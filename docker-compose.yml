@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  migrator:
+    build: .
+    image: github-migrator:latest
+    container_name: github-migrator
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./configs:/app/configs
+    environment:
+      - GHMIG_SERVER_PORT=8080
+      - GHMIG_DATABASE_TYPE=sqlite
+      - GHMIG_DATABASE_DSN=/app/data/migrator.db
+      - GHMIG_LOGGING_LEVEL=info
+      - GHMIG_LOGGING_FORMAT=json
+    restart: unless-stopped
