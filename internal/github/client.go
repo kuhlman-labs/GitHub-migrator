@@ -1,0 +1,341 @@
+package github
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	"github.com/google/go-github/v75/github"
+	"github.com/shurcooL/githubv4"
+	"golang.org/x/oauth2"
+)
+
+// Client wraps GitHub REST and GraphQL clients with rate limiting and retry logic
+type Client struct {
+	rest           *github.Client
+	graphql        *githubv4.Client
+	baseURL        string
+	token          string
+	rateLimiter    *RateLimiter
+	retryer        *Retryer
+	circuitBreaker *CircuitBreaker
+	logger         *slog.Logger
+}
+
+// ClientConfig configures the GitHub client
+type ClientConfig struct {
+	BaseURL     string
+	Token       string
+	Timeout     time.Duration
+	RetryConfig RetryConfig
+	Logger      *slog.Logger
+}
+
+// NewClient creates a new GitHub client with rate limiting and retry logic
+func NewClient(cfg ClientConfig) (*Client, error) {
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 30 * time.Second
+	}
+
+	// Create OAuth2 client
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: cfg.Token},
+	)
+	httpClient := oauth2.NewClient(ctx, ts)
+	httpClient.Timeout = cfg.Timeout
+
+	// Create REST client
+	var restClient *github.Client
+	if cfg.BaseURL == "" || cfg.BaseURL == "https://api.github.com" {
+		restClient = github.NewClient(httpClient)
+	} else {
+		var err error
+		restClient, err = github.NewClient(httpClient).WithEnterpriseURLs(cfg.BaseURL, cfg.BaseURL)
+		if err != nil {
+			return nil, WrapError(err, "NewClient", cfg.BaseURL)
+		}
+	}
+
+	// Create GraphQL client
+	var graphqlClient *githubv4.Client
+	if cfg.BaseURL == "" || cfg.BaseURL == "https://api.github.com" {
+		graphqlClient = githubv4.NewClient(httpClient)
+	} else {
+		graphqlClient = githubv4.NewEnterpriseClient(cfg.BaseURL+"/api/graphql", httpClient)
+	}
+
+	// Initialize rate limiter and retry logic
+	rateLimiter := NewRateLimiter(cfg.Logger)
+	retryer := NewRetryer(cfg.RetryConfig, rateLimiter, cfg.Logger)
+	circuitBreaker := NewCircuitBreaker(5, 1*time.Minute, cfg.Logger)
+
+	client := &Client{
+		rest:           restClient,
+		graphql:        graphqlClient,
+		baseURL:        cfg.BaseURL,
+		token:          cfg.Token,
+		rateLimiter:    rateLimiter,
+		retryer:        retryer,
+		circuitBreaker: circuitBreaker,
+		logger:         cfg.Logger,
+	}
+
+	// Initialize rate limits
+	if err := client.updateRateLimits(context.Background()); err != nil {
+		cfg.Logger.Warn("Failed to initialize rate limits", "error", err)
+	}
+
+	return client, nil
+}
+
+// REST returns the underlying GitHub REST client
+func (c *Client) REST() *github.Client {
+	return c.rest
+}
+
+// GraphQL returns the underlying GitHub GraphQL client
+func (c *Client) GraphQL() *githubv4.Client {
+	return c.graphql
+}
+
+// GetRateLimiter returns the rate limiter
+func (c *Client) GetRateLimiter() *RateLimiter {
+	return c.rateLimiter
+}
+
+// GetRetryer returns the retryer
+func (c *Client) GetRetryer() *Retryer {
+	return c.retryer
+}
+
+// DoWithRetry executes a REST API operation with retry logic
+func (c *Client) DoWithRetry(ctx context.Context, operation string, fn func(ctx context.Context) (*github.Response, error)) (*github.Response, error) {
+	var resp *github.Response
+	var lastErr error
+
+	err := c.retryer.Do(ctx, operation, func(ctx context.Context) error {
+		var err error
+		resp, err = fn(ctx)
+
+		if err != nil {
+			lastErr = WrapError(err, operation, c.baseURL)
+			return lastErr
+		}
+
+		// Update rate limits from response
+		if resp != nil && resp.Rate.Limit > 0 {
+			c.rateLimiter.UpdateLimits(
+				resp.Rate.Remaining,
+				resp.Rate.Limit,
+				resp.Rate.Reset.Time,
+			)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return resp, lastErr
+	}
+	return resp, nil
+}
+
+// QueryWithRetry executes a GraphQL query with retry logic
+func (c *Client) QueryWithRetry(ctx context.Context, operation string, query interface{}, variables map[string]interface{}) error {
+	return c.retryer.Do(ctx, operation, func(ctx context.Context) error {
+		err := c.graphql.Query(ctx, query, variables)
+		if err != nil {
+			return WrapError(err, operation, c.baseURL)
+		}
+		return nil
+	})
+}
+
+// MutateWithRetry executes a GraphQL mutation with retry logic
+func (c *Client) MutateWithRetry(ctx context.Context, operation string, mutation interface{}, input map[string]interface{}, variables map[string]interface{}) error {
+	return c.retryer.Do(ctx, operation, func(ctx context.Context) error {
+		err := c.graphql.Mutate(ctx, mutation, input, variables)
+		if err != nil {
+			return WrapError(err, operation, c.baseURL)
+		}
+		return nil
+	})
+}
+
+// updateRateLimits fetches and updates rate limit information
+func (c *Client) updateRateLimits(ctx context.Context) error {
+	limits, resp, err := c.rest.RateLimit.Get(ctx)
+	if err != nil {
+		return WrapError(err, "GetRateLimits", c.baseURL)
+	}
+
+	if limits != nil && limits.Core != nil {
+		c.rateLimiter.UpdateLimits(
+			limits.Core.Remaining,
+			limits.Core.Limit,
+			limits.Core.Reset.Time,
+		)
+	}
+
+	if resp != nil && limits != nil && limits.Core != nil {
+		c.logger.Debug("Rate limits fetched",
+			"remaining", limits.Core.Remaining,
+			"limit", limits.Core.Limit,
+			"reset", limits.Core.Reset.Time)
+	}
+
+	return nil
+}
+
+// GetRateLimitStatus returns the current rate limit status
+func (c *Client) GetRateLimitStatus(ctx context.Context) (*github.RateLimits, error) {
+	limits, _, err := c.rest.RateLimit.Get(ctx)
+	if err != nil {
+		return nil, WrapError(err, "GetRateLimits", c.baseURL)
+	}
+	return limits, nil
+}
+
+// CheckRateLimit logs rate limit information
+func (c *Client) CheckRateLimit(ctx context.Context) error {
+	limits, err := c.GetRateLimitStatus(ctx)
+	if err != nil {
+		return err
+	}
+
+	if limits.Core != nil {
+		c.logger.Info("Rate limit status",
+			"remaining", limits.Core.Remaining,
+			"limit", limits.Core.Limit,
+			"reset", limits.Core.Reset.Time)
+
+		c.rateLimiter.UpdateLimits(
+			limits.Core.Remaining,
+			limits.Core.Limit,
+			limits.Core.Reset.Time,
+		)
+	}
+
+	return nil
+}
+
+// ListRepositories lists all repositories for an organization with pagination
+func (c *Client) ListRepositories(ctx context.Context, org string) ([]*github.Repository, error) {
+	var allRepos []*github.Repository
+	opt := &github.RepositoryListByOrgOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	c.logger.Info("Listing repositories", "org", org)
+
+	for {
+		var repos []*github.Repository
+		var resp *github.Response
+
+		err := c.retryer.Do(ctx, "ListRepositories", func(ctx context.Context) error {
+			var err error
+			repos, resp, err = c.rest.Repositories.ListByOrg(ctx, org, opt)
+			if err != nil {
+				return WrapError(err, "ListByOrg", c.baseURL)
+			}
+
+			// Update rate limits
+			if resp != nil && resp.Rate.Limit > 0 {
+				c.rateLimiter.UpdateLimits(
+					resp.Rate.Remaining,
+					resp.Rate.Limit,
+					resp.Rate.Reset.Time,
+				)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		allRepos = append(allRepos, repos...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	c.logger.Info("Repository listing complete",
+		"org", org,
+		"total_repos", len(allRepos))
+
+	return allRepos, nil
+}
+
+// GetRepository gets a single repository by owner and name
+func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
+	var repository *github.Repository
+
+	err := c.retryer.Do(ctx, "GetRepository", func(ctx context.Context) error {
+		var resp *github.Response
+		var err error
+		repository, resp, err = c.rest.Repositories.Get(ctx, owner, repo)
+		if err != nil {
+			return WrapError(err, "Get", c.baseURL)
+		}
+
+		// Update rate limits
+		if resp != nil && resp.Rate.Limit > 0 {
+			c.rateLimiter.UpdateLimits(
+				resp.Rate.Remaining,
+				resp.Rate.Limit,
+				resp.Rate.Reset.Time,
+			)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return repository, nil
+}
+
+// TestAuthentication verifies that the client is authenticated properly
+func (c *Client) TestAuthentication(ctx context.Context) error {
+	c.logger.Info("Testing GitHub authentication")
+
+	var user *github.User
+	err := c.retryer.Do(ctx, "TestAuthentication", func(ctx context.Context) error {
+		var resp *github.Response
+		var err error
+		user, resp, err = c.rest.Users.Get(ctx, "")
+		if err != nil {
+			return WrapError(err, "GetAuthenticatedUser", c.baseURL)
+		}
+
+		// Update rate limits
+		if resp != nil && resp.Rate.Limit > 0 {
+			c.rateLimiter.UpdateLimits(
+				resp.Rate.Remaining,
+				resp.Rate.Limit,
+				resp.Rate.Reset.Time,
+			)
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.logger.Error("Authentication test failed", "error", err)
+		return err
+	}
+
+	c.logger.Info("Authentication successful",
+		"user", user.GetLogin(),
+		"type", user.GetType())
+
+	return nil
+}
