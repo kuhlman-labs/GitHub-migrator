@@ -1,0 +1,94 @@
+export interface Repository {
+  id: number;
+  full_name: string;
+  source: string;
+  source_url: string;
+  total_size: number;
+  largest_file?: string;
+  largest_file_size?: number;
+  largest_commit?: string;
+  largest_commit_size?: number;
+  has_lfs: boolean;
+  has_submodules: boolean;
+  default_branch: string;
+  branch_count: number;
+  commit_count: number;
+  has_wiki: boolean;
+  has_pages: boolean;
+  has_discussions: boolean;
+  has_actions: boolean;
+  has_projects: boolean;
+  branch_protections: number;
+  environment_count: number;
+  secret_count: number;
+  variable_count: number;
+  webhook_count: number;
+  contributor_count: number;
+  top_contributors?: string;
+  status: string;
+  batch_id?: number;
+  priority: number;
+  destination_url?: string;
+  destination_full_name?: string;
+  discovered_at: string;
+  updated_at: string;
+  migrated_at?: string;
+}
+
+export interface MigrationHistory {
+  id: number;
+  repository_id: number;
+  status: string;
+  phase: string;
+  message: string;
+  error_message?: string;
+  started_at: string;
+  completed_at?: string;
+  duration_seconds?: number;
+}
+
+export interface MigrationLog {
+  id: number;
+  repository_id: number;
+  history_id?: number;
+  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+  phase: string;
+  operation: string;
+  message: string;
+  details?: string;
+  timestamp: string;
+}
+
+export interface Batch {
+  id: number;
+  name: string;
+  description: string;
+  type: string;
+  repository_count: number;
+  status: string;
+  scheduled_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface Analytics {
+  total_repositories: number;
+  migrated_count: number;
+  failed_count: number;
+  in_progress_count: number;
+  pending_count: number;
+  average_migration_time?: number;
+  status_breakdown: Record<string, number>;
+}
+
+export interface RepositoryDetailResponse {
+  repository: Repository;
+  history: MigrationHistory[];
+}
+
+export interface MigrationLogsResponse {
+  logs: MigrationLog[];
+  total: number;
+}
+

@@ -1,4 +1,4 @@
-.PHONY: help build test lint clean docker-build docker-run install-tools install-dependencies install setup
+.PHONY: help build test lint clean docker-build docker-run install-tools install-dependencies install setup web-install web-build web-dev web-lint
 
 # Variables
 APP_NAME=github-migrator
@@ -22,15 +22,28 @@ install-tools: ## Install development tools
 	go install github.com/github/git-sizer@latest
 	@echo "Development tools installed successfully!"
 
-setup: install-dependencies install-tools ## Install all dependencies and tools
+web-install: ## Install frontend dependencies
+	@echo "Installing frontend dependencies..."
+	cd web && npm install
+	@echo "Frontend dependencies installed successfully!"
+
+setup: install-dependencies install-tools web-install ## Install all dependencies and tools
 	@echo "Setup complete!"
 
 install: setup ## Alias for setup
 
-build: ## Build the application
+build: ## Build the application (backend only)
 	@echo "Building backend..."
 	CGO_ENABLED=1 go build -o bin/$(APP_NAME)-server cmd/server/main.go
 	@echo "Build complete!"
+
+web-build: ## Build the frontend
+	@echo "Building frontend..."
+	cd web && npm run build
+	@echo "Frontend build complete!"
+
+build-all: build web-build ## Build both backend and frontend
+	@echo "Full build complete!"
 
 test: ## Run tests
 	@echo "Running backend tests..."
@@ -47,6 +60,12 @@ lint: ## Run linters
 	@echo "Running security scan..."
 	$(GOBIN)/gosec -exclude=G201 ./...
 
+web-lint: ## Run frontend linter
+	@echo "Linting frontend..."
+	cd web && npm run lint
+
+lint-all: lint web-lint ## Run all linters
+
 fmt: ## Format code
 	@echo "Formatting Go code..."
 	go fmt ./...
@@ -54,6 +73,12 @@ fmt: ## Format code
 
 run-server: ## Run the server locally
 	go run cmd/server/main.go
+
+web-dev: ## Run frontend dev server
+	cd web && npm run dev
+
+run-dev: ## Run both backend and frontend in dev mode (requires tmux or run in separate terminals)
+	@echo "Run 'make run-server' in one terminal and 'make web-dev' in another"
 
 docker-build: ## Build Docker image
 	docker build -t $(DOCKER_IMAGE) .
@@ -68,7 +93,8 @@ clean: ## Clean build artifacts
 	rm -rf bin/
 	rm -f coverage.out coverage.html
 	rm -f $(APP_NAME)-server $(APP_NAME)-cli
+	rm -rf web/dist web/node_modules
 
-all: lint test build ## Run all checks and build
+all: lint test build web-build ## Run all checks and build
 
 .DEFAULT_GOAL := help

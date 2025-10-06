@@ -40,7 +40,25 @@ This project provides an automated migration server with discovery, profiling, b
   - Circuit breaker states tested
   - Zero linting errors
 
-**🚧 Phase 3-9: In Progress** - See [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) for remaining phases
+**✅ Phase 3-6: Complete** - Discovery, API, Migration, and Batch Management
+- Repository discovery with profiling (Phase 3)
+- RESTful API with full endpoint coverage (Phase 4)
+- Migration execution engine with status tracking (Phase 5)
+- Intelligent batch management and pilot selection (Phase 6)
+- See individual PHASE*_COMPLETE.md files for details
+
+**✅ Phase 7: Complete** - Frontend Application
+- Vite + React 18 + TypeScript
+- Tailwind CSS with responsive design
+- Dashboard with repository grid and real-time updates
+- Repository detail view with migration controls
+- Analytics with charts (Recharts)
+- Batch management interface
+- Self-service migration UI
+- React Router navigation
+- **28 files, fully typed, zero linting errors**
+
+**🚧 Phase 8-9: Pending** - See [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) for remaining phases
 
 ## Features
 
@@ -87,25 +105,19 @@ This project provides an automated migration server with discovery, profiling, b
 ### Build
 
 ```bash
-# Install Go dependencies
-make install-dependencies
-
-# Install development tools (golangci-lint, gosec, git-sizer)
-make install-tools
-
-# Or install both dependencies and tools at once
-make setup
-# or
+# Install all dependencies (Go + Node.js)
 make install
+# or
+make setup
 
 # Build backend and frontend
-make build
+make build-all
 
 # Run tests
 make test
 
 # Run linters
-make lint
+make lint-all
 ```
 
 ### Configuration
@@ -137,11 +149,14 @@ logging:
 ### Run Locally
 
 ```bash
-# Run backend server
+# Terminal 1: Run backend server
 make run-server
 
-# Or run both backend and frontend in dev mode
-make run-dev
+# Terminal 2: Run frontend dev server
+make web-dev
+
+# Backend will be at http://localhost:8080
+# Frontend will be at http://localhost:3000
 ```
 
 ### Docker Deployment
@@ -235,48 +250,50 @@ Repositories progress through the following phases:
 
 ```bash
 make help                   # Show all available commands
-make install-dependencies   # Install Go module dependencies
-make install-tools          # Install development tools (golangci-lint, gosec, git-sizer)
-make setup                  # Install all dependencies and tools
-make install                # Alias for setup
-make build                  # Build backend and frontend
-make test                   # Run all tests
+make install                # Install all dependencies (Go + Node.js)
+make setup                  # Alias for install
+make build                  # Build backend only
+make web-build              # Build frontend only
+make build-all              # Build both backend and frontend
+make test                   # Run backend tests
 make test-coverage          # Generate coverage report
-make lint                   # Run all linters
+make lint                   # Run backend linters
+make web-lint               # Run frontend linter
+make lint-all               # Run all linters
 make fmt                    # Format code
 make run-server             # Run backend server
-make run-dev                # Run backend + frontend in dev mode
+make web-dev                # Run frontend dev server
 make docker-build           # Build Docker image
 make docker-run             # Run with Docker Compose
 make docker-down            # Stop Docker containers
-make clean                  # Clean build artifacts
-make all                    # Run all checks and build
+make clean                  # Clean all build artifacts
+make all                    # Run all checks and build everything
 ```
 
 ### Testing
 
 ```bash
 # Backend tests
-go test -v ./...
-
-# Frontend tests
-cd web && npm test
+make test
 
 # Coverage report
 make test-coverage
+
+# Type checking (frontend)
+cd web && npm run type-check
 ```
 
 ### Linting
 
 ```bash
 # Lint backend
-golangci-lint run
-
-# Security scan
-gosec ./...
+make lint
 
 # Lint frontend
-cd web && npm run lint
+make web-lint
+
+# Lint everything
+make lint-all
 ```
 
 ## API Documentation
