@@ -1,0 +1,1080 @@
+# GitHub Migration Server - API Documentation
+
+## Overview
+
+The GitHub Migration Server provides a comprehensive REST API for managing repository discovery, profiling, batch organization, and migration execution. All endpoints return JSON responses and follow RESTful conventions.
+
+**Base URL:** `http://localhost:8080`  
+**API Version:** v1  
+**Content-Type:** `application/json`
+
+## Table of Contents
+
+- [Health Check](#health-check)
+- [Discovery](#discovery)
+- [Repositories](#repositories)
+- [Batches](#batches)
+- [Migrations](#migrations)
+- [Analytics](#analytics)
+- [Error Handling](#error-handling)
+- [Rate Limiting](#rate-limiting)
+
+---
+
+## Health Check
+
+### GET /health
+
+Health check endpoint to verify server status.
+
+**Response 200 OK:**
+```json
+{
+  "status": "healthy",
+  "time": "2024-01-15T10:30:00Z"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/health
+```
+
+---
+
+## Discovery
+
+### POST /api/v1/discovery/start
+
+Start repository discovery from the source GitHub system.
+
+**Request Body:**
+```json
+{
+  "organization": "acme-corp",
+  "options": {
+    "include_archived": false,
+    "include_forks": true,
+    "parallel_workers": 5
+  }
+}
+```
+
+**Response 202 Accepted:**
+```json
+{
+  "status": "started",
+  "organization": "acme-corp",
+  "message": "Discovery started successfully"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "error": "Organization name is required"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/discovery/start \
+  -H "Content-Type: application/json" \
+  -d '{"organization": "acme-corp"}'
+```
+
+### GET /api/v1/discovery/status
+
+Get the status of the current or last discovery operation.
+
+**Response 200 OK:**
+```json
+{
+  "status": "running",
+  "organization": "acme-corp",
+  "started_at": "2024-01-15T10:00:00Z",
+  "repositories_found": 127,
+  "repositories_profiled": 89,
+  "current_repository": "acme-corp/api-gateway",
+  "progress_percentage": 70
+}
+```
+
+**Status Values:**
+- `idle` - No discovery running
+- `running` - Discovery in progress
+- `completed` - Discovery completed successfully
+- `failed` - Discovery failed
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/discovery/status
+```
+
+---
+
+## Repositories
+
+### GET /api/v1/repositories
+
+List all repositories with optional filtering.
+
+**Query Parameters:**
+- `status` (string) - Filter by migration status (pending, profiled, ready, migrating, completed, failed)
+- `batch_id` (int) - Filter by batch ID
+- `organization` (string) - Filter by organization name
+- `has_lfs` (bool) - Filter by LFS usage
+- `has_submodules` (bool) - Filter by submodule presence
+- `min_size` (int) - Minimum size in KB
+- `max_size` (int) - Maximum size in KB
+
+**Response 200 OK:**
+```json
+[
+  {
+    "id": 1,
+    "full_name": "acme-corp/api-gateway",
+    "organization": "acme-corp",
+    "name": "api-gateway",
+    "description": "Main API Gateway service",
+    "status": "ready",
+    "size_kb": 15234,
+    "stars": 45,
+    "forks": 12,
+    "open_issues": 8,
+    "default_branch": "main",
+    "is_private": true,
+    "is_fork": false,
+    "is_archived": false,
+    "has_wiki": true,
+    "has_pages": false,
+    "has_issues": true,
+    "has_projects": false,
+    "has_actions": true,
+    "has_lfs": true,
+    "has_submodules": false,
+    "protected_branches_count": 2,
+    "webhooks_count": 3,
+    "topics": ["api", "gateway", "microservices"],
+    "language": "Go",
+    "batch_id": 1,
+    "priority": 5,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "discovered_at": "2024-01-15T10:00:00Z"
+  }
+]
+```
+
+**Examples:**
+```bash
+# Get all repositories
+curl http://localhost:8080/api/v1/repositories
+
+# Filter by status
+curl "http://localhost:8080/api/v1/repositories?status=ready"
+
+# Filter by batch
+curl "http://localhost:8080/api/v1/repositories?batch_id=1"
+
+# Filter by multiple criteria
+curl "http://localhost:8080/api/v1/repositories?status=ready&has_lfs=true&min_size=1000"
+```
+
+### GET /api/v1/repositories/{fullName}
+
+Get detailed information about a specific repository including migration history.
+
+**Path Parameters:**
+- `fullName` (string) - Repository full name (e.g., "acme-corp/api-gateway")
+
+**Response 200 OK:**
+```json
+{
+  "repository": {
+    "id": 1,
+    "full_name": "acme-corp/api-gateway",
+    "organization": "acme-corp",
+    "name": "api-gateway",
+    "status": "migrating",
+    "size_kb": 15234,
+    "default_branch": "main",
+    "has_lfs": true,
+    "has_actions": true,
+    "protected_branches_count": 2,
+    "batch_id": 1,
+    "priority": 5,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T11:00:00Z"
+  },
+  "history": [
+    {
+      "id": 1,
+      "repository_id": 1,
+      "migration_id": "mig_123456",
+      "status": "migrating",
+      "phase": "migration",
+      "sub_phase": "migrating",
+      "started_at": "2024-01-15T11:00:00Z",
+      "completed_at": null,
+      "error_message": null,
+      "metadata": {
+        "dry_run": false,
+        "initiated_by": "admin",
+        "batch_id": 1
+      }
+    }
+  ]
+}
+```
+
+**Response 404 Not Found:**
+```json
+{
+  "error": "Repository not found"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/repositories/acme-corp/api-gateway
+```
+
+### PATCH /api/v1/repositories/{fullName}
+
+Update repository metadata (batch assignment, priority).
+
+**Path Parameters:**
+- `fullName` (string) - Repository full name
+
+**Request Body:**
+```json
+{
+  "batch_id": 2,
+  "priority": 10
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "id": 1,
+  "full_name": "acme-corp/api-gateway",
+  "batch_id": 2,
+  "priority": 10,
+  "updated_at": "2024-01-15T12:00:00Z"
+}
+```
+
+**Example:**
+```bash
+curl -X PATCH http://localhost:8080/api/v1/repositories/acme-corp/api-gateway \
+  -H "Content-Type: application/json" \
+  -d '{"batch_id": 2, "priority": 10}'
+```
+
+---
+
+## Batches
+
+### GET /api/v1/batches
+
+List all migration batches.
+
+**Response 200 OK:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Pilot Repositories",
+    "description": "Initial pilot migration batch",
+    "status": "completed",
+    "repository_count": 5,
+    "started_at": "2024-01-15T09:00:00Z",
+    "completed_at": "2024-01-15T10:00:00Z",
+    "created_at": "2024-01-14T15:00:00Z"
+  },
+  {
+    "id": 2,
+    "name": "Wave 1 - Critical Services",
+    "description": "First wave of critical microservices",
+    "status": "ready",
+    "repository_count": 15,
+    "created_at": "2024-01-15T10:00:00Z"
+  }
+]
+```
+
+**Batch Status Values:**
+- `ready` - Batch created and ready to start
+- `running` - Batch migration in progress
+- `completed` - All repositories migrated successfully
+- `failed` - Batch migration failed
+- `partial` - Some repositories failed
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/batches
+```
+
+### POST /api/v1/batches
+
+Create a new migration batch.
+
+**Request Body:**
+```json
+{
+  "name": "Wave 2 - Backend Services",
+  "description": "Second wave containing backend microservices",
+  "repository_ids": [10, 11, 12, 13, 14]
+}
+```
+
+**Response 201 Created:**
+```json
+{
+  "id": 3,
+  "name": "Wave 2 - Backend Services",
+  "description": "Second wave containing backend microservices",
+  "status": "ready",
+  "repository_count": 5,
+  "created_at": "2024-01-15T12:00:00Z"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/batches \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Wave 2",
+    "description": "Backend services",
+    "repository_ids": [10, 11, 12]
+  }'
+```
+
+### GET /api/v1/batches/{id}
+
+Get detailed information about a specific batch including its repositories.
+
+**Path Parameters:**
+- `id` (int) - Batch ID
+
+**Response 200 OK:**
+```json
+{
+  "batch": {
+    "id": 1,
+    "name": "Pilot Repositories",
+    "description": "Initial pilot migration batch",
+    "status": "completed",
+    "repository_count": 5,
+    "started_at": "2024-01-15T09:00:00Z",
+    "completed_at": "2024-01-15T10:00:00Z",
+    "created_at": "2024-01-14T15:00:00Z"
+  },
+  "repositories": [
+    {
+      "id": 1,
+      "full_name": "acme-corp/api-gateway",
+      "status": "completed",
+      "batch_id": 1,
+      "priority": 10
+    },
+    {
+      "id": 2,
+      "full_name": "acme-corp/auth-service",
+      "status": "completed",
+      "batch_id": 1,
+      "priority": 9
+    }
+  ]
+}
+```
+
+**Response 404 Not Found:**
+```json
+{
+  "error": "Batch not found"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/batches/1
+```
+
+### POST /api/v1/batches/{id}/start
+
+Start migration for all repositories in a batch.
+
+**Path Parameters:**
+- `id` (int) - Batch ID
+
+**Query Parameters:**
+- `dry_run` (bool) - Perform dry run validation (default: false)
+
+**Response 202 Accepted:**
+```json
+{
+  "batch_id": 1,
+  "migration_ids": [101, 102, 103, 104, 105],
+  "count": 5,
+  "message": "Started migration for 5 repositories in batch 'Pilot Repositories'"
+}
+```
+
+**Example:**
+```bash
+# Start actual migration
+curl -X POST http://localhost:8080/api/v1/batches/1/start
+
+# Start dry run
+curl -X POST "http://localhost:8080/api/v1/batches/1/start?dry_run=true"
+```
+
+---
+
+## Migrations
+
+### POST /api/v1/migrations/start
+
+Start migration for one or more repositories. Supports both repository IDs and full names (for self-service).
+
+**Request Body (by IDs):**
+```json
+{
+  "repository_ids": [1, 2, 3],
+  "dry_run": false,
+  "priority": 5
+}
+```
+
+**Request Body (by Names - Self-Service):**
+```json
+{
+  "full_names": ["acme-corp/api-gateway", "acme-corp/auth-service"],
+  "dry_run": false,
+  "priority": 5
+}
+```
+
+**Response 202 Accepted:**
+```json
+{
+  "migration_ids": [101, 102],
+  "count": 2,
+  "message": "Started migration for 2 repositories"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "error": "Must provide repository_ids or full_names"
+}
+```
+
+**Response 404 Not Found:**
+```json
+{
+  "error": "No repositories found"
+}
+```
+
+**Examples:**
+```bash
+# Start migration by IDs
+curl -X POST http://localhost:8080/api/v1/migrations/start \
+  -H "Content-Type: application/json" \
+  -d '{"repository_ids": [1, 2, 3], "dry_run": false}'
+
+# Start migration by names (self-service)
+curl -X POST http://localhost:8080/api/v1/migrations/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "full_names": ["acme-corp/api-gateway", "acme-corp/auth-service"],
+    "dry_run": false
+  }'
+
+# Start dry run
+curl -X POST http://localhost:8080/api/v1/migrations/start \
+  -H "Content-Type: application/json" \
+  -d '{"repository_ids": [1], "dry_run": true}'
+```
+
+### GET /api/v1/migrations/{id}
+
+Get the current status of a migration.
+
+**Path Parameters:**
+- `id` (int) - Migration ID
+
+**Response 200 OK:**
+```json
+{
+  "id": 101,
+  "repository_id": 1,
+  "repository_name": "acme-corp/api-gateway",
+  "migration_id": "mig_123456",
+  "status": "migrating",
+  "phase": "migration",
+  "sub_phase": "migrating",
+  "started_at": "2024-01-15T11:00:00Z",
+  "completed_at": null,
+  "duration_seconds": 120,
+  "error_message": null,
+  "metadata": {
+    "dry_run": false,
+    "initiated_by": "admin",
+    "batch_id": 1,
+    "estimated_completion": "2024-01-15T11:10:00Z"
+  }
+}
+```
+
+**Migration Phases:**
+1. `pending` - Migration queued
+2. `dry_run` - Dry run validation
+3. `pre_migration` - Pre-flight checks
+4. `migration` - Active migration
+   - Sub-phases: `archive` → `queue` → `migrating` → `complete`
+5. `post_migration` - Post-migration tasks
+6. `completed` - Fully migrated
+7. `failed` - Migration failed
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/migrations/101
+```
+
+### GET /api/v1/migrations/{id}/history
+
+Get complete migration history for a migration.
+
+**Path Parameters:**
+- `id` (int) - Migration ID
+
+**Response 200 OK:**
+```json
+[
+  {
+    "id": 1,
+    "repository_id": 1,
+    "migration_id": "mig_123456",
+    "status": "migrating",
+    "phase": "migration",
+    "sub_phase": "migrating",
+    "started_at": "2024-01-15T11:00:00Z",
+    "completed_at": null,
+    "error_message": null,
+    "metadata": {
+      "dry_run": false,
+      "batch_id": 1
+    }
+  }
+]
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/migrations/101/history
+```
+
+### GET /api/v1/migrations/{id}/logs
+
+Get migration logs with optional filtering.
+
+**Path Parameters:**
+- `id` (int) - Migration ID
+
+**Query Parameters:**
+- `level` (string) - Filter by log level (info, warn, error)
+- `limit` (int) - Maximum number of logs to return (default: 100)
+
+**Response 200 OK:**
+```json
+[
+  {
+    "id": 1,
+    "migration_id": 101,
+    "timestamp": "2024-01-15T11:00:00Z",
+    "level": "info",
+    "message": "Starting repository migration",
+    "metadata": {
+      "repository": "acme-corp/api-gateway",
+      "phase": "pre_migration"
+    }
+  },
+  {
+    "id": 2,
+    "migration_id": 101,
+    "timestamp": "2024-01-15T11:00:05Z",
+    "level": "info",
+    "message": "Pre-flight checks passed",
+    "metadata": {
+      "checks": ["size", "lfs", "permissions"]
+    }
+  },
+  {
+    "id": 3,
+    "migration_id": 101,
+    "timestamp": "2024-01-15T11:00:10Z",
+    "level": "info",
+    "message": "Migration archive created",
+    "metadata": {
+      "archive_id": "arch_789012"
+    }
+  }
+]
+```
+
+**Examples:**
+```bash
+# Get all logs
+curl http://localhost:8080/api/v1/migrations/101/logs
+
+# Filter by level
+curl "http://localhost:8080/api/v1/migrations/101/logs?level=error"
+
+# Limit results
+curl "http://localhost:8080/api/v1/migrations/101/logs?limit=50"
+```
+
+---
+
+## Analytics
+
+### GET /api/v1/analytics/summary
+
+Get analytics summary with repository status breakdown.
+
+**Response 200 OK:**
+```json
+{
+  "total_repositories": 150,
+  "by_status": {
+    "pending": 20,
+    "profiled": 15,
+    "ready": 30,
+    "migrating": 10,
+    "completed": 70,
+    "failed": 5
+  },
+  "total_size_gb": 234.5,
+  "repositories_with_lfs": 45,
+  "repositories_with_actions": 89,
+  "repositories_with_submodules": 12,
+  "average_size_mb": 1.6,
+  "largest_repository": {
+    "full_name": "acme-corp/monorepo",
+    "size_gb": 15.2
+  },
+  "most_complex_repository": {
+    "full_name": "acme-corp/legacy-platform",
+    "complexity_score": 95,
+    "has_lfs": true,
+    "has_submodules": true,
+    "protected_branches": 5
+  }
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/analytics/summary
+```
+
+### GET /api/v1/analytics/progress
+
+Get migration progress metrics over time.
+
+**Query Parameters:**
+- `days` (int) - Number of days to include (default: 30)
+- `group_by` (string) - Grouping interval: hour, day, week (default: day)
+
+**Response 200 OK:**
+```json
+{
+  "period": {
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-01-31T23:59:59Z",
+    "days": 30
+  },
+  "total_migrations": 150,
+  "successful_migrations": 140,
+  "failed_migrations": 10,
+  "success_rate": 93.3,
+  "average_duration_minutes": 8.5,
+  "total_data_migrated_gb": 234.5,
+  "daily_progress": [
+    {
+      "date": "2024-01-15",
+      "migrations_completed": 12,
+      "migrations_failed": 1,
+      "data_migrated_gb": 18.3,
+      "average_duration_minutes": 7.2
+    },
+    {
+      "date": "2024-01-16",
+      "migrations_completed": 15,
+      "migrations_failed": 0,
+      "data_migrated_gb": 22.1,
+      "average_duration_minutes": 9.1
+    }
+  ],
+  "by_batch": [
+    {
+      "batch_id": 1,
+      "batch_name": "Pilot Repositories",
+      "total": 5,
+      "completed": 5,
+      "failed": 0,
+      "success_rate": 100
+    }
+  ]
+}
+```
+
+**Example:**
+```bash
+# Get 30-day progress
+curl http://localhost:8080/api/v1/analytics/progress
+
+# Get 7-day progress grouped by hour
+curl "http://localhost:8080/api/v1/analytics/progress?days=7&group_by=hour"
+```
+
+---
+
+## Error Handling
+
+All API endpoints return consistent error responses.
+
+### Error Response Format
+
+```json
+{
+  "error": "Detailed error message",
+  "code": "ERROR_CODE",
+  "timestamp": "2024-01-15T12:00:00Z"
+}
+```
+
+### HTTP Status Codes
+
+| Code | Description | Usage |
+|------|-------------|-------|
+| 200 | OK | Successful GET, PATCH requests |
+| 201 | Created | Successful POST creating new resource |
+| 202 | Accepted | Async operation started successfully |
+| 400 | Bad Request | Invalid request body or parameters |
+| 404 | Not Found | Resource not found |
+| 500 | Internal Server Error | Server-side error |
+
+### Common Error Scenarios
+
+**Invalid Request Body:**
+```json
+{
+  "error": "Invalid request body",
+  "code": "INVALID_REQUEST"
+}
+```
+
+**Resource Not Found:**
+```json
+{
+  "error": "Repository not found",
+  "code": "NOT_FOUND"
+}
+```
+
+**Migration Not Allowed:**
+```json
+{
+  "error": "Repository cannot be migrated: status is 'migrating'",
+  "code": "MIGRATION_NOT_ALLOWED"
+}
+```
+
+**Server Error:**
+```json
+{
+  "error": "Failed to fetch repositories",
+  "code": "INTERNAL_ERROR"
+}
+```
+
+---
+
+## Rate Limiting
+
+The server implements intelligent rate limiting for GitHub API calls:
+
+- **Primary Rate Limit:** 5,000 requests/hour (GitHub authenticated)
+- **Secondary Rate Limit:** Dynamic based on response headers
+- **Auto-Wait:** Server automatically waits when limits are exhausted
+- **Retry Logic:** Exponential backoff for failed requests
+
+### Rate Limit Headers
+
+Response headers include rate limit information:
+
+```
+X-RateLimit-Limit: 5000
+X-RateLimit-Remaining: 4850
+X-RateLimit-Reset: 1705324800
+```
+
+### Circuit Breaker
+
+The server implements a circuit breaker pattern:
+
+- **Closed:** Normal operation
+- **Open:** Too many failures, requests blocked temporarily
+- **Half-Open:** Testing if service recovered
+
+---
+
+## Pagination
+
+Currently, the API returns all results. Future versions will implement pagination:
+
+**Planned Headers:**
+```
+X-Total-Count: 150
+X-Page: 1
+X-Per-Page: 50
+Link: <url?page=2>; rel="next", <url?page=3>; rel="last"
+```
+
+---
+
+## Authentication
+
+**Current Version:** No authentication (internal use only)
+
+**Future Versions** will support:
+- API Key authentication
+- OAuth 2.0
+- JWT tokens
+- Role-based access control (RBAC)
+
+---
+
+## Webhooks
+
+**Future Feature:** The server will support webhooks for event notifications:
+
+**Planned Events:**
+- `discovery.started`
+- `discovery.completed`
+- `migration.started`
+- `migration.completed`
+- `migration.failed`
+- `batch.started`
+- `batch.completed`
+
+---
+
+## Best Practices
+
+### 1. Use Dry Run First
+
+Always perform a dry run before actual migration:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/migrations/start \
+  -H "Content-Type: application/json" \
+  -d '{"repository_ids": [1], "dry_run": true}'
+```
+
+### 2. Monitor Migration Status
+
+Poll migration status to track progress:
+
+```bash
+# Get current status
+curl http://localhost:8080/api/v1/migrations/101
+
+# Get detailed logs
+curl http://localhost:8080/api/v1/migrations/101/logs
+```
+
+### 3. Use Batches for Organization
+
+Organize repositories into logical batches:
+
+```bash
+# Create batch
+curl -X POST http://localhost:8080/api/v1/batches \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Critical Services", "repository_ids": [1,2,3]}'
+
+# Start batch migration
+curl -X POST http://localhost:8080/api/v1/batches/1/start
+```
+
+### 4. Track Analytics
+
+Monitor overall progress with analytics:
+
+```bash
+# Get summary
+curl http://localhost:8080/api/v1/analytics/summary
+
+# Get progress over time
+curl http://localhost:8080/api/v1/analytics/progress?days=7
+```
+
+### 5. Self-Service by Name
+
+Enable self-service migrations using repository names:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/migrations/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "full_names": ["acme-corp/my-app"],
+    "dry_run": false
+  }'
+```
+
+---
+
+## Code Examples
+
+### JavaScript/TypeScript
+
+```typescript
+const API_BASE = 'http://localhost:8080/api/v1';
+
+// Start discovery
+async function startDiscovery(org: string) {
+  const response = await fetch(`${API_BASE}/discovery/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organization: org })
+  });
+  return response.json();
+}
+
+// Get repositories
+async function getRepositories(filters?: Record<string, any>) {
+  const params = new URLSearchParams(filters);
+  const response = await fetch(`${API_BASE}/repositories?${params}`);
+  return response.json();
+}
+
+// Start migration
+async function startMigration(repoIds: number[], dryRun = false) {
+  const response = await fetch(`${API_BASE}/migrations/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      repository_ids: repoIds,
+      dry_run: dryRun
+    })
+  });
+  return response.json();
+}
+```
+
+### Python
+
+```python
+import requests
+
+API_BASE = 'http://localhost:8080/api/v1'
+
+# Start discovery
+def start_discovery(org):
+    response = requests.post(
+        f'{API_BASE}/discovery/start',
+        json={'organization': org}
+    )
+    return response.json()
+
+# Get repositories
+def get_repositories(filters=None):
+    response = requests.get(
+        f'{API_BASE}/repositories',
+        params=filters or {}
+    )
+    return response.json()
+
+# Start migration
+def start_migration(repo_ids, dry_run=False):
+    response = requests.post(
+        f'{API_BASE}/migrations/start',
+        json={
+            'repository_ids': repo_ids,
+            'dry_run': dry_run
+        }
+    )
+    return response.json()
+```
+
+### Go
+
+```go
+package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+const apiBase = "http://localhost:8080/api/v1"
+
+type DiscoveryRequest struct {
+    Organization string `json:"organization"`
+}
+
+// Start discovery
+func startDiscovery(org string) error {
+    body, _ := json.Marshal(DiscoveryRequest{Organization: org})
+    resp, err := http.Post(
+        apiBase+"/discovery/start",
+        "application/json",
+        bytes.NewBuffer(body),
+    )
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    return nil
+}
+
+// Get repositories
+func getRepositories() ([]Repository, error) {
+    resp, err := http.Get(apiBase + "/repositories")
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    
+    var repos []Repository
+    json.NewDecoder(resp.Body).Decode(&repos)
+    return repos, nil
+}
+```
+
+---
+
+## Support
+
+For detailed implementation information, see:
+- [README.md](../README.md) - Project overview
+- [DEPLOYMENT.md](./DEPLOYMENT.md) - Deployment guide
+- [OPERATIONS.md](./OPERATIONS.md) - Operations runbook
+- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) - Detailed implementation guide
+
+---
+
+**API Version:** 1.0.0  
+**Last Updated:** January 2024  
+**Status:** Production Ready
+

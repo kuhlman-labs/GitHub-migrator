@@ -315,10 +315,10 @@ make lint-all
 
 ### Comprehensive Guides
 
-- **[API.md](./API.md)** - Complete API documentation with examples
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Deployment guide for Docker, Kubernetes, and manual deployment
-- **[OPERATIONS.md](./OPERATIONS.md)** - Operations runbook with daily checklists and incident response
-- **[IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)** - Detailed implementation guide for developers
+- **[API.md](./docs/API.md)** - Complete API documentation with examples
+- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Deployment guide for Docker, Kubernetes, and manual deployment
+- **[OPERATIONS.md](./docs/OPERATIONS.md)** - Operations runbook with daily checklists and incident response
+- **[IMPLEMENTATION_GUIDE.md](./docs/IMPLEMENTATION_GUIDE.md)** - Detailed implementation guide for developers
 
 ### Configuration Examples
 
@@ -330,7 +330,7 @@ make lint-all
 
 ## API Documentation
 
-The server exposes a REST API at `/api/v1/`. For complete documentation, see **[API.md](./API.md)**.
+The server exposes a REST API at `/api/v1/`. For complete documentation, see **[API.md](./docs/API.md)**.
 
 ### Discovery
 - `POST /api/v1/discovery/start` - Start repository discovery
@@ -396,7 +396,7 @@ open http://localhost:8080
 
 ### Production Deployment
 
-For production deployments, see **[DEPLOYMENT.md](./DEPLOYMENT.md)** which covers:
+For production deployments, see **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** which covers:
 
 - Docker and Docker Compose setup
 - Kubernetes deployment
@@ -407,7 +407,7 @@ For production deployments, see **[DEPLOYMENT.md](./DEPLOYMENT.md)** which cover
 
 ### Operations
 
-For day-to-day operations, see **[OPERATIONS.md](./OPERATIONS.md)** which includes:
+For day-to-day operations, see **[OPERATIONS.md](./docs/OPERATIONS.md)** which includes:
 
 - Daily operations checklists
 - Migration workflow guides
@@ -438,4 +438,4 @@ For day-to-day operations, see **[OPERATIONS.md](./OPERATIONS.md)** which includ
 
 ## Support
 
-For detailed implementation guidance, refer to [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)
+For detailed implementation guidance, refer to [IMPLEMENTATION_GUIDE.md](./docs/IMPLEMENTATION_GUIDE.md)
