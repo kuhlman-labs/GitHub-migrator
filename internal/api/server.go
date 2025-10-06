@@ -4,44 +4,66 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/brettkuhlman/github-migrator/internal/api/handlers"
+	"github.com/brettkuhlman/github-migrator/internal/api/middleware"
 	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
 
 type Server struct {
-	config *config.Config
-	db     *storage.Database
-	logger *slog.Logger
+	config  *config.Config
+	db      *storage.Database
+	logger  *slog.Logger
+	handler *handlers.Handler
 }
 
-func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger) *Server {
+func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, ghClient *github.Client) *Server {
 	return &Server{
-		config: cfg,
-		db:     db,
-		logger: logger,
+		config:  cfg,
+		db:      db,
+		logger:  logger,
+		handler: handlers.NewHandler(db, logger, ghClient),
 	}
 }
 
 func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 
-	// Health check endpoint
-	mux.HandleFunc("/health", s.handleHealth)
+	// Apply middleware
+	handler := middleware.CORS(
+		middleware.Logging(s.logger)(
+			middleware.Recovery(s.logger)(mux),
+		),
+	)
 
-	// Placeholder for future API endpoints
-	mux.HandleFunc("/api/v1/repositories", s.handleRepositories)
+	// Health check
+	mux.HandleFunc("/health", s.handler.Health)
 
-	return mux
-}
+	// Discovery endpoints
+	mux.HandleFunc("POST /api/v1/discovery/start", s.handler.StartDiscovery)
+	mux.HandleFunc("GET /api/v1/discovery/status", s.handler.DiscoveryStatus)
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"healthy"}`))
-}
+	// Repository endpoints
+	mux.HandleFunc("GET /api/v1/repositories", s.handler.ListRepositories)
+	mux.HandleFunc("GET /api/v1/repositories/{fullName}", s.handler.GetRepository)
+	mux.HandleFunc("PATCH /api/v1/repositories/{fullName}", s.handler.UpdateRepository)
 
-func (s *Server) handleRepositories(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"repositories":[]}`))
+	// Batch endpoints
+	mux.HandleFunc("GET /api/v1/batches", s.handler.ListBatches)
+	mux.HandleFunc("POST /api/v1/batches", s.handler.CreateBatch)
+	mux.HandleFunc("GET /api/v1/batches/{id}", s.handler.GetBatch)
+	mux.HandleFunc("POST /api/v1/batches/{id}/start", s.handler.StartBatch)
+
+	// Migration endpoints
+	mux.HandleFunc("POST /api/v1/migrations/start", s.handler.StartMigration)
+	mux.HandleFunc("GET /api/v1/migrations/{id}", s.handler.GetMigrationStatus)
+	mux.HandleFunc("GET /api/v1/migrations/{id}/history", s.handler.GetMigrationHistory)
+	mux.HandleFunc("GET /api/v1/migrations/{id}/logs", s.handler.GetMigrationLogs)
+
+	// Analytics endpoints
+	mux.HandleFunc("GET /api/v1/analytics/summary", s.handler.GetAnalyticsSummary)
+	mux.HandleFunc("GET /api/v1/analytics/progress", s.handler.GetMigrationProgress)
+
+	return handler
 }

@@ -37,9 +37,16 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 		t.Fatal(err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	// Run migrations
+	if err := db.Migrate(); err != nil {
+		db.Close()
+		os.RemoveAll(tmpDir)
+		t.Fatal(err)
+	}
 
-	server := NewServer(cfg, db, logger)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	server := NewServer(cfg, db, logger, nil)
 
 	cleanup := func() {
 		db.Close()
@@ -87,24 +94,18 @@ func TestServer_HandleHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 
-	server.handleHealth(w, req)
+	server.handler.Health(w, req)
 
 	resp := w.Result()
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("handleHealth() status = %d, want %d", resp.StatusCode, http.StatusOK)
+		t.Errorf("Health() status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {
-		t.Errorf("handleHealth() Content-Type = %s, want application/json", contentType)
-	}
-
-	body := w.Body.String()
-	expectedBody := `{"status":"healthy"}`
-	if body != expectedBody {
-		t.Errorf("handleHealth() body = %s, want %s", body, expectedBody)
+		t.Errorf("Health() Content-Type = %s, want application/json", contentType)
 	}
 }
 
@@ -115,24 +116,18 @@ func TestServer_HandleRepositories(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories", nil)
 	w := httptest.NewRecorder()
 
-	server.handleRepositories(w, req)
+	server.handler.ListRepositories(w, req)
 
 	resp := w.Result()
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("handleRepositories() status = %d, want %d", resp.StatusCode, http.StatusOK)
+		t.Errorf("ListRepositories() status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {
-		t.Errorf("handleRepositories() Content-Type = %s, want application/json", contentType)
-	}
-
-	body := w.Body.String()
-	expectedBody := `{"repositories":[]}`
-	if body != expectedBody {
-		t.Errorf("handleRepositories() body = %s, want %s", body, expectedBody)
+		t.Errorf("ListRepositories() Content-Type = %s, want application/json", contentType)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/brettkuhlman/github-migrator/internal/api"
 	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/logging"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
@@ -42,8 +43,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize GitHub client (optional)
+	var ghClient *github.Client
+	if cfg.GitHub.Source.Token != "" && cfg.GitHub.Source.BaseURL != "" {
+		ghClient, err = github.NewClient(github.ClientConfig{
+			BaseURL:     cfg.GitHub.Source.BaseURL,
+			Token:       cfg.GitHub.Source.Token,
+			Timeout:     30 * time.Second,
+			RetryConfig: github.DefaultRetryConfig(),
+			Logger:      logger,
+		})
+		if err != nil {
+			slog.Warn("Failed to initialize GitHub client", "error", err)
+		} else {
+			slog.Info("GitHub client initialized", "base_url", cfg.GitHub.Source.BaseURL)
+		}
+	}
+
 	// Create API server
-	server := api.NewServer(cfg, db, logger)
+	server := api.NewServer(cfg, db, logger, ghClient)
 
 	// Start HTTP server
 	httpServer := &http.Server{

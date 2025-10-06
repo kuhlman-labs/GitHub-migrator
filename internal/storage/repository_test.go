@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -446,5 +447,230 @@ func TestGetRepositoryStatsByStatus(t *testing.T) {
 	}
 	if stats[string(models.StatusMigrationFailed)] != 1 {
 		t.Errorf("Expected 1 failed, got %d", stats[string(models.StatusMigrationFailed)])
+	}
+}
+
+func TestGetRepositoriesByIDs(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+
+	// Save test repositories
+	var ids []int64
+	for i := 0; i < 3; i++ {
+		repo := &models.Repository{
+			FullName:      fmt.Sprintf("org/repo%d", i),
+			Source:        "ghes",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+
+		saved, _ := db.GetRepository(ctx, repo.FullName)
+		ids = append(ids, saved.ID)
+	}
+
+	// Test getting repositories by IDs
+	found, err := db.GetRepositoriesByIDs(ctx, ids[:2])
+	if err != nil {
+		t.Fatalf("GetRepositoriesByIDs() error = %v", err)
+	}
+
+	if len(found) != 2 {
+		t.Errorf("GetRepositoriesByIDs() returned %d repos, want 2", len(found))
+	}
+
+	// Test empty IDs
+	empty, err := db.GetRepositoriesByIDs(ctx, []int64{})
+	if err != nil {
+		t.Fatalf("GetRepositoriesByIDs() with empty IDs error = %v", err)
+	}
+
+	if len(empty) != 0 {
+		t.Errorf("GetRepositoriesByIDs() with empty IDs returned %d repos, want 0", len(empty))
+	}
+}
+
+func TestGetRepositoriesByNames(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+
+	// Save test repositories
+	names := []string{"org/repoa", "org/repob", "org/repoc"}
+	for _, name := range names {
+		repo := &models.Repository{
+			FullName:      name,
+			Source:        "ghes",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+	}
+
+	// Test getting repositories by names
+	found, err := db.GetRepositoriesByNames(ctx, []string{"org/repoa", "org/repoc"})
+	if err != nil {
+		t.Fatalf("GetRepositoriesByNames() error = %v", err)
+	}
+
+	if len(found) != 2 {
+		t.Errorf("GetRepositoriesByNames() returned %d repos, want 2", len(found))
+	}
+
+	// Test empty names
+	empty, err := db.GetRepositoriesByNames(ctx, []string{})
+	if err != nil {
+		t.Fatalf("GetRepositoriesByNames() with empty names error = %v", err)
+	}
+
+	if len(empty) != 0 {
+		t.Errorf("GetRepositoriesByNames() with empty names returned %d repos, want 0", len(empty))
+	}
+}
+
+func TestGetRepositoryByID(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+
+	repo := &models.Repository{
+		FullName:      "org/repo1",
+		Source:        "ghes",
+		TotalSize:     &totalSize,
+		DefaultBranch: &defaultBranch,
+		Status:        string(models.StatusPending),
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("SaveRepository() error = %v", err)
+	}
+
+	saved, _ := db.GetRepository(ctx, repo.FullName)
+
+	// Get by ID
+	found, err := db.GetRepositoryByID(ctx, saved.ID)
+	if err != nil {
+		t.Fatalf("GetRepositoryByID() error = %v", err)
+	}
+
+	if found == nil {
+		t.Fatal("GetRepositoryByID() returned nil")
+	}
+
+	if found.FullName != repo.FullName {
+		t.Errorf("GetRepositoryByID() FullName = %s, want %s", found.FullName, repo.FullName)
+	}
+
+	// Test non-existent ID
+	notFound, err := db.GetRepositoryByID(ctx, 999999)
+	if err != nil {
+		t.Fatalf("GetRepositoryByID() with invalid ID error = %v", err)
+	}
+
+	if notFound != nil {
+		t.Error("GetRepositoryByID() with invalid ID should return nil")
+	}
+}
+
+func TestBatchOperations(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create batch
+	desc := "Test batch description"
+	batch := &models.Batch{
+		Name:            "Test Batch",
+		Description:     &desc,
+		Type:            "pilot",
+		RepositoryCount: 5,
+		Status:          "ready",
+		CreatedAt:       time.Now(),
+	}
+
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+
+	if batch.ID == 0 {
+		t.Error("CreateBatch() should set batch ID")
+	}
+
+	// Get batch
+	found, err := db.GetBatch(ctx, batch.ID)
+	if err != nil {
+		t.Fatalf("GetBatch() error = %v", err)
+	}
+
+	if found == nil {
+		t.Fatal("GetBatch() returned nil")
+	}
+
+	if found.Name != batch.Name {
+		t.Errorf("GetBatch() Name = %s, want %s", found.Name, batch.Name)
+	}
+
+	// Update batch
+	found.Status = "in_progress"
+	now := time.Now()
+	found.StartedAt = &now
+
+	if err := db.UpdateBatch(ctx, found); err != nil {
+		t.Fatalf("UpdateBatch() error = %v", err)
+	}
+
+	// Verify update
+	updated, err := db.GetBatch(ctx, batch.ID)
+	if err != nil {
+		t.Fatalf("GetBatch() after update error = %v", err)
+	}
+
+	if updated.Status != "in_progress" {
+		t.Errorf("UpdateBatch() Status = %s, want in_progress", updated.Status)
+	}
+
+	// List batches
+	batches, err := db.ListBatches(ctx)
+	if err != nil {
+		t.Fatalf("ListBatches() error = %v", err)
+	}
+
+	if len(batches) == 0 {
+		t.Error("ListBatches() returned empty list")
+	}
+
+	// Test non-existent batch
+	notFound, err := db.GetBatch(ctx, 999999)
+	if err != nil {
+		t.Fatalf("GetBatch() with invalid ID error = %v", err)
+	}
+
+	if notFound != nil {
+		t.Error("GetBatch() with invalid ID should return nil")
 	}
 }

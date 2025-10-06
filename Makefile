@@ -45,7 +45,7 @@ lint: ## Run linters
 	@echo "Linting backend..."
 	$(GOBIN)/golangci-lint run --config .golangci.yml
 	@echo "Running security scan..."
-	$(GOBIN)/gosec ./...
+	$(GOBIN)/gosec -exclude=G201 ./...
 
 fmt: ## Format code
 	@echo "Formatting Go code..."

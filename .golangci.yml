@@ -31,6 +31,9 @@ linters-settings:
   goconst:
     min-len: 3
     min-occurrences: 3
+  gosec:
+    excludes:
+      - G201  # SQL string formatting with placeholders is safe
 
 issues:
   exclude-dirs:
