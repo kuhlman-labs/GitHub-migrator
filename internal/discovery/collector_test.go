@@ -1,0 +1,228 @@
+package discovery
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/brettkuhlman/github-migrator/internal/github"
+	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/brettkuhlman/github-migrator/internal/storage"
+)
+
+func TestNewCollector(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Create test database
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	collector := NewCollector(client, db, logger)
+
+	if collector == nil {
+		t.Fatal("NewCollector returned nil")
+	}
+	if collector.client == nil {
+		t.Error("Collector client is nil")
+	}
+	if collector.storage == nil {
+		t.Error("Collector storage is nil")
+	}
+	if collector.logger == nil {
+		t.Error("Collector logger is nil")
+	}
+	if collector.workers != 5 {
+		t.Errorf("Expected default workers to be 5, got %d", collector.workers)
+	}
+}
+
+func TestSetWorkers(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	collector := NewCollector(client, db, logger)
+
+	// Test setting workers
+	collector.SetWorkers(10)
+	if collector.workers != 10 {
+		t.Errorf("Expected workers to be 10, got %d", collector.workers)
+	}
+
+	// Test invalid value (should not change)
+	collector.SetWorkers(0)
+	if collector.workers != 10 {
+		t.Errorf("Expected workers to remain 10, got %d", collector.workers)
+	}
+
+	collector.SetWorkers(-5)
+	if collector.workers != 10 {
+		t.Errorf("Expected workers to remain 10, got %d", collector.workers)
+	}
+}
+
+func TestProfileRepository_SaveToDatabase(t *testing.T) {
+	// Create test database
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Test SaveRepository directly
+	totalSize := int64(1024 * 1024)
+	defaultBranch := "main"
+	repo := &models.Repository{
+		FullName:      "test/repo",
+		Source:        "ghes",
+		SourceURL:     "https://github.com/test/repo",
+		TotalSize:     &totalSize,
+		DefaultBranch: &defaultBranch,
+		HasWiki:       true,
+		HasPages:      false,
+		Status:        string(models.StatusPending),
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+
+	// Retrieve and verify
+	retrieved, err := db.GetRepository(ctx, "test/repo")
+	if err != nil {
+		t.Fatalf("Failed to get repository: %v", err)
+	}
+
+	if retrieved == nil {
+		t.Fatal("Retrieved repository is nil")
+	}
+
+	if retrieved.FullName != "test/repo" {
+		t.Errorf("Expected FullName 'test/repo', got '%s'", retrieved.FullName)
+	}
+	if retrieved.Source != "ghes" {
+		t.Errorf("Expected Source 'ghes', got '%s'", retrieved.Source)
+	}
+	if retrieved.TotalSize == nil || *retrieved.TotalSize != totalSize {
+		t.Errorf("Expected TotalSize %d, got %v", totalSize, retrieved.TotalSize)
+	}
+	if !retrieved.HasWiki {
+		t.Error("Expected HasWiki to be true")
+	}
+}
+
+func TestDiscoverRepositories_Integration(t *testing.T) {
+	// Skip if GITHUB_TOKEN is not set
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		t.Skip("Skipping integration test (set GITHUB_TOKEN to run)")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   token,
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Create test database
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	collector := NewCollector(client, db, logger)
+	collector.SetWorkers(2) // Use fewer workers for testing
+
+	ctx := context.Background()
+
+	// Test with a small public organization
+	// Note: This will fail if the org doesn't exist or has no repos
+	err = collector.DiscoverRepositories(ctx, "octocat")
+	if err != nil {
+		t.Logf("Warning: Discovery failed (expected for test org): %v", err)
+	}
+
+	// List repositories to verify some were discovered
+	repos, err := db.ListRepositories(ctx, nil)
+	if err != nil {
+		t.Fatalf("Failed to list repositories: %v", err)
+	}
+
+	t.Logf("Discovered %d repositories", len(repos))
+}

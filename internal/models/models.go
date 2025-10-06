@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Repository represents a Git repository to be migrated
 type Repository struct {
@@ -109,4 +112,22 @@ type Batch struct {
 	StartedAt       *time.Time `json:"started_at,omitempty" db:"started_at"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at"`
 	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+}
+
+// Organization extracts the organization from full_name (org/repo)
+func (r *Repository) Organization() string {
+	parts := strings.SplitN(r.FullName, "/", 2)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
+}
+
+// Name extracts the repository name from full_name (org/repo)
+func (r *Repository) Name() string {
+	parts := strings.SplitN(r.FullName, "/", 2)
+	if len(parts) > 1 {
+		return parts[1]
+	}
+	return r.FullName
 }

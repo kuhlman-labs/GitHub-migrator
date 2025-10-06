@@ -1,0 +1,269 @@
+package discovery
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/brettkuhlman/github-migrator/internal/github"
+	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/brettkuhlman/github-migrator/internal/storage"
+	ghapi "github.com/google/go-github/v75/github"
+)
+
+// Collector discovers and profiles repositories
+type Collector struct {
+	client  *github.Client
+	storage *storage.Database
+	logger  *slog.Logger
+	workers int // Number of parallel workers
+}
+
+// NewCollector creates a new repository collector
+func NewCollector(client *github.Client, storage *storage.Database, logger *slog.Logger) *Collector {
+	return &Collector{
+		client:  client,
+		storage: storage,
+		logger:  logger,
+		workers: 5, // Default to 5 parallel workers
+	}
+}
+
+// SetWorkers sets the number of parallel workers for processing
+func (c *Collector) SetWorkers(workers int) {
+	if workers > 0 {
+		c.workers = workers
+	}
+}
+
+// DiscoverRepositories discovers all repositories from the source organization
+func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error {
+	c.logger.Info("Starting repository discovery", "organization", org)
+
+	// List all repositories
+	repos, err := c.listAllRepositories(ctx, org)
+	if err != nil {
+		return fmt.Errorf("failed to list repositories: %w", err)
+	}
+
+	c.logger.Info("Found repositories", "count", len(repos))
+
+	// Process repositories in parallel
+	return c.processRepositories(ctx, repos)
+}
+
+// listAllRepositories lists all repositories for an organization with pagination
+func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*ghapi.Repository, error) {
+	var allRepos []*ghapi.Repository
+	opts := &ghapi.RepositoryListByOrgOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 100},
+	}
+
+	for {
+		repos, resp, err := c.client.REST().Repositories.ListByOrg(ctx, org, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list repositories: %w", err)
+		}
+
+		allRepos = append(allRepos, repos...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return allRepos, nil
+}
+
+// processRepositories processes repositories in parallel using worker pool
+func (c *Collector) processRepositories(ctx context.Context, repos []*ghapi.Repository) error {
+	jobs := make(chan *ghapi.Repository, len(repos))
+	errors := make(chan error, len(repos))
+	var wg sync.WaitGroup
+
+	// Start workers
+	for i := 0; i < c.workers; i++ {
+		wg.Add(1)
+		go c.worker(ctx, &wg, jobs, errors)
+	}
+
+	// Send jobs
+	for _, repo := range repos {
+		jobs <- repo
+	}
+	close(jobs)
+
+	// Wait for completion
+	wg.Wait()
+	close(errors)
+
+	// Collect errors
+	var errs []error
+	for err := range errors {
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		c.logger.Warn("Discovery completed with errors",
+			"total_repos", len(repos),
+			"error_count", len(errs))
+		return fmt.Errorf("encountered %d errors during discovery (see logs for details)", len(errs))
+	}
+
+	c.logger.Info("Discovery completed successfully", "total_repos", len(repos))
+	return nil
+}
+
+// worker processes repositories from the jobs channel
+func (c *Collector) worker(ctx context.Context, wg *sync.WaitGroup, jobs <-chan *ghapi.Repository, errors chan<- error) {
+	defer wg.Done()
+
+	for repo := range jobs {
+		if err := c.profileRepository(ctx, repo); err != nil {
+			c.logger.Error("Failed to profile repository",
+				"repo", repo.GetFullName(),
+				"error", err)
+			errors <- err
+		}
+	}
+}
+
+// profileRepository profiles a single repository with both Git and GitHub features
+func (c *Collector) profileRepository(ctx context.Context, ghRepo *ghapi.Repository) error {
+	c.logger.Debug("Profiling repository", "repo", ghRepo.GetFullName())
+
+	// Create basic repository profile from GitHub API data
+	totalSize := int64(ghRepo.GetSize()) * 1024 // Convert KB to bytes (GitHub API returns KB)
+	defaultBranch := ghRepo.GetDefaultBranch()
+	repo := &models.Repository{
+		FullName:      ghRepo.GetFullName(),
+		Source:        "ghes",
+		SourceURL:     ghRepo.GetCloneURL(),
+		TotalSize:     &totalSize,
+		DefaultBranch: &defaultBranch,
+		HasWiki:       ghRepo.GetHasWiki(),
+		HasPages:      ghRepo.GetHasPages(),
+		Status:        string(models.StatusPending),
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	// Clone repository temporarily for git-sizer analysis
+	// For production, consider caching clones or using shallow clones
+	tempDir, err := c.cloneRepository(ctx, repo.SourceURL, repo.FullName)
+	if err != nil {
+		c.logger.Warn("Failed to clone repository for analysis, using API-only metrics",
+			"repo", repo.FullName,
+			"error", err)
+		// Continue with basic profiling even if clone fails
+	} else {
+		defer func() {
+			if err := os.RemoveAll(tempDir); err != nil {
+				c.logger.Warn("Failed to clean up temp directory",
+					"path", tempDir,
+					"error", err)
+			}
+		}()
+
+		// Analyze Git properties with git-sizer
+		analyzer := NewAnalyzer(c.logger)
+		if err := analyzer.AnalyzeGitProperties(ctx, repo, tempDir); err != nil {
+			c.logger.Warn("Failed to analyze git properties",
+				"repo", repo.FullName,
+				"error", err)
+		}
+	}
+
+	// Profile GitHub features via API (no clone needed)
+	profiler := NewProfiler(c.client, c.logger)
+	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
+		c.logger.Warn("Failed to profile features",
+			"repo", repo.FullName,
+			"error", err)
+	}
+
+	// Save to database
+	if err := c.storage.SaveRepository(ctx, repo); err != nil {
+		return fmt.Errorf("failed to save repository: %w", err)
+	}
+
+	c.logger.Info("Repository profiled and saved",
+		"repo", repo.FullName,
+		"size", repo.TotalSize,
+		"commits", repo.CommitCount)
+
+	return nil
+}
+
+// setupTempDir creates and prepares a temporary directory for cloning
+func (c *Collector) setupTempDir(fullName string) (string, error) {
+	tempBase := filepath.Join(os.TempDir(), "gh-migrator")
+	// #nosec G301 -- 0755 is appropriate for temporary directory
+	if err := os.MkdirAll(tempBase, 0755); err != nil {
+		return "", fmt.Errorf("failed to create temp base directory: %w", err)
+	}
+
+	tempDir := filepath.Join(tempBase, filepath.Base(fullName))
+
+	// Remove if it already exists
+	if err := os.RemoveAll(tempDir); err != nil {
+		return "", fmt.Errorf("failed to clean existing temp directory: %w", err)
+	}
+
+	return tempDir, nil
+}
+
+// cloneRepository creates a temporary shallow clone for analysis
+func (c *Collector) cloneRepository(ctx context.Context, url, fullName string) (string, error) {
+	tempDir, err := c.setupTempDir(fullName)
+	if err != nil {
+		return "", err
+	}
+
+	// Shallow clone to save time and space (depth=1)
+	// For more accurate git-sizer analysis, remove --depth=1 for full clone
+	// #nosec G204 -- url and tempDir are controlled inputs from repository discovery
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, tempDir)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git clone failed: %w (stderr: %s)", err, stderr.String())
+	}
+
+	return tempDir, nil
+}
+
+// cloneRepositoryFull creates a full clone for more accurate analysis
+// This is slower and more space-intensive but provides better metrics
+// nolint:unused // Provided as alternative to shallow clone for detailed analysis
+func (c *Collector) cloneRepositoryFull(ctx context.Context, url, fullName string) (string, error) {
+	tempDir, err := c.setupTempDir(fullName)
+	if err != nil {
+		return "", err
+	}
+
+	// Full clone for accurate git-sizer analysis
+	// WARNING: This can be slow and space-intensive for large repositories
+	// #nosec G204 -- url and tempDir are controlled inputs from repository discovery
+	cmd := exec.CommandContext(ctx, "git", "clone", "--bare", url, tempDir)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git clone failed: %w (stderr: %s)", err, stderr.String())
+	}
+
+	return tempDir, nil
+}
