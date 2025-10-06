@@ -1,0 +1,71 @@
+# GitHub Migration Server - Development Configuration
+# This configuration is optimized for local development
+
+server:
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  # Use SQLite for development
+  type: sqlite
+  dsn: ./data/migrator.db
+
+github:
+  source:
+    base_url: "https://github.company.com/api/v3"
+    token: "${GITHUB_SOURCE_TOKEN}"
+    graphql_url: "https://github.company.com/api/graphql"
+  
+  destination:
+    base_url: "https://api.github.com"
+    token: "${GITHUB_DEST_TOKEN}"
+    graphql_url: "https://api.github.com/graphql"
+  
+  rate_limit:
+    requests_per_hour: 5000
+    wait_on_exhaustion: true
+  
+  retry:
+    max_attempts: 3
+    initial_backoff: 1s
+    max_backoff: 30s
+
+logging:
+  level: debug  # Verbose logging for development
+  format: text  # Human-readable format
+  output_file: ./logs/migrator.log
+  max_size: 100
+  max_backups: 3
+  max_age: 7
+  compress: false
+
+migration:
+  parallel_workers: 3
+  timeout: 30m
+  dry_run_default: true
+
+discovery:
+  parallel_workers: 5
+  profile_depth: full
+  timeout: 1h
+
+batch:
+  max_batch_size: 50
+  execution_strategy: sequential
+
+monitoring:
+  enabled: false
+
+security:
+  cors_enabled: true
+  cors_allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+
+features:
+  self_service_enabled: true
+  batch_management_enabled: true
+  analytics_enabled: true
+  webhooks_enabled: false
+

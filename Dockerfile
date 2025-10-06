@@ -1,5 +1,5 @@
 # Build stage - Backend
-FROM golang:1.21-alpine AS backend-builder
+FROM golang:1.23-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ RUN apk add --no-cache git gcc musl-dev sqlite-dev
 
 # Copy go mod files
 COPY go.mod go.sum ./
-RUN go mod download
+RUN GOTOOLCHAIN=auto go mod download
 
 # Install git-sizer for repository analysis
 RUN go install github.com/github/git-sizer@latest
@@ -17,7 +17,7 @@ RUN go install github.com/github/git-sizer@latest
 COPY . .
 
 # Build binaries
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o server cmd/server/main.go
+RUN GOTOOLCHAIN=auto CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o server cmd/server/main.go
 
 # Final stage
 FROM alpine:latest
