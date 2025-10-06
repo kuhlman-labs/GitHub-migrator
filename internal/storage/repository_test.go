@@ -674,3 +674,264 @@ func TestBatchOperations(t *testing.T) {
 		t.Error("GetBatch() with invalid ID should return nil")
 	}
 }
+
+func TestGetMigrationHistory(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a test repository
+	repo := &models.Repository{
+		FullName:     "test/repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test/repo",
+		Status:       string(models.StatusPending),
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+	savedRepo, _ := db.GetRepository(ctx, repo.FullName)
+
+	// Initially should have no history
+	history, err := db.GetMigrationHistory(ctx, savedRepo.ID)
+	if err != nil {
+		t.Fatalf("GetMigrationHistory() error = %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("Expected 0 history entries, got %d", len(history))
+	}
+
+	// Create migration history
+	msg := "Test message"
+	hist := &models.MigrationHistory{
+		RepositoryID: savedRepo.ID,
+		Status:       "in_progress",
+		Phase:        "migration",
+		Message:      &msg,
+		StartedAt:    time.Now(),
+	}
+	historyID, err := db.CreateMigrationHistory(ctx, hist)
+	if err != nil {
+		t.Fatalf("CreateMigrationHistory() error = %v", err)
+	}
+	if historyID == 0 {
+		t.Error("Expected non-zero history ID")
+	}
+
+	// Retrieve history
+	history, err = db.GetMigrationHistory(ctx, savedRepo.ID)
+	if err != nil {
+		t.Fatalf("GetMigrationHistory() error = %v", err)
+	}
+	if len(history) != 1 {
+		t.Errorf("Expected 1 history entry, got %d", len(history))
+	}
+}
+
+func TestCreateMigrationHistory(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a test repository
+	repo := &models.Repository{
+		FullName:     "test/repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test/repo",
+		Status:       string(models.StatusPending),
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+	savedRepo, _ := db.GetRepository(ctx, repo.FullName)
+
+	// Create migration history
+	msg := "Test message"
+	hist := &models.MigrationHistory{
+		RepositoryID: savedRepo.ID,
+		Status:       "in_progress",
+		Phase:        "migration",
+		Message:      &msg,
+		StartedAt:    time.Now(),
+	}
+	historyID, err := db.CreateMigrationHistory(ctx, hist)
+	if err != nil {
+		t.Fatalf("CreateMigrationHistory() error = %v", err)
+	}
+	if historyID == 0 {
+		t.Error("Expected non-zero history ID")
+	}
+}
+
+func TestUpdateMigrationHistory(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a test repository
+	repo := &models.Repository{
+		FullName:     "test/repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test/repo",
+		Status:       string(models.StatusPending),
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+	savedRepo, _ := db.GetRepository(ctx, repo.FullName)
+
+	// Create migration history
+	msg := "Test message"
+	hist := &models.MigrationHistory{
+		RepositoryID: savedRepo.ID,
+		Status:       "in_progress",
+		Phase:        "migration",
+		Message:      &msg,
+		StartedAt:    time.Now(),
+	}
+	historyID, err := db.CreateMigrationHistory(ctx, hist)
+	if err != nil {
+		t.Fatalf("CreateMigrationHistory() error = %v", err)
+	}
+
+	// Update history status
+	errMsg := "Test error"
+	err = db.UpdateMigrationHistory(ctx, historyID, "failed", &errMsg)
+	if err != nil {
+		t.Fatalf("UpdateMigrationHistory() error = %v", err)
+	}
+}
+
+func TestGetMigrationLogs(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a test repository
+	repo := &models.Repository{
+		FullName:     "test/repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test/repo",
+		Status:       string(models.StatusPending),
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+	savedRepo, _ := db.GetRepository(ctx, repo.FullName)
+
+	// Initially should have no logs
+	logs, err := db.GetMigrationLogs(ctx, savedRepo.ID, "", "", 100, 0)
+	if err != nil {
+		t.Fatalf("GetMigrationLogs() error = %v", err)
+	}
+	if len(logs) != 0 {
+		t.Errorf("Expected 0 logs, got %d", len(logs))
+	}
+
+	// Create migration logs
+	log1 := &models.MigrationLog{
+		RepositoryID: savedRepo.ID,
+		Level:        "INFO",
+		Phase:        "pre_migration",
+		Operation:    "validate",
+		Message:      "Validation started",
+		Timestamp:    time.Now(),
+	}
+	log2 := &models.MigrationLog{
+		RepositoryID: savedRepo.ID,
+		Level:        "ERROR",
+		Phase:        "migration",
+		Operation:    "migrate",
+		Message:      "Migration failed",
+		Timestamp:    time.Now(),
+	}
+	if err := db.CreateMigrationLog(ctx, log1); err != nil {
+		t.Fatalf("CreateMigrationLog() error = %v", err)
+	}
+	if err := db.CreateMigrationLog(ctx, log2); err != nil {
+		t.Fatalf("CreateMigrationLog() error = %v", err)
+	}
+
+	// Get all logs
+	logs, err = db.GetMigrationLogs(ctx, savedRepo.ID, "", "", 100, 0)
+	if err != nil {
+		t.Fatalf("GetMigrationLogs() error = %v", err)
+	}
+	if len(logs) != 2 {
+		t.Errorf("Expected 2 logs, got %d", len(logs))
+	}
+
+	// Filter by level
+	logs, err = db.GetMigrationLogs(ctx, savedRepo.ID, "ERROR", "", 100, 0)
+	if err != nil {
+		t.Fatalf("GetMigrationLogs() with level filter error = %v", err)
+	}
+	if len(logs) != 1 {
+		t.Errorf("Expected 1 ERROR log, got %d", len(logs))
+	}
+
+	// Filter by phase
+	logs, err = db.GetMigrationLogs(ctx, savedRepo.ID, "", "pre_migration", 100, 0)
+	if err != nil {
+		t.Fatalf("GetMigrationLogs() with phase filter error = %v", err)
+	}
+	if len(logs) != 1 {
+		t.Errorf("Expected 1 pre_migration log, got %d", len(logs))
+	}
+
+	// Test pagination
+	logs, err = db.GetMigrationLogs(ctx, savedRepo.ID, "", "", 1, 0)
+	if err != nil {
+		t.Fatalf("GetMigrationLogs() with limit error = %v", err)
+	}
+	if len(logs) != 1 {
+		t.Errorf("Expected 1 log with limit=1, got %d", len(logs))
+	}
+}
+
+func TestCreateMigrationLog(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a test repository
+	repo := &models.Repository{
+		FullName:     "test/repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test/repo",
+		Status:       string(models.StatusPending),
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+	savedRepo, _ := db.GetRepository(ctx, repo.FullName)
+
+	// Create migration log
+	log := &models.MigrationLog{
+		RepositoryID: savedRepo.ID,
+		Level:        "INFO",
+		Phase:        "pre_migration",
+		Operation:    "validate",
+		Message:      "Validation started",
+		Timestamp:    time.Now(),
+	}
+	err := db.CreateMigrationLog(ctx, log)
+	if err != nil {
+		t.Fatalf("CreateMigrationLog() error = %v", err)
+	}
+}
