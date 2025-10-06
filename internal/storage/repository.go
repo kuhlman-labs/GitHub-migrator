@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/models"
 )
@@ -617,4 +618,82 @@ func (d *Database) scanRepositories(rows *sql.Rows) ([]*models.Repository, error
 		repos = append(repos, &repo)
 	}
 	return repos, rows.Err()
+}
+
+// CreateMigrationHistory creates a new migration history record
+func (d *Database) CreateMigrationHistory(ctx context.Context, history *models.MigrationHistory) (int64, error) {
+	query := `
+		INSERT INTO migration_history (repository_id, status, phase, message, error_message, started_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`
+
+	result, err := d.db.ExecContext(ctx, query,
+		history.RepositoryID,
+		history.Status,
+		history.Phase,
+		history.Message,
+		history.ErrorMessage,
+		history.StartedAt,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create migration history: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get migration history ID: %w", err)
+	}
+
+	return id, nil
+}
+
+// UpdateMigrationHistory updates a migration history record
+func (d *Database) UpdateMigrationHistory(ctx context.Context, id int64, status string, errorMsg *string) error {
+	completedAt := time.Now()
+
+	// Calculate duration
+	var startedAt time.Time
+	err := d.db.QueryRowContext(ctx, "SELECT started_at FROM migration_history WHERE id = ?", id).Scan(&startedAt)
+	if err != nil {
+		return fmt.Errorf("failed to get started_at time: %w", err)
+	}
+
+	durationSeconds := int(completedAt.Sub(startedAt).Seconds())
+
+	query := `
+		UPDATE migration_history 
+		SET status = ?, error_message = ?, completed_at = ?, duration_seconds = ?
+		WHERE id = ?
+	`
+
+	_, err = d.db.ExecContext(ctx, query, status, errorMsg, completedAt, durationSeconds, id)
+	if err != nil {
+		return fmt.Errorf("failed to update migration history: %w", err)
+	}
+
+	return nil
+}
+
+// CreateMigrationLog creates a new migration log entry
+func (d *Database) CreateMigrationLog(ctx context.Context, log *models.MigrationLog) error {
+	query := `
+		INSERT INTO migration_logs (repository_id, history_id, level, phase, operation, message, details, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	_, err := d.db.ExecContext(ctx, query,
+		log.RepositoryID,
+		log.HistoryID,
+		log.Level,
+		log.Phase,
+		log.Operation,
+		log.Message,
+		log.Details,
+		log.Timestamp,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create migration log: %w", err)
+	}
+
+	return nil
 }
