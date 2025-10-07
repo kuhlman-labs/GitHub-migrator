@@ -14,15 +14,29 @@ database:
   max_idle_conns: 5
   conn_max_lifetime: 5m
 
+# Source repository system configuration
+# Set GHMIG_SOURCE_TYPE to: github, gitlab, or azuredevops
+source:
+  type: "${GHMIG_SOURCE_TYPE:-github}"
+  base_url: "${GITHUB_SOURCE_URL:-https://github.company.com/api/v3}"
+  token: "${GITHUB_SOURCE_TOKEN}"
+  # For Azure DevOps:
+  organization: "${ADO_ORGANIZATION:-}"
+  username: "${ADO_USERNAME:-}"
+
+# Destination repository system configuration
+# Set GHMIG_DESTINATION_TYPE to: github or gitlab
+destination:
+  type: "${GHMIG_DESTINATION_TYPE:-github}"
+  base_url: "${GITHUB_DEST_URL:-https://api.github.com}"
+  token: "${GITHUB_DEST_TOKEN}"
+
+# Legacy GitHub-specific configuration (if needed)
 github:
   source:
-    base_url: "${GITHUB_SOURCE_URL:-https://github.company.com/api/v3}"
-    token: "${GITHUB_SOURCE_TOKEN}"
     graphql_url: "${GITHUB_SOURCE_GRAPHQL_URL:-https://github.company.com/api/graphql}"
   
   destination:
-    base_url: "${GITHUB_DEST_URL:-https://api.github.com}"
-    token: "${GITHUB_DEST_TOKEN}"
     graphql_url: "${GITHUB_DEST_GRAPHQL_URL:-https://api.github.com/graphql}"
   
   rate_limit:

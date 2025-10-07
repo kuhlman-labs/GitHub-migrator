@@ -12,6 +12,7 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/discovery"
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/brettkuhlman/github-migrator/internal/source"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
 
@@ -28,10 +29,11 @@ type Handler struct {
 }
 
 // NewHandler creates a new Handler instance
-func NewHandler(db *storage.Database, logger *slog.Logger, ghClient *github.Client) *Handler {
+// sourceProvider can be nil if discovery is not needed
+func NewHandler(db *storage.Database, logger *slog.Logger, ghClient *github.Client, sourceProvider source.Provider) *Handler {
 	var collector *discovery.Collector
-	if ghClient != nil {
-		collector = discovery.NewCollector(ghClient, db, logger)
+	if ghClient != nil && sourceProvider != nil {
+		collector = discovery.NewCollector(ghClient, db, logger, sourceProvider)
 	}
 	return &Handler{
 		db:        db,

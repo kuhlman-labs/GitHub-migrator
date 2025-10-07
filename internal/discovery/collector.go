@@ -1,37 +1,38 @@
 package discovery
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/brettkuhlman/github-migrator/internal/source"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 	ghapi "github.com/google/go-github/v75/github"
 )
 
 // Collector discovers and profiles repositories
 type Collector struct {
-	client  *github.Client
-	storage *storage.Database
-	logger  *slog.Logger
-	workers int // Number of parallel workers
+	client         *github.Client
+	storage        *storage.Database
+	logger         *slog.Logger
+	workers        int // Number of parallel workers
+	sourceProvider source.Provider
 }
 
 // NewCollector creates a new repository collector
-func NewCollector(client *github.Client, storage *storage.Database, logger *slog.Logger) *Collector {
+func NewCollector(client *github.Client, storage *storage.Database, logger *slog.Logger, sourceProvider source.Provider) *Collector {
 	return &Collector{
-		client:  client,
-		storage: storage,
-		logger:  logger,
-		workers: 5, // Default to 5 parallel workers
+		client:         client,
+		storage:        storage,
+		logger:         logger,
+		workers:        5, // Default to 5 parallel workers
+		sourceProvider: sourceProvider,
 	}
 }
 
@@ -207,7 +208,7 @@ func (c *Collector) profileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 
 	// Clone repository temporarily for git-sizer analysis
 	// For production, consider caching clones or using shallow clones
-	tempDir, err := c.cloneRepository(ctx, repo.SourceURL, repo.FullName)
+	tempDir, err := c.cloneRepositoryWithProvider(ctx, repo.SourceURL, repo.FullName)
 	if err != nil {
 		c.logger.Warn("Failed to clone repository for analysis, using API-only metrics",
 			"repo", repo.FullName,
@@ -270,23 +271,27 @@ func (c *Collector) setupTempDir(fullName string) (string, error) {
 	return tempDir, nil
 }
 
-// cloneRepository creates a temporary shallow clone for analysis
-func (c *Collector) cloneRepository(ctx context.Context, url, fullName string) (string, error) {
+// cloneRepositoryWithProvider uses the configured source provider to clone a repository
+func (c *Collector) cloneRepositoryWithProvider(ctx context.Context, cloneURL, fullName string) (string, error) {
 	tempDir, err := c.setupTempDir(fullName)
 	if err != nil {
 		return "", err
 	}
 
-	// Shallow clone to save time and space (depth=1)
-	// For more accurate git-sizer analysis, remove --depth=1 for full clone
-	// #nosec G204 -- url and tempDir are controlled inputs from repository discovery
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, tempDir)
+	// Create repository info for the provider
+	repoInfo := source.RepositoryInfo{
+		FullName: fullName,
+		CloneURL: cloneURL,
+	}
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	// Use default clone options (shallow clone for faster analysis)
+	opts := source.DefaultCloneOptions()
 
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git clone failed: %w (stderr: %s)", err, stderr.String())
+	// Clone using the provider
+	if err := c.sourceProvider.CloneRepository(ctx, repoInfo, tempDir, opts); err != nil {
+		// Clean up temp directory on failure
+		_ = os.RemoveAll(tempDir)
+		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	return tempDir, nil
@@ -294,23 +299,34 @@ func (c *Collector) cloneRepository(ctx context.Context, url, fullName string) (
 
 // cloneRepositoryFull creates a full clone for more accurate analysis
 // This is slower and more space-intensive but provides better metrics
-// nolint:unused // Provided as alternative to shallow clone for detailed analysis
-func (c *Collector) cloneRepositoryFull(ctx context.Context, url, fullName string) (string, error) {
+// This method is currently unused but retained for potential future use cases
+// where full repository history analysis is required.
+// nolint:unused
+func (c *Collector) cloneRepositoryFull(ctx context.Context, cloneURL, fullName string) (string, error) {
 	tempDir, err := c.setupTempDir(fullName)
 	if err != nil {
 		return "", err
 	}
 
-	// Full clone for accurate git-sizer analysis
-	// WARNING: This can be slow and space-intensive for large repositories
-	// #nosec G204 -- url and tempDir are controlled inputs from repository discovery
-	cmd := exec.CommandContext(ctx, "git", "clone", "--bare", url, tempDir)
+	// Create repository info for the provider
+	repoInfo := source.RepositoryInfo{
+		FullName: fullName,
+		CloneURL: cloneURL,
+	}
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	// Use full clone options for more accurate analysis
+	opts := source.CloneOptions{
+		Shallow:           false, // Full clone for accurate metrics
+		Bare:              true,  // Bare clone for git-sizer
+		IncludeLFS:        false, // Don't fetch LFS content during discovery
+		IncludeSubmodules: false, // Don't clone submodules during discovery
+	}
 
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git clone failed: %w (stderr: %s)", err, stderr.String())
+	// Clone using the provider
+	if err := c.sourceProvider.CloneRepository(ctx, repoInfo, tempDir, opts); err != nil {
+		// Clean up temp directory on failure
+		_ = os.RemoveAll(tempDir)
+		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	return tempDir, nil

@@ -15,8 +15,36 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/config"
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/brettkuhlman/github-migrator/internal/source"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
+
+// mockSourceProvider is a mock implementation of source.Provider for testing
+type mockSourceProvider struct{}
+
+func (m *mockSourceProvider) Type() source.ProviderType {
+	return source.ProviderGitHub
+}
+
+func (m *mockSourceProvider) Name() string {
+	return "Mock Provider"
+}
+
+func (m *mockSourceProvider) CloneRepository(ctx context.Context, info source.RepositoryInfo, destPath string, opts source.CloneOptions) error {
+	return nil
+}
+
+func (m *mockSourceProvider) GetAuthenticatedCloneURL(cloneURL string) (string, error) {
+	return cloneURL, nil
+}
+
+func (m *mockSourceProvider) ValidateCredentials(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockSourceProvider) SupportsFeature(feature source.Feature) bool {
+	return true
+}
 
 func setupTestDB(t *testing.T) *storage.Database {
 	t.Helper()
@@ -38,7 +66,7 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database) {
 	t.Helper()
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	handler := NewHandler(db, logger, nil)
+	handler := NewHandler(db, logger, nil, nil)
 	return handler, db
 }
 
@@ -47,7 +75,7 @@ func TestNewHandler(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	t.Run("without GitHub client", func(t *testing.T) {
-		h := NewHandler(db, logger, nil)
+		h := NewHandler(db, logger, nil, nil)
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
@@ -56,14 +84,14 @@ func TestNewHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("with GitHub client", func(t *testing.T) {
+	t.Run("with GitHub client but no source provider", func(t *testing.T) {
 		ghClient := &github.Client{}
-		h := NewHandler(db, logger, ghClient)
+		h := NewHandler(db, logger, ghClient, nil)
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
-		if h.collector == nil {
-			t.Error("Expected collector to be created when GitHub client is provided")
+		if h.collector != nil {
+			t.Error("Expected collector to be nil when source provider is nil")
 		}
 	})
 }
@@ -105,7 +133,7 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	h := NewHandler(db, logger, nil)
+	h := NewHandler(db, logger, nil, nil)
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -125,7 +153,7 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 func testStartDiscoveryValidation(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	h := NewHandler(db, logger, &github.Client{})
+	h := NewHandler(db, logger, &github.Client{}, nil)
 
 	tests := []struct {
 		name     string
@@ -184,7 +212,8 @@ func testStartDiscoveryOrganization(t *testing.T) {
 		Logger:  logger,
 	}
 	client, _ := github.NewClient(cfg)
-	h := NewHandler(db, logger, client)
+	mockProvider := &mockSourceProvider{}
+	h := NewHandler(db, logger, client, mockProvider)
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -222,7 +251,8 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 		Logger:  logger,
 	}
 	client, _ := github.NewClient(cfg)
-	h := NewHandler(db, logger, client)
+	mockProvider := &mockSourceProvider{}
+	h := NewHandler(db, logger, client, mockProvider)
 
 	reqBody := map[string]interface{}{
 		"enterprise_slug": "test-enterprise",

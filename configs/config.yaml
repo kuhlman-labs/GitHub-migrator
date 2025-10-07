@@ -5,13 +5,19 @@ database:
   type: sqlite
   dsn: ./data/migrator.db
 
-github:
-  source:
-    base_url: "https://github.company.com/api/v3"  # GitHub Enterprise Server
-    token: "${GITHUB_SOURCE_TOKEN}"
-  destination:
-    base_url: "https://api.github.com"  # GitHub Enterprise Cloud
-    token: "${GITHUB_DEST_TOKEN}"
+# Source repository system (where to migrate FROM)
+# Supported types: github, gitlab, azuredevops
+source:
+  type: github
+  base_url: "https://github.company.com/api/v3"  # GitHub Enterprise Server
+  token: "${GITHUB_SOURCE_TOKEN}"
+
+# Destination repository system (where to migrate TO)
+# Supported types: github, gitlab
+destination:
+  type: github
+  base_url: "https://api.github.com"  # GitHub Enterprise Cloud or GitHub.com
+  token: "${GITHUB_DEST_TOKEN}"
 
 logging:
   level: info

@@ -44,11 +44,12 @@ func main() {
 	}
 
 	// Initialize GitHub client (optional)
+	// Use new source config format, which automatically migrates from legacy GitHub config
 	var ghClient *github.Client
-	if cfg.GitHub.Source.Token != "" && cfg.GitHub.Source.BaseURL != "" {
+	if cfg.Source.Token != "" && cfg.Source.BaseURL != "" && cfg.Source.Type == "github" {
 		ghClient, err = github.NewClient(github.ClientConfig{
-			BaseURL:     cfg.GitHub.Source.BaseURL,
-			Token:       cfg.GitHub.Source.Token,
+			BaseURL:     cfg.Source.BaseURL,
+			Token:       cfg.Source.Token,
 			Timeout:     30 * time.Second,
 			RetryConfig: github.DefaultRetryConfig(),
 			Logger:      logger,
@@ -56,7 +57,9 @@ func main() {
 		if err != nil {
 			slog.Warn("Failed to initialize GitHub client", "error", err)
 		} else {
-			slog.Info("GitHub client initialized", "base_url", cfg.GitHub.Source.BaseURL)
+			slog.Info("GitHub client initialized",
+				"base_url", cfg.Source.BaseURL,
+				"source_type", cfg.Source.Type)
 		}
 	}
 

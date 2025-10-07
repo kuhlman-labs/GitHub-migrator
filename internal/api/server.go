@@ -8,6 +8,7 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/api/middleware"
 	"github.com/brettkuhlman/github-migrator/internal/config"
 	"github.com/brettkuhlman/github-migrator/internal/github"
+	"github.com/brettkuhlman/github-migrator/internal/source"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
 
@@ -19,11 +20,21 @@ type Server struct {
 }
 
 func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, ghClient *github.Client) *Server {
+	// Create source provider from config
+	var sourceProvider source.Provider
+	if cfg.Source.Token != "" {
+		var err error
+		sourceProvider, err = source.NewProviderFromConfig(cfg.Source)
+		if err != nil {
+			logger.Warn("Failed to create source provider", "error", err)
+		}
+	}
+
 	return &Server{
 		config:  cfg,
 		db:      db,
 		logger:  logger,
-		handler: handlers.NewHandler(db, logger, ghClient),
+		handler: handlers.NewHandler(db, logger, ghClient, sourceProvider),
 	}
 }
 

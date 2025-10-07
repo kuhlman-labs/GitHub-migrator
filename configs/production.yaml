@@ -16,17 +16,31 @@ database:
   conn_max_lifetime: 10m
   conn_max_idle_time: 5m
 
+# Source repository system configuration
+# Supported types: github, gitlab, azuredevops
+source:
+  type: "${SOURCE_TYPE:-github}"
+  base_url: "${GITHUB_SOURCE_URL}"  # e.g., https://github.company.com/api/v3
+  token: "${GITHUB_SOURCE_TOKEN}"
+  # For GitLab: base_url would be https://gitlab.company.com
+  # For Azure DevOps:
+  organization: "${ADO_ORGANIZATION:-}"  # Required for ADO
+  username: "${ADO_USERNAME:-}"  # Optional for ADO
+
+# Destination repository system configuration  
+# Supported types: github, gitlab
+destination:
+  type: "${DESTINATION_TYPE:-github}"
+  base_url: "${GITHUB_DEST_URL}"  # e.g., https://api.github.com
+  token: "${GITHUB_DEST_TOKEN}"
+
+# Legacy GitHub-specific configuration (maintained for backward compatibility)
+# The source/destination format above is the recommended approach
 github:
   source:
-    # GitHub Enterprise Server (source)
-    base_url: "${GITHUB_SOURCE_URL}"  # e.g., https://github.company.com/api/v3
-    token: "${GITHUB_SOURCE_TOKEN}"
     graphql_url: "${GITHUB_SOURCE_GRAPHQL_URL}"  # e.g., https://github.company.com/api/graphql
   
   destination:
-    # GitHub Enterprise Cloud (destination)
-    base_url: "${GITHUB_DEST_URL}"  # e.g., https://api.github.com
-    token: "${GITHUB_DEST_TOKEN}"
     graphql_url: "${GITHUB_DEST_GRAPHQL_URL}"  # e.g., https://api.github.com/graphql
   
   rate_limit:

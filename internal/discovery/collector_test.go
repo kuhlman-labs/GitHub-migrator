@@ -10,8 +10,37 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/config"
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/brettkuhlman/github-migrator/internal/source"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
+
+// mockSourceProvider is a mock implementation of source.Provider for testing
+type mockSourceProvider struct{}
+
+func (m *mockSourceProvider) Type() source.ProviderType {
+	return source.ProviderGitHub
+}
+
+func (m *mockSourceProvider) Name() string {
+	return "Mock Provider"
+}
+
+func (m *mockSourceProvider) CloneRepository(ctx context.Context, info source.RepositoryInfo, destPath string, opts source.CloneOptions) error {
+	// Mock implementation - do nothing
+	return nil
+}
+
+func (m *mockSourceProvider) GetAuthenticatedCloneURL(cloneURL string) (string, error) {
+	return cloneURL, nil
+}
+
+func (m *mockSourceProvider) ValidateCredentials(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockSourceProvider) SupportsFeature(feature source.Feature) bool {
+	return true
+}
 
 func TestNewCollector(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -43,7 +72,8 @@ func TestNewCollector(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	collector := NewCollector(client, db, logger)
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, db, logger, mockProvider)
 
 	if collector == nil {
 		t.Fatal("NewCollector returned nil")
@@ -56,6 +86,9 @@ func TestNewCollector(t *testing.T) {
 	}
 	if collector.logger == nil {
 		t.Error("Collector logger is nil")
+	}
+	if collector.sourceProvider == nil {
+		t.Error("Collector sourceProvider is nil")
 	}
 	if collector.workers != 5 {
 		t.Errorf("Expected default workers to be 5, got %d", collector.workers)
@@ -87,7 +120,8 @@ func TestSetWorkers(t *testing.T) {
 	}
 	defer db.Close()
 
-	collector := NewCollector(client, db, logger)
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, db, logger, mockProvider)
 
 	// Test setting workers
 	collector.SetWorkers(10)
@@ -206,7 +240,8 @@ func TestDiscoverRepositories_Integration(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	collector := NewCollector(client, db, logger)
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, db, logger, mockProvider)
 	collector.SetWorkers(2) // Use fewer workers for testing
 
 	ctx := context.Background()
@@ -265,7 +300,8 @@ func TestDiscoverEnterpriseRepositories_Integration(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	collector := NewCollector(client, db, logger)
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, db, logger, mockProvider)
 	collector.SetWorkers(2) // Use fewer workers for testing
 
 	ctx := context.Background()
@@ -319,7 +355,8 @@ func TestDiscoverEnterpriseRepositories_Unit(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	collector := NewCollector(client, db, logger)
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, db, logger, mockProvider)
 
 	ctx := context.Background()
 
