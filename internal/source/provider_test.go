@@ -7,8 +7,27 @@ import (
 func TestDefaultCloneOptions(t *testing.T) {
 	opts := DefaultCloneOptions()
 
+	// Default options use full clone for accurate git-sizer metrics
+	if opts.Shallow {
+		t.Error("Expected Shallow to be false (full clone needed for git-sizer)")
+	}
+	if opts.Bare {
+		t.Error("Expected Bare to be false")
+	}
+	if opts.IncludeLFS {
+		t.Error("Expected IncludeLFS to be false")
+	}
+	if opts.IncludeSubmodules {
+		t.Error("Expected IncludeSubmodules to be false")
+	}
+}
+
+func TestShallowCloneOptions(t *testing.T) {
+	opts := ShallowCloneOptions()
+
+	// Shallow options for fast clones when full history isn't needed
 	if !opts.Shallow {
-		t.Error("Expected Shallow to be true")
+		t.Error("Expected Shallow to be true for shallow clone options")
 	}
 	if opts.Bare {
 		t.Error("Expected Bare to be false")

@@ -39,12 +39,24 @@ type CloneOptions struct {
 }
 
 // DefaultCloneOptions returns default clone options for discovery
+// Uses full clone for accurate git-sizer analysis
 func DefaultCloneOptions() CloneOptions {
 	return CloneOptions{
-		Shallow:           true,  // Faster for analysis
+		Shallow:           false, // Full clone needed for accurate git-sizer metrics
 		Bare:              false, // Need working tree for file analysis
 		IncludeLFS:        false, // Don't fetch LFS content during discovery
 		IncludeSubmodules: false, // Don't clone submodules during discovery
+	}
+}
+
+// ShallowCloneOptions returns options for fast shallow clones
+// Use this when full git history is not needed (e.g., quick file checks)
+func ShallowCloneOptions() CloneOptions {
+	return CloneOptions{
+		Shallow:           true,  // Shallow clone for speed
+		Bare:              false, // Need working tree for file analysis
+		IncludeLFS:        false, // Don't fetch LFS content
+		IncludeSubmodules: false, // Don't clone submodules
 	}
 }
 

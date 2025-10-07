@@ -272,6 +272,7 @@ func (c *Collector) setupTempDir(fullName string) (string, error) {
 }
 
 // cloneRepositoryWithProvider uses the configured source provider to clone a repository
+// Uses full clone (not shallow) for accurate git-sizer analysis of repository history
 func (c *Collector) cloneRepositoryWithProvider(ctx context.Context, cloneURL, fullName string) (string, error) {
 	tempDir, err := c.setupTempDir(fullName)
 	if err != nil {
@@ -284,8 +285,17 @@ func (c *Collector) cloneRepositoryWithProvider(ctx context.Context, cloneURL, f
 		CloneURL: cloneURL,
 	}
 
-	// Use default clone options (shallow clone for faster analysis)
+	// Use full clone for accurate git-sizer metrics
+	// Note: This is slower but necessary for proper analysis of:
+	// - Total commit count and history depth
+	// - Historical blob sizes and tree entries
+	// - Accurate repository size calculations
 	opts := source.DefaultCloneOptions()
+
+	c.logger.Debug("Cloning repository for analysis",
+		"repo", fullName,
+		"shallow", opts.Shallow,
+		"bare", opts.Bare)
 
 	// Clone using the provider
 	if err := c.sourceProvider.CloneRepository(ctx, repoInfo, tempDir, opts); err != nil {
@@ -297,12 +307,11 @@ func (c *Collector) cloneRepositoryWithProvider(ctx context.Context, cloneURL, f
 	return tempDir, nil
 }
 
-// cloneRepositoryFull creates a full clone for more accurate analysis
-// This is slower and more space-intensive but provides better metrics
-// This method is currently unused but retained for potential future use cases
-// where full repository history analysis is required.
+// cloneRepositoryBare creates a bare clone for specialized analysis
+// Bare clones are faster and smaller (no working directory) but can't be used for file inspection
+// This is useful for pure git-sizer analysis when file content inspection is not needed
 // nolint:unused
-func (c *Collector) cloneRepositoryFull(ctx context.Context, cloneURL, fullName string) (string, error) {
+func (c *Collector) cloneRepositoryBare(ctx context.Context, cloneURL, fullName string) (string, error) {
 	tempDir, err := c.setupTempDir(fullName)
 	if err != nil {
 		return "", err
@@ -314,13 +323,17 @@ func (c *Collector) cloneRepositoryFull(ctx context.Context, cloneURL, fullName 
 		CloneURL: cloneURL,
 	}
 
-	// Use full clone options for more accurate analysis
+	// Use bare clone for maximum git-sizer accuracy with minimal disk space
 	opts := source.CloneOptions{
 		Shallow:           false, // Full clone for accurate metrics
-		Bare:              true,  // Bare clone for git-sizer
+		Bare:              true,  // Bare clone - no working directory
 		IncludeLFS:        false, // Don't fetch LFS content during discovery
 		IncludeSubmodules: false, // Don't clone submodules during discovery
 	}
+
+	c.logger.Debug("Creating bare clone for git-sizer analysis",
+		"repo", fullName,
+		"bare", true)
 
 	// Clone using the provider
 	if err := c.sourceProvider.CloneRepository(ctx, repoInfo, tempDir, opts); err != nil {
