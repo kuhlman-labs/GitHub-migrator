@@ -609,6 +609,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		"failed_count":       failed,
 		"in_progress_count":  inProgress,
 		"pending_count":      pending,
+		"status_breakdown":   stats,
 	}
 
 	h.sendJSON(w, http.StatusOK, summary)

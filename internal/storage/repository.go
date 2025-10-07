@@ -165,7 +165,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 	}
 	defer rows.Close()
 
-	var repos []*models.Repository
+	repos := []*models.Repository{}
 	for rows.Next() {
 		var repo models.Repository
 		// nolint:dupl // Standard repository scanning, duplication expected
@@ -555,7 +555,7 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 	}
 	defer rows.Close()
 
-	var batches []*models.Batch
+	batches := []*models.Batch{}
 	for rows.Next() {
 		var batch models.Batch
 		if err := rows.Scan(
