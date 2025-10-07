@@ -120,11 +120,22 @@ func (c *Client) DoWithRetry(ctx context.Context, operation string, fn func(ctx 
 	var lastErr error
 
 	err := c.retryer.Do(ctx, operation, func(ctx context.Context) error {
+		start := time.Now()
+		c.logger.Debug("GitHub API call started",
+			"operation", operation,
+			"base_url", c.baseURL)
+
 		var err error
 		resp, err = fn(ctx)
+		duration := time.Since(start)
 
 		if err != nil {
 			lastErr = WrapError(err, operation, c.baseURL)
+			c.logger.Error("GitHub API call failed",
+				"operation", operation,
+				"base_url", c.baseURL,
+				"duration_ms", duration.Milliseconds(),
+				"error", lastErr)
 			return lastErr
 		}
 
@@ -135,6 +146,20 @@ func (c *Client) DoWithRetry(ctx context.Context, operation string, fn func(ctx 
 				resp.Rate.Limit,
 				resp.Rate.Reset.Time,
 			)
+
+			c.logger.Debug("GitHub API call completed",
+				"operation", operation,
+				"base_url", c.baseURL,
+				"status_code", resp.StatusCode,
+				"duration_ms", duration.Milliseconds(),
+				"rate_limit_remaining", resp.Rate.Remaining,
+				"rate_limit_limit", resp.Rate.Limit,
+				"rate_limit_reset", resp.Rate.Reset.Time)
+		} else {
+			c.logger.Debug("GitHub API call completed",
+				"operation", operation,
+				"base_url", c.baseURL,
+				"duration_ms", duration.Milliseconds())
 		}
 
 		return nil
@@ -149,10 +174,30 @@ func (c *Client) DoWithRetry(ctx context.Context, operation string, fn func(ctx 
 // QueryWithRetry executes a GraphQL query with retry logic
 func (c *Client) QueryWithRetry(ctx context.Context, operation string, query interface{}, variables map[string]interface{}) error {
 	return c.retryer.Do(ctx, operation, func(ctx context.Context) error {
+		start := time.Now()
+		c.logger.Debug("GitHub GraphQL query started",
+			"operation", operation,
+			"base_url", c.baseURL,
+			"variables", variables)
+
 		err := c.graphql.Query(ctx, query, variables)
+		duration := time.Since(start)
+
 		if err != nil {
-			return WrapError(err, operation, c.baseURL)
+			wrappedErr := WrapError(err, operation, c.baseURL)
+			c.logger.Error("GitHub GraphQL query failed",
+				"operation", operation,
+				"base_url", c.baseURL,
+				"duration_ms", duration.Milliseconds(),
+				"error", wrappedErr)
+			return wrappedErr
 		}
+
+		c.logger.Debug("GitHub GraphQL query completed",
+			"operation", operation,
+			"base_url", c.baseURL,
+			"duration_ms", duration.Milliseconds())
+
 		return nil
 	})
 }
@@ -160,10 +205,30 @@ func (c *Client) QueryWithRetry(ctx context.Context, operation string, query int
 // MutateWithRetry executes a GraphQL mutation with retry logic
 func (c *Client) MutateWithRetry(ctx context.Context, operation string, mutation interface{}, input map[string]interface{}, variables map[string]interface{}) error {
 	return c.retryer.Do(ctx, operation, func(ctx context.Context) error {
+		start := time.Now()
+		c.logger.Debug("GitHub GraphQL mutation started",
+			"operation", operation,
+			"base_url", c.baseURL,
+			"variables", variables)
+
 		err := c.graphql.Mutate(ctx, mutation, input, variables)
+		duration := time.Since(start)
+
 		if err != nil {
-			return WrapError(err, operation, c.baseURL)
+			wrappedErr := WrapError(err, operation, c.baseURL)
+			c.logger.Error("GitHub GraphQL mutation failed",
+				"operation", operation,
+				"base_url", c.baseURL,
+				"duration_ms", duration.Milliseconds(),
+				"error", wrappedErr)
+			return wrappedErr
 		}
+
+		c.logger.Debug("GitHub GraphQL mutation completed",
+			"operation", operation,
+			"base_url", c.baseURL,
+			"duration_ms", duration.Milliseconds())
+
 		return nil
 	})
 }

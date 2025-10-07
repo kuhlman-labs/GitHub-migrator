@@ -46,7 +46,7 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	server := NewServer(cfg, db, logger, nil)
+	server := NewServer(cfg, db, logger, nil, nil)
 
 	cleanup := func() {
 		db.Close()

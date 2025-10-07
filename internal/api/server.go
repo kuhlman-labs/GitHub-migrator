@@ -19,7 +19,7 @@ type Server struct {
 	handler *handlers.Handler
 }
 
-func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, ghClient *github.Client) *Server {
+func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, sourceClient *github.Client, destClient *github.Client) *Server {
 	// Create source provider from config
 	var sourceProvider source.Provider
 	if cfg.Source.Token != "" {
@@ -34,7 +34,7 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, gh
 		config:  cfg,
 		db:      db,
 		logger:  logger,
-		handler: handlers.NewHandler(db, logger, ghClient, sourceProvider),
+		handler: handlers.NewHandler(db, logger, sourceClient, destClient, sourceProvider),
 	}
 }
 

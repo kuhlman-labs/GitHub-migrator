@@ -23,7 +23,7 @@ func TestIntegration_RepositoryLifecycle(t *testing.T) {
 	defer db.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	server := NewServer(&config.Config{}, db, logger, nil)
+	server := NewServer(&config.Config{}, db, logger, nil, nil)
 	router := server.Router()
 
 	// Test: Create repository
@@ -105,7 +105,7 @@ func TestIntegration_BatchWorkflow(t *testing.T) {
 	defer db.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	server := NewServer(&config.Config{}, db, logger, nil)
+	server := NewServer(&config.Config{}, db, logger, nil, nil)
 	router := server.Router()
 
 	ctx := context.Background()
@@ -193,7 +193,7 @@ func TestIntegration_MigrationStartWorkflow(t *testing.T) {
 	defer db.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	server := NewServer(&config.Config{}, db, logger, nil)
+	server := NewServer(&config.Config{}, db, logger, nil, nil)
 	router := server.Router()
 
 	ctx := context.Background()
@@ -246,7 +246,7 @@ func TestIntegration_Analytics(t *testing.T) {
 	defer db.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	server := NewServer(&config.Config{}, db, logger, nil)
+	server := NewServer(&config.Config{}, db, logger, nil, nil)
 	router := server.Router()
 
 	ctx := context.Background()

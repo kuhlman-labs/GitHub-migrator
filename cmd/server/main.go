@@ -43,11 +43,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize GitHub client (optional)
-	// Use new source config format, which automatically migrates from legacy GitHub config
-	var ghClient *github.Client
+	// Initialize GitHub source client (optional)
+	var sourceClient *github.Client
 	if cfg.Source.Token != "" && cfg.Source.BaseURL != "" && cfg.Source.Type == "github" {
-		ghClient, err = github.NewClient(github.ClientConfig{
+		sourceClient, err = github.NewClient(github.ClientConfig{
 			BaseURL:     cfg.Source.BaseURL,
 			Token:       cfg.Source.Token,
 			Timeout:     30 * time.Second,
@@ -55,16 +54,35 @@ func main() {
 			Logger:      logger,
 		})
 		if err != nil {
-			slog.Warn("Failed to initialize GitHub client", "error", err)
+			slog.Warn("Failed to initialize source GitHub client", "error", err)
 		} else {
-			slog.Info("GitHub client initialized",
+			slog.Info("Source GitHub client initialized",
 				"base_url", cfg.Source.BaseURL,
 				"source_type", cfg.Source.Type)
 		}
 	}
 
+	// Initialize GitHub destination client (optional)
+	var destClient *github.Client
+	if cfg.Destination.Token != "" && cfg.Destination.BaseURL != "" && cfg.Destination.Type == "github" {
+		destClient, err = github.NewClient(github.ClientConfig{
+			BaseURL:     cfg.Destination.BaseURL,
+			Token:       cfg.Destination.Token,
+			Timeout:     30 * time.Second,
+			RetryConfig: github.DefaultRetryConfig(),
+			Logger:      logger,
+		})
+		if err != nil {
+			slog.Warn("Failed to initialize destination GitHub client", "error", err)
+		} else {
+			slog.Info("Destination GitHub client initialized",
+				"base_url", cfg.Destination.BaseURL,
+				"dest_type", cfg.Destination.Type)
+		}
+	}
+
 	// Create API server
-	server := api.NewServer(cfg, db, logger, ghClient)
+	server := api.NewServer(cfg, db, logger, sourceClient, destClient)
 
 	// Start HTTP server
 	httpServer := &http.Server{

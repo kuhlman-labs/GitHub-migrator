@@ -580,9 +580,11 @@ func TestCanMigrate(t *testing.T) {
 		expected bool
 	}{
 		{string(models.StatusPending), true},
+		{string(models.StatusDryRunQueued), true}, // Can re-queue dry runs
+		{string(models.StatusDryRunFailed), true}, // Can retry failed dry runs
 		{string(models.StatusDryRunComplete), true},
-		{string(models.StatusMigrationFailed), true},
-		{string(models.StatusDryRunFailed), true},
+		{string(models.StatusPreMigration), true},
+		{string(models.StatusMigrationFailed), true}, // Can retry failed migrations
 		{string(models.StatusComplete), false},
 		{string(models.StatusMigratingContent), false},
 		{string(models.StatusQueuedForMigration), false},

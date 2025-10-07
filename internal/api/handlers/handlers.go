@@ -22,24 +22,26 @@ const (
 
 // Handler contains all HTTP handlers
 type Handler struct {
-	db        *storage.Database
-	logger    *slog.Logger
-	ghClient  *github.Client
-	collector *discovery.Collector
+	db           *storage.Database
+	logger       *slog.Logger
+	sourceClient *github.Client
+	destClient   *github.Client
+	collector    *discovery.Collector
 }
 
 // NewHandler creates a new Handler instance
 // sourceProvider can be nil if discovery is not needed
-func NewHandler(db *storage.Database, logger *slog.Logger, ghClient *github.Client, sourceProvider source.Provider) *Handler {
+func NewHandler(db *storage.Database, logger *slog.Logger, sourceClient *github.Client, destClient *github.Client, sourceProvider source.Provider) *Handler {
 	var collector *discovery.Collector
-	if ghClient != nil && sourceProvider != nil {
-		collector = discovery.NewCollector(ghClient, db, logger, sourceProvider)
+	if sourceClient != nil && sourceProvider != nil {
+		collector = discovery.NewCollector(sourceClient, db, logger, sourceProvider)
 	}
 	return &Handler{
-		db:        db,
-		logger:    logger,
-		ghClient:  ghClient,
-		collector: collector,
+		db:           db,
+		logger:       logger,
+		sourceClient: sourceClient,
+		destClient:   destClient,
+		collector:    collector,
 	}
 }
 
@@ -686,9 +688,11 @@ func (h *Handler) sendError(w http.ResponseWriter, status int, message string) {
 func canMigrate(status string) bool {
 	allowedStatuses := []string{
 		string(models.StatusPending),
+		string(models.StatusDryRunQueued), // Allow re-queuing dry runs
+		string(models.StatusDryRunFailed), // Allow retrying failed dry runs
 		string(models.StatusDryRunComplete),
 		string(models.StatusPreMigration),
-		string(models.StatusMigrationFailed),
+		string(models.StatusMigrationFailed), // Allow retrying failed migrations
 	}
 
 	for _, allowed := range allowedStatuses {

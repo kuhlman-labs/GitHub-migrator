@@ -360,9 +360,11 @@ func (s *Scheduler) IsBatchRunning(batchID int64) bool {
 func canMigrate(status string) bool {
 	switch models.MigrationStatus(status) {
 	case models.StatusPending,
+		models.StatusDryRunQueued, // Allow re-queuing dry runs
+		models.StatusDryRunFailed, // Allow retrying failed dry runs
 		models.StatusDryRunComplete,
-		models.StatusMigrationFailed,
-		models.StatusDryRunFailed:
+		models.StatusPreMigration,
+		models.StatusMigrationFailed: // Allow retrying failed migrations
 		return true
 	default:
 		return false

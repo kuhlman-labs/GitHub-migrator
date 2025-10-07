@@ -66,7 +66,7 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database) {
 	t.Helper()
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	handler := NewHandler(db, logger, nil, nil)
+	handler := NewHandler(db, logger, nil, nil, nil)
 	return handler, db
 }
 
@@ -74,19 +74,20 @@ func TestNewHandler(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	t.Run("without GitHub client", func(t *testing.T) {
-		h := NewHandler(db, logger, nil, nil)
+	t.Run("without GitHub clients", func(t *testing.T) {
+		h := NewHandler(db, logger, nil, nil, nil)
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
 		if h.collector != nil {
-			t.Error("Expected collector to be nil when GitHub client is nil")
+			t.Error("Expected collector to be nil when GitHub clients are nil")
 		}
 	})
 
-	t.Run("with GitHub client but no source provider", func(t *testing.T) {
-		ghClient := &github.Client{}
-		h := NewHandler(db, logger, ghClient, nil)
+	t.Run("with GitHub clients but no source provider", func(t *testing.T) {
+		sourceClient := &github.Client{}
+		destClient := &github.Client{}
+		h := NewHandler(db, logger, sourceClient, destClient, nil)
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
@@ -133,7 +134,7 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	h := NewHandler(db, logger, nil, nil)
+	h := NewHandler(db, logger, nil, nil, nil)
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -153,7 +154,7 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 func testStartDiscoveryValidation(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	h := NewHandler(db, logger, &github.Client{}, nil)
+	h := NewHandler(db, logger, &github.Client{}, nil, nil)
 
 	tests := []struct {
 		name     string
@@ -213,7 +214,7 @@ func testStartDiscoveryOrganization(t *testing.T) {
 	}
 	client, _ := github.NewClient(cfg)
 	mockProvider := &mockSourceProvider{}
-	h := NewHandler(db, logger, client, mockProvider)
+	h := NewHandler(db, logger, client, nil, mockProvider)
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -252,7 +253,7 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 	}
 	client, _ := github.NewClient(cfg)
 	mockProvider := &mockSourceProvider{}
-	h := NewHandler(db, logger, client, mockProvider)
+	h := NewHandler(db, logger, client, nil, mockProvider)
 
 	reqBody := map[string]interface{}{
 		"enterprise_slug": "test-enterprise",
@@ -1091,9 +1092,11 @@ func TestCanMigrate(t *testing.T) {
 		expected bool
 	}{
 		{string(models.StatusPending), true},
+		{string(models.StatusDryRunQueued), true}, // Can re-queue dry runs
+		{string(models.StatusDryRunFailed), true}, // Can retry failed dry runs
 		{string(models.StatusDryRunComplete), true},
 		{string(models.StatusPreMigration), true},
-		{string(models.StatusMigrationFailed), true},
+		{string(models.StatusMigrationFailed), true}, // Can retry failed migrations
 		{string(models.StatusComplete), false},
 		{string(models.StatusMigratingContent), false},
 		{string(models.StatusQueuedForMigration), false},
