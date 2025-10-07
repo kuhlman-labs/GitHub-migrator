@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -338,4 +339,55 @@ func (c *Client) TestAuthentication(ctx context.Context) error {
 		"type", user.GetType())
 
 	return nil
+}
+
+// ListEnterpriseOrganizations lists all organizations in an enterprise using GraphQL
+func (c *Client) ListEnterpriseOrganizations(ctx context.Context, enterpriseSlug string) ([]string, error) {
+	c.logger.Info("Listing organizations for enterprise", "enterprise", enterpriseSlug)
+
+	var allOrgs []string
+	var endCursor *githubv4.String
+
+	// GraphQL query for enterprise organizations
+	var query struct {
+		Enterprise struct {
+			Organizations struct {
+				Nodes []struct {
+					Login githubv4.String
+				}
+				PageInfo struct {
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
+				}
+			} `graphql:"organizations(first: 100, after: $cursor)"`
+		} `graphql:"enterprise(slug: $slug)"`
+	}
+
+	for {
+		variables := map[string]interface{}{
+			"slug":   githubv4.String(enterpriseSlug),
+			"cursor": endCursor,
+		}
+
+		err := c.QueryWithRetry(ctx, "ListEnterpriseOrganizations", &query, variables)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list enterprise organizations: %w", err)
+		}
+
+		// Collect organization logins
+		for _, org := range query.Enterprise.Organizations.Nodes {
+			allOrgs = append(allOrgs, string(org.Login))
+		}
+
+		if !query.Enterprise.Organizations.PageInfo.HasNextPage {
+			break
+		}
+		endCursor = &query.Enterprise.Organizations.PageInfo.EndCursor
+	}
+
+	c.logger.Info("Enterprise organizations listed",
+		"enterprise", enterpriseSlug,
+		"total_orgs", len(allOrgs))
+
+	return allOrgs, nil
 }

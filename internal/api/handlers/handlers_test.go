@@ -95,55 +95,158 @@ func TestHealth(t *testing.T) {
 }
 
 func TestStartDiscovery(t *testing.T) {
+	testStartDiscoveryWithoutClient(t)
+	testStartDiscoveryValidation(t)
+	testStartDiscoveryOrganization(t)
+	testStartDiscoveryEnterprise(t)
+}
+
+func testStartDiscoveryWithoutClient(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	t.Run("without GitHub client", func(t *testing.T) {
-		h := NewHandler(db, logger, nil)
+	h := NewHandler(db, logger, nil)
 
-		reqBody := map[string]interface{}{
-			"organization": "test-org",
-		}
-		body, _ := json.Marshal(reqBody)
+	reqBody := map[string]interface{}{
+		"organization": "test-org",
+	}
+	body, _ := json.Marshal(reqBody)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/start", bytes.NewReader(body))
-		w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/start", bytes.NewReader(body))
+	w := httptest.NewRecorder()
 
-		h.StartDiscovery(w, req)
+	h.StartDiscovery(w, req)
 
-		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
-		}
-	})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
 
-	t.Run("missing organization", func(t *testing.T) {
-		h := NewHandler(db, logger, &github.Client{})
+func testStartDiscoveryValidation(t *testing.T) {
+	db := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	h := NewHandler(db, logger, &github.Client{})
 
-		reqBody := map[string]interface{}{}
-		body, _ := json.Marshal(reqBody)
+	tests := []struct {
+		name     string
+		reqBody  map[string]interface{}
+		rawBody  string
+		wantCode int
+	}{
+		{
+			name:     "missing both",
+			reqBody:  map[string]interface{}{},
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name: "both provided",
+			reqBody: map[string]interface{}{
+				"organization":    "test-org",
+				"enterprise_slug": "test-enterprise",
+			},
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:     "invalid json",
+			rawBody:  "invalid json",
+			wantCode: http.StatusBadRequest,
+		},
+	}
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/start", bytes.NewReader(body))
-		w := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body []byte
+			if tt.rawBody != "" {
+				body = []byte(tt.rawBody)
+			} else {
+				body, _ = json.Marshal(tt.reqBody)
+			}
 
-		h.StartDiscovery(w, req)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/start", bytes.NewReader(body))
+			w := httptest.NewRecorder()
 
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
-		}
-	})
+			h.StartDiscovery(w, req)
 
-	t.Run("invalid request body", func(t *testing.T) {
-		h := NewHandler(db, logger, &github.Client{})
+			if w.Code != tt.wantCode {
+				t.Errorf("Expected status %d, got %d", tt.wantCode, w.Code)
+			}
+		})
+	}
+}
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/start", bytes.NewReader([]byte("invalid json")))
-		w := httptest.NewRecorder()
+func testStartDiscoveryOrganization(t *testing.T) {
+	db := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-		h.StartDiscovery(w, req)
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+	client, _ := github.NewClient(cfg)
+	h := NewHandler(db, logger, client)
 
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
-		}
-	})
+	reqBody := map[string]interface{}{
+		"organization": "test-org",
+		"workers":      10,
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/start", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	h.StartDiscovery(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
+	}
+
+	var response map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&response)
+
+	if response["type"] != "organization" {
+		t.Errorf("Expected type 'organization', got %v", response["type"])
+	}
+	if response["organization"] != "test-org" {
+		t.Errorf("Expected organization 'test-org', got %v", response["organization"])
+	}
+}
+
+func testStartDiscoveryEnterprise(t *testing.T) {
+	db := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+	client, _ := github.NewClient(cfg)
+	h := NewHandler(db, logger, client)
+
+	reqBody := map[string]interface{}{
+		"enterprise_slug": "test-enterprise",
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/start", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	h.StartDiscovery(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
+	}
+
+	var response map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&response)
+
+	if response["type"] != "enterprise" {
+		t.Errorf("Expected type 'enterprise', got %v", response["type"])
+	}
+	if response["enterprise"] != "test-enterprise" {
+		t.Errorf("Expected enterprise 'test-enterprise', got %v", response["enterprise"])
+	}
 }
 
 func TestDiscoveryStatus(t *testing.T) {

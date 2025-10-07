@@ -15,6 +15,10 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
 
+const (
+	statusInProgress = "in_progress"
+)
+
 // Handler contains all HTTP handlers
 type Handler struct {
 	db        *storage.Database
@@ -48,8 +52,9 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 // StartDiscovery handles POST /api/v1/discovery/start
 func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Organization string `json:"organization"`
-		Workers      int    `json:"workers,omitempty"`
+		Organization   string `json:"organization,omitempty"`
+		EnterpriseSlug string `json:"enterprise_slug,omitempty"`
+		Workers        int    `json:"workers,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -57,8 +62,14 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Organization == "" {
-		h.sendError(w, http.StatusBadRequest, "Organization is required")
+	// Validate that either organization or enterprise is provided, but not both
+	if req.Organization == "" && req.EnterpriseSlug == "" {
+		h.sendError(w, http.StatusBadRequest, "Either organization or enterprise_slug is required")
+		return
+	}
+
+	if req.Organization != "" && req.EnterpriseSlug != "" {
+		h.sendError(w, http.StatusBadRequest, "Cannot specify both organization and enterprise_slug")
 		return
 	}
 
@@ -72,19 +83,38 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		h.collector.SetWorkers(req.Workers)
 	}
 
-	// Start discovery asynchronously
-	go func() {
-		ctx := context.Background()
-		if err := h.collector.DiscoverRepositories(ctx, req.Organization); err != nil {
-			h.logger.Error("Discovery failed", "error", err, "org", req.Organization)
-		}
-	}()
+	// Start discovery asynchronously based on type
+	if req.EnterpriseSlug != "" {
+		// Enterprise-wide discovery
+		go func() {
+			ctx := context.Background()
+			if err := h.collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug); err != nil {
+				h.logger.Error("Enterprise discovery failed", "error", err, "enterprise", req.EnterpriseSlug)
+			}
+		}()
 
-	h.sendJSON(w, http.StatusAccepted, map[string]string{
-		"message":      "Discovery started",
-		"organization": req.Organization,
-		"status":       "in_progress",
-	})
+		h.sendJSON(w, http.StatusAccepted, map[string]string{
+			"message":    "Enterprise discovery started",
+			"enterprise": req.EnterpriseSlug,
+			"status":     statusInProgress,
+			"type":       "enterprise",
+		})
+	} else {
+		// Organization discovery
+		go func() {
+			ctx := context.Background()
+			if err := h.collector.DiscoverRepositories(ctx, req.Organization); err != nil {
+				h.logger.Error("Discovery failed", "error", err, "org", req.Organization)
+			}
+		}()
+
+		h.sendJSON(w, http.StatusAccepted, map[string]string{
+			"message":      "Discovery started",
+			"organization": req.Organization,
+			"status":       statusInProgress,
+			"type":         "organization",
+		})
+	}
 }
 
 // DiscoveryStatus handles GET /api/v1/discovery/status
@@ -357,7 +387,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update batch status
-	batch.Status = "in_progress"
+	batch.Status = statusInProgress
 	now := time.Now()
 	batch.StartedAt = &now
 	if err := h.db.UpdateBatch(ctx, batch); err != nil {

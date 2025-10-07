@@ -13,7 +13,9 @@ export function Dashboard() {
   const [filter, setFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
+  const [discoveryType, setDiscoveryType] = useState<'organization' | 'enterprise'>('organization');
   const [organization, setOrganization] = useState('');
+  const [enterpriseSlug, setEnterpriseSlug] = useState('');
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
@@ -41,8 +43,14 @@ export function Dashboard() {
   };
 
   const handleStartDiscovery = async () => {
-    if (!organization.trim()) {
+    // Validate input based on discovery type
+    if (discoveryType === 'organization' && !organization.trim()) {
       setDiscoveryError('Organization name is required');
+      return;
+    }
+    
+    if (discoveryType === 'enterprise' && !enterpriseSlug.trim()) {
+      setDiscoveryError('Enterprise slug is required');
       return;
     }
 
@@ -51,9 +59,16 @@ export function Dashboard() {
     setDiscoverySuccess(null);
 
     try {
-      await api.startDiscovery(organization.trim());
-      setDiscoverySuccess(`Discovery started for ${organization}`);
-      setOrganization('');
+      if (discoveryType === 'enterprise') {
+        await api.startDiscovery({ enterprise_slug: enterpriseSlug.trim() });
+        setDiscoverySuccess(`Enterprise discovery started for ${enterpriseSlug}`);
+        setEnterpriseSlug('');
+      } else {
+        await api.startDiscovery({ organization: organization.trim() });
+        setDiscoverySuccess(`Discovery started for ${organization}`);
+        setOrganization('');
+      }
+      
       setShowDiscoveryModal(false);
       
       // Reload repositories after a short delay
@@ -112,8 +127,12 @@ export function Dashboard() {
 
       {showDiscoveryModal && (
         <DiscoveryModal
+          discoveryType={discoveryType}
+          setDiscoveryType={setDiscoveryType}
           organization={organization}
           setOrganization={setOrganization}
+          enterpriseSlug={enterpriseSlug}
+          setEnterpriseSlug={setEnterpriseSlug}
           loading={discoveryLoading}
           error={discoveryError}
           onStart={handleStartDiscovery}
@@ -121,6 +140,7 @@ export function Dashboard() {
             setShowDiscoveryModal(false);
             setDiscoveryError(null);
             setOrganization('');
+            setEnterpriseSlug('');
           }}
         />
       )}
@@ -191,8 +211,12 @@ function RepositoryCard({ repository }: { repository: Repository }) {
 }
 
 interface DiscoveryModalProps {
+  discoveryType: 'organization' | 'enterprise';
+  setDiscoveryType: (type: 'organization' | 'enterprise') => void;
   organization: string;
   setOrganization: (org: string) => void;
+  enterpriseSlug: string;
+  setEnterpriseSlug: (slug: string) => void;
   loading: boolean;
   error: string | null;
   onStart: () => void;
@@ -200,8 +224,12 @@ interface DiscoveryModalProps {
 }
 
 function DiscoveryModal({ 
+  discoveryType,
+  setDiscoveryType,
   organization, 
-  setOrganization, 
+  setOrganization,
+  enterpriseSlug,
+  setEnterpriseSlug,
   loading, 
   error, 
   onStart, 
@@ -211,6 +239,8 @@ function DiscoveryModal({
     e.preventDefault();
     onStart();
   };
+
+  const isFormValid = discoveryType === 'organization' ? organization.trim() : enterpriseSlug.trim();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -229,24 +259,82 @@ function DiscoveryModal({
         </div>
         
         <form onSubmit={handleSubmit} className="p-6">
+          {/* Discovery Type Selector */}
           <div className="mb-4">
-            <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-2">
-              Organization Name
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Discovery Type
             </label>
-            <input
-              id="organization"
-              type="text"
-              value={organization}
-              onChange={(e) => setOrganization(e.target.value)}
-              placeholder="e.g., your-github-org"
-              disabled={loading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              autoFocus
-            />
-            <p className="mt-2 text-sm text-gray-500">
-              Enter the GitHub organization name to discover all repositories.
-            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDiscoveryType('organization')}
+                disabled={loading}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  discoveryType === 'organization'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                Organization
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscoveryType('enterprise')}
+                disabled={loading}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  discoveryType === 'enterprise'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                Enterprise
+              </button>
+            </div>
           </div>
+
+          {/* Organization Input */}
+          {discoveryType === 'organization' && (
+            <div className="mb-4">
+              <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-2">
+                Organization Name
+              </label>
+              <input
+                id="organization"
+                type="text"
+                value={organization}
+                onChange={(e) => setOrganization(e.target.value)}
+                placeholder="e.g., your-github-org"
+                disabled={loading}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                autoFocus
+              />
+              <p className="mt-2 text-sm text-gray-500">
+                Enter the GitHub organization name to discover all repositories.
+              </p>
+            </div>
+          )}
+
+          {/* Enterprise Input */}
+          {discoveryType === 'enterprise' && (
+            <div className="mb-4">
+              <label htmlFor="enterprise" className="block text-sm font-medium text-gray-700 mb-2">
+                Enterprise Slug
+              </label>
+              <input
+                id="enterprise"
+                type="text"
+                value={enterpriseSlug}
+                onChange={(e) => setEnterpriseSlug(e.target.value)}
+                placeholder="e.g., your-enterprise-slug"
+                disabled={loading}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                autoFocus
+              />
+              <p className="mt-2 text-sm text-gray-500">
+                Enter the GitHub Enterprise slug to discover repositories across all organizations.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
@@ -265,7 +353,7 @@ function DiscoveryModal({
             </button>
             <button
               type="submit"
-              disabled={loading || !organization.trim()}
+              disabled={loading || !isFormValid}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               {loading ? (

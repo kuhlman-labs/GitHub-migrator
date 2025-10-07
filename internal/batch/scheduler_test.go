@@ -203,7 +203,11 @@ func TestScheduleBatch(t *testing.T) {
 
 func TestExecuteBatch(t *testing.T) {
 	scheduler, db, executor, cleanup := setupTestScheduler(t)
-	defer cleanup()
+	defer func() {
+		// Wait for any async batch operations to complete before cleanup
+		time.Sleep(100 * time.Millisecond)
+		cleanup()
+	}()
 
 	ctx := context.Background()
 

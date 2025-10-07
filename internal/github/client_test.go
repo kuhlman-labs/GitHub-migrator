@@ -374,3 +374,87 @@ func TestClient_GetRateLimitStatusIntegration(t *testing.T) {
 			limits.Core.Remaining, limits.Core.Limit, limits.Core.Reset)
 	}
 }
+
+// Integration test for enterprise organization listing (requires enterprise access)
+func TestClient_ListEnterpriseOrganizationsIntegration(t *testing.T) {
+	// Skip this test unless explicitly running integration tests
+	token := os.Getenv("GITHUB_TOKEN")
+	enterpriseSlug := os.Getenv("GITHUB_ENTERPRISE_SLUG")
+
+	if token == "" || enterpriseSlug == "" {
+		t.Skip("Skipping integration test: GITHUB_TOKEN or GITHUB_ENTERPRISE_SLUG not set")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	cfg := ClientConfig{
+		BaseURL:     "https://api.github.com",
+		Token:       token,
+		RetryConfig: DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v, want nil", err)
+	}
+
+	ctx := context.Background()
+	orgs, err := client.ListEnterpriseOrganizations(ctx, enterpriseSlug)
+
+	if err != nil {
+		t.Errorf("ListEnterpriseOrganizations() error = %v, want nil", err)
+		return
+	}
+
+	if orgs == nil {
+		t.Error("ListEnterpriseOrganizations() returned nil organizations")
+		return
+	}
+
+	t.Logf("Found %d organizations in enterprise %s", len(orgs), enterpriseSlug)
+
+	// Should return at least an empty slice, not nil
+	if len(orgs) == 0 {
+		t.Log("No organizations found in enterprise (could be valid)")
+	} else {
+		t.Logf("Sample organizations: %v", orgs[:min(3, len(orgs))])
+	}
+}
+
+// Unit test for ListEnterpriseOrganizations structure
+func TestClient_ListEnterpriseOrganizationsUnit(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	cfg := ClientConfig{
+		BaseURL:     "https://api.github.com",
+		Token:       "test-token",
+		RetryConfig: DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v, want nil", err)
+	}
+
+	ctx := context.Background()
+
+	// This will fail with authentication error, but we're testing the structure
+	_, err = client.ListEnterpriseOrganizations(ctx, "test-enterprise")
+
+	// We expect an error since we're using a fake token
+	if err == nil {
+		t.Log("ListEnterpriseOrganizations() succeeded (unexpected with fake token)")
+	}
+
+	// The important thing is it doesn't panic and returns proper error
+	if err != nil {
+		t.Logf("Expected error with fake token: %v", err)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

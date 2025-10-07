@@ -14,8 +14,8 @@ const client = axios.create({
 
 export const api = {
   // Discovery
-  async startDiscovery(organization: string) {
-    const { data } = await client.post('/discovery/start', { organization });
+  async startDiscovery(params: { organization?: string; enterprise_slug?: string; workers?: number }) {
+    const { data } = await client.post('/discovery/start', params);
     return data;
   },
 

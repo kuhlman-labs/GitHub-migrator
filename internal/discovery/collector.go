@@ -58,6 +58,54 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 	return c.processRepositories(ctx, repos)
 }
 
+// DiscoverEnterpriseRepositories discovers all repositories across all organizations in an enterprise
+func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpriseSlug string) error {
+	c.logger.Info("Starting enterprise-wide repository discovery", "enterprise", enterpriseSlug)
+
+	// Get all organizations in the enterprise
+	orgs, err := c.client.ListEnterpriseOrganizations(ctx, enterpriseSlug)
+	if err != nil {
+		return fmt.Errorf("failed to list enterprise organizations: %w", err)
+	}
+
+	c.logger.Info("Found organizations in enterprise",
+		"enterprise", enterpriseSlug,
+		"org_count", len(orgs))
+
+	// Collect repositories from all organizations
+	var allRepos []*ghapi.Repository
+	for _, org := range orgs {
+		c.logger.Info("Discovering repositories for organization",
+			"enterprise", enterpriseSlug,
+			"organization", org)
+
+		repos, err := c.listAllRepositories(ctx, org)
+		if err != nil {
+			c.logger.Error("Failed to list repositories for organization",
+				"enterprise", enterpriseSlug,
+				"organization", org,
+				"error", err)
+			// Continue with other organizations even if one fails
+			continue
+		}
+
+		c.logger.Info("Found repositories in organization",
+			"enterprise", enterpriseSlug,
+			"organization", org,
+			"count", len(repos))
+
+		allRepos = append(allRepos, repos...)
+	}
+
+	c.logger.Info("Enterprise discovery complete",
+		"enterprise", enterpriseSlug,
+		"total_orgs", len(orgs),
+		"total_repos", len(allRepos))
+
+	// Process all repositories in parallel
+	return c.processRepositories(ctx, allRepos)
+}
+
 // listAllRepositories lists all repositories for an organization with pagination
 func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*ghapi.Repository, error) {
 	var allRepos []*ghapi.Repository

@@ -10,7 +10,10 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/models"
 )
 
-const testDefaultBranch = "main"
+const (
+	testDefaultBranch = "main"
+	testMessage       = "Test message"
+)
 
 func setupTestDB(t *testing.T) *Database {
 	cfg := config.DatabaseConfig{
@@ -705,7 +708,7 @@ func TestGetMigrationHistory(t *testing.T) {
 	}
 
 	// Create migration history
-	msg := "Test message"
+	msg := testMessage
 	hist := &models.MigrationHistory{
 		RepositoryID: savedRepo.ID,
 		Status:       "in_progress",
@@ -752,7 +755,7 @@ func TestCreateMigrationHistory(t *testing.T) {
 	savedRepo, _ := db.GetRepository(ctx, repo.FullName)
 
 	// Create migration history
-	msg := "Test message"
+	msg := testMessage
 	hist := &models.MigrationHistory{
 		RepositoryID: savedRepo.ID,
 		Status:       "in_progress",
@@ -790,7 +793,7 @@ func TestUpdateMigrationHistory(t *testing.T) {
 	savedRepo, _ := db.GetRepository(ctx, repo.FullName)
 
 	// Create migration history
-	msg := "Test message"
+	msg := testMessage
 	hist := &models.MigrationHistory{
 		RepositoryID: savedRepo.ID,
 		Status:       "in_progress",

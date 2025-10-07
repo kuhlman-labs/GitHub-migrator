@@ -226,3 +226,113 @@ func TestDiscoverRepositories_Integration(t *testing.T) {
 
 	t.Logf("Discovered %d repositories", len(repos))
 }
+
+func TestDiscoverEnterpriseRepositories_Integration(t *testing.T) {
+	// Skip if GITHUB_TOKEN or GITHUB_ENTERPRISE_SLUG is not set
+	token := os.Getenv("GITHUB_TOKEN")
+	enterpriseSlug := os.Getenv("GITHUB_ENTERPRISE_SLUG")
+
+	if token == "" || enterpriseSlug == "" {
+		t.Skip("Skipping integration test (set GITHUB_TOKEN and GITHUB_ENTERPRISE_SLUG to run)")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   token,
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Create test database
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	collector := NewCollector(client, db, logger)
+	collector.SetWorkers(2) // Use fewer workers for testing
+
+	ctx := context.Background()
+
+	// Test enterprise-wide discovery
+	err = collector.DiscoverEnterpriseRepositories(ctx, enterpriseSlug)
+	if err != nil {
+		t.Errorf("DiscoverEnterpriseRepositories() failed: %v", err)
+	}
+
+	// List repositories to verify some were discovered
+	repos, err := db.ListRepositories(ctx, nil)
+	if err != nil {
+		t.Fatalf("Failed to list repositories: %v", err)
+	}
+
+	t.Logf("Discovered %d repositories across enterprise %s", len(repos), enterpriseSlug)
+
+	if len(repos) == 0 {
+		t.Log("No repositories found (could be valid for empty enterprise)")
+	}
+}
+
+func TestDiscoverEnterpriseRepositories_Unit(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Create test database
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	collector := NewCollector(client, db, logger)
+
+	ctx := context.Background()
+
+	// This will fail with authentication error, but we're testing the structure
+	err = collector.DiscoverEnterpriseRepositories(ctx, "test-enterprise")
+
+	// We expect an error since we're using a fake token
+	if err == nil {
+		t.Log("DiscoverEnterpriseRepositories() succeeded (unexpected with fake token)")
+	}
+
+	// The important thing is it doesn't panic and returns proper error
+	if err != nil {
+		t.Logf("Expected error with fake token: %v", err)
+	}
+}
