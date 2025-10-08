@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/github"
@@ -49,8 +50,8 @@ type Executor struct {
 	sourceClient         *github.Client // GHES client
 	destClient           *github.Client // GHEC client
 	storage              *storage.Database
-	migSourceID          string // Migration source ID from GraphQL (GHEC)
-	destOrgID            string // Destination organization ID (GHEC)
+	orgIDCache           map[string]string // Cache of org name -> org ID
+	migSourceID          string            // Cached migration source ID (created on first use)
 	logger               *slog.Logger
 	postMigrationMode    PostMigrationMode           // When to run post-migration tasks
 	destRepoExistsAction DestinationRepoExistsAction // What to do if destination repo exists
@@ -61,8 +62,6 @@ type ExecutorConfig struct {
 	SourceClient         *github.Client
 	DestClient           *github.Client
 	Storage              *storage.Database
-	MigSourceID          string // Migration source ID (must be created once on GHEC)
-	DestOrgID            string // Destination org ID
 	Logger               *slog.Logger
 	PostMigrationMode    PostMigrationMode           // When to run post-migration tasks (default: production_only)
 	DestRepoExistsAction DestinationRepoExistsAction // What to do if destination repo exists (default: fail)
@@ -105,12 +104,107 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 		sourceClient:         cfg.SourceClient,
 		destClient:           cfg.DestClient,
 		storage:              cfg.Storage,
-		migSourceID:          cfg.MigSourceID,
-		destOrgID:            cfg.DestOrgID,
+		orgIDCache:           make(map[string]string),
 		logger:               cfg.Logger,
 		postMigrationMode:    postMigMode,
 		destRepoExistsAction: destRepoAction,
 	}, nil
+}
+
+// getDestinationOrg returns the destination org for a repository
+// Defaults to the source org if not explicitly set
+func (e *Executor) getDestinationOrg(repo *models.Repository) string {
+	// If DestinationFullName is set, extract org from it
+	if repo.DestinationFullName != nil && *repo.DestinationFullName != "" {
+		parts := strings.Split(*repo.DestinationFullName, "/")
+		if len(parts) >= 1 {
+			return parts[0]
+		}
+	}
+
+	// Default to source org
+	parts := strings.Split(repo.FullName, "/")
+	if len(parts) >= 1 {
+		return parts[0]
+	}
+
+	return ""
+}
+
+// getOrFetchDestOrgID returns the destination org ID for a given org name, fetching it if not cached
+func (e *Executor) getOrFetchDestOrgID(ctx context.Context, orgName string) (string, error) {
+	if orgName == "" {
+		return "", fmt.Errorf("organization name is required")
+	}
+
+	// Check cache first
+	if orgID, exists := e.orgIDCache[orgName]; exists {
+		return orgID, nil
+	}
+
+	e.logger.Info("Fetching destination organization ID", "org", orgName)
+
+	// GraphQL query to get organization ID
+	var query struct {
+		Organization struct {
+			ID string
+		} `graphql:"organization(login: $login)"`
+	}
+
+	variables := map[string]interface{}{
+		"login": githubv4.String(orgName),
+	}
+
+	if err := e.destClient.QueryWithRetry(ctx, "GetOrganizationID", &query, variables); err != nil {
+		return "", fmt.Errorf("failed to fetch organization ID for %s: %w", orgName, err)
+	}
+
+	orgID := query.Organization.ID
+	e.orgIDCache[orgName] = orgID // Cache it
+
+	e.logger.Info("Fetched destination organization ID",
+		"org", orgName,
+		"org_id", orgID)
+
+	return orgID, nil
+}
+
+// getOrCreateMigrationSource returns the migration source ID, creating it if not cached
+func (e *Executor) getOrCreateMigrationSource(ctx context.Context) (string, error) {
+	if e.migSourceID != "" {
+		return e.migSourceID, nil
+	}
+
+	e.logger.Info("Creating migration source")
+
+	// Get the source URL from the source client
+	sourceURL := e.sourceClient.BaseURL()
+
+	// GraphQL mutation to create migration source
+	var mutation struct {
+		CreateMigrationSource struct {
+			MigrationSource struct {
+				ID string
+			}
+		} `graphql:"createMigrationSource(input: $input)"`
+	}
+
+	input := map[string]interface{}{
+		"name": githubv4.String(fmt.Sprintf("Migration from %s", sourceURL)),
+		"url":  githubv4.String(sourceURL),
+		"type": githubv4.String("GITHUB_ARCHIVE"),
+	}
+
+	if err := e.destClient.MutateWithRetry(ctx, "CreateMigrationSource", &mutation, input, nil); err != nil {
+		return "", fmt.Errorf("failed to create migration source: %w", err)
+	}
+
+	e.migSourceID = mutation.CreateMigrationSource.MigrationSource.ID
+	e.logger.Info("Created migration source",
+		"source_id", e.migSourceID,
+		"source_url", sourceURL)
+
+	return e.migSourceID, nil
 }
 
 // ExecuteMigration performs a full repository migration
@@ -420,6 +514,24 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 
 // startRepositoryMigration starts migration on GHEC using GraphQL
 func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Repository, urls *ArchiveURLs) (string, error) {
+	// Get destination org name for this repository
+	destOrgName := e.getDestinationOrg(repo)
+	if destOrgName == "" {
+		return "", fmt.Errorf("unable to determine destination organization for repository %s", repo.FullName)
+	}
+
+	// Fetch destination org ID
+	destOrgID, err := e.getOrFetchDestOrgID(ctx, destOrgName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get destination org ID: %w", err)
+	}
+
+	// Create migration source if not already cached
+	migSourceID, err := e.getOrCreateMigrationSource(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get migration source ID: %w", err)
+	}
+
 	var mutation struct {
 		StartRepositoryMigration struct {
 			RepositoryMigration struct {
@@ -430,8 +542,8 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 	}
 
 	input := map[string]interface{}{
-		"sourceId":             githubv4.String(e.migSourceID),
-		"ownerId":              githubv4.String(e.destOrgID),
+		"sourceId":             githubv4.String(migSourceID),
+		"ownerId":              githubv4.String(destOrgID),
 		"sourceRepositoryUrl":  githubv4.String(repo.SourceURL),
 		"repositoryName":       githubv4.String(repo.Name()),
 		"continueOnError":      githubv4.Boolean(false),
@@ -440,7 +552,7 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 		"targetRepoVisibility": githubv4.String("private"),
 	}
 
-	err := e.destClient.MutateWithRetry(ctx, "StartRepositoryMigration", &mutation, input, nil)
+	err = e.destClient.MutateWithRetry(ctx, "StartRepositoryMigration", &mutation, input, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to start migration via GraphQL: %w", err)
 	}

@@ -11,6 +11,7 @@ type Config struct {
 	Database    DatabaseConfig    `mapstructure:"database"`
 	Source      SourceConfig      `mapstructure:"source"`
 	Destination DestinationConfig `mapstructure:"destination"`
+	Migration   MigrationConfig   `mapstructure:"migration"`
 	Logging     LoggingConfig     `mapstructure:"logging"`
 	// Deprecated: Use Source and Destination instead
 	GitHub GitHubConfig `mapstructure:"github"`
@@ -39,6 +40,14 @@ type DestinationConfig struct {
 	Type    string `mapstructure:"type"`     // "github", "gitlab", or "azuredevops"
 	BaseURL string `mapstructure:"base_url"` // API base URL
 	Token   string `mapstructure:"token"`    // Authentication token
+}
+
+// MigrationConfig defines migration worker configuration
+type MigrationConfig struct {
+	Workers              int    `mapstructure:"workers"`                 // Number of parallel workers
+	PollIntervalSeconds  int    `mapstructure:"poll_interval_seconds"`   // Polling interval in seconds
+	PostMigrationMode    string `mapstructure:"post_migration_mode"`     // never, production_only, dry_run_only, always
+	DestRepoExistsAction string `mapstructure:"dest_repo_exists_action"` // fail, skip, delete
 }
 
 // GitHubConfig is deprecated but kept for backward compatibility
@@ -98,6 +107,10 @@ func setDefaults() {
 	viper.SetDefault("source.base_url", "https://api.github.com")
 	viper.SetDefault("destination.type", "github")
 	viper.SetDefault("destination.base_url", "https://api.github.com")
+	viper.SetDefault("migration.workers", 5)
+	viper.SetDefault("migration.poll_interval_seconds", 30)
+	viper.SetDefault("migration.post_migration_mode", "production_only")
+	viper.SetDefault("migration.dest_repo_exists_action", "fail")
 	viper.SetDefault("logging.level", "info")
 	viper.SetDefault("logging.format", "json")
 	viper.SetDefault("logging.output_file", "./logs/migrator.log")

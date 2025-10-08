@@ -99,6 +99,11 @@ func (c *Client) REST() *github.Client {
 	return c.rest
 }
 
+// BaseURL returns the base URL of the GitHub instance
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
 // GraphQL returns the underlying GitHub GraphQL client
 func (c *Client) GraphQL() *githubv4.Client {
 	return c.graphql

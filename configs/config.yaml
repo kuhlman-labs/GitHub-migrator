@@ -14,10 +14,22 @@ source:
 
 # Destination repository system (where to migrate TO)
 # Supported types: github, gitlab
+# Note: Destination organization is determined per-repository, defaulting to source org
 destination:
   type: github
   base_url: "https://api.github.com"  # GitHub Enterprise Cloud or GitHub.com
   token: "${GITHUB_DEST_TOKEN}"
+
+# Migration worker configuration
+migration:
+  # Number of parallel migration workers (default: 5)
+  workers: 5
+  # Polling interval in seconds (default: 30)
+  poll_interval_seconds: 30
+  # When to run post-migration validation: never, production_only, dry_run_only, always (default: production_only)
+  post_migration_mode: "production_only"
+  # What to do if destination repo exists: fail, skip, delete (default: fail)
+  dest_repo_exists_action: "fail"
 
 logging:
   level: info

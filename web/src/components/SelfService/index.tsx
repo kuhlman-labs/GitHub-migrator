@@ -3,6 +3,8 @@ import { api } from '../../services/api';
 
 export function SelfServiceMigration() {
   const [repoNames, setRepoNames] = useState('');
+  const [useCustomDestination, setUseCustomDestination] = useState(false);
+  const [destinationMappings, setDestinationMappings] = useState('');
   const [dryRun, setDryRun] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
@@ -33,6 +35,25 @@ export function SelfServiceMigration() {
       return;
     }
 
+    // Parse destination mappings if provided
+    const destinationMap = new Map<string, string>();
+    if (useCustomDestination && destinationMappings.trim()) {
+      const mappings = destinationMappings
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+
+      for (const mapping of mappings) {
+        const parts = mapping.split('->').map(p => p.trim());
+        if (parts.length === 2 && parts[0].includes('/') && parts[1].includes('/')) {
+          destinationMap.set(parts[0], parts[1]);
+        } else {
+          alert(`Invalid mapping format: "${mapping}"\nExpected: source-org/repo -> dest-org/repo`);
+          return;
+        }
+      }
+    }
+
     if (!confirm(`Start ${dryRun ? 'dry run' : 'migration'} for ${names.length} repositories?`)) {
       return;
     }
@@ -41,6 +62,22 @@ export function SelfServiceMigration() {
     setResult(null);
 
     try {
+      // First, update destination_full_name for repositories with custom destinations
+      if (destinationMap.size > 0) {
+        for (const [sourceName, destName] of destinationMap.entries()) {
+          if (names.includes(sourceName)) {
+            try {
+              await api.updateRepository(sourceName, {
+                destination_full_name: destName,
+              });
+            } catch (error) {
+              console.error(`Failed to update destination for ${sourceName}:`, error);
+            }
+          }
+        }
+      }
+
+      // Then start the migration
       const response = await api.startMigration({
         full_names: names,
         dry_run: dryRun,
@@ -53,6 +90,7 @@ export function SelfServiceMigration() {
         count: response.count || names.length,
       });
       setRepoNames(''); // Clear input on success
+      setDestinationMappings('');
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
       setResult({ 
@@ -91,6 +129,45 @@ export function SelfServiceMigration() {
               Example: myorg/my-repo or myorg/repo1, myorg/repo2
             </p>
           </div>
+
+          {/* Custom Destination Toggle */}
+          <div className="mb-6">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={useCustomDestination}
+                onChange={(e) => setUseCustomDestination(e.target.checked)}
+                disabled={loading}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-700">
+                Use custom destination organizations (default: migrates to same org name)
+              </span>
+            </label>
+          </div>
+
+          {/* Destination Mappings */}
+          {useCustomDestination && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Destination Mappings
+              </label>
+              <textarea
+                value={destinationMappings}
+                onChange={(e) => setDestinationMappings(e.target.value)}
+                placeholder="source-org/repo1 -> dest-org/repo1&#10;source-org/repo2 -> other-org/repo2"
+                rows={6}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                disabled={loading}
+              />
+              <p className="mt-2 text-sm text-gray-500">
+                Format: <code className="bg-gray-100 px-1 rounded">source-org/repo -&gt; dest-org/repo</code> (one per line)
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Repositories not listed here will migrate to the same organization name as the source.
+              </p>
+            </div>
+          )}
 
           {/* Dry Run Checkbox */}
           <div className="mb-6">
@@ -172,6 +249,8 @@ export function SelfServiceMigration() {
           <ul className="space-y-2 text-sm text-gray-600">
             <li>• Repository names must be in "organization/repository" format</li>
             <li>• Separate multiple repositories with new lines or commas</li>
+            <li>• <strong>Default behavior:</strong> Repositories migrate to the same organization name (e.g., <code className="bg-gray-100 px-1 rounded">acme-corp/api</code> → <code className="bg-gray-100 px-1 rounded">acme-corp/api</code> on destination)</li>
+            <li>• <strong>Custom destinations:</strong> Check the box above to specify different destination organizations for specific repositories</li>
             <li>• Use "Dry Run" to test the migration without making any changes</li>
             <li>• You can monitor progress on the Dashboard after submission</li>
           </ul>

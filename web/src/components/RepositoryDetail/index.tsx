@@ -19,6 +19,11 @@ export function RepositoryDetail() {
   const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'logs'>('overview');
   
+  // Destination configuration
+  const [editingDestination, setEditingDestination] = useState(false);
+  const [destinationFullName, setDestinationFullName] = useState<string>('');
+  const [savingDestination, setSavingDestination] = useState(false);
+  
   // Log filters
   const [logLevel, setLogLevel] = useState<string>('');
   const [logPhase, setLogPhase] = useState<string>('');
@@ -39,6 +44,9 @@ export function RepositoryDetail() {
       const response = await api.getRepository(decodeURIComponent(fullName));
       setRepository(response.repository);
       setHistory(response.history || []);
+      
+      // Set destination full name (defaults to source full name if not set)
+      setDestinationFullName(response.repository.destination_full_name || response.repository.full_name);
       
       // Load logs if tab is active
       if (activeTab === 'logs') {
@@ -78,8 +86,38 @@ export function RepositoryDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logLevel, logPhase, activeTab]);
 
+  const handleSaveDestination = async () => {
+    if (!repository || !fullName) return;
+
+    // Validate format
+    if (!destinationFullName.includes('/')) {
+      alert('Destination must be in "organization/repository" format');
+      return;
+    }
+
+    setSavingDestination(true);
+    try {
+      await api.updateRepository(decodeURIComponent(fullName), {
+        destination_full_name: destinationFullName,
+      });
+      
+      setEditingDestination(false);
+      await loadRepository();
+    } catch (error) {
+      console.error('Failed to save destination:', error);
+      alert('Failed to save destination. Please try again.');
+    } finally {
+      setSavingDestination(false);
+    }
+  };
+
   const handleStartMigration = async (dryRun: boolean = false) => {
     if (!repository || migrating) return;
+
+    // Save destination first if it was changed
+    if (editingDestination && destinationFullName !== repository.destination_full_name) {
+      await handleSaveDestination();
+    }
 
     setMigrating(true);
     try {
@@ -113,32 +151,91 @@ export function RepositoryDetail() {
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
         <div className="flex justify-between items-start">
-          <div>
+          <div className="flex-1">
             <h1 className="text-3xl font-light text-gray-900 mb-2">
               {repository.full_name}
             </h1>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 mb-4">
               <StatusBadge status={repository.status} />
               {repository.priority === 1 && <Badge color="purple">High Priority</Badge>}
               {repository.batch_id && <Badge color="blue">Batch #{repository.batch_id}</Badge>}
             </div>
+
+            {/* Destination Configuration */}
+            {canMigrate && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Destination (where to migrate)
+                    </label>
+                    {editingDestination ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={destinationFullName}
+                          onChange={(e) => setDestinationFullName(e.target.value)}
+                          placeholder="org/repo"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          disabled={savingDestination}
+                        />
+                        <button
+                          onClick={handleSaveDestination}
+                          disabled={savingDestination}
+                          className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {savingDestination ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingDestination(false);
+                            setDestinationFullName(repository.destination_full_name || repository.full_name);
+                          }}
+                          disabled={savingDestination}
+                          className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-900">
+                          {destinationFullName}
+                        </code>
+                        <button
+                          onClick={() => setEditingDestination(true)}
+                          className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      {destinationFullName === repository.full_name 
+                        ? 'Using same organization as source (default)' 
+                        : 'Using custom destination organization'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Migration Actions */}
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 ml-6">
             {canMigrate && (
               <>
                 <button
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </button>
                 <button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
                 </button>
@@ -148,7 +245,7 @@ export function RepositoryDetail() {
               <button
                 onClick={() => handleStartMigration(false)}
                 disabled={migrating}
-                className="px-4 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
               >
                 Retry Migration
               </button>
