@@ -359,11 +359,10 @@ func (s *Scheduler) IsBatchRunning(batchID int64) bool {
 // canMigrate checks if a repository can be migrated
 func canMigrate(status string) bool {
 	switch models.MigrationStatus(status) {
-	case models.StatusPending,
-		models.StatusDryRunQueued, // Allow re-queuing dry runs
-		models.StatusDryRunFailed, // Allow retrying failed dry runs
-		models.StatusDryRunComplete,
-		models.StatusPreMigration,
+	case models.StatusQueuedForMigration, // Explicitly queued for migration
+		models.StatusDryRunQueued,    // Explicitly queued for dry run
+		models.StatusDryRunFailed,    // Allow retrying failed dry runs
+		models.StatusDryRunComplete,  // Can migrate after successful dry run
 		models.StatusMigrationFailed: // Allow retrying failed migrations
 		return true
 	default:

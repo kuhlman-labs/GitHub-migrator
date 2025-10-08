@@ -134,52 +134,52 @@ func TestCheckRepositoryProblems(t *testing.T) {
 		{
 			name: "No problems",
 			output: &GitSizerOutput{
-				MaxBlobSize:      1024 * 1024,       // 1MB
-				UniqueBlobSize:   100 * 1024 * 1024, // 100MB
-				UniqueTreeSize:   10 * 1024 * 1024,  // 10MB
-				UniqueCommitSize: 1 * 1024 * 1024,   // 1MB
-				MaxHistoryDepth:  1000,
-				MaxTreeEntries:   100,
-				MaxFileCount:     1000,
+				MaxBlobSize:          1024 * 1024,       // 1MB
+				UniqueBlobSize:       100 * 1024 * 1024, // 100MB
+				UniqueTreeSize:       10 * 1024 * 1024,  // 10MB
+				UniqueCommitSize:     1 * 1024 * 1024,   // 1MB
+				MaxHistoryDepth:      1000,
+				MaxTreeEntries:       100,
+				MaxExpandedBlobCount: 1000,
 			},
 			expected: 0,
 		},
 		{
 			name: "Large blob problem",
 			output: &GitSizerOutput{
-				MaxBlobSize:      100 * 1024 * 1024, // 100MB
-				UniqueBlobSize:   100 * 1024 * 1024,
-				UniqueTreeSize:   10 * 1024 * 1024,
-				UniqueCommitSize: 1 * 1024 * 1024,
-				MaxHistoryDepth:  1000,
-				MaxTreeEntries:   100,
-				MaxFileCount:     1000,
+				MaxBlobSize:          100 * 1024 * 1024, // 100MB
+				UniqueBlobSize:       100 * 1024 * 1024,
+				UniqueTreeSize:       10 * 1024 * 1024,
+				UniqueCommitSize:     1 * 1024 * 1024,
+				MaxHistoryDepth:      1000,
+				MaxTreeEntries:       100,
+				MaxExpandedBlobCount: 1000,
 			},
 			expected: 1,
 		},
 		{
 			name: "Large repository problem",
 			output: &GitSizerOutput{
-				MaxBlobSize:      1024 * 1024,
-				UniqueBlobSize:   6 * 1024 * 1024 * 1024, // 6GB
-				UniqueTreeSize:   10 * 1024 * 1024,
-				UniqueCommitSize: 1 * 1024 * 1024,
-				MaxHistoryDepth:  1000,
-				MaxTreeEntries:   100,
-				MaxFileCount:     1000,
+				MaxBlobSize:          1024 * 1024,
+				UniqueBlobSize:       6 * 1024 * 1024 * 1024, // 6GB
+				UniqueTreeSize:       10 * 1024 * 1024,
+				UniqueCommitSize:     1 * 1024 * 1024,
+				MaxHistoryDepth:      1000,
+				MaxTreeEntries:       100,
+				MaxExpandedBlobCount: 1000,
 			},
 			expected: 1,
 		},
 		{
 			name: "Multiple problems",
 			output: &GitSizerOutput{
-				MaxBlobSize:      100 * 1024 * 1024,      // 100MB
-				UniqueBlobSize:   6 * 1024 * 1024 * 1024, // 6GB
-				UniqueTreeSize:   10 * 1024 * 1024,
-				UniqueCommitSize: 1 * 1024 * 1024,
-				MaxHistoryDepth:  150000,
-				MaxTreeEntries:   15000,
-				MaxFileCount:     150000,
+				MaxBlobSize:          100 * 1024 * 1024,      // 100MB
+				UniqueBlobSize:       6 * 1024 * 1024 * 1024, // 6GB
+				UniqueTreeSize:       10 * 1024 * 1024,
+				UniqueCommitSize:     1 * 1024 * 1024,
+				MaxHistoryDepth:      150000,
+				MaxTreeEntries:       15000,
+				MaxExpandedBlobCount: 150000,
 			},
 			expected: 5,
 		},

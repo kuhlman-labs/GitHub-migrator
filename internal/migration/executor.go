@@ -333,7 +333,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	details = fmt.Sprintf("Migration ID: %s", migrationID)
 	e.logOperation(ctx, repo, historyID, "INFO", "migration_start", "initiate", "Migration started successfully", &details)
 
-	repo.Status = string(models.StatusQueuedForMigration)
+	repo.Status = string(models.StatusMigratingContent)
 	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
 		e.logger.Error("Failed to update repository status", "error", err)
 	}

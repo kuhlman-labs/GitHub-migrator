@@ -1091,15 +1091,15 @@ func TestCanMigrate(t *testing.T) {
 		status   string
 		expected bool
 	}{
-		{string(models.StatusPending), true},
-		{string(models.StatusDryRunQueued), true}, // Can re-queue dry runs
-		{string(models.StatusDryRunFailed), true}, // Can retry failed dry runs
-		{string(models.StatusDryRunComplete), true},
-		{string(models.StatusPreMigration), true},
-		{string(models.StatusMigrationFailed), true}, // Can retry failed migrations
-		{string(models.StatusComplete), false},
-		{string(models.StatusMigratingContent), false},
-		{string(models.StatusQueuedForMigration), false},
+		{string(models.StatusPending), true},             // Can queue pending repos
+		{string(models.StatusDryRunQueued), true},        // Can re-queue dry runs
+		{string(models.StatusDryRunFailed), true},        // Can retry failed dry runs
+		{string(models.StatusDryRunComplete), true},      // Can queue after dry run
+		{string(models.StatusPreMigration), false},       // Already in migration process
+		{string(models.StatusMigrationFailed), true},     // Can retry failed migrations
+		{string(models.StatusComplete), false},           // Already complete
+		{string(models.StatusMigratingContent), false},   // Already migrating
+		{string(models.StatusQueuedForMigration), false}, // Already queued
 	}
 
 	for _, tt := range tests {

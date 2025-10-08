@@ -687,11 +687,10 @@ func (h *Handler) sendError(w http.ResponseWriter, status int, message string) {
 
 func canMigrate(status string) bool {
 	allowedStatuses := []string{
-		string(models.StatusPending),
-		string(models.StatusDryRunQueued), // Allow re-queuing dry runs
-		string(models.StatusDryRunFailed), // Allow retrying failed dry runs
-		string(models.StatusDryRunComplete),
-		string(models.StatusPreMigration),
+		string(models.StatusPending),         // Can queue pending repositories for migration
+		string(models.StatusDryRunQueued),    // Allow re-queuing dry runs
+		string(models.StatusDryRunFailed),    // Allow retrying failed dry runs
+		string(models.StatusDryRunComplete),  // Can queue after successful dry run
 		string(models.StatusMigrationFailed), // Allow retrying failed migrations
 	}
 

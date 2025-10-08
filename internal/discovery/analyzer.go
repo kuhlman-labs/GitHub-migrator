@@ -25,82 +25,29 @@ func NewAnalyzer(logger *slog.Logger) *Analyzer {
 	}
 }
 
-// GitSizerMetric represents a single metric from git-sizer with its value
-type GitSizerMetric struct {
-	Value int64 `json:"value"`
-}
-
-// GitSizerRawOutput represents the raw JSON output from git-sizer
-// Each metric is an object with a "value" field
-// Based on: https://github.com/github/git-sizer
-type GitSizerRawOutput struct {
-	UniqueCommitCount   GitSizerMetric `json:"unique_commit_count"`
-	UniqueCommitSize    GitSizerMetric `json:"unique_commit_size"`
-	UniqueTreeCount     GitSizerMetric `json:"unique_tree_count"`
-	UniqueTreeSize      GitSizerMetric `json:"unique_tree_size"`
-	UniqueBlobCount     GitSizerMetric `json:"unique_blob_count"`
-	UniqueBlobSize      GitSizerMetric `json:"unique_blob_size"`
-	UniqueTagCount      GitSizerMetric `json:"unique_tag_count"`
-	MaxCommitSize       GitSizerMetric `json:"max_commit_size"`
-	MaxTreeEntries      GitSizerMetric `json:"max_tree_entries"`
-	MaxBlobSize         GitSizerMetric `json:"max_blob_size"`
-	MaxHistoryDepth     GitSizerMetric `json:"max_history_depth"`
-	MaxTagDepth         GitSizerMetric `json:"max_tag_depth"`
-	MaxPathDepth        GitSizerMetric `json:"max_path_depth"`
-	MaxPathLength       GitSizerMetric `json:"max_path_length"`
-	MaxDirectoryCount   GitSizerMetric `json:"max_directory_count"`
-	MaxFileCount        GitSizerMetric `json:"max_file_count"`
-	MaxExpandedTreeSize GitSizerMetric `json:"max_expanded_tree_size"`
-	MaxSymlinkCount     GitSizerMetric `json:"max_symlink_count"`
-	MaxSubmoduleCount   GitSizerMetric `json:"max_submodule_count"`
-}
-
-// GitSizerOutput represents the flattened git-sizer metrics for easier use
+// GitSizerOutput represents the JSON output from git-sizer
+// Based on actual git-sizer output format: https://github.com/github/git-sizer
+// Values are returned as integers directly in the JSON, not wrapped in objects
 type GitSizerOutput struct {
-	UniqueCommitCount   int64
-	UniqueCommitSize    int64
-	UniqueTreeCount     int64
-	UniqueTreeSize      int64
-	UniqueBlobCount     int64
-	UniqueBlobSize      int64
-	UniqueTagCount      int64
-	MaxCommitSize       int64
-	MaxTreeEntries      int64
-	MaxBlobSize         int64
-	MaxHistoryDepth     int64
-	MaxTagDepth         int64
-	MaxPathDepth        int64
-	MaxPathLength       int64
-	MaxDirectoryCount   int64
-	MaxFileCount        int64
-	MaxExpandedTreeSize int64
-	MaxSymlinkCount     int64
-	MaxSubmoduleCount   int64
-}
-
-// toFlat converts GitSizerRawOutput to GitSizerOutput by extracting values
-func (r *GitSizerRawOutput) toFlat() *GitSizerOutput {
-	return &GitSizerOutput{
-		UniqueCommitCount:   r.UniqueCommitCount.Value,
-		UniqueCommitSize:    r.UniqueCommitSize.Value,
-		UniqueTreeCount:     r.UniqueTreeCount.Value,
-		UniqueTreeSize:      r.UniqueTreeSize.Value,
-		UniqueBlobCount:     r.UniqueBlobCount.Value,
-		UniqueBlobSize:      r.UniqueBlobSize.Value,
-		UniqueTagCount:      r.UniqueTagCount.Value,
-		MaxCommitSize:       r.MaxCommitSize.Value,
-		MaxTreeEntries:      r.MaxTreeEntries.Value,
-		MaxBlobSize:         r.MaxBlobSize.Value,
-		MaxHistoryDepth:     r.MaxHistoryDepth.Value,
-		MaxTagDepth:         r.MaxTagDepth.Value,
-		MaxPathDepth:        r.MaxPathDepth.Value,
-		MaxPathLength:       r.MaxPathLength.Value,
-		MaxDirectoryCount:   r.MaxDirectoryCount.Value,
-		MaxFileCount:        r.MaxFileCount.Value,
-		MaxExpandedTreeSize: r.MaxExpandedTreeSize.Value,
-		MaxSymlinkCount:     r.MaxSymlinkCount.Value,
-		MaxSubmoduleCount:   r.MaxSubmoduleCount.Value,
-	}
+	UniqueCommitCount         int64 `json:"unique_commit_count"`
+	UniqueCommitSize          int64 `json:"unique_commit_size"`
+	UniqueTreeCount           int64 `json:"unique_tree_count"`
+	UniqueTreeSize            int64 `json:"unique_tree_size"`
+	UniqueBlobCount           int64 `json:"unique_blob_count"`
+	UniqueBlobSize            int64 `json:"unique_blob_size"`
+	UniqueTagCount            int64 `json:"unique_tag_count"`
+	MaxCommitSize             int64 `json:"max_commit_size"`
+	MaxTreeEntries            int64 `json:"max_tree_entries"`
+	MaxBlobSize               int64 `json:"max_blob_size"`
+	MaxHistoryDepth           int64 `json:"max_history_depth"`
+	MaxTagDepth               int64 `json:"max_tag_depth"`
+	MaxPathDepth              int64 `json:"max_path_depth"`
+	MaxPathLength             int64 `json:"max_path_length"`
+	MaxExpandedTreeCount      int64 `json:"max_expanded_tree_count"`
+	MaxExpandedBlobCount      int64 `json:"max_expanded_blob_count"`
+	MaxExpandedBlobSize       int64 `json:"max_expanded_blob_size"`
+	MaxExpandedLinkCount      int64 `json:"max_expanded_link_count"`
+	MaxExpandedSubmoduleCount int64 `json:"max_expanded_submodule_count"`
 }
 
 // AnalyzeGitProperties analyzes Git repository using git-sizer and additional detection methods
@@ -158,16 +105,13 @@ func (a *Analyzer) runGitSizer(ctx context.Context, repoPath string) (*GitSizerO
 		return nil, fmt.Errorf("git-sizer execution failed: %w (stderr: %s)", err, stderr.String())
 	}
 
-	// Parse JSON output (nested structure with value fields)
-	var rawOutput GitSizerRawOutput
-	if err := json.Unmarshal(stdout.Bytes(), &rawOutput); err != nil {
+	// Parse JSON output directly
+	var output GitSizerOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		return nil, fmt.Errorf("failed to parse git-sizer output: %w", err)
 	}
 
-	// Convert to flat structure for easier use
-	output := rawOutput.toFlat()
-
-	return output, nil
+	return &output, nil
 }
 
 // detectLFS checks for Git LFS usage using two methods:
@@ -287,9 +231,9 @@ func (a *Analyzer) CheckRepositoryProblems(output *GitSizerOutput) []string {
 	}
 
 	// Extremely large checkouts (>100k files)
-	if output.MaxFileCount > 100000 {
+	if output.MaxExpandedBlobCount > 100000 {
 		problems = append(problems,
-			fmt.Sprintf("Very large checkout: %d files", output.MaxFileCount))
+			fmt.Sprintf("Very large checkout: %d files", output.MaxExpandedBlobCount))
 	}
 
 	return problems

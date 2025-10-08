@@ -223,13 +223,13 @@ func TestExecuteBatch(t *testing.T) {
 		t.Fatalf("Failed to create batch: %v", err)
 	}
 
-	// Create test repositories
+	// Create test repositories (queued for migration)
 	size1 := int64(100000 * 1024) // Convert KB to bytes
 	size2 := int64(200000 * 1024)
 	repo1 := &models.Repository{
 		FullName:     "org/repo1",
 		TotalSize:    &size1,
-		Status:       string(models.StatusPending),
+		Status:       string(models.StatusQueuedForMigration),
 		Source:       "github",
 		DiscoveredAt: time.Now(),
 		UpdatedAt:    time.Now(),
@@ -238,7 +238,7 @@ func TestExecuteBatch(t *testing.T) {
 	repo2 := &models.Repository{
 		FullName:     "org/repo2",
 		TotalSize:    &size2,
-		Status:       string(models.StatusPending),
+		Status:       string(models.StatusQueuedForMigration),
 		Source:       "github",
 		DiscoveredAt: time.Now(),
 		UpdatedAt:    time.Now(),
@@ -301,7 +301,7 @@ func TestExecuteBatch(t *testing.T) {
 		repo := &models.Repository{
 			FullName:     "org/repo3",
 			TotalSize:    &size,
-			Status:       string(models.StatusPending),
+			Status:       string(models.StatusQueuedForMigration),
 			Source:       "github",
 			DiscoveredAt: time.Now(),
 			UpdatedAt:    time.Now(),
@@ -353,7 +353,7 @@ func TestCancelBatch(t *testing.T) {
 	repo := &models.Repository{
 		FullName:     "org/repo",
 		TotalSize:    &size,
-		Status:       string(models.StatusPending),
+		Status:       string(models.StatusQueuedForMigration),
 		Source:       "github",
 		DiscoveredAt: time.Now(),
 		UpdatedAt:    time.Now(),
@@ -448,7 +448,7 @@ func TestGetRunningBatches(t *testing.T) {
 	repo1 := &models.Repository{
 		FullName:     "org/repo1",
 		TotalSize:    &size,
-		Status:       string(models.StatusPending),
+		Status:       string(models.StatusQueuedForMigration),
 		Source:       "github",
 		DiscoveredAt: time.Now(),
 		UpdatedAt:    time.Now(),
@@ -458,7 +458,7 @@ func TestGetRunningBatches(t *testing.T) {
 	repo2 := &models.Repository{
 		FullName:     "org/repo2",
 		TotalSize:    &size2,
-		Status:       string(models.StatusPending),
+		Status:       string(models.StatusQueuedForMigration),
 		Source:       "github",
 		DiscoveredAt: time.Now(),
 		UpdatedAt:    time.Now(),
@@ -536,7 +536,7 @@ func TestIsBatchRunning(t *testing.T) {
 	repo := &models.Repository{
 		FullName:     "org/repo",
 		TotalSize:    &size,
-		Status:       string(models.StatusPending),
+		Status:       string(models.StatusQueuedForMigration),
 		Source:       "github",
 		DiscoveredAt: time.Now(),
 		UpdatedAt:    time.Now(),
@@ -579,15 +579,16 @@ func TestCanMigrate(t *testing.T) {
 		status   string
 		expected bool
 	}{
-		{string(models.StatusPending), true},
-		{string(models.StatusDryRunQueued), true}, // Can re-queue dry runs
-		{string(models.StatusDryRunFailed), true}, // Can retry failed dry runs
-		{string(models.StatusDryRunComplete), true},
-		{string(models.StatusPreMigration), true},
-		{string(models.StatusMigrationFailed), true}, // Can retry failed migrations
-		{string(models.StatusComplete), false},
-		{string(models.StatusMigratingContent), false},
-		{string(models.StatusQueuedForMigration), false},
+		{string(models.StatusPending), false},           // Must be queued first
+		{string(models.StatusQueuedForMigration), true}, // Explicitly queued
+		{string(models.StatusDryRunQueued), true},       // Explicitly queued for dry run
+		{string(models.StatusDryRunFailed), true},       // Can retry failed dry runs
+		{string(models.StatusDryRunComplete), true},     // Can migrate after dry run
+		{string(models.StatusPreMigration), false},      // Intermediate status during migration
+		{string(models.StatusMigrationFailed), true},    // Can retry failed migrations
+		{string(models.StatusComplete), false},          // Already complete
+		{string(models.StatusMigratingContent), false},  // Already migrating
+		{string(models.StatusArchiveGenerating), false}, // Already in progress
 	}
 
 	for _, tt := range tests {
