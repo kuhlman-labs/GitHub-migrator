@@ -171,8 +171,23 @@ func TestCheckRepositoryProblems(t *testing.T) {
 			expected: 1,
 		},
 		{
+			name: "Large commit problem",
+			output: &GitSizerOutput{
+				MaxCommitSize:        150 * 1024 * 1024, // 150MB - exceeds GitHub limit
+				MaxBlobSize:          1024 * 1024,
+				UniqueBlobSize:       100 * 1024 * 1024,
+				UniqueTreeSize:       10 * 1024 * 1024,
+				UniqueCommitSize:     1 * 1024 * 1024,
+				MaxHistoryDepth:      1000,
+				MaxTreeEntries:       100,
+				MaxExpandedBlobCount: 1000,
+			},
+			expected: 1,
+		},
+		{
 			name: "Multiple problems",
 			output: &GitSizerOutput{
+				MaxCommitSize:        150 * 1024 * 1024,      // 150MB - exceeds limit
 				MaxBlobSize:          100 * 1024 * 1024,      // 100MB
 				UniqueBlobSize:       6 * 1024 * 1024 * 1024, // 6GB
 				UniqueTreeSize:       10 * 1024 * 1024,
@@ -181,7 +196,7 @@ func TestCheckRepositoryProblems(t *testing.T) {
 				MaxTreeEntries:       15000,
 				MaxExpandedBlobCount: 150000,
 			},
-			expected: 5,
+			expected: 6,
 		},
 	}
 
@@ -258,5 +273,77 @@ func TestAnalyzeGitProperties_Integration(t *testing.T) {
 	}
 	if repo.BranchCount < 0 {
 		t.Error("Expected non-negative branch count")
+	}
+}
+
+func TestExtractCommitSHA(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Full SHA only",
+			input:    "f7a25d8bede5b581accd6abe89cad8cc1c4b6d8d",
+			expected: "f7a25d8bede5b581accd6abe89cad8cc1c4b6d8d",
+		},
+		{
+			name:     "SHA with branch info",
+			input:    "f7a25d8bede5b581accd6abe89cad8cc1c4b6d8d (refs/heads/main)",
+			expected: "f7a25d8bede5b581accd6abe89cad8cc1c4b6d8d",
+		},
+		{
+			name:     "Short SHA",
+			input:    "f7a25d8",
+			expected: "f7a25d8",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := analyzer.extractCommitSHA(tt.input)
+			if result != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestExtractFilenameFromBlobInfo(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Standard format",
+			input:    "319b802f686f9d80d4d2e7e62d1ccea8eea87766 (9ae8b638196a3ff9ec70b1b556db104c42e3365c:IMPLEMENTATION_GUIDE.md)",
+			expected: "IMPLEMENTATION_GUIDE.md",
+		},
+		{
+			name:     "With path",
+			input:    "abc123 (def456:docs/README.md)",
+			expected: "docs/README.md",
+		},
+		{
+			name:     "No filename",
+			input:    "abc123",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := analyzer.extractFilenameFromBlobInfo(tt.input)
+			if result != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, result)
+			}
+		})
 	}
 }

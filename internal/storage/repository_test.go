@@ -153,6 +153,17 @@ func TestListRepositories(t *testing.T) {
 			DiscoveredAt:  time.Now(),
 			UpdatedAt:     time.Now(),
 		},
+		{
+			FullName:      "org/repo3",
+			Source:        "ghes",
+			SourceURL:     "https://github.com/org/repo3",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusQueuedForMigration),
+			HasLFS:        false,
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		},
 	}
 
 	for _, repo := range repos {
@@ -169,12 +180,17 @@ func TestListRepositories(t *testing.T) {
 		{
 			name:     "No filters",
 			filters:  nil,
-			expected: 2,
+			expected: 3,
 		},
 		{
 			name:     "Filter by status",
 			filters:  map[string]interface{}{"status": string(models.StatusPending)},
 			expected: 1,
+		},
+		{
+			name:     "Filter by multiple statuses",
+			filters:  map[string]interface{}{"status": []string{string(models.StatusPending), string(models.StatusComplete)}},
+			expected: 2,
 		},
 		{
 			name:     "Filter by LFS",
@@ -184,7 +200,7 @@ func TestListRepositories(t *testing.T) {
 		{
 			name:     "Filter by source",
 			filters:  map[string]interface{}{"source": "ghes"},
-			expected: 2,
+			expected: 3,
 		},
 		{
 			name:     "Filter with limit",
@@ -385,6 +401,11 @@ func TestCountRepositories(t *testing.T) {
 			name:     "Count complete",
 			filters:  map[string]interface{}{"status": string(models.StatusComplete)},
 			expected: 2,
+		},
+		{
+			name:     "Count multiple statuses",
+			filters:  map[string]interface{}{"status": []string{string(models.StatusPending), string(models.StatusComplete)}},
+			expected: 5,
 		},
 	}
 

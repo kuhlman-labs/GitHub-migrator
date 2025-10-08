@@ -125,9 +125,24 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 	args := []interface{}{}
 
 	// Apply filters dynamically
-	if status, ok := filters["status"].(string); ok && status != "" {
-		query += " AND status = ?"
-		args = append(args, status)
+	// Handle status as either string or slice of strings
+	if statusValue, ok := filters["status"]; ok {
+		switch status := statusValue.(type) {
+		case string:
+			if status != "" {
+				query += " AND status = ?"
+				args = append(args, status)
+			}
+		case []string:
+			if len(status) > 0 {
+				placeholders := make([]string, len(status))
+				for i, s := range status {
+					placeholders[i] = "?"
+					args = append(args, s)
+				}
+				query += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
+			}
+		}
 	}
 
 	if batchID, ok := filters["batch_id"].(int64); ok && batchID > 0 {
@@ -263,9 +278,24 @@ func (d *Database) CountRepositories(ctx context.Context, filters map[string]int
 	query := "SELECT COUNT(*) FROM repositories WHERE 1=1"
 	args := []interface{}{}
 
-	if status, ok := filters["status"].(string); ok && status != "" {
-		query += " AND status = ?"
-		args = append(args, status)
+	// Handle status as either string or slice of strings
+	if statusValue, ok := filters["status"]; ok {
+		switch status := statusValue.(type) {
+		case string:
+			if status != "" {
+				query += " AND status = ?"
+				args = append(args, status)
+			}
+		case []string:
+			if len(status) > 0 {
+				placeholders := make([]string, len(status))
+				for i, s := range status {
+					placeholders[i] = "?"
+					args = append(args, s)
+				}
+				query += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
+			}
+		}
 	}
 
 	if batchID, ok := filters["batch_id"].(int64); ok && batchID > 0 {

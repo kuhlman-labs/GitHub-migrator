@@ -29,25 +29,27 @@ func NewAnalyzer(logger *slog.Logger) *Analyzer {
 // Based on actual git-sizer output format: https://github.com/github/git-sizer
 // Values are returned as integers directly in the JSON, not wrapped in objects
 type GitSizerOutput struct {
-	UniqueCommitCount         int64 `json:"unique_commit_count"`
-	UniqueCommitSize          int64 `json:"unique_commit_size"`
-	UniqueTreeCount           int64 `json:"unique_tree_count"`
-	UniqueTreeSize            int64 `json:"unique_tree_size"`
-	UniqueBlobCount           int64 `json:"unique_blob_count"`
-	UniqueBlobSize            int64 `json:"unique_blob_size"`
-	UniqueTagCount            int64 `json:"unique_tag_count"`
-	MaxCommitSize             int64 `json:"max_commit_size"`
-	MaxTreeEntries            int64 `json:"max_tree_entries"`
-	MaxBlobSize               int64 `json:"max_blob_size"`
-	MaxHistoryDepth           int64 `json:"max_history_depth"`
-	MaxTagDepth               int64 `json:"max_tag_depth"`
-	MaxPathDepth              int64 `json:"max_path_depth"`
-	MaxPathLength             int64 `json:"max_path_length"`
-	MaxExpandedTreeCount      int64 `json:"max_expanded_tree_count"`
-	MaxExpandedBlobCount      int64 `json:"max_expanded_blob_count"`
-	MaxExpandedBlobSize       int64 `json:"max_expanded_blob_size"`
-	MaxExpandedLinkCount      int64 `json:"max_expanded_link_count"`
-	MaxExpandedSubmoduleCount int64 `json:"max_expanded_submodule_count"`
+	UniqueCommitCount         int64  `json:"unique_commit_count"`
+	UniqueCommitSize          int64  `json:"unique_commit_size"`
+	UniqueTreeCount           int64  `json:"unique_tree_count"`
+	UniqueTreeSize            int64  `json:"unique_tree_size"`
+	UniqueBlobCount           int64  `json:"unique_blob_count"`
+	UniqueBlobSize            int64  `json:"unique_blob_size"`
+	UniqueTagCount            int64  `json:"unique_tag_count"`
+	MaxCommitSize             int64  `json:"max_commit_size"`
+	MaxCommit                 string `json:"max_commit"` // SHA of largest commit
+	MaxTreeEntries            int64  `json:"max_tree_entries"`
+	MaxBlobSize               int64  `json:"max_blob_size"`
+	MaxBlobSizeBlob           string `json:"max_blob_size_blob"` // Blob info for largest file
+	MaxHistoryDepth           int64  `json:"max_history_depth"`
+	MaxTagDepth               int64  `json:"max_tag_depth"`
+	MaxPathDepth              int64  `json:"max_path_depth"`
+	MaxPathLength             int64  `json:"max_path_length"`
+	MaxExpandedTreeCount      int64  `json:"max_expanded_tree_count"`
+	MaxExpandedBlobCount      int64  `json:"max_expanded_blob_count"`
+	MaxExpandedBlobSize       int64  `json:"max_expanded_blob_size"`
+	MaxExpandedLinkCount      int64  `json:"max_expanded_link_count"`
+	MaxExpandedSubmoduleCount int64  `json:"max_expanded_submodule_count"`
 }
 
 // AnalyzeGitProperties analyzes Git repository using git-sizer and additional detection methods
@@ -56,19 +58,50 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 		"repo", repo.FullName,
 		"path", repoPath)
 
+	// Get actual disk size using du command
+	diskSize, err := a.getDiskSize(ctx, repoPath)
+	if err != nil {
+		a.logger.Warn("Failed to get disk size, will use git-sizer estimate",
+			"repo", repo.FullName,
+			"error", err)
+		// Fall back to git-sizer estimate if du fails
+		diskSize = 0
+	}
+
 	// Run git-sizer with JSON output
 	output, err := a.runGitSizer(ctx, repoPath)
 	if err != nil {
 		return fmt.Errorf("git-sizer failed: %w", err)
 	}
 
-	// Map git-sizer output to repository model
-	totalSize := output.UniqueBlobSize + output.UniqueTreeSize + output.UniqueCommitSize
-	repo.TotalSize = &totalSize
+	// Use disk size if available, otherwise use git-sizer calculation
+	if diskSize > 0 {
+		repo.TotalSize = &diskSize
+	} else {
+		totalSize := output.UniqueBlobSize + output.UniqueTreeSize + output.UniqueCommitSize
+		repo.TotalSize = &totalSize
+	}
+
+	// Store largest file info
 	largestFileSize := output.MaxBlobSize
 	repo.LargestFileSize = &largestFileSize
+	if output.MaxBlobSizeBlob != "" {
+		// Extract filename from blob info (format: "hash (commit:path)")
+		filename := a.extractFilenameFromBlobInfo(output.MaxBlobSizeBlob)
+		if filename != "" {
+			repo.LargestFile = &filename
+		}
+	}
+
+	// Store largest commit info
 	largestCommitSize := output.MaxCommitSize
 	repo.LargestCommitSize = &largestCommitSize
+	if output.MaxCommit != "" {
+		// Store just the commit SHA (may have branch info appended)
+		commitSHA := a.extractCommitSHA(output.MaxCommit)
+		repo.LargestCommit = &commitSHA
+	}
+
 	repo.CommitCount = int(output.UniqueCommitCount)
 
 	// Detect LFS using .gitattributes and git lfs ls-files
@@ -83,7 +116,10 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 	a.logger.Info("Git analysis complete",
 		"repo", repo.FullName,
 		"total_size", repo.TotalSize,
-		"largest_file", repo.LargestFileSize,
+		"largest_file", repo.LargestFile,
+		"largest_file_size", repo.LargestFileSize,
+		"largest_commit", repo.LargestCommit,
+		"largest_commit_size", repo.LargestCommitSize,
 		"commits", repo.CommitCount,
 		"has_lfs", repo.HasLFS,
 		"has_submodules", repo.HasSubmodules,
@@ -198,12 +234,72 @@ func (a *Analyzer) getBranchCount(ctx context.Context, repoPath string) int {
 	return count
 }
 
+// getDiskSize returns the actual disk size of the repository using du command
+func (a *Analyzer) getDiskSize(ctx context.Context, repoPath string) (int64, error) {
+	// Use du -sb for size in bytes
+	cmd := exec.CommandContext(ctx, "du", "-sb", repoPath)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("du command failed: %w", err)
+	}
+
+	// Parse output: "size<tab>path"
+	parts := bytes.Fields(output)
+	if len(parts) < 1 {
+		return 0, fmt.Errorf("unexpected du output format")
+	}
+
+	// Parse size
+	sizeStr := string(parts[0])
+	size := int64(0)
+	if _, err := fmt.Sscanf(sizeStr, "%d", &size); err != nil {
+		return 0, fmt.Errorf("failed to parse size: %w", err)
+	}
+
+	return size, nil
+}
+
+// extractCommitSHA extracts the commit SHA from git-sizer output
+// Format can be: "f7a25d8bede5b581accd6abe89cad8cc1c4b6d8d" or "f7a25d8... (refs/heads/main)"
+func (a *Analyzer) extractCommitSHA(commitInfo string) string {
+	// Take first 40 characters (full SHA) or until first space
+	if idx := strings.Index(commitInfo, " "); idx > 0 {
+		return commitInfo[:idx]
+	}
+	// Limit to 40 chars for full SHA
+	if len(commitInfo) > 40 {
+		return commitInfo[:40]
+	}
+	return commitInfo
+}
+
+// extractFilenameFromBlobInfo extracts the filename from git-sizer blob info
+// Format: "319b802f686f9d80d4d2e7e62d1ccea8eea87766 (9ae8b638196a3ff9ec70b1b556db104c42e3365c:IMPLEMENTATION_GUIDE.md)"
+func (a *Analyzer) extractFilenameFromBlobInfo(blobInfo string) string {
+	// Find the filename after the colon
+	if idx := strings.LastIndex(blobInfo, ":"); idx > 0 {
+		// Extract between : and )
+		filename := blobInfo[idx+1:]
+		if endIdx := strings.Index(filename, ")"); endIdx > 0 {
+			return filename[:endIdx]
+		}
+		return filename
+	}
+	return ""
+}
+
 // CheckRepositoryProblems identifies potential migration issues using git-sizer output
 func (a *Analyzer) CheckRepositoryProblems(output *GitSizerOutput) []string {
 	var problems []string
 
 	// Based on git-sizer's "level of concern" thresholds
 	// Reference: https://github.com/github/git-sizer
+
+	// Very large commits (>100MB) - GitHub has a 100MB limit
+	if output.MaxCommitSize > 100*1024*1024 {
+		problems = append(problems,
+			fmt.Sprintf("Commit exceeds GitHub limit: %d MB (limit: 100 MB)", output.MaxCommitSize/(1024*1024)))
+	}
 
 	// Very large blobs (>50MB)
 	if output.MaxBlobSize > 50*1024*1024 {
