@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/v75/github"
@@ -30,6 +31,60 @@ type ClientConfig struct {
 	Timeout     time.Duration
 	RetryConfig RetryConfig
 	Logger      *slog.Logger
+}
+
+// InstanceType represents the type of GitHub instance
+type InstanceType int
+
+const (
+	// InstanceTypeGitHub is standard GitHub.com
+	InstanceTypeGitHub InstanceType = iota
+	// InstanceTypeGHEC is GitHub Enterprise Cloud with data residency
+	InstanceTypeGHEC
+	// InstanceTypeGHES is GitHub Enterprise Server (self-hosted)
+	InstanceTypeGHES
+)
+
+// detectInstanceType determines the type of GitHub instance from the base URL
+func detectInstanceType(baseURL string) InstanceType {
+	if baseURL == "" || baseURL == "https://api.github.com" {
+		return InstanceTypeGitHub
+	}
+
+	// GitHub Enterprise Cloud with data residency uses .ghe.com domains
+	// e.g., https://octocorp.ghe.com or https://api.octocorp.ghe.com
+	if strings.Contains(baseURL, ".ghe.com") {
+		return InstanceTypeGHEC
+	}
+
+	// Everything else is assumed to be GitHub Enterprise Server
+	return InstanceTypeGHES
+}
+
+// buildGraphQLURL builds the correct GraphQL endpoint URL based on instance type
+func buildGraphQLURL(baseURL string) string {
+	instanceType := detectInstanceType(baseURL)
+
+	switch instanceType {
+	case InstanceTypeGitHub:
+		return "https://api.github.com/graphql"
+
+	case InstanceTypeGHEC:
+		// For GHE Cloud with data residency, convert domain to API endpoint
+		// e.g., octocorp.ghe.com -> https://api.octocorp.ghe.com/graphql
+		domain := strings.TrimPrefix(baseURL, "https://")
+		domain = strings.TrimPrefix(domain, "http://")
+		domain = strings.TrimPrefix(domain, "api.")
+		domain = strings.TrimSuffix(domain, "/")
+		return fmt.Sprintf("https://api.%s/graphql", domain)
+
+	case InstanceTypeGHES:
+		// For GitHub Enterprise Server, use /api/graphql path
+		return strings.TrimSuffix(baseURL, "/") + "/api/graphql"
+
+	default:
+		return strings.TrimSuffix(baseURL, "/") + "/api/graphql"
+	}
 }
 
 // NewClient creates a new GitHub client with rate limiting and retry logic
@@ -62,13 +117,19 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		}
 	}
 
-	// Create GraphQL client
+	// Create GraphQL client with the correct endpoint based on instance type
+	graphqlURL := buildGraphQLURL(cfg.BaseURL)
 	var graphqlClient *githubv4.Client
 	if cfg.BaseURL == "" || cfg.BaseURL == "https://api.github.com" {
 		graphqlClient = githubv4.NewClient(httpClient)
 	} else {
-		graphqlClient = githubv4.NewEnterpriseClient(cfg.BaseURL+"/api/graphql", httpClient)
+		graphqlClient = githubv4.NewEnterpriseClient(graphqlURL, httpClient)
 	}
+
+	cfg.Logger.Debug("GraphQL client configured",
+		"base_url", cfg.BaseURL,
+		"graphql_url", graphqlURL,
+		"instance_type", detectInstanceType(cfg.BaseURL))
 
 	// Initialize rate limiter and retry logic
 	rateLimiter := NewRateLimiter(cfg.Logger)

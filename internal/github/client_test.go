@@ -458,3 +458,164 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+func TestDetectInstanceType(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		expected InstanceType
+	}{
+		{
+			name:     "GitHub.com - empty URL",
+			baseURL:  "",
+			expected: InstanceTypeGitHub,
+		},
+		{
+			name:     "GitHub.com - standard API URL",
+			baseURL:  "https://api.github.com",
+			expected: InstanceTypeGitHub,
+		},
+		{
+			name:     "GHEC - data residency with .ghe.com",
+			baseURL:  "https://octocorp.ghe.com",
+			expected: InstanceTypeGHEC,
+		},
+		{
+			name:     "GHEC - data residency with api subdomain",
+			baseURL:  "https://api.octocorp.ghe.com",
+			expected: InstanceTypeGHEC,
+		},
+		{
+			name:     "GHES - self-hosted instance",
+			baseURL:  "https://github.company.com/api/v3",
+			expected: InstanceTypeGHES,
+		},
+		{
+			name:     "GHES - self-hosted with subdomain",
+			baseURL:  "https://api.github.company.com",
+			expected: InstanceTypeGHES,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detectInstanceType(tt.baseURL)
+			if result != tt.expected {
+				t.Errorf("detectInstanceType(%q) = %v, want %v", tt.baseURL, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBuildGraphQLURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		expected string
+	}{
+		{
+			name:     "GitHub.com - empty URL",
+			baseURL:  "",
+			expected: "https://api.github.com/graphql",
+		},
+		{
+			name:     "GitHub.com - standard API URL",
+			baseURL:  "https://api.github.com",
+			expected: "https://api.github.com/graphql",
+		},
+		{
+			name:     "GHEC - data residency domain",
+			baseURL:  "https://octocorp.ghe.com",
+			expected: "https://api.octocorp.ghe.com/graphql",
+		},
+		{
+			name:     "GHEC - data residency with api subdomain",
+			baseURL:  "https://api.octocorp.ghe.com",
+			expected: "https://api.octocorp.ghe.com/graphql",
+		},
+		{
+			name:     "GHEC - data residency without https",
+			baseURL:  "octocorp.ghe.com",
+			expected: "https://api.octocorp.ghe.com/graphql",
+		},
+		{
+			name:     "GHES - self-hosted instance",
+			baseURL:  "https://github.company.com/api/v3",
+			expected: "https://github.company.com/api/v3/api/graphql",
+		},
+		{
+			name:     "GHES - self-hosted with trailing slash",
+			baseURL:  "https://github.company.com/",
+			expected: "https://github.company.com/api/graphql",
+		},
+		{
+			name:     "GHEC - data residency with trailing slash",
+			baseURL:  "https://octocorp.ghe.com/",
+			expected: "https://api.octocorp.ghe.com/graphql",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildGraphQLURL(tt.baseURL)
+			if result != tt.expected {
+				t.Errorf("buildGraphQLURL(%q) = %q, want %q", tt.baseURL, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNewClientWithGHECDataResidency(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	cfg := ClientConfig{
+		BaseURL:     "https://octocorp.ghe.com",
+		Token:       "test-token",
+		Timeout:     30 * time.Second,
+		RetryConfig: DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v, want nil", err)
+	}
+
+	if client == nil {
+		t.Fatal("NewClient() returned nil client")
+	}
+
+	// Verify that the GraphQL client was created
+	if client.graphql == nil {
+		t.Error("GraphQL client is nil for GHEC data residency instance")
+	}
+
+	// Verify the base URL is stored correctly
+	if client.baseURL != cfg.BaseURL {
+		t.Errorf("baseURL = %s, want %s", client.baseURL, cfg.BaseURL)
+	}
+}
+
+func TestNewClientWithGHECAPISubdomain(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	cfg := ClientConfig{
+		BaseURL:     "https://api.octocorp.ghe.com",
+		Token:       "test-token",
+		Timeout:     30 * time.Second,
+		RetryConfig: DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v, want nil", err)
+	}
+
+	if client == nil {
+		t.Fatal("NewClient() returned nil client")
+	}
+
+	// Verify that the GraphQL client was created
+	if client.graphql == nil {
+		t.Error("GraphQL client is nil for GHEC data residency instance with api subdomain")
+	}
+}
