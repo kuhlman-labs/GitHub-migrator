@@ -269,7 +269,9 @@ func (c *Client) QueryWithRetry(ctx context.Context, operation string, query int
 }
 
 // MutateWithRetry executes a GraphQL mutation with retry logic
-func (c *Client) MutateWithRetry(ctx context.Context, operation string, mutation interface{}, input map[string]interface{}, variables map[string]interface{}) error {
+// The input parameter should be a typed githubv4 input struct (e.g., githubv4.CreateMigrationSourceInput)
+// or a map[string]interface{} for dynamic inputs
+func (c *Client) MutateWithRetry(ctx context.Context, operation string, mutation interface{}, input interface{}, variables map[string]interface{}) error {
 	return c.retryer.Do(ctx, operation, func(ctx context.Context) error {
 		start := time.Now()
 		c.logger.Debug("GitHub GraphQL mutation started",

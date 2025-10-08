@@ -244,7 +244,9 @@ func TestClient_MutateWithRetrySuccess(t *testing.T) {
 	// Note: This will fail in real execution because we're not using a valid token
 	// The test just ensures the method exists and basic error handling works.
 	var mutation struct{}
-	err = client.MutateWithRetry(ctx, "test-mutation", &mutation, nil, nil)
+	// Use an empty map for input to test the interface{} parameter
+	input := map[string]interface{}{}
+	err = client.MutateWithRetry(ctx, "test-mutation", &mutation, input, nil)
 
 	// We expect an error because we're not actually authenticated
 	if err == nil {

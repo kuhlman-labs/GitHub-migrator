@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -170,7 +171,7 @@ func (e *Executor) getOrFetchDestOrgID(ctx context.Context, orgName string) (str
 }
 
 // getOrCreateMigrationSource returns the migration source ID, creating it if not cached
-func (e *Executor) getOrCreateMigrationSource(ctx context.Context) (string, error) {
+func (e *Executor) getOrCreateMigrationSource(ctx context.Context, ownerID string) (string, error) {
 	if e.migSourceID != "" {
 		return e.migSourceID, nil
 	}
@@ -184,25 +185,35 @@ func (e *Executor) getOrCreateMigrationSource(ctx context.Context) (string, erro
 	var mutation struct {
 		CreateMigrationSource struct {
 			MigrationSource struct {
-				ID string
+				ID   githubv4.String
+				Name githubv4.String
+				URL  githubv4.String
+				Type githubv4.String
 			}
 		} `graphql:"createMigrationSource(input: $input)"`
 	}
 
-	input := map[string]interface{}{
-		"name": githubv4.String(fmt.Sprintf("Migration from %s", sourceURL)),
-		"url":  githubv4.String(sourceURL),
-		"type": githubv4.String("GITHUB_ARCHIVE"),
+	// Create string pointer for URL
+	urlPtr := githubv4.String(sourceURL)
+
+	// Use typed input struct
+	input := githubv4.CreateMigrationSourceInput{
+		Name:    githubv4.String(fmt.Sprintf("Migration from %s", sourceURL)),
+		URL:     &urlPtr,
+		OwnerID: githubv4.ID(ownerID),
+		Type:    githubv4.MigrationSourceTypeGitHubArchive,
 	}
 
 	if err := e.destClient.MutateWithRetry(ctx, "CreateMigrationSource", &mutation, input, nil); err != nil {
 		return "", fmt.Errorf("failed to create migration source: %w", err)
 	}
 
-	e.migSourceID = mutation.CreateMigrationSource.MigrationSource.ID
+	e.migSourceID = string(mutation.CreateMigrationSource.MigrationSource.ID)
 	e.logger.Info("Created migration source",
 		"source_id", e.migSourceID,
-		"source_url", sourceURL)
+		"source_url", sourceURL,
+		"name", string(mutation.CreateMigrationSource.MigrationSource.Name),
+		"type", string(mutation.CreateMigrationSource.MigrationSource.Type))
 
 	return e.migSourceID, nil
 }
@@ -526,8 +537,8 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 		return "", fmt.Errorf("failed to get destination org ID: %w", err)
 	}
 
-	// Create migration source if not already cached
-	migSourceID, err := e.getOrCreateMigrationSource(ctx)
+	// Create migration source if not already cached (pass ownerID)
+	migSourceID, err := e.getOrCreateMigrationSource(ctx, destOrgID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get migration source ID: %w", err)
 	}
@@ -535,21 +546,46 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 	var mutation struct {
 		StartRepositoryMigration struct {
 			RepositoryMigration struct {
-				ID    githubv4.String
-				State githubv4.String
+				ID              githubv4.String
+				State           githubv4.String
+				SourceURL       githubv4.String
+				MigrationSource struct {
+					ID   githubv4.String
+					Name githubv4.String
+					Type githubv4.String
+				}
 			}
 		} `graphql:"startRepositoryMigration(input: $input)"`
 	}
 
-	input := map[string]interface{}{
-		"sourceId":             githubv4.String(migSourceID),
-		"ownerId":              githubv4.String(destOrgID),
-		"sourceRepositoryUrl":  githubv4.String(repo.SourceURL),
-		"repositoryName":       githubv4.String(repo.Name()),
-		"continueOnError":      githubv4.Boolean(false),
-		"gitArchiveUrl":        githubv4.String(urls.GitSource),
-		"metadataArchiveUrl":   githubv4.String(urls.Metadata),
-		"targetRepoVisibility": githubv4.String("private"),
+	// Parse the source repository URL for URI type
+	parsedURL, err := url.Parse(repo.SourceURL)
+	if err != nil {
+		e.logger.Error("Failed to parse source repository URL",
+			"error", err,
+			"url", repo.SourceURL)
+		return "", fmt.Errorf("invalid source repository URL: %w", err)
+	}
+
+	// Create URI from parsed URL
+	sourceRepoURI := githubv4.URI{URL: parsedURL}
+
+	// Create pointers for optional fields
+	continueOnError := githubv4.Boolean(true)
+	targetRepoVisibility := githubv4.String("private")
+	gitArchiveURL := githubv4.String(urls.GitSource)
+	metadataArchiveURL := githubv4.String(urls.Metadata)
+
+	// Use typed input struct
+	input := githubv4.StartRepositoryMigrationInput{
+		SourceID:             githubv4.ID(migSourceID),
+		OwnerID:              githubv4.ID(destOrgID),
+		RepositoryName:       githubv4.String(repo.Name()),
+		ContinueOnError:      &continueOnError,
+		TargetRepoVisibility: &targetRepoVisibility,
+		SourceRepositoryURL:  sourceRepoURI,
+		GitArchiveURL:        &gitArchiveURL,
+		MetadataArchiveURL:   &metadataArchiveURL,
 	}
 
 	err = e.destClient.MutateWithRetry(ctx, "StartRepositoryMigration", &mutation, input, nil)
@@ -557,7 +593,14 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 		return "", fmt.Errorf("failed to start migration via GraphQL: %w", err)
 	}
 
-	return string(mutation.StartRepositoryMigration.RepositoryMigration.ID), nil
+	migrationID := string(mutation.StartRepositoryMigration.RepositoryMigration.ID)
+	e.logger.Info("Repository migration started via GraphQL",
+		"migration_id", migrationID,
+		"repository", repo.Name(),
+		"source_id", string(mutation.StartRepositoryMigration.RepositoryMigration.MigrationSource.ID),
+		"source_url", string(mutation.StartRepositoryMigration.RepositoryMigration.SourceURL))
+
+	return migrationID, nil
 }
 
 // pollMigrationStatus polls for migration completion on GHEC
