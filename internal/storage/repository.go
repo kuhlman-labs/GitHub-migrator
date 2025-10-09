@@ -108,6 +108,64 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 	return &repo, nil
 }
 
+// applyRepositoryFilters applies filters to the SQL query and returns the updated query and args
+func applyRepositoryFilters(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	// Apply status filter
+	query, args = applyStatusFilter(query, args, filters)
+	// Apply batch_id filter
+	if batchID, ok := filters["batch_id"].(int64); ok && batchID > 0 {
+		query += " AND batch_id = ?"
+		args = append(args, batchID)
+	}
+
+	// Apply source filter
+	if source, ok := filters["source"].(string); ok && source != "" {
+		query += " AND source = ?"
+		args = append(args, source)
+	}
+
+	// Apply has_lfs filter
+	if hasLFS, ok := filters["has_lfs"].(bool); ok {
+		query += " AND has_lfs = ?"
+		args = append(args, hasLFS)
+	}
+
+	// Apply has_submodules filter
+	if hasSubmodules, ok := filters["has_submodules"].(bool); ok {
+		query += " AND has_submodules = ?"
+		args = append(args, hasSubmodules)
+	}
+
+	return query, args
+}
+
+// applyStatusFilter handles the status filter which can be a string or slice of strings
+func applyStatusFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	statusValue, ok := filters["status"]
+	if !ok {
+		return query, args
+	}
+
+	switch status := statusValue.(type) {
+	case string:
+		if status != "" {
+			query += " AND status = ?"
+			args = append(args, status)
+		}
+	case []string:
+		if len(status) > 0 {
+			placeholders := make([]string, len(status))
+			for i, s := range status {
+				placeholders[i] = "?"
+				args = append(args, s)
+			}
+			query += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
+		}
+	}
+
+	return query, args
+}
+
 // ListRepositories retrieves repositories with optional filters
 func (d *Database) ListRepositories(ctx context.Context, filters map[string]interface{}) ([]*models.Repository, error) {
 	query := `
@@ -125,45 +183,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 	args := []interface{}{}
 
 	// Apply filters dynamically
-	// Handle status as either string or slice of strings
-	if statusValue, ok := filters["status"]; ok {
-		switch status := statusValue.(type) {
-		case string:
-			if status != "" {
-				query += " AND status = ?"
-				args = append(args, status)
-			}
-		case []string:
-			if len(status) > 0 {
-				placeholders := make([]string, len(status))
-				for i, s := range status {
-					placeholders[i] = "?"
-					args = append(args, s)
-				}
-				query += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
-			}
-		}
-	}
-
-	if batchID, ok := filters["batch_id"].(int64); ok && batchID > 0 {
-		query += " AND batch_id = ?"
-		args = append(args, batchID)
-	}
-
-	if source, ok := filters["source"].(string); ok && source != "" {
-		query += " AND source = ?"
-		args = append(args, source)
-	}
-
-	if hasLFS, ok := filters["has_lfs"].(bool); ok {
-		query += " AND has_lfs = ?"
-		args = append(args, hasLFS)
-	}
-
-	if hasSubmodules, ok := filters["has_submodules"].(bool); ok {
-		query += " AND has_submodules = ?"
-		args = append(args, hasSubmodules)
-	}
+	query, args = applyRepositoryFilters(query, args, filters)
 
 	// Add ordering
 	query += " ORDER BY full_name ASC"

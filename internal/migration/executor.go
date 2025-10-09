@@ -197,11 +197,14 @@ func (e *Executor) getOrCreateMigrationSource(ctx context.Context, ownerID strin
 	urlPtr := githubv4.String(sourceURL)
 
 	// Use typed input struct
+	// Note: GitHubPat is set to nil because archive URLs are pre-signed S3/blob storage URLs
+	// that don't require authentication
 	input := githubv4.CreateMigrationSourceInput{
-		Name:    githubv4.String(fmt.Sprintf("Migration from %s", sourceURL)),
-		URL:     &urlPtr,
-		OwnerID: githubv4.ID(ownerID),
-		Type:    githubv4.MigrationSourceTypeGitHubArchive,
+		Name:      githubv4.String(fmt.Sprintf("Migration from %s", sourceURL)),
+		URL:       &urlPtr,
+		OwnerID:   githubv4.ID(ownerID),
+		Type:      githubv4.MigrationSourceTypeGitHubArchive,
+		GitHubPat: nil, // Not needed for archive-based migrations with pre-signed URLs
 	}
 
 	if err := e.destClient.MutateWithRetry(ctx, "CreateMigrationSource", &mutation, input, nil); err != nil {
@@ -576,6 +579,12 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 	gitArchiveURL := githubv4.String(urls.GitSource)
 	metadataArchiveURL := githubv4.String(urls.Metadata)
 
+	// Get tokens - IMPORTANT: Per GitHub documentation:
+	// - AccessToken: Personal access token for the SOURCE (GHES)
+	// - GitHubPat: Personal access token for the DESTINATION (GHEC)
+	sourceToken := githubv4.String(e.sourceClient.Token()) // GHES token
+	destToken := githubv4.String(e.destClient.Token())     // GHEC token
+
 	// Use typed input struct
 	input := githubv4.StartRepositoryMigrationInput{
 		SourceID:             githubv4.ID(migSourceID),
@@ -586,6 +595,8 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 		SourceRepositoryURL:  sourceRepoURI,
 		GitArchiveURL:        &gitArchiveURL,
 		MetadataArchiveURL:   &metadataArchiveURL,
+		AccessToken:          &sourceToken, // Source GHES token
+		GitHubPat:            &destToken,   // Destination GHEC token
 	}
 
 	err = e.destClient.MutateWithRetry(ctx, "StartRepositoryMigration", &mutation, input, nil)

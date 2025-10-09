@@ -45,9 +45,14 @@ const (
 	InstanceTypeGHES
 )
 
+const (
+	// GitHubAPIURL is the standard GitHub.com API URL
+	GitHubAPIURL = "https://api.github.com"
+)
+
 // detectInstanceType determines the type of GitHub instance from the base URL
 func detectInstanceType(baseURL string) InstanceType {
-	if baseURL == "" || baseURL == "https://api.github.com" {
+	if baseURL == "" || baseURL == GitHubAPIURL {
 		return InstanceTypeGitHub
 	}
 
@@ -67,7 +72,7 @@ func buildGraphQLURL(baseURL string) string {
 
 	switch instanceType {
 	case InstanceTypeGitHub:
-		return "https://api.github.com/graphql"
+		return GitHubAPIURL + "/graphql"
 
 	case InstanceTypeGHEC:
 		// For GHE Cloud with data residency, convert domain to API endpoint
@@ -115,7 +120,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 
 	// Create REST client
 	var restClient *github.Client
-	if cfg.BaseURL == "" || cfg.BaseURL == "https://api.github.com" {
+	if cfg.BaseURL == "" || cfg.BaseURL == GitHubAPIURL {
 		restClient = github.NewClient(httpClient)
 	} else {
 		var err error
@@ -128,7 +133,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	// Create GraphQL client with the correct endpoint based on instance type
 	graphqlURL := buildGraphQLURL(cfg.BaseURL)
 	var graphqlClient *githubv4.Client
-	if cfg.BaseURL == "" || cfg.BaseURL == "https://api.github.com" {
+	if cfg.BaseURL == "" || cfg.BaseURL == GitHubAPIURL {
 		graphqlClient = githubv4.NewClient(httpClient)
 	} else {
 		graphqlClient = githubv4.NewEnterpriseClient(graphqlURL, httpClient)
@@ -171,6 +176,11 @@ func (c *Client) REST() *github.Client {
 // BaseURL returns the base URL of the GitHub instance
 func (c *Client) BaseURL() string {
 	return c.baseURL
+}
+
+// Token returns the authentication token
+func (c *Client) Token() string {
+	return c.token
 }
 
 // GraphQL returns the underlying GitHub GraphQL client
