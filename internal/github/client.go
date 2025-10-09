@@ -80,10 +80,18 @@ func buildGraphQLURL(baseURL string) string {
 
 	case InstanceTypeGHES:
 		// For GitHub Enterprise Server, use /api/graphql path
-		return strings.TrimSuffix(baseURL, "/") + "/api/graphql"
+		// Strip any existing /api/v3 or /api paths first to avoid duplication
+		url := strings.TrimSuffix(baseURL, "/")
+		url = strings.TrimSuffix(url, "/api/v3")
+		url = strings.TrimSuffix(url, "/api")
+		return url + "/api/graphql"
 
 	default:
-		return strings.TrimSuffix(baseURL, "/") + "/api/graphql"
+		// Default to GHES-style endpoint, strip any existing /api/v3 or /api paths
+		url := strings.TrimSuffix(baseURL, "/")
+		url = strings.TrimSuffix(url, "/api/v3")
+		url = strings.TrimSuffix(url, "/api")
+		return url + "/api/graphql"
 	}
 }
 

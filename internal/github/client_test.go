@@ -541,9 +541,14 @@ func TestBuildGraphQLURL(t *testing.T) {
 			expected: "https://api.octocorp.ghe.com/graphql",
 		},
 		{
-			name:     "GHES - self-hosted instance",
+			name:     "GHES - self-hosted instance with /api/v3",
 			baseURL:  "https://github.company.com/api/v3",
-			expected: "https://github.company.com/api/v3/api/graphql",
+			expected: "https://github.company.com/api/graphql",
+		},
+		{
+			name:     "GHES - self-hosted instance with /api",
+			baseURL:  "https://github.company.com/api",
+			expected: "https://github.company.com/api/graphql",
 		},
 		{
 			name:     "GHES - self-hosted with trailing slash",
