@@ -196,7 +196,7 @@ func (c *Collector) profileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 	repo := &models.Repository{
 		FullName:      ghRepo.GetFullName(),
 		Source:        "ghes",
-		SourceURL:     ghRepo.GetCloneURL(),
+		SourceURL:     ghRepo.GetHTMLURL(),
 		TotalSize:     &totalSize,
 		DefaultBranch: &defaultBranch,
 		HasWiki:       ghRepo.GetHasWiki(),
@@ -207,8 +207,9 @@ func (c *Collector) profileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 	}
 
 	// Clone repository temporarily for git-sizer analysis
-	// For production, consider caching clones or using shallow clones
-	tempDir, err := c.cloneRepositoryWithProvider(ctx, repo.SourceURL, repo.FullName)
+	cloneUrl := ghRepo.GetCloneURL()
+	tempDir, err := c.cloneRepositoryWithProvider(ctx, cloneUrl, repo.FullName)
+
 	if err != nil {
 		c.logger.Warn("Failed to clone repository for analysis, using API-only metrics",
 			"repo", repo.FullName,
