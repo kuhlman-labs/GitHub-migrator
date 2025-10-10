@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
-import { Badge } from '../common/Badge';
 import { formatBytes, formatDate } from '../../utils/format';
 
 export function BatchManagement() {
@@ -139,7 +138,6 @@ export function BatchManagement() {
                   <p className="text-gray-600 mt-1">{selectedBatch.description}</p>
                   <div className="flex gap-3 mt-3">
                     <StatusBadge status={selectedBatch.status} />
-                    <Badge color="blue">{selectedBatch.type}</Badge>
                     <span className="text-sm text-gray-600">
                       {selectedBatch.repository_count} repositories
                     </span>
@@ -289,7 +287,6 @@ interface CreateBatchModalProps {
 function CreateBatchModal({ onClose, onSuccess }: CreateBatchModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [type, setType] = useState('pilot');
   const [scheduledAt, setScheduledAt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -308,7 +305,7 @@ function CreateBatchModal({ onClose, onSuccess }: CreateBatchModalProps) {
       await api.createBatch({
         name: name.trim(),
         description: description.trim() || undefined,
-        type,
+        type: 'batch', // Default type
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
       });
       onSuccess();
@@ -346,7 +343,7 @@ function CreateBatchModal({ onClose, onSuccess }: CreateBatchModalProps) {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., Pilot Batch 1"
+                placeholder="e.g., Pilot, Wave 1, Wave 2, Q1 Migration"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={loading}
                 required
@@ -366,25 +363,6 @@ function CreateBatchModal({ onClose, onSuccess }: CreateBatchModalProps) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={loading}
               />
-            </div>
-
-            <div>
-              <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-1">
-                Batch Type
-              </label>
-              <select
-                id="type"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={loading}
-              >
-                <option value="pilot">Pilot</option>
-                <option value="wave_1">Wave 1</option>
-                <option value="wave_2">Wave 2</option>
-                <option value="wave_3">Wave 3</option>
-                <option value="final">Final</option>
-              </select>
             </div>
 
             <div>
@@ -440,7 +418,6 @@ interface EditBatchModalProps {
 function EditBatchModal({ batch, onClose, onSuccess }: EditBatchModalProps) {
   const [name, setName] = useState(batch.name);
   const [description, setDescription] = useState(batch.description || '');
-  const [type, setType] = useState(batch.type);
   const [scheduledAt, setScheduledAt] = useState(
     batch.scheduled_at ? new Date(batch.scheduled_at).toISOString().slice(0, 16) : ''
   );
@@ -455,14 +432,7 @@ function EditBatchModal({ batch, onClose, onSuccess }: EditBatchModalProps) {
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<number>>(new Set());
   const [currentRepos, setCurrentRepos] = useState<Repository[]>([]);
 
-  useEffect(() => {
-    if (showRepoSection) {
-      loadAvailableRepos();
-      loadCurrentRepos();
-    }
-  }, [showRepoSection, repoSearch]);
-
-  const loadAvailableRepos = async () => {
+  const loadAvailableRepos = useCallback(async () => {
     setRepoLoading(true);
     try {
       const repos = await api.listRepositories({
@@ -476,16 +446,23 @@ function EditBatchModal({ batch, onClose, onSuccess }: EditBatchModalProps) {
     } finally {
       setRepoLoading(false);
     }
-  };
+  }, [repoSearch]);
 
-  const loadCurrentRepos = async () => {
+  const loadCurrentRepos = useCallback(async () => {
     try {
       const repos = await api.listRepositories({ batch_id: batch.id });
       setCurrentRepos(repos);
     } catch (err) {
       console.error('Failed to load current repositories:', err);
     }
-  };
+  }, [batch.id]);
+
+  useEffect(() => {
+    if (showRepoSection) {
+      loadAvailableRepos();
+      loadCurrentRepos();
+    }
+  }, [showRepoSection, loadAvailableRepos, loadCurrentRepos]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -501,7 +478,6 @@ function EditBatchModal({ batch, onClose, onSuccess }: EditBatchModalProps) {
       await api.updateBatch(batch.id, {
         name: name.trim(),
         description: description.trim() || undefined,
-        type,
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
       });
       onSuccess();
@@ -581,6 +557,7 @@ function EditBatchModal({ batch, onClose, onSuccess }: EditBatchModalProps) {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Pilot, Wave 1, Wave 2, Q1 Migration"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={loading}
                 required
@@ -601,39 +578,18 @@ function EditBatchModal({ batch, onClose, onSuccess }: EditBatchModalProps) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="edit-type" className="block text-sm font-medium text-gray-700 mb-1">
-                  Batch Type
-                </label>
-                <select
-                  id="edit-type"
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={loading}
-                >
-                  <option value="pilot">Pilot</option>
-                  <option value="wave_1">Wave 1</option>
-                  <option value="wave_2">Wave 2</option>
-                  <option value="wave_3">Wave 3</option>
-                  <option value="final">Final</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="edit-scheduledAt" className="block text-sm font-medium text-gray-700 mb-1">
-                  Scheduled Date
-                </label>
-                <input
-                  id="edit-scheduledAt"
-                  type="datetime-local"
-                  value={scheduledAt}
-                  onChange={(e) => setScheduledAt(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={loading}
-                />
-              </div>
+            <div>
+              <label htmlFor="edit-scheduledAt" className="block text-sm font-medium text-gray-700 mb-1">
+                Scheduled Date (Optional)
+              </label>
+              <input
+                id="edit-scheduledAt"
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={loading}
+              />
             </div>
 
             {/* Repository Management Section */}
