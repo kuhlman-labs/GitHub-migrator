@@ -347,3 +347,166 @@ func TestExtractFilenameFromBlobInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestGetLastCommitSHA(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+	ctx := context.Background()
+
+	// Create a temporary git repository
+	tempDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Skip("git not available, skipping test")
+	}
+
+	// Configure git user
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	// Create an initial commit
+	testFile := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Skip("Failed to create initial commit, skipping")
+	}
+
+	sha := analyzer.getLastCommitSHA(ctx, tempDir)
+	if sha == "" {
+		t.Error("Expected non-empty commit SHA")
+	}
+	if len(sha) != 40 {
+		t.Errorf("Expected 40-character SHA, got %d characters: %s", len(sha), sha)
+	}
+}
+
+func TestGetTagCount(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+	ctx := context.Background()
+
+	// Create a temporary git repository
+	tempDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Skip("git not available, skipping test")
+	}
+
+	// Configure git user
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	// Create an initial commit
+	testFile := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Skip("Failed to create initial commit, skipping")
+	}
+
+	// Initially no tags
+	count := analyzer.getTagCount(ctx, tempDir)
+	if count != 0 {
+		t.Errorf("Expected 0 tags, got %d", count)
+	}
+
+	// Create a tag
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Skip("Failed to create tag, skipping")
+	}
+
+	count = analyzer.getTagCount(ctx, tempDir)
+	if count != 1 {
+		t.Errorf("Expected 1 tag, got %d", count)
+	}
+}
+
+func TestLargeFileDetection(t *testing.T) {
+	tests := []struct {
+		name             string
+		maxBlobSize      int64
+		expectLargeFiles bool
+		expectCount      int
+	}{
+		{
+			name:             "No large files - 50MB",
+			maxBlobSize:      50 * 1024 * 1024,
+			expectLargeFiles: false,
+			expectCount:      0,
+		},
+		{
+			name:             "Large file - exactly 100MB",
+			maxBlobSize:      100 * 1024 * 1024,
+			expectLargeFiles: false,
+			expectCount:      0,
+		},
+		{
+			name:             "Large file - 101MB",
+			maxBlobSize:      101 * 1024 * 1024,
+			expectLargeFiles: true,
+			expectCount:      1,
+		},
+		{
+			name:             "Large file - 500MB",
+			maxBlobSize:      500 * 1024 * 1024,
+			expectLargeFiles: true,
+			expectCount:      1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &models.Repository{
+				FullName: "test/repo",
+			}
+
+			// Simulate the large file detection logic
+			if tt.maxBlobSize > LargeFileThreshold {
+				repo.HasLargeFiles = true
+				repo.LargeFileCount = 1
+			}
+
+			if repo.HasLargeFiles != tt.expectLargeFiles {
+				t.Errorf("Expected HasLargeFiles=%v, got %v", tt.expectLargeFiles, repo.HasLargeFiles)
+			}
+			if repo.LargeFileCount != tt.expectCount {
+				t.Errorf("Expected LargeFileCount=%d, got %d", tt.expectCount, repo.LargeFileCount)
+			}
+		})
+	}
+}

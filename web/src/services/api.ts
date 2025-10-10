@@ -25,7 +25,7 @@ export const api = {
   },
 
   // Repositories
-  async listRepositories(filters?: Record<string, string | number | undefined>): Promise<Repository[]> {
+  async listRepositories(filters?: Record<string, string | number | boolean | undefined>): Promise<Repository[]> {
     const { data } = await client.get('/repositories', { params: filters });
     return data;
   },
@@ -53,6 +53,32 @@ export const api = {
 
   async createBatch(batch: Partial<Batch>): Promise<Batch> {
     const { data } = await client.post('/batches', batch);
+    return data;
+  },
+
+  async updateBatch(id: number, updates: Partial<Batch>): Promise<Batch> {
+    const { data } = await client.patch(`/batches/${id}`, updates);
+    return data;
+  },
+
+  async addRepositoriesToBatch(batchId: number, repositoryIds: number[]) {
+    const { data } = await client.post(`/batches/${batchId}/repositories`, {
+      repository_ids: repositoryIds,
+    });
+    return data;
+  },
+
+  async removeRepositoriesFromBatch(batchId: number, repositoryIds: number[]) {
+    const { data } = await client.delete(`/batches/${batchId}/repositories`, {
+      data: { repository_ids: repositoryIds },
+    });
+    return data;
+  },
+
+  async retryBatchFailures(batchId: number, repositoryIds?: number[]) {
+    const { data } = await client.post(`/batches/${batchId}/retry`, {
+      repository_ids: repositoryIds,
+    });
     return data;
   },
 

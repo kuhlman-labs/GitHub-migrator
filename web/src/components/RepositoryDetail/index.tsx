@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
-import type { Repository, MigrationHistory, MigrationLog } from '../../types';
+import type { Repository, MigrationHistory, MigrationLog, Batch } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
@@ -19,6 +19,11 @@ export function RepositoryDetail() {
   const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'logs'>('overview');
   
+  // Batch assignment state
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
+  const [assigningBatch, setAssigningBatch] = useState(false);
+  
   // Destination configuration
   const [editingDestination, setEditingDestination] = useState(false);
   const [destinationFullName, setDestinationFullName] = useState<string>('');
@@ -31,11 +36,23 @@ export function RepositoryDetail() {
 
   useEffect(() => {
     loadRepository();
+    loadBatches();
     // Poll for status updates every 10 seconds
     const interval = setInterval(loadRepository, 10000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fullName]);
+
+  const loadBatches = async () => {
+    try {
+      const allBatches = await api.listBatches();
+      // Only show ready batches for assignment
+      const readyBatches = allBatches.filter(b => b.status === 'ready');
+      setBatches(readyBatches);
+    } catch (error) {
+      console.error('Failed to load batches:', error);
+    }
+  };
 
   const loadRepository = async () => {
     if (!fullName) return;
@@ -139,12 +156,60 @@ export function RepositoryDetail() {
     }
   };
 
+  const handleAssignToBatch = async () => {
+    if (!repository || !selectedBatchId || assigningBatch) return;
+
+    setAssigningBatch(true);
+    try {
+      await api.addRepositoriesToBatch(selectedBatchId, [repository.id]);
+      alert('Repository assigned to batch successfully!');
+      await loadRepository();
+      setSelectedBatchId(null);
+    } catch (error) {
+      console.error('Failed to assign to batch:', error);
+      alert('Failed to assign to batch. Please try again.');
+    } finally {
+      setAssigningBatch(false);
+    }
+  };
+
+  const handleRemoveFromBatch = async () => {
+    if (!repository || !repository.batch_id || assigningBatch) return;
+
+    if (!confirm('Are you sure you want to remove this repository from its batch?')) {
+      return;
+    }
+
+    setAssigningBatch(true);
+    try {
+      await api.removeRepositoriesFromBatch(repository.batch_id, [repository.id]);
+      alert('Repository removed from batch successfully!');
+      await loadRepository();
+    } catch (error) {
+      console.error('Failed to remove from batch:', error);
+      alert('Failed to remove from batch. Please try again.');
+    } finally {
+      setAssigningBatch(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner />;
   if (!repository) return <div className="text-center py-12 text-gray-500">Repository not found</div>;
 
   const canMigrate = ['pending', 'dry_run_complete', 'pre_migration_complete', 'migration_failed'].includes(
     repository.status
   );
+
+  const isInActiveMigration = [
+    'queued_for_migration',
+    'dry_run_in_progress',
+    'dry_run_queued',
+    'migrating_content',
+    'archive_generating',
+    'post_migration',
+  ].includes(repository.status);
+
+  const canChangeBatch = !isInActiveMigration && repository.status !== 'complete';
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -217,6 +282,59 @@ export function RepositoryDetail() {
                     </p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Batch Assignment */}
+            {canChangeBatch && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Batch Assignment
+                </label>
+                {repository.batch_id ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm">
+                      <Badge color="blue">Batch #{repository.batch_id}</Badge>
+                    </div>
+                    <button
+                      onClick={handleRemoveFromBatch}
+                      disabled={assigningBatch}
+                      className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {assigningBatch ? 'Removing...' : 'Remove from Batch'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedBatchId || ''}
+                      onChange={(e) => setSelectedBatchId(e.target.value ? Number(e.target.value) : null)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      disabled={assigningBatch}
+                    >
+                      <option value="">Select a batch...</option>
+                      {batches.map((batch) => (
+                        <option key={batch.id} value={batch.id}>
+                          {batch.name} ({batch.type}) - {batch.repository_count} repos
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleAssignToBatch}
+                      disabled={!selectedBatchId || assigningBatch}
+                      className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {assigningBatch ? 'Assigning...' : 'Assign to Batch'}
+                    </button>
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  {repository.batch_id
+                    ? 'Repository is assigned to a batch'
+                    : batches.length === 0
+                    ? 'No ready batches available. Create a batch first.'
+                    : 'Assign this repository to a batch for grouped migration'}
+                </p>
               </div>
             )}
           </div>
@@ -299,11 +417,52 @@ export function RepositoryDetail() {
         <div className="p-6">
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ProfileCard title="Migration Complexity Assessment">
+                <ProfileItem label="Repository Size" value={formatBytes(repository.total_size)} />
+                <ProfileItem 
+                  label="Large Files (>100MB)" 
+                  value={repository.has_large_files ? `Yes (${repository.large_file_count}+)` : 'No'} 
+                />
+                {repository.largest_file && (
+                  <ProfileItem 
+                    label="Largest File" 
+                    value={`${repository.largest_file} (${formatBytes(repository.largest_file_size || 0)})`} 
+                  />
+                )}
+                <ProfileItem 
+                  label="Last Activity" 
+                  value={repository.last_commit_date ? formatDate(repository.last_commit_date) : 'Unknown'} 
+                />
+                <ProfileItem label="Uses LFS" value={repository.has_lfs ? 'Yes' : 'No'} />
+                <ProfileItem label="Has Submodules" value={repository.has_submodules ? 'Yes' : 'No'} />
+                <ProfileItem label="Total Commits" value={repository.commit_count.toLocaleString()} />
+              </ProfileCard>
+
+              <ProfileCard title="Verification Metrics">
+                <ProfileItem 
+                  label="Last Commit SHA" 
+                  value={repository.last_commit_sha ? (
+                    <code className="text-xs bg-gray-100 px-2 py-1 rounded">{repository.last_commit_sha.substring(0, 8)}</code>
+                  ) : 'Unknown'} 
+                />
+                <ProfileItem label="Branches" value={repository.branch_count} />
+                <ProfileItem label="Tags/Releases" value={repository.tag_count} />
+                <ProfileItem 
+                  label="Issues" 
+                  value={`${repository.open_issue_count} open / ${repository.issue_count} total`} 
+                />
+                <ProfileItem 
+                  label="Pull Requests" 
+                  value={`${repository.open_pr_count} open / ${repository.pull_request_count} total`} 
+                />
+                <ProfileItem label="Contributors" value={repository.contributor_count} />
+              </ProfileCard>
+
               <ProfileCard title="Git Properties">
+                <ProfileItem label="Default Branch" value={repository.default_branch} />
                 <ProfileItem label="Total Size" value={formatBytes(repository.total_size)} />
                 <ProfileItem label="Branches" value={repository.branch_count} />
-                <ProfileItem label="Commits" value={repository.commit_count} />
-                <ProfileItem label="Default Branch" value={repository.default_branch} />
+                <ProfileItem label="Commits" value={repository.commit_count.toLocaleString()} />
                 <ProfileItem label="Has LFS" value={repository.has_lfs ? 'Yes' : 'No'} />
                 <ProfileItem label="Has Submodules" value={repository.has_submodules ? 'Yes' : 'No'} />
               </ProfileCard>

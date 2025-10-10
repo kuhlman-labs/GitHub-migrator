@@ -206,6 +206,12 @@ func (c *Collector) profileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 		UpdatedAt:     time.Now(),
 	}
 
+	// Extract last push date from repository object
+	if ghRepo.PushedAt != nil {
+		pushTime := ghRepo.PushedAt.Time
+		repo.LastCommitDate = &pushTime
+	}
+
 	// Clone repository temporarily for git-sizer analysis
 	cloneUrl := ghRepo.GetCloneURL()
 	tempDir, err := c.cloneRepositoryWithProvider(ctx, cloneUrl, repo.FullName)

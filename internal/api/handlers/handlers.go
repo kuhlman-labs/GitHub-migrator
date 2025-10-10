@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/discovery"
@@ -18,6 +19,8 @@ import (
 
 const (
 	statusInProgress = "in_progress"
+	statusReady      = "ready"
+	boolTrue         = "true"
 )
 
 // Handler contains all HTTP handlers
@@ -141,6 +144,8 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListRepositories handles GET /api/v1/repositories
+//
+//nolint:gocyclo // Complexity is due to multiple query parameter handlers
 func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -162,11 +167,34 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasLFS := r.URL.Query().Get("has_lfs"); hasLFS != "" {
-		filters["has_lfs"] = hasLFS == "true"
+		filters["has_lfs"] = hasLFS == boolTrue
 	}
 
 	if hasSubmodules := r.URL.Query().Get("has_submodules"); hasSubmodules != "" {
-		filters["has_submodules"] = hasSubmodules == "true"
+		filters["has_submodules"] = hasSubmodules == boolTrue
+	}
+
+	// Search filter
+	if search := r.URL.Query().Get("search"); search != "" {
+		filters["search"] = search
+	}
+
+	// Available for batch filter
+	if availableForBatch := r.URL.Query().Get("available_for_batch"); availableForBatch == "true" {
+		filters["available_for_batch"] = true
+	}
+
+	// Pagination
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			filters["limit"] = limit
+		}
+	}
+
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
+			filters["offset"] = offset
+		}
 	}
 
 	repos, err := h.db.ListRepositories(ctx, filters)
@@ -278,7 +306,7 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	batch.CreatedAt = time.Now()
-	batch.Status = "ready"
+	batch.Status = statusReady
 
 	if err := h.db.CreateBatch(ctx, &batch); err != nil {
 		h.logger.Error("Failed to create batch", "error", err)
@@ -407,6 +435,321 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusAccepted, response)
+}
+
+// UpdateBatch handles PATCH /api/v1/batches/{id}
+func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get existing batch
+	batch, err := h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Error("Failed to get batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		return
+	}
+
+	if batch == nil {
+		h.sendError(w, http.StatusNotFound, "Batch not found")
+		return
+	}
+
+	// Only allow updates for "ready" batches
+	if batch.Status != statusReady {
+		h.sendError(w, http.StatusBadRequest, "Can only edit batches with 'ready' status")
+		return
+	}
+
+	// Parse update request
+	var updates struct {
+		Name        *string    `json:"name,omitempty"`
+		Description *string    `json:"description,omitempty"`
+		Type        *string    `json:"type,omitempty"`
+		ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Apply updates
+	if updates.Name != nil {
+		batch.Name = *updates.Name
+	}
+	if updates.Description != nil {
+		batch.Description = updates.Description
+	}
+	if updates.Type != nil {
+		batch.Type = *updates.Type
+	}
+	if updates.ScheduledAt != nil {
+		batch.ScheduledAt = updates.ScheduledAt
+	}
+
+	if err := h.db.UpdateBatch(ctx, batch); err != nil {
+		h.logger.Error("Failed to update batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to update batch")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, batch)
+}
+
+// AddRepositoriesToBatch handles POST /api/v1/batches/{id}/repositories
+func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get batch
+	batch, err := h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Error("Failed to get batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		return
+	}
+
+	if batch == nil {
+		h.sendError(w, http.StatusNotFound, "Batch not found")
+		return
+	}
+
+	// Only allow adding repos to "ready" batches
+	if batch.Status != statusReady {
+		h.sendError(w, http.StatusBadRequest, "Can only add repositories to batches with 'ready' status")
+		return
+	}
+
+	// Parse request
+	var req struct {
+		RepositoryIDs []int64 `json:"repository_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(req.RepositoryIDs) == 0 {
+		h.sendError(w, http.StatusBadRequest, "No repository IDs provided")
+		return
+	}
+
+	// Validate repositories are eligible for batch
+	repos, err := h.db.GetRepositoriesByIDs(ctx, req.RepositoryIDs)
+	if err != nil {
+		h.logger.Error("Failed to get repositories", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to validate repositories")
+		return
+	}
+
+	// Check each repo is eligible
+	ineligibleRepos := []string{}
+	for _, repo := range repos {
+		if !isEligibleForBatch(repo.Status) {
+			ineligibleRepos = append(ineligibleRepos, repo.FullName)
+		}
+	}
+
+	if len(ineligibleRepos) > 0 {
+		h.sendError(w, http.StatusBadRequest,
+			fmt.Sprintf("Some repositories are not eligible for batch assignment: %s",
+				strings.Join(ineligibleRepos, ", ")))
+		return
+	}
+
+	// Add repositories to batch
+	if err := h.db.AddRepositoriesToBatch(ctx, batchID, req.RepositoryIDs); err != nil {
+		h.logger.Error("Failed to add repositories to batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to add repositories to batch")
+		return
+	}
+
+	// Get updated batch
+	batch, _ = h.db.GetBatch(ctx, batchID)
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"batch":              batch,
+		"repositories_added": len(req.RepositoryIDs),
+		"message":            fmt.Sprintf("Added %d repositories to batch", len(req.RepositoryIDs)),
+	})
+}
+
+// RemoveRepositoriesFromBatch handles DELETE /api/v1/batches/{id}/repositories
+func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get batch
+	batch, err := h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Error("Failed to get batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		return
+	}
+
+	if batch == nil {
+		h.sendError(w, http.StatusNotFound, "Batch not found")
+		return
+	}
+
+	// Only allow removing repos from "ready" batches
+	if batch.Status != statusReady {
+		h.sendError(w, http.StatusBadRequest, "Can only remove repositories from batches with 'ready' status")
+		return
+	}
+
+	// Parse request
+	var req struct {
+		RepositoryIDs []int64 `json:"repository_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(req.RepositoryIDs) == 0 {
+		h.sendError(w, http.StatusBadRequest, "No repository IDs provided")
+		return
+	}
+
+	// Remove repositories from batch
+	if err := h.db.RemoveRepositoriesFromBatch(ctx, batchID, req.RepositoryIDs); err != nil {
+		h.logger.Error("Failed to remove repositories from batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to remove repositories from batch")
+		return
+	}
+
+	// Get updated batch
+	batch, _ = h.db.GetBatch(ctx, batchID)
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"batch":                batch,
+		"repositories_removed": len(req.RepositoryIDs),
+		"message":              fmt.Sprintf("Removed %d repositories from batch", len(req.RepositoryIDs)),
+	})
+}
+
+// RetryBatchFailures handles POST /api/v1/batches/{id}/retry
+//
+//nolint:gocyclo // Complexity is due to multiple validation and error handling paths
+func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get batch
+	batch, err := h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Error("Failed to get batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		return
+	}
+
+	if batch == nil {
+		h.sendError(w, http.StatusNotFound, "Batch not found")
+		return
+	}
+
+	// Parse optional repository IDs
+	var req struct {
+		RepositoryIDs []int64 `json:"repository_ids,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Empty body is okay, means retry all
+		req.RepositoryIDs = nil
+	}
+
+	var reposToRetry []*models.Repository
+
+	if len(req.RepositoryIDs) > 0 {
+		// Retry specific repositories
+		reposToRetry, err = h.db.GetRepositoriesByIDs(ctx, req.RepositoryIDs)
+		if err != nil {
+			h.logger.Error("Failed to get repositories", "error", err)
+			h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+			return
+		}
+
+		// Validate all repos are in this batch and failed
+		for _, repo := range reposToRetry {
+			if repo.BatchID == nil || *repo.BatchID != batchID {
+				h.sendError(w, http.StatusBadRequest,
+					fmt.Sprintf("Repository %s is not in this batch", repo.FullName))
+				return
+			}
+			if repo.Status != string(models.StatusMigrationFailed) && repo.Status != string(models.StatusDryRunFailed) {
+				h.sendError(w, http.StatusBadRequest,
+					fmt.Sprintf("Repository %s is not in a failed state", repo.FullName))
+				return
+			}
+		}
+	} else {
+		// Retry all failed repositories in batch
+		filters := map[string]interface{}{
+			"batch_id": batchID,
+			"status": []string{
+				string(models.StatusMigrationFailed),
+				string(models.StatusDryRunFailed),
+			},
+		}
+		reposToRetry, err = h.db.ListRepositories(ctx, filters)
+		if err != nil {
+			h.logger.Error("Failed to get failed repositories", "error", err)
+			h.sendError(w, http.StatusInternalServerError, "Failed to fetch failed repositories")
+			return
+		}
+	}
+
+	if len(reposToRetry) == 0 {
+		h.sendError(w, http.StatusBadRequest, "No failed repositories to retry")
+		return
+	}
+
+	// Queue repositories for retry
+	retriedIDs := make([]int64, 0, len(reposToRetry))
+	for _, repo := range reposToRetry {
+		repo.Status = string(models.StatusQueuedForMigration)
+		if err := h.db.UpdateRepository(ctx, repo); err != nil {
+			h.logger.Error("Failed to update repository", "error", err, "repo", repo.FullName)
+			continue
+		}
+		retriedIDs = append(retriedIDs, repo.ID)
+	}
+
+	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		"batch_id":      batchID,
+		"batch_name":    batch.Name,
+		"retried_count": len(retriedIDs),
+		"retried_ids":   retriedIDs,
+		"message":       fmt.Sprintf("Queued %d repositories for retry", len(retriedIDs)),
+	})
 }
 
 // StartMigration handles POST /api/v1/migrations/start
@@ -696,6 +1039,22 @@ func canMigrate(status string) bool {
 
 	for _, allowed := range allowedStatuses {
 		if status == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func isEligibleForBatch(status string) bool {
+	eligibleStatuses := []string{
+		string(models.StatusPending),
+		string(models.StatusDryRunComplete),
+		string(models.StatusDryRunFailed),
+		string(models.StatusMigrationFailed),
+	}
+
+	for _, eligible := range eligibleStatuses {
+		if status == eligible {
 			return true
 		}
 	}

@@ -105,4 +105,7 @@ func TestProfileFeatures_Integration(t *testing.T) {
 	t.Logf("Has Pages: %v", repo.HasPages)
 	t.Logf("Has Actions: %v", repo.HasActions)
 	t.Logf("Contributors: %d", repo.ContributorCount)
+	t.Logf("Issues: %d (open: %d)", repo.IssueCount, repo.OpenIssueCount)
+	t.Logf("Pull Requests: %d (open: %d)", repo.PullRequestCount, repo.OpenPRCount)
+	t.Logf("Tags: %d", repo.TagCount)
 }

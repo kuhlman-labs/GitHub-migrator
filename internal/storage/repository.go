@@ -136,6 +136,33 @@ func applyRepositoryFilters(query string, args []interface{}, filters map[string
 		args = append(args, hasSubmodules)
 	}
 
+	// Apply search filter (case-insensitive)
+	if search, ok := filters["search"].(string); ok && search != "" {
+		query += " AND LOWER(full_name) LIKE LOWER(?)"
+		args = append(args, "%"+search+"%")
+	}
+
+	// Apply available_for_batch filter
+	if availableForBatch, ok := filters["available_for_batch"].(bool); ok && availableForBatch {
+		// Exclude repos that are completed or in active migration
+		excludedStatuses := []string{
+			"complete",
+			"queued_for_migration",
+			"dry_run_in_progress",
+			"dry_run_queued",
+			"migrating_content",
+			"archive_generating",
+			"post_migration",
+			"migration_complete",
+		}
+		placeholders := make([]string, len(excludedStatuses))
+		for i, status := range excludedStatuses {
+			placeholders[i] = "?"
+			args = append(args, status)
+		}
+		query += fmt.Sprintf(" AND status NOT IN (%s)", strings.Join(placeholders, ","))
+	}
+
 	return query, args
 }
 
@@ -188,10 +215,15 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 	// Add ordering
 	query += " ORDER BY full_name ASC"
 
-	// Add limit if specified
+	// Add limit and offset if specified
 	if limit, ok := filters["limit"].(int); ok && limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, limit)
+
+		if offset, ok := filters["offset"].(int); ok && offset > 0 {
+			query += " OFFSET ?"
+			args = append(args, offset)
+		}
 	}
 
 	rows, err := d.db.QueryContext(ctx, query, args...)
@@ -743,6 +775,104 @@ func (d *Database) CreateMigrationLog(ctx context.Context, log *models.Migration
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create migration log: %w", err)
+	}
+
+	return nil
+}
+
+// AddRepositoriesToBatch assigns multiple repositories to a batch
+//
+//nolint:dupl // Similar to RemoveRepositoriesFromBatch but performs different operations
+func (d *Database) AddRepositoriesToBatch(ctx context.Context, batchID int64, repoIDs []int64) error {
+	if len(repoIDs) == 0 {
+		return nil
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(repoIDs))
+	args := make([]interface{}, len(repoIDs)+1)
+	args[0] = batchID
+	for i, id := range repoIDs {
+		placeholders[i] = "?"
+		args[i+1] = id
+	}
+
+	//nolint:gosec // G201: Safe use of fmt.Sprintf with placeholders for IN clause
+	query := fmt.Sprintf(`
+		UPDATE repositories 
+		SET batch_id = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id IN (%s)
+	`, strings.Join(placeholders, ","))
+
+	result, err := d.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to add repositories to batch: %w", err)
+	}
+
+	// Update batch repository count
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// RemoveRepositoriesFromBatch removes repositories from a batch
+//
+//nolint:dupl // Similar to AddRepositoriesToBatch but performs different operations
+func (d *Database) RemoveRepositoriesFromBatch(ctx context.Context, batchID int64, repoIDs []int64) error {
+	if len(repoIDs) == 0 {
+		return nil
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(repoIDs))
+	args := make([]interface{}, len(repoIDs)+1)
+	args[0] = batchID
+	for i, id := range repoIDs {
+		placeholders[i] = "?"
+		args[i+1] = id
+	}
+
+	//nolint:gosec // G201: Safe use of fmt.Sprintf with placeholders for IN clause
+	query := fmt.Sprintf(`
+		UPDATE repositories 
+		SET batch_id = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE batch_id = ? AND id IN (%s)
+	`, strings.Join(placeholders, ","))
+
+	result, err := d.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to remove repositories from batch: %w", err)
+	}
+
+	// Update batch repository count
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// updateBatchRepositoryCount updates the repository count for a batch
+func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64) error {
+	query := `
+		UPDATE batches 
+		SET repository_count = (
+			SELECT COUNT(*) FROM repositories WHERE batch_id = ?
+		)
+		WHERE id = ?
+	`
+
+	_, err := d.db.ExecContext(ctx, query, batchID, batchID)
+	if err != nil {
+		return fmt.Errorf("failed to update batch repository count: %w", err)
 	}
 
 	return nil

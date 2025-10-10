@@ -13,16 +13,20 @@ type Repository struct {
 	SourceURL string `json:"source_url" db:"source_url"`
 
 	// Git properties
-	TotalSize         *int64  `json:"total_size,omitempty" db:"total_size"`
-	LargestFile       *string `json:"largest_file,omitempty" db:"largest_file"`
-	LargestFileSize   *int64  `json:"largest_file_size,omitempty" db:"largest_file_size"`
-	LargestCommit     *string `json:"largest_commit,omitempty" db:"largest_commit"`
-	LargestCommitSize *int64  `json:"largest_commit_size,omitempty" db:"largest_commit_size"`
-	HasLFS            bool    `json:"has_lfs" db:"has_lfs"`
-	HasSubmodules     bool    `json:"has_submodules" db:"has_submodules"`
-	DefaultBranch     *string `json:"default_branch,omitempty" db:"default_branch"`
-	BranchCount       int     `json:"branch_count" db:"branch_count"`
-	CommitCount       int     `json:"commit_count" db:"commit_count"`
+	TotalSize         *int64     `json:"total_size,omitempty" db:"total_size"`
+	LargestFile       *string    `json:"largest_file,omitempty" db:"largest_file"`
+	LargestFileSize   *int64     `json:"largest_file_size,omitempty" db:"largest_file_size"`
+	LargestCommit     *string    `json:"largest_commit,omitempty" db:"largest_commit"`
+	LargestCommitSize *int64     `json:"largest_commit_size,omitempty" db:"largest_commit_size"`
+	HasLFS            bool       `json:"has_lfs" db:"has_lfs"`
+	HasSubmodules     bool       `json:"has_submodules" db:"has_submodules"`
+	HasLargeFiles     bool       `json:"has_large_files" db:"has_large_files"` // Files > 100MB in history
+	LargeFileCount    int        `json:"large_file_count" db:"large_file_count"`
+	DefaultBranch     *string    `json:"default_branch,omitempty" db:"default_branch"`
+	BranchCount       int        `json:"branch_count" db:"branch_count"`
+	CommitCount       int        `json:"commit_count" db:"commit_count"`
+	LastCommitSHA     *string    `json:"last_commit_sha,omitempty" db:"last_commit_sha"`
+	LastCommitDate    *time.Time `json:"last_commit_date,omitempty" db:"last_commit_date"`
 
 	// GitHub features
 	HasWiki           bool `json:"has_wiki" db:"has_wiki"`
@@ -39,6 +43,13 @@ type Repository struct {
 	// Contributors
 	ContributorCount int     `json:"contributor_count" db:"contributor_count"`
 	TopContributors  *string `json:"top_contributors,omitempty" db:"top_contributors"` // JSON array
+
+	// Verification data (for post-migration verification)
+	IssueCount       int `json:"issue_count" db:"issue_count"`
+	PullRequestCount int `json:"pull_request_count" db:"pull_request_count"`
+	TagCount         int `json:"tag_count" db:"tag_count"`
+	OpenIssueCount   int `json:"open_issue_count" db:"open_issue_count"`
+	OpenPRCount      int `json:"open_pr_count" db:"open_pr_count"`
 
 	// Status Tracking
 	Status   string `json:"status" db:"status"`

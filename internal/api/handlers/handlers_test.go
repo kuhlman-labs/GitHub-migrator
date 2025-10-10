@@ -19,6 +19,10 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
 
+const (
+	testMainBranch = "main"
+)
+
 // mockSourceProvider is a mock implementation of source.Provider for testing
 type mockSourceProvider struct{}
 
@@ -1193,4 +1197,431 @@ func TestSendError(t *testing.T) {
 	if response["error"] != "test error" {
 		t.Errorf("Expected error='test error', got error='%s'", response["error"])
 	}
+}
+
+func TestUpdateBatch(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	// Create a test batch
+	desc := "Original description"
+	batch := &models.Batch{
+		Name:        "Test Batch",
+		Description: &desc,
+		Type:        "pilot",
+		Status:      "ready",
+		CreatedAt:   time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("Failed to create batch: %v", err)
+	}
+
+	t.Run("successful update", func(t *testing.T) {
+		newDesc := "Updated description"
+		updates := map[string]interface{}{
+			"name":        "Updated Batch",
+			"description": newDesc,
+			"type":        "wave_1",
+		}
+
+		body, _ := json.Marshal(updates)
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/v1/batches/%d", batch.ID), bytes.NewReader(body))
+		req.SetPathValue("id", fmt.Sprintf("%d", batch.ID))
+		w := httptest.NewRecorder()
+
+		h.UpdateBatch(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response models.Batch
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if response.Name != "Updated Batch" {
+			t.Errorf("Expected name 'Updated Batch', got '%s'", response.Name)
+		}
+	})
+
+	t.Run("cannot update non-ready batch", func(t *testing.T) {
+		// Create a batch with in_progress status
+		ipBatch := &models.Batch{
+			Name:      "In Progress Batch",
+			Type:      "pilot",
+			Status:    "in_progress",
+			CreatedAt: time.Now(),
+		}
+		if err := db.CreateBatch(ctx, ipBatch); err != nil {
+			t.Fatalf("Failed to create batch: %v", err)
+		}
+
+		updates := map[string]interface{}{
+			"name": "Should Not Update",
+		}
+
+		body, _ := json.Marshal(updates)
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/v1/batches/%d", ipBatch.ID), bytes.NewReader(body))
+		req.SetPathValue("id", fmt.Sprintf("%d", ipBatch.ID))
+		w := httptest.NewRecorder()
+
+		h.UpdateBatch(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}
+
+func TestAddRepositoriesToBatch(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	// Create a test batch
+	batch := &models.Batch{
+		Name:      "Test Batch",
+		Type:      "pilot",
+		Status:    "ready",
+		CreatedAt: time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("Failed to create batch: %v", err)
+	}
+
+	// Create test repositories
+	totalSize := int64(1024)
+	defaultBranch := testMainBranch
+	var repoIDs []int64
+	for i := 0; i < 3; i++ {
+		repo := &models.Repository{
+			FullName:      fmt.Sprintf("org/repo%d", i),
+			Source:        "ghes",
+			SourceURL:     "https://github.com/org/repo",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+		saved, _ := db.GetRepository(ctx, repo.FullName)
+		repoIDs = append(repoIDs, saved.ID)
+	}
+
+	t.Run("successful add", func(t *testing.T) {
+		reqBody := map[string]interface{}{
+			"repository_ids": repoIDs,
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/batches/%d/repositories", batch.ID), bytes.NewReader(body))
+		req.SetPathValue("id", fmt.Sprintf("%d", batch.ID))
+		w := httptest.NewRecorder()
+
+		h.AddRepositoriesToBatch(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if int(response["repositories_added"].(float64)) != len(repoIDs) {
+			t.Errorf("Expected %d repositories added, got %v", len(repoIDs), response["repositories_added"])
+		}
+	})
+
+	t.Run("cannot add to non-ready batch", func(t *testing.T) {
+		// Create a batch with in_progress status
+		ipBatch := &models.Batch{
+			Name:      "In Progress Batch",
+			Type:      "pilot",
+			Status:    "in_progress",
+			CreatedAt: time.Now(),
+		}
+		if err := db.CreateBatch(ctx, ipBatch); err != nil {
+			t.Fatalf("Failed to create batch: %v", err)
+		}
+
+		reqBody := map[string]interface{}{
+			"repository_ids": repoIDs,
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/batches/%d/repositories", ipBatch.ID), bytes.NewReader(body))
+		req.SetPathValue("id", fmt.Sprintf("%d", ipBatch.ID))
+		w := httptest.NewRecorder()
+
+		h.AddRepositoriesToBatch(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}
+
+func TestRemoveRepositoriesFromBatch(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	// Create a test batch
+	batch := &models.Batch{
+		Name:      "Test Batch",
+		Type:      "pilot",
+		Status:    "ready",
+		CreatedAt: time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("Failed to create batch: %v", err)
+	}
+
+	// Create and assign repositories to batch
+	totalSize := int64(1024)
+	defaultBranch := testMainBranch
+	var repoIDs []int64
+	for i := 0; i < 3; i++ {
+		repo := &models.Repository{
+			FullName:      fmt.Sprintf("org/repo%d", i),
+			Source:        "ghes",
+			SourceURL:     "https://github.com/org/repo",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			BatchID:       &batch.ID,
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+		saved, _ := db.GetRepository(ctx, repo.FullName)
+		repoIDs = append(repoIDs, saved.ID)
+	}
+
+	batch.RepositoryCount = 3
+	db.UpdateBatch(ctx, batch)
+
+	t.Run("successful remove", func(t *testing.T) {
+		reqBody := map[string]interface{}{
+			"repository_ids": repoIDs[:2],
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/v1/batches/%d/repositories", batch.ID), bytes.NewReader(body))
+		req.SetPathValue("id", fmt.Sprintf("%d", batch.ID))
+		w := httptest.NewRecorder()
+
+		h.RemoveRepositoriesFromBatch(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if int(response["repositories_removed"].(float64)) != 2 {
+			t.Errorf("Expected 2 repositories removed, got %v", response["repositories_removed"])
+		}
+	})
+}
+
+func TestRetryBatchFailures(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	// Create a test batch
+	batch := &models.Batch{
+		Name:      "Test Batch",
+		Type:      "pilot",
+		Status:    "in_progress",
+		CreatedAt: time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("Failed to create batch: %v", err)
+	}
+
+	// Create failed repositories in the batch
+	totalSize := int64(1024)
+	defaultBranch := testMainBranch
+	var failedRepoIDs []int64
+	for i := 0; i < 2; i++ {
+		repo := &models.Repository{
+			FullName:      fmt.Sprintf("org/failed-repo%d", i),
+			Source:        "ghes",
+			SourceURL:     "https://github.com/org/failed-repo",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusMigrationFailed),
+			BatchID:       &batch.ID,
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+		saved, _ := db.GetRepository(ctx, repo.FullName)
+		failedRepoIDs = append(failedRepoIDs, saved.ID)
+	}
+
+	t.Run("retry all failures", func(t *testing.T) {
+		reqBody := map[string]interface{}{}
+
+		body, _ := json.Marshal(reqBody)
+		req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/batches/%d/retry", batch.ID), bytes.NewReader(body))
+		req.SetPathValue("id", fmt.Sprintf("%d", batch.ID))
+		w := httptest.NewRecorder()
+
+		h.RetryBatchFailures(w, req)
+
+		if w.Code != http.StatusAccepted {
+			t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if int(response["retried_count"].(float64)) != 2 {
+			t.Errorf("Expected 2 repositories retried, got %v", response["retried_count"])
+		}
+	})
+
+	t.Run("retry selected failures", func(t *testing.T) {
+		// Reset failed repos
+		for _, id := range failedRepoIDs {
+			repo, _ := db.GetRepositoryByID(ctx, id)
+			repo.Status = string(models.StatusMigrationFailed)
+			db.UpdateRepository(ctx, repo)
+		}
+
+		reqBody := map[string]interface{}{
+			"repository_ids": []int64{failedRepoIDs[0]},
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/batches/%d/retry", batch.ID), bytes.NewReader(body))
+		req.SetPathValue("id", fmt.Sprintf("%d", batch.ID))
+		w := httptest.NewRecorder()
+
+		h.RetryBatchFailures(w, req)
+
+		if w.Code != http.StatusAccepted {
+			t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if int(response["retried_count"].(float64)) != 1 {
+			t.Errorf("Expected 1 repository retried, got %v", response["retried_count"])
+		}
+	})
+}
+
+func TestListRepositoriesWithFilters(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	// Create test repositories
+	totalSize := int64(1024)
+	defaultBranch := testMainBranch
+
+	repos := []struct {
+		name   string
+		status models.MigrationStatus
+	}{
+		{"org/pending-repo", models.StatusPending},
+		{"org/complete-repo", models.StatusComplete},
+		{"org/queued-repo", models.StatusQueuedForMigration},
+		{"company/search-me", models.StatusPending},
+	}
+
+	for _, r := range repos {
+		repo := &models.Repository{
+			FullName:      r.name,
+			Source:        "ghes",
+			SourceURL:     "https://github.com/" + r.name,
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(r.status),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+	}
+
+	t.Run("filter by search", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/repositories?search=search-me", nil)
+		w := httptest.NewRecorder()
+
+		h.ListRepositories(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response []models.Repository
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if len(response) != 1 {
+			t.Errorf("Expected 1 repository, got %d", len(response))
+		}
+	})
+
+	t.Run("filter available_for_batch", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/repositories?available_for_batch=true", nil)
+		w := httptest.NewRecorder()
+
+		h.ListRepositories(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response []models.Repository
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		// Should include pending repos but exclude complete and queued
+		if len(response) != 2 {
+			t.Errorf("Expected 2 repositories available for batch, got %d", len(response))
+		}
+	})
+
+	t.Run("pagination with limit and offset", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/repositories?limit=2&offset=0", nil)
+		w := httptest.NewRecorder()
+
+		h.ListRepositories(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response []models.Repository
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if len(response) != 2 {
+			t.Errorf("Expected 2 repositories, got %d", len(response))
+		}
+	})
 }

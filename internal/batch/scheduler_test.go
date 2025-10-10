@@ -101,6 +101,25 @@ func setupTestScheduler(t *testing.T) (*Scheduler, *storage.Database, *MockMigra
 	return scheduler, db, executor, cleanup
 }
 
+// waitForBatchCompletion waits for a batch to complete or times out
+func waitForBatchCompletion(t *testing.T, scheduler *Scheduler, batchID int64, timeout time.Duration) {
+	t.Helper()
+	timeoutChan := time.After(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeoutChan:
+			t.Fatalf("Timeout waiting for batch %d to complete", batchID)
+		case <-ticker.C:
+			if !scheduler.IsBatchRunning(batchID) {
+				return
+			}
+		}
+	}
+}
+
 func TestNewScheduler(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	db := &storage.Database{}
@@ -203,11 +222,7 @@ func TestScheduleBatch(t *testing.T) {
 
 func TestExecuteBatch(t *testing.T) {
 	scheduler, db, executor, cleanup := setupTestScheduler(t)
-	defer func() {
-		// Wait for any async batch operations to complete before cleanup
-		time.Sleep(100 * time.Millisecond)
-		cleanup()
-	}()
+	defer cleanup()
 
 	ctx := context.Background()
 
@@ -269,17 +284,12 @@ func TestExecuteBatch(t *testing.T) {
 		}
 
 		// Wait for async execution to complete
-		time.Sleep(200 * time.Millisecond)
+		waitForBatchCompletion(t, scheduler, batch.ID, 2*time.Second)
 
 		// Verify repositories were executed
 		executedRepos := executor.GetExecutedRepos()
 		if len(executedRepos) != 2 {
 			t.Errorf("Expected 2 repos executed, got %d", len(executedRepos))
-		}
-
-		// Verify batch is no longer running
-		if scheduler.IsBatchRunning(batch.ID) {
-			t.Error("Expected batch to be completed and not running")
 		}
 	})
 
@@ -312,7 +322,8 @@ func TestExecuteBatch(t *testing.T) {
 		}
 
 		// Set delay to keep batch running
-		executor.SetDelay(1 * time.Second)
+		executor.SetDelay(500 * time.Millisecond)
+		defer executor.SetDelay(0) // Reset for other tests
 
 		// Start batch
 		if err := scheduler.ExecuteBatch(ctx, batch2.ID, false); err != nil {
@@ -325,8 +336,8 @@ func TestExecuteBatch(t *testing.T) {
 			t.Error("Expected error when batch is already running")
 		}
 
-		// Reset delay for other tests
-		executor.SetDelay(0)
+		// Wait for the batch to complete before test ends
+		waitForBatchCompletion(t, scheduler, batch2.ID, 2*time.Second)
 	})
 }
 

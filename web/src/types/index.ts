@@ -10,9 +10,13 @@ export interface Repository {
   largest_commit_size?: number;
   has_lfs: boolean;
   has_submodules: boolean;
+  has_large_files: boolean;
+  large_file_count: number;
   default_branch: string;
   branch_count: number;
   commit_count: number;
+  last_commit_sha?: string;
+  last_commit_date?: string;
   has_wiki: boolean;
   has_pages: boolean;
   has_discussions: boolean;
@@ -25,6 +29,11 @@ export interface Repository {
   webhook_count: number;
   contributor_count: number;
   top_contributors?: string;
+  issue_count: number;
+  pull_request_count: number;
+  tag_count: number;
+  open_issue_count: number;
+  open_pr_count: number;
   status: string;
   batch_id?: number;
   priority: number;

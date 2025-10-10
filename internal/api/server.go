@@ -64,7 +64,11 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/batches", s.handler.ListBatches)
 	mux.HandleFunc("POST /api/v1/batches", s.handler.CreateBatch)
 	mux.HandleFunc("GET /api/v1/batches/{id}", s.handler.GetBatch)
+	mux.HandleFunc("PATCH /api/v1/batches/{id}", s.handler.UpdateBatch)
 	mux.HandleFunc("POST /api/v1/batches/{id}/start", s.handler.StartBatch)
+	mux.HandleFunc("POST /api/v1/batches/{id}/repositories", s.handler.AddRepositoriesToBatch)
+	mux.HandleFunc("DELETE /api/v1/batches/{id}/repositories", s.handler.RemoveRepositoriesFromBatch)
+	mux.HandleFunc("POST /api/v1/batches/{id}/retry", s.handler.RetryBatchFailures)
 
 	// Migration endpoints
 	mux.HandleFunc("POST /api/v1/migrations/start", s.handler.StartMigration)

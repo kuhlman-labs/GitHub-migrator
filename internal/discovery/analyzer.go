@@ -13,6 +13,12 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/models"
 )
 
+const (
+	// LargeFileThreshold is the size threshold for detecting large files (100MB)
+	// Files larger than this may cause issues during migration
+	LargeFileThreshold = 100 * 1024 * 1024
+)
+
 // Analyzer analyzes Git repository properties
 type Analyzer struct {
 	logger *slog.Logger
@@ -104,6 +110,18 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 
 	repo.CommitCount = int(output.UniqueCommitCount)
 
+	// Detect large files (>100MB) that may cause migration issues
+	if output.MaxBlobSize > LargeFileThreshold {
+		repo.HasLargeFiles = true
+		// git-sizer only gives us the max blob size, not a count of large files
+		// We set count to 1 to indicate at least one large file exists
+		repo.LargeFileCount = 1
+		a.logger.Warn("Large file detected in repository",
+			"repo", repo.FullName,
+			"size_mb", output.MaxBlobSize/(1024*1024),
+			"file", repo.LargestFile)
+	}
+
 	// Detect LFS using .gitattributes and git lfs ls-files
 	repo.HasLFS = a.detectLFS(ctx, repoPath)
 
@@ -112,6 +130,14 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 
 	// Get branch count
 	repo.BranchCount = a.getBranchCount(ctx, repoPath)
+
+	// Get last commit SHA from default branch
+	if lastCommitSHA := a.getLastCommitSHA(ctx, repoPath); lastCommitSHA != "" {
+		repo.LastCommitSHA = &lastCommitSHA
+	}
+
+	// Get tag count
+	repo.TagCount = a.getTagCount(ctx, repoPath)
 
 	a.logger.Info("Git analysis complete",
 		"repo", repo.FullName,
@@ -223,6 +249,43 @@ func (a *Analyzer) getBranchCount(ctx context.Context, repoPath string) int {
 	}
 
 	// Count non-empty lines (each line is a branch)
+	lines := bytes.Split(output, []byte("\n"))
+	count := 0
+	for _, line := range lines {
+		if len(bytes.TrimSpace(line)) > 0 {
+			count++
+		}
+	}
+
+	return count
+}
+
+// getLastCommitSHA returns the SHA of the last commit on the default branch
+func (a *Analyzer) getLastCommitSHA(ctx context.Context, repoPath string) string {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd.Dir = repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		a.logger.Debug("Failed to get last commit SHA", "error", err)
+		return ""
+	}
+
+	return strings.TrimSpace(string(output))
+}
+
+// getTagCount returns the number of tags in the repository
+func (a *Analyzer) getTagCount(ctx context.Context, repoPath string) int {
+	cmd := exec.CommandContext(ctx, "git", "tag", "--list")
+	cmd.Dir = repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		a.logger.Debug("Failed to get tag count", "error", err)
+		return 0
+	}
+
+	// Count non-empty lines (each line is a tag)
 	lines := bytes.Split(output, []byte("\n"))
 	count := 0
 	for _, line := range lines {

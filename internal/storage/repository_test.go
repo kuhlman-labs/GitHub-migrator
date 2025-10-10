@@ -959,3 +959,368 @@ func TestCreateMigrationLog(t *testing.T) {
 		t.Fatalf("CreateMigrationLog() error = %v", err)
 	}
 }
+
+func TestAddRepositoriesToBatch(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a batch
+	batch := &models.Batch{
+		Name:            "Test Batch",
+		Type:            "pilot",
+		RepositoryCount: 0,
+		Status:          "ready",
+		CreatedAt:       time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+
+	// Create test repositories
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+	var repoIDs []int64
+	for i := 0; i < 3; i++ {
+		repo := &models.Repository{
+			FullName:      fmt.Sprintf("org/repo%d", i),
+			Source:        "ghes",
+			SourceURL:     "https://github.com/org/repo",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+		saved, _ := db.GetRepository(ctx, repo.FullName)
+		repoIDs = append(repoIDs, saved.ID)
+	}
+
+	// Add repositories to batch
+	if err := db.AddRepositoriesToBatch(ctx, batch.ID, repoIDs); err != nil {
+		t.Fatalf("AddRepositoriesToBatch() error = %v", err)
+	}
+
+	// Verify repositories are assigned
+	repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch.ID})
+	if err != nil {
+		t.Fatalf("ListRepositories() error = %v", err)
+	}
+	if len(repos) != 3 {
+		t.Errorf("Expected 3 repositories in batch, got %d", len(repos))
+	}
+
+	// Verify batch count was updated
+	updatedBatch, err := db.GetBatch(ctx, batch.ID)
+	if err != nil {
+		t.Fatalf("GetBatch() error = %v", err)
+	}
+	if updatedBatch.RepositoryCount != 3 {
+		t.Errorf("Expected batch repository count 3, got %d", updatedBatch.RepositoryCount)
+	}
+
+	// Test with empty IDs
+	if err := db.AddRepositoriesToBatch(ctx, batch.ID, []int64{}); err != nil {
+		t.Errorf("AddRepositoriesToBatch() with empty IDs should not error, got %v", err)
+	}
+}
+
+func TestRemoveRepositoriesFromBatch(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a batch
+	batch := &models.Batch{
+		Name:            "Test Batch",
+		Type:            "pilot",
+		RepositoryCount: 0,
+		Status:          "ready",
+		CreatedAt:       time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+
+	// Create and assign repositories to batch
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+	var repoIDs []int64
+	for i := 0; i < 3; i++ {
+		repo := &models.Repository{
+			FullName:      fmt.Sprintf("org/repo%d", i),
+			Source:        "ghes",
+			SourceURL:     "https://github.com/org/repo",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			BatchID:       &batch.ID,
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+		saved, _ := db.GetRepository(ctx, repo.FullName)
+		repoIDs = append(repoIDs, saved.ID)
+	}
+
+	// Update batch count manually for test
+	batch.RepositoryCount = 3
+	if err := db.UpdateBatch(ctx, batch); err != nil {
+		t.Fatalf("UpdateBatch() error = %v", err)
+	}
+
+	// Remove some repositories from batch
+	if err := db.RemoveRepositoriesFromBatch(ctx, batch.ID, repoIDs[:2]); err != nil {
+		t.Fatalf("RemoveRepositoriesFromBatch() error = %v", err)
+	}
+
+	// Verify repositories were removed
+	repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch.ID})
+	if err != nil {
+		t.Fatalf("ListRepositories() error = %v", err)
+	}
+	if len(repos) != 1 {
+		t.Errorf("Expected 1 repository remaining in batch, got %d", len(repos))
+	}
+
+	// Verify batch count was updated
+	updatedBatch, err := db.GetBatch(ctx, batch.ID)
+	if err != nil {
+		t.Fatalf("GetBatch() error = %v", err)
+	}
+	if updatedBatch.RepositoryCount != 1 {
+		t.Errorf("Expected batch repository count 1, got %d", updatedBatch.RepositoryCount)
+	}
+
+	// Test with empty IDs
+	if err := db.RemoveRepositoriesFromBatch(ctx, batch.ID, []int64{}); err != nil {
+		t.Errorf("RemoveRepositoriesFromBatch() with empty IDs should not error, got %v", err)
+	}
+}
+
+func TestListRepositoriesWithSearch(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+
+	// Create test repositories with different names
+	repos := []string{
+		"acme/frontend-app",
+		"acme/backend-api",
+		"company/mobile-app",
+		"company/web-service",
+	}
+
+	for _, name := range repos {
+		repo := &models.Repository{
+			FullName:      name,
+			Source:        "ghes",
+			SourceURL:     "https://github.com/" + name,
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		search   string
+		expected int
+	}{
+		{
+			name:     "Search for 'app'",
+			search:   "app",
+			expected: 2,
+		},
+		{
+			name:     "Search for 'acme'",
+			search:   "acme",
+			expected: 2,
+		},
+		{
+			name:     "Search for 'frontend'",
+			search:   "frontend",
+			expected: 1,
+		},
+		{
+			name:     "Search for 'service'",
+			search:   "service",
+			expected: 1,
+		},
+		{
+			name:     "Case insensitive search",
+			search:   "ACME",
+			expected: 2,
+		},
+		{
+			name:     "No results",
+			search:   "nonexistent",
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := db.ListRepositories(ctx, map[string]interface{}{"search": tt.search})
+			if err != nil {
+				t.Fatalf("ListRepositories() error = %v", err)
+			}
+			if len(results) != tt.expected {
+				t.Errorf("Expected %d repositories, got %d", tt.expected, len(results))
+			}
+		})
+	}
+}
+
+func TestListRepositoriesAvailableForBatch(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+
+	// Create repositories with different statuses
+	testCases := []struct {
+		name   string
+		status models.MigrationStatus
+	}{
+		{"org/pending", models.StatusPending},
+		{"org/complete", models.StatusComplete},
+		{"org/queued", models.StatusQueuedForMigration},
+		{"org/dry-run-complete", models.StatusDryRunComplete},
+		{"org/dry-run-failed", models.StatusDryRunFailed},
+		{"org/migrating", models.StatusMigratingContent},
+		{"org/failed", models.StatusMigrationFailed},
+	}
+
+	for _, tc := range testCases {
+		repo := &models.Repository{
+			FullName:      tc.name,
+			Source:        "ghes",
+			SourceURL:     "https://github.com/" + tc.name,
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(tc.status),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+	}
+
+	// Get repositories available for batch
+	results, err := db.ListRepositories(ctx, map[string]interface{}{"available_for_batch": true})
+	if err != nil {
+		t.Fatalf("ListRepositories() error = %v", err)
+	}
+
+	// Should include: pending, dry_run_complete, dry_run_failed, migration_failed
+	// Should exclude: complete, queued_for_migration, migrating_content
+	expectedCount := 4
+	if len(results) != expectedCount {
+		t.Errorf("Expected %d repositories available for batch, got %d", expectedCount, len(results))
+	}
+
+	// Verify excluded statuses are not present
+	excludedStatuses := map[string]bool{
+		string(models.StatusComplete):           true,
+		string(models.StatusQueuedForMigration): true,
+		string(models.StatusMigratingContent):   true,
+	}
+
+	for _, repo := range results {
+		if excludedStatuses[repo.Status] {
+			t.Errorf("Repository with status %s should not be available for batch", repo.Status)
+		}
+	}
+}
+
+func TestListRepositoriesWithPagination(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+
+	// Create 10 test repositories
+	for i := 0; i < 10; i++ {
+		repo := &models.Repository{
+			FullName:      fmt.Sprintf("org/repo%02d", i),
+			Source:        "ghes",
+			SourceURL:     "https://github.com/org/repo",
+			TotalSize:     &totalSize,
+			DefaultBranch: &defaultBranch,
+			Status:        string(models.StatusPending),
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("SaveRepository() error = %v", err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		limit    int
+		offset   int
+		expected int
+	}{
+		{
+			name:     "First page",
+			limit:    5,
+			offset:   0,
+			expected: 5,
+		},
+		{
+			name:     "Second page",
+			limit:    5,
+			offset:   5,
+			expected: 5,
+		},
+		{
+			name:     "Third page (partial)",
+			limit:    5,
+			offset:   8,
+			expected: 2,
+		},
+		{
+			name:     "Beyond available",
+			limit:    5,
+			offset:   15,
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := db.ListRepositories(ctx, map[string]interface{}{
+				"limit":  tt.limit,
+				"offset": tt.offset,
+			})
+			if err != nil {
+				t.Fatalf("ListRepositories() error = %v", err)
+			}
+			if len(results) != tt.expected {
+				t.Errorf("Expected %d repositories, got %d", tt.expected, len(results))
+			}
+		})
+	}
+}
