@@ -19,6 +19,15 @@ const (
 	LargeFileThreshold = 100 * 1024 * 1024
 )
 
+// Repository Analysis Strategy:
+// 1. Use `git count-objects -vH` for accurate repository size calculation
+//    - Provides size of loose objects and packfiles
+//    - More accurate for Git-specific sizing than disk usage
+// 2. Use `git-sizer` for detailed Git statistics and analysis
+//    - Commit counts, largest files, tree entries, history depth
+//    - Identifies potential migration problems
+//    - Provides detailed blob and tree analysis
+
 // Analyzer analyzes Git repository properties
 type Analyzer struct {
 	logger *slog.Logger
@@ -31,31 +40,36 @@ func NewAnalyzer(logger *slog.Logger) *Analyzer {
 	}
 }
 
-// GitSizerOutput represents the JSON output from git-sizer
+// GitSizerMetric represents a single metric in git-sizer JSON output (version 2)
+type GitSizerMetric struct {
+	Value             int64  `json:"value"`
+	ObjectName        string `json:"objectName,omitempty"`
+	ObjectDescription string `json:"objectDescription,omitempty"`
+}
+
+// GitSizerOutput represents the JSON output from git-sizer (json-version=2)
 // Based on actual git-sizer output format: https://github.com/github/git-sizer
-// Values are returned as integers directly in the JSON, not wrapped in objects
+// Each field is a nested object with value, unit, and other metadata
 type GitSizerOutput struct {
-	UniqueCommitCount         int64  `json:"unique_commit_count"`
-	UniqueCommitSize          int64  `json:"unique_commit_size"`
-	UniqueTreeCount           int64  `json:"unique_tree_count"`
-	UniqueTreeSize            int64  `json:"unique_tree_size"`
-	UniqueBlobCount           int64  `json:"unique_blob_count"`
-	UniqueBlobSize            int64  `json:"unique_blob_size"`
-	UniqueTagCount            int64  `json:"unique_tag_count"`
-	MaxCommitSize             int64  `json:"max_commit_size"`
-	MaxCommit                 string `json:"max_commit"` // SHA of largest commit
-	MaxTreeEntries            int64  `json:"max_tree_entries"`
-	MaxBlobSize               int64  `json:"max_blob_size"`
-	MaxBlobSizeBlob           string `json:"max_blob_size_blob"` // Blob info for largest file
-	MaxHistoryDepth           int64  `json:"max_history_depth"`
-	MaxTagDepth               int64  `json:"max_tag_depth"`
-	MaxPathDepth              int64  `json:"max_path_depth"`
-	MaxPathLength             int64  `json:"max_path_length"`
-	MaxExpandedTreeCount      int64  `json:"max_expanded_tree_count"`
-	MaxExpandedBlobCount      int64  `json:"max_expanded_blob_count"`
-	MaxExpandedBlobSize       int64  `json:"max_expanded_blob_size"`
-	MaxExpandedLinkCount      int64  `json:"max_expanded_link_count"`
-	MaxExpandedSubmoduleCount int64  `json:"max_expanded_submodule_count"`
+	UniqueCommitCount         GitSizerMetric `json:"uniqueCommitCount"`
+	UniqueCommitSize          GitSizerMetric `json:"uniqueCommitSize"`
+	UniqueTreeCount           GitSizerMetric `json:"uniqueTreeCount"`
+	UniqueTreeSize            GitSizerMetric `json:"uniqueTreeSize"`
+	UniqueBlobCount           GitSizerMetric `json:"uniqueBlobCount"`
+	UniqueBlobSize            GitSizerMetric `json:"uniqueBlobSize"`
+	UniqueTagCount            GitSizerMetric `json:"uniqueTagCount"`
+	MaxCommitSize             GitSizerMetric `json:"maxCommitSize"`
+	MaxTreeEntries            GitSizerMetric `json:"maxTreeEntries"`
+	MaxBlobSize               GitSizerMetric `json:"maxBlobSize"`
+	MaxHistoryDepth           GitSizerMetric `json:"maxHistoryDepth"`
+	MaxTagDepth               GitSizerMetric `json:"maxTagDepth"`
+	MaxCheckoutPathDepth      GitSizerMetric `json:"maxCheckoutPathDepth"`
+	MaxCheckoutPathLength     GitSizerMetric `json:"maxCheckoutPathLength"`
+	MaxCheckoutTreeCount      GitSizerMetric `json:"maxCheckoutTreeCount"`
+	MaxCheckoutBlobCount      GitSizerMetric `json:"maxCheckoutBlobCount"`
+	MaxCheckoutBlobSize       GitSizerMetric `json:"maxCheckoutBlobSize"`
+	MaxCheckoutLinkCount      GitSizerMetric `json:"maxCheckoutLinkCount"`
+	MaxCheckoutSubmoduleCount GitSizerMetric `json:"maxCheckoutSubmoduleCount"`
 }
 
 // AnalyzeGitProperties analyzes Git repository using git-sizer and additional detection methods
@@ -64,14 +78,14 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 		"repo", repo.FullName,
 		"path", repoPath)
 
-	// Get actual disk size using du command
-	diskSize, err := a.getDiskSize(ctx, repoPath)
+	// Get repository size using git count-objects
+	gitSize, err := a.getGitObjectSize(ctx, repoPath)
 	if err != nil {
-		a.logger.Warn("Failed to get disk size, will use git-sizer estimate",
+		a.logger.Warn("Failed to get git object size, will use git-sizer estimate",
 			"repo", repo.FullName,
 			"error", err)
-		// Fall back to git-sizer estimate if du fails
-		diskSize = 0
+		// Fall back to git-sizer estimate if git count-objects fails
+		gitSize = 0
 	}
 
 	// Run git-sizer with JSON output
@@ -80,45 +94,45 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 		return fmt.Errorf("git-sizer failed: %w", err)
 	}
 
-	// Use disk size if available, otherwise use git-sizer calculation
-	if diskSize > 0 {
-		repo.TotalSize = &diskSize
+	// Use git count-objects size if available, otherwise use git-sizer calculation
+	if gitSize > 0 {
+		repo.TotalSize = &gitSize
 	} else {
-		totalSize := output.UniqueBlobSize + output.UniqueTreeSize + output.UniqueCommitSize
+		totalSize := output.UniqueBlobSize.Value + output.UniqueTreeSize.Value + output.UniqueCommitSize.Value
 		repo.TotalSize = &totalSize
 	}
 
 	// Store largest file info
-	largestFileSize := output.MaxBlobSize
+	largestFileSize := output.MaxBlobSize.Value
 	repo.LargestFileSize = &largestFileSize
-	if output.MaxBlobSizeBlob != "" {
+	if output.MaxBlobSize.ObjectDescription != "" {
 		// Extract filename from blob info (format: "hash (commit:path)")
-		filename := a.extractFilenameFromBlobInfo(output.MaxBlobSizeBlob)
+		filename := a.extractFilenameFromBlobInfo(output.MaxBlobSize.ObjectDescription)
 		if filename != "" {
 			repo.LargestFile = &filename
 		}
 	}
 
 	// Store largest commit info
-	largestCommitSize := output.MaxCommitSize
+	largestCommitSize := output.MaxCommitSize.Value
 	repo.LargestCommitSize = &largestCommitSize
-	if output.MaxCommit != "" {
-		// Store just the commit SHA (may have branch info appended)
-		commitSHA := a.extractCommitSHA(output.MaxCommit)
+	if output.MaxCommitSize.ObjectName != "" {
+		// Store just the commit SHA
+		commitSHA := a.extractCommitSHA(output.MaxCommitSize.ObjectName)
 		repo.LargestCommit = &commitSHA
 	}
 
-	repo.CommitCount = int(output.UniqueCommitCount)
+	repo.CommitCount = int(output.UniqueCommitCount.Value)
 
 	// Detect large files (>100MB) that may cause migration issues
-	if output.MaxBlobSize > LargeFileThreshold {
+	if output.MaxBlobSize.Value > LargeFileThreshold {
 		repo.HasLargeFiles = true
 		// git-sizer only gives us the max blob size, not a count of large files
 		// We set count to 1 to indicate at least one large file exists
 		repo.LargeFileCount = 1
 		a.logger.Warn("Large file detected in repository",
 			"repo", repo.FullName,
-			"size_mb", output.MaxBlobSize/(1024*1024),
+			"size_mb", output.MaxBlobSize.Value/(1024*1024),
 			"file", repo.LargestFile)
 	}
 
@@ -297,29 +311,169 @@ func (a *Analyzer) getTagCount(ctx context.Context, repoPath string) int {
 	return count
 }
 
-// getDiskSize returns the actual disk size of the repository using du command
-func (a *Analyzer) getDiskSize(ctx context.Context, repoPath string) (int64, error) {
-	// Use du -sb for size in bytes
-	cmd := exec.CommandContext(ctx, "du", "-sb", repoPath)
-	output, err := cmd.Output()
+// GitCountObjectsOutput represents parsed output from git count-objects -vH
+type GitCountObjectsOutput struct {
+	Count         int64 // Number of loose objects
+	Size          int64 // Size of loose objects in bytes
+	InPack        int64 // Number of objects in packs
+	Packs         int64 // Number of packs
+	SizePack      int64 // Size of packs in bytes
+	PrunePackable int64 // Number of objects that could be pruned
+	Garbage       int64 // Number of garbage files
+	SizeGarbage   int64 // Size of garbage files in bytes
+}
+
+// getGitObjectSize returns the repository size using git count-objects -vH
+// This provides Git-specific size information about loose objects and packfiles
+func (a *Analyzer) getGitObjectSize(ctx context.Context, repoPath string) (int64, error) {
+	cmd := exec.CommandContext(ctx, "git", "count-objects", "-vH")
+	cmd.Dir = repoPath
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return 0, fmt.Errorf("git count-objects failed: %w (stderr: %s)", err, stderr.String())
+	}
+
+	// Parse the output
+	output, err := a.parseGitCountObjects(stdout.String())
 	if err != nil {
-		return 0, fmt.Errorf("du command failed: %w", err)
+		return 0, fmt.Errorf("failed to parse git count-objects output: %w", err)
 	}
 
-	// Parse output: "size<tab>path"
-	parts := bytes.Fields(output)
-	if len(parts) < 1 {
-		return 0, fmt.Errorf("unexpected du output format")
+	// Total size is loose objects + packed objects
+	totalSize := output.Size + output.SizePack
+
+	a.logger.Debug("Git object statistics",
+		"repo_path", repoPath,
+		"loose_objects", output.Count,
+		"loose_size_bytes", output.Size,
+		"packed_objects", output.InPack,
+		"pack_count", output.Packs,
+		"pack_size_bytes", output.SizePack,
+		"total_size_bytes", totalSize)
+
+	return totalSize, nil
+}
+
+// parseGitCountObjects parses the output of git count-objects -vH
+// Example output:
+// count: 391
+// size: 1.84 MiB
+// in-pack: 4
+// packs: 1
+// size-pack: 2.44 KiB
+func (a *Analyzer) parseGitCountObjects(output string) (*GitCountObjectsOutput, error) {
+	result := &GitCountObjectsOutput{}
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		switch key {
+		case "count":
+			if v, err := a.parseInteger(value); err == nil {
+				result.Count = v
+			}
+		case "size":
+			if v, err := a.parseHumanSize(value); err == nil {
+				result.Size = v
+			}
+		case "in-pack":
+			if v, err := a.parseInteger(value); err == nil {
+				result.InPack = v
+			}
+		case "packs":
+			if v, err := a.parseInteger(value); err == nil {
+				result.Packs = v
+			}
+		case "size-pack":
+			if v, err := a.parseHumanSize(value); err == nil {
+				result.SizePack = v
+			}
+		case "prune-packable":
+			if v, err := a.parseInteger(value); err == nil {
+				result.PrunePackable = v
+			}
+		case "garbage":
+			if v, err := a.parseInteger(value); err == nil {
+				result.Garbage = v
+			}
+		case "size-garbage":
+			if v, err := a.parseHumanSize(value); err == nil {
+				result.SizeGarbage = v
+			}
+		}
 	}
 
-	// Parse size
-	sizeStr := string(parts[0])
-	size := int64(0)
-	if _, err := fmt.Sscanf(sizeStr, "%d", &size); err != nil {
-		return 0, fmt.Errorf("failed to parse size: %w", err)
+	return result, nil
+}
+
+// parseInteger parses an integer value from git count-objects output
+func (a *Analyzer) parseInteger(value string) (int64, error) {
+	var result int64
+	if _, err := fmt.Sscanf(value, "%d", &result); err != nil {
+		return 0, err
+	}
+	return result, nil
+}
+
+// parseHumanSize parses human-readable size (e.g., "1.84 MiB", "2.44 KiB") to bytes
+func (a *Analyzer) parseHumanSize(value string) (int64, error) {
+	// Handle formats like "1.84 MiB", "2.44 KiB", "0 bytes"
+	parts := strings.Fields(value)
+	if len(parts) == 0 {
+		return 0, fmt.Errorf("empty size value")
 	}
 
-	return size, nil
+	// If it's just a number (bytes), parse directly
+	if len(parts) == 1 || parts[1] == "bytes" {
+		return a.parseInteger(parts[0])
+	}
+
+	// Parse the numeric value
+	var numValue float64
+	if _, err := fmt.Sscanf(parts[0], "%f", &numValue); err != nil {
+		return 0, fmt.Errorf("failed to parse size number: %w", err)
+	}
+
+	// Parse the unit
+	if len(parts) < 2 {
+		return int64(numValue), nil
+	}
+
+	unit := strings.ToLower(parts[1])
+	var multiplier int64
+
+	switch unit {
+	case "kib":
+		multiplier = 1024
+	case "mib":
+		multiplier = 1024 * 1024
+	case "gib":
+		multiplier = 1024 * 1024 * 1024
+	case "tib":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	case "bytes", "byte":
+		multiplier = 1
+	default:
+		return 0, fmt.Errorf("unknown size unit: %s", unit)
+	}
+
+	return int64(numValue * float64(multiplier)), nil
 }
 
 // extractCommitSHA extracts the commit SHA from git-sizer output
@@ -359,40 +513,40 @@ func (a *Analyzer) CheckRepositoryProblems(output *GitSizerOutput) []string {
 	// Reference: https://github.com/github/git-sizer
 
 	// Very large commits (>100MB) - GitHub has a 100MB limit
-	if output.MaxCommitSize > 100*1024*1024 {
+	if output.MaxCommitSize.Value > 100*1024*1024 {
 		problems = append(problems,
-			fmt.Sprintf("Commit exceeds GitHub limit: %d MB (limit: 100 MB)", output.MaxCommitSize/(1024*1024)))
+			fmt.Sprintf("Commit exceeds GitHub limit: %d MB (limit: 100 MB)", output.MaxCommitSize.Value/(1024*1024)))
 	}
 
 	// Very large blobs (>50MB)
-	if output.MaxBlobSize > 50*1024*1024 {
+	if output.MaxBlobSize.Value > 50*1024*1024 {
 		problems = append(problems,
-			fmt.Sprintf("Very large file detected: %d MB", output.MaxBlobSize/(1024*1024)))
+			fmt.Sprintf("Very large file detected: %d MB", output.MaxBlobSize.Value/(1024*1024)))
 	}
 
 	// Extremely large repositories (>5GB)
-	totalSize := output.UniqueBlobSize + output.UniqueTreeSize + output.UniqueCommitSize
+	totalSize := output.UniqueBlobSize.Value + output.UniqueTreeSize.Value + output.UniqueCommitSize.Value
 	if totalSize > 5*1024*1024*1024 {
 		problems = append(problems,
 			fmt.Sprintf("Very large repository: %d GB", totalSize/(1024*1024*1024)))
 	}
 
 	// Very deep history (>100k commits)
-	if output.MaxHistoryDepth > 100000 {
+	if output.MaxHistoryDepth.Value > 100000 {
 		problems = append(problems,
-			fmt.Sprintf("Very deep history: %d commits", output.MaxHistoryDepth))
+			fmt.Sprintf("Very deep history: %d commits", output.MaxHistoryDepth.Value))
 	}
 
 	// Extremely large trees (>10k entries)
-	if output.MaxTreeEntries > 10000 {
+	if output.MaxTreeEntries.Value > 10000 {
 		problems = append(problems,
-			fmt.Sprintf("Very large directory: %d entries", output.MaxTreeEntries))
+			fmt.Sprintf("Very large directory: %d entries", output.MaxTreeEntries.Value))
 	}
 
 	// Extremely large checkouts (>100k files)
-	if output.MaxExpandedBlobCount > 100000 {
+	if output.MaxCheckoutBlobCount.Value > 100000 {
 		problems = append(problems,
-			fmt.Sprintf("Very large checkout: %d files", output.MaxExpandedBlobCount))
+			fmt.Sprintf("Very large checkout: %d files", output.MaxCheckoutBlobCount.Value))
 	}
 
 	return problems

@@ -134,67 +134,67 @@ func TestCheckRepositoryProblems(t *testing.T) {
 		{
 			name: "No problems",
 			output: &GitSizerOutput{
-				MaxBlobSize:          1024 * 1024,       // 1MB
-				UniqueBlobSize:       100 * 1024 * 1024, // 100MB
-				UniqueTreeSize:       10 * 1024 * 1024,  // 10MB
-				UniqueCommitSize:     1 * 1024 * 1024,   // 1MB
-				MaxHistoryDepth:      1000,
-				MaxTreeEntries:       100,
-				MaxExpandedBlobCount: 1000,
+				MaxBlobSize:          GitSizerMetric{Value: 1024 * 1024},       // 1MB
+				UniqueBlobSize:       GitSizerMetric{Value: 100 * 1024 * 1024}, // 100MB
+				UniqueTreeSize:       GitSizerMetric{Value: 10 * 1024 * 1024},  // 10MB
+				UniqueCommitSize:     GitSizerMetric{Value: 1 * 1024 * 1024},   // 1MB
+				MaxHistoryDepth:      GitSizerMetric{Value: 1000},
+				MaxTreeEntries:       GitSizerMetric{Value: 100},
+				MaxCheckoutBlobCount: GitSizerMetric{Value: 1000},
 			},
 			expected: 0,
 		},
 		{
 			name: "Large blob problem",
 			output: &GitSizerOutput{
-				MaxBlobSize:          100 * 1024 * 1024, // 100MB
-				UniqueBlobSize:       100 * 1024 * 1024,
-				UniqueTreeSize:       10 * 1024 * 1024,
-				UniqueCommitSize:     1 * 1024 * 1024,
-				MaxHistoryDepth:      1000,
-				MaxTreeEntries:       100,
-				MaxExpandedBlobCount: 1000,
+				MaxBlobSize:          GitSizerMetric{Value: 100 * 1024 * 1024}, // 100MB
+				UniqueBlobSize:       GitSizerMetric{Value: 100 * 1024 * 1024},
+				UniqueTreeSize:       GitSizerMetric{Value: 10 * 1024 * 1024},
+				UniqueCommitSize:     GitSizerMetric{Value: 1 * 1024 * 1024},
+				MaxHistoryDepth:      GitSizerMetric{Value: 1000},
+				MaxTreeEntries:       GitSizerMetric{Value: 100},
+				MaxCheckoutBlobCount: GitSizerMetric{Value: 1000},
 			},
 			expected: 1,
 		},
 		{
 			name: "Large repository problem",
 			output: &GitSizerOutput{
-				MaxBlobSize:          1024 * 1024,
-				UniqueBlobSize:       6 * 1024 * 1024 * 1024, // 6GB
-				UniqueTreeSize:       10 * 1024 * 1024,
-				UniqueCommitSize:     1 * 1024 * 1024,
-				MaxHistoryDepth:      1000,
-				MaxTreeEntries:       100,
-				MaxExpandedBlobCount: 1000,
+				MaxBlobSize:          GitSizerMetric{Value: 1024 * 1024},
+				UniqueBlobSize:       GitSizerMetric{Value: 6 * 1024 * 1024 * 1024}, // 6GB
+				UniqueTreeSize:       GitSizerMetric{Value: 10 * 1024 * 1024},
+				UniqueCommitSize:     GitSizerMetric{Value: 1 * 1024 * 1024},
+				MaxHistoryDepth:      GitSizerMetric{Value: 1000},
+				MaxTreeEntries:       GitSizerMetric{Value: 100},
+				MaxCheckoutBlobCount: GitSizerMetric{Value: 1000},
 			},
 			expected: 1,
 		},
 		{
 			name: "Large commit problem",
 			output: &GitSizerOutput{
-				MaxCommitSize:        150 * 1024 * 1024, // 150MB - exceeds GitHub limit
-				MaxBlobSize:          1024 * 1024,
-				UniqueBlobSize:       100 * 1024 * 1024,
-				UniqueTreeSize:       10 * 1024 * 1024,
-				UniqueCommitSize:     1 * 1024 * 1024,
-				MaxHistoryDepth:      1000,
-				MaxTreeEntries:       100,
-				MaxExpandedBlobCount: 1000,
+				MaxCommitSize:        GitSizerMetric{Value: 150 * 1024 * 1024}, // 150MB - exceeds GitHub limit
+				MaxBlobSize:          GitSizerMetric{Value: 1024 * 1024},
+				UniqueBlobSize:       GitSizerMetric{Value: 100 * 1024 * 1024},
+				UniqueTreeSize:       GitSizerMetric{Value: 10 * 1024 * 1024},
+				UniqueCommitSize:     GitSizerMetric{Value: 1 * 1024 * 1024},
+				MaxHistoryDepth:      GitSizerMetric{Value: 1000},
+				MaxTreeEntries:       GitSizerMetric{Value: 100},
+				MaxCheckoutBlobCount: GitSizerMetric{Value: 1000},
 			},
 			expected: 1,
 		},
 		{
 			name: "Multiple problems",
 			output: &GitSizerOutput{
-				MaxCommitSize:        150 * 1024 * 1024,      // 150MB - exceeds limit
-				MaxBlobSize:          100 * 1024 * 1024,      // 100MB
-				UniqueBlobSize:       6 * 1024 * 1024 * 1024, // 6GB
-				UniqueTreeSize:       10 * 1024 * 1024,
-				UniqueCommitSize:     1 * 1024 * 1024,
-				MaxHistoryDepth:      150000,
-				MaxTreeEntries:       15000,
-				MaxExpandedBlobCount: 150000,
+				MaxCommitSize:        GitSizerMetric{Value: 150 * 1024 * 1024},      // 150MB - exceeds limit
+				MaxBlobSize:          GitSizerMetric{Value: 100 * 1024 * 1024},      // 100MB
+				UniqueBlobSize:       GitSizerMetric{Value: 6 * 1024 * 1024 * 1024}, // 6GB
+				UniqueTreeSize:       GitSizerMetric{Value: 10 * 1024 * 1024},
+				UniqueCommitSize:     GitSizerMetric{Value: 1 * 1024 * 1024},
+				MaxHistoryDepth:      GitSizerMetric{Value: 150000},
+				MaxTreeEntries:       GitSizerMetric{Value: 15000},
+				MaxCheckoutBlobCount: GitSizerMetric{Value: 150000},
 			},
 			expected: 6,
 		},
@@ -509,4 +509,314 @@ func TestLargeFileDetection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseGitCountObjects(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected *GitCountObjectsOutput
+	}{
+		{
+			name: "Standard output with human-readable sizes",
+			input: `count: 391
+size: 1.84 MiB
+in-pack: 4
+packs: 1
+size-pack: 2.44 KiB
+prune-packable: 0
+garbage: 0
+size-garbage: 0 bytes`,
+			expected: &GitCountObjectsOutput{
+				Count:         391,
+				Size:          1929379, // 1.84 MiB in bytes (1.84 * 1024 * 1024)
+				InPack:        4,
+				Packs:         1,
+				SizePack:      2498, // 2.44 KiB in bytes (approx)
+				PrunePackable: 0,
+				Garbage:       0,
+				SizeGarbage:   0,
+			},
+		},
+		{
+			name: "Output with larger values",
+			input: `count: 1000
+size: 500 MiB
+in-pack: 50000
+packs: 5
+size-pack: 2.5 GiB
+prune-packable: 10
+garbage: 2
+size-garbage: 1.5 KiB`,
+			expected: &GitCountObjectsOutput{
+				Count:         1000,
+				Size:          524288000, // 500 MiB
+				InPack:        50000,
+				Packs:         5,
+				SizePack:      2684354560, // 2.5 GiB
+				PrunePackable: 10,
+				Garbage:       2,
+				SizeGarbage:   1536, // 1.5 KiB
+			},
+		},
+		{
+			name: "Output with zero bytes",
+			input: `count: 0
+size: 0 bytes
+in-pack: 0
+packs: 0
+size-pack: 0 bytes
+prune-packable: 0
+garbage: 0
+size-garbage: 0 bytes`,
+			expected: &GitCountObjectsOutput{
+				Count:         0,
+				Size:          0,
+				InPack:        0,
+				Packs:         0,
+				SizePack:      0,
+				PrunePackable: 0,
+				Garbage:       0,
+				SizeGarbage:   0,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := analyzer.parseGitCountObjects(tt.input)
+			if err != nil {
+				t.Fatalf("parseGitCountObjects failed: %v", err)
+			}
+
+			if result.Count != tt.expected.Count {
+				t.Errorf("Count: expected %d, got %d", tt.expected.Count, result.Count)
+			}
+			if result.InPack != tt.expected.InPack {
+				t.Errorf("InPack: expected %d, got %d", tt.expected.InPack, result.InPack)
+			}
+			if result.Packs != tt.expected.Packs {
+				t.Errorf("Packs: expected %d, got %d", tt.expected.Packs, result.Packs)
+			}
+			if result.PrunePackable != tt.expected.PrunePackable {
+				t.Errorf("PrunePackable: expected %d, got %d", tt.expected.PrunePackable, result.PrunePackable)
+			}
+			if result.Garbage != tt.expected.Garbage {
+				t.Errorf("Garbage: expected %d, got %d", tt.expected.Garbage, result.Garbage)
+			}
+			// Allow some tolerance for size conversions due to floating point
+			if result.Size < tt.expected.Size-1000 || result.Size > tt.expected.Size+1000 {
+				t.Errorf("Size: expected ~%d, got %d", tt.expected.Size, result.Size)
+			}
+			if result.SizePack < tt.expected.SizePack-1000 || result.SizePack > tt.expected.SizePack+1000 {
+				t.Errorf("SizePack: expected ~%d, got %d", tt.expected.SizePack, result.SizePack)
+			}
+			if result.SizeGarbage < tt.expected.SizeGarbage-10 || result.SizeGarbage > tt.expected.SizeGarbage+10 {
+				t.Errorf("SizeGarbage: expected ~%d, got %d", tt.expected.SizeGarbage, result.SizeGarbage)
+			}
+		})
+	}
+}
+
+func TestParseHumanSize(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected int64
+		hasError bool
+	}{
+		{
+			name:     "Bytes",
+			input:    "0 bytes",
+			expected: 0,
+		},
+		{
+			name:     "Single byte",
+			input:    "1 byte",
+			expected: 1,
+		},
+		{
+			name:     "KiB",
+			input:    "2.44 KiB",
+			expected: 2498, // approximately
+		},
+		{
+			name:     "MiB",
+			input:    "1.84 MiB",
+			expected: 1929379, // approximately
+		},
+		{
+			name:     "GiB",
+			input:    "2.5 GiB",
+			expected: 2684354560,
+		},
+		{
+			name:     "TiB",
+			input:    "1.0 TiB",
+			expected: 1099511627776,
+		},
+		{
+			name:     "Integer KiB",
+			input:    "100 KiB",
+			expected: 102400,
+		},
+		{
+			name:     "Integer MiB",
+			input:    "50 MiB",
+			expected: 52428800,
+		},
+		{
+			name:     "Just number",
+			input:    "1024",
+			expected: 1024,
+		},
+		{
+			name:     "Unknown unit",
+			input:    "100 foobar",
+			hasError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := analyzer.parseHumanSize(tt.input)
+			if tt.hasError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			// Allow 1% tolerance for floating point conversions
+			tolerance := tt.expected / 100
+			if tolerance < 10 {
+				tolerance = 10
+			}
+			if result < tt.expected-tolerance || result > tt.expected+tolerance {
+				t.Errorf("Expected ~%d (±%d), got %d", tt.expected, tolerance, result)
+			}
+		})
+	}
+}
+
+func TestParseInteger(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected int64
+		hasError bool
+	}{
+		{
+			name:     "Zero",
+			input:    "0",
+			expected: 0,
+		},
+		{
+			name:     "Small number",
+			input:    "42",
+			expected: 42,
+		},
+		{
+			name:     "Large number",
+			input:    "1234567890",
+			expected: 1234567890,
+		},
+		{
+			name:     "Invalid number",
+			input:    "abc",
+			hasError: true,
+		},
+		{
+			name:     "Number with text",
+			input:    "123abc",
+			expected: 123, // Sscanf stops at first non-digit
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := analyzer.parseInteger(tt.input)
+			if tt.hasError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %d, got %d", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestGetGitObjectSize_Integration(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available, skipping test")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+	ctx := context.Background()
+
+	// Create a temporary git repository
+	tempDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Configure git user
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	// Create a test file and commit
+	testFile := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content for git object size calculation"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tempDir
+	cmd.Run()
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
+
+	// Test getGitObjectSize
+	size, err := analyzer.getGitObjectSize(ctx, tempDir)
+	if err != nil {
+		t.Fatalf("getGitObjectSize failed: %v", err)
+	}
+
+	if size <= 0 {
+		t.Error("Expected positive size, got", size)
+	}
+
+	t.Logf("Git object size: %d bytes", size)
 }
