@@ -572,6 +572,86 @@ func TestBuildGraphQLURL(t *testing.T) {
 	}
 }
 
+func TestRepositoryURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		fullName string
+		expected string
+	}{
+		{
+			name:     "GitHub.com - standard repository",
+			baseURL:  "https://api.github.com",
+			fullName: "octocat/hello-world",
+			expected: "https://github.com/octocat/hello-world",
+		},
+		{
+			name:     "GitHub.com - empty base URL",
+			baseURL:  "",
+			fullName: "octocat/hello-world",
+			expected: "https://github.com/octocat/hello-world",
+		},
+		{
+			name:     "GHEC - data residency domain",
+			baseURL:  "https://octocorp.ghe.com",
+			fullName: "engineering/webapp",
+			expected: "https://octocorp.ghe.com/engineering/webapp",
+		},
+		{
+			name:     "GHEC - data residency with api subdomain",
+			baseURL:  "https://api.octocorp.ghe.com",
+			fullName: "engineering/webapp",
+			expected: "https://octocorp.ghe.com/engineering/webapp",
+		},
+		{
+			name:     "GHEC - data residency with /api/v3",
+			baseURL:  "https://api.octocorp.ghe.com/api/v3",
+			fullName: "engineering/webapp",
+			expected: "https://octocorp.ghe.com/engineering/webapp",
+		},
+		{
+			name:     "GHES - self-hosted instance",
+			baseURL:  "https://github.company.com/api/v3",
+			fullName: "myorg/myrepo",
+			expected: "https://github.company.com/myorg/myrepo",
+		},
+		{
+			name:     "GHES - self-hosted with api subdomain",
+			baseURL:  "https://api.github.company.com",
+			fullName: "myorg/myrepo",
+			expected: "https://api.github.company.com/myorg/myrepo",
+		},
+		{
+			name:     "GHES - self-hosted with trailing slash",
+			baseURL:  "https://github.company.com/",
+			fullName: "myorg/myrepo",
+			expected: "https://github.company.com/myorg/myrepo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			cfg := ClientConfig{
+				BaseURL:     tt.baseURL,
+				Token:       "test-token",
+				RetryConfig: DefaultRetryConfig(),
+				Logger:      logger,
+			}
+
+			client, err := NewClient(cfg)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v, want nil", err)
+			}
+
+			result := client.RepositoryURL(tt.fullName)
+			if result != tt.expected {
+				t.Errorf("RepositoryURL(%q) = %q, want %q", tt.fullName, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestNewClientWithGHECDataResidency(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := ClientConfig{

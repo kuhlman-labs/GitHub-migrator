@@ -286,6 +286,9 @@ func TestExecuteBatch(t *testing.T) {
 		// Wait for async execution to complete
 		waitForBatchCompletion(t, scheduler, batch.ID, 2*time.Second)
 
+		// Give the scheduler time to finish all background database updates
+		time.Sleep(500 * time.Millisecond)
+
 		// Verify repositories were executed
 		executedRepos := executor.GetExecutedRepos()
 		if len(executedRepos) != 2 {

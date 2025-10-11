@@ -492,6 +492,44 @@ func (c *Client) TestAuthentication(ctx context.Context) error {
 	return nil
 }
 
+// RepositoryURL converts a repository full name (org/repo) to a full repository URL
+// based on the client's base URL. This is useful for converting destination repository
+// names to URLs for display and linking purposes.
+func (c *Client) RepositoryURL(fullName string) string {
+	// Parse the base URL to get the domain
+	instanceType := detectInstanceType(c.baseURL)
+
+	switch instanceType {
+	case InstanceTypeGitHub:
+		// Standard GitHub.com
+		return fmt.Sprintf("https://github.com/%s", fullName)
+
+	case InstanceTypeGHEC:
+		// GitHub Enterprise Cloud with data residency (e.g., octocorp.ghe.com)
+		domain := strings.TrimPrefix(c.baseURL, "https://")
+		domain = strings.TrimPrefix(domain, "http://")
+		domain = strings.TrimPrefix(domain, "api.")
+		domain = strings.TrimSuffix(domain, "/")
+		domain = strings.TrimSuffix(domain, "/api/v3")
+		domain = strings.TrimSuffix(domain, "/api")
+		return fmt.Sprintf("https://%s/%s", domain, fullName)
+
+	case InstanceTypeGHES:
+		// GitHub Enterprise Server
+		domain := strings.TrimSuffix(c.baseURL, "/")
+		domain = strings.TrimSuffix(domain, "/api/v3")
+		domain = strings.TrimSuffix(domain, "/api")
+		return fmt.Sprintf("%s/%s", domain, fullName)
+
+	default:
+		// Fallback to base URL with full name
+		domain := strings.TrimSuffix(c.baseURL, "/")
+		domain = strings.TrimSuffix(domain, "/api/v3")
+		domain = strings.TrimSuffix(domain, "/api")
+		return fmt.Sprintf("%s/%s", domain, fullName)
+	}
+}
+
 // ListEnterpriseOrganizations lists all organizations in an enterprise using GraphQL
 func (c *Client) ListEnterpriseOrganizations(ctx context.Context, enterpriseSlug string) ([]string, error) {
 	c.logger.Info("Listing organizations for enterprise", "enterprise", enterpriseSlug)

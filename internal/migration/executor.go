@@ -660,6 +660,9 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 				// Set destination details
 				destFullName := fmt.Sprintf("%s/%s", repo.Organization(), repo.Name())
 				repo.DestinationFullName = &destFullName
+				// Convert full name to URL using the destination client
+				destURL := e.destClient.RepositoryURL(destFullName)
+				repo.DestinationURL = &destURL
 				if err := e.storage.UpdateRepository(ctx, repo); err != nil {
 					e.logger.Error("Failed to update repository status", "error", err)
 				}

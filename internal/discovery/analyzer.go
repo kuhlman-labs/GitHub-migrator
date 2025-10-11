@@ -370,56 +370,45 @@ func (a *Analyzer) parseGitCountObjects(output string) (*GitCountObjectsOutput, 
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		switch key {
-		case "count":
-			if v, err := a.parseInteger(value); err == nil {
-				result.Count = v
-			}
-		case "size":
-			if v, err := a.parseHumanSize(value); err == nil {
-				result.Size = v
-			}
-		case "in-pack":
-			if v, err := a.parseInteger(value); err == nil {
-				result.InPack = v
-			}
-		case "packs":
-			if v, err := a.parseInteger(value); err == nil {
-				result.Packs = v
-			}
-		case "size-pack":
-			if v, err := a.parseHumanSize(value); err == nil {
-				result.SizePack = v
-			}
-		case "prune-packable":
-			if v, err := a.parseInteger(value); err == nil {
-				result.PrunePackable = v
-			}
-		case "garbage":
-			if v, err := a.parseInteger(value); err == nil {
-				result.Garbage = v
-			}
-		case "size-garbage":
-			if v, err := a.parseHumanSize(value); err == nil {
-				result.SizeGarbage = v
-			}
-		}
+		a.parseCountObjectsLine(line, result)
 	}
 
 	return result, nil
+}
+
+// parseCountObjectsLine parses a single line from git count-objects output
+func (a *Analyzer) parseCountObjectsLine(line string, result *GitCountObjectsOutput) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return
+	}
+
+	key := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+
+	switch key {
+	case "count":
+		result.Count, _ = a.parseInteger(value)
+	case "size":
+		result.Size, _ = a.parseHumanSize(value)
+	case "in-pack":
+		result.InPack, _ = a.parseInteger(value)
+	case "packs":
+		result.Packs, _ = a.parseInteger(value)
+	case "size-pack":
+		result.SizePack, _ = a.parseHumanSize(value)
+	case "prune-packable":
+		result.PrunePackable, _ = a.parseInteger(value)
+	case "garbage":
+		result.Garbage, _ = a.parseInteger(value)
+	case "size-garbage":
+		result.SizeGarbage, _ = a.parseHumanSize(value)
+	}
 }
 
 // parseInteger parses an integer value from git count-objects output
