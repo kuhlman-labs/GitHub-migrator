@@ -17,13 +17,17 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		INSERT INTO repositories (
 			full_name, source, source_url, total_size, largest_file, 
 			largest_file_size, largest_commit, largest_commit_size,
-			has_lfs, has_submodules, default_branch, branch_count, 
-			commit_count, has_wiki, has_pages, has_discussions, 
+			has_lfs, has_submodules, has_large_files, large_file_count,
+			default_branch, branch_count, commit_count, last_commit_sha,
+			last_commit_date, has_wiki, has_pages, has_discussions, 
 			has_actions, has_projects, branch_protections, 
 			environment_count, secret_count, variable_count, 
 			webhook_count, contributor_count, top_contributors,
-			status, batch_id, priority, discovered_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			issue_count, pull_request_count, tag_count, 
+			open_issue_count, open_pr_count,
+			status, batch_id, priority, destination_url, 
+			destination_full_name, discovered_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(full_name) DO UPDATE SET
 			source = excluded.source,
 			source_url = excluded.source_url,
@@ -34,9 +38,13 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			largest_commit_size = excluded.largest_commit_size,
 			has_lfs = excluded.has_lfs,
 			has_submodules = excluded.has_submodules,
+			has_large_files = excluded.has_large_files,
+			large_file_count = excluded.large_file_count,
 			default_branch = excluded.default_branch,
 			branch_count = excluded.branch_count,
 			commit_count = excluded.commit_count,
+			last_commit_sha = excluded.last_commit_sha,
+			last_commit_date = excluded.last_commit_date,
 			has_wiki = excluded.has_wiki,
 			has_pages = excluded.has_pages,
 			has_discussions = excluded.has_discussions,
@@ -49,6 +57,13 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			webhook_count = excluded.webhook_count,
 			contributor_count = excluded.contributor_count,
 			top_contributors = excluded.top_contributors,
+			issue_count = excluded.issue_count,
+			pull_request_count = excluded.pull_request_count,
+			tag_count = excluded.tag_count,
+			open_issue_count = excluded.open_issue_count,
+			open_pr_count = excluded.open_pr_count,
+			destination_url = excluded.destination_url,
+			destination_full_name = excluded.destination_full_name,
 			updated_at = excluded.updated_at
 	`
 
@@ -56,12 +71,17 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.FullName, repo.Source, repo.SourceURL, repo.TotalSize,
 		repo.LargestFile, repo.LargestFileSize, repo.LargestCommit,
 		repo.LargestCommitSize, repo.HasLFS, repo.HasSubmodules,
+		repo.HasLargeFiles, repo.LargeFileCount,
 		repo.DefaultBranch, repo.BranchCount, repo.CommitCount,
+		repo.LastCommitSHA, repo.LastCommitDate,
 		repo.HasWiki, repo.HasPages, repo.HasDiscussions,
 		repo.HasActions, repo.HasProjects, repo.BranchProtections,
 		repo.EnvironmentCount, repo.SecretCount, repo.VariableCount,
 		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
+		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
+		repo.OpenIssueCount, repo.OpenPRCount,
 		repo.Status, repo.BatchID, repo.Priority,
+		repo.DestinationURL, repo.DestinationFullName,
 		repo.DiscoveredAt, repo.UpdatedAt,
 	)
 
@@ -74,12 +94,16 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 	query := `
 		SELECT id, full_name, source, source_url, total_size, largest_file, 
 			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, default_branch, branch_count, 
-			   commit_count, has_wiki, has_pages, has_discussions, 
+			   has_lfs, has_submodules, has_large_files, large_file_count,
+			   default_branch, branch_count, commit_count, last_commit_sha,
+			   last_commit_date, has_wiki, has_pages, has_discussions, 
 			   has_actions, has_projects, branch_protections, 
 			   environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
-			   status, batch_id, priority, discovered_at, updated_at, migrated_at
+			   issue_count, pull_request_count, tag_count,
+			   open_issue_count, open_pr_count,
+			   status, batch_id, priority, destination_url, 
+			   destination_full_name, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE full_name = ?
 	`
@@ -89,12 +113,17 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
 		&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
 		&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-		&repo.HasSubmodules, &repo.DefaultBranch, &repo.BranchCount,
-		&repo.CommitCount, &repo.HasWiki, &repo.HasPages,
-		&repo.HasDiscussions, &repo.HasActions, &repo.HasProjects,
-		&repo.BranchProtections, &repo.EnvironmentCount, &repo.SecretCount,
-		&repo.VariableCount, &repo.WebhookCount, &repo.ContributorCount,
-		&repo.TopContributors, &repo.Status, &repo.BatchID, &repo.Priority,
+		&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
+		&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
+		&repo.LastCommitSHA, &repo.LastCommitDate,
+		&repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
+		&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
+		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
+		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
+		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
+		&repo.OpenIssueCount, &repo.OpenPRCount,
+		&repo.Status, &repo.BatchID, &repo.Priority,
+		&repo.DestinationURL, &repo.DestinationFullName,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 	)
 
@@ -198,12 +227,16 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 	query := `
 		SELECT id, full_name, source, source_url, total_size, largest_file, 
 			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, default_branch, branch_count, 
-			   commit_count, has_wiki, has_pages, has_discussions, 
+			   has_lfs, has_submodules, has_large_files, large_file_count,
+			   default_branch, branch_count, commit_count, last_commit_sha,
+			   last_commit_date, has_wiki, has_pages, has_discussions, 
 			   has_actions, has_projects, branch_protections, 
 			   environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
-			   status, batch_id, priority, discovered_at, updated_at, migrated_at
+			   issue_count, pull_request_count, tag_count,
+			   open_issue_count, open_pr_count,
+			   status, batch_id, priority, destination_url, 
+			   destination_full_name, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE 1=1
 	`
@@ -240,12 +273,17 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
 			&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
 			&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-			&repo.HasSubmodules, &repo.DefaultBranch, &repo.BranchCount,
-			&repo.CommitCount, &repo.HasWiki, &repo.HasPages,
-			&repo.HasDiscussions, &repo.HasActions, &repo.HasProjects,
-			&repo.BranchProtections, &repo.EnvironmentCount, &repo.SecretCount,
-			&repo.VariableCount, &repo.WebhookCount, &repo.ContributorCount,
-			&repo.TopContributors, &repo.Status, &repo.BatchID, &repo.Priority,
+			&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
+			&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
+			&repo.LastCommitSHA, &repo.LastCommitDate,
+			&repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
+			&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
+			&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
+			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
+			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
+			&repo.OpenIssueCount, &repo.OpenPRCount,
+			&repo.Status, &repo.BatchID, &repo.Priority,
+			&repo.DestinationURL, &repo.DestinationFullName,
 			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 		)
 		if err != nil {
@@ -271,9 +309,13 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 			largest_commit_size = ?,
 			has_lfs = ?,
 			has_submodules = ?,
+			has_large_files = ?,
+			large_file_count = ?,
 			default_branch = ?,
 			branch_count = ?,
 			commit_count = ?,
+			last_commit_sha = ?,
+			last_commit_date = ?,
 			has_wiki = ?,
 			has_pages = ?,
 			has_discussions = ?,
@@ -286,9 +328,16 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 			webhook_count = ?,
 			contributor_count = ?,
 			top_contributors = ?,
+			issue_count = ?,
+			pull_request_count = ?,
+			tag_count = ?,
+			open_issue_count = ?,
+			open_pr_count = ?,
 			status = ?,
 			batch_id = ?,
 			priority = ?,
+			destination_url = ?,
+			destination_full_name = ?,
 			updated_at = ?,
 			migrated_at = ?
 		WHERE full_name = ?
@@ -298,12 +347,17 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 		repo.Source, repo.SourceURL, repo.TotalSize,
 		repo.LargestFile, repo.LargestFileSize, repo.LargestCommit,
 		repo.LargestCommitSize, repo.HasLFS, repo.HasSubmodules,
+		repo.HasLargeFiles, repo.LargeFileCount,
 		repo.DefaultBranch, repo.BranchCount, repo.CommitCount,
+		repo.LastCommitSHA, repo.LastCommitDate,
 		repo.HasWiki, repo.HasPages, repo.HasDiscussions,
 		repo.HasActions, repo.HasProjects, repo.BranchProtections,
 		repo.EnvironmentCount, repo.SecretCount, repo.VariableCount,
 		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
+		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
+		repo.OpenIssueCount, repo.OpenPRCount,
 		repo.Status, repo.BatchID, repo.Priority,
+		repo.DestinationURL, repo.DestinationFullName,
 		repo.UpdatedAt, repo.MigratedAt,
 		repo.FullName,
 	)
@@ -406,12 +460,16 @@ func (d *Database) GetRepositoriesByIDs(ctx context.Context, ids []int64) ([]*mo
 	query := fmt.Sprintf(`
 		SELECT id, full_name, source, source_url, total_size, largest_file, 
 			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, default_branch, branch_count, 
-			   commit_count, has_wiki, has_pages, has_discussions, 
+			   has_lfs, has_submodules, has_large_files, large_file_count,
+			   default_branch, branch_count, commit_count, last_commit_sha,
+			   last_commit_date, has_wiki, has_pages, has_discussions, 
 			   has_actions, has_projects, branch_protections, 
 			   environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
-			   status, batch_id, priority, discovered_at, updated_at, migrated_at
+			   issue_count, pull_request_count, tag_count,
+			   open_issue_count, open_pr_count,
+			   status, batch_id, priority, destination_url, 
+			   destination_full_name, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -443,12 +501,16 @@ func (d *Database) GetRepositoriesByNames(ctx context.Context, names []string) (
 	query := fmt.Sprintf(`
 		SELECT id, full_name, source, source_url, total_size, largest_file, 
 			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, default_branch, branch_count, 
-			   commit_count, has_wiki, has_pages, has_discussions, 
+			   has_lfs, has_submodules, has_large_files, large_file_count,
+			   default_branch, branch_count, commit_count, last_commit_sha,
+			   last_commit_date, has_wiki, has_pages, has_discussions, 
 			   has_actions, has_projects, branch_protections, 
 			   environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
-			   status, batch_id, priority, discovered_at, updated_at, migrated_at
+			   issue_count, pull_request_count, tag_count,
+			   open_issue_count, open_pr_count,
+			   status, batch_id, priority, destination_url, 
+			   destination_full_name, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE full_name IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -468,12 +530,16 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 	query := `
 		SELECT id, full_name, source, source_url, total_size, largest_file, 
 			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, default_branch, branch_count, 
-			   commit_count, has_wiki, has_pages, has_discussions, 
+			   has_lfs, has_submodules, has_large_files, large_file_count,
+			   default_branch, branch_count, commit_count, last_commit_sha,
+			   last_commit_date, has_wiki, has_pages, has_discussions, 
 			   has_actions, has_projects, branch_protections, 
 			   environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
-			   status, batch_id, priority, discovered_at, updated_at, migrated_at
+			   issue_count, pull_request_count, tag_count,
+			   open_issue_count, open_pr_count,
+			   status, batch_id, priority, destination_url, 
+			   destination_full_name, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE id = ?
 	`
@@ -483,12 +549,17 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 		&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
 		&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
 		&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-		&repo.HasSubmodules, &repo.DefaultBranch, &repo.BranchCount,
-		&repo.CommitCount, &repo.HasWiki, &repo.HasPages,
-		&repo.HasDiscussions, &repo.HasActions, &repo.HasProjects,
-		&repo.BranchProtections, &repo.EnvironmentCount, &repo.SecretCount,
-		&repo.VariableCount, &repo.WebhookCount, &repo.ContributorCount,
-		&repo.TopContributors, &repo.Status, &repo.BatchID, &repo.Priority,
+		&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
+		&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
+		&repo.LastCommitSHA, &repo.LastCommitDate,
+		&repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
+		&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
+		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
+		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
+		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
+		&repo.OpenIssueCount, &repo.OpenPRCount,
+		&repo.Status, &repo.BatchID, &repo.Priority,
+		&repo.DestinationURL, &repo.DestinationFullName,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 	)
 
@@ -687,12 +758,17 @@ func (d *Database) scanRepositories(rows *sql.Rows) ([]*models.Repository, error
 			&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
 			&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
 			&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-			&repo.HasSubmodules, &repo.DefaultBranch, &repo.BranchCount,
-			&repo.CommitCount, &repo.HasWiki, &repo.HasPages,
-			&repo.HasDiscussions, &repo.HasActions, &repo.HasProjects,
-			&repo.BranchProtections, &repo.EnvironmentCount, &repo.SecretCount,
-			&repo.VariableCount, &repo.WebhookCount, &repo.ContributorCount,
-			&repo.TopContributors, &repo.Status, &repo.BatchID, &repo.Priority,
+			&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
+			&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
+			&repo.LastCommitSHA, &repo.LastCommitDate,
+			&repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
+			&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
+			&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
+			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
+			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
+			&repo.OpenIssueCount, &repo.OpenPRCount,
+			&repo.Status, &repo.BatchID, &repo.Priority,
+			&repo.DestinationURL, &repo.DestinationFullName,
 			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan repository: %w", err)
