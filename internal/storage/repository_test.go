@@ -1534,6 +1534,32 @@ func TestGetCompletedMigrations(t *testing.T) {
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
 		}
+
+		// Create migration_history record for completed repos
+		if r.status == string(models.StatusComplete) {
+			savedRepo, err := db.GetRepository(ctx, r.fullName)
+			if err != nil {
+				t.Fatalf("Failed to get repository %s: %v", r.fullName, err)
+			}
+
+			history := &models.MigrationHistory{
+				RepositoryID: savedRepo.ID,
+				Status:       "completed",
+				Phase:        "migration",
+				StartedAt:    now.Add(-1 * time.Hour),
+			}
+			historyID, err := db.CreateMigrationHistory(ctx, history)
+			if err != nil {
+				t.Fatalf("Failed to create migration history: %v", err)
+			}
+
+			// Update with completion time
+			completedMsg := "Migration completed"
+			err = db.UpdateMigrationHistory(ctx, historyID, "completed", &completedMsg)
+			if err != nil {
+				t.Fatalf("Failed to update migration history: %v", err)
+			}
+		}
 	}
 
 	// Get completed migrations
@@ -1547,10 +1573,19 @@ func TestGetCompletedMigrations(t *testing.T) {
 		t.Errorf("Expected 2 completed migrations, got %d", len(migrations))
 	}
 
-	// Verify they are the correct ones
+	// Verify they are the correct ones and have migration history data
 	for _, m := range migrations {
 		if m.Status != string(models.StatusComplete) {
 			t.Errorf("Expected status 'complete', got %s", m.Status)
+		}
+		if m.StartedAt == nil {
+			t.Errorf("Expected started_at to be populated for %s", m.FullName)
+		}
+		if m.CompletedAt == nil {
+			t.Errorf("Expected completed_at to be populated for %s", m.FullName)
+		}
+		if m.DurationSeconds == nil {
+			t.Errorf("Expected duration_seconds to be populated for %s", m.FullName)
 		}
 	}
 }

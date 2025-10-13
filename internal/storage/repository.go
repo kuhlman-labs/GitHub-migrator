@@ -1145,7 +1145,7 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 				MAX(completed_at) as completed_at,
 				SUM(duration_seconds) as duration_seconds
 			FROM migration_history
-			WHERE phase = 'migration' AND status = 'complete'
+			WHERE phase = 'migration' AND status = 'completed'
 			GROUP BY repository_id
 		) h ON r.id = h.repository_id
 		WHERE r.status = 'complete'
@@ -1162,6 +1162,8 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 	for rows.Next() {
 		var m CompletedMigration
 		var migratedAt *time.Time
+		var startedAtStr, completedAtStr sql.NullString
+
 		if err := rows.Scan(
 			&m.ID,
 			&m.FullName,
@@ -1169,12 +1171,36 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 			&m.DestinationURL,
 			&m.Status,
 			&migratedAt,
-			&m.StartedAt,
-			&m.CompletedAt,
+			&startedAtStr,
+			&completedAtStr,
 			&m.DurationSeconds,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan completed migration: %w", err)
 		}
+
+		// Parse timestamp strings to time.Time
+		if startedAtStr.Valid {
+			t, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", startedAtStr.String)
+			if err != nil {
+				// Try alternative format
+				t, err = time.Parse("2006-01-02 15:04:05", startedAtStr.String)
+			}
+			if err == nil {
+				m.StartedAt = &t
+			}
+		}
+
+		if completedAtStr.Valid {
+			t, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", completedAtStr.String)
+			if err != nil {
+				// Try alternative format
+				t, err = time.Parse("2006-01-02 15:04:05", completedAtStr.String)
+			}
+			if err == nil {
+				m.CompletedAt = &t
+			}
+		}
+
 		migrations = append(migrations, &m)
 	}
 
