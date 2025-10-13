@@ -177,7 +177,7 @@ func (c *Collector) worker(ctx context.Context, wg *sync.WaitGroup, jobs <-chan 
 	defer wg.Done()
 
 	for repo := range jobs {
-		if err := c.profileRepository(ctx, repo); err != nil {
+		if err := c.ProfileRepository(ctx, repo); err != nil {
 			c.logger.Error("Failed to profile repository",
 				"repo", repo.GetFullName(),
 				"error", err)
@@ -186,8 +186,8 @@ func (c *Collector) worker(ctx context.Context, wg *sync.WaitGroup, jobs <-chan 
 	}
 }
 
-// profileRepository profiles a single repository with both Git and GitHub features
-func (c *Collector) profileRepository(ctx context.Context, ghRepo *ghapi.Repository) error {
+// ProfileRepository profiles a single repository with both Git and GitHub features
+func (c *Collector) ProfileRepository(ctx context.Context, ghRepo *ghapi.Repository) error {
 	c.logger.Debug("Profiling repository", "repo", ghRepo.GetFullName())
 
 	// Create basic repository profile from GitHub API data

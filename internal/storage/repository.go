@@ -953,3 +953,230 @@ func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64
 
 	return nil
 }
+
+// OrganizationStats represents statistics for a single organization
+type OrganizationStats struct {
+	Organization string         `json:"organization"`
+	TotalRepos   int            `json:"total_repos"`
+	StatusCounts map[string]int `json:"status_counts"`
+}
+
+// GetOrganizationStats returns repository counts grouped by organization
+func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationStats, error) {
+	// First, get unique organizations with their total counts
+	query := `
+		SELECT 
+			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
+			COUNT(*) as total,
+			status,
+			COUNT(*) as status_count
+		FROM repositories
+		WHERE INSTR(full_name, '/') > 0
+		GROUP BY org, status
+		ORDER BY total DESC, org ASC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get organization stats: %w", err)
+	}
+	defer rows.Close()
+
+	// Build organization stats map
+	orgMap := make(map[string]*OrganizationStats)
+	for rows.Next() {
+		var org, status string
+		var total, statusCount int
+		if err := rows.Scan(&org, &total, &status, &statusCount); err != nil {
+			return nil, fmt.Errorf("failed to scan organization stats: %w", err)
+		}
+
+		if _, exists := orgMap[org]; !exists {
+			orgMap[org] = &OrganizationStats{
+				Organization: org,
+				TotalRepos:   0,
+				StatusCounts: make(map[string]int),
+			}
+		}
+
+		orgMap[org].StatusCounts[status] = statusCount
+		orgMap[org].TotalRepos += statusCount
+	}
+
+	// Convert map to slice
+	stats := make([]*OrganizationStats, 0, len(orgMap))
+	for _, stat := range orgMap {
+		stats = append(stats, stat)
+	}
+
+	return stats, rows.Err()
+}
+
+// SizeDistribution represents repository size distribution
+type SizeDistribution struct {
+	Category string `json:"category"`
+	Count    int    `json:"count"`
+}
+
+// GetSizeDistribution categorizes repositories by size
+func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution, error) {
+	// Size categories: small (<100MB), medium (100MB-1GB), large (1GB-5GB), very_large (>5GB)
+	query := `
+		SELECT 
+			CASE 
+				WHEN total_size IS NULL THEN 'unknown'
+				WHEN total_size < 104857600 THEN 'small'
+				WHEN total_size < 1073741824 THEN 'medium'
+				WHEN total_size < 5368709120 THEN 'large'
+				ELSE 'very_large'
+			END as category,
+			COUNT(*) as count
+		FROM repositories
+		GROUP BY category
+		ORDER BY 
+			CASE category
+				WHEN 'small' THEN 1
+				WHEN 'medium' THEN 2
+				WHEN 'large' THEN 3
+				WHEN 'very_large' THEN 4
+				WHEN 'unknown' THEN 5
+			END
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get size distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var distribution []*SizeDistribution
+	for rows.Next() {
+		var dist SizeDistribution
+		if err := rows.Scan(&dist.Category, &dist.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan size distribution: %w", err)
+		}
+		distribution = append(distribution, &dist)
+	}
+
+	return distribution, rows.Err()
+}
+
+// FeatureStats represents aggregated feature usage statistics
+type FeatureStats struct {
+	HasLFS               int `json:"has_lfs"`
+	HasSubmodules        int `json:"has_submodules"`
+	HasLargeFiles        int `json:"has_large_files"`
+	HasWiki              int `json:"has_wiki"`
+	HasPages             int `json:"has_pages"`
+	HasDiscussions       int `json:"has_discussions"`
+	HasActions           int `json:"has_actions"`
+	HasProjects          int `json:"has_projects"`
+	HasBranchProtections int `json:"has_branch_protections"`
+	TotalRepositories    int `json:"total_repositories"`
+}
+
+// GetFeatureStats returns aggregated statistics on feature usage
+func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
+	query := `
+		SELECT 
+			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
+			SUM(CASE WHEN has_wiki = 1 THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN has_pages = 1 THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			COUNT(*) as total
+		FROM repositories
+	`
+
+	var stats FeatureStats
+	err := d.db.QueryRowContext(ctx, query).Scan(
+		&stats.HasLFS,
+		&stats.HasSubmodules,
+		&stats.HasLargeFiles,
+		&stats.HasWiki,
+		&stats.HasPages,
+		&stats.HasDiscussions,
+		&stats.HasActions,
+		&stats.HasProjects,
+		&stats.HasBranchProtections,
+		&stats.TotalRepositories,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get feature stats: %w", err)
+	}
+
+	return &stats, nil
+}
+
+// CompletedMigration represents a completed migration for the history page
+type CompletedMigration struct {
+	ID              int64      `json:"id"`
+	FullName        string     `json:"full_name"`
+	SourceURL       string     `json:"source_url"`
+	DestinationURL  *string    `json:"destination_url"`
+	Status          string     `json:"status"`
+	StartedAt       *time.Time `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at"`
+	DurationSeconds *int       `json:"duration_seconds"`
+}
+
+// GetCompletedMigrations returns all successfully completed migrations
+func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigration, error) {
+	query := `
+		SELECT 
+			r.id,
+			r.full_name,
+			r.source_url,
+			r.destination_url,
+			r.status,
+			r.migrated_at,
+			h.started_at,
+			h.completed_at,
+			h.duration_seconds
+		FROM repositories r
+		LEFT JOIN (
+			SELECT 
+				repository_id,
+				MIN(started_at) as started_at,
+				MAX(completed_at) as completed_at,
+				SUM(duration_seconds) as duration_seconds
+			FROM migration_history
+			WHERE phase = 'migration' AND status = 'complete'
+			GROUP BY repository_id
+		) h ON r.id = h.repository_id
+		WHERE r.status = 'complete'
+		ORDER BY r.migrated_at DESC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get completed migrations: %w", err)
+	}
+	defer rows.Close()
+
+	var migrations []*CompletedMigration
+	for rows.Next() {
+		var m CompletedMigration
+		var migratedAt *time.Time
+		if err := rows.Scan(
+			&m.ID,
+			&m.FullName,
+			&m.SourceURL,
+			&m.DestinationURL,
+			&m.Status,
+			&migratedAt,
+			&m.StartedAt,
+			&m.CompletedAt,
+			&m.DurationSeconds,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan completed migration: %w", err)
+		}
+		migrations = append(migrations, &m)
+	}
+
+	return migrations, rows.Err()
+}

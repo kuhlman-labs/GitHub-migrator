@@ -59,6 +59,10 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/repositories", s.handler.ListRepositories)
 	mux.HandleFunc("GET /api/v1/repositories/{fullName}", s.handler.GetRepository)
 	mux.HandleFunc("PATCH /api/v1/repositories/{fullName}", s.handler.UpdateRepository)
+	mux.HandleFunc("POST /api/v1/repositories/{fullName}/rediscover", s.handler.RediscoverRepository)
+
+	// Organization endpoints
+	mux.HandleFunc("GET /api/v1/organizations", s.handler.ListOrganizations)
 
 	// Batch endpoints
 	mux.HandleFunc("GET /api/v1/batches", s.handler.ListBatches)
@@ -75,6 +79,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/migrations/{id}", s.handler.GetMigrationStatus)
 	mux.HandleFunc("GET /api/v1/migrations/{id}/history", s.handler.GetMigrationHistory)
 	mux.HandleFunc("GET /api/v1/migrations/{id}/logs", s.handler.GetMigrationLogs)
+	mux.HandleFunc("GET /api/v1/migrations/history", s.handler.GetMigrationHistoryList)
+	mux.HandleFunc("GET /api/v1/migrations/history/export", s.handler.ExportMigrationHistory)
 
 	// Analytics endpoints
 	mux.HandleFunc("GET /api/v1/analytics/summary", s.handler.GetAnalyticsSummary)

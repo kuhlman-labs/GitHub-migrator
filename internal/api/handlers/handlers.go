@@ -275,6 +275,10 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 		repo.Priority = int(priority)
 	}
 
+	if destFullName, ok := updates["destination_full_name"].(string); ok {
+		repo.DestinationFullName = &destFullName
+	}
+
 	if err := h.db.UpdateRepository(ctx, repo); err != nil {
 		h.logger.Error("Failed to update repository", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to update repository")
@@ -282,6 +286,61 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, repo)
+}
+
+// RediscoverRepository handles POST /api/v1/repositories/{fullName}/rediscover
+func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	if h.collector == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Check if repository exists
+	repo, err := h.db.GetRepository(ctx, fullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Extract org and repo name from fullName
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 {
+		h.sendError(w, http.StatusBadRequest, "Invalid repository name format")
+		return
+	}
+	org, repoName := parts[0], parts[1]
+
+	// Fetch repository from GitHub API
+	ghRepo, _, err := h.sourceClient.REST().Repositories.Get(ctx, org, repoName)
+	if err != nil {
+		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", fullName)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository from GitHub")
+		return
+	}
+
+	// Run discovery asynchronously
+	go func() {
+		bgCtx := context.Background()
+		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
+			h.logger.Error("Re-discovery failed", "error", err, "repo", fullName)
+		} else {
+			h.logger.Info("Re-discovery completed", "repo", fullName)
+		}
+	}()
+
+	h.sendJSON(w, http.StatusAccepted, map[string]string{
+		"message":   "Re-discovery started",
+		"full_name": fullName,
+		"status":    "in_progress",
+	})
 }
 
 // ListBatches handles GET /api/v1/batches
@@ -980,6 +1039,25 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	inProgress := total - migrated - failed - pending
 
+	// Get discovery statistics
+	orgStats, err := h.db.GetOrganizationStats(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get organization stats", "error", err)
+		orgStats = []*storage.OrganizationStats{}
+	}
+
+	sizeDistribution, err := h.db.GetSizeDistribution(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get size distribution", "error", err)
+		sizeDistribution = []*storage.SizeDistribution{}
+	}
+
+	featureStats, err := h.db.GetFeatureStats(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get feature stats", "error", err)
+		featureStats = &storage.FeatureStats{}
+	}
+
 	summary := map[string]interface{}{
 		"total_repositories": total,
 		"migrated_count":     migrated,
@@ -987,6 +1065,9 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		"in_progress_count":  inProgress,
 		"pending_count":      pending,
 		"status_breakdown":   stats,
+		"organization_stats": orgStats,
+		"size_distribution":  sizeDistribution,
+		"feature_stats":      featureStats,
 	}
 
 	h.sendJSON(w, http.StatusOK, summary)
@@ -1059,4 +1140,121 @@ func isEligibleForBatch(status string) bool {
 		}
 	}
 	return false
+}
+
+// ListOrganizations handles GET /api/v1/organizations
+func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	orgStats, err := h.db.GetOrganizationStats(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get organization stats", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch organizations")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, orgStats)
+}
+
+// GetMigrationHistoryList handles GET /api/v1/migrations/history
+func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	migrations, err := h.db.GetCompletedMigrations(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get migration history", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch migration history")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"migrations": migrations,
+		"total":      len(migrations),
+	})
+}
+
+// ExportMigrationHistory handles GET /api/v1/migrations/history/export
+func (h *Handler) ExportMigrationHistory(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	format := r.URL.Query().Get("format")
+
+	if format != "csv" && format != "json" {
+		h.sendError(w, http.StatusBadRequest, "Invalid format. Must be 'csv' or 'json'")
+		return
+	}
+
+	migrations, err := h.db.GetCompletedMigrations(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get migration history for export", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch migration history")
+		return
+	}
+
+	if format == "csv" {
+		h.exportMigrationHistoryCSV(w, migrations)
+	} else {
+		h.exportMigrationHistoryJSON(w, migrations)
+	}
+}
+
+func (h *Handler) exportMigrationHistoryCSV(w http.ResponseWriter, migrations []*storage.CompletedMigration) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=migration_history.csv")
+
+	// Write CSV header
+	_, _ = w.Write([]byte("Repository,Source URL,Destination URL,Status,Started At,Completed At,Duration (seconds)\n"))
+
+	// Write data rows
+	for _, m := range migrations {
+		row := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%d\n",
+			escapesCSV(m.FullName),
+			escapesCSV(m.SourceURL),
+			escapesCSV(stringPtrOrEmpty(m.DestinationURL)),
+			escapesCSV(m.Status),
+			formatTimePtr(m.StartedAt),
+			formatTimePtr(m.CompletedAt),
+			intPtrOrZero(m.DurationSeconds),
+		)
+		_, _ = w.Write([]byte(row))
+	}
+}
+
+func (h *Handler) exportMigrationHistoryJSON(w http.ResponseWriter, migrations []*storage.CompletedMigration) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=migration_history.json")
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"migrations":  migrations,
+		"total":       len(migrations),
+		"exported_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+func escapesCSV(s string) string {
+	// Escape quotes and wrap in quotes if contains comma, quote, or newline
+	if strings.ContainsAny(s, ",\"\n") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
+}
+
+func stringPtrOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func formatTimePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
+
+func intPtrOrZero(i *int) int {
+	if i == nil {
+		return 0
+	}
+	return *i
 }

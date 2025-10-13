@@ -1625,3 +1625,181 @@ func TestListRepositoriesWithFilters(t *testing.T) {
 		}
 	})
 }
+
+func TestListOrganizations(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Create test repositories in different orgs
+	repos := []struct {
+		fullName string
+		status   string
+	}{
+		{"org1/repo1", string(models.StatusPending)},
+		{"org1/repo2", string(models.StatusComplete)},
+		{"org2/repo1", string(models.StatusPending)},
+	}
+
+	for _, r := range repos {
+		repo := &models.Repository{
+			FullName:     r.fullName,
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
+			Status:       r.status,
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := db.SaveRepository(context.Background(), repo); err != nil {
+			t.Fatalf("Failed to save repository: %v", err)
+		}
+	}
+
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{})
+
+	req := httptest.NewRequest("GET", "/api/v1/organizations", nil)
+	w := httptest.NewRecorder()
+
+	h.ListOrganizations(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response []storage.OrganizationStats
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(response) != 2 {
+		t.Errorf("Expected 2 organizations, got %d", len(response))
+	}
+}
+
+func TestGetMigrationHistoryList(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Create completed and incomplete repositories
+	repos := []struct {
+		fullName string
+		status   string
+	}{
+		{"test/complete1", string(models.StatusComplete)},
+		{"test/complete2", string(models.StatusComplete)},
+		{"test/pending", string(models.StatusPending)},
+	}
+
+	for _, r := range repos {
+		now := time.Now()
+		repo := &models.Repository{
+			FullName:     r.fullName,
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
+			Status:       r.status,
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if r.status == string(models.StatusComplete) {
+			repo.MigratedAt = &now
+		}
+		if err := db.SaveRepository(context.Background(), repo); err != nil {
+			t.Fatalf("Failed to save repository: %v", err)
+		}
+	}
+
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{})
+
+	req := httptest.NewRequest("GET", "/api/v1/migrations/history", nil)
+	w := httptest.NewRecorder()
+
+	h.GetMigrationHistoryList(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	migrations, ok := response["migrations"].([]interface{})
+	if !ok {
+		t.Fatal("Expected migrations to be an array")
+	}
+
+	// Should only return completed migrations
+	if len(migrations) != 2 {
+		t.Errorf("Expected 2 completed migrations, got %d", len(migrations))
+	}
+}
+
+func TestExportMigrationHistory(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Create a completed repository
+	now := time.Now()
+	repo := &models.Repository{
+		FullName:     "test/complete",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test/complete",
+		Status:       string(models.StatusComplete),
+		MigratedAt:   &now,
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.SaveRepository(context.Background(), repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{})
+
+	t.Run("CSV export", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/migrations/history/export?format=csv", nil)
+		w := httptest.NewRecorder()
+
+		h.ExportMigrationHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		contentType := w.Header().Get("Content-Type")
+		if contentType != "text/csv" {
+			t.Errorf("Expected Content-Type 'text/csv', got '%s'", contentType)
+		}
+
+		contentDisposition := w.Header().Get("Content-Disposition")
+		if contentDisposition != "attachment; filename=migration_history.csv" {
+			t.Errorf("Expected Content-Disposition with filename, got '%s'", contentDisposition)
+		}
+	})
+
+	t.Run("JSON export", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/migrations/history/export?format=json", nil)
+		w := httptest.NewRecorder()
+
+		h.ExportMigrationHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		contentType := w.Header().Get("Content-Type")
+		if contentType != "application/json" {
+			t.Errorf("Expected Content-Type 'application/json', got '%s'", contentType)
+		}
+	})
+
+	t.Run("Invalid format", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/migrations/history/export?format=xml", nil)
+		w := httptest.NewRecorder()
+
+		h.ExportMigrationHistory(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}

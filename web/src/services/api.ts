@@ -4,7 +4,9 @@ import type {
   Batch, 
   Analytics, 
   RepositoryDetailResponse, 
-  MigrationLogsResponse 
+  MigrationLogsResponse,
+  Organization,
+  MigrationHistoryEntry 
 } from '../types';
 
 const client = axios.create({
@@ -37,6 +39,17 @@ export const api = {
 
   async updateRepository(fullName: string, updates: Partial<Repository>) {
     const { data } = await client.patch(`/repositories/${encodeURIComponent(fullName)}`, updates);
+    return data;
+  },
+
+  async rediscoverRepository(fullName: string) {
+    const { data } = await client.post(`/repositories/${encodeURIComponent(fullName)}/rediscover`);
+    return data;
+  },
+
+  // Organizations
+  async listOrganizations(): Promise<Organization[]> {
+    const { data } = await client.get('/organizations');
     return data;
   },
 
@@ -129,6 +142,19 @@ export const api = {
 
   async getMigrationProgress() {
     const { data } = await client.get('/analytics/progress');
+    return data;
+  },
+
+  // Migration History
+  async getMigrationHistoryList(): Promise<{ migrations: MigrationHistoryEntry[]; total: number }> {
+    const { data } = await client.get('/migrations/history');
+    return data;
+  },
+
+  async exportMigrationHistory(format: 'csv' | 'json'): Promise<Blob> {
+    const { data } = await client.get(`/migrations/history/export?format=${format}`, {
+      responseType: 'blob',
+    });
     return data;
   },
 };

@@ -81,6 +81,30 @@ export interface Batch {
   created_at: string;
 }
 
+export interface Organization {
+  organization: string;
+  total_repos: number;
+  status_counts: Record<string, number>;
+}
+
+export interface SizeDistribution {
+  category: string;
+  count: number;
+}
+
+export interface FeatureStats {
+  has_lfs: number;
+  has_submodules: number;
+  has_large_files: number;
+  has_wiki: number;
+  has_pages: number;
+  has_discussions: number;
+  has_actions: number;
+  has_projects: number;
+  has_branch_protections: number;
+  total_repositories: number;
+}
+
 export interface Analytics {
   total_repositories: number;
   migrated_count: number;
@@ -89,6 +113,20 @@ export interface Analytics {
   pending_count: number;
   average_migration_time?: number;
   status_breakdown: Record<string, number>;
+  organization_stats?: Organization[];
+  size_distribution?: SizeDistribution[];
+  feature_stats?: FeatureStats;
+}
+
+export interface MigrationHistoryEntry {
+  id: number;
+  full_name: string;
+  source_url: string;
+  destination_url?: string;
+  status: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_seconds?: number;
 }
 
 export interface RepositoryDetailResponse {

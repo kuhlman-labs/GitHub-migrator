@@ -17,6 +17,7 @@ export function RepositoryDetail() {
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [migrating, setMigrating] = useState(false);
+  const [rediscovering, setRediscovering] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'logs'>('overview');
   
   // Batch assignment state
@@ -193,6 +194,30 @@ export function RepositoryDetail() {
     }
   };
 
+  const handleRediscover = async () => {
+    if (!repository || !fullName || rediscovering) return;
+
+    if (!confirm('Are you sure you want to re-discover this repository? This will update all repository data.')) {
+      return;
+    }
+
+    setRediscovering(true);
+    try {
+      await api.rediscoverRepository(decodeURIComponent(fullName));
+      alert('Re-discovery started! Repository data will be updated shortly.');
+      
+      // Reload after a short delay to show updated data
+      setTimeout(async () => {
+        await loadRepository();
+        setRediscovering(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Failed to start re-discovery:', error);
+      alert('Failed to start re-discovery. Please try again.');
+      setRediscovering(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner />;
   if (!repository) return <div className="text-center py-12 text-gray-500">Repository not found</div>;
 
@@ -341,6 +366,13 @@ export function RepositoryDetail() {
 
           {/* Migration Actions */}
           <div className="flex flex-col gap-3 ml-6">
+            <button
+              onClick={handleRediscover}
+              disabled={rediscovering}
+              className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {rediscovering ? 'Re-discovering...' : 'Re-discover'}
+            </button>
             {canMigrate && (
               <>
                 <button

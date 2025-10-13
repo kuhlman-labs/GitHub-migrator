@@ -30,6 +30,9 @@ export function Navigation() {
               <Link to="/batches" className={linkClass('/batches')}>
                 Batches
               </Link>
+              <Link to="/history" className={linkClass('/history')}>
+                History
+              </Link>
               <Link to="/self-service" className={linkClass('/self-service')}>
                 Self-Service
               </Link>

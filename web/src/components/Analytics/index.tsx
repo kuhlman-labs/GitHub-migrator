@@ -58,6 +58,22 @@ export function Analytics() {
     { name: 'Pending', value: analytics.pending_count, fill: '#9CA3AF' },
   ].filter(item => item.value > 0);
 
+  const sizeCategories: Record<string, string> = {
+    small: 'Small (<100MB)',
+    medium: 'Medium (100MB-1GB)',
+    large: 'Large (1GB-5GB)',
+    very_large: 'Very Large (>5GB)',
+    unknown: 'Unknown',
+  };
+
+  const sizeColors: Record<string, string> = {
+    small: '#10B981',
+    medium: '#3B82F6',
+    large: '#F59E0B',
+    very_large: '#EF4444',
+    unknown: '#9CA3AF',
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <h1 className="text-3xl font-light text-gray-900 mb-8">Migration Analytics</h1>
@@ -189,6 +205,121 @@ export function Analytics() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Discovery Statistics Section */}
+      {analytics.organization_stats && analytics.organization_stats.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-light text-gray-900 mb-6">Discovery Statistics</h2>
+          
+          {/* Organization Breakdown */}
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Organization Breakdown</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Organization
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total Repositories
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Percentage
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {analytics.organization_stats
+                    .sort((a, b) => b.total_repos - a.total_repos)
+                    .map((org) => {
+                      const percentage = analytics.total_repositories > 0
+                        ? ((org.total_repos / analytics.total_repositories) * 100).toFixed(1)
+                        : '0.0';
+                      return (
+                        <tr key={org.organization} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {org.organization}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {org.total_repos}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {percentage}%
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Size Distribution and Feature Stats */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Size Distribution */}
+            {analytics.size_distribution && analytics.size_distribution.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Repository Size Distribution</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={analytics.size_distribution.map(item => ({
+                        name: sizeCategories[item.category] || item.category,
+                        value: item.count,
+                        fill: sizeColors[item.category] || '#9CA3AF',
+                      }))}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                      outerRadius={80}
+                      dataKey="value"
+                    >
+                      {analytics.size_distribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={sizeColors[entry.category] || '#9CA3AF'} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Feature Stats */}
+            {analytics.feature_stats && (
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
+                <div className="space-y-3">
+                  <FeatureStat label="LFS" count={analytics.feature_stats.has_lfs} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="Submodules" count={analytics.feature_stats.has_submodules} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="Large Files (>100MB)" count={analytics.feature_stats.has_large_files} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="GitHub Actions" count={analytics.feature_stats.has_actions} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="Wikis" count={analytics.feature_stats.has_wiki} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="Pages" count={analytics.feature_stats.has_pages} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="Discussions" count={analytics.feature_stats.has_discussions} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="Projects" count={analytics.feature_stats.has_projects} total={analytics.feature_stats.total_repositories} />
+                  <FeatureStat label="Branch Protections" count={analytics.feature_stats.has_branch_protections} total={analytics.feature_stats.total_repositories} />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FeatureStat({ label, count, total }: { label: string; count: number; total: number }) {
+  const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+  
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-sm text-gray-700">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-gray-900">{count}</span>
+        <span className="text-xs text-gray-500">({percentage}%)</span>
       </div>
     </div>
   );

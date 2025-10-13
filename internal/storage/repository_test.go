@@ -1324,3 +1324,233 @@ func TestListRepositoriesWithPagination(t *testing.T) {
 		})
 	}
 }
+
+func TestGetOrganizationStats(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create repositories in different organizations
+	repos := []struct {
+		fullName string
+		status   string
+	}{
+		{"org1/repo1", string(models.StatusPending)},
+		{"org1/repo2", string(models.StatusComplete)},
+		{"org1/repo3", string(models.StatusComplete)},
+		{"org2/repo1", string(models.StatusPending)},
+		{"org2/repo2", string(models.StatusMigrationFailed)},
+	}
+
+	for _, r := range repos {
+		repo := &models.Repository{
+			FullName:     r.fullName,
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
+			Status:       r.status,
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
+		}
+	}
+
+	// Get organization stats
+	stats, err := db.GetOrganizationStats(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get organization stats: %v", err)
+	}
+
+	// Verify we have 2 organizations
+	if len(stats) != 2 {
+		t.Errorf("Expected 2 organizations, got %d", len(stats))
+	}
+
+	// Find org1 stats
+	var org1Stats *OrganizationStats
+	for _, s := range stats {
+		if s.Organization == "org1" {
+			org1Stats = s
+			break
+		}
+	}
+
+	if org1Stats == nil {
+		t.Fatal("Expected to find org1 in stats")
+	}
+
+	if org1Stats.TotalRepos != 3 {
+		t.Errorf("Expected org1 to have 3 repos, got %d", org1Stats.TotalRepos)
+	}
+
+	if org1Stats.StatusCounts[string(models.StatusComplete)] != 2 {
+		t.Errorf("Expected org1 to have 2 complete repos, got %d", org1Stats.StatusCounts[string(models.StatusComplete)])
+	}
+}
+
+func TestGetSizeDistribution(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create repositories with different sizes
+	sizes := []int64{
+		50 * 1024 * 1024,       // 50MB - small
+		500 * 1024 * 1024,      // 500MB - medium
+		2 * 1024 * 1024 * 1024, // 2GB - large
+		6 * 1024 * 1024 * 1024, // 6GB - very large
+	}
+
+	for i, size := range sizes {
+		repo := &models.Repository{
+			FullName:     fmt.Sprintf("test/repo%d", i),
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/test/repo%d", i),
+			TotalSize:    &size,
+			Status:       string(models.StatusPending),
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("Failed to save repository %d: %v", i, err)
+		}
+	}
+
+	// Get size distribution
+	distribution, err := db.GetSizeDistribution(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get size distribution: %v", err)
+	}
+
+	// Verify we have all size categories represented
+	categoryMap := make(map[string]int)
+	for _, d := range distribution {
+		categoryMap[d.Category] = d.Count
+	}
+
+	if categoryMap["small"] != 1 {
+		t.Errorf("Expected 1 small repo, got %d", categoryMap["small"])
+	}
+	if categoryMap["medium"] != 1 {
+		t.Errorf("Expected 1 medium repo, got %d", categoryMap["medium"])
+	}
+	if categoryMap["large"] != 1 {
+		t.Errorf("Expected 1 large repo, got %d", categoryMap["large"])
+	}
+	if categoryMap["very_large"] != 1 {
+		t.Errorf("Expected 1 very_large repo, got %d", categoryMap["very_large"])
+	}
+}
+
+func TestGetFeatureStats(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create repositories with different features
+	repos := []struct {
+		fullName   string
+		hasLFS     bool
+		hasActions bool
+		hasWiki    bool
+	}{
+		{"test/repo1", true, true, false},
+		{"test/repo2", true, false, true},
+		{"test/repo3", false, true, true},
+		{"test/repo4", false, false, false},
+	}
+
+	for _, r := range repos {
+		repo := &models.Repository{
+			FullName:     r.fullName,
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
+			HasLFS:       r.hasLFS,
+			HasActions:   r.hasActions,
+			HasWiki:      r.hasWiki,
+			Status:       string(models.StatusPending),
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
+		}
+	}
+
+	// Get feature stats
+	stats, err := db.GetFeatureStats(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get feature stats: %v", err)
+	}
+
+	if stats.TotalRepositories != 4 {
+		t.Errorf("Expected 4 total repositories, got %d", stats.TotalRepositories)
+	}
+	if stats.HasLFS != 2 {
+		t.Errorf("Expected 2 repos with LFS, got %d", stats.HasLFS)
+	}
+	if stats.HasActions != 2 {
+		t.Errorf("Expected 2 repos with Actions, got %d", stats.HasActions)
+	}
+	if stats.HasWiki != 2 {
+		t.Errorf("Expected 2 repos with Wiki, got %d", stats.HasWiki)
+	}
+}
+
+func TestGetCompletedMigrations(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create completed and non-completed repositories
+	repos := []struct {
+		fullName string
+		status   string
+	}{
+		{"test/complete1", string(models.StatusComplete)},
+		{"test/complete2", string(models.StatusComplete)},
+		{"test/pending", string(models.StatusPending)},
+		{"test/failed", string(models.StatusMigrationFailed)},
+	}
+
+	for _, r := range repos {
+		now := time.Now()
+		repo := &models.Repository{
+			FullName:     r.fullName,
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
+			Status:       r.status,
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if r.status == string(models.StatusComplete) {
+			repo.MigratedAt = &now
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
+		}
+	}
+
+	// Get completed migrations
+	migrations, err := db.GetCompletedMigrations(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get completed migrations: %v", err)
+	}
+
+	// Should only return the 2 completed repos
+	if len(migrations) != 2 {
+		t.Errorf("Expected 2 completed migrations, got %d", len(migrations))
+	}
+
+	// Verify they are the correct ones
+	for _, m := range migrations {
+		if m.Status != string(models.StatusComplete) {
+			t.Errorf("Expected status 'complete', got %s", m.Status)
+		}
+	}
+}
