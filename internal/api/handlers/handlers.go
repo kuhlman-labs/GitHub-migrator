@@ -411,6 +411,57 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RollbackRepository handles POST /api/v1/repositories/{fullName}/rollback
+func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get repository
+	repo, err := h.db.GetRepository(ctx, fullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Validate repository status is complete
+	if repo.Status != string(models.StatusComplete) {
+		h.sendError(w, http.StatusBadRequest, "Only completed migrations can be rolled back")
+		return
+	}
+
+	// Parse request body for optional reason
+	var req struct {
+		Reason string `json:"reason,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Empty body is okay, reason is optional
+		req.Reason = ""
+	}
+
+	// Perform rollback
+	if err := h.db.RollbackRepository(ctx, fullName, req.Reason); err != nil {
+		h.logger.Error("Failed to rollback repository", "error", err, "repo", fullName)
+		h.sendError(w, http.StatusInternalServerError, "Failed to rollback repository")
+		return
+	}
+
+	h.logger.Info("Repository rolled back successfully", "repo", fullName, "reason", req.Reason)
+
+	// Get updated repository
+	repo, _ = h.db.GetRepository(ctx, fullName)
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    "Repository rolled back successfully",
+		"repository": repo,
+	})
+}
+
 // ListBatches handles GET /api/v1/batches
 func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -1191,6 +1242,7 @@ func canMigrate(status string) bool {
 		string(models.StatusDryRunFailed),    // Allow retrying failed dry runs
 		string(models.StatusDryRunComplete),  // Can queue after successful dry run
 		string(models.StatusMigrationFailed), // Allow retrying failed migrations
+		string(models.StatusRolledBack),      // Allow re-migrating rolled back repositories
 	}
 
 	for _, allowed := range allowedStatuses {
@@ -1207,6 +1259,7 @@ func isEligibleForBatch(status string) bool {
 		string(models.StatusDryRunComplete),
 		string(models.StatusDryRunFailed),
 		string(models.StatusMigrationFailed),
+		string(models.StatusRolledBack),
 	}
 
 	for _, eligible := range eligibleStatuses {

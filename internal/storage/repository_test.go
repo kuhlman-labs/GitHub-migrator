@@ -1368,6 +1368,14 @@ func TestGetOrganizationStats(t *testing.T) {
 		t.Errorf("Expected 2 organizations, got %d", len(stats))
 	}
 
+	// Verify ordering: org1 (3 repos) should come before org2 (2 repos)
+	if stats[0].Organization != "org1" {
+		t.Errorf("Expected first org to be 'org1', got '%s'", stats[0].Organization)
+	}
+	if stats[1].Organization != "org2" {
+		t.Errorf("Expected second org to be 'org2', got '%s'", stats[1].Organization)
+	}
+
 	// Find org1 stats
 	var org1Stats *OrganizationStats
 	for _, s := range stats {

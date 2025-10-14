@@ -88,6 +88,7 @@ const (
 	StatusMigrationFailed    MigrationStatus = "migration_failed"
 	StatusPostMigration      MigrationStatus = "post_migration"
 	StatusComplete           MigrationStatus = "complete"
+	StatusRolledBack         MigrationStatus = "rolled_back"
 )
 
 // MigrationHistory tracks the migration lifecycle of a repository

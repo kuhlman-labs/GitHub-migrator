@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -1009,6 +1010,14 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 		stats = append(stats, stat)
 	}
 
+	// Sort by total repos (descending), then by organization name (ascending) for consistent ordering
+	sort.Slice(stats, func(i, j int) bool {
+		if stats[i].TotalRepos == stats[j].TotalRepos {
+			return stats[i].Organization < stats[j].Organization
+		}
+		return stats[i].TotalRepos > stats[j].TotalRepos
+	})
+
 	return stats, rows.Err()
 }
 
@@ -1259,4 +1268,40 @@ func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*Mig
 	}
 
 	return stats, rows.Err()
+}
+
+// RollbackRepository marks a repository as rolled back and creates a migration history entry
+func (d *Database) RollbackRepository(ctx context.Context, fullName string, reason string) error {
+	// Get the repository
+	repo, err := d.GetRepository(ctx, fullName)
+	if err != nil {
+		return fmt.Errorf("failed to get repository: %w", err)
+	}
+	if repo == nil {
+		return fmt.Errorf("repository not found")
+	}
+
+	// Update repository status to rolled_back
+	query := `UPDATE repositories SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
+	_, err = d.db.ExecContext(ctx, query, string(models.StatusRolledBack), fullName)
+	if err != nil {
+		return fmt.Errorf("failed to update repository status: %w", err)
+	}
+
+	// Create migration history entry for rollback
+	message := "Repository rolled back"
+	if reason != "" {
+		message = reason
+	}
+
+	historyQuery := `
+		INSERT INTO migration_history (repository_id, status, phase, message, started_at, completed_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`
+	_, err = d.db.ExecContext(ctx, historyQuery, repo.ID, "rolled_back", "rollback", message)
+	if err != nil {
+		return fmt.Errorf("failed to create rollback history: %w", err)
+	}
+
+	return nil
 }

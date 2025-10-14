@@ -9,6 +9,7 @@ export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
     
     if (normalizedStatus.includes('complete')) return 'bg-green-100 text-green-800';
     if (normalizedStatus.includes('failed')) return 'bg-red-100 text-red-800';
+    if (normalizedStatus.includes('rolled back')) return 'bg-orange-100 text-orange-800';
     if (normalizedStatus.includes('progress') || normalizedStatus.includes('migrating')) {
       return 'bg-blue-100 text-blue-800';
     }

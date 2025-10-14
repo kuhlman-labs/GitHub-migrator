@@ -153,3 +153,23 @@ export interface MigrationLogsResponse {
   total: number;
 }
 
+export interface RollbackRequest {
+  reason?: string;
+}
+
+export type MigrationStatus = 
+  | 'pending'
+  | 'dry_run_queued'
+  | 'dry_run_in_progress'
+  | 'dry_run_complete'
+  | 'dry_run_failed'
+  | 'pre_migration'
+  | 'archive_generating'
+  | 'queued_for_migration'
+  | 'migrating_content'
+  | 'migration_complete'
+  | 'migration_failed'
+  | 'post_migration'
+  | 'complete'
+  | 'rolled_back';
+

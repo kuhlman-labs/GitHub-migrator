@@ -10,7 +10,7 @@ import { ProfileCard } from '../common/ProfileCard';
 import { ProfileItem } from '../common/ProfileItem';
 import { formatBytes, formatDate } from '../../utils/format';
 import { useRepository, useBatches } from '../../hooks/useQueries';
-import { useRediscoverRepository, useUpdateRepository, useUnlockRepository } from '../../hooks/useMutations';
+import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useRollbackRepository } from '../../hooks/useMutations';
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
@@ -20,12 +20,17 @@ export function RepositoryDetail() {
   const rediscoverMutation = useRediscoverRepository();
   const updateRepositoryMutation = useUpdateRepository();
   const unlockMutation = useUnlockRepository();
+  const rollbackMutation = useRollbackRepository();
   
   const [history, setHistory] = useState<MigrationHistory[]>([]);
   const [logs, setLogs] = useState<MigrationLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'logs'>('overview');
+  
+  // Rollback state
+  const [showRollbackDialog, setShowRollbackDialog] = useState(false);
+  const [rollbackReason, setRollbackReason] = useState('');
   
   // Batch assignment state
   const batches = allBatches.filter(b => b.status === 'ready');
@@ -42,8 +47,9 @@ export function RepositoryDetail() {
   const [logSearch, setLogSearch] = useState<string>('');
 
   useEffect(() => {
-    if (repository?.destination_full_name) {
-      setDestinationFullName(repository.destination_full_name);
+    if (repository) {
+      // Use destination_full_name if set, otherwise default to source full_name
+      setDestinationFullName(repository.destination_full_name || repository.full_name);
     }
     
     // Load migration history when repository changes
@@ -200,10 +206,27 @@ export function RepositoryDetail() {
     }
   };
 
+  const handleRollback = async () => {
+    if (!repository || !fullName || rollbackMutation.isPending) return;
+
+    try {
+      await rollbackMutation.mutateAsync({ 
+        fullName: decodeURIComponent(fullName), 
+        reason: rollbackReason 
+      });
+      setShowRollbackDialog(false);
+      setRollbackReason('');
+      alert('Repository rolled back successfully! It can now be migrated again.');
+    } catch (error) {
+      console.error('Failed to rollback repository:', error);
+      alert('Failed to rollback repository. Please try again.');
+    }
+  };
+
   if (isLoading) return <LoadingSpinner />;
   if (!repository) return <div className="text-center py-12 text-gray-500">Repository not found</div>;
 
-  const canMigrate = ['pending', 'dry_run_complete', 'pre_migration_complete', 'migration_failed'].includes(
+  const canMigrate = ['pending', 'dry_run_complete', 'pre_migration_complete', 'migration_failed', 'rolled_back'].includes(
     repository.status
   );
 
@@ -395,6 +418,15 @@ export function RepositoryDetail() {
                   </button>
                 )}
               </>
+            )}
+            {repository.status === 'complete' && (
+              <button
+                onClick={() => setShowRollbackDialog(true)}
+                disabled={rollbackMutation.isPending}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback Migration'}
+              </button>
             )}
           </div>
         </div>
@@ -595,6 +627,53 @@ export function RepositoryDetail() {
           )}
         </div>
       </div>
+
+      {/* Rollback Dialog */}
+      {showRollbackDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Rollback Migration</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will mark the repository as rolled back and allow it to be migrated again in the future.
+              You can optionally provide a reason for the rollback.
+            </p>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason (optional)
+              </label>
+              <textarea
+                value={rollbackReason}
+                onChange={(e) => setRollbackReason(e.target.value)}
+                placeholder="e.g., CI/CD integration issues, workflow failures..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                rows={3}
+                disabled={rollbackMutation.isPending}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowRollbackDialog(false);
+                  setRollbackReason('');
+                }}
+                disabled={rollbackMutation.isPending}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRollback}
+                disabled={rollbackMutation.isPending}
+                className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700 disabled:opacity-50"
+              >
+                {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

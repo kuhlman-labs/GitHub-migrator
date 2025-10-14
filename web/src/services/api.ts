@@ -52,6 +52,13 @@ export const api = {
     return data;
   },
 
+  async rollbackRepository(fullName: string, reason?: string): Promise<Repository> {
+    const { data } = await client.post(`/repositories/${encodeURIComponent(fullName)}/rollback`, {
+      reason: reason || '',
+    });
+    return data.repository;
+  },
+
   // Organizations
   async listOrganizations(): Promise<Organization[]> {
     const { data } = await client.get('/organizations');

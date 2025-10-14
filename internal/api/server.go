@@ -61,6 +61,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/repositories/{fullName}", s.handler.UpdateRepository)
 	mux.HandleFunc("POST /api/v1/repositories/{fullName}/rediscover", s.handler.RediscoverRepository)
 	mux.HandleFunc("POST /api/v1/repositories/{fullName}/unlock", s.handler.UnlockRepository)
+	mux.HandleFunc("POST /api/v1/repositories/{fullName}/rollback", s.handler.RollbackRepository)
 
 	// Organization endpoints
 	mux.HandleFunc("GET /api/v1/organizations", s.handler.ListOrganizations)
