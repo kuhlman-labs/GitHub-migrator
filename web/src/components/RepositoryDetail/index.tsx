@@ -1,34 +1,39 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
-import type { Repository, MigrationHistory, MigrationLog, Batch } from '../../types';
+import type { Repository, MigrationHistory, MigrationLog } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
 import { ProfileCard } from '../common/ProfileCard';
 import { ProfileItem } from '../common/ProfileItem';
 import { formatBytes, formatDate } from '../../utils/format';
+import { useRepository, useBatches } from '../../hooks/useQueries';
+import { useRediscoverRepository, useUpdateRepository } from '../../hooks/useMutations';
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
-  const [repository, setRepository] = useState<Repository | null>(null);
+  const { data, isLoading, isFetching } = useRepository(fullName || '');
+  const repository: Repository | undefined = data;
+  const { data: allBatches = [] } = useBatches();
+  const rediscoverMutation = useRediscoverRepository();
+  const updateRepositoryMutation = useUpdateRepository();
+  
   const [history, setHistory] = useState<MigrationHistory[]>([]);
   const [logs, setLogs] = useState<MigrationLog[]>([]);
-  const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [migrating, setMigrating] = useState(false);
-  const [rediscovering, setRediscovering] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'logs'>('overview');
   
   // Batch assignment state
-  const [batches, setBatches] = useState<Batch[]>([]);
+  const batches = allBatches.filter(b => b.status === 'ready');
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [assigningBatch, setAssigningBatch] = useState(false);
   
   // Destination configuration
   const [editingDestination, setEditingDestination] = useState(false);
   const [destinationFullName, setDestinationFullName] = useState<string>('');
-  const [savingDestination, setSavingDestination] = useState(false);
   
   // Log filters
   const [logLevel, setLogLevel] = useState<string>('');
@@ -36,46 +41,22 @@ export function RepositoryDetail() {
   const [logSearch, setLogSearch] = useState<string>('');
 
   useEffect(() => {
-    loadRepository();
-    loadBatches();
-    // Poll for status updates every 10 seconds
-    const interval = setInterval(loadRepository, 10000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fullName]);
-
-  const loadBatches = async () => {
-    try {
-      const allBatches = await api.listBatches();
-      // Only show ready batches for assignment
-      const readyBatches = allBatches.filter(b => b.status === 'ready');
-      setBatches(readyBatches);
-    } catch (error) {
-      console.error('Failed to load batches:', error);
+    if (repository?.destination_full_name) {
+      setDestinationFullName(repository.destination_full_name);
     }
-  };
-
-  const loadRepository = async () => {
-    if (!fullName) return;
     
-    try {
-      const response = await api.getRepository(decodeURIComponent(fullName));
-      setRepository(response.repository);
-      setHistory(response.history || []);
-      
-      // Set destination full name (defaults to source full name if not set)
-      setDestinationFullName(response.repository.destination_full_name || response.repository.full_name);
-      
-      // Load logs if tab is active
-      if (activeTab === 'logs') {
-        await loadLogs(response.repository.id);
-      }
-    } catch (error) {
-      console.error('Failed to load repository:', error);
-    } finally {
-      setLoading(false);
+    // Load migration history when repository changes
+    if (repository?.id) {
+      (async () => {
+        try {
+          const response = await api.getMigrationHistory(repository.id);
+          setHistory(response || []);
+        } catch (error) {
+          console.error('Failed to load migration history:', error);
+        }
+      })();
     }
-  };
+  }, [repository]);
 
   const loadLogs = async (repoId?: number) => {
     const id = repoId || repository?.id;
@@ -113,19 +94,16 @@ export function RepositoryDetail() {
       return;
     }
 
-    setSavingDestination(true);
     try {
-      await api.updateRepository(decodeURIComponent(fullName), {
-        destination_full_name: destinationFullName,
+      await updateRepositoryMutation.mutateAsync({
+        fullName: decodeURIComponent(fullName),
+        updates: { destination_full_name: destinationFullName },
       });
       
       setEditingDestination(false);
-      await loadRepository();
     } catch (error) {
       console.error('Failed to save destination:', error);
       alert('Failed to save destination. Please try again.');
-    } finally {
-      setSavingDestination(false);
     }
   };
 
@@ -146,9 +124,6 @@ export function RepositoryDetail() {
       
       // Show success message
       alert(`${dryRun ? 'Dry run' : 'Migration'} started successfully!`);
-      
-      // Reload to get updated status
-      await loadRepository();
     } catch (error) {
       console.error('Failed to start migration:', error);
       alert('Failed to start migration. Please try again.');
@@ -164,7 +139,6 @@ export function RepositoryDetail() {
     try {
       await api.addRepositoriesToBatch(selectedBatchId, [repository.id]);
       alert('Repository assigned to batch successfully!');
-      await loadRepository();
       setSelectedBatchId(null);
     } catch (error) {
       console.error('Failed to assign to batch:', error);
@@ -185,7 +159,6 @@ export function RepositoryDetail() {
     try {
       await api.removeRepositoriesFromBatch(repository.batch_id, [repository.id]);
       alert('Repository removed from batch successfully!');
-      await loadRepository();
     } catch (error) {
       console.error('Failed to remove from batch:', error);
       alert('Failed to remove from batch. Please try again.');
@@ -195,30 +168,22 @@ export function RepositoryDetail() {
   };
 
   const handleRediscover = async () => {
-    if (!repository || !fullName || rediscovering) return;
+    if (!repository || !fullName || rediscoverMutation.isPending) return;
 
     if (!confirm('Are you sure you want to re-discover this repository? This will update all repository data.')) {
       return;
     }
 
-    setRediscovering(true);
     try {
-      await api.rediscoverRepository(decodeURIComponent(fullName));
+      await rediscoverMutation.mutateAsync(decodeURIComponent(fullName));
       alert('Re-discovery started! Repository data will be updated shortly.');
-      
-      // Reload after a short delay to show updated data
-      setTimeout(async () => {
-        await loadRepository();
-        setRediscovering(false);
-      }, 3000);
     } catch (error) {
       console.error('Failed to start re-discovery:', error);
       alert('Failed to start re-discovery. Please try again.');
-      setRediscovering(false);
     }
   };
 
-  if (loading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingSpinner />;
   if (!repository) return <div className="text-center py-12 text-gray-500">Repository not found</div>;
 
   const canMigrate = ['pending', 'dry_run_complete', 'pre_migration_complete', 'migration_failed'].includes(
@@ -237,7 +202,9 @@ export function RepositoryDetail() {
   const canChangeBatch = !isInActiveMigration && repository.status !== 'complete';
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto relative">
+      <RefreshIndicator isRefreshing={isFetching && !isLoading} />
+      
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
         <div className="flex justify-between items-start">
@@ -267,21 +234,21 @@ export function RepositoryDetail() {
                           onChange={(e) => setDestinationFullName(e.target.value)}
                           placeholder="org/repo"
                           className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          disabled={savingDestination}
+                          disabled={updateRepositoryMutation.isPending}
                         />
                         <button
                           onClick={handleSaveDestination}
-                          disabled={savingDestination}
+                          disabled={updateRepositoryMutation.isPending}
                           className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                         >
-                          {savingDestination ? 'Saving...' : 'Save'}
+                          {updateRepositoryMutation.isPending ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={() => {
                             setEditingDestination(false);
                             setDestinationFullName(repository.destination_full_name || repository.full_name);
                           }}
-                          disabled={savingDestination}
+                          disabled={updateRepositoryMutation.isPending}
                           className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
                         >
                           Cancel
@@ -368,10 +335,10 @@ export function RepositoryDetail() {
           <div className="flex flex-col gap-3 ml-6">
             <button
               onClick={handleRediscover}
-              disabled={rediscovering}
+              disabled={rediscoverMutation.isPending}
               className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
-              {rediscovering ? 'Re-discovering...' : 'Re-discover'}
+              {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
             </button>
             {canMigrate && (
               <>
@@ -500,6 +467,7 @@ export function RepositoryDetail() {
               </ProfileCard>
 
               <ProfileCard title="GitHub Features">
+                <ProfileItem label="Archived" value={repository.is_archived ? 'Yes' : 'No'} />
                 <ProfileItem label="Wikis" value={repository.has_wiki ? 'Enabled' : 'Disabled'} />
                 <ProfileItem label="Pages" value={repository.has_pages ? 'Enabled' : 'Disabled'} />
                 <ProfileItem label="Discussions" value={repository.has_discussions ? 'Enabled' : 'Disabled'} />

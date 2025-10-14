@@ -199,6 +199,7 @@ func (c *Collector) ProfileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 		SourceURL:     ghRepo.GetHTMLURL(),
 		TotalSize:     &totalSize,
 		DefaultBranch: &defaultBranch,
+		IsArchived:    ghRepo.GetArchived(),
 		HasWiki:       ghRepo.GetHasWiki(),
 		HasPages:      ghRepo.GetHasPages(),
 		Status:        string(models.StatusPending),

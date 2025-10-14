@@ -29,6 +29,7 @@ type Repository struct {
 	LastCommitDate    *time.Time `json:"last_commit_date,omitempty" db:"last_commit_date"`
 
 	// GitHub features
+	IsArchived        bool `json:"is_archived" db:"is_archived"`
 	HasWiki           bool `json:"has_wiki" db:"has_wiki"`
 	HasPages          bool `json:"has_pages" db:"has_pages"`
 	HasDiscussions    bool `json:"has_discussions" db:"has_discussions"`

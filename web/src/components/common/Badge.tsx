@@ -1,6 +1,6 @@
 interface BadgeProps {
   children: React.ReactNode;
-  color?: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'gray';
+  color?: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'gray' | 'orange' | 'pink' | 'indigo' | 'teal';
 }
 
 export function Badge({ children, color = 'gray' }: BadgeProps) {
@@ -11,6 +11,10 @@ export function Badge({ children, color = 'gray' }: BadgeProps) {
     red: 'bg-red-100 text-red-800',
     purple: 'bg-purple-100 text-purple-800',
     gray: 'bg-gray-100 text-gray-800',
+    orange: 'bg-orange-100 text-orange-800',
+    pink: 'bg-pink-100 text-pink-800',
+    indigo: 'bg-indigo-100 text-indigo-800',
+    teal: 'bg-teal-100 text-teal-800',
   };
   
   return (

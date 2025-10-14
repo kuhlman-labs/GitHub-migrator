@@ -17,6 +17,7 @@ export interface Repository {
   commit_count: number;
   last_commit_sha?: string;
   last_commit_date?: string;
+  is_archived: boolean;
   has_wiki: boolean;
   has_pages: boolean;
   has_discussions: boolean;
@@ -93,6 +94,7 @@ export interface SizeDistribution {
 }
 
 export interface FeatureStats {
+  is_archived: number;
   has_lfs: number;
   has_submodules: number;
   has_large_files: number;
@@ -103,6 +105,15 @@ export interface FeatureStats {
   has_projects: number;
   has_branch_protections: number;
   total_repositories: number;
+}
+
+export interface MigrationCompletionStats {
+  organization: string;
+  total_repos: number;
+  completed_count: number;
+  in_progress_count: number;
+  pending_count: number;
+  failed_count: number;
 }
 
 export interface Analytics {
@@ -116,6 +127,7 @@ export interface Analytics {
   organization_stats?: Organization[];
   size_distribution?: SizeDistribution[];
   feature_stats?: FeatureStats;
+  migration_completion_stats?: MigrationCompletionStats[];
 }
 
 export interface MigrationHistoryEntry {

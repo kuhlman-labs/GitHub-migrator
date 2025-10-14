@@ -1589,3 +1589,86 @@ func TestGetCompletedMigrations(t *testing.T) {
 		}
 	}
 }
+
+func TestGetMigrationCompletionStatsByOrg(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create test repositories
+	createTestReposForOrgStats(t, db, ctx)
+
+	// Get migration completion stats
+	stats, err := db.GetMigrationCompletionStatsByOrg(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get migration completion stats: %v", err)
+	}
+
+	// Should return 3 organizations
+	if len(stats) != 3 {
+		t.Errorf("Expected 3 organizations, got %d", len(stats))
+	}
+
+	// Verify organization stats
+	verifyOrgStats(t, stats, "acme", 4, 2, 1, 1)
+	verifyOrgStats(t, stats, "corp", 2, 1, 1, 0)
+	verifyOrgStats(t, stats, "org", 1, 1, 0, 0)
+}
+
+func createTestReposForOrgStats(t *testing.T, db *Database, ctx context.Context) {
+	repos := []struct {
+		fullName string
+		status   string
+	}{
+		{"acme/repo1", string(models.StatusComplete)},
+		{"acme/repo2", string(models.StatusComplete)},
+		{"acme/repo3", string(models.StatusPending)},
+		{"acme/repo4", string(models.StatusMigrationFailed)},
+		{"corp/repo1", string(models.StatusComplete)},
+		{"corp/repo2", string(models.StatusPending)},
+		{"org/repo1", string(models.StatusComplete)},
+	}
+
+	for _, r := range repos {
+		repo := &models.Repository{
+			FullName:     r.fullName,
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
+			Status:       r.status,
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
+		}
+	}
+}
+
+func verifyOrgStats(t *testing.T, stats []*MigrationCompletionStats, orgName string, expectedTotal, expectedCompleted, expectedPending, expectedFailed int) {
+	orgStats := findOrgStats(stats, orgName)
+	if orgStats == nil {
+		t.Fatalf("Expected to find %s organization stats", orgName)
+	}
+	if orgStats.TotalRepos != expectedTotal {
+		t.Errorf("Expected %s to have %d total repos, got %d", orgName, expectedTotal, orgStats.TotalRepos)
+	}
+	if orgStats.CompletedCount != expectedCompleted {
+		t.Errorf("Expected %s to have %d completed, got %d", orgName, expectedCompleted, orgStats.CompletedCount)
+	}
+	if orgStats.PendingCount != expectedPending {
+		t.Errorf("Expected %s to have %d pending, got %d", orgName, expectedPending, orgStats.PendingCount)
+	}
+	if orgStats.FailedCount != expectedFailed {
+		t.Errorf("Expected %s to have %d failed, got %d", orgName, expectedFailed, orgStats.FailedCount)
+	}
+}
+
+func findOrgStats(stats []*MigrationCompletionStats, orgName string) *MigrationCompletionStats {
+	for _, s := range stats {
+		if s.Organization == orgName {
+			return s
+		}
+	}
+	return nil
+}

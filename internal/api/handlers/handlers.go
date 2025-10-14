@@ -1058,16 +1058,23 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		featureStats = &storage.FeatureStats{}
 	}
 
+	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrg(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get migration completion stats", "error", err)
+		migrationCompletionStats = []*storage.MigrationCompletionStats{}
+	}
+
 	summary := map[string]interface{}{
-		"total_repositories": total,
-		"migrated_count":     migrated,
-		"failed_count":       failed,
-		"in_progress_count":  inProgress,
-		"pending_count":      pending,
-		"status_breakdown":   stats,
-		"organization_stats": orgStats,
-		"size_distribution":  sizeDistribution,
-		"feature_stats":      featureStats,
+		"total_repositories":         total,
+		"migrated_count":             migrated,
+		"failed_count":               failed,
+		"in_progress_count":          inProgress,
+		"pending_count":              pending,
+		"status_breakdown":           stats,
+		"organization_stats":         orgStats,
+		"size_distribution":          sizeDistribution,
+		"feature_stats":              featureStats,
+		"migration_completion_stats": migrationCompletionStats,
 	}
 
 	h.sendJSON(w, http.StatusOK, summary)

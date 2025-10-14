@@ -1063,6 +1063,7 @@ func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution
 
 // FeatureStats represents aggregated feature usage statistics
 type FeatureStats struct {
+	IsArchived           int `json:"is_archived"`
 	HasLFS               int `json:"has_lfs"`
 	HasSubmodules        int `json:"has_submodules"`
 	HasLargeFiles        int `json:"has_large_files"`
@@ -1079,6 +1080,7 @@ type FeatureStats struct {
 func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	query := `
 		SELECT 
+			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
 			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
 			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
 			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
@@ -1094,6 +1096,7 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 
 	var stats FeatureStats
 	err := d.db.QueryRowContext(ctx, query).Scan(
+		&stats.IsArchived,
 		&stats.HasLFS,
 		&stats.HasSubmodules,
 		&stats.HasLargeFiles,
@@ -1110,6 +1113,16 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	}
 
 	return &stats, nil
+}
+
+// MigrationCompletionStats represents migration completion stats by organization
+type MigrationCompletionStats struct {
+	Organization    string `json:"organization"`
+	TotalRepos      int    `json:"total_repos"`
+	CompletedCount  int    `json:"completed_count"`
+	InProgressCount int    `json:"in_progress_count"`
+	PendingCount    int    `json:"pending_count"`
+	FailedCount     int    `json:"failed_count"`
 }
 
 // CompletedMigration represents a completed migration for the history page
@@ -1205,4 +1218,45 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 	}
 
 	return migrations, rows.Err()
+}
+
+// GetMigrationCompletionStatsByOrg returns migration completion stats grouped by organization
+func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*MigrationCompletionStats, error) {
+	query := `
+		SELECT 
+			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
+			COUNT(*) as total_repos,
+			SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN status IN ('in_progress', 'pre_migration', 'queued_for_migration', 'migrating_content') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN status IN ('pending', 'discovered') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN status LIKE '%failed%' THEN 1 ELSE 0 END) as failed_count
+		FROM repositories
+		WHERE full_name LIKE '%/%'
+		GROUP BY organization
+		ORDER BY total_repos DESC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration completion stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []*MigrationCompletionStats
+	for rows.Next() {
+		var s MigrationCompletionStats
+		if err := rows.Scan(
+			&s.Organization,
+			&s.TotalRepos,
+			&s.CompletedCount,
+			&s.InProgressCount,
+			&s.PendingCount,
+			&s.FailedCount,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan migration completion stats: %w", err)
+		}
+		stats = append(stats, &s)
+	}
+
+	return stats, rows.Err()
 }

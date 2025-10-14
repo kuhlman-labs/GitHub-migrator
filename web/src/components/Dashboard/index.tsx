@@ -1,40 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../../services/api';
 import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { RefreshIndicator } from '../common/RefreshIndicator';
+import { useOrganizations } from '../../hooks/useQueries';
+import { useStartDiscovery } from '../../hooks/useMutations';
 
 export function Dashboard() {
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: organizations = [], isLoading, isFetching } = useOrganizations();
+  const startDiscoveryMutation = useStartDiscovery();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [discoveryType, setDiscoveryType] = useState<'organization' | 'enterprise'>('organization');
   const [organization, setOrganization] = useState('');
   const [enterpriseSlug, setEnterpriseSlug] = useState('');
-  const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadOrganizations();
-    // Poll for updates every 10 seconds
-    const interval = setInterval(loadOrganizations, 10000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const loadOrganizations = async () => {
-    setLoading(true);
-    try {
-      const data = await api.listOrganizations();
-      setOrganizations(data);
-    } catch (error) {
-      console.error('Failed to load organizations:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleStartDiscovery = async () => {
     // Validate input based on discovery type
@@ -48,32 +30,28 @@ export function Dashboard() {
       return;
     }
 
-    setDiscoveryLoading(true);
     setDiscoveryError(null);
     setDiscoverySuccess(null);
 
     try {
       if (discoveryType === 'enterprise') {
-        await api.startDiscovery({ enterprise_slug: enterpriseSlug.trim() });
+        await startDiscoveryMutation.mutateAsync({ enterprise_slug: enterpriseSlug.trim() });
         setDiscoverySuccess(`Enterprise discovery started for ${enterpriseSlug}`);
         setEnterpriseSlug('');
       } else {
-        await api.startDiscovery({ organization: organization.trim() });
+        await startDiscoveryMutation.mutateAsync({ organization: organization.trim() });
         setDiscoverySuccess(`Discovery started for ${organization}`);
         setOrganization('');
       }
       
       setShowDiscoveryModal(false);
       
-      // Reload organizations after a short delay
+      // Clear success message after 2 seconds
       setTimeout(() => {
-        loadOrganizations();
         setDiscoverySuccess(null);
       }, 2000);
     } catch (error) {
       setDiscoveryError(error instanceof Error ? error.message : 'Failed to start discovery');
-    } finally {
-      setDiscoveryLoading(false);
     }
   };
 
@@ -84,7 +62,9 @@ export function Dashboard() {
   const totalRepos = organizations.reduce((sum, org) => sum + org.total_repos, 0);
 
   return (
-    <div>
+    <div className="relative">
+      <RefreshIndicator isRefreshing={isFetching && !isLoading} />
+      
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-light text-gray-900">Organizations</h1>
         <div className="flex gap-4">
@@ -114,7 +94,7 @@ export function Dashboard() {
         Showing {filteredOrgs.length} organizations with {totalRepos} total repositories
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <LoadingSpinner />
       ) : filteredOrgs.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
@@ -136,7 +116,7 @@ export function Dashboard() {
           setOrganization={setOrganization}
           enterpriseSlug={enterpriseSlug}
           setEnterpriseSlug={setEnterpriseSlug}
-          loading={discoveryLoading}
+          loading={startDiscoveryMutation.isPending}
           error={discoveryError}
           onStart={handleStartDiscovery}
           onClose={() => {

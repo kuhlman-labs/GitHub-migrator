@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { api } from '../../services/api';
-import type { Analytics as AnalyticsData } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDuration } from '../../utils/format';
+import { useAnalytics } from '../../hooks/useQueries';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#9CA3AF',
@@ -15,29 +14,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function Analytics() {
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: analytics, isLoading, isFetching } = useAnalytics();
 
-  useEffect(() => {
-    loadAnalytics();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadAnalytics, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadAnalytics = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getAnalyticsSummary();
-      setAnalytics(data);
-    } catch (error) {
-      console.error('Failed to load analytics:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingSpinner />;
   if (!analytics) return <div className="text-center py-12 text-gray-500">No analytics data available</div>;
 
   // Prepare chart data
@@ -75,7 +54,8 @@ export function Analytics() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto relative">
+      <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       <h1 className="text-3xl font-light text-gray-900 mb-8">Migration Analytics</h1>
 
       {/* Summary Cards */}
@@ -292,6 +272,7 @@ export function Analytics() {
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
                 <div className="space-y-3">
+                  <FeatureStat label="Archived" count={analytics.feature_stats.is_archived} total={analytics.feature_stats.total_repositories} />
                   <FeatureStat label="LFS" count={analytics.feature_stats.has_lfs} total={analytics.feature_stats.total_repositories} />
                   <FeatureStat label="Submodules" count={analytics.feature_stats.has_submodules} total={analytics.feature_stats.total_repositories} />
                   <FeatureStat label="Large Files (>100MB)" count={analytics.feature_stats.has_large_files} total={analytics.feature_stats.total_repositories} />
@@ -305,6 +286,85 @@ export function Analytics() {
               </div>
             )}
           </div>
+
+          {/* Migration Completion by Organization */}
+          {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Migration Progress by Organization</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Organization
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Total Repos
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Completed
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        In Progress
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Pending
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Failed
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Progress
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {analytics.migration_completion_stats.map((org) => {
+                      const completionPercentage = org.total_repos > 0 
+                        ? Math.round((org.completed_count / org.total_repos) * 100)
+                        : 0;
+                      
+                      return (
+                        <tr key={org.organization} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {org.organization}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {org.total_repos}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                            {org.completed_count}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600">
+                            {org.in_progress_count}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {org.pending_count}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
+                            {org.failed_count}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2 min-w-[100px]">
+                                <div
+                                  className="bg-green-600 h-2 rounded-full"
+                                  style={{ width: `${completionPercentage}%` }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium text-gray-700 min-w-[3rem] text-right">
+                                {completionPercentage}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

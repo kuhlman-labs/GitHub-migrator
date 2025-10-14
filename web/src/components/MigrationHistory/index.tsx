@@ -1,30 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../../services/api';
 import type { MigrationHistoryEntry } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDate, formatDuration } from '../../utils/format';
+import { useMigrationHistory } from '../../hooks/useQueries';
 
 export function MigrationHistory() {
-  const [migrations, setMigrations] = useState<MigrationHistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading, isFetching } = useMigrationHistory();
+  const migrations = data?.migrations || [];
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [exporting, setExporting] = useState(false);
-
-  useEffect(() => {
-    loadMigrationHistory();
-  }, []);
-
-  const loadMigrationHistory = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getMigrationHistoryList();
-      setMigrations(data.migrations || []);
-    } catch (error) {
-      console.error('Failed to load migration history:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleExport = async (format: 'csv' | 'json') => {
     setExporting(true);
@@ -52,10 +39,11 @@ export function MigrationHistory() {
     m.full_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto relative">
+      <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-light text-gray-900">Migration History</h1>
         <div className="flex gap-4">
