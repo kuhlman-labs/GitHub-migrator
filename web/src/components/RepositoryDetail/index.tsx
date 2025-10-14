@@ -10,7 +10,7 @@ import { ProfileCard } from '../common/ProfileCard';
 import { ProfileItem } from '../common/ProfileItem';
 import { formatBytes, formatDate } from '../../utils/format';
 import { useRepository, useBatches } from '../../hooks/useQueries';
-import { useRediscoverRepository, useUpdateRepository } from '../../hooks/useMutations';
+import { useRediscoverRepository, useUpdateRepository, useUnlockRepository } from '../../hooks/useMutations';
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
@@ -19,6 +19,7 @@ export function RepositoryDetail() {
   const { data: allBatches = [] } = useBatches();
   const rediscoverMutation = useRediscoverRepository();
   const updateRepositoryMutation = useUpdateRepository();
+  const unlockMutation = useUnlockRepository();
   
   const [history, setHistory] = useState<MigrationHistory[]>([]);
   const [logs, setLogs] = useState<MigrationLog[]>([]);
@@ -183,6 +184,22 @@ export function RepositoryDetail() {
     }
   };
 
+  const handleUnlock = async () => {
+    if (!repository || !fullName || unlockMutation.isPending) return;
+
+    if (!confirm('Are you sure you want to unlock this repository? This will remove the lock from the source repository.')) {
+      return;
+    }
+
+    try {
+      await unlockMutation.mutateAsync(decodeURIComponent(fullName));
+      alert('Repository unlocked successfully!');
+    } catch (error) {
+      console.error('Failed to unlock repository:', error);
+      alert('Failed to unlock repository. Please try again.');
+    }
+  };
+
   if (isLoading) return <LoadingSpinner />;
   if (!repository) return <div className="text-center py-12 text-gray-500">Repository not found</div>;
 
@@ -216,6 +233,7 @@ export function RepositoryDetail() {
               <StatusBadge status={repository.status} />
               {repository.priority === 1 && <Badge color="purple">High Priority</Badge>}
               {repository.batch_id && <Badge color="blue">Batch #{repository.batch_id}</Badge>}
+              {repository.is_source_locked && <Badge color="orange">🔒 Source Locked</Badge>}
             </div>
 
             {/* Destination Configuration */}
@@ -359,13 +377,24 @@ export function RepositoryDetail() {
               </>
             )}
             {repository.status === 'migration_failed' && (
-              <button
-                onClick={() => handleStartMigration(false)}
-                disabled={migrating}
-                className="px-4 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                Retry Migration
-              </button>
+              <>
+                <button
+                  onClick={() => handleStartMigration(false)}
+                  disabled={migrating}
+                  className="px-4 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  Retry Migration
+                </button>
+                {repository.is_source_locked && repository.source_migration_id && (
+                  <button
+                    onClick={handleUnlock}
+                    disabled={unlockMutation.isPending}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {unlockMutation.isPending ? 'Unlocking...' : '🔓 Unlock Source'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -123,3 +123,15 @@ export function useUpdateRepository() {
   });
 }
 
+export function useUnlockRepository() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (fullName: string) => api.unlockRepository(fullName),
+    onSuccess: (_, fullName) => {
+      queryClient.invalidateQueries({ queryKey: ['repository', fullName] });
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+    },
+  });
+}
+

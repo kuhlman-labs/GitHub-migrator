@@ -530,6 +530,34 @@ func (c *Client) RepositoryURL(fullName string) string {
 	}
 }
 
+// UnlockRepository unlocks a repository that was locked during a migration.
+// This is used when a migration fails and the source repository remains locked.
+// See: https://docs.github.com/en/rest/migrations/orgs#unlock-an-organization-repository
+func (c *Client) UnlockRepository(ctx context.Context, org, repo string, migrationID int64) error {
+	_, err := c.DoWithRetry(ctx, "UnlockRepository", func(ctx context.Context) (*github.Response, error) {
+		req, err := c.rest.NewRequest("DELETE",
+			fmt.Sprintf("orgs/%s/migrations/%d/repos/%s/lock", org, migrationID, repo),
+			nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.rest.Do(ctx, req, nil)
+		return resp, err
+	})
+
+	if err != nil {
+		return WrapError(err, "UnlockRepository", c.baseURL)
+	}
+
+	c.logger.Info("Repository unlocked successfully",
+		"org", org,
+		"repo", repo,
+		"migration_id", migrationID)
+
+	return nil
+}
+
 // ListEnterpriseOrganizations lists all organizations in an enterprise using GraphQL
 func (c *Client) ListEnterpriseOrganizations(ctx context.Context, enterpriseSlug string) ([]string, error) {
 	c.logger.Info("Listing organizations for enterprise", "enterprise", enterpriseSlug)

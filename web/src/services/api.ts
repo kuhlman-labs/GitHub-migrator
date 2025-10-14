@@ -47,6 +47,11 @@ export const api = {
     return data;
   },
 
+  async unlockRepository(fullName: string) {
+    const { data } = await client.post(`/repositories/${encodeURIComponent(fullName)}/unlock`);
+    return data;
+  },
+
   // Organizations
   async listOrganizations(): Promise<Organization[]> {
     const { data } = await client.get('/organizations');

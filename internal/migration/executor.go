@@ -304,6 +304,10 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "initiate", "Archive generation initiated successfully", &details)
 
 	repo.Status = string(models.StatusArchiveGenerating)
+	// Track migration ID and lock status for production migrations
+	migID := archiveID
+	repo.SourceMigrationID = &migID
+	repo.IsSourceLocked = lockRepos
 	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
 		e.logger.Error("Failed to update repository status", "error", err)
 	}
@@ -391,6 +395,8 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	// Phase 7: Mark complete
 	completionStatus := models.StatusComplete
 	completionMsg := "Migration completed successfully"
+	// Clear lock status on successful completion
+	repo.IsSourceLocked = false
 	if dryRun {
 		completionStatus = models.StatusDryRunComplete
 		completionMsg = "Dry run completed successfully - repository can be migrated safely"

@@ -343,6 +343,74 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UnlockRepository handles POST /api/v1/repositories/{fullName}/unlock
+func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	if h.sourceClient == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Source client not configured")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get repository
+	repo, err := h.db.GetRepository(ctx, fullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Check if repository has lock information
+	if repo.SourceMigrationID == nil {
+		h.sendError(w, http.StatusBadRequest, "No migration ID found for this repository")
+		return
+	}
+
+	if !repo.IsSourceLocked {
+		h.sendJSON(w, http.StatusOK, map[string]string{
+			"message":   "Repository is not locked",
+			"full_name": fullName,
+		})
+		return
+	}
+
+	// Extract org and repo name
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 {
+		h.sendError(w, http.StatusBadRequest, "Invalid repository name format")
+		return
+	}
+	org, repoName := parts[0], parts[1]
+
+	// Unlock the repository
+	err = h.sourceClient.UnlockRepository(ctx, org, repoName, *repo.SourceMigrationID)
+	if err != nil {
+		h.logger.Error("Failed to unlock repository", "error", err, "repo", fullName)
+		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to unlock repository: %v", err))
+		return
+	}
+
+	// Update repository lock status
+	repo.IsSourceLocked = false
+	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+		h.logger.Error("Failed to update repository lock status", "error", err)
+		// Continue anyway, the unlock was successful
+	}
+
+	h.logger.Info("Repository unlocked successfully", "repo", fullName, "migration_id", *repo.SourceMigrationID)
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message":      "Repository unlocked successfully",
+		"full_name":    fullName,
+		"migration_id": *repo.SourceMigrationID,
+	})
+}
+
 // ListBatches handles GET /api/v1/batches
 func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

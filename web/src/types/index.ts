@@ -40,6 +40,8 @@ export interface Repository {
   priority: number;
   destination_url?: string;
   destination_full_name?: string;
+  source_migration_id?: number;
+  is_source_locked: boolean;
   discovered_at: string;
   updated_at: string;
   migrated_at?: string;

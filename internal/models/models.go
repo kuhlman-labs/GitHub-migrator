@@ -61,6 +61,10 @@ type Repository struct {
 	DestinationURL      *string `json:"destination_url,omitempty" db:"destination_url"`
 	DestinationFullName *string `json:"destination_full_name,omitempty" db:"destination_full_name"`
 
+	// Lock Tracking (for failed migrations)
+	SourceMigrationID *int64 `json:"source_migration_id,omitempty" db:"source_migration_id"` // GHES migration ID
+	IsSourceLocked    bool   `json:"is_source_locked" db:"is_source_locked"`                 // Whether source repo is locked
+
 	// Timestamps
 	DiscoveredAt time.Time  `json:"discovered_at" db:"discovered_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
