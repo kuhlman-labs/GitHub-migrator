@@ -11,17 +11,24 @@ interface RepositoryFiltersProps {
 export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFiltersProps) {
   const [organizations, setOrganizations] = useState<string[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [loadingOrgs, setLoadingOrgs] = useState(false);
 
   useEffect(() => {
     loadOrganizations();
   }, []);
 
   const loadOrganizations = async () => {
+    if (loadingOrgs) return; // Prevent duplicate loads
+    
+    setLoadingOrgs(true);
     try {
       const orgs = await api.getOrganizationList();
-      setOrganizations(orgs);
+      setOrganizations(orgs || []); // Ensure it's always an array
     } catch (error) {
       console.error('Failed to load organizations:', error);
+      setOrganizations([]); // Set to empty array on error
+    } finally {
+      setLoadingOrgs(false);
     }
   };
 
@@ -211,7 +218,7 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
                 <input
                   type="checkbox"
                   checked={filters.has_lfs || false}
-                  onChange={(e) => onChange({ ...filters, has_lfs: e.target.checked || undefined })}
+                  onChange={(e) => onChange({ ...filters, has_lfs: e.target.checked ? true : undefined })}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">Has LFS</span>
@@ -220,7 +227,7 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
                 <input
                   type="checkbox"
                   checked={filters.has_submodules || false}
-                  onChange={(e) => onChange({ ...filters, has_submodules: e.target.checked || undefined })}
+                  onChange={(e) => onChange({ ...filters, has_submodules: e.target.checked ? true : undefined })}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">Has Submodules</span>
@@ -229,7 +236,7 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
                 <input
                   type="checkbox"
                   checked={filters.has_actions || false}
-                  onChange={(e) => onChange({ ...filters, has_actions: e.target.checked || undefined })}
+                  onChange={(e) => onChange({ ...filters, has_actions: e.target.checked ? true : undefined })}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">Has Actions</span>
@@ -238,7 +245,7 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
                 <input
                   type="checkbox"
                   checked={filters.has_wiki || false}
-                  onChange={(e) => onChange({ ...filters, has_wiki: e.target.checked || undefined })}
+                  onChange={(e) => onChange({ ...filters, has_wiki: e.target.checked ? true : undefined })}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">Has Wiki</span>
@@ -247,7 +254,7 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
                 <input
                   type="checkbox"
                   checked={filters.has_pages || false}
-                  onChange={(e) => onChange({ ...filters, has_pages: e.target.checked || undefined })}
+                  onChange={(e) => onChange({ ...filters, has_pages: e.target.checked ? true : undefined })}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">Has Pages</span>

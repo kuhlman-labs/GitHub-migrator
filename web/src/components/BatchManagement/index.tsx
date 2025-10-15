@@ -4,6 +4,7 @@ import type { Batch, Repository } from '../../types';
 import { BatchBuilder } from './BatchBuilder';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 import { formatBytes, formatDate } from '../../utils/format';
 
 export function BatchManagement() {
@@ -362,11 +363,13 @@ export function BatchManagement() {
 
       {/* Batch Builder Modal */}
       {showBuilder && (
-        <BatchBuilder
-          batch={editingBatch || undefined}
-          onClose={handleBuilderClose}
-          onSuccess={handleBuilderSuccess}
-        />
+        <ErrorBoundary>
+          <BatchBuilder
+            batch={editingBatch || undefined}
+            onClose={handleBuilderClose}
+            onSuccess={handleBuilderSuccess}
+          />
+        </ErrorBoundary>
       )}
     </div>
   );
