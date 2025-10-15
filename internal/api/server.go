@@ -65,6 +65,7 @@ func (s *Server) Router() http.Handler {
 
 	// Organization endpoints
 	mux.HandleFunc("GET /api/v1/organizations", s.handler.ListOrganizations)
+	mux.HandleFunc("GET /api/v1/organizations/list", s.handler.GetOrganizationList)
 
 	// Batch endpoints
 	mux.HandleFunc("GET /api/v1/batches", s.handler.ListBatches)

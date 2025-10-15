@@ -139,10 +139,35 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 	return &repo, nil
 }
 
+const (
+	orderByFullNameASC = " ORDER BY full_name ASC"
+)
+
 // applyRepositoryFilters applies filters to the SQL query and returns the updated query and args
 func applyRepositoryFilters(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
 	// Apply status filter
 	query, args = applyStatusFilter(query, args, filters)
+
+	// Apply simple filters
+	query, args = applySimpleFilters(query, args, filters)
+
+	// Apply organization filter
+	query, args = applyOrganizationFilter(query, args, filters)
+
+	// Apply feature filters
+	query, args = applyFeatureFilters(query, args, filters)
+
+	// Apply available for batch filter
+	query, args = applyAvailableForBatchFilter(query, args, filters)
+
+	// Apply sort order
+	query, args = applySortOrder(query, args, filters)
+
+	return query, args
+}
+
+// applySimpleFilters applies basic filters like batch_id, source, size, and search
+func applySimpleFilters(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
 	// Apply batch_id filter
 	if batchID, ok := filters["batch_id"].(int64); ok && batchID > 0 {
 		query += " AND batch_id = ?"
@@ -155,16 +180,14 @@ func applyRepositoryFilters(query string, args []interface{}, filters map[string
 		args = append(args, source)
 	}
 
-	// Apply has_lfs filter
-	if hasLFS, ok := filters["has_lfs"].(bool); ok {
-		query += " AND has_lfs = ?"
-		args = append(args, hasLFS)
+	// Apply size range filters
+	if minSize, ok := filters["min_size"].(int64); ok && minSize > 0 {
+		query += " AND total_size >= ?"
+		args = append(args, minSize)
 	}
-
-	// Apply has_submodules filter
-	if hasSubmodules, ok := filters["has_submodules"].(bool); ok {
-		query += " AND has_submodules = ?"
-		args = append(args, hasSubmodules)
+	if maxSize, ok := filters["max_size"].(int64); ok && maxSize > 0 {
+		query += " AND total_size <= ?"
+		args = append(args, maxSize)
 	}
 
 	// Apply search filter (case-insensitive)
@@ -173,26 +196,110 @@ func applyRepositoryFilters(query string, args []interface{}, filters map[string
 		args = append(args, "%"+search+"%")
 	}
 
-	// Apply available_for_batch filter
-	if availableForBatch, ok := filters["available_for_batch"].(bool); ok && availableForBatch {
-		// Exclude repos that are completed or in active migration
-		excludedStatuses := []string{
-			"complete",
-			"queued_for_migration",
-			"dry_run_in_progress",
-			"dry_run_queued",
-			"migrating_content",
-			"archive_generating",
-			"post_migration",
-			"migration_complete",
-		}
-		placeholders := make([]string, len(excludedStatuses))
-		for i, status := range excludedStatuses {
-			placeholders[i] = "?"
-			args = append(args, status)
-		}
-		query += fmt.Sprintf(" AND status NOT IN (%s)", strings.Join(placeholders, ","))
+	return query, args
+}
+
+// applyOrganizationFilter applies organization filter (single or multiple)
+func applyOrganizationFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	orgValue, ok := filters["organization"]
+	if !ok {
+		return query, args
 	}
+
+	switch org := orgValue.(type) {
+	case string:
+		if org != "" {
+			query += " AND LOWER(full_name) LIKE LOWER(?)"
+			args = append(args, org+"/%")
+		}
+	case []string:
+		if len(org) > 0 {
+			placeholders := make([]string, len(org))
+			for i, o := range org {
+				placeholders[i] = "LOWER(full_name) LIKE LOWER(?)"
+				args = append(args, o+"/%")
+			}
+			query += fmt.Sprintf(" AND (%s)", strings.Join(placeholders, " OR "))
+		}
+	}
+
+	return query, args
+}
+
+// applyFeatureFilters applies feature-based filters
+func applyFeatureFilters(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	featureFilters := []struct {
+		key    string
+		column string
+	}{
+		{"has_lfs", "has_lfs"},
+		{"has_submodules", "has_submodules"},
+		{"has_actions", "has_actions"},
+		{"has_wiki", "has_wiki"},
+		{"has_pages", "has_pages"},
+		{"is_archived", "is_archived"},
+	}
+
+	for _, f := range featureFilters {
+		if value, ok := filters[f.key].(bool); ok {
+			query += fmt.Sprintf(" AND %s = ?", f.column)
+			args = append(args, value)
+		}
+	}
+
+	return query, args
+}
+
+// applyAvailableForBatchFilter excludes repos that are not eligible for batch assignment
+func applyAvailableForBatchFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	availableForBatch, ok := filters["available_for_batch"].(bool)
+	if !ok || !availableForBatch {
+		return query, args
+	}
+
+	// Exclude repos that are completed or in active migration
+	excludedStatuses := []string{
+		"complete",
+		"queued_for_migration",
+		"dry_run_in_progress",
+		"dry_run_queued",
+		"migrating_content",
+		"archive_generating",
+		"post_migration",
+		"migration_complete",
+	}
+	placeholders := make([]string, len(excludedStatuses))
+	for i, status := range excludedStatuses {
+		placeholders[i] = "?"
+		args = append(args, status)
+	}
+	query += fmt.Sprintf(" AND status NOT IN (%s)", strings.Join(placeholders, ","))
+
+	return query, args
+}
+
+// applySortOrder applies the sort order to the query
+func applySortOrder(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	sortBy, ok := filters["sort_by"].(string)
+	if !ok || sortBy == "" {
+		return query, args
+	}
+
+	switch sortBy {
+	case "name":
+		query += orderByFullNameASC
+	case "size":
+		query += " ORDER BY total_size DESC"
+	case "org":
+		query += orderByFullNameASC // Already sorts by org/repo
+	case "updated":
+		query += " ORDER BY updated_at DESC"
+	default:
+		query += orderByFullNameASC
+	}
+
+	// Mark as sorted to prevent double ORDER BY
+	filters["_sorted"] = true
 
 	return query, args
 }
@@ -247,8 +354,10 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 	// Apply filters dynamically
 	query, args = applyRepositoryFilters(query, args, filters)
 
-	// Add ordering
-	query += " ORDER BY full_name ASC"
+	// Add ordering if not already added by filters
+	if _, sorted := filters["_sorted"]; !sorted {
+		query += orderByFullNameASC
+	}
 
 	// Add limit and offset if specified
 	if limit, ok := filters["limit"].(int); ok && limit > 0 {

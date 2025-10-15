@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/api"
+	"github.com/brettkuhlman/github-migrator/internal/batch"
 	"github.com/brettkuhlman/github-migrator/internal/config"
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/logging"
@@ -54,6 +55,15 @@ func main() {
 
 	// Initialize migration executor and worker (if both clients are available)
 	migrationWorker := initializeMigrationWorker(cfg, sourceClient, destClient, db, logger)
+
+	// Initialize and start batch status updater
+	statusUpdater := initializeBatchStatusUpdater(db, logger)
+	ctx, cancelStatusUpdater := context.WithCancel(context.Background())
+	defer cancelStatusUpdater()
+
+	if statusUpdater != nil {
+		go statusUpdater.Start(ctx)
+	}
 
 	// Start HTTP server
 	httpServer := &http.Server{
@@ -221,4 +231,20 @@ func initializeMigrationWorker(cfg *config.Config, sourceClient, destClient *git
 		"poll_interval", pollInterval)
 
 	return migrationWorker
+}
+
+// initializeBatchStatusUpdater creates the batch status updater service
+func initializeBatchStatusUpdater(db *storage.Database, logger *slog.Logger) *batch.StatusUpdater {
+	statusUpdater, err := batch.NewStatusUpdater(batch.StatusUpdaterConfig{
+		Storage:  db,
+		Logger:   logger,
+		Interval: 30 * time.Second, // Update every 30 seconds
+	})
+	if err != nil {
+		slog.Error("Failed to create batch status updater", "error", err)
+		return nil
+	}
+
+	slog.Info("Batch status updater initialized", "interval", "30s")
+	return statusUpdater
 }

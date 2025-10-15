@@ -6,7 +6,9 @@ import type {
   RepositoryDetailResponse, 
   MigrationLogsResponse,
   Organization,
-  MigrationHistoryEntry 
+  MigrationHistoryEntry,
+  RepositoryFilters,
+  RepositoryListResponse
 } from '../types';
 
 const client = axios.create({
@@ -27,8 +29,19 @@ export const api = {
   },
 
   // Repositories
-  async listRepositories(filters?: Record<string, string | number | boolean | undefined>): Promise<Repository[]> {
-    const { data } = await client.get('/repositories', { params: filters });
+  async listRepositories(filters?: RepositoryFilters): Promise<RepositoryListResponse> {
+    // Convert array filters to comma-separated strings for API
+    const params: Record<string, any> = { ...filters };
+    if (filters?.organization && Array.isArray(filters.organization)) {
+      params.organization = filters.organization.join(',');
+    }
+    
+    const { data } = await client.get('/repositories', { params });
+    
+    // Handle both old and new response formats
+    if (Array.isArray(data)) {
+      return { repositories: data };
+    }
     return data;
   },
 
@@ -62,6 +75,11 @@ export const api = {
   // Organizations
   async listOrganizations(): Promise<Organization[]> {
     const { data } = await client.get('/organizations');
+    return data;
+  },
+
+  async getOrganizationList(): Promise<string[]> {
+    const { data } = await client.get('/organizations/list');
     return data;
   },
 
@@ -120,6 +138,15 @@ export const api = {
     priority?: number;
   }) {
     const { data } = await client.post('/migrations/start', params);
+    return data;
+  },
+
+  async retryRepository(repositoryId: number) {
+    const { data } = await client.post('/migrations/start', {
+      repository_ids: [repositoryId],
+      dry_run: false,
+      priority: 0,
+    });
     return data;
   },
 

@@ -193,3 +193,36 @@ export type MigrationStatus =
   | 'complete'
   | 'rolled_back';
 
+export type BatchStatus =
+  | 'ready'
+  | 'in_progress'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'failed'
+  | 'cancelled';
+
+export interface RepositoryFilters {
+  status?: string;
+  batch_id?: number;
+  source?: string;
+  organization?: string | string[];
+  min_size?: number;
+  max_size?: number;
+  has_lfs?: boolean;
+  has_submodules?: boolean;
+  has_actions?: boolean;
+  has_wiki?: boolean;
+  has_pages?: boolean;
+  is_archived?: boolean;
+  search?: string;
+  sort_by?: 'name' | 'size' | 'org' | 'updated';
+  available_for_batch?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RepositoryListResponse {
+  repositories: Repository[];
+  total?: number;
+}
+

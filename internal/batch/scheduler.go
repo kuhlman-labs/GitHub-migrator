@@ -123,7 +123,7 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 	s.logger.Info("Found migratable repositories", "count", len(migratable), "total", len(repos))
 
 	// Update batch status
-	batch.Status = "in_progress"
+	batch.Status = StatusInProgress
 	now := time.Now()
 	batch.StartedAt = &now
 	if err := s.storage.UpdateBatch(ctx, batch); err != nil {
@@ -219,13 +219,23 @@ func (s *Scheduler) completeBatch(ctx context.Context, batchID int64, successCou
 	now := time.Now()
 	batch.CompletedAt = &now
 
-	// Set status based on results
-	if failCount == 0 {
-		batch.Status = "completed"
-	} else if successCount == 0 {
-		batch.Status = "failed"
+	// Get all repos to calculate accurate status
+	repos, err := s.storage.ListRepositories(ctx, map[string]interface{}{
+		"batch_id": batchID,
+	})
+	if err != nil {
+		s.logger.Error("Failed to list repositories for batch completion", "batch_id", batchID, "error", err)
+		// Fallback to simple logic
+		if failCount == 0 {
+			batch.Status = StatusCompleted
+		} else if successCount == 0 {
+			batch.Status = StatusFailed
+		} else {
+			batch.Status = StatusCompletedWithErrors
+		}
 	} else {
-		batch.Status = "completed_with_errors"
+		// Use consistent status calculation
+		batch.Status = CalculateBatchStatusFromRepos(repos)
 	}
 
 	if err := s.storage.UpdateBatch(ctx, batch); err != nil {
@@ -262,7 +272,7 @@ func (s *Scheduler) CancelBatch(ctx context.Context, batchID int64) error {
 	}
 
 	if batch != nil {
-		batch.Status = "cancelled"
+		batch.Status = StatusCancelled
 		if err := s.storage.UpdateBatch(ctx, batch); err != nil {
 			s.logger.Error("Failed to update batch status", "batch_id", batchID, "error", err)
 		}

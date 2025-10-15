@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -166,4 +167,53 @@ func (d *Database) applyMigration(filename, content string) error {
 	}
 
 	return tx.Commit()
+}
+
+// GetDistinctOrganizations retrieves a list of unique organizations from repositories
+func (d *Database) GetDistinctOrganizations(ctx context.Context) ([]string, error) {
+	query := `
+		SELECT DISTINCT 
+			CASE 
+				WHEN instr(full_name, '/') > 0 
+				THEN substr(full_name, 1, instr(full_name, '/') - 1)
+				ELSE full_name
+			END as organization
+		FROM repositories
+		WHERE full_name LIKE '%/%'
+		ORDER BY organization ASC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distinct organizations: %w", err)
+	}
+	defer rows.Close()
+
+	var orgs []string
+	for rows.Next() {
+		var org string
+		if err := rows.Scan(&org); err != nil {
+			return nil, fmt.Errorf("failed to scan organization: %w", err)
+		}
+		orgs = append(orgs, org)
+	}
+
+	return orgs, rows.Err()
+}
+
+// CountRepositoriesWithFilters counts repositories matching the given filters
+func (d *Database) CountRepositoriesWithFilters(ctx context.Context, filters map[string]interface{}) (int, error) {
+	query := "SELECT COUNT(*) FROM repositories WHERE 1=1"
+	args := []interface{}{}
+
+	// Apply the same filters as ListRepositories
+	query, args = applyRepositoryFilters(query, args, filters)
+
+	var count int
+	err := d.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count repositories: %w", err)
+	}
+
+	return count, nil
 }

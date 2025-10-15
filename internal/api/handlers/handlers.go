@@ -174,9 +174,49 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		filters["has_submodules"] = hasSubmodules == boolTrue
 	}
 
+	// Organization filter (can be comma-separated list)
+	if org := r.URL.Query().Get("organization"); org != "" {
+		if strings.Contains(org, ",") {
+			filters["organization"] = strings.Split(org, ",")
+		} else {
+			filters["organization"] = org
+		}
+	}
+
+	// Size range filters (in bytes)
+	if minSizeStr := r.URL.Query().Get("min_size"); minSizeStr != "" {
+		if minSize, err := strconv.ParseInt(minSizeStr, 10, 64); err == nil {
+			filters["min_size"] = minSize
+		}
+	}
+	if maxSizeStr := r.URL.Query().Get("max_size"); maxSizeStr != "" {
+		if maxSize, err := strconv.ParseInt(maxSizeStr, 10, 64); err == nil {
+			filters["max_size"] = maxSize
+		}
+	}
+
+	// Feature filters
+	if hasActions := r.URL.Query().Get("has_actions"); hasActions != "" {
+		filters["has_actions"] = hasActions == boolTrue
+	}
+	if hasWiki := r.URL.Query().Get("has_wiki"); hasWiki != "" {
+		filters["has_wiki"] = hasWiki == boolTrue
+	}
+	if hasPages := r.URL.Query().Get("has_pages"); hasPages != "" {
+		filters["has_pages"] = hasPages == boolTrue
+	}
+	if isArchived := r.URL.Query().Get("is_archived"); isArchived != "" {
+		filters["is_archived"] = isArchived == boolTrue
+	}
+
 	// Search filter
 	if search := r.URL.Query().Get("search"); search != "" {
 		filters["search"] = search
+	}
+
+	// Sort filter
+	if sortBy := r.URL.Query().Get("sort_by"); sortBy != "" {
+		filters["sort_by"] = sortBy
 	}
 
 	// Available for batch filter
@@ -204,7 +244,22 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, repos)
+	// Get total count if pagination is used
+	response := map[string]interface{}{
+		"repositories": repos,
+	}
+
+	if _, hasLimit := filters["limit"]; hasLimit {
+		// Count total matching repositories
+		totalCount, err := h.db.CountRepositoriesWithFilters(ctx, filters)
+		if err != nil {
+			h.logger.Error("Failed to count repositories", "error", err)
+		} else {
+			response["total"] = totalCount
+		}
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // GetRepository handles GET /api/v1/repositories/{fullName}
@@ -1336,6 +1391,21 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, orgStats)
+}
+
+// GetOrganizationList handles GET /api/v1/organizations/list
+// Returns a simple list of organization names (for filters/dropdowns)
+func (h *Handler) GetOrganizationList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	orgs, err := h.db.GetDistinctOrganizations(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get organization list", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch organization list")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, orgs)
 }
 
 // GetMigrationHistoryList handles GET /api/v1/migrations/history

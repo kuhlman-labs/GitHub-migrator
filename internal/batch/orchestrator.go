@@ -143,7 +143,7 @@ func (o *Orchestrator) ExecuteScheduledBatches(ctx context.Context, dryRun bool)
 	for _, batch := range batches {
 		// Check if batch is scheduled and ready to execute
 		if batch.ScheduledAt != nil &&
-			batch.Status == "ready" &&
+			batch.Status == StatusReady &&
 			batch.ScheduledAt.Before(now) {
 
 			o.logger.Info("Executing scheduled batch",
