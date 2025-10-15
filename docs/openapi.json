@@ -1,0 +1,2062 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GitHub Migration Server API",
+    "description": "API for managing repository discovery, profiling, batch organization, and migration execution between GitHub instances.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "GitHub Migration Server"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "health",
+      "description": "Health check endpoints"
+    },
+    {
+      "name": "discovery",
+      "description": "Repository discovery operations"
+    },
+    {
+      "name": "repositories",
+      "description": "Repository management"
+    },
+    {
+      "name": "organizations",
+      "description": "Organization information"
+    },
+    {
+      "name": "batches",
+      "description": "Batch management for grouped migrations"
+    },
+    {
+      "name": "migrations",
+      "description": "Migration execution and tracking"
+    },
+    {
+      "name": "analytics",
+      "description": "Analytics and reporting"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["health"],
+        "summary": "Health check",
+        "description": "Check if the server is healthy and running",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "healthy"
+                    },
+                    "time": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2024-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/discovery/start": {
+      "post": {
+        "tags": ["discovery"],
+        "summary": "Start repository discovery",
+        "description": "Start discovery process for an organization or enterprise",
+        "operationId": "startDiscovery",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "organization": {
+                    "type": "string",
+                    "description": "Organization name to discover",
+                    "example": "acme-corp"
+                  },
+                  "enterprise_slug": {
+                    "type": "string",
+                    "description": "Enterprise slug for enterprise-wide discovery",
+                    "example": "acme-enterprise"
+                  },
+                  "workers": {
+                    "type": "integer",
+                    "description": "Number of parallel workers",
+                    "example": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Discovery started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Discovery started"
+                    },
+                    "organization": {
+                      "type": "string",
+                      "example": "acme-corp"
+                    },
+                    "enterprise": {
+                      "type": "string",
+                      "example": "acme-enterprise"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "in_progress"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": ["organization", "enterprise"],
+                      "example": "organization"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/discovery/status": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "Get discovery status",
+        "description": "Get the current status of repository discovery",
+        "operationId": "getDiscoveryStatus",
+        "responses": {
+          "200": {
+            "description": "Discovery status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "complete"
+                    },
+                    "repositories_found": {
+                      "type": "integer",
+                      "example": 127
+                    },
+                    "completed_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2024-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories": {
+      "get": {
+        "tags": ["repositories"],
+        "summary": "List repositories",
+        "description": "List all repositories with optional filtering and pagination",
+        "operationId": "listRepositories",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by migration status",
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "dry_run_queued", "dry_run_in_progress", "dry_run_complete", "dry_run_failed", "queued_for_migration", "migrating_content", "migration_complete", "migration_failed", "complete", "rolled_back"]
+            }
+          },
+          {
+            "name": "batch_id",
+            "in": "query",
+            "description": "Filter by batch ID",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "description": "Filter by source system",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organization",
+            "in": "query",
+            "description": "Filter by organization (supports comma-separated list)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "has_lfs",
+            "in": "query",
+            "description": "Filter by LFS usage",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "has_submodules",
+            "in": "query",
+            "description": "Filter by submodule presence",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "min_size",
+            "in": "query",
+            "description": "Minimum repository size in bytes",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "max_size",
+            "in": "query",
+            "description": "Maximum repository size in bytes",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "has_actions",
+            "in": "query",
+            "description": "Filter by GitHub Actions usage",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "has_wiki",
+            "in": "query",
+            "description": "Filter by wiki presence",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "has_pages",
+            "in": "query",
+            "description": "Filter by GitHub Pages usage",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "is_archived",
+            "in": "query",
+            "description": "Filter by archived status",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search repositories by name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort field",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "available_for_batch",
+            "in": "query",
+            "description": "Filter repositories available for batch assignment",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of results",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of results to skip",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of repositories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repositories": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Repository"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "Total count (when pagination is used)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{fullName}": {
+      "get": {
+        "tags": ["repositories"],
+        "summary": "Get repository details",
+        "description": "Get detailed information about a specific repository including migration history",
+        "operationId": "getRepository",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repository": {
+                      "$ref": "#/components/schemas/Repository"
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MigrationHistory"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["repositories"],
+        "summary": "Update repository",
+        "description": "Update repository metadata such as batch assignment and priority",
+        "operationId": "updateRepository",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "batch_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "nullable": true
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "destination_full_name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repository updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{fullName}/rediscover": {
+      "post": {
+        "tags": ["repositories"],
+        "summary": "Re-discover repository",
+        "description": "Re-run discovery and profiling for a specific repository",
+        "operationId": "rediscoverRepository",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Re-discovery started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Re-discovery started"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "acme-corp/api-gateway"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "in_progress"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{fullName}/unlock": {
+      "post": {
+        "tags": ["repositories"],
+        "summary": "Unlock repository",
+        "description": "Unlock a repository that was locked during migration",
+        "operationId": "unlockRepository",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository unlocked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Repository unlocked successfully"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "acme-corp/api-gateway"
+                    },
+                    "migration_id": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{fullName}/rollback": {
+      "post": {
+        "tags": ["repositories"],
+        "summary": "Rollback migration",
+        "description": "Rollback a completed migration",
+        "operationId": "rollbackRepository",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Reason for rollback"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repository rolled back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Repository rolled back successfully"
+                    },
+                    "repository": {
+                      "$ref": "#/components/schemas/Repository"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/organizations": {
+      "get": {
+        "tags": ["organizations"],
+        "summary": "List organizations",
+        "description": "Get organization statistics",
+        "operationId": "listOrganizations",
+        "responses": {
+          "200": {
+            "description": "List of organizations with statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "organization": {
+                        "type": "string"
+                      },
+                      "repository_count": {
+                        "type": "integer"
+                      },
+                      "total_size": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/list": {
+      "get": {
+        "tags": ["organizations"],
+        "summary": "Get organization names",
+        "description": "Get a simple list of organization names for filters and dropdowns",
+        "operationId": "getOrganizationList",
+        "responses": {
+          "200": {
+            "description": "List of organization names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/batches": {
+      "get": {
+        "tags": ["batches"],
+        "summary": "List batches",
+        "description": "Get all migration batches",
+        "operationId": "listBatches",
+        "responses": {
+          "200": {
+            "description": "List of batches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Batch"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": ["batches"],
+        "summary": "Create batch",
+        "description": "Create a new migration batch",
+        "operationId": "createBatch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Wave 1 - Critical Services"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "First wave of critical microservices"
+                  },
+                  "type": {
+                    "type": "string",
+                    "example": "pilot"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Batch created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Batch"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}": {
+      "get": {
+        "tags": ["batches"],
+        "summary": "Get batch details",
+        "description": "Get detailed information about a specific batch including its repositories",
+        "operationId": "getBatch",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/batchId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "$ref": "#/components/schemas/Batch"
+                    },
+                    "repositories": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Repository"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["batches"],
+        "summary": "Update batch",
+        "description": "Update batch metadata (only allowed for batches with 'ready' status)",
+        "operationId": "updateBatch",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/batchId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "scheduled_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Batch"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}/start": {
+      "post": {
+        "tags": ["batches"],
+        "summary": "Start batch migration",
+        "description": "Start migration for all repositories in a batch",
+        "operationId": "startBatch",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/batchId"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Batch migration started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch_id": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "batch_name": {
+                      "type": "string"
+                    },
+                    "migration_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}/repositories": {
+      "post": {
+        "tags": ["batches"],
+        "summary": "Add repositories to batch",
+        "description": "Add repositories to a batch (only allowed for batches with 'ready' status)",
+        "operationId": "addRepositoriesToBatch",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/batchId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["repository_ids"],
+                "properties": {
+                  "repository_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repositories added to batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "$ref": "#/components/schemas/Batch"
+                    },
+                    "repositories_added": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["batches"],
+        "summary": "Remove repositories from batch",
+        "description": "Remove repositories from a batch (only allowed for batches with 'ready' status)",
+        "operationId": "removeRepositoriesFromBatch",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/batchId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["repository_ids"],
+                "properties": {
+                  "repository_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repositories removed from batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "$ref": "#/components/schemas/Batch"
+                    },
+                    "repositories_removed": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}/retry": {
+      "post": {
+        "tags": ["batches"],
+        "summary": "Retry batch failures",
+        "description": "Retry failed migrations in a batch",
+        "operationId": "retryBatchFailures",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/batchId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repository_ids": {
+                    "type": "array",
+                    "description": "Specific repository IDs to retry (omit to retry all failures)",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Repositories queued for retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch_id": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "batch_name": {
+                      "type": "string"
+                    },
+                    "retried_count": {
+                      "type": "integer"
+                    },
+                    "retried_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/migrations/start": {
+      "post": {
+        "tags": ["migrations"],
+        "summary": "Start migration",
+        "description": "Start migration for one or more repositories by IDs or full names",
+        "operationId": "startMigration",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repository_ids": {
+                    "type": "array",
+                    "description": "Repository IDs to migrate",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  },
+                  "full_names": {
+                    "type": "array",
+                    "description": "Repository full names to migrate (for self-service)",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "dry_run": {
+                    "type": "boolean",
+                    "description": "Perform dry run validation",
+                    "default": false
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "description": "Migration priority",
+                    "default": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Migration started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "migration_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/migrations/{id}": {
+      "get": {
+        "tags": ["migrations"],
+        "summary": "Get migration status",
+        "description": "Get the current status of a migration",
+        "operationId": "getMigrationStatus",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/migrationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repository_id": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "full_name": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "destination_url": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "migrated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "latest_event": {
+                      "$ref": "#/components/schemas/MigrationHistory"
+                    },
+                    "can_retry": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/migrations/{id}/history": {
+      "get": {
+        "tags": ["migrations"],
+        "summary": "Get migration history",
+        "description": "Get complete migration history for a repository",
+        "operationId": "getMigrationHistory",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/migrationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MigrationHistory"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/migrations/{id}/logs": {
+      "get": {
+        "tags": ["migrations"],
+        "summary": "Get migration logs",
+        "description": "Get migration logs with optional filtering",
+        "operationId": "getMigrationLogs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/migrationId"
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "description": "Filter by log level",
+            "schema": {
+              "type": "string",
+              "enum": ["DEBUG", "INFO", "WARN", "ERROR"]
+            }
+          },
+          {
+            "name": "phase",
+            "in": "query",
+            "description": "Filter by migration phase",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of logs to return",
+            "schema": {
+              "type": "integer",
+              "default": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of logs to skip",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "logs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MigrationLog"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/migrations/history": {
+      "get": {
+        "tags": ["migrations"],
+        "summary": "List migration history",
+        "description": "Get list of completed migrations",
+        "operationId": "getMigrationHistoryList",
+        "responses": {
+          "200": {
+            "description": "Migration history list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "migrations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "full_name": {
+                            "type": "string"
+                          },
+                          "source_url": {
+                            "type": "string"
+                          },
+                          "destination_url": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "completed_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "duration_seconds": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/migrations/history/export": {
+      "get": {
+        "tags": ["migrations"],
+        "summary": "Export migration history",
+        "description": "Export migration history in CSV or JSON format",
+        "operationId": "exportMigrationHistory",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "description": "Export format",
+            "schema": {
+              "type": "string",
+              "enum": ["csv", "json"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration history export",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "migrations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "exported_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/summary": {
+      "get": {
+        "tags": ["analytics"],
+        "summary": "Get analytics summary",
+        "description": "Get comprehensive analytics summary with repository statistics and migration metrics",
+        "operationId": "getAnalyticsSummary",
+        "parameters": [
+          {
+            "name": "organization",
+            "in": "query",
+            "description": "Filter by organization",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batch_id",
+            "in": "query",
+            "description": "Filter by batch ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analytics summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_repositories": {
+                      "type": "integer"
+                    },
+                    "migrated_count": {
+                      "type": "integer"
+                    },
+                    "failed_count": {
+                      "type": "integer"
+                    },
+                    "in_progress_count": {
+                      "type": "integer"
+                    },
+                    "pending_count": {
+                      "type": "integer"
+                    },
+                    "success_rate": {
+                      "type": "number",
+                      "format": "float"
+                    },
+                    "status_breakdown": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "complexity_distribution": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "migration_velocity": {
+                      "type": "object",
+                      "properties": {
+                        "repos_per_day": {
+                          "type": "number",
+                          "format": "float"
+                        }
+                      }
+                    },
+                    "migration_time_series": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "average_migration_time": {
+                      "type": "number",
+                      "format": "float"
+                    },
+                    "estimated_completion_date": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "organization_stats": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "size_distribution": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "feature_stats": {
+                      "type": "object"
+                    },
+                    "migration_completion_stats": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/progress": {
+      "get": {
+        "tags": ["analytics"],
+        "summary": "Get migration progress",
+        "description": "Get migration progress statistics",
+        "operationId": "getMigrationProgress",
+        "responses": {
+          "200": {
+            "description": "Migration progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "status_breakdown": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Repository": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "full_name": {
+            "type": "string",
+            "example": "acme-corp/api-gateway"
+          },
+          "source": {
+            "type": "string",
+            "example": "ghes"
+          },
+          "source_url": {
+            "type": "string",
+            "example": "https://github.example.com/acme-corp/api-gateway"
+          },
+          "total_size": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "largest_file": {
+            "type": "string",
+            "nullable": true
+          },
+          "largest_file_size": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "largest_commit": {
+            "type": "string",
+            "nullable": true
+          },
+          "largest_commit_size": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "has_lfs": {
+            "type": "boolean"
+          },
+          "has_submodules": {
+            "type": "boolean"
+          },
+          "has_large_files": {
+            "type": "boolean"
+          },
+          "large_file_count": {
+            "type": "integer"
+          },
+          "default_branch": {
+            "type": "string",
+            "nullable": true
+          },
+          "branch_count": {
+            "type": "integer"
+          },
+          "commit_count": {
+            "type": "integer"
+          },
+          "last_commit_sha": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_commit_date": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "is_archived": {
+            "type": "boolean"
+          },
+          "has_wiki": {
+            "type": "boolean"
+          },
+          "has_pages": {
+            "type": "boolean"
+          },
+          "has_discussions": {
+            "type": "boolean"
+          },
+          "has_actions": {
+            "type": "boolean"
+          },
+          "has_projects": {
+            "type": "boolean"
+          },
+          "branch_protections": {
+            "type": "integer"
+          },
+          "environment_count": {
+            "type": "integer"
+          },
+          "secret_count": {
+            "type": "integer"
+          },
+          "variable_count": {
+            "type": "integer"
+          },
+          "webhook_count": {
+            "type": "integer"
+          },
+          "contributor_count": {
+            "type": "integer"
+          },
+          "top_contributors": {
+            "type": "string",
+            "nullable": true
+          },
+          "issue_count": {
+            "type": "integer"
+          },
+          "pull_request_count": {
+            "type": "integer"
+          },
+          "tag_count": {
+            "type": "integer"
+          },
+          "open_issue_count": {
+            "type": "integer"
+          },
+          "open_pr_count": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "dry_run_queued", "dry_run_in_progress", "dry_run_complete", "dry_run_failed", "pre_migration", "archive_generating", "queued_for_migration", "migrating_content", "migration_complete", "migration_failed", "post_migration", "complete", "rolled_back"]
+          },
+          "batch_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "destination_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "destination_full_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_migration_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "is_source_locked": {
+            "type": "boolean"
+          },
+          "discovered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "migrated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "Batch": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string",
+            "example": "Wave 1 - Critical Services"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "example": "pilot"
+          },
+          "repository_count": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ready", "in_progress", "complete", "failed"]
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MigrationHistory": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repository_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "MigrationLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repository_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "history_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "level": {
+            "type": "string",
+            "enum": ["DEBUG", "INFO", "WARN", "ERROR"]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "fullName": {
+        "name": "fullName",
+        "in": "path",
+        "required": true,
+        "description": "Repository full name (org/repo)",
+        "schema": {
+          "type": "string"
+        },
+        "example": "acme-corp/api-gateway"
+      },
+      "batchId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Batch ID",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "migrationId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Migration/Repository ID",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Invalid request body"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Repository not found"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Failed to fetch repositories"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Service unavailable",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "GitHub client not configured"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
