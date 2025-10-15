@@ -147,8 +147,8 @@ export const api = {
   },
 
   // Analytics
-  async getAnalyticsSummary(): Promise<Analytics> {
-    const { data } = await client.get('/analytics/summary');
+  async getAnalyticsSummary(filters?: { organization?: string; batch_id?: string }): Promise<Analytics> {
+    const { data } = await client.get('/analytics/summary', { params: filters });
     return data;
   },
 

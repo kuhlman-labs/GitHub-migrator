@@ -133,12 +133,31 @@ export function Dashboard() {
 
 function OrganizationCard({ organization }: { organization: Organization }) {
   const getStatusColor = (status: string) => {
+    // Map all backend statuses to simplified color categories
     const colors: Record<string, string> = {
-      complete: 'bg-green-100 text-green-800',
-      migration_complete: 'bg-green-100 text-green-800',
+      // Pending
       pending: 'bg-gray-100 text-gray-800',
-      in_progress: 'bg-blue-100 text-blue-800',
-      failed: 'bg-red-100 text-red-800',
+      
+      // In Progress (blue)
+      dry_run_queued: 'bg-blue-100 text-blue-800',
+      dry_run_in_progress: 'bg-blue-100 text-blue-800',
+      pre_migration: 'bg-blue-100 text-blue-800',
+      archive_generating: 'bg-blue-100 text-blue-800',
+      queued_for_migration: 'bg-blue-100 text-blue-800',
+      migrating_content: 'bg-blue-100 text-blue-800',
+      post_migration: 'bg-blue-100 text-blue-800',
+      
+      // Complete (green)
+      dry_run_complete: 'bg-green-100 text-green-800',
+      migration_complete: 'bg-green-100 text-green-800',
+      complete: 'bg-green-100 text-green-800',
+      
+      // Failed (red)
+      dry_run_failed: 'bg-red-100 text-red-800',
+      migration_failed: 'bg-red-100 text-red-800',
+      
+      // Rolled Back (yellow/orange)
+      rolled_back: 'bg-yellow-100 text-yellow-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };

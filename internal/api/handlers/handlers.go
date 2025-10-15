@@ -1138,8 +1138,12 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get repository stats
-	stats, err := h.db.GetRepositoryStatsByStatus(ctx)
+	// Get filter parameters
+	orgFilter := r.URL.Query().Get("organization")
+	batchFilter := r.URL.Query().Get("batch_id")
+
+	// Get repository stats with filters
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
@@ -1158,26 +1162,70 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	inProgress := total - migrated - failed - pending
 
-	// Get discovery statistics
-	orgStats, err := h.db.GetOrganizationStats(ctx)
+	// Calculate success rate
+	successRate := 0.0
+	if migrated+failed > 0 {
+		successRate = float64(migrated) / float64(migrated+failed) * 100
+	}
+
+	// Get complexity distribution
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get complexity distribution", "error", err)
+		complexityDistribution = []*storage.ComplexityDistribution{}
+	}
+
+	// Get migration velocity (last 30 days)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	if err != nil {
+		h.logger.Error("Failed to get migration velocity", "error", err)
+		migrationVelocity = &storage.MigrationVelocity{}
+	}
+
+	// Get migration time series
+	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get migration time series", "error", err)
+		migrationTimeSeries = []*storage.MigrationTimeSeriesPoint{}
+	}
+
+	// Get average migration time
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get average migration time", "error", err)
+		avgMigrationTime = 0
+	}
+
+	// Calculate estimated completion date
+	var estimatedCompletionDate *string
+	remaining := total - migrated
+	if remaining > 0 && migrationVelocity.ReposPerDay > 0 {
+		daysRemaining := float64(remaining) / migrationVelocity.ReposPerDay
+		completionDate := time.Now().Add(time.Duration(daysRemaining*24) * time.Hour)
+		dateStr := completionDate.Format("2006-01-02")
+		estimatedCompletionDate = &dateStr
+	}
+
+	// Get discovery statistics with filters
+	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get organization stats", "error", err)
 		orgStats = []*storage.OrganizationStats{}
 	}
 
-	sizeDistribution, err := h.db.GetSizeDistribution(ctx)
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get size distribution", "error", err)
 		sizeDistribution = []*storage.SizeDistribution{}
 	}
 
-	featureStats, err := h.db.GetFeatureStats(ctx)
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get feature stats", "error", err)
 		featureStats = &storage.FeatureStats{}
 	}
 
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrg(ctx)
+	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get migration completion stats", "error", err)
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
@@ -1189,7 +1237,13 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		"failed_count":               failed,
 		"in_progress_count":          inProgress,
 		"pending_count":              pending,
+		"success_rate":               successRate,
 		"status_breakdown":           stats,
+		"complexity_distribution":    complexityDistribution,
+		"migration_velocity":         migrationVelocity,
+		"migration_time_series":      migrationTimeSeries,
+		"average_migration_time":     avgMigrationTime,
+		"estimated_completion_date":  estimatedCompletionDate,
 		"organization_stats":         orgStats,
 		"size_distribution":          sizeDistribution,
 		"feature_stats":              featureStats,

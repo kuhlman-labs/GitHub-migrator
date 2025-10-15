@@ -5,19 +5,33 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
   const getStatusColor = (status: string) => {
-    const normalizedStatus = status.toLowerCase().replace(/_/g, ' ');
-    
-    if (normalizedStatus.includes('complete')) return 'bg-green-100 text-green-800';
-    if (normalizedStatus.includes('failed')) return 'bg-red-100 text-red-800';
-    if (normalizedStatus.includes('rolled back')) return 'bg-orange-100 text-orange-800';
-    if (normalizedStatus.includes('progress') || normalizedStatus.includes('migrating')) {
-      return 'bg-blue-100 text-blue-800';
-    }
-    if (normalizedStatus === 'pending') return 'bg-gray-100 text-gray-800';
-    if (normalizedStatus.includes('queued')) return 'bg-yellow-100 text-yellow-800';
-    if (normalizedStatus.includes('dry run')) return 'bg-purple-100 text-purple-800';
-    
-    return 'bg-gray-100 text-gray-800';
+    // Map all backend statuses to simplified color categories
+    const colors: Record<string, string> = {
+      // Pending
+      pending: 'bg-gray-100 text-gray-800',
+      
+      // In Progress (blue)
+      dry_run_queued: 'bg-blue-100 text-blue-800',
+      dry_run_in_progress: 'bg-blue-100 text-blue-800',
+      pre_migration: 'bg-blue-100 text-blue-800',
+      archive_generating: 'bg-blue-100 text-blue-800',
+      queued_for_migration: 'bg-blue-100 text-blue-800',
+      migrating_content: 'bg-blue-100 text-blue-800',
+      post_migration: 'bg-blue-100 text-blue-800',
+      
+      // Complete (green)
+      dry_run_complete: 'bg-green-100 text-green-800',
+      migration_complete: 'bg-green-100 text-green-800',
+      complete: 'bg-green-100 text-green-800',
+      
+      // Failed (red)
+      dry_run_failed: 'bg-red-100 text-red-800',
+      migration_failed: 'bg-red-100 text-red-800',
+      
+      // Rolled Back (yellow)
+      rolled_back: 'bg-yellow-100 text-yellow-800',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
   };
   
   const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';

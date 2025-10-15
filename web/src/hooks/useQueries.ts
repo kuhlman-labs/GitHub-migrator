@@ -48,10 +48,15 @@ export function useRepository(fullName: string) {
 }
 
 // Analytics queries
-export function useAnalytics() {
+interface AnalyticsFilters {
+  organization?: string;
+  batch_id?: string;
+}
+
+export function useAnalytics(filters: AnalyticsFilters = {}) {
   return useQuery<Analytics, Error>({
-    queryKey: ['analytics'],
-    queryFn: () => api.getAnalyticsSummary(),
+    queryKey: ['analytics', filters],
+    queryFn: () => api.getAnalyticsSummary(filters),
   });
 }
 

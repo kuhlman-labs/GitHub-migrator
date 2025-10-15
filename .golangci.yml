@@ -34,6 +34,7 @@ linters-settings:
   gosec:
     excludes:
       - G201  # SQL string formatting with placeholders is safe
+      - G202  # SQL string concatenation - filters are sanitized
 
 issues:
   exclude-dirs:

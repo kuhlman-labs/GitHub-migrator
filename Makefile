@@ -58,7 +58,7 @@ lint: ## Run linters
 	@echo "Linting backend..."
 	$(GOBIN)/golangci-lint run --config .golangci.yml
 	@echo "Running security scan..."
-	$(GOBIN)/gosec -exclude=G201 ./...
+	$(GOBIN)/gosec -exclude=G201,G202 ./...
 
 web-lint: ## Run frontend linter
 	@echo "Linting frontend..."

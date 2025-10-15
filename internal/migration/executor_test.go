@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
@@ -504,6 +505,238 @@ func TestArchiveURLs(t *testing.T) {
 			t.Error("Metadata should not be empty")
 		}
 	})
+}
+
+// TestExecutor_getDestinationOrg tests the getDestinationOrg helper function
+func TestExecutor_getDestinationOrg(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	executor, err := NewExecutor(ExecutorConfig{
+		SourceClient: &github.Client{},
+		DestClient:   &github.Client{},
+		Storage:      &storage.Database{},
+		Logger:       logger,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		repo     *models.Repository
+		expected string
+	}{
+		{
+			name: "no destination specified - uses source org",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: nil,
+			},
+			expected: "source-org",
+		},
+		{
+			name: "destination org specified - different org",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: ptrString("dest-org/my-repo"),
+			},
+			expected: "dest-org",
+		},
+		{
+			name: "destination org specified - different org and repo name",
+			repo: &models.Repository{
+				FullName:            "source-org/old-name",
+				DestinationFullName: ptrString("dest-org/new-name"),
+			},
+			expected: "dest-org",
+		},
+		{
+			name: "empty destination string - uses source org",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: ptrString(""),
+			},
+			expected: "source-org",
+		},
+		{
+			name: "destination with only org (edge case)",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: ptrString("dest-org"),
+			},
+			expected: "dest-org",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := executor.getDestinationOrg(tt.repo)
+			if result != tt.expected {
+				t.Errorf("getDestinationOrg() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestExecutor_getDestinationRepoName tests the getDestinationRepoName helper function
+func TestExecutor_getDestinationRepoName(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	executor, err := NewExecutor(ExecutorConfig{
+		SourceClient: &github.Client{},
+		DestClient:   &github.Client{},
+		Storage:      &storage.Database{},
+		Logger:       logger,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		repo     *models.Repository
+		expected string
+	}{
+		{
+			name: "no destination specified - uses source repo name",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: nil,
+			},
+			expected: "my-repo",
+		},
+		{
+			name: "destination specified - same repo name",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: ptrString("dest-org/my-repo"),
+			},
+			expected: "my-repo",
+		},
+		{
+			name: "destination specified - different repo name",
+			repo: &models.Repository{
+				FullName:            "source-org/old-name",
+				DestinationFullName: ptrString("dest-org/new-name"),
+			},
+			expected: "new-name",
+		},
+		{
+			name: "destination specified - different org and repo name",
+			repo: &models.Repository{
+				FullName:            "legacy-org/legacy-repo",
+				DestinationFullName: ptrString("modern-org/modern-repo"),
+			},
+			expected: "modern-repo",
+		},
+		{
+			name: "empty destination string - uses source repo name",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: ptrString(""),
+			},
+			expected: "my-repo",
+		},
+		{
+			name: "destination with only org - returns org as name",
+			repo: &models.Repository{
+				FullName:            "source-org/my-repo",
+				DestinationFullName: ptrString("dest-org"),
+			},
+			expected: "dest-org",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := executor.getDestinationRepoName(tt.repo)
+			if result != tt.expected {
+				t.Errorf("getDestinationRepoName() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestExecutor_DestinationHelpers_Integration tests both helpers together
+func TestExecutor_DestinationHelpers_Integration(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	executor, err := NewExecutor(ExecutorConfig{
+		SourceClient: &github.Client{},
+		DestClient:   &github.Client{},
+		Storage:      &storage.Database{},
+		Logger:       logger,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		repo         *models.Repository
+		expectedOrg  string
+		expectedName string
+		description  string
+	}{
+		{
+			name: "default behavior - no destination specified",
+			repo: &models.Repository{
+				FullName:            "acme-corp/backend-api",
+				DestinationFullName: nil,
+			},
+			expectedOrg:  "acme-corp",
+			expectedName: "backend-api",
+			description:  "Should use source org and repo name when destination not specified",
+		},
+		{
+			name: "different organization only",
+			repo: &models.Repository{
+				FullName:            "old-org/my-service",
+				DestinationFullName: ptrString("new-org/my-service"),
+			},
+			expectedOrg:  "new-org",
+			expectedName: "my-service",
+			description:  "Should migrate to different org with same repo name",
+		},
+		{
+			name: "different organization AND repository name",
+			repo: &models.Repository{
+				FullName:            "legacy-systems/monolith-v1",
+				DestinationFullName: ptrString("modern-apps/microservice-auth"),
+			},
+			expectedOrg:  "modern-apps",
+			expectedName: "microservice-auth",
+			description:  "Should migrate to different org with different repo name",
+		},
+		{
+			name: "same organization, different name",
+			repo: &models.Repository{
+				FullName:            "company/project-old",
+				DestinationFullName: ptrString("company/project-new"),
+			},
+			expectedOrg:  "company",
+			expectedName: "project-new",
+			description:  "Should rename repository within same organization",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			org := executor.getDestinationOrg(tt.repo)
+			name := executor.getDestinationRepoName(tt.repo)
+
+			if org != tt.expectedOrg {
+				t.Errorf("getDestinationOrg() = %q, want %q", org, tt.expectedOrg)
+			}
+			if name != tt.expectedName {
+				t.Errorf("getDestinationRepoName() = %q, want %q", name, tt.expectedName)
+			}
+
+			fullName := fmt.Sprintf("%s/%s", org, name)
+			t.Logf("✓ %s: %s -> %s", tt.name, tt.repo.FullName, fullName)
+			t.Logf("  Description: %s", tt.description)
+		})
+	}
 }
 
 // Helper functions

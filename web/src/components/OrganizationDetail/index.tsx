@@ -27,6 +27,24 @@ const FEATURE_FILTERS: FeatureFilter[] = [
   { key: 'branch_protections', label: 'Branch Protections', color: 'red' },
 ];
 
+// Map simplified filter values to actual backend statuses
+const STATUS_MAP: Record<string, string[]> = {
+  all: [],
+  pending: ['pending'],
+  in_progress: [
+    'dry_run_queued',
+    'dry_run_in_progress',
+    'pre_migration',
+    'archive_generating',
+    'queued_for_migration',
+    'migrating_content',
+    'post_migration',
+  ],
+  complete: ['dry_run_complete', 'migration_complete', 'complete'],
+  failed: ['dry_run_failed', 'migration_failed'],
+  rolled_back: ['rolled_back'],
+};
+
 export function OrganizationDetail() {
   const { orgName } = useParams<{ orgName: string }>();
   const [filter, setFilter] = useState<string>('all');
@@ -34,9 +52,7 @@ export function OrganizationDetail() {
   const [selectedFeatures, setSelectedFeatures] = useState<Set<keyof Repository>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
 
-  const { data, isLoading, isFetching } = useRepositories({
-    status: filter === 'all' ? undefined : filter,
-  });
+  const { data, isLoading, isFetching } = useRepositories({});
 
   // Filter repositories for this organization (client-side)
   const repositories = (data?.repositories || []).filter((repo: Repository) => {
@@ -61,6 +77,14 @@ export function OrganizationDetail() {
   };
 
   const filteredRepos = repositories.filter((repo: Repository) => {
+    // Status filter - check if repo status matches any of the mapped backend statuses
+    if (filter !== 'all') {
+      const allowedStatuses = STATUS_MAP[filter] || [];
+      if (!allowedStatuses.includes(repo.status)) {
+        return false;
+      }
+    }
+
     // Search filter
     if (searchTerm && !repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
@@ -80,7 +104,7 @@ export function OrganizationDetail() {
     return true;
   });
 
-  const statuses = ['all', 'pending', 'in_progress', 'migration_complete', 'complete', 'failed'];
+  const statuses = ['all', 'pending', 'in_progress', 'complete', 'failed', 'rolled_back'];
   const hasActiveFilters = selectedFeatures.size > 0 || filter !== 'all' || searchTerm !== '';
 
   return (

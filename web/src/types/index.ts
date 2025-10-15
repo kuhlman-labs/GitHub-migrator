@@ -118,14 +118,34 @@ export interface MigrationCompletionStats {
   failed_count: number;
 }
 
+export interface ComplexityDistribution {
+  category: string;
+  count: number;
+}
+
+export interface MigrationVelocity {
+  repos_per_day: number;
+  repos_per_week: number;
+}
+
+export interface MigrationTimeSeriesPoint {
+  date: string;
+  count: number;
+}
+
 export interface Analytics {
   total_repositories: number;
   migrated_count: number;
   failed_count: number;
   in_progress_count: number;
   pending_count: number;
+  success_rate?: number;
   average_migration_time?: number;
   status_breakdown: Record<string, number>;
+  complexity_distribution?: ComplexityDistribution[];
+  migration_velocity?: MigrationVelocity;
+  migration_time_series?: MigrationTimeSeriesPoint[];
+  estimated_completion_date?: string;
   organization_stats?: Organization[];
   size_distribution?: SizeDistribution[];
   feature_stats?: FeatureStats;

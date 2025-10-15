@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1304,4 +1305,416 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 	}
 
 	return nil
+}
+
+// ComplexityDistribution represents repository complexity distribution
+type ComplexityDistribution struct {
+	Category string `json:"category"`
+	Count    int    `json:"count"`
+}
+
+// GetComplexityDistribution categorizes repositories by complexity score
+//
+//nolint:dupl // Similar query pattern but different business logic
+func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
+	// Calculate complexity score based on:
+	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 2), Branch protections (weight: 1)
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
+	query := `
+		SELECT 
+			CASE 
+				WHEN complexity_score <= 3 THEN 'low'
+				WHEN complexity_score <= 6 THEN 'medium'
+				WHEN complexity_score <= 9 THEN 'high'
+				ELSE 'very_high'
+			END as category,
+			COUNT(*) as count
+		FROM (
+			SELECT 
+				(CASE 
+					WHEN total_size IS NULL THEN 0
+					WHEN total_size < 104857600 THEN 0
+					WHEN total_size < 1073741824 THEN 1
+					WHEN total_size < 5368709120 THEN 2
+					ELSE 3
+				END) * 3 +
+				(CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END) +
+				(CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END) +
+				(CASE WHEN has_large_files = 1 THEN 2 ELSE 0 END) +
+				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as complexity_score
+			FROM repositories r
+			WHERE 1=1
+				` + d.buildOrgFilter(orgFilter) + `
+				` + d.buildBatchFilter(batchFilter) + `
+		) as scored_repos
+		GROUP BY category
+		ORDER BY 
+			CASE category
+				WHEN 'low' THEN 1
+				WHEN 'medium' THEN 2
+				WHEN 'high' THEN 3
+				WHEN 'very_high' THEN 4
+			END
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get complexity distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var distribution []*ComplexityDistribution
+	for rows.Next() {
+		var dist ComplexityDistribution
+		if err := rows.Scan(&dist.Category, &dist.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan complexity distribution: %w", err)
+		}
+		distribution = append(distribution, &dist)
+	}
+
+	return distribution, rows.Err()
+}
+
+// MigrationVelocity represents migration velocity metrics
+type MigrationVelocity struct {
+	ReposPerDay  float64 `json:"repos_per_day"`
+	ReposPerWeek float64 `json:"repos_per_week"`
+}
+
+// GetMigrationVelocity calculates migration velocity over the specified period
+func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFilter string, days int) (*MigrationVelocity, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
+	query := `
+		SELECT COUNT(DISTINCT r.id) as total_completed
+		FROM repositories r
+		INNER JOIN migration_history mh ON r.id = mh.repository_id
+		WHERE mh.status = 'completed' 
+			AND mh.phase = 'migration'
+			AND mh.completed_at >= datetime('now', '-' || ? || ' days')
+			` + d.buildOrgFilter(orgFilter) + `
+			` + d.buildBatchFilter(batchFilter) + `
+	`
+
+	var totalCompleted int
+	err := d.db.QueryRowContext(ctx, query, days).Scan(&totalCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration velocity: %w", err)
+	}
+
+	velocity := &MigrationVelocity{
+		ReposPerDay:  float64(totalCompleted) / float64(days),
+		ReposPerWeek: (float64(totalCompleted) / float64(days)) * 7,
+	}
+
+	return velocity, nil
+}
+
+// MigrationTimeSeriesPoint represents a point in the migration time series
+type MigrationTimeSeriesPoint struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+// GetMigrationTimeSeries returns daily migration completions for the last 30 days
+//
+//nolint:dupl // Similar query pattern but different business logic
+func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchFilter string) ([]*MigrationTimeSeriesPoint, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
+	query := `
+		SELECT 
+			DATE(mh.completed_at) as date,
+			COUNT(DISTINCT r.id) as count
+		FROM repositories r
+		INNER JOIN migration_history mh ON r.id = mh.repository_id
+		WHERE mh.status = 'completed'
+			AND mh.phase = 'migration'
+			AND mh.completed_at >= datetime('now', '-30 days')
+			` + d.buildOrgFilter(orgFilter) + `
+			` + d.buildBatchFilter(batchFilter) + `
+		GROUP BY DATE(mh.completed_at)
+		ORDER BY date ASC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration time series: %w", err)
+	}
+	defer rows.Close()
+
+	var series []*MigrationTimeSeriesPoint
+	for rows.Next() {
+		var point MigrationTimeSeriesPoint
+		if err := rows.Scan(&point.Date, &point.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan time series point: %w", err)
+		}
+		series = append(series, &point)
+	}
+
+	return series, rows.Err()
+}
+
+// GetAverageMigrationTime calculates the average migration duration
+func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, batchFilter string) (float64, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
+	query := `
+		SELECT AVG(mh.duration_seconds) as avg_duration
+		FROM repositories r
+		INNER JOIN migration_history mh ON r.id = mh.repository_id
+		WHERE mh.status = 'completed'
+			AND mh.phase = 'migration'
+			AND mh.duration_seconds IS NOT NULL
+			` + d.buildOrgFilter(orgFilter) + `
+			` + d.buildBatchFilter(batchFilter) + `
+	`
+
+	var avgDuration sql.NullFloat64
+	err := d.db.QueryRowContext(ctx, query).Scan(&avgDuration)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get average migration time: %w", err)
+	}
+
+	if !avgDuration.Valid {
+		return 0, nil
+	}
+
+	return avgDuration.Float64, nil
+}
+
+// buildOrgFilter builds the organization filter clause
+// Note: orgFilter is from query parameters and is safe for use in SQL
+func (d *Database) buildOrgFilter(orgFilter string) string {
+	if orgFilter == "" {
+		return ""
+	}
+	// Sanitize input by replacing single quotes
+	sanitized := strings.ReplaceAll(orgFilter, "'", "''")
+	return fmt.Sprintf(" AND SUBSTR(r.full_name, 1, INSTR(r.full_name, '/') - 1) = '%s'", sanitized)
+}
+
+// buildBatchFilter builds the batch filter clause
+// Note: batchFilter is from query parameters and validated as integer-like
+func (d *Database) buildBatchFilter(batchFilter string) string {
+	if batchFilter == "" {
+		return ""
+	}
+	// Validate that batchFilter contains only digits
+	if _, err := strconv.Atoi(batchFilter); err != nil {
+		return ""
+	}
+	return fmt.Sprintf(" AND r.batch_id = %s", batchFilter)
+}
+
+// GetRepositoryStatsByStatusFiltered returns repository counts by status with filters
+func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFilter, batchFilter string) (map[string]int, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
+	query := `
+		SELECT status, COUNT(*) as count
+		FROM repositories r
+		WHERE 1=1
+			` + d.buildOrgFilter(orgFilter) + `
+			` + d.buildBatchFilter(batchFilter) + `
+		GROUP BY status
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get repository stats: %w", err)
+	}
+	defer rows.Close()
+
+	stats := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan stats: %w", err)
+		}
+		stats[status] = count
+	}
+
+	return stats, rows.Err()
+}
+
+// GetSizeDistributionFiltered returns size distribution with filters
+//
+//nolint:dupl // Similar query pattern but different business logic
+func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, batchFilter string) ([]*SizeDistribution, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
+	query := `
+		SELECT 
+			CASE 
+				WHEN total_size IS NULL THEN 'unknown'
+				WHEN total_size < 104857600 THEN 'small'
+				WHEN total_size < 1073741824 THEN 'medium'
+				WHEN total_size < 5368709120 THEN 'large'
+				ELSE 'very_large'
+			END as category,
+			COUNT(*) as count
+		FROM repositories r
+		WHERE 1=1
+			` + d.buildOrgFilter(orgFilter) + `
+			` + d.buildBatchFilter(batchFilter) + `
+		GROUP BY category
+		ORDER BY 
+			CASE category
+				WHEN 'small' THEN 1
+				WHEN 'medium' THEN 2
+				WHEN 'large' THEN 3
+				WHEN 'very_large' THEN 4
+				WHEN 'unknown' THEN 5
+			END
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get size distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var distribution []*SizeDistribution
+	for rows.Next() {
+		var dist SizeDistribution
+		if err := rows.Scan(&dist.Category, &dist.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan size distribution: %w", err)
+		}
+		distribution = append(distribution, &dist)
+	}
+
+	return distribution, rows.Err()
+}
+
+// GetFeatureStatsFiltered returns feature stats with filters
+func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batchFilter string) (*FeatureStats, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
+	query := `
+		SELECT 
+			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
+			SUM(CASE WHEN has_wiki = 1 THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN has_pages = 1 THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			COUNT(*) as total
+		FROM repositories r
+		WHERE 1=1
+			` + d.buildOrgFilter(orgFilter) + `
+			` + d.buildBatchFilter(batchFilter) + `
+	`
+
+	var stats FeatureStats
+	err := d.db.QueryRowContext(ctx, query).Scan(
+		&stats.IsArchived,
+		&stats.HasLFS,
+		&stats.HasSubmodules,
+		&stats.HasLargeFiles,
+		&stats.HasWiki,
+		&stats.HasPages,
+		&stats.HasDiscussions,
+		&stats.HasActions,
+		&stats.HasProjects,
+		&stats.HasBranchProtections,
+		&stats.TotalRepositories,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get feature stats: %w", err)
+	}
+
+	return &stats, nil
+}
+
+// GetOrganizationStatsFiltered returns organization stats with batch filter
+func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, batchFilter string) ([]*OrganizationStats, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildBatchFilter
+	query := `
+		SELECT 
+			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
+			COUNT(*) as total,
+			status,
+			COUNT(*) as status_count
+		FROM repositories r
+		WHERE INSTR(full_name, '/') > 0
+			` + d.buildBatchFilter(batchFilter) + `
+		GROUP BY org, status
+		ORDER BY total DESC, org ASC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get organization stats: %w", err)
+	}
+	defer rows.Close()
+
+	orgMap := make(map[string]*OrganizationStats)
+	for rows.Next() {
+		var org, status string
+		var total, statusCount int
+		if err := rows.Scan(&org, &total, &status, &statusCount); err != nil {
+			return nil, fmt.Errorf("failed to scan organization stats: %w", err)
+		}
+
+		if _, exists := orgMap[org]; !exists {
+			orgMap[org] = &OrganizationStats{
+				Organization: org,
+				TotalRepos:   0,
+				StatusCounts: make(map[string]int),
+			}
+		}
+
+		orgMap[org].StatusCounts[status] = statusCount
+		orgMap[org].TotalRepos += statusCount
+	}
+
+	stats := make([]*OrganizationStats, 0, len(orgMap))
+	for _, stat := range orgMap {
+		stats = append(stats, stat)
+	}
+
+	return stats, rows.Err()
+}
+
+// GetMigrationCompletionStatsByOrgFiltered returns migration completion stats with batch filter
+func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, batchFilter string) ([]*MigrationCompletionStats, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildBatchFilter
+	query := `
+		SELECT 
+			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
+			COUNT(*) as total_repos,
+			SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN status IN ('in_progress', 'pre_migration', 'queued_for_migration', 'migrating_content') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN status IN ('pending', 'discovered') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN status LIKE '%failed%' THEN 1 ELSE 0 END) as failed_count
+		FROM repositories r
+		WHERE full_name LIKE '%/%'
+			` + d.buildBatchFilter(batchFilter) + `
+		GROUP BY organization
+		ORDER BY total_repos DESC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration completion stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []*MigrationCompletionStats
+	for rows.Next() {
+		var s MigrationCompletionStats
+		if err := rows.Scan(
+			&s.Organization,
+			&s.TotalRepos,
+			&s.CompletedCount,
+			&s.InProgressCount,
+			&s.PendingCount,
+			&s.FailedCount,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan migration completion stats: %w", err)
+		}
+		stats = append(stats, &s)
+	}
+
+	return stats, rows.Err()
 }

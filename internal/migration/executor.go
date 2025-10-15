@@ -132,6 +132,25 @@ func (e *Executor) getDestinationOrg(repo *models.Repository) string {
 	return ""
 }
 
+// getDestinationRepoName returns the destination repository name for a repository
+// Defaults to the source repo name if not explicitly set
+func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
+	// If DestinationFullName is set, extract repo name from it
+	if repo.DestinationFullName != nil && *repo.DestinationFullName != "" {
+		parts := strings.Split(*repo.DestinationFullName, "/")
+		if len(parts) >= 2 {
+			return parts[1]
+		}
+		// If only one part, return it as the repo name
+		if len(parts) == 1 {
+			return parts[0]
+		}
+	}
+
+	// Default to source repo name
+	return repo.Name()
+}
+
 // getOrFetchDestOrgID returns the destination org ID for a given org name, fetching it if not cached
 func (e *Executor) getOrFetchDestOrgID(ctx context.Context, orgName string) (string, error) {
 	if orgName == "" {
@@ -591,11 +610,14 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 	sourceToken := githubv4.String(e.sourceClient.Token()) // GHES token
 	destToken := githubv4.String(e.destClient.Token())     // GHEC token
 
+	// Get the destination repository name (respects DestinationFullName if set)
+	destRepoName := e.getDestinationRepoName(repo)
+
 	// Use typed input struct
 	input := githubv4.StartRepositoryMigrationInput{
 		SourceID:             githubv4.ID(migSourceID),
 		OwnerID:              githubv4.ID(destOrgID),
-		RepositoryName:       githubv4.String(repo.Name()),
+		RepositoryName:       githubv4.String(destRepoName),
 		ContinueOnError:      &continueOnError,
 		TargetRepoVisibility: &targetRepoVisibility,
 		SourceRepositoryURL:  sourceRepoURI,
@@ -663,8 +685,10 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 			switch state {
 			case "SUCCEEDED":
 				repo.Status = string(models.StatusMigrationComplete)
-				// Set destination details
-				destFullName := fmt.Sprintf("%s/%s", repo.Organization(), repo.Name())
+				// Set destination details using the correct destination org and repo name
+				destOrg := e.getDestinationOrg(repo)
+				destRepoName := e.getDestinationRepoName(repo)
+				destFullName := fmt.Sprintf("%s/%s", destOrg, destRepoName)
 				repo.DestinationFullName = &destFullName
 				// Convert full name to URL using the destination client
 				destURL := e.destClient.RepositoryURL(destFullName)
@@ -742,13 +766,19 @@ func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Reposi
 	}
 
 	// 2. Check if destination repository already exists
-	e.logger.Info("Checking destination repository", "repo", repo.FullName, "action", e.destRepoExistsAction)
+	destOrg := e.getDestinationOrg(repo)
+	destRepoName := e.getDestinationRepoName(repo)
+	e.logger.Info("Checking destination repository",
+		"source_repo", repo.FullName,
+		"dest_org", destOrg,
+		"dest_repo_name", destRepoName,
+		"action", e.destRepoExistsAction)
 	var destRepoData *ghapi.Repository
 	destExists := false
 
 	_, err = e.destClient.DoWithRetry(ctx, "GetRepository", func(ctx context.Context) (*ghapi.Response, error) {
 		var resp *ghapi.Response
-		destRepoData, resp, err = e.destClient.REST().Repositories.Get(ctx, repo.Organization(), repo.Name())
+		destRepoData, resp, err = e.destClient.REST().Repositories.Get(ctx, destOrg, destRepoName)
 		return resp, err
 	})
 
@@ -783,12 +813,12 @@ func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Reposi
 
 		case DestinationRepoExistsDelete:
 			e.logger.Warn("Deleting existing destination repository",
-				"repo", repo.FullName,
+				"source_repo", repo.FullName,
 				"dest_repo", destRepoData.GetFullName())
 
 			// Delete the existing repository
 			_, err = e.destClient.DoWithRetry(ctx, "DeleteRepository", func(ctx context.Context) (*ghapi.Response, error) {
-				resp, err := e.destClient.REST().Repositories.Delete(ctx, repo.Organization(), repo.Name())
+				resp, err := e.destClient.REST().Repositories.Delete(ctx, destOrg, destRepoName)
 				return resp, err
 			})
 
@@ -817,13 +847,17 @@ func (e *Executor) validatePostMigration(ctx context.Context, repo *models.Repos
 		return fmt.Errorf("destination repository not set")
 	}
 
+	// Get destination organization and repo name
+	destOrg := e.getDestinationOrg(repo)
+	destRepoName := e.getDestinationRepoName(repo)
+
 	// Get destination repository
 	var destRepo *ghapi.Repository
 	var err error
 
 	_, err = e.destClient.DoWithRetry(ctx, "GetRepository", func(ctx context.Context) (*ghapi.Response, error) {
 		var resp *ghapi.Response
-		destRepo, resp, err = e.destClient.REST().Repositories.Get(ctx, repo.Organization(), repo.Name())
+		destRepo, resp, err = e.destClient.REST().Repositories.Get(ctx, destOrg, destRepoName)
 		return resp, err
 	})
 
