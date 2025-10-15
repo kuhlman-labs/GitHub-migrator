@@ -221,53 +221,53 @@ func TestScheduleBatch(t *testing.T) {
 }
 
 func TestExecuteBatch(t *testing.T) {
-	scheduler, db, executor, cleanup := setupTestScheduler(t)
-	defer cleanup()
-
-	ctx := context.Background()
-
-	// Create test batch
-	batch := &models.Batch{
-		Name:            "Test Batch",
-		Type:            "pilot",
-		RepositoryCount: 2,
-		Status:          "ready",
-		CreatedAt:       time.Now(),
-	}
-	if err := db.CreateBatch(ctx, batch); err != nil {
-		t.Fatalf("Failed to create batch: %v", err)
-	}
-
-	// Create test repositories (queued for migration)
-	size1 := int64(100000 * 1024) // Convert KB to bytes
-	size2 := int64(200000 * 1024)
-	repo1 := &models.Repository{
-		FullName:     "org/repo1",
-		TotalSize:    &size1,
-		Status:       string(models.StatusQueuedForMigration),
-		Source:       "github",
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-		BatchID:      &batch.ID,
-	}
-	repo2 := &models.Repository{
-		FullName:     "org/repo2",
-		TotalSize:    &size2,
-		Status:       string(models.StatusQueuedForMigration),
-		Source:       "github",
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-		BatchID:      &batch.ID,
-	}
-
-	if err := db.SaveRepository(ctx, repo1); err != nil {
-		t.Fatalf("Failed to create repo1: %v", err)
-	}
-	if err := db.SaveRepository(ctx, repo2); err != nil {
-		t.Fatalf("Failed to create repo2: %v", err)
-	}
-
 	t.Run("execute batch successfully", func(t *testing.T) {
+		scheduler, db, executor, cleanup := setupTestScheduler(t)
+		defer cleanup()
+
+		ctx := context.Background()
+
+		// Create test batch
+		batch := &models.Batch{
+			Name:            "Test Batch",
+			Type:            "pilot",
+			RepositoryCount: 2,
+			Status:          "ready",
+			CreatedAt:       time.Now(),
+		}
+		if err := db.CreateBatch(ctx, batch); err != nil {
+			t.Fatalf("Failed to create batch: %v", err)
+		}
+
+		// Create test repositories (queued for migration)
+		size1 := int64(100000 * 1024) // Convert KB to bytes
+		size2 := int64(200000 * 1024)
+		repo1 := &models.Repository{
+			FullName:     "org/repo1",
+			TotalSize:    &size1,
+			Status:       string(models.StatusQueuedForMigration),
+			Source:       "github",
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+			BatchID:      &batch.ID,
+		}
+		repo2 := &models.Repository{
+			FullName:     "org/repo2",
+			TotalSize:    &size2,
+			Status:       string(models.StatusQueuedForMigration),
+			Source:       "github",
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
+			BatchID:      &batch.ID,
+		}
+
+		if err := db.SaveRepository(ctx, repo1); err != nil {
+			t.Fatalf("Failed to create repo1: %v", err)
+		}
+		if err := db.SaveRepository(ctx, repo2); err != nil {
+			t.Fatalf("Failed to create repo2: %v", err)
+		}
+
 		err := scheduler.ExecuteBatch(ctx, batch.ID, false)
 		if err != nil {
 			t.Fatalf("ExecuteBatch() error = %v", err)
@@ -275,8 +275,8 @@ func TestExecuteBatch(t *testing.T) {
 
 		// Verify batch status was updated
 		updated, _ := db.GetBatch(ctx, batch.ID)
-		if updated.Status != "in_progress" {
-			t.Errorf("Expected status 'in_progress', got %s", updated.Status)
+		if updated.Status != StatusInProgress {
+			t.Errorf("Expected status '%s', got %s", StatusInProgress, updated.Status)
 		}
 
 		if updated.StartedAt == nil {
@@ -297,16 +297,21 @@ func TestExecuteBatch(t *testing.T) {
 	})
 
 	t.Run("cannot execute running batch", func(t *testing.T) {
-		// Create a new batch for this test
-		batch2 := &models.Batch{
+		scheduler, db, executor, cleanup := setupTestScheduler(t)
+		defer cleanup()
+
+		ctx := context.Background()
+
+		// Create a batch for this test
+		batch := &models.Batch{
 			Name:            "Test Batch 2",
 			Type:            "pilot",
 			RepositoryCount: 1,
 			Status:          "ready",
 			CreatedAt:       time.Now(),
 		}
-		if err := db.CreateBatch(ctx, batch2); err != nil {
-			t.Fatalf("Failed to create batch2: %v", err)
+		if err := db.CreateBatch(ctx, batch); err != nil {
+			t.Fatalf("Failed to create batch: %v", err)
 		}
 
 		// Create a repo with delay to keep it running
@@ -318,7 +323,7 @@ func TestExecuteBatch(t *testing.T) {
 			Source:       "github",
 			DiscoveredAt: time.Now(),
 			UpdatedAt:    time.Now(),
-			BatchID:      &batch2.ID,
+			BatchID:      &batch.ID,
 		}
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to create repo: %v", err)
@@ -329,18 +334,21 @@ func TestExecuteBatch(t *testing.T) {
 		defer executor.SetDelay(0) // Reset for other tests
 
 		// Start batch
-		if err := scheduler.ExecuteBatch(ctx, batch2.ID, false); err != nil {
+		if err := scheduler.ExecuteBatch(ctx, batch.ID, false); err != nil {
 			t.Fatalf("ExecuteBatch() error = %v", err)
 		}
 
 		// Try to execute same batch again while it's running
-		err := scheduler.ExecuteBatch(ctx, batch2.ID, false)
+		err := scheduler.ExecuteBatch(ctx, batch.ID, false)
 		if err == nil {
 			t.Error("Expected error when batch is already running")
 		}
 
 		// Wait for the batch to complete before test ends
-		waitForBatchCompletion(t, scheduler, batch2.ID, 2*time.Second)
+		waitForBatchCompletion(t, scheduler, batch.ID, 2*time.Second)
+
+		// Give extra time for cleanup
+		time.Sleep(100 * time.Millisecond)
 	})
 }
 

@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { RepositoryFilters as FilterComponent } from './RepositoryFilters';
 import { RepositoryGroup } from './RepositoryGroup';
-import { RepositoryListItem } from './RepositoryListItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { formatBytes } from '../../utils/format';
 

@@ -380,18 +380,21 @@ func TestListRepositories(t *testing.T) {
 				t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 			}
 
-			var repos []*models.Repository
-			if err := json.NewDecoder(w.Body).Decode(&repos); err != nil {
+			var response struct {
+				Repositories []*models.Repository `json:"repositories"`
+				Total        *int                 `json:"total,omitempty"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
 			}
 
-			if len(repos) != tt.expectedCount {
-				t.Errorf("Expected %d repositories, got %d", tt.expectedCount, len(repos))
+			if len(response.Repositories) != tt.expectedCount {
+				t.Errorf("Expected %d repositories, got %d", tt.expectedCount, len(response.Repositories))
 			}
 
-			if tt.expectedStatus != "" && len(repos) > 0 {
-				if repos[0].Status != tt.expectedStatus {
-					t.Errorf("Expected status %s, got %s", tt.expectedStatus, repos[0].Status)
+			if tt.expectedStatus != "" && len(response.Repositories) > 0 {
+				if response.Repositories[0].Status != tt.expectedStatus {
+					t.Errorf("Expected status %s, got %s", tt.expectedStatus, response.Repositories[0].Status)
 				}
 			}
 		})
@@ -1574,13 +1577,16 @@ func TestListRepositoriesWithFilters(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response []models.Repository
+		var response struct {
+			Repositories []models.Repository `json:"repositories"`
+			Total        *int                `json:"total,omitempty"`
+		}
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
-		if len(response) != 1 {
-			t.Errorf("Expected 1 repository, got %d", len(response))
+		if len(response.Repositories) != 1 {
+			t.Errorf("Expected 1 repository, got %d", len(response.Repositories))
 		}
 	})
 
@@ -1594,14 +1600,17 @@ func TestListRepositoriesWithFilters(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response []models.Repository
+		var response struct {
+			Repositories []models.Repository `json:"repositories"`
+			Total        *int                `json:"total,omitempty"`
+		}
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
 		// Should include pending repos but exclude complete and queued
-		if len(response) != 2 {
-			t.Errorf("Expected 2 repositories available for batch, got %d", len(response))
+		if len(response.Repositories) != 2 {
+			t.Errorf("Expected 2 repositories available for batch, got %d", len(response.Repositories))
 		}
 	})
 
@@ -1615,13 +1624,16 @@ func TestListRepositoriesWithFilters(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response []models.Repository
+		var response struct {
+			Repositories []models.Repository `json:"repositories"`
+			Total        *int                `json:"total,omitempty"`
+		}
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
-		if len(response) != 2 {
-			t.Errorf("Expected 2 repositories, got %d", len(response))
+		if len(response.Repositories) != 2 {
+			t.Errorf("Expected 2 repositories, got %d", len(response.Repositories))
 		}
 	})
 }

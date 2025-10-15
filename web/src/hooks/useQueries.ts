@@ -20,7 +20,7 @@ interface RepositoryFilters {
 }
 
 export function useRepositories(filters: RepositoryFilters = {}) {
-  return useQuery<{ repositories: Repository[]; total: number }, Error>({
+  return useQuery<{ repositories: Repository[]; total?: number }, Error>({
     queryKey: ['repositories', filters],
     queryFn: async () => {
       const params: Record<string, string | undefined> = {};
@@ -30,8 +30,7 @@ export function useRepositories(filters: RepositoryFilters = {}) {
       if (filters.hasLfs !== undefined) params.has_lfs = String(filters.hasLfs);
       if (filters.hasSubmodules !== undefined) params.has_submodules = String(filters.hasSubmodules);
       
-      const repositories = await api.listRepositories(params);
-      return { repositories, total: repositories.length };
+      return api.listRepositories(params);
     },
   });
 }

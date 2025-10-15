@@ -49,13 +49,16 @@ func TestIntegration_RepositoryLifecycle(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var repos []*models.Repository
-		if err := json.NewDecoder(w.Body).Decode(&repos); err != nil {
+		var response struct {
+			Repositories []*models.Repository `json:"repositories"`
+			Total        *int                 `json:"total,omitempty"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
-		if len(repos) != 1 {
-			t.Errorf("Expected 1 repository, got %d", len(repos))
+		if len(response.Repositories) != 1 {
+			t.Errorf("Expected 1 repository, got %d", len(response.Repositories))
 		}
 	})
 

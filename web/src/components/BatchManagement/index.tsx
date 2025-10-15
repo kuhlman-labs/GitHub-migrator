@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { BatchBuilder } from './BatchBuilder';
@@ -137,7 +137,7 @@ export function BatchManagement() {
     setShowBuilder(true);
   };
 
-  const getBatchProgress = (batch: Batch, repos: Repository[]) => {
+  const getBatchProgress = (_batch: Batch, repos: Repository[]) => {
     if (repos.length === 0) return { completed: 0, total: 0, percentage: 0 };
     
     const completed = repos.filter((r) => r.status === 'complete').length;
