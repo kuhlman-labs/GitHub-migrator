@@ -72,13 +72,13 @@ export function MigrationHistory() {
       </div>
 
       <div className="mb-4 text-sm text-gray-600">
-        Showing {filteredMigrations.length} of {migrations.length} completed migrations
+        Showing {filteredMigrations.length} of {migrations.length} migrations
       </div>
 
       {filteredMigrations.length === 0 ? (
         <div className="bg-white rounded-lg shadow-sm p-12 text-center text-gray-500">
           {migrations.length === 0 
-            ? 'No completed migrations yet'
+            ? 'No migrations yet'
             : 'No migrations match your search'}
         </div>
       ) : (
@@ -121,6 +121,32 @@ export function MigrationHistory() {
 }
 
 function MigrationRow({ migration }: { migration: MigrationHistoryEntry }) {
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case 'complete':
+        return 'bg-green-100 text-green-800';
+      case 'migration_failed':
+        return 'bg-red-100 text-red-800';
+      case 'rolled_back':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'complete':
+        return 'Complete';
+      case 'migration_failed':
+        return 'Failed';
+      case 'rolled_back':
+        return 'Rolled Back';
+      default:
+        return status;
+    }
+  };
+
   return (
     <tr className="hover:bg-gray-50 transition-colors">
       <td className="px-6 py-4 whitespace-nowrap">
@@ -148,8 +174,8 @@ function MigrationRow({ migration }: { migration: MigrationHistoryEntry }) {
         {migration.duration_seconds ? formatDuration(migration.duration_seconds) : '-'}
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
-        <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
-          {migration.status}
+        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusBadgeClass(migration.status)}`}>
+          {getStatusLabel(migration.status)}
         </span>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import type { Repository, MigrationHistory, MigrationLog } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -240,6 +240,11 @@ export function RepositoryDetail() {
   ].includes(repository.status);
 
   const canChangeBatch = !isInActiveMigration && repository.status !== 'complete';
+  
+  // Find the current batch name
+  const currentBatch = repository.batch_id 
+    ? allBatches.find(b => b.id === repository.batch_id)
+    : null;
 
   return (
     <div className="max-w-6xl mx-auto relative">
@@ -247,6 +252,11 @@ export function RepositoryDetail() {
       
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div className="mb-4">
+          <Link to="/" className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1">
+            ← Back to Repositories
+          </Link>
+        </div>
         <div className="flex justify-between items-start">
           <div className="flex-1">
             <h1 className="text-3xl font-light text-gray-900 mb-2">
@@ -255,7 +265,7 @@ export function RepositoryDetail() {
             <div className="flex items-center gap-4 mb-4">
               <StatusBadge status={repository.status} />
               {repository.priority === 1 && <Badge color="purple">High Priority</Badge>}
-              {repository.batch_id && <Badge color="blue">Batch #{repository.batch_id}</Badge>}
+              {currentBatch && <Badge color="blue">{currentBatch.name}</Badge>}
               {repository.is_source_locked && <Badge color="orange">🔒 Source Locked</Badge>}
             </div>
 
@@ -327,7 +337,7 @@ export function RepositoryDetail() {
                 {repository.batch_id ? (
                   <div className="flex items-center gap-2">
                     <div className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm">
-                      <Badge color="blue">Batch #{repository.batch_id}</Badge>
+                      <Badge color="blue">{currentBatch?.name || `Batch #${repository.batch_id}`}</Badge>
                     </div>
                     <button
                       onClick={handleRemoveFromBatch}
@@ -381,7 +391,7 @@ export function RepositoryDetail() {
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
             </button>
-            {canMigrate && (
+            {canMigrate && repository.status !== 'migration_failed' && (
               <>
                 <button
                   onClick={() => handleStartMigration(true)}

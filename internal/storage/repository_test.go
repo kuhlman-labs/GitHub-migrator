@@ -1509,83 +1509,90 @@ func TestGetFeatureStats(t *testing.T) {
 	}
 }
 
+func createRepoWithHistory(t *testing.T, db *Database, ctx context.Context, fullName, status string) {
+	now := time.Now()
+	repo := &models.Repository{
+		FullName:     fullName,
+		Source:       "ghes",
+		SourceURL:    fmt.Sprintf("https://github.com/%s", fullName),
+		Status:       status,
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if status == string(models.StatusComplete) {
+		repo.MigratedAt = &now
+	}
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository %s: %v", fullName, err)
+	}
+
+	// Create migration_history record for completed and failed repos
+	if status == string(models.StatusComplete) || status == string(models.StatusMigrationFailed) {
+		savedRepo, err := db.GetRepository(ctx, fullName)
+		if err != nil {
+			t.Fatalf("Failed to get repository %s: %v", fullName, err)
+		}
+
+		historyStatus := "completed"
+		historyMsg := "Migration completed"
+		if status == string(models.StatusMigrationFailed) {
+			historyStatus = "failed"
+			historyMsg = "Migration failed"
+		}
+
+		history := &models.MigrationHistory{
+			RepositoryID: savedRepo.ID,
+			Status:       historyStatus,
+			Phase:        "migration",
+			StartedAt:    now.Add(-1 * time.Hour),
+		}
+		historyID, err := db.CreateMigrationHistory(ctx, history)
+		if err != nil {
+			t.Fatalf("Failed to create migration history: %v", err)
+		}
+
+		err = db.UpdateMigrationHistory(ctx, historyID, historyStatus, &historyMsg)
+		if err != nil {
+			t.Fatalf("Failed to update migration history: %v", err)
+		}
+	}
+}
+
 func TestGetCompletedMigrations(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
 
-	// Create completed and non-completed repositories
-	repos := []struct {
-		fullName string
-		status   string
-	}{
-		{"test/complete1", string(models.StatusComplete)},
-		{"test/complete2", string(models.StatusComplete)},
-		{"test/pending", string(models.StatusPending)},
-		{"test/failed", string(models.StatusMigrationFailed)},
-	}
+	// Create test repositories with migration history
+	createRepoWithHistory(t, db, ctx, "test/complete1", string(models.StatusComplete))
+	createRepoWithHistory(t, db, ctx, "test/complete2", string(models.StatusComplete))
+	createRepoWithHistory(t, db, ctx, "test/pending", string(models.StatusPending))
+	createRepoWithHistory(t, db, ctx, "test/failed", string(models.StatusMigrationFailed))
 
-	for _, r := range repos {
-		now := time.Now()
-		repo := &models.Repository{
-			FullName:     r.fullName,
-			Source:       "ghes",
-			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
-			Status:       r.status,
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-		}
-		if r.status == string(models.StatusComplete) {
-			repo.MigratedAt = &now
-		}
-		if err := db.SaveRepository(ctx, repo); err != nil {
-			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
-		}
-
-		// Create migration_history record for completed repos
-		if r.status == string(models.StatusComplete) {
-			savedRepo, err := db.GetRepository(ctx, r.fullName)
-			if err != nil {
-				t.Fatalf("Failed to get repository %s: %v", r.fullName, err)
-			}
-
-			history := &models.MigrationHistory{
-				RepositoryID: savedRepo.ID,
-				Status:       "completed",
-				Phase:        "migration",
-				StartedAt:    now.Add(-1 * time.Hour),
-			}
-			historyID, err := db.CreateMigrationHistory(ctx, history)
-			if err != nil {
-				t.Fatalf("Failed to create migration history: %v", err)
-			}
-
-			// Update with completion time
-			completedMsg := "Migration completed"
-			err = db.UpdateMigrationHistory(ctx, historyID, "completed", &completedMsg)
-			if err != nil {
-				t.Fatalf("Failed to update migration history: %v", err)
-			}
-		}
-	}
-
-	// Get completed migrations
+	// Get completed migrations (includes complete, failed, and rolled_back)
 	migrations, err := db.GetCompletedMigrations(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get completed migrations: %v", err)
 	}
 
-	// Should only return the 2 completed repos
-	if len(migrations) != 2 {
-		t.Errorf("Expected 2 completed migrations, got %d", len(migrations))
+	// Should return 3 migrations (2 complete + 1 failed)
+	if len(migrations) != 3 {
+		t.Errorf("Expected 3 migrations (2 complete + 1 failed), got %d", len(migrations))
 	}
 
-	// Verify they are the correct ones and have migration history data
+	// Verify they have the correct statuses and migration history data
+	completeCount := 0
+	failedCount := 0
 	for _, m := range migrations {
-		if m.Status != string(models.StatusComplete) {
-			t.Errorf("Expected status 'complete', got %s", m.Status)
+		// Count status types
+		if m.Status == string(models.StatusComplete) {
+			completeCount++
+		} else if m.Status == string(models.StatusMigrationFailed) {
+			failedCount++
 		}
+
+		// All should have migration history data
 		if m.StartedAt == nil {
 			t.Errorf("Expected started_at to be populated for %s", m.FullName)
 		}
@@ -1595,6 +1602,14 @@ func TestGetCompletedMigrations(t *testing.T) {
 		if m.DurationSeconds == nil {
 			t.Errorf("Expected duration_seconds to be populated for %s", m.FullName)
 		}
+	}
+
+	// Verify we got the expected status distribution
+	if completeCount != 2 {
+		t.Errorf("Expected 2 complete migrations, got %d", completeCount)
+	}
+	if failedCount != 1 {
+		t.Errorf("Expected 1 failed migration, got %d", failedCount)
 	}
 }
 

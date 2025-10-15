@@ -313,6 +313,13 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 			status = models.StatusDryRunFailed
 		}
 		repo.Status = string(status)
+
+		// Unlock repository if it was locked
+		if lockRepos && repo.SourceMigrationID != nil {
+			repo.IsSourceLocked = false
+			e.unlockSourceRepository(ctx, repo)
+		}
+
 		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
 			e.logger.Error("Failed to update repository status", "error", updateErr)
 		}
@@ -342,6 +349,13 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
 
 		repo.Status = string(models.StatusMigrationFailed)
+
+		// Unlock repository if it was locked
+		if lockRepos && repo.SourceMigrationID != nil {
+			repo.IsSourceLocked = false
+			e.unlockSourceRepository(ctx, repo)
+		}
+
 		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
 			e.logger.Error("Failed to update repository status", "error", updateErr)
 		}
@@ -361,6 +375,13 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
 
 		repo.Status = string(models.StatusMigrationFailed)
+
+		// Unlock repository if it was locked
+		if lockRepos && repo.SourceMigrationID != nil {
+			repo.IsSourceLocked = false
+			e.unlockSourceRepository(ctx, repo)
+		}
+
 		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
 			e.logger.Error("Failed to update repository status", "error", updateErr)
 		}
@@ -385,6 +406,13 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
 
 		repo.Status = string(models.StatusMigrationFailed)
+
+		// Unlock repository if it was locked
+		if lockRepos && repo.SourceMigrationID != nil {
+			repo.IsSourceLocked = false
+			e.unlockSourceRepository(ctx, repo)
+		}
+
 		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
 			e.logger.Error("Failed to update repository status", "error", updateErr)
 		}
@@ -416,6 +444,12 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	completionMsg := "Migration completed successfully"
 	// Clear lock status on successful completion
 	repo.IsSourceLocked = false
+
+	// Unlock source repository for production migrations
+	if !dryRun && repo.SourceMigrationID != nil {
+		e.unlockSourceRepository(ctx, repo)
+	}
+
 	if dryRun {
 		completionStatus = models.StatusDryRunComplete
 		completionMsg = "Dry run completed successfully - repository can be migrated safely"
@@ -952,5 +986,28 @@ func (e *Executor) logOperation(ctx context.Context, repo *models.Repository, hi
 
 	if err := e.storage.CreateMigrationLog(ctx, log); err != nil {
 		e.logger.Error("Failed to create migration log", "error", err)
+	}
+}
+
+// unlockSourceRepository unlocks the source repository if it was locked during migration
+func (e *Executor) unlockSourceRepository(ctx context.Context, repo *models.Repository) {
+	if repo.SourceMigrationID == nil {
+		e.logger.Debug("No source migration ID, skipping unlock", "repo", repo.FullName)
+		return
+	}
+
+	e.logger.Info("Unlocking source repository",
+		"repo", repo.FullName,
+		"migration_id", *repo.SourceMigrationID)
+
+	err := e.sourceClient.UnlockRepository(ctx, repo.Organization(), repo.Name(), *repo.SourceMigrationID)
+	if err != nil {
+		// Log error but don't fail the migration - the unlock can be done manually if needed
+		e.logger.Error("Failed to unlock source repository (can be unlocked manually)",
+			"error", err,
+			"repo", repo.FullName,
+			"migration_id", *repo.SourceMigrationID)
+	} else {
+		e.logger.Info("Successfully unlocked source repository", "repo", repo.FullName)
 	}
 }

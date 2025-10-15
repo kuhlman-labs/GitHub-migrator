@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { BatchBuilder } from './BatchBuilder';
@@ -425,18 +426,23 @@ function RepositoryItem({ repository, onRetry }: RepositoryItemProps) {
   const isFailed = repository.status === 'migration_failed' || repository.status === 'dry_run_failed';
 
   return (
-    <div className="flex justify-between items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
-      <div className="flex-1">
-        <div className="font-medium text-gray-900">{repository.full_name}</div>
+    <div className="flex justify-between items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 group">
+      <Link to={`/repository/${encodeURIComponent(repository.full_name)}`} className="flex-1 min-w-0">
+        <div className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+          {repository.full_name}
+        </div>
         <div className="text-sm text-gray-600 mt-1">
           {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
         </div>
-      </div>
+      </Link>
       <div className="flex items-center gap-3">
         <StatusBadge status={repository.status} size="sm" />
         {isFailed && onRetry && (
           <button
-            onClick={onRetry}
+            onClick={(e) => {
+              e.preventDefault();
+              onRetry();
+            }}
             className="text-sm px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700"
           >
             Retry

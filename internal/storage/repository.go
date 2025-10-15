@@ -1256,7 +1256,7 @@ type CompletedMigration struct {
 	DurationSeconds *int       `json:"duration_seconds"`
 }
 
-// GetCompletedMigrations returns all successfully completed migrations
+// GetCompletedMigrations returns all completed, failed, and rolled back migrations
 func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigration, error) {
 	query := `
 		SELECT 
@@ -1277,11 +1277,11 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 				MAX(completed_at) as completed_at,
 				SUM(duration_seconds) as duration_seconds
 			FROM migration_history
-			WHERE phase = 'migration' AND status = 'completed'
+			WHERE phase IN ('migration', 'rollback') 
 			GROUP BY repository_id
 		) h ON r.id = h.repository_id
-		WHERE r.status = 'complete'
-		ORDER BY r.migrated_at DESC
+		WHERE r.status IN ('complete', 'migration_failed', 'rolled_back')
+		ORDER BY r.migrated_at DESC, r.updated_at DESC
 	`
 
 	rows, err := d.db.QueryContext(ctx, query)
