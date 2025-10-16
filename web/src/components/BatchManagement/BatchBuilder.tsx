@@ -226,26 +226,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-7xl h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-2xl font-semibold text-gray-900">
-            {isEditMode ? 'Edit Batch' : 'Create New Batch'}
-          </h2>
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-hidden flex">
+    <div className="bg-white rounded-lg shadow h-full flex flex-col">
+      {/* Content */}
+      <div className="flex-1 overflow-hidden flex">
           {/* Left Panel - Available Repositories */}
           <div className="w-1/2 border-r flex flex-col p-6 overflow-hidden">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Available Repositories</h3>
@@ -450,7 +433,6 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }

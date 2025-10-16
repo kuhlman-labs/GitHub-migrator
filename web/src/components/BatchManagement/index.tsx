@@ -1,20 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
-import { BatchBuilder } from './BatchBuilder';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
-import { ErrorBoundary } from '../common/ErrorBoundary';
 import { formatBytes, formatDate } from '../../utils/format';
 
 export function BatchManagement() {
+  const navigate = useNavigate();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [batchRepositories, setBatchRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
 
   useEffect(() => {
     loadBatches();
@@ -118,25 +115,12 @@ export function BatchManagement() {
     }
   };
 
-  const handleBuilderClose = () => {
-    setShowBuilder(false);
-    setEditingBatch(null);
-  };
-
-  const handleBuilderSuccess = async () => {
-    setShowBuilder(false);
-    setEditingBatch(null);
-    await loadBatches();
-    if (selectedBatch) {
-      const updated = await api.getBatch(selectedBatch.id);
-      setSelectedBatch(updated);
-      await loadBatchRepositories(selectedBatch.id);
-    }
+  const handleCreateBatch = () => {
+    navigate('/batches/new');
   };
 
   const handleEditBatch = (batch: Batch) => {
-    setEditingBatch(batch);
-    setShowBuilder(true);
+    navigate(`/batches/${batch.id}/edit`);
   };
 
   const getBatchProgress = (_batch: Batch, repos: Repository[]) => {
@@ -184,7 +168,7 @@ export function BatchManagement() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-light text-gray-900">Batch Management</h1>
         <button
-          onClick={() => setShowBuilder(true)}
+          onClick={handleCreateBatch}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
         >
           Create New Batch
@@ -362,16 +346,6 @@ export function BatchManagement() {
         </div>
       </div>
 
-      {/* Batch Builder Modal */}
-      {showBuilder && (
-        <ErrorBoundary>
-          <BatchBuilder
-            batch={editingBatch || undefined}
-            onClose={handleBuilderClose}
-            onSuccess={handleBuilderSuccess}
-          />
-        </ErrorBoundary>
-      )}
     </div>
   );
 }

@@ -50,6 +50,131 @@ func TestDetectLFS(t *testing.T) {
 			t.Error("Expected LFS to be detected via .gitattributes")
 		}
 	})
+
+	t.Run("LFS detected via .git/config", func(t *testing.T) {
+		// Create a new temp directory for this test
+		tempDir2 := t.TempDir()
+
+		// Create .git directory
+		gitDir := filepath.Join(tempDir2, ".git")
+		if err := os.Mkdir(gitDir, 0755); err != nil {
+			t.Fatalf("Failed to create .git directory: %v", err)
+		}
+
+		// Create .git/config with LFS filter configuration
+		gitConfig := filepath.Join(gitDir, "config")
+		configContent := `[core]
+	repositoryformatversion = 0
+	filemode = true
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+`
+		if err := os.WriteFile(gitConfig, []byte(configContent), 0644); err != nil {
+			t.Fatalf("Failed to create .git/config: %v", err)
+		}
+
+		hasLFS := analyzer.detectLFS(ctx, tempDir2)
+		if !hasLFS {
+			t.Error("Expected LFS to be detected via .git/config")
+		}
+	})
+}
+
+func TestDetectLFSPointerFiles(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	analyzer := NewAnalyzer(logger)
+	ctx := context.Background()
+
+	t.Run("No LFS pointer files", func(t *testing.T) {
+		// Create a temporary git repository
+		tempDir := t.TempDir()
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Skip("git not available, skipping test")
+		}
+
+		// Configure git user
+		cmd = exec.Command("git", "config", "user.name", "Test User")
+		cmd.Dir = tempDir
+		cmd.Run()
+
+		cmd = exec.Command("git", "config", "user.email", "test@example.com")
+		cmd.Dir = tempDir
+		cmd.Run()
+
+		// Create a regular file and commit
+		testFile := filepath.Join(tempDir, "test.txt")
+		if err := os.WriteFile(testFile, []byte("regular file content"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		cmd = exec.Command("git", "add", ".")
+		cmd.Dir = tempDir
+		cmd.Run()
+
+		cmd = exec.Command("git", "commit", "-m", "Initial commit")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Skip("Failed to create initial commit, skipping")
+		}
+
+		hasLFS := analyzer.detectLFSPointerFiles(ctx, tempDir)
+		if hasLFS {
+			t.Error("Expected no LFS pointer files to be detected")
+		}
+	})
+
+	t.Run("LFS pointer file detected", func(t *testing.T) {
+		// Create a temporary git repository
+		tempDir := t.TempDir()
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Skip("git not available, skipping test")
+		}
+
+		// Configure git user
+		cmd = exec.Command("git", "config", "user.name", "Test User")
+		cmd.Dir = tempDir
+		cmd.Run()
+
+		cmd = exec.Command("git", "config", "user.email", "test@example.com")
+		cmd.Dir = tempDir
+		cmd.Run()
+
+		// Create a file with LFS pointer content
+		lfsPointerFile := filepath.Join(tempDir, "large-file.bin")
+		lfsPointerContent := `version https://git-lfs.github.com/spec/v1
+oid sha256:4d70b55500e395744f43477146522c019d3f11d132a9a834927b5f63901b0f5b
+size 123456
+`
+		if err := os.WriteFile(lfsPointerFile, []byte(lfsPointerContent), 0644); err != nil {
+			t.Fatalf("Failed to create LFS pointer file: %v", err)
+		}
+
+		cmd = exec.Command("git", "add", ".")
+		cmd.Dir = tempDir
+		cmd.Run()
+
+		cmd = exec.Command("git", "commit", "-m", "Add LFS pointer")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Skip("Failed to create commit with LFS pointer, skipping")
+		}
+
+		hasLFS := analyzer.detectLFSPointerFiles(ctx, tempDir)
+		if !hasLFS {
+			t.Error("Expected LFS pointer files to be detected")
+		}
+	})
 }
 
 func TestDetectSubmodules(t *testing.T) {
@@ -76,6 +201,35 @@ func TestDetectSubmodules(t *testing.T) {
 		hasSubmodules := analyzer.detectSubmodules(ctx, tempDir)
 		if !hasSubmodules {
 			t.Error("Expected submodules to be detected via .gitmodules")
+		}
+	})
+
+	t.Run("Submodules detected via .git/config", func(t *testing.T) {
+		// Create a new temp directory for this test
+		tempDir2 := t.TempDir()
+
+		// Create .git directory
+		gitDir := filepath.Join(tempDir2, ".git")
+		if err := os.Mkdir(gitDir, 0755); err != nil {
+			t.Fatalf("Failed to create .git directory: %v", err)
+		}
+
+		// Create .git/config with submodule configuration
+		gitConfig := filepath.Join(gitDir, "config")
+		configContent := `[core]
+	repositoryformatversion = 0
+	filemode = true
+[submodule "vendor/lib"]
+	url = https://github.com/example/lib.git
+	active = true
+`
+		if err := os.WriteFile(gitConfig, []byte(configContent), 0644); err != nil {
+			t.Fatalf("Failed to create .git/config: %v", err)
+		}
+
+		hasSubmodules := analyzer.detectSubmodules(ctx, tempDir2)
+		if !hasSubmodules {
+			t.Error("Expected submodules to be detected via .git/config")
 		}
 	})
 }

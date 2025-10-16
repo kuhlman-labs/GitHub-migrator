@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/brettkuhlman/github-migrator/internal/models"
@@ -190,9 +191,11 @@ func (a *Analyzer) runGitSizer(ctx context.Context, repoPath string) (*GitSizerO
 	return &output, nil
 }
 
-// detectLFS checks for Git LFS usage using two methods:
+// detectLFS checks for Git LFS usage using four methods:
 // 1. Check .gitattributes for "filter=lfs"
 // 2. Run "git lfs ls-files" to list LFS-tracked files
+// 3. Check .git/config for [filter "lfs"] configuration
+// 4. Check for LFS pointer files in the repository
 func (a *Analyzer) detectLFS(ctx context.Context, repoPath string) bool {
 	// Method 1: Check .gitattributes file
 	gitattributesPath := repoPath + "/.gitattributes"
@@ -209,22 +212,52 @@ func (a *Analyzer) detectLFS(ctx context.Context, repoPath string) bool {
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()
-	if err != nil {
-		// git lfs might not be installed or no LFS files exist
-		return false
+	if err == nil {
+		// If any LFS files exist, the output will not be empty
+		hasLFS := len(bytes.TrimSpace(output)) > 0
+		if hasLFS {
+			a.logger.Debug("LFS detected via git lfs ls-files", "repo_path", repoPath)
+			return true
+		}
 	}
 
-	// If any LFS files exist, the output will not be empty
-	hasLFS := len(bytes.TrimSpace(output)) > 0
-	if hasLFS {
-		a.logger.Debug("LFS detected via git lfs ls-files", "repo_path", repoPath)
+	// Method 3: Check .git/config for LFS filter configuration
+	gitConfigPath := filepath.Join(repoPath, ".git", "config")
+	// #nosec G304 -- repoPath is a controlled temporary directory path
+	if data, err := os.ReadFile(gitConfigPath); err == nil {
+		if strings.Contains(string(data), "[filter \"lfs\"]") {
+			a.logger.Debug("LFS detected via .git/config", "repo_path", repoPath)
+			return true
+		}
 	}
-	return hasLFS
+
+	// Method 4: Check for LFS pointer files
+	// LFS pointer files contain "version https://git-lfs.github.com/spec/"
+	if a.detectLFSPointerFiles(ctx, repoPath) {
+		a.logger.Debug("LFS detected via pointer files", "repo_path", repoPath)
+		return true
+	}
+
+	return false
 }
 
-// detectSubmodules checks for Git submodules using two methods:
+// detectLFSPointerFiles checks for Git LFS pointer files by searching for
+// files that contain the LFS pointer format
+func (a *Analyzer) detectLFSPointerFiles(ctx context.Context, repoPath string) bool {
+	// Use git grep to search for LFS pointer file pattern
+	// LFS pointer files start with "version https://git-lfs.github.com/spec/"
+	cmd := exec.CommandContext(ctx, "git", "grep", "-q", "version https://git-lfs.github.com/spec/")
+	cmd.Dir = repoPath
+
+	// git grep -q returns exit code 0 if pattern is found, 1 if not found
+	err := cmd.Run()
+	return err == nil
+}
+
+// detectSubmodules checks for Git submodules using three methods:
 // 1. Check for .gitmodules file
-// 2. Run "git submodule" command
+// 2. Run "git submodule status" command
+// 3. Check .git/config for [submodule sections
 func (a *Analyzer) detectSubmodules(ctx context.Context, repoPath string) bool {
 	// Method 1: Check for .gitmodules file
 	gitmodulesPath := repoPath + "/.gitmodules"
@@ -238,17 +271,26 @@ func (a *Analyzer) detectSubmodules(ctx context.Context, repoPath string) bool {
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()
-	if err != nil {
-		// No submodules or error
-		return false
+	if err == nil {
+		// If any submodules exist, the output will not be empty
+		hasSubmodules := len(bytes.TrimSpace(output)) > 0
+		if hasSubmodules {
+			a.logger.Debug("Submodules detected via git submodule", "repo_path", repoPath)
+			return true
+		}
 	}
 
-	// If any submodules exist, the output will not be empty
-	hasSubmodules := len(bytes.TrimSpace(output)) > 0
-	if hasSubmodules {
-		a.logger.Debug("Submodules detected via git submodule", "repo_path", repoPath)
+	// Method 3: Check .git/config for submodule configuration
+	gitConfigPath := filepath.Join(repoPath, ".git", "config")
+	// #nosec G304 -- repoPath is a controlled temporary directory path
+	if data, err := os.ReadFile(gitConfigPath); err == nil {
+		if strings.Contains(string(data), "[submodule") {
+			a.logger.Debug("Submodules detected via .git/config", "repo_path", repoPath)
+			return true
+		}
 	}
-	return hasSubmodules
+
+	return false
 }
 
 // getBranchCount returns the number of branches in the repository
