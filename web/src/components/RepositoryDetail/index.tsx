@@ -253,7 +253,10 @@ export function RepositoryDetail() {
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
         <div className="mb-4">
-          <Link to="/" className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1">
+          <Link 
+            to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
+            className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+          >
             ← Back to Repositories
           </Link>
         </div>
