@@ -10,12 +10,12 @@ import { ComplexityChart } from './ComplexityChart';
 import { KPICard } from './KPICard';
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: '#9CA3AF',
-  in_progress: '#3B82F6',
-  migration_complete: '#10B981',
-  complete: '#059669',
-  failed: '#EF4444',
-  dry_run_complete: '#8B5CF6',
+  pending: '#656D76',
+  in_progress: '#0969DA',
+  migration_complete: '#1A7F37',
+  complete: '#1A7F37',
+  failed: '#D1242F',
+  dry_run_complete: '#8250DF',
 };
 
 export function Analytics() {
@@ -28,13 +28,13 @@ export function Analytics() {
   });
 
   if (isLoading) return <LoadingSpinner />;
-  if (!analytics) return <div className="text-center py-12 text-gray-500">No analytics data available</div>;
+  if (!analytics) return <div className="text-center py-12 text-gh-text-secondary">No analytics data available</div>;
 
-  // Prepare chart data
+  // Prepare chart data with GitHub colors
   const statusChartData = Object.entries(analytics.status_breakdown).map(([status, count]) => ({
     name: status.replace(/_/g, ' '),
     value: count,
-    fill: STATUS_COLORS[status] || '#9CA3AF',
+    fill: STATUS_COLORS[status] || '#656D76',
   }));
 
   const completionRate = analytics.total_repositories > 0
@@ -42,10 +42,10 @@ export function Analytics() {
     : 0;
 
   const progressData = [
-    { name: 'Migrated', value: analytics.migrated_count, fill: '#10B981' },
-    { name: 'In Progress', value: analytics.in_progress_count, fill: '#3B82F6' },
-    { name: 'Failed', value: analytics.failed_count, fill: '#EF4444' },
-    { name: 'Pending', value: analytics.pending_count, fill: '#9CA3AF' },
+    { name: 'Migrated', value: analytics.migrated_count, fill: '#1A7F37' },
+    { name: 'In Progress', value: analytics.in_progress_count, fill: '#0969DA' },
+    { name: 'Failed', value: analytics.failed_count, fill: '#D1242F' },
+    { name: 'Pending', value: analytics.pending_count, fill: '#656D76' },
   ].filter(item => item.value > 0);
 
   const sizeCategories: Record<string, string> = {
@@ -57,11 +57,11 @@ export function Analytics() {
   };
 
   const sizeColors: Record<string, string> = {
-    small: '#10B981',
-    medium: '#3B82F6',
-    large: '#F59E0B',
-    very_large: '#EF4444',
-    unknown: '#9CA3AF',
+    small: '#1A7F37',
+    medium: '#0969DA',
+    large: '#9A6700',
+    very_large: '#D1242F',
+    unknown: '#656D76',
   };
 
   // Calculate high complexity count
@@ -72,7 +72,7 @@ export function Analytics() {
   return (
     <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
-      <h1 className="text-3xl font-light text-gray-900 mb-8">Analytics Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-gh-text-primary mb-8">Analytics Dashboard</h1>
 
       {/* Filter Bar */}
       <FilterBar
@@ -84,9 +84,9 @@ export function Analytics() {
 
       {/* SECTION 1: DISCOVERY ANALYTICS */}
       <section className="mb-12">
-        <div className="border-l-4 border-blue-500 pl-4 mb-6">
-          <h2 className="text-2xl font-light text-gray-900">Discovery Analytics</h2>
-          <p className="text-sm text-gray-600 mt-1">
+        <div className="border-l-4 border-gh-blue pl-4 mb-6">
+          <h2 className="text-xl font-semibold text-gh-text-primary">Discovery Analytics</h2>
+          <p className="text-sm text-gh-text-secondary mt-1">
             Source environment overview to drive batch planning decisions
           </p>
         </div>

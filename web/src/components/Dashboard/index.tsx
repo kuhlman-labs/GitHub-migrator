@@ -66,11 +66,11 @@ export function Dashboard() {
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-light text-gray-900">Organizations</h1>
-        <div className="flex gap-4">
+        <h1 className="text-2xl font-semibold text-gh-text-primary">Organizations</h1>
+        <div className="flex gap-3">
           <button
             onClick={() => setShowDiscoveryModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            className="px-4 py-1.5 bg-gh-success text-white text-sm font-medium rounded-md hover:bg-gh-success-hover transition-colors"
           >
             Start Discovery
           </button>
@@ -79,25 +79,25 @@ export function Dashboard() {
             placeholder="Search organizations..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
           />
         </div>
       </div>
 
       {discoverySuccess && (
-        <div className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
+        <div className="mb-4 bg-gh-success-bg border border-gh-success text-gh-success px-4 py-3 rounded-md text-sm">
           {discoverySuccess}
         </div>
       )}
 
-      <div className="mb-4 text-sm text-gray-600">
+      <div className="mb-4 text-sm text-gh-text-secondary">
         Showing {filteredOrgs.length} organizations with {totalRepos} total repositories
       </div>
 
       {isLoading ? (
         <LoadingSpinner />
       ) : filteredOrgs.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gh-text-secondary">
           No organizations found
         </div>
       ) : (
@@ -133,33 +133,33 @@ export function Dashboard() {
 
 function OrganizationCard({ organization }: { organization: Organization }) {
   const getStatusColor = (status: string) => {
-    // Map all backend statuses to simplified color categories
+    // Map all backend statuses to GitHub color scheme
     const colors: Record<string, string> = {
       // Pending
-      pending: 'bg-gray-100 text-gray-800',
+      pending: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
       
       // In Progress (blue)
-      dry_run_queued: 'bg-blue-100 text-blue-800',
-      dry_run_in_progress: 'bg-blue-100 text-blue-800',
-      pre_migration: 'bg-blue-100 text-blue-800',
-      archive_generating: 'bg-blue-100 text-blue-800',
-      queued_for_migration: 'bg-blue-100 text-blue-800',
-      migrating_content: 'bg-blue-100 text-blue-800',
-      post_migration: 'bg-blue-100 text-blue-800',
+      dry_run_queued: 'bg-gh-blue text-white',
+      dry_run_in_progress: 'bg-gh-blue text-white',
+      pre_migration: 'bg-gh-blue text-white',
+      archive_generating: 'bg-gh-blue text-white',
+      queued_for_migration: 'bg-gh-blue text-white',
+      migrating_content: 'bg-gh-blue text-white',
+      post_migration: 'bg-gh-blue text-white',
       
       // Complete (green)
-      dry_run_complete: 'bg-green-100 text-green-800',
-      migration_complete: 'bg-green-100 text-green-800',
-      complete: 'bg-green-100 text-green-800',
+      dry_run_complete: 'bg-gh-success text-white',
+      migration_complete: 'bg-gh-success text-white',
+      complete: 'bg-gh-success text-white',
       
       // Failed (red)
-      dry_run_failed: 'bg-red-100 text-red-800',
-      migration_failed: 'bg-red-100 text-red-800',
+      dry_run_failed: 'bg-gh-danger text-white',
+      migration_failed: 'bg-gh-danger text-white',
       
       // Rolled Back (yellow/orange)
-      rolled_back: 'bg-yellow-100 text-yellow-800',
+      rolled_back: 'bg-gh-warning text-white',
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[status] || 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default';
   };
 
   const totalRepos = organization.total_repos;
@@ -168,24 +168,24 @@ function OrganizationCard({ organization }: { organization: Organization }) {
   return (
     <Link
       to={`/org/${encodeURIComponent(organization.organization)}`}
-      className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 block"
+      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
     >
-      <h3 className="text-xl font-medium text-gray-900 mb-4">
+      <h3 className="text-lg font-semibold text-gh-text-primary mb-4">
         {organization.organization}
       </h3>
       
       <div className="mb-4">
-        <div className="text-3xl font-light text-blue-600 mb-1">{totalRepos}</div>
-        <div className="text-sm text-gray-600">Total Repositories</div>
+        <div className="text-3xl font-semibold text-gh-blue mb-1">{totalRepos}</div>
+        <div className="text-sm text-gh-text-secondary">Total Repositories</div>
       </div>
 
       <div className="space-y-2">
-        <div className="text-sm font-medium text-gray-700 mb-2">Status Breakdown:</div>
+        <div className="text-xs font-semibold text-gh-text-secondary mb-2 uppercase tracking-wide">Status Breakdown</div>
         <div className="flex flex-wrap gap-2">
           {Object.entries(statusCounts).map(([status, count]) => (
             <span
               key={status}
-              className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(status)}`}
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}
             >
               {status.replace(/_/g, ' ')}: {count}
             </span>
@@ -193,7 +193,7 @@ function OrganizationCard({ organization }: { organization: Organization }) {
         </div>
       </div>
 
-      <div className="mt-4 text-sm text-blue-600 hover:underline">
+      <div className="mt-4 text-sm text-gh-blue hover:underline font-medium">
         View repositories →
       </div>
     </Link>
@@ -234,24 +234,24 @@ function DiscoveryModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">Start Repository Discovery</h2>
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 border border-gh-border-default">
+        <div className="flex justify-between items-center p-4 border-b border-gh-border-default">
+          <h2 className="text-base font-semibold text-gh-text-primary">Start Repository Discovery</h2>
           <button
             onClick={onClose}
             disabled={loading}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gh-text-secondary hover:text-gh-text-primary transition-colors"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} className="p-4">
           {/* Discovery Type Selector */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gh-text-primary mb-2">
               Discovery Type
             </label>
             <div className="flex gap-2">
@@ -259,10 +259,10 @@ function DiscoveryModal({
                 type="button"
                 onClick={() => setDiscoveryType('organization')}
                 disabled={loading}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   discoveryType === 'organization'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gh-blue text-white'
+                    : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 Organization
@@ -271,10 +271,10 @@ function DiscoveryModal({
                 type="button"
                 onClick={() => setDiscoveryType('enterprise')}
                 disabled={loading}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   discoveryType === 'enterprise'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gh-blue text-white'
+                    : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 Enterprise
@@ -285,7 +285,7 @@ function DiscoveryModal({
           {/* Organization Input */}
           {discoveryType === 'organization' && (
             <div className="mb-4">
-              <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="organization" className="block text-sm font-semibold text-gh-text-primary mb-2">
                 Organization Name
               </label>
               <input
@@ -295,10 +295,10 @@ function DiscoveryModal({
                 onChange={(e) => setOrganization(e.target.value)}
                 placeholder="e.g., your-github-org"
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
                 autoFocus
               />
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-xs text-gh-text-secondary">
                 Enter the GitHub organization name to discover all repositories.
               </p>
             </div>
@@ -307,7 +307,7 @@ function DiscoveryModal({
           {/* Enterprise Input */}
           {discoveryType === 'enterprise' && (
             <div className="mb-4">
-              <label htmlFor="enterprise" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="enterprise" className="block text-sm font-semibold text-gh-text-primary mb-2">
                 Enterprise Slug
               </label>
               <input
@@ -317,34 +317,34 @@ function DiscoveryModal({
                 onChange={(e) => setEnterpriseSlug(e.target.value)}
                 placeholder="e.g., your-enterprise-slug"
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
                 autoFocus
               />
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-xs text-gh-text-secondary">
                 Enter the GitHub Enterprise slug to discover repositories across all organizations.
               </p>
             </div>
           )}
 
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
+            <div className="mb-4 bg-gh-danger-bg border border-gh-danger text-gh-danger px-3 py-2 rounded-md text-xs">
               {error}
             </div>
           )}
 
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 text-sm border border-gh-border-default text-gh-text-primary rounded-md hover:bg-gh-neutral-bg disabled:bg-gh-neutral-bg disabled:cursor-not-allowed transition-colors font-medium"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || !isFormValid}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className="px-3 py-1.5 text-sm bg-gh-success text-white rounded-md hover:bg-gh-success-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 font-medium"
             >
               {loading ? (
                 <>

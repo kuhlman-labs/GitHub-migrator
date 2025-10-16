@@ -5,44 +5,46 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
   const getStatusColor = (status: string) => {
-    // Map all backend statuses to simplified color categories
+    // Map all backend statuses to GitHub color scheme
     const colors: Record<string, string> = {
-      // Pending / Ready (gray)
-      pending: 'bg-gray-100 text-gray-800',
-      ready: 'bg-gray-100 text-gray-800',
+      // Pending / Ready (neutral gray)
+      pending: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
+      ready: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
       
       // In Progress (blue)
-      dry_run_queued: 'bg-blue-100 text-blue-800',
-      dry_run_in_progress: 'bg-blue-100 text-blue-800',
-      pre_migration: 'bg-blue-100 text-blue-800',
-      archive_generating: 'bg-blue-100 text-blue-800',
-      queued_for_migration: 'bg-blue-100 text-blue-800',
-      migrating_content: 'bg-blue-100 text-blue-800',
-      post_migration: 'bg-blue-100 text-blue-800',
-      in_progress: 'bg-blue-100 text-blue-800',
+      dry_run_queued: 'bg-gh-blue text-white',
+      dry_run_in_progress: 'bg-gh-blue text-white',
+      pre_migration: 'bg-gh-blue text-white',
+      archive_generating: 'bg-gh-blue text-white',
+      queued_for_migration: 'bg-gh-blue text-white',
+      migrating_content: 'bg-gh-blue text-white',
+      post_migration: 'bg-gh-blue text-white',
+      in_progress: 'bg-gh-blue text-white',
       
       // Complete (green)
-      dry_run_complete: 'bg-green-100 text-green-800',
-      migration_complete: 'bg-green-100 text-green-800',
-      complete: 'bg-green-100 text-green-800',
-      completed: 'bg-green-100 text-green-800',
+      dry_run_complete: 'bg-gh-success text-white',
+      migration_complete: 'bg-gh-success text-white',
+      complete: 'bg-gh-success text-white',
+      completed: 'bg-gh-success text-white',
       
-      // Partial Success / Warnings (yellow)
-      completed_with_errors: 'bg-yellow-100 text-yellow-800',
-      rolled_back: 'bg-yellow-100 text-yellow-800',
+      // Partial Success / Warnings (yellow/orange)
+      completed_with_errors: 'bg-gh-warning text-white',
+      rolled_back: 'bg-gh-warning text-white',
       
       // Failed (red)
-      dry_run_failed: 'bg-red-100 text-red-800',
-      migration_failed: 'bg-red-100 text-red-800',
-      failed: 'bg-red-100 text-red-800',
+      dry_run_failed: 'bg-gh-danger text-white',
+      migration_failed: 'bg-gh-danger text-white',
+      failed: 'bg-gh-danger text-white',
       
       // Cancelled (gray)
-      cancelled: 'bg-gray-100 text-gray-800',
+      cancelled: 'bg-gh-text-secondary text-white',
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[status] || 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default';
   };
   
-  const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';
+  const sizeClasses = size === 'sm' 
+    ? 'text-xs px-2 h-5' 
+    : 'text-xs px-3 h-6';
   
   return (
     <span className={`inline-flex items-center rounded-full font-medium ${getStatusColor(status)} ${sizeClasses}`}>
