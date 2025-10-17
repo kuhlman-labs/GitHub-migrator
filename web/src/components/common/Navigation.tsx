@@ -6,21 +6,28 @@ export function Navigation() {
   const isActive = (path: string) => location.pathname === path;
   
   const linkClass = (path: string) =>
-    `px-4 py-2 rounded-lg transition-colors ${
+    `px-3 py-2 text-gh-header-text font-medium transition-colors border-b-2 ${
       isActive(path)
-        ? 'bg-blue-600 text-white'
-        : 'text-gray-700 hover:bg-gray-100'
+        ? 'border-white/50'
+        : 'border-transparent hover:text-white/80'
     }`;
   
   return (
-    <nav className="bg-white shadow-sm border-b border-gray-200">
+    <nav className="bg-gh-header-bg border-b border-white/10">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          <div className="flex items-center space-x-8">
-            <h1 className="text-xl font-semibold text-gray-900">
-              GitHub Migrator
-            </h1>
-            <div className="flex space-x-2">
+          <div className="flex items-center space-x-6">
+            <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <img 
+                src="/github-mark-white.png" 
+                alt="GitHub" 
+                className="w-8 h-8"
+              />
+              <span className="text-gh-header-text font-semibold text-base">
+                Migrator
+              </span>
+            </Link>
+            <div className="flex space-x-1 ml-4">
               <Link to="/" className={linkClass('/')}>
                 Dashboard
               </Link>

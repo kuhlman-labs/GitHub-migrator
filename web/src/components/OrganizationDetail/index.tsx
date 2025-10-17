@@ -111,25 +111,25 @@ export function OrganizationDetail() {
     <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       <div className="mb-6">
-        <Link to="/" className="text-blue-600 hover:underline text-sm">
+        <Link to="/" className="text-gh-blue hover:underline text-sm font-medium">
           ← Back to Organizations
         </Link>
       </div>
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-light text-gray-900">{orgName}</h1>
-        <div className="flex gap-4">
+        <h1 className="text-2xl font-semibold text-gh-text-primary">{orgName}</h1>
+        <div className="flex gap-3">
           <input
             type="text"
             placeholder="Search repositories..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
           />
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
           >
             {statuses.map((status) => (
               <option key={status} value={status}>
@@ -139,19 +139,19 @@ export function OrganizationDetail() {
           </select>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`px-4 py-2 rounded-lg transition-colors ${
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors font-medium ${
               selectedFeatures.size > 0
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                ? 'bg-gh-blue text-white hover:bg-gh-blue-hover'
+                : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
             }`}
           >
             <span className="flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
               Features
               {selectedFeatures.size > 0 && (
-                <span className="bg-white text-blue-600 rounded-full px-2 py-0.5 text-xs font-medium">
+                <span className="bg-white text-gh-blue rounded-full px-2 py-0.5 text-xs font-medium">
                   {selectedFeatures.size}
                 </span>
               )}
@@ -160,7 +160,7 @@ export function OrganizationDetail() {
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
-              className="px-4 py-2 text-gray-600 hover:text-gray-900 transition-colors"
+              className="px-3 py-1.5 text-sm text-gh-text-secondary hover:text-gh-text-primary transition-colors font-medium"
             >
               Clear All
             </button>
@@ -170,9 +170,9 @@ export function OrganizationDetail() {
 
       {/* Feature Filters Panel */}
       {showFilters && (
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Filter by Features</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 mb-6">
+          <h3 className="text-base font-semibold text-gh-text-primary mb-4">Filter by Features</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {FEATURE_FILTERS.map((featureFilter) => {
               const count = repositories.filter(r => {
                 const value = r[featureFilter.key];
@@ -181,21 +181,21 @@ export function OrganizationDetail() {
               return (
                 <label
                   key={featureFilter.key}
-                  className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer transition-all ${
                     selectedFeatures.has(featureFilter.key)
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-gh-blue bg-gh-info-bg'
+                      : 'border-gh-border-default hover:border-gh-border-hover'
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={selectedFeatures.has(featureFilter.key)}
                     onChange={() => toggleFeature(featureFilter.key)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-gh-blue rounded border-gh-border-default focus:ring-gh-blue"
                   />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900">{featureFilter.label}</div>
-                    <div className="text-xs text-gray-500">{count} repos</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gh-text-primary truncate">{featureFilter.label}</div>
+                    <div className="text-xs text-gh-text-secondary">{count} repos</div>
                   </div>
                 </label>
               );
@@ -205,7 +205,7 @@ export function OrganizationDetail() {
       )}
 
       <div className="mb-4 flex items-center justify-between">
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-gh-text-secondary">
           Showing {filteredRepos.length} of {repositories.length} repositories
         </div>
         {selectedFeatures.size > 0 && (
@@ -215,14 +215,14 @@ export function OrganizationDetail() {
               return (
                 <span
                   key={feature}
-                  className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-gh-info-bg text-gh-blue rounded-full text-xs font-medium border border-gh-blue/20"
                 >
                   {featureConfig?.label}
                   <button
                     onClick={() => toggleFeature(feature)}
-                    className="hover:bg-blue-200 rounded-full p-0.5"
+                    className="hover:bg-gh-blue/10 rounded-full p-0.5"
                   >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
                   </button>
@@ -236,7 +236,7 @@ export function OrganizationDetail() {
       {isLoading ? (
         <LoadingSpinner />
       ) : filteredRepos.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gh-text-secondary">
           No repositories found
         </div>
       ) : (
@@ -254,18 +254,18 @@ function RepositoryCard({ repository }: { repository: Repository }) {
   return (
     <Link
       to={`/repository/${encodeURIComponent(repository.full_name)}`}
-      className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 block"
+      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
     >
-      <h3 className="text-lg font-medium text-gray-900 mb-2 truncate">
+      <h3 className="text-base font-semibold text-gh-text-primary mb-3 truncate">
         {repository.full_name}
       </h3>
-      <div className="mb-4">
-        <StatusBadge status={repository.status} />
+      <div className="mb-3">
+        <StatusBadge status={repository.status} size="sm" />
       </div>
-      <div className="space-y-2 text-sm text-gray-600">
+      <div className="space-y-1.5 text-sm text-gh-text-secondary">
         <div>Size: {formatBytes(repository.total_size)}</div>
         <div>Branches: {repository.branch_count}</div>
-        <div className="flex gap-2 flex-wrap mt-2">
+        <div className="flex gap-1.5 flex-wrap mt-3">
           {repository.is_archived && <Badge color="gray">Archived</Badge>}
           {repository.has_lfs && <Badge color="blue">LFS</Badge>}
           {repository.has_submodules && <Badge color="purple">Submodules</Badge>}
