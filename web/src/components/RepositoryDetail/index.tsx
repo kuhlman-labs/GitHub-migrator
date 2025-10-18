@@ -390,25 +390,43 @@ export function RepositoryDetail() {
             <button
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
-              className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              className="px-4 py-2 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
             </button>
-            {canMigrate && repository.status !== 'migration_failed' && (
+            {canMigrate && repository.status !== 'migration_failed' && repository.status !== 'dry_run_failed' && (
               <>
                 <button
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-4 py-2 border border-gh-border-default rounded-md text-sm font-medium text-gh-text-primary hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </button>
                 <button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-4 py-2 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
+                </button>
+              </>
+            )}
+            {repository.status === 'dry_run_failed' && (
+              <>
+                <button
+                  onClick={() => handleStartMigration(true)}
+                  disabled={migrating}
+                  className="px-4 py-2 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {migrating ? 'Re-running...' : 'Re-run Dry Run'}
+                </button>
+                <button
+                  onClick={() => handleStartMigration(false)}
+                  disabled={migrating}
+                  className="px-4 py-2 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {migrating ? 'Starting...' : 'Start Migration Anyway'}
                 </button>
               </>
             )}
@@ -417,7 +435,7 @@ export function RepositoryDetail() {
                 <button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-4 py-2 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   Retry Migration
                 </button>
@@ -425,7 +443,7 @@ export function RepositoryDetail() {
                   <button
                     onClick={handleUnlock}
                     disabled={unlockMutation.isPending}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
                     {unlockMutation.isPending ? 'Unlocking...' : '🔓 Unlock Source'}
                   </button>
@@ -436,7 +454,7 @@ export function RepositoryDetail() {
               <button
                 onClick={() => setShowRollbackDialog(true)}
                 disabled={rollbackMutation.isPending}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
               >
                 {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback Migration'}
               </button>

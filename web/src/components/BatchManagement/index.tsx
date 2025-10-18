@@ -398,14 +398,15 @@ interface RepositoryItemProps {
 
 function RepositoryItem({ repository, onRetry }: RepositoryItemProps) {
   const isFailed = repository.status === 'migration_failed' || repository.status === 'dry_run_failed';
+  const isDryRunFailed = repository.status === 'dry_run_failed';
 
   return (
-    <div className="flex justify-between items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 group">
+    <div className="flex justify-between items-center p-3 border border-gh-border-default rounded-lg hover:bg-gh-neutral-bg group">
       <Link to={`/repository/${encodeURIComponent(repository.full_name)}`} className="flex-1 min-w-0">
-        <div className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+        <div className="font-semibold text-gh-text-primary group-hover:text-gh-blue transition-colors">
           {repository.full_name}
         </div>
-        <div className="text-sm text-gray-600 mt-1">
+        <div className="text-sm text-gh-text-secondary mt-1">
           {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
         </div>
       </Link>
@@ -417,7 +418,8 @@ function RepositoryItem({ repository, onRetry }: RepositoryItemProps) {
               e.preventDefault();
               onRetry();
             }}
-            className="text-sm px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+            className="text-sm px-3 py-1.5 bg-gh-warning text-white rounded-md font-medium hover:bg-gh-warning-emphasis"
+            title={isDryRunFailed ? 'Re-run dry run or view details to start migration' : 'Retry migration'}
           >
             Retry
           </button>
