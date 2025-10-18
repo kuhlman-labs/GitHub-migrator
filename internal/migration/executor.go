@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -261,6 +262,23 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	// Phase 1: Pre-migration validation
 	e.logger.Info("Running pre-migration validation", "repo", repo.FullName)
 	e.logOperation(ctx, repo, historyID, "INFO", "pre_migration", "validate", "Running pre-migration validation", nil)
+
+	// Run discovery on source repository for production migrations to get latest stats
+	if !dryRun {
+		e.logger.Info("Running pre-migration discovery to refresh repository data", "repo", repo.FullName)
+		e.logOperation(ctx, repo, historyID, "INFO", "pre_migration", "discovery", "Refreshing repository characteristics", nil)
+
+		if err := e.runPreMigrationDiscovery(ctx, repo); err != nil {
+			// Log warning but don't fail migration
+			errMsg := err.Error()
+			e.logger.Warn("Pre-migration discovery failed, continuing with existing data",
+				"repo", repo.FullName,
+				"error", err)
+			e.logOperation(ctx, repo, historyID, "WARN", "pre_migration", "discovery", "Pre-migration discovery failed", &errMsg)
+		} else {
+			e.logOperation(ctx, repo, historyID, "INFO", "pre_migration", "discovery", "Repository data refreshed successfully", nil)
+		}
+	}
 
 	if err := e.validatePreMigration(ctx, repo); err != nil {
 		errMsg := err.Error()
@@ -875,49 +893,72 @@ func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Reposi
 	return nil
 }
 
-// validatePostMigration performs post-migration validation
+// validatePostMigration performs comprehensive post-migration validation
 func (e *Executor) validatePostMigration(ctx context.Context, repo *models.Repository) error {
 	if repo.DestinationFullName == nil {
 		return fmt.Errorf("destination repository not set")
 	}
 
-	// Get destination organization and repo name
-	destOrg := e.getDestinationOrg(repo)
-	destRepoName := e.getDestinationRepoName(repo)
+	e.logger.Info("Running post-migration validation with characteristic comparison",
+		"repo", repo.FullName,
+		"destination", *repo.DestinationFullName)
 
-	// Get destination repository
-	var destRepo *ghapi.Repository
-	var err error
-
-	_, err = e.destClient.DoWithRetry(ctx, "GetRepository", func(ctx context.Context) (*ghapi.Response, error) {
-		var resp *ghapi.Response
-		destRepo, resp, err = e.destClient.REST().Repositories.Get(ctx, destOrg, destRepoName)
-		return resp, err
-	})
-
+	// Profile the destination repository (API-only, no cloning)
+	destRepo, err := e.profileDestinationRepository(ctx, *repo.DestinationFullName)
 	if err != nil {
-		return fmt.Errorf("destination repository not found: %w", err)
+		return fmt.Errorf("failed to profile destination repository: %w", err)
 	}
 
-	// Verify basic properties
-	var warnings []string
+	// Compare source and destination characteristics
+	mismatches, hasCriticalMismatches := e.compareRepositoryCharacteristics(repo, destRepo)
 
-	// Check default branch
-	if repo.DefaultBranch != nil && destRepo.GetDefaultBranch() != *repo.DefaultBranch {
-		warnings = append(warnings, fmt.Sprintf("Default branch mismatch: expected %s, got %s",
-			*repo.DefaultBranch, destRepo.GetDefaultBranch()))
-	}
+	// Generate validation report
+	validationStatus := "passed"
+	var validationDetails *string
+	var destinationData *string
 
-	// Note: Branch and commit counts require additional API calls
-	// This is a simplified validation
+	if len(mismatches) > 0 {
+		validationStatus = "failed"
 
-	if len(warnings) > 0 {
-		e.logger.Warn("Post-migration validation warnings",
+		// Log all mismatches
+		e.logger.Warn("Post-migration validation found mismatches",
 			"repo", repo.FullName,
-			"warnings", warnings)
+			"mismatch_count", len(mismatches),
+			"critical", hasCriticalMismatches)
+
+		for _, mismatch := range mismatches {
+			e.logger.Warn("Validation mismatch",
+				"repo", repo.FullName,
+				"field", mismatch.Field,
+				"source", mismatch.SourceValue,
+				"destination", mismatch.DestValue,
+				"critical", mismatch.Critical)
+		}
+
+		// Generate JSON validation details
+		validationReport := e.generateValidationReport(mismatches)
+		validationDetails = &validationReport
+
+		// Store destination data for further analysis
+		destDataJSON := e.serializeDestinationData(destRepo)
+		destinationData = &destDataJSON
+	} else {
+		e.logger.Info("Post-migration validation passed - all characteristics match",
+			"repo", repo.FullName)
 	}
 
-	e.logger.Info("Post-migration validation passed", "repo", repo.FullName)
+	// Update validation fields in database
+	if err := e.storage.UpdateRepositoryValidation(ctx, repo.FullName, validationStatus, validationDetails, destinationData); err != nil {
+		e.logger.Error("Failed to update validation status", "error", err)
+		// Don't fail the migration due to database update error
+	}
+
+	// Update repository validation fields
+	repo.ValidationStatus = &validationStatus
+	repo.ValidationDetails = validationDetails
+	repo.DestinationData = destinationData
+
+	// Don't fail migration on validation warnings - just log them
 	return nil
 }
 
@@ -989,6 +1030,79 @@ func (e *Executor) logOperation(ctx context.Context, repo *models.Repository, hi
 	}
 }
 
+// runPreMigrationDiscovery refreshes repository characteristics before migration
+// This uses API-only calls to update basic repository information
+func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Repository) error {
+	e.logger.Info("Refreshing repository characteristics before migration", "repo", repo.FullName)
+
+	// Get repository from source API
+	var sourceRepo *ghapi.Repository
+	var err error
+
+	_, err = e.sourceClient.DoWithRetry(ctx, "GetRepository", func(ctx context.Context) (*ghapi.Response, error) {
+		var resp *ghapi.Response
+		sourceRepo, resp, err = e.sourceClient.REST().Repositories.Get(ctx, repo.Organization(), repo.Name())
+		return resp, err
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to get repository from source: %w", err)
+	}
+
+	// Update basic repository information from API
+	totalSize := int64(sourceRepo.GetSize()) * 1024 // Convert KB to bytes
+	repo.TotalSize = &totalSize
+
+	defaultBranch := sourceRepo.GetDefaultBranch()
+	repo.DefaultBranch = &defaultBranch
+
+	repo.HasWiki = sourceRepo.GetHasWiki()
+	repo.HasPages = sourceRepo.GetHasPages()
+	repo.IsArchived = sourceRepo.GetArchived()
+
+	// Update last push date
+	if sourceRepo.PushedAt != nil {
+		pushTime := sourceRepo.PushedAt.Time
+		repo.LastCommitDate = &pushTime
+	}
+
+	// Get branch count
+	branches, _, err := e.sourceClient.REST().Repositories.ListBranches(ctx, repo.Organization(), repo.Name(), nil)
+	if err == nil {
+		repo.BranchCount = len(branches)
+	}
+
+	// Get last commit SHA from default branch
+	if defaultBranch != "" {
+		branch, _, err := e.sourceClient.REST().Repositories.GetBranch(ctx, repo.Organization(), repo.Name(), defaultBranch, 0)
+		if err == nil && branch != nil && branch.Commit != nil {
+			sha := branch.Commit.GetSHA()
+			repo.LastCommitSHA = &sha
+		}
+	}
+
+	// Get tag count
+	tags, _, err := e.sourceClient.REST().Repositories.ListTags(ctx, repo.Organization(), repo.Name(), nil)
+	if err == nil {
+		repo.TagCount = len(tags)
+	}
+
+	// Update repository in database
+	repo.UpdatedAt = time.Now()
+	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
+		e.logger.Warn("Failed to update repository after discovery", "error", err)
+		// Don't fail - just log the warning
+	}
+
+	e.logger.Info("Pre-migration discovery complete",
+		"repo", repo.FullName,
+		"total_size", repo.TotalSize,
+		"branches", repo.BranchCount,
+		"tags", repo.TagCount)
+
+	return nil
+}
+
 // unlockSourceRepository unlocks the source repository if it was locked during migration
 func (e *Executor) unlockSourceRepository(ctx context.Context, repo *models.Repository) {
 	if repo.SourceMigrationID == nil {
@@ -1010,4 +1124,279 @@ func (e *Executor) unlockSourceRepository(ctx context.Context, repo *models.Repo
 	} else {
 		e.logger.Info("Successfully unlocked source repository", "repo", repo.FullName)
 	}
+}
+
+// ValidationMismatch represents a mismatch between source and destination repository characteristics
+type ValidationMismatch struct {
+	Field       string
+	SourceValue interface{}
+	DestValue   interface{}
+	Critical    bool // Whether this mismatch is critical (affects migration success)
+}
+
+// profileDestinationRepository profiles a destination repository using API-only metrics
+func (e *Executor) profileDestinationRepository(ctx context.Context, fullName string) (*models.Repository, error) {
+	// Parse full name
+	parts := strings.Split(fullName, "/")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid repository full name: %s", fullName)
+	}
+	org := parts[0]
+	name := parts[1]
+
+	// Get repository details from destination
+	var ghRepo *ghapi.Repository
+	var err error
+
+	_, err = e.destClient.DoWithRetry(ctx, "GetRepository", func(ctx context.Context) (*ghapi.Response, error) {
+		var resp *ghapi.Response
+		ghRepo, resp, err = e.destClient.REST().Repositories.Get(ctx, org, name)
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get destination repository: %w", err)
+	}
+
+	// Create basic repository profile from GitHub API data
+	totalSize := int64(ghRepo.GetSize()) * 1024 // Convert KB to bytes
+	defaultBranch := ghRepo.GetDefaultBranch()
+	repo := &models.Repository{
+		FullName:      ghRepo.GetFullName(),
+		DefaultBranch: &defaultBranch,
+		TotalSize:     &totalSize,
+		HasWiki:       ghRepo.GetHasWiki(),
+		HasPages:      ghRepo.GetHasPages(),
+		IsArchived:    ghRepo.GetArchived(),
+	}
+
+	// Get branch count
+	branches, _, err := e.destClient.REST().Repositories.ListBranches(ctx, org, name, nil)
+	if err == nil {
+		repo.BranchCount = len(branches)
+	}
+
+	// Get last commit SHA from default branch
+	if defaultBranch != "" {
+		branch, _, err := e.destClient.REST().Repositories.GetBranch(ctx, org, name, defaultBranch, 0)
+		if err == nil && branch != nil && branch.Commit != nil {
+			sha := branch.Commit.GetSHA()
+			repo.LastCommitSHA = &sha
+		}
+	}
+
+	// Get commit count (approximation from contributors API)
+	contributors, _, err := e.destClient.REST().Repositories.ListContributors(ctx, org, name, nil)
+	if err == nil {
+		totalCommits := 0
+		for _, contributor := range contributors {
+			totalCommits += contributor.GetContributions()
+		}
+		repo.CommitCount = totalCommits
+	}
+
+	// Get tag count
+	tags, _, err := e.destClient.REST().Repositories.ListTags(ctx, org, name, nil)
+	if err == nil {
+		repo.TagCount = len(tags)
+	}
+
+	// Get issue and PR counts
+	// Note: This is a simplified approach
+	issues, _, err := e.destClient.REST().Issues.ListByRepo(ctx, org, name, &ghapi.IssueListByRepoOptions{
+		State:       "all",
+		ListOptions: ghapi.ListOptions{PerPage: 1},
+	})
+	if err == nil {
+		// Count issues (excluding PRs)
+		for _, issue := range issues {
+			if issue.PullRequestLinks == nil {
+				repo.IssueCount++
+			} else {
+				repo.PullRequestCount++
+			}
+		}
+	}
+
+	return repo, nil
+}
+
+// compareRepositoryCharacteristics compares source and destination repository characteristics
+func (e *Executor) compareRepositoryCharacteristics(source, dest *models.Repository) ([]ValidationMismatch, bool) {
+	var mismatches []ValidationMismatch
+	hasCritical := false
+
+	// Compare critical Git properties
+	if source.DefaultBranch != nil && dest.DefaultBranch != nil && *source.DefaultBranch != *dest.DefaultBranch {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "default_branch",
+			SourceValue: *source.DefaultBranch,
+			DestValue:   *dest.DefaultBranch,
+			Critical:    true,
+		})
+		hasCritical = true
+	}
+
+	if source.CommitCount != dest.CommitCount {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "commit_count",
+			SourceValue: source.CommitCount,
+			DestValue:   dest.CommitCount,
+			Critical:    true,
+		})
+		hasCritical = true
+	}
+
+	if source.BranchCount != dest.BranchCount {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "branch_count",
+			SourceValue: source.BranchCount,
+			DestValue:   dest.BranchCount,
+			Critical:    true,
+		})
+		hasCritical = true
+	}
+
+	if source.TagCount != dest.TagCount {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "tag_count",
+			SourceValue: source.TagCount,
+			DestValue:   dest.TagCount,
+			Critical:    false,
+		})
+	}
+
+	// Compare last commit SHA if available
+	if source.LastCommitSHA != nil && dest.LastCommitSHA != nil && *source.LastCommitSHA != *dest.LastCommitSHA {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "last_commit_sha",
+			SourceValue: *source.LastCommitSHA,
+			DestValue:   *dest.LastCommitSHA,
+			Critical:    true,
+		})
+		hasCritical = true
+	}
+
+	// Compare GitHub features (non-critical)
+	if source.HasWiki != dest.HasWiki {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "has_wiki",
+			SourceValue: source.HasWiki,
+			DestValue:   dest.HasWiki,
+			Critical:    false,
+		})
+	}
+
+	if source.HasPages != dest.HasPages {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "has_pages",
+			SourceValue: source.HasPages,
+			DestValue:   dest.HasPages,
+			Critical:    false,
+		})
+	}
+
+	if source.HasDiscussions != dest.HasDiscussions {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "has_discussions",
+			SourceValue: source.HasDiscussions,
+			DestValue:   dest.HasDiscussions,
+			Critical:    false,
+		})
+	}
+
+	if source.HasActions != dest.HasActions {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "has_actions",
+			SourceValue: source.HasActions,
+			DestValue:   dest.HasActions,
+			Critical:    false,
+		})
+	}
+
+	if source.BranchProtections != dest.BranchProtections {
+		mismatches = append(mismatches, ValidationMismatch{
+			Field:       "branch_protections",
+			SourceValue: source.BranchProtections,
+			DestValue:   dest.BranchProtections,
+			Critical:    false,
+		})
+	}
+
+	return mismatches, hasCritical
+}
+
+// generateValidationReport generates a JSON validation report from mismatches
+func (e *Executor) generateValidationReport(mismatches []ValidationMismatch) string {
+	type Report struct {
+		TotalMismatches    int                  `json:"total_mismatches"`
+		CriticalMismatches int                  `json:"critical_mismatches"`
+		Mismatches         []ValidationMismatch `json:"mismatches"`
+	}
+
+	criticalCount := 0
+	for _, m := range mismatches {
+		if m.Critical {
+			criticalCount++
+		}
+	}
+
+	report := Report{
+		TotalMismatches:    len(mismatches),
+		CriticalMismatches: criticalCount,
+		Mismatches:         mismatches,
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(report)
+	if err != nil {
+		e.logger.Error("Failed to marshal validation report", "error", err)
+		return fmt.Sprintf(`{"error": "failed to generate report: %s"}`, err.Error())
+	}
+
+	return string(data)
+}
+
+// serializeDestinationData serializes destination repository data to JSON
+func (e *Executor) serializeDestinationData(dest *models.Repository) string {
+	// Create a simplified struct with key fields
+	type DestData struct {
+		DefaultBranch     *string `json:"default_branch,omitempty"`
+		BranchCount       int     `json:"branch_count"`
+		CommitCount       int     `json:"commit_count"`
+		TagCount          int     `json:"tag_count"`
+		LastCommitSHA     *string `json:"last_commit_sha,omitempty"`
+		TotalSize         *int64  `json:"total_size,omitempty"`
+		HasWiki           bool    `json:"has_wiki"`
+		HasPages          bool    `json:"has_pages"`
+		HasDiscussions    bool    `json:"has_discussions"`
+		HasActions        bool    `json:"has_actions"`
+		BranchProtections int     `json:"branch_protections"`
+		IssueCount        int     `json:"issue_count"`
+		PullRequestCount  int     `json:"pull_request_count"`
+	}
+
+	data := DestData{
+		DefaultBranch:     dest.DefaultBranch,
+		BranchCount:       dest.BranchCount,
+		CommitCount:       dest.CommitCount,
+		TagCount:          dest.TagCount,
+		LastCommitSHA:     dest.LastCommitSHA,
+		TotalSize:         dest.TotalSize,
+		HasWiki:           dest.HasWiki,
+		HasPages:          dest.HasPages,
+		HasDiscussions:    dest.HasDiscussions,
+		HasActions:        dest.HasActions,
+		BranchProtections: dest.BranchProtections,
+		IssueCount:        dest.IssueCount,
+		PullRequestCount:  dest.PullRequestCount,
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		e.logger.Error("Failed to serialize destination data", "error", err)
+		return fmt.Sprintf(`{"error": "failed to serialize: %s"}`, err.Error())
+	}
+
+	return string(jsonData)
 }

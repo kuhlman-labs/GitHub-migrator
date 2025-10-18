@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -184,6 +185,91 @@ func (c *Collector) worker(ctx context.Context, wg *sync.WaitGroup, jobs <-chan 
 			errors <- err
 		}
 	}
+}
+
+// ProfileDestinationRepository profiles a destination repository using API-only metrics (no cloning)
+// This is used for post-migration validation to compare with source repository
+func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName string) (*models.Repository, error) {
+	c.logger.Debug("Profiling destination repository (API-only)", "repo", fullName)
+
+	// Parse full name
+	parts := strings.Split(fullName, "/")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid repository full name: %s", fullName)
+	}
+	org := parts[0]
+	name := parts[1]
+
+	// Get repository details from destination
+	ghRepo, _, err := c.client.REST().Repositories.Get(ctx, org, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get destination repository: %w", err)
+	}
+
+	// Create basic repository profile from GitHub API data
+	totalSize := int64(ghRepo.GetSize()) * 1024 // Convert KB to bytes
+	defaultBranch := ghRepo.GetDefaultBranch()
+	repo := &models.Repository{
+		FullName:      ghRepo.GetFullName(),
+		Source:        "ghec", // Destination is GHEC
+		SourceURL:     ghRepo.GetHTMLURL(),
+		TotalSize:     &totalSize,
+		DefaultBranch: &defaultBranch,
+		IsArchived:    ghRepo.GetArchived(),
+		HasWiki:       ghRepo.GetHasWiki(),
+		HasPages:      ghRepo.GetHasPages(),
+		Status:        string(models.StatusComplete),
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	// Extract last push date
+	if ghRepo.PushedAt != nil {
+		pushTime := ghRepo.PushedAt.Time
+		repo.LastCommitDate = &pushTime
+	}
+
+	// Get branch count using git API
+	branches, _, err := c.client.REST().Repositories.ListBranches(ctx, org, name, nil)
+	if err == nil {
+		repo.BranchCount = len(branches)
+	}
+
+	// Get last commit SHA from default branch
+	if defaultBranch != "" {
+		branch, _, err := c.client.REST().Repositories.GetBranch(ctx, org, name, defaultBranch, 0)
+		if err == nil && branch != nil && branch.Commit != nil {
+			sha := branch.Commit.GetSHA()
+			repo.LastCommitSHA = &sha
+		}
+	}
+
+	// Get commit count (approximation from contributors API)
+	contributors, _, err := c.client.REST().Repositories.ListContributors(ctx, org, name, nil)
+	if err == nil {
+		totalCommits := 0
+		for _, contributor := range contributors {
+			totalCommits += contributor.GetContributions()
+		}
+		repo.CommitCount = totalCommits
+	}
+
+	// Profile GitHub features via API (no clone needed)
+	profiler := NewProfiler(c.client, c.logger)
+	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
+		c.logger.Warn("Failed to profile destination features",
+			"repo", repo.FullName,
+			"error", err)
+	}
+
+	c.logger.Info("Destination repository profiled",
+		"repo", repo.FullName,
+		"size", repo.TotalSize,
+		"commits", repo.CommitCount,
+		"branches", repo.BranchCount,
+		"tags", repo.TagCount)
+
+	return repo, nil
 }
 
 // ProfileRepository profiles a single repository with both Git and GitHub features

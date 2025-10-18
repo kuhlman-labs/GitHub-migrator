@@ -105,7 +105,8 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, discovered_at, updated_at, migrated_at
+			   destination_full_name, validation_status, validation_details, 
+			   destination_data, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE full_name = ?
 	`
@@ -126,6 +127,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.OpenIssueCount, &repo.OpenPRCount,
 		&repo.Status, &repo.BatchID, &repo.Priority,
 		&repo.DestinationURL, &repo.DestinationFullName,
+		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 	)
 
@@ -345,7 +347,8 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, discovered_at, updated_at, migrated_at
+			   destination_full_name, validation_status, validation_details, 
+			   destination_data, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE 1=1
 	`
@@ -395,6 +398,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.OpenIssueCount, &repo.OpenPRCount,
 			&repo.Status, &repo.BatchID, &repo.Priority,
 			&repo.DestinationURL, &repo.DestinationFullName,
+			&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 		)
 		if err != nil {
@@ -580,7 +584,8 @@ func (d *Database) GetRepositoriesByIDs(ctx context.Context, ids []int64) ([]*mo
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, discovered_at, updated_at, migrated_at
+			   destination_full_name, validation_status, validation_details, 
+			   destination_data, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -621,7 +626,8 @@ func (d *Database) GetRepositoriesByNames(ctx context.Context, names []string) (
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, discovered_at, updated_at, migrated_at
+			   destination_full_name, validation_status, validation_details, 
+			   destination_data, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE full_name IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -650,7 +656,8 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, discovered_at, updated_at, migrated_at
+			   destination_full_name, validation_status, validation_details, 
+			   destination_data, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE id = ?
 	`
@@ -671,6 +678,7 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 		&repo.OpenIssueCount, &repo.OpenPRCount,
 		&repo.Status, &repo.BatchID, &repo.Priority,
 		&repo.DestinationURL, &repo.DestinationFullName,
+		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 	)
 
@@ -880,6 +888,7 @@ func (d *Database) scanRepositories(rows *sql.Rows) ([]*models.Repository, error
 			&repo.OpenIssueCount, &repo.OpenPRCount,
 			&repo.Status, &repo.BatchID, &repo.Priority,
 			&repo.DestinationURL, &repo.DestinationFullName,
+			&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan repository: %w", err)
@@ -1783,6 +1792,25 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, batchFilter
 	}
 
 	return stats, rows.Err()
+}
+
+// UpdateRepositoryValidation updates the validation fields for a repository
+func (d *Database) UpdateRepositoryValidation(ctx context.Context, fullName string, validationStatus string, validationDetails, destinationData *string) error {
+	query := `
+		UPDATE repositories 
+		SET validation_status = ?, 
+		    validation_details = ?, 
+		    destination_data = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE full_name = ?
+	`
+
+	_, err := d.db.ExecContext(ctx, query, validationStatus, validationDetails, destinationData, fullName)
+	if err != nil {
+		return fmt.Errorf("failed to update repository validation: %w", err)
+	}
+
+	return nil
 }
 
 // GetMigrationCompletionStatsByOrgFiltered returns migration completion stats with batch filter
