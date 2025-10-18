@@ -1,5 +1,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import { ComplexityDistribution } from '../../types';
+import { getRepositoriesUrl } from '../../utils/filters';
 
 interface ComplexityChartProps {
   data: ComplexityDistribution[];
@@ -20,6 +22,8 @@ const COMPLEXITY_LABELS: Record<string, string> = {
 };
 
 export function ComplexityChart({ data }: ComplexityChartProps) {
+  const navigate = useNavigate();
+
   if (!data || data.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6">
@@ -37,11 +41,18 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
     fill: COMPLEXITY_COLORS[item.category] || '#9CA3AF',
   }));
 
+  const handleBarClick = (entry: any) => {
+    if (entry && entry.category) {
+      const url = getRepositoriesUrl({ complexity: [entry.category] });
+      navigate(url);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <h2 className="text-lg font-medium text-gray-900 mb-4">Repository Complexity Distribution</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Based on size, LFS, submodules, large files, and branch protections
+        Based on size, LFS, submodules, large files, and branch protections. Click bars to view repositories.
       </p>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={chartData}>
@@ -50,8 +61,14 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
           <YAxis />
           <Tooltip 
             formatter={(value: number) => [`${value} repos`, 'Count']}
+            cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }}
           />
-          <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+          <Bar 
+            dataKey="count" 
+            radius={[8, 8, 0, 0]}
+            onClick={handleBarClick}
+            cursor="pointer"
+          >
             {chartData.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.fill} />
             ))}

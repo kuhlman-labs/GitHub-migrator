@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Dashboard } from './components/Dashboard';
 import { OrganizationDetail } from './components/OrganizationDetail';
 import { RepositoryDetail } from './components/RepositoryDetail';
+import { Repositories } from './components/Repositories';
 import { Analytics } from './components/Analytics';
 import { BatchManagement } from './components/BatchManagement';
 import { BatchBuilderPage } from './components/BatchManagement/BatchBuilderPage';
@@ -38,6 +39,11 @@ function App() {
           <Route path="/analytics" element={
             <main className="container mx-auto px-4 py-8">
               <Analytics />
+            </main>
+          } />
+          <Route path="/repositories" element={
+            <main className="container mx-auto px-4 py-8">
+              <Repositories />
             </main>
           } />
           <Route path="/batches" element={

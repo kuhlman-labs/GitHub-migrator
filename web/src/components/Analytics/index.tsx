@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -8,6 +9,7 @@ import { FilterBar } from './FilterBar';
 import { MigrationTrendChart } from './MigrationTrendChart';
 import { ComplexityChart } from './ComplexityChart';
 import { KPICard } from './KPICard';
+import { getRepositoriesUrl } from '../../utils/filters';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#656D76',
@@ -19,6 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function Analytics() {
+  const navigate = useNavigate();
   const [selectedOrganization, setSelectedOrganization] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('');
 
@@ -108,6 +111,7 @@ export function Analytics() {
             value={highComplexityCount}
             color="yellow"
             subtitle={`${analytics.total_repositories > 0 ? Math.round((highComplexityCount / analytics.total_repositories) * 100) : 0}% of total`}
+            onClick={() => navigate(getRepositoriesUrl({ complexity: ['high', 'very_high'] }))}
           />
           <StatCard
             title="Features Detected"
@@ -202,17 +206,68 @@ export function Analytics() {
           {analytics.feature_stats && (
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
+              <p className="text-sm text-gray-600 mb-4">Click on any feature to view repositories with that feature</p>
               <div className="space-y-3">
-                <FeatureStat label="Archived" count={analytics.feature_stats.is_archived} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="LFS" count={analytics.feature_stats.has_lfs} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="Submodules" count={analytics.feature_stats.has_submodules} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="Large Files (>100MB)" count={analytics.feature_stats.has_large_files} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="GitHub Actions" count={analytics.feature_stats.has_actions} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="Wikis" count={analytics.feature_stats.has_wiki} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="Pages" count={analytics.feature_stats.has_pages} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="Discussions" count={analytics.feature_stats.has_discussions} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="Projects" count={analytics.feature_stats.has_projects} total={analytics.feature_stats.total_repositories} />
-                <FeatureStat label="Branch Protections" count={analytics.feature_stats.has_branch_protections} total={analytics.feature_stats.total_repositories} />
+                <FeatureStat 
+                  label="Archived" 
+                  count={analytics.feature_stats.is_archived} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ is_archived: true }))}
+                />
+                <FeatureStat 
+                  label="LFS" 
+                  count={analytics.feature_stats.has_lfs} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_lfs: true }))}
+                />
+                <FeatureStat 
+                  label="Submodules" 
+                  count={analytics.feature_stats.has_submodules} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_submodules: true }))}
+                />
+                <FeatureStat 
+                  label="Large Files (>100MB)" 
+                  count={analytics.feature_stats.has_large_files} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_large_files: true }))}
+                />
+                <FeatureStat 
+                  label="GitHub Actions" 
+                  count={analytics.feature_stats.has_actions} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_actions: true }))}
+                />
+                <FeatureStat 
+                  label="Wikis" 
+                  count={analytics.feature_stats.has_wiki} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_wiki: true }))}
+                />
+                <FeatureStat 
+                  label="Pages" 
+                  count={analytics.feature_stats.has_pages} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_pages: true }))}
+                />
+                <FeatureStat 
+                  label="Discussions" 
+                  count={analytics.feature_stats.has_discussions} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_discussions: true }))}
+                />
+                <FeatureStat 
+                  label="Projects" 
+                  count={analytics.feature_stats.has_projects} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_projects: true }))}
+                />
+                <FeatureStat 
+                  label="Branch Protections" 
+                  count={analytics.feature_stats.has_branch_protections} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_branch_protections: true }))}
+                />
               </div>
             </div>
           )}
@@ -474,16 +529,41 @@ export function Analytics() {
   );
 }
 
-function FeatureStat({ label, count, total }: { label: string; count: number; total: number }) {
+function FeatureStat({ label, count, total, onClick }: { label: string; count: number; total: number; onClick?: () => void }) {
   const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
   
-  return (
-    <div className="flex items-center justify-between">
+  const content = (
+    <>
       <span className="text-sm text-gray-700">{label}</span>
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-900">{count}</span>
         <span className="text-xs text-gray-500">({percentage}%)</span>
       </div>
+    </>
+  );
+
+  if (onClick && count > 0) {
+    return (
+      <button
+        onClick={onClick}
+        className="flex items-center justify-between w-full px-2 py-1 -mx-2 rounded hover:bg-gh-info-bg transition-colors cursor-pointer group"
+      >
+        {content}
+        <svg 
+          className="w-4 h-4 text-gh-text-secondary opacity-0 group-hover:opacity-100 transition-opacity ml-2" 
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between">
+      {content}
     </div>
   );
 }
@@ -493,9 +573,10 @@ interface StatCardProps {
   value: number;
   color: 'blue' | 'green' | 'red' | 'yellow';
   subtitle?: string;
+  onClick?: () => void;
 }
 
-function StatCard({ title, value, color, subtitle }: StatCardProps) {
+function StatCard({ title, value, color, subtitle, onClick }: StatCardProps) {
   const colorClasses = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
@@ -503,8 +584,34 @@ function StatCard({ title, value, color, subtitle }: StatCardProps) {
     yellow: 'bg-yellow-50 text-yellow-600',
   };
 
+  const isClickable = !!onClick;
+  const baseClasses = "bg-white rounded-lg shadow-sm p-6 transition-all";
+  const clickableClasses = isClickable 
+    ? "cursor-pointer hover:shadow-lg hover:border-2 hover:border-blue-500" 
+    : "";
+
+  const handleClick = () => {
+    if (onClick) {
+      onClick();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6">
+    <div 
+      className={`${baseClasses} ${clickableClasses}`}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      aria-label={isClickable ? `View repositories: ${title}` : undefined}
+    >
       <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
       <div className={`text-3xl font-light mb-1 ${colorClasses[color]}`}>
         {value}

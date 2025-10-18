@@ -5,9 +5,10 @@ interface KPICardProps {
   color?: 'blue' | 'green' | 'purple' | 'yellow';
   icon?: React.ReactNode;
   tooltip?: string;
+  onClick?: () => void;
 }
 
-export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip }: KPICardProps) {
+export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip, onClick }: KPICardProps) {
   const colorClasses = {
     blue: 'text-gh-blue',
     green: 'text-gh-success',
@@ -22,8 +23,34 @@ export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip 
     yellow: 'bg-gh-warning-bg',
   };
 
+  const isClickable = !!onClick;
+  const baseClasses = "bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 relative group transition-all";
+  const clickableClasses = isClickable 
+    ? "cursor-pointer hover:border-gh-blue hover:shadow-lg" 
+    : "hover:border-gh-border-hover";
+
+  const handleClick = () => {
+    if (onClick) {
+      onClick();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
-    <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 relative group hover:border-gh-border-hover transition-colors">
+    <div 
+      className={`${baseClasses} ${clickableClasses}`}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      aria-label={isClickable ? `View repositories: ${title}` : undefined}
+    >
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <h3 className="text-xs font-semibold text-gh-text-secondary mb-2 uppercase tracking-wide">{title}</h3>

@@ -210,10 +210,16 @@ export interface RepositoryFilters {
   max_size?: number;
   has_lfs?: boolean;
   has_submodules?: boolean;
+  has_large_files?: boolean;
   has_actions?: boolean;
   has_wiki?: boolean;
   has_pages?: boolean;
+  has_discussions?: boolean;
+  has_projects?: boolean;
+  has_branch_protections?: boolean;
   is_archived?: boolean;
+  complexity?: string | string[];
+  size_category?: string | string[];
   search?: string;
   sort_by?: 'name' | 'size' | 'org' | 'updated';
   available_for_batch?: boolean;
