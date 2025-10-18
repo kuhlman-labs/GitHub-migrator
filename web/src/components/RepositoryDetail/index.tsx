@@ -293,7 +293,7 @@ export function RepositoryDetail() {
                         <button
                           onClick={handleSaveDestination}
                           disabled={updateRepositoryMutation.isPending}
-                          className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                          className="px-3 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50"
                         >
                           {updateRepositoryMutation.isPending ? 'Saving...' : 'Save'}
                         </button>
@@ -368,7 +368,7 @@ export function RepositoryDetail() {
                     <button
                       onClick={handleAssignToBatch}
                       disabled={!selectedBatchId || assigningBatch}
-                      className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                      className="px-3 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50"
                     >
                       {assigningBatch ? 'Assigning...' : 'Assign to Batch'}
                     </button>
@@ -626,7 +626,7 @@ export function RepositoryDetail() {
 
                 <button
                   onClick={() => loadLogs()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                  className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
                 >
                   Refresh
                 </button>

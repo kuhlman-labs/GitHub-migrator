@@ -166,10 +166,10 @@ export function BatchManagement() {
   return (
     <div className="max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-light text-gray-900">Batch Management</h1>
+        <h1 className="text-2xl font-semibold text-gh-text-primary">Batch Management</h1>
         <button
           onClick={handleCreateBatch}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+          className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
         >
           Create New Batch
         </button>
@@ -178,12 +178,12 @@ export function BatchManagement() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Batch List */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Batches</h2>
+          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-4">
+            <h2 className="text-base font-semibold text-gh-text-primary mb-4">Batches</h2>
             {loading ? (
               <LoadingSpinner />
             ) : batches.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No batches found</div>
+              <div className="text-center py-8 text-gh-text-secondary">No batches found</div>
             ) : (
               <div className="space-y-2">
                 {batches.map((batch) => (
@@ -203,21 +203,21 @@ export function BatchManagement() {
         {/* Batch Detail */}
         <div className="lg:col-span-2">
           {selectedBatch ? (
-            <div className="bg-white rounded-lg shadow-sm p-6">
+            <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6">
               <div className="flex justify-between items-start mb-6">
                 <div className="flex-1">
-                  <h2 className="text-2xl font-medium text-gray-900">{selectedBatch.name}</h2>
+                  <h2 className="text-xl font-semibold text-gh-text-primary">{selectedBatch.name}</h2>
                   {selectedBatch.description && (
-                    <p className="text-gray-600 mt-1">{selectedBatch.description}</p>
+                    <p className="text-gh-text-secondary mt-1">{selectedBatch.description}</p>
                   )}
                   <div className="flex gap-3 mt-3">
                     <StatusBadge status={selectedBatch.status} />
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-gh-text-secondary">
                       {selectedBatch.repository_count} repositories
                     </span>
                   </div>
                   {selectedBatch.scheduled_at && (
-                    <div className="text-sm text-gray-600 mt-2">
+                    <div className="text-sm text-gh-text-secondary mt-2">
                       Scheduled: {formatDate(selectedBatch.scheduled_at)}
                     </div>
                   )}
@@ -228,13 +228,13 @@ export function BatchManagement() {
                     <>
                       <button
                         onClick={() => handleEditBatch(selectedBatch)}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
+                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
                       >
                         Edit Batch
                       </button>
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id)}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+                        className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
                       >
                         Start Migration
                       </button>
@@ -243,7 +243,7 @@ export function BatchManagement() {
                   {groupedRepos.failed.length > 0 && (
                     <button
                       onClick={handleRetryFailed}
-                      className="px-4 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700"
+                      className="px-4 py-1.5 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis"
                     >
                       Retry All Failed ({groupedRepos.failed.length})
                     </button>
@@ -253,16 +253,16 @@ export function BatchManagement() {
 
               {/* Progress Bar */}
               {progress && progress.total > 0 && (
-                <div className="mb-6 bg-gray-50 p-4 rounded-lg">
-                  <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <div className="mb-6 bg-gh-neutral-bg p-4 rounded-lg">
+                  <div className="flex justify-between text-sm text-gh-text-secondary mb-2">
                     <span>Progress</span>
                     <span>
                       {progress.completed} / {progress.total} ({progress.percentage}%)
                     </span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-gh-border-default rounded-full h-2">
                     <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      className="bg-gh-success h-2 rounded-full transition-all duration-300"
                       style={{ width: `${progress.percentage}%` }}
                     />
                   </div>

@@ -223,7 +223,7 @@ export function SelfServiceMigration() {
             <button
               type="submit"
               disabled={loading || !repoNames.trim()}
-              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 px-4 py-2 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? 'Processing...' : dryRun ? 'Start Dry Run' : 'Start Migration'}
             </button>

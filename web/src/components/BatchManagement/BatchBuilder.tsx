@@ -416,7 +416,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                 <button
                   onClick={() => handleSubmit(false)}
                   disabled={loading}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg disabled:opacity-50"
                 >
                   {loading ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
                 </button>
@@ -424,7 +424,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                   <button
                     onClick={() => handleSubmit(true)}
                     disabled={loading}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    className="flex-1 px-4 py-2 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50"
                   >
                     Create & Start
                   </button>

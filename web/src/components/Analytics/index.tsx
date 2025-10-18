@@ -349,7 +349,7 @@ export function Analytics() {
                           <div className="flex items-center gap-2">
                             <div className="flex-1 bg-gray-200 rounded-full h-2 min-w-[100px]">
                               <div
-                                className="bg-green-600 h-2 rounded-full"
+                                className="bg-gh-success h-2 rounded-full"
                                 style={{ width: `${completionPercentage}%` }}
                               />
                             </div>
