@@ -11,10 +11,10 @@ import { searchParamsToFilters, filtersToSearchParams } from '../../utils/filter
 
 // Complexity mapping for display
 const COMPLEXITY_LABELS: Record<string, string> = {
-  low: 'Low Complexity',
-  medium: 'Medium Complexity',
-  high: 'High Complexity',
-  very_high: 'Very High Complexity',
+  simple: 'Simple',
+  medium: 'Medium',
+  complex: 'Complex',
+  very_complex: 'Very Complex',
 };
 
 // Size category mapping

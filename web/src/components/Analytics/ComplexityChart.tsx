@@ -8,37 +8,31 @@ interface ComplexityChartProps {
 }
 
 const COMPLEXITY_COLORS: Record<string, string> = {
-  low: '#10B981',
+  simple: '#10B981',
   medium: '#F59E0B',
-  high: '#F97316',
-  very_high: '#EF4444',
+  complex: '#F97316',
+  very_complex: '#EF4444',
 };
 
 const COMPLEXITY_LABELS: Record<string, string> = {
-  low: 'Low',
+  simple: 'Simple',
   medium: 'Medium',
-  high: 'High',
-  very_high: 'Very High',
+  complex: 'Complex',
+  very_complex: 'Very Complex',
 };
 
 export function ComplexityChart({ data }: ComplexityChartProps) {
   const navigate = useNavigate();
 
-  if (!data || data.length === 0) {
-    return (
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Repository Complexity Distribution</h2>
-        <div className="h-[300px] flex items-center justify-center text-gray-500">
-          No complexity data available
-        </div>
-      </div>
-    );
-  }
-
-  const chartData = data.map(item => ({
-    ...item,
-    name: COMPLEXITY_LABELS[item.category] || item.category,
-    fill: COMPLEXITY_COLORS[item.category] || '#9CA3AF',
+  // Ensure all complexity levels are shown, even if they have 0 count
+  const allCategories = ['simple', 'medium', 'complex', 'very_complex'];
+  const dataMap = new Map((data || []).map(item => [item.category, item.count]));
+  
+  const chartData = allCategories.map(category => ({
+    category,
+    count: dataMap.get(category) || 0,
+    name: COMPLEXITY_LABELS[category] || category,
+    fill: COMPLEXITY_COLORS[category] || '#9CA3AF',
   }));
 
   const handleBarClick = (entry: any) => {

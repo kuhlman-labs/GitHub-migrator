@@ -10,16 +10,27 @@ interface RepositoryListItemProps {
 
 export function RepositoryListItem({ repository, selected, onToggle }: RepositoryListItemProps) {
   const getComplexityIndicator = () => {
-    let complexity = 0;
-    if (repository.has_lfs) complexity++;
-    if (repository.has_submodules) complexity++;
-    if (repository.has_actions) complexity++;
-    if (repository.branch_protections > 0) complexity++;
-    if (repository.branch_count > 10) complexity++;
+    // Calculate complexity score matching backend logic:
+    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (2) + branch_protections > 0 (1)
+    const MB100 = 100 * 1024 * 1024;
+    const GB1 = 1024 * 1024 * 1024;
+    const GB5 = 5 * 1024 * 1024 * 1024;
+    
+    let sizeTier = 0;
+    if (repository.total_size >= GB5) sizeTier = 3;
+    else if (repository.total_size >= GB1) sizeTier = 2;
+    else if (repository.total_size >= MB100) sizeTier = 1;
+    
+    let score = sizeTier * 3;
+    if (repository.has_lfs) score += 2;
+    if (repository.has_submodules) score += 2;
+    if (repository.has_large_files) score += 2;
+    if (repository.branch_protections > 0) score += 1;
 
-    if (complexity === 0) return { label: 'Simple', color: 'text-gh-success' };
-    if (complexity <= 2) return { label: 'Moderate', color: 'text-gh-warning' };
-    return { label: 'Complex', color: 'text-gh-danger' };
+    if (score <= 3) return { label: 'Simple', color: 'text-gh-success' };
+    if (score <= 6) return { label: 'Medium', color: 'text-gh-warning' };
+    if (score <= 9) return { label: 'Complex', color: 'text-gh-danger' };
+    return { label: 'Very Complex', color: 'text-gh-danger' };
   };
 
   const complexity = getComplexityIndicator();

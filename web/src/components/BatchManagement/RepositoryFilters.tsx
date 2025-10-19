@@ -75,11 +75,17 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
     let count = 0;
     if (filters.organization) count++;
     if (filters.min_size || filters.max_size) count++;
+    if (filters.size_category) count++;
+    if (filters.complexity) count++;
     if (filters.has_lfs) count++;
     if (filters.has_submodules) count++;
+    if (filters.has_large_files) count++;
     if (filters.has_actions) count++;
     if (filters.has_wiki) count++;
     if (filters.has_pages) count++;
+    if (filters.has_discussions) count++;
+    if (filters.has_projects) count++;
+    if (filters.has_branch_protections) count++;
     if (filters.is_archived !== undefined) count++;
     if (filters.sort_by && filters.sort_by !== 'name') count++;
     return count;
@@ -92,16 +98,12 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
         break;
       case 'simple':
         onChange({
-          has_lfs: false,
-          has_submodules: false,
-          has_actions: false,
-          is_archived: false,
+          complexity: ['simple'],
         });
         break;
       case 'complex':
         onChange({
-          ...filters,
-          has_lfs: true,
+          complexity: ['complex', 'very_complex'],
         });
         break;
     }
@@ -215,6 +217,55 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
       {showAdvanced && (
         <>
 
+          {/* Size Category */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Size Category</label>
+            <select
+              multiple
+              value={Array.isArray(filters.size_category) ? filters.size_category : (filters.size_category ? [filters.size_category] : [])}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions, option => option.value);
+                onChange({
+                  ...filters,
+                  size_category: selected.length > 0 ? selected : undefined,
+                });
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              size={5}
+            >
+              <option value="small">Small (&lt;100MB)</option>
+              <option value="medium">Medium (100MB-1GB)</option>
+              <option value="large">Large (1GB-5GB)</option>
+              <option value="very_large">Very Large (&gt;5GB)</option>
+              <option value="unknown">Unknown</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+          </div>
+
+          {/* Complexity */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Complexity</label>
+            <select
+              multiple
+              value={Array.isArray(filters.complexity) ? filters.complexity : (filters.complexity ? [filters.complexity] : [])}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions, option => option.value);
+                onChange({
+                  ...filters,
+                  complexity: selected.length > 0 ? selected : undefined,
+                });
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              size={4}
+            >
+              <option value="simple">Simple</option>
+              <option value="medium">Medium</option>
+              <option value="complex">Complex</option>
+              <option value="very_complex">Very Complex</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+          </div>
+
           {/* Size Range */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -273,6 +324,15 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={filters.has_large_files || false}
+                  onChange={(e) => onChange({ ...filters, has_large_files: e.target.checked ? true : undefined })}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Has Large Files (&gt;100MB)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
                   checked={filters.has_actions || false}
                   onChange={(e) => onChange({ ...filters, has_actions: e.target.checked ? true : undefined })}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -296,6 +356,42 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">Has Pages</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters.has_discussions || false}
+                  onChange={(e) => onChange({ ...filters, has_discussions: e.target.checked ? true : undefined })}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Has Discussions</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters.has_projects || false}
+                  onChange={(e) => onChange({ ...filters, has_projects: e.target.checked ? true : undefined })}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Has Projects</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters.has_branch_protections || false}
+                  onChange={(e) => onChange({ ...filters, has_branch_protections: e.target.checked ? true : undefined })}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Has Branch Protections</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters.is_archived || false}
+                  onChange={(e) => onChange({ ...filters, is_archived: e.target.checked ? true : undefined })}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Is Archived</span>
               </label>
             </div>
           </div>

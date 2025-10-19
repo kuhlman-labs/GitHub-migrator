@@ -69,7 +69,7 @@ export function Analytics() {
 
   // Calculate high complexity count
   const highComplexityCount = analytics.complexity_distribution
-    ?.filter(d => d.category === 'high' || d.category === 'very_high')
+    ?.filter(d => d.category === 'complex' || d.category === 'very_complex')
     .reduce((sum, d) => sum + d.count, 0) || 0;
 
   return (
@@ -111,7 +111,7 @@ export function Analytics() {
             value={highComplexityCount}
             color="yellow"
             subtitle={`${analytics.total_repositories > 0 ? Math.round((highComplexityCount / analytics.total_repositories) * 100) : 0}% of total`}
-            onClick={() => navigate(getRepositoriesUrl({ complexity: ['high', 'very_high'] }))}
+            onClick={() => navigate(getRepositoriesUrl({ complexity: ['complex', 'very_complex'] }))}
           />
           <StatCard
             title="Features Detected"

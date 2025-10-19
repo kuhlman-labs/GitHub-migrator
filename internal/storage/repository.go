@@ -330,10 +330,10 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 
 	// Complexity scoring (matching analytics calculation):
 	// Size score (0-3) * 3, plus feature scores
-	// low: score <= 3
+	// simple: score <= 3
 	// medium: score 4-6
-	// high: score 7-9
-	// very_high: score >= 10
+	// complex: score 7-9
+	// very_complex: score >= 10
 	//
 	// Scoring factors:
 	// - Size tier * 3: NULL/unknown(0), <100MB(0), 100MB-1GB(1*3=3), 1GB-5GB(2*3=6), >5GB(3*3=9)
@@ -375,16 +375,16 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 
 	for _, category := range categories {
 		switch category {
-		case "low":
+		case "simple":
 			conditions = append(conditions, fmt.Sprintf("(%s <= 3)", scoreCalc))
 			args = append(args, MB100, GB1, GB5)
 		case "medium":
 			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 4 AND 6)", scoreCalc))
 			args = append(args, MB100, GB1, GB5)
-		case "high":
+		case "complex":
 			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 7 AND 9)", scoreCalc))
 			args = append(args, MB100, GB1, GB5)
-		case "very_high":
+		case "very_complex":
 			conditions = append(conditions, fmt.Sprintf("(%s >= 10)", scoreCalc))
 			args = append(args, MB100, GB1, GB5)
 		}
@@ -1586,10 +1586,10 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 	query := `
 		SELECT 
 			CASE 
-				WHEN complexity_score <= 3 THEN 'low'
+				WHEN complexity_score <= 3 THEN 'simple'
 				WHEN complexity_score <= 6 THEN 'medium'
-				WHEN complexity_score <= 9 THEN 'high'
-				ELSE 'very_high'
+				WHEN complexity_score <= 9 THEN 'complex'
+				ELSE 'very_complex'
 			END as category,
 			COUNT(*) as count
 		FROM (
@@ -1613,10 +1613,10 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 		GROUP BY category
 		ORDER BY 
 			CASE category
-				WHEN 'low' THEN 1
+				WHEN 'simple' THEN 1
 				WHEN 'medium' THEN 2
-				WHEN 'high' THEN 3
-				WHEN 'very_high' THEN 4
+				WHEN 'complex' THEN 3
+				WHEN 'very_complex' THEN 4
 			END
 	`
 
