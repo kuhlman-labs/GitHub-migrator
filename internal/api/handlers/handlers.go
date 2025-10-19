@@ -630,6 +630,12 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// Parse optional request body
+	var req struct {
+		OnlyPending bool `json:"only_pending,omitempty"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
 	// Get batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
@@ -643,9 +649,10 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only allow dry run for "pending" batches
-	if batch.Status != "pending" {
-		h.sendError(w, http.StatusBadRequest, "Can only run dry run on batches with 'pending' status")
+	// Allow dry run for both "pending" and "ready" batches
+	// (You can re-run dry runs even on ready batches)
+	if batch.Status != "pending" && batch.Status != "ready" {
+		h.sendError(w, http.StatusBadRequest, "Can only run dry run on batches with 'pending' or 'ready' status")
 		return
 	}
 
@@ -671,10 +678,31 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dryRunIDs := make([]int64, 0, len(repos))
+	skippedCount := 0
+
 	for _, repo := range repos {
-		// Only queue repos that are in pending or dry_run_failed state
-		if repo.Status != string(models.StatusPending) && repo.Status != string(models.StatusDryRunFailed) {
-			continue
+		// If only_pending=true, only queue repos that need dry runs
+		if req.OnlyPending {
+			needsDryRun := repo.Status == string(models.StatusPending) ||
+				repo.Status == string(models.StatusDryRunFailed) ||
+				repo.Status == string(models.StatusMigrationFailed) ||
+				repo.Status == string(models.StatusRolledBack)
+
+			if !needsDryRun {
+				skippedCount++
+				continue
+			}
+		} else {
+			// If running dry run on all, skip repos in terminal or active migration states
+			if repo.Status == string(models.StatusComplete) ||
+				repo.Status == string(models.StatusQueuedForMigration) ||
+				repo.Status == string(models.StatusMigratingContent) ||
+				repo.Status == string(models.StatusArchiveGenerating) ||
+				repo.Status == string(models.StatusDryRunInProgress) ||
+				repo.Status == string(models.StatusDryRunQueued) {
+				skippedCount++
+				continue
+			}
 		}
 
 		repo.Status = string(models.StatusDryRunQueued)
@@ -688,8 +716,12 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 		dryRunIDs = append(dryRunIDs, repo.ID)
 	}
 
-	// Update batch status to ready (will be set after dry run completes successfully)
-	// For now, we keep it pending and will update after dry runs complete
+	if len(dryRunIDs) == 0 {
+		h.sendError(w, http.StatusBadRequest, fmt.Sprintf("No repositories to run dry run. %d repositories were skipped.", skippedCount))
+		return
+	}
+
+	// Update batch status to in_progress during dry run
 	batch.Status = statusInProgress
 	now := time.Now()
 	batch.StartedAt = &now
@@ -697,12 +729,19 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to update batch", "error", err)
 	}
 
+	message := fmt.Sprintf("Started dry run for %d repositories in batch '%s'", len(dryRunIDs), batch.Name)
+	if skippedCount > 0 {
+		message += fmt.Sprintf(" (%d repositories skipped)", skippedCount)
+	}
+
 	response := map[string]interface{}{
-		"batch_id":    batchID,
-		"batch_name":  batch.Name,
-		"dry_run_ids": dryRunIDs,
-		"count":       len(dryRunIDs),
-		"message":     fmt.Sprintf("Started dry run for %d repositories in batch '%s'", len(dryRunIDs), batch.Name),
+		"batch_id":      batchID,
+		"batch_name":    batch.Name,
+		"dry_run_ids":   dryRunIDs,
+		"count":         len(dryRunIDs),
+		"skipped_count": skippedCount,
+		"message":       message,
+		"only_pending":  req.OnlyPending,
 	}
 
 	h.sendJSON(w, http.StatusAccepted, response)

@@ -134,8 +134,10 @@ export const api = {
     return data;
   },
 
-  async dryRunBatch(id: number) {
-    const { data } = await client.post(`/batches/${id}/dry-run`);
+  async dryRunBatch(id: number, onlyPending?: boolean) {
+    const { data } = await client.post(`/batches/${id}/dry-run`, {
+      only_pending: onlyPending || false,
+    });
     return data;
   },
 

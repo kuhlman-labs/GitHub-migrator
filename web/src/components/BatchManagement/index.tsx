@@ -61,14 +61,15 @@ export function BatchManagement() {
     }
   };
 
-  const handleDryRunBatch = async (batchId: number) => {
-    if (!confirm('Run dry run for this batch? This will validate all repositories before migration.')) {
+  const handleDryRunBatch = async (batchId: number, onlyPending = false) => {
+    const actionType = onlyPending ? 'pending repositories' : 'all repositories';
+    if (!confirm(`Run dry run for ${actionType}? This will validate repositories before migration.`)) {
       return;
     }
 
     try {
-      await api.dryRunBatch(batchId);
-      alert('Dry run started successfully. Batch will move to "ready" status when complete.');
+      await api.dryRunBatch(batchId, onlyPending);
+      alert('Dry run started successfully. Batch will move to "ready" status when all dry runs complete.');
       await loadBatches();
       if (selectedBatch?.id === batchId) {
         await loadBatchRepositories(batchId);
@@ -170,6 +171,8 @@ export function BatchManagement() {
       in_progress: [],
       failed: [],
       pending: [],
+      needs_dry_run: [],
+      dry_run_complete: [],
     };
 
     repos.forEach((repo) => {
@@ -180,11 +183,24 @@ export function BatchManagement() {
       } else if (
         repo.status === 'queued_for_migration' ||
         repo.status === 'migrating_content' ||
-        repo.status === 'dry_run_in_progress'
+        repo.status === 'dry_run_in_progress' ||
+        repo.status === 'dry_run_queued'
       ) {
         groups.in_progress.push(repo);
+      } else if (repo.status === 'dry_run_complete') {
+        groups.dry_run_complete.push(repo);
       } else {
         groups.pending.push(repo);
+      }
+
+      // Track repos that need dry runs (pending, failed, or rolled back)
+      if (
+        repo.status === 'pending' ||
+        repo.status === 'dry_run_failed' ||
+        repo.status === 'migration_failed' ||
+        repo.status === 'rolled_back'
+      ) {
+        groups.needs_dry_run.push(repo);
       }
     });
 
@@ -266,12 +282,14 @@ export function BatchManagement() {
                   
                   {selectedBatch.status === 'pending' && (
                     <>
-                      <button
-                        onClick={() => handleDryRunBatch(selectedBatch.id)}
-                        className="px-4 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-                      >
-                        Run Dry Run
-                      </button>
+                      {groupedRepos.needs_dry_run.length > 0 && (
+                        <button
+                          onClick={() => handleDryRunBatch(selectedBatch.id, true)}
+                          className="px-4 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                        >
+                          Run Dry Run ({groupedRepos.needs_dry_run.length} repos)
+                        </button>
+                      )}
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id, true)}
                         className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
@@ -282,12 +300,30 @@ export function BatchManagement() {
                   )}
                   
                   {selectedBatch.status === 'ready' && (
-                    <button
-                      onClick={() => handleStartBatch(selectedBatch.id)}
-                      className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
-                    >
-                      Start Migration
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleStartBatch(selectedBatch.id)}
+                        className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
+                      >
+                        Start Migration
+                      </button>
+                      {groupedRepos.needs_dry_run.length > 0 ? (
+                        <button
+                          onClick={() => handleDryRunBatch(selectedBatch.id, true)}
+                          className="px-3 py-1.5 border border-blue-600 text-blue-600 rounded-md text-sm font-medium hover:bg-blue-50"
+                          title="Run dry run only for repositories that need it"
+                        >
+                          Dry Run Pending ({groupedRepos.needs_dry_run.length})
+                        </button>
+                      ) : null}
+                      <button
+                        onClick={() => handleDryRunBatch(selectedBatch.id, false)}
+                        className="px-3 py-1.5 border border-gh-border-default text-gh-text-secondary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        title="Re-run dry run for all repositories"
+                      >
+                        Re-run All Dry Runs
+                      </button>
+                    </>
                   )}
                   
                   {groupedRepos.failed.length > 0 && (

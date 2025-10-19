@@ -1153,10 +1153,14 @@ func (d *Database) AddRepositoriesToBatch(ctx context.Context, batchID int64, re
 		return fmt.Errorf("failed to add repositories to batch: %w", err)
 	}
 
-	// Update batch repository count
+	// Update batch repository count and status
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
 		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
+			return err
+		}
+		// Recalculate batch status based on repository dry run readiness
+		if err := d.UpdateBatchStatus(ctx, batchID); err != nil {
 			return err
 		}
 	}
@@ -1193,10 +1197,14 @@ func (d *Database) RemoveRepositoriesFromBatch(ctx context.Context, batchID int6
 		return fmt.Errorf("failed to remove repositories from batch: %w", err)
 	}
 
-	// Update batch repository count
+	// Update batch repository count and status
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
 		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
+			return err
+		}
+		// Recalculate batch status after removal
+		if err := d.UpdateBatchStatus(ctx, batchID); err != nil {
 			return err
 		}
 	}
@@ -1220,6 +1228,84 @@ func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64
 	}
 
 	return nil
+}
+
+// UpdateBatchStatus recalculates and updates the batch status based on repository statuses
+// Batch is 'ready' only if ALL repositories have completed dry runs
+// Batch is 'pending' if ANY repository hasn't completed a dry run
+func (d *Database) UpdateBatchStatus(ctx context.Context, batchID int64) error {
+	// Get all repositories in the batch
+	repos, err := d.ListRepositories(ctx, map[string]interface{}{
+		"batch_id": batchID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list batch repositories: %w", err)
+	}
+
+	// Get current batch to check if it's in a terminal or active state
+	batch, err := d.GetBatch(ctx, batchID)
+	if err != nil {
+		return fmt.Errorf("failed to get batch: %w", err)
+	}
+	if batch == nil {
+		return fmt.Errorf("batch not found")
+	}
+
+	// Don't update status if batch is in progress or completed
+	terminalStates := []string{"in_progress", "completed", "completed_with_errors", "failed", "cancelled"}
+	for _, state := range terminalStates {
+		if batch.Status == state {
+			// Batch is actively running or finished, don't change status
+			return nil
+		}
+	}
+
+	// Calculate new status based on repository dry run status
+	newStatus := calculateBatchReadiness(repos)
+
+	// Only update if status changed
+	if newStatus != batch.Status {
+		query := `UPDATE batches SET status = ? WHERE id = ?`
+		_, err := d.db.ExecContext(ctx, query, newStatus, batchID)
+		if err != nil {
+			return fmt.Errorf("failed to update batch status: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// calculateBatchReadiness determines if a batch should be 'ready' or 'pending'
+// based on the dry run status of its repositories
+func calculateBatchReadiness(repos []*models.Repository) string {
+	if len(repos) == 0 {
+		return "pending"
+	}
+
+	allDryRunComplete := true
+	for _, repo := range repos {
+		// Repository needs dry run if it's in any of these states
+		needsDryRun := repo.Status == string(models.StatusPending) ||
+			repo.Status == string(models.StatusDryRunFailed) ||
+			repo.Status == string(models.StatusMigrationFailed) ||
+			repo.Status == string(models.StatusRolledBack)
+
+		if needsDryRun {
+			allDryRunComplete = false
+			break
+		}
+
+		// If repo is not dry_run_complete, it also needs dry run
+		if repo.Status != string(models.StatusDryRunComplete) {
+			allDryRunComplete = false
+			break
+		}
+	}
+
+	if allDryRunComplete {
+		return "ready"
+	}
+	return "pending"
 }
 
 // OrganizationStats represents statistics for a single organization

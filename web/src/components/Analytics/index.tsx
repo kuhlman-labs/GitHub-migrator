@@ -156,7 +156,7 @@ export function Analytics() {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number, name: string, props: any) => [
+                    formatter={(value: number, _name: string, props: any) => [
                       `${value} repositories`,
                       props.payload.name
                     ]}
