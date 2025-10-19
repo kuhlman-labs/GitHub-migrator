@@ -11,7 +11,7 @@ interface RepositoryListItemProps {
 export function RepositoryListItem({ repository, selected, onToggle }: RepositoryListItemProps) {
   const getComplexityIndicator = () => {
     // Calculate complexity score matching backend logic:
-    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (2) + branch_protections > 0 (1)
+    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + branch_protections > 0 (1)
     const MB100 = 100 * 1024 * 1024;
     const GB1 = 1024 * 1024 * 1024;
     const GB5 = 5 * 1024 * 1024 * 1024;
@@ -24,7 +24,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
     let score = sizeTier * 3;
     if (repository.has_lfs) score += 2;
     if (repository.has_submodules) score += 2;
-    if (repository.has_large_files) score += 2;
+    if (repository.has_large_files) score += 4;
     if (repository.branch_protections > 0) score += 1;
 
     if (score <= 3) return { label: 'Simple', color: 'text-gh-success' };

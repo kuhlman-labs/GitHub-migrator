@@ -339,7 +339,7 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 	// - Size tier * 3: NULL/unknown(0), <100MB(0), 100MB-1GB(1*3=3), 1GB-5GB(2*3=6), >5GB(3*3=9)
 	// - has_lfs: +2
 	// - has_submodules: +2
-	// - has_large_files: +2
+	// - has_large_files: +4 (higher weight due to remediation requirements)
 	// - branch_protections > 0: +1
 
 	const (
@@ -369,7 +369,7 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 		END) * 3 +
 		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
 		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
-		CASE WHEN has_large_files = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
 		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END
 	)`
 
@@ -1581,7 +1581,7 @@ type ComplexityDistribution struct {
 //nolint:dupl // Similar query pattern but different business logic
 func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
 	// Calculate complexity score based on:
-	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 2), Branch protections (weight: 1)
+	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4), Branch protections (weight: 1)
 	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
 		SELECT 
@@ -1603,7 +1603,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 				END) * 3 +
 				(CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END) +
-				(CASE WHEN has_large_files = 1 THEN 2 ELSE 0 END) +
+				(CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END) +
 				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as complexity_score
 			FROM repositories r
 			WHERE 1=1

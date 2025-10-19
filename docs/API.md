@@ -130,7 +130,7 @@ List all repositories with optional filtering.
 - `min_size` (int) - Minimum size in bytes
 - `max_size` (int) - Maximum size in bytes
 - `size_category` (string) - Filter by size category: small (<100MB), medium (100MB-1GB), large (1GB-5GB), very_large (>5GB), unknown (supports comma-separated list)
-- `complexity` (string) - Filter by complexity level: simple (score ≤3), medium (score 4-6), complex (score 7-9), very_complex (score ≥10). Scoring: size tier (0-3) × 3 + LFS (2) + submodules (2) + large files (2) + branch protections (1) (supports comma-separated list)
+- `complexity` (string) - Filter by complexity level: simple (score ≤3), medium (score 4-6), complex (score 7-9), very_complex (score ≥10). Scoring: size tier (0-3) × 3 + LFS (2) + submodules (2) + large files (4) + branch protections (1) (supports comma-separated list)
 - `has_lfs` (bool) - Filter by LFS usage
 - `has_submodules` (bool) - Filter by submodule presence
 - `has_large_files` (bool) - Filter by large files (>100MB)
