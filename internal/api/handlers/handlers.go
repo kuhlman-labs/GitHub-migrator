@@ -911,6 +911,53 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, batch)
 }
 
+// DeleteBatch handles DELETE /api/v1/batches/{id}
+func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get existing batch
+	batch, err := h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Error("Failed to get batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		return
+	}
+
+	if batch == nil {
+		h.sendError(w, http.StatusNotFound, "Batch not found")
+		return
+	}
+
+	// Only allow deletion of batches not in progress
+	terminalStates := []string{"in_progress"}
+	for _, state := range terminalStates {
+		if batch.Status == state {
+			h.sendError(w, http.StatusBadRequest, "Cannot delete batch in 'in_progress' status")
+			return
+		}
+	}
+
+	// Delete the batch (this will also clear batch_id from all repositories)
+	if err := h.db.DeleteBatch(ctx, batchID); err != nil {
+		h.logger.Error("Failed to delete batch", "error", err, "batch_id", batchID)
+		h.sendError(w, http.StatusInternalServerError, "Failed to delete batch")
+		return
+	}
+
+	h.logger.Info("Batch deleted successfully", "batch_id", batchID, "batch_name", batch.Name)
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Batch deleted successfully",
+	})
+}
+
 // AddRepositoriesToBatch handles POST /api/v1/batches/{id}/repositories
 func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")

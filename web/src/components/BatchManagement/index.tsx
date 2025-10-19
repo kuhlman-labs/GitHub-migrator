@@ -155,6 +155,34 @@ export function BatchManagement() {
     navigate(`/batches/${batch.id}/edit`);
   };
 
+  const handleDeleteBatch = async (batch: Batch) => {
+    if (batch.status === 'in_progress') {
+      alert('Cannot delete a batch that is currently in progress.');
+      return;
+    }
+
+    const confirmMessage = batch.repository_count > 0
+      ? `Delete batch "${batch.name}"? This will remove ${batch.repository_count} repositories from the batch, making them available for other batches.`
+      : `Delete batch "${batch.name}"?`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      await api.deleteBatch(batch.id);
+      alert('Batch deleted successfully');
+      // Clear selection if we deleted the selected batch
+      if (selectedBatch?.id === batch.id) {
+        setSelectedBatch(null);
+      }
+      await loadBatches();
+    } catch (error: any) {
+      console.error('Failed to delete batch:', error);
+      alert(error.response?.data?.error || 'Failed to delete batch');
+    }
+  };
+
   const getBatchProgress = (_batch: Batch, repos: Repository[]) => {
     if (repos.length === 0) return { completed: 0, total: 0, percentage: 0 };
     
@@ -272,12 +300,20 @@ export function BatchManagement() {
 
                 <div className="flex gap-2">
                   {(selectedBatch.status === 'pending' || selectedBatch.status === 'ready') && (
-                    <button
-                      onClick={() => handleEditBatch(selectedBatch)}
-                      className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
-                    >
-                      Edit Batch
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleEditBatch(selectedBatch)}
+                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                      >
+                        Edit Batch
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBatch(selectedBatch)}
+                        className="px-4 py-1.5 border border-red-600 text-red-600 rounded-md text-sm font-medium hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </>
                   )}
                   
                   {selectedBatch.status === 'pending' && (

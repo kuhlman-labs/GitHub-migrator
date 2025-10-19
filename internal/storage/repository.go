@@ -1015,6 +1015,50 @@ func (d *Database) CreateBatch(ctx context.Context, batch *models.Batch) error {
 	return nil
 }
 
+// DeleteBatch deletes a batch and clears batch_id from all associated repositories
+func (d *Database) DeleteBatch(ctx context.Context, batchID int64) error {
+	// Start a transaction to ensure atomicity
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Clear batch_id from all repositories in this batch
+	clearReposQuery := `
+		UPDATE repositories 
+		SET batch_id = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE batch_id = ?
+	`
+	_, err = tx.ExecContext(ctx, clearReposQuery, batchID)
+	if err != nil {
+		return fmt.Errorf("failed to clear batch from repositories: %w", err)
+	}
+
+	// Delete the batch
+	deleteBatchQuery := `DELETE FROM batches WHERE id = ?`
+	result, err := tx.ExecContext(ctx, deleteBatchQuery, batchID)
+	if err != nil {
+		return fmt.Errorf("failed to delete batch: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("batch not found")
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 // scanRepositories is a helper to scan multiple repositories from rows
 // nolint:dupl // Expected duplication in scanning logic for consistency
 func (d *Database) scanRepositories(rows *sql.Rows) ([]*models.Repository, error) {

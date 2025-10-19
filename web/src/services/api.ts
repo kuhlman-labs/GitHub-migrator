@@ -113,6 +113,11 @@ export const api = {
     return data;
   },
 
+  async deleteBatch(id: number) {
+    const { data } = await client.delete(`/batches/${id}`);
+    return data;
+  },
+
   async addRepositoriesToBatch(batchId: number, repositoryIds: number[]) {
     const { data } = await client.post(`/batches/${batchId}/repositories`, {
       repository_ids: repositoryIds,

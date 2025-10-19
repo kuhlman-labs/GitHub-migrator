@@ -605,6 +605,75 @@ func TestCreateBatch(t *testing.T) {
 	})
 }
 
+func TestDeleteBatch(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	t.Run("delete existing batch", func(t *testing.T) {
+		// Create a batch
+		batch := &models.Batch{
+			Name:      "Test Batch to Delete",
+			Type:      "pilot",
+			Status:    "pending",
+			CreatedAt: time.Now(),
+		}
+		if err := db.CreateBatch(ctx, batch); err != nil {
+			t.Fatalf("Failed to create batch: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/batches/1", nil)
+		req.SetPathValue("id", "1")
+		w := httptest.NewRecorder()
+
+		h.DeleteBatch(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		// Verify batch is deleted
+		deletedBatch, err := db.GetBatch(ctx, batch.ID)
+		if err == nil && deletedBatch != nil {
+			t.Errorf("Expected batch to be deleted")
+		}
+	})
+
+	t.Run("delete non-existent batch", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/batches/99999", nil)
+		req.SetPathValue("id", "99999")
+		w := httptest.NewRecorder()
+
+		h.DeleteBatch(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+		}
+	})
+
+	t.Run("delete batch in progress", func(t *testing.T) {
+		// Create a batch in progress
+		batch := &models.Batch{
+			Name:      "In Progress Batch",
+			Type:      "pilot",
+			Status:    "in_progress",
+			CreatedAt: time.Now(),
+		}
+		if err := db.CreateBatch(ctx, batch); err != nil {
+			t.Fatalf("Failed to create batch: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/batches/"+fmt.Sprint(batch.ID), nil)
+		req.SetPathValue("id", fmt.Sprint(batch.ID))
+		w := httptest.NewRecorder()
+
+		h.DeleteBatch(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}
+
 func TestGetBatch(t *testing.T) {
 	h, db := setupTestHandler(t)
 	ctx := context.Background()
