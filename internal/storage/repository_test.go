@@ -699,6 +699,119 @@ func TestBatchOperations(t *testing.T) {
 	}
 }
 
+func TestRollbackRepositoryClearsBatchID(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	totalSize := int64(1024)
+	defaultBranch := testDefaultBranch
+
+	// Create a batch
+	batch := &models.Batch{
+		Name:            "Test Batch",
+		Type:            "pilot",
+		Status:          "ready",
+		RepositoryCount: 0,
+		CreatedAt:       time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+
+	// Create a repository and assign it to the batch
+	repo := &models.Repository{
+		FullName:      "org/test-repo",
+		Source:        "ghes",
+		SourceURL:     "https://github.com/org/test-repo",
+		TotalSize:     &totalSize,
+		DefaultBranch: &defaultBranch,
+		Status:        string(models.StatusComplete),
+		BatchID:       &batch.ID,
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("SaveRepository() error = %v", err)
+	}
+
+	// Update batch count
+	if err := db.AddRepositoriesToBatch(ctx, batch.ID, []int64{repo.ID}); err != nil {
+		t.Fatalf("AddRepositoriesToBatch() error = %v", err)
+	}
+
+	// Verify repository is in batch
+	savedRepo, err := db.GetRepository(ctx, repo.FullName)
+	if err != nil {
+		t.Fatalf("GetRepository() error = %v", err)
+	}
+	if savedRepo.BatchID == nil || *savedRepo.BatchID != batch.ID {
+		t.Errorf("Expected repository to be in batch %d, got %v", batch.ID, savedRepo.BatchID)
+	}
+
+	// Rollback the repository
+	if err := db.RollbackRepository(ctx, repo.FullName, "Testing rollback"); err != nil {
+		t.Fatalf("RollbackRepository() error = %v", err)
+	}
+
+	// Verify repository batch_id is cleared
+	rolledBackRepo, err := db.GetRepository(ctx, repo.FullName)
+	if err != nil {
+		t.Fatalf("GetRepository() after rollback error = %v", err)
+	}
+
+	if rolledBackRepo.BatchID != nil {
+		t.Errorf("Expected batch_id to be NULL after rollback, got %v", *rolledBackRepo.BatchID)
+	}
+
+	if rolledBackRepo.Status != string(models.StatusRolledBack) {
+		t.Errorf("Expected status to be 'rolled_back', got %s", rolledBackRepo.Status)
+	}
+
+	// Verify repository is now available for batch assignment
+	availableRepos, err := db.ListRepositories(ctx, map[string]interface{}{"available_for_batch": true})
+	if err != nil {
+		t.Fatalf("ListRepositories() error = %v", err)
+	}
+
+	found := false
+	for _, r := range availableRepos {
+		if r.FullName == repo.FullName {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("Expected rolled back repository to be available for batch assignment")
+	}
+
+	// Verify we can reassign it to a new batch
+	newBatch := &models.Batch{
+		Name:            "New Batch",
+		Type:            "wave_1",
+		Status:          "pending",
+		RepositoryCount: 0,
+		CreatedAt:       time.Now(),
+	}
+	if err := db.CreateBatch(ctx, newBatch); err != nil {
+		t.Fatalf("CreateBatch() for new batch error = %v", err)
+	}
+
+	if err := db.AddRepositoriesToBatch(ctx, newBatch.ID, []int64{rolledBackRepo.ID}); err != nil {
+		t.Fatalf("AddRepositoriesToBatch() for reassignment error = %v", err)
+	}
+
+	reassignedRepo, err := db.GetRepository(ctx, repo.FullName)
+	if err != nil {
+		t.Fatalf("GetRepository() after reassignment error = %v", err)
+	}
+
+	if reassignedRepo.BatchID == nil || *reassignedRepo.BatchID != newBatch.ID {
+		t.Errorf("Expected repository to be in new batch %d, got %v", newBatch.ID, reassignedRepo.BatchID)
+	}
+}
+
 func TestGetMigrationHistory(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
@@ -1195,18 +1308,33 @@ func TestListRepositoriesAvailableForBatch(t *testing.T) {
 	totalSize := int64(1024)
 	defaultBranch := testDefaultBranch
 
+	// Create a batch first
+	batch := &models.Batch{
+		Name:            "Test Batch",
+		Type:            "pilot",
+		Status:          "ready",
+		RepositoryCount: 0,
+		CreatedAt:       time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+
 	// Create repositories with different statuses
 	testCases := []struct {
-		name   string
-		status models.MigrationStatus
+		name      string
+		status    models.MigrationStatus
+		batchID   *int64
+		available bool // whether it should be available for batch
 	}{
-		{"org/pending", models.StatusPending},
-		{"org/complete", models.StatusComplete},
-		{"org/queued", models.StatusQueuedForMigration},
-		{"org/dry-run-complete", models.StatusDryRunComplete},
-		{"org/dry-run-failed", models.StatusDryRunFailed},
-		{"org/migrating", models.StatusMigratingContent},
-		{"org/failed", models.StatusMigrationFailed},
+		{"org/pending", models.StatusPending, nil, true},
+		{"org/complete", models.StatusComplete, nil, false},
+		{"org/queued", models.StatusQueuedForMigration, nil, false},
+		{"org/dry-run-complete", models.StatusDryRunComplete, nil, true},
+		{"org/dry-run-failed", models.StatusDryRunFailed, nil, true},
+		{"org/migrating", models.StatusMigratingContent, nil, false},
+		{"org/failed", models.StatusMigrationFailed, nil, true},
+		{"org/in-batch", models.StatusPending, &batch.ID, false}, // Already in a batch
 	}
 
 	for _, tc := range testCases {
@@ -1217,6 +1345,7 @@ func TestListRepositoriesAvailableForBatch(t *testing.T) {
 			TotalSize:     &totalSize,
 			DefaultBranch: &defaultBranch,
 			Status:        string(tc.status),
+			BatchID:       tc.batchID,
 			DiscoveredAt:  time.Now(),
 			UpdatedAt:     time.Now(),
 		}
@@ -1231,11 +1360,21 @@ func TestListRepositoriesAvailableForBatch(t *testing.T) {
 		t.Fatalf("ListRepositories() error = %v", err)
 	}
 
-	// Should include: pending, dry_run_complete, dry_run_failed, migration_failed
-	// Should exclude: complete, queued_for_migration, migrating_content
+	// Should include: pending, dry_run_complete, dry_run_failed, migration_failed (4 repos)
+	// Should exclude: complete, queued_for_migration, migrating_content, already in batch
 	expectedCount := 4
 	if len(results) != expectedCount {
 		t.Errorf("Expected %d repositories available for batch, got %d", expectedCount, len(results))
+		for _, r := range results {
+			t.Logf("  - %s (status: %s, batch_id: %v)", r.FullName, r.Status, r.BatchID)
+		}
+	}
+
+	// Verify no repos with batch_id are included
+	for _, repo := range results {
+		if repo.BatchID != nil {
+			t.Errorf("Repository %s with batch_id %d should not be available for batch", repo.FullName, *repo.BatchID)
+		}
 	}
 
 	// Verify excluded statuses are not present

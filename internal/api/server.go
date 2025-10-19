@@ -72,6 +72,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/batches", s.handler.CreateBatch)
 	mux.HandleFunc("GET /api/v1/batches/{id}", s.handler.GetBatch)
 	mux.HandleFunc("PATCH /api/v1/batches/{id}", s.handler.UpdateBatch)
+	mux.HandleFunc("POST /api/v1/batches/{id}/dry-run", s.handler.DryRunBatch)
 	mux.HandleFunc("POST /api/v1/batches/{id}/start", s.handler.StartBatch)
 	mux.HandleFunc("POST /api/v1/batches/{id}/repositories", s.handler.AddRepositoriesToBatch)
 	mux.HandleFunc("DELETE /api/v1/batches/{id}/repositories", s.handler.RemoveRepositoriesFromBatch)

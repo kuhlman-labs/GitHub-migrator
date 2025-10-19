@@ -569,7 +569,7 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	batch.CreatedAt = time.Now()
-	batch.Status = statusReady
+	batch.Status = "pending" // Start batches in pending state
 
 	if err := h.db.CreateBatch(ctx, &batch); err != nil {
 		h.logger.Error("Failed to create batch", "error", err)
@@ -619,8 +619,8 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, response)
 }
 
-// StartBatch handles POST /api/v1/batches/{id}/start
-func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
+// DryRunBatch handles POST /api/v1/batches/{id}/dry-run
+func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -640,6 +640,112 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 
 	if batch == nil {
 		h.sendError(w, http.StatusNotFound, "Batch not found")
+		return
+	}
+
+	// Only allow dry run for "pending" batches
+	if batch.Status != "pending" {
+		h.sendError(w, http.StatusBadRequest, "Can only run dry run on batches with 'pending' status")
+		return
+	}
+
+	// Get all repositories in batch
+	repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
+		"batch_id": batchID,
+	})
+	if err != nil {
+		h.logger.Error("Failed to get batch repositories", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+		return
+	}
+
+	if len(repos) == 0 {
+		h.sendError(w, http.StatusBadRequest, "Batch has no repositories")
+		return
+	}
+
+	// Queue repositories for dry run
+	priority := 0
+	if batch.Type == "pilot" {
+		priority = 1
+	}
+
+	dryRunIDs := make([]int64, 0, len(repos))
+	for _, repo := range repos {
+		// Only queue repos that are in pending or dry_run_failed state
+		if repo.Status != string(models.StatusPending) && repo.Status != string(models.StatusDryRunFailed) {
+			continue
+		}
+
+		repo.Status = string(models.StatusDryRunQueued)
+		repo.Priority = priority
+
+		if err := h.db.UpdateRepository(ctx, repo); err != nil {
+			h.logger.Error("Failed to update repository", "error", err)
+			continue
+		}
+
+		dryRunIDs = append(dryRunIDs, repo.ID)
+	}
+
+	// Update batch status to ready (will be set after dry run completes successfully)
+	// For now, we keep it pending and will update after dry runs complete
+	batch.Status = statusInProgress
+	now := time.Now()
+	batch.StartedAt = &now
+	if err := h.db.UpdateBatch(ctx, batch); err != nil {
+		h.logger.Error("Failed to update batch", "error", err)
+	}
+
+	response := map[string]interface{}{
+		"batch_id":    batchID,
+		"batch_name":  batch.Name,
+		"dry_run_ids": dryRunIDs,
+		"count":       len(dryRunIDs),
+		"message":     fmt.Sprintf("Started dry run for %d repositories in batch '%s'", len(dryRunIDs), batch.Name),
+	}
+
+	h.sendJSON(w, http.StatusAccepted, response)
+}
+
+// StartBatch handles POST /api/v1/batches/{id}/start
+func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Parse optional request body
+	var req struct {
+		SkipDryRun bool `json:"skip_dry_run,omitempty"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	// Get batch
+	batch, err := h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Error("Failed to get batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		return
+	}
+
+	if batch == nil {
+		h.sendError(w, http.StatusNotFound, "Batch not found")
+		return
+	}
+
+	// Validate batch status
+	if batch.Status == "pending" && !req.SkipDryRun {
+		h.sendError(w, http.StatusBadRequest, "Batch is in 'pending' state. Run dry run first or set skip_dry_run=true")
+		return
+	}
+
+	if batch.Status != statusReady && batch.Status != "pending" {
+		h.sendError(w, http.StatusBadRequest, "Can only start batches with 'ready' or 'pending' status")
 		return
 	}
 
@@ -724,9 +830,9 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only allow updates for "ready" batches
-	if batch.Status != statusReady {
-		h.sendError(w, http.StatusBadRequest, "Can only edit batches with 'ready' status")
+	// Only allow updates for "pending" and "ready" batches
+	if batch.Status != statusReady && batch.Status != "pending" {
+		h.sendError(w, http.StatusBadRequest, "Can only edit batches with 'pending' or 'ready' status")
 		return
 	}
 
@@ -790,9 +896,9 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Only allow adding repos to "ready" batches
-	if batch.Status != statusReady {
-		h.sendError(w, http.StatusBadRequest, "Can only add repositories to batches with 'ready' status")
+	// Only allow adding repos to "pending" and "ready" batches
+	if batch.Status != statusReady && batch.Status != "pending" {
+		h.sendError(w, http.StatusBadRequest, "Can only add repositories to batches with 'pending' or 'ready' status")
 		return
 	}
 
@@ -821,16 +927,21 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 
 	// Check each repo is eligible
 	ineligibleRepos := []string{}
+	ineligibleReasons := make(map[string]string)
 	for _, repo := range repos {
-		if !isEligibleForBatch(repo.Status) {
+		if eligible, reason := isRepositoryEligibleForBatch(repo); !eligible {
 			ineligibleRepos = append(ineligibleRepos, repo.FullName)
+			ineligibleReasons[repo.FullName] = reason
 		}
 	}
 
 	if len(ineligibleRepos) > 0 {
-		h.sendError(w, http.StatusBadRequest,
-			fmt.Sprintf("Some repositories are not eligible for batch assignment: %s",
-				strings.Join(ineligibleRepos, ", ")))
+		// Build detailed error message
+		errorMsg := "Some repositories are not eligible for batch assignment:\n"
+		for _, repoName := range ineligibleRepos {
+			errorMsg += fmt.Sprintf("  - %s: %s\n", repoName, ineligibleReasons[repoName])
+		}
+		h.sendError(w, http.StatusBadRequest, strings.TrimSpace(errorMsg))
 		return
 	}
 
@@ -875,9 +986,9 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Only allow removing repos from "ready" batches
-	if batch.Status != statusReady {
-		h.sendError(w, http.StatusBadRequest, "Can only remove repositories from batches with 'ready' status")
+	// Only allow removing repos from "pending" and "ready" batches
+	if batch.Status != statusReady && batch.Status != "pending" {
+		h.sendError(w, http.StatusBadRequest, "Can only remove repositories from batches with 'pending' or 'ready' status")
 		return
 	}
 
@@ -1407,6 +1518,20 @@ func isEligibleForBatch(status string) bool {
 		}
 	}
 	return false
+}
+
+func isRepositoryEligibleForBatch(repo *models.Repository) (bool, string) {
+	// Check if already in a batch
+	if repo.BatchID != nil {
+		return false, "repository is already assigned to a batch"
+	}
+
+	// Check if status is eligible
+	if !isEligibleForBatch(repo.Status) {
+		return false, fmt.Sprintf("repository status '%s' is not eligible for batch assignment", repo.Status)
+	}
+
+	return true, ""
 }
 
 // ListOrganizations handles GET /api/v1/organizations

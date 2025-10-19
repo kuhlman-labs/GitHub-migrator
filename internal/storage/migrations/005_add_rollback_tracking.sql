@@ -22,6 +22,15 @@
 -- The rolled_back status indicates that a successfully migrated repository
 -- has been rolled back and is eligible for re-migration.
 
--- Rollback events are tracked in the migration_history table with phase='rollback'
--- and the rollback reason stored in the message field.
+-- Rollback behavior:
+-- - Sets repository status to 'rolled_back'
+-- - Clears the batch_id (sets to NULL) to allow reassignment to a new batch
+-- - Updates the old batch's repository count
+-- - Creates a migration history entry with phase='rollback'
+-- - The rollback reason is stored in the migration history message field
+
+-- After rollback, repositories can be:
+-- - Reassigned to a new batch
+-- - Re-migrated individually
+-- - Filtered with available_for_batch=true
 

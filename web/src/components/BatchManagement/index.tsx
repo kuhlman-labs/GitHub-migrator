@@ -61,21 +61,52 @@ export function BatchManagement() {
     }
   };
 
-  const handleStartBatch = async (batchId: number) => {
+  const handleDryRunBatch = async (batchId: number) => {
+    if (!confirm('Run dry run for this batch? This will validate all repositories before migration.')) {
+      return;
+    }
+
+    try {
+      await api.dryRunBatch(batchId);
+      alert('Dry run started successfully. Batch will move to "ready" status when complete.');
+      await loadBatches();
+      if (selectedBatch?.id === batchId) {
+        await loadBatchRepositories(batchId);
+      }
+    } catch (error: any) {
+      console.error('Failed to start dry run:', error);
+      alert(error.response?.data?.error || 'Failed to start dry run');
+    }
+  };
+
+  const handleStartBatch = async (batchId: number, skipDryRun = false) => {
+    const batch = batches.find(b => b.id === batchId);
+    
+    if (batch?.status === 'pending' && !skipDryRun) {
+      const shouldSkip = confirm(
+        'This batch has not completed a dry run. Do you want to start migration anyway? ' +
+        '(Recommended: Cancel and run dry run first)'
+      );
+      
+      if (!shouldSkip) {
+        return;
+      }
+    }
+
     if (!confirm('Are you sure you want to start migration for this entire batch?')) {
       return;
     }
 
     try {
-      await api.startBatch(batchId);
+      await api.startBatch(batchId, skipDryRun);
       alert('Batch migration started successfully');
       await loadBatches();
       if (selectedBatch?.id === batchId) {
         await loadBatchRepositories(batchId);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to start batch:', error);
-      alert('Failed to start batch migration');
+      alert(error.response?.data?.error || 'Failed to start batch migration');
     }
   };
 
@@ -224,22 +255,41 @@ export function BatchManagement() {
                 </div>
 
                 <div className="flex gap-2">
-                  {selectedBatch.status === 'ready' && (
+                  {(selectedBatch.status === 'pending' || selectedBatch.status === 'ready') && (
+                    <button
+                      onClick={() => handleEditBatch(selectedBatch)}
+                      className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                    >
+                      Edit Batch
+                    </button>
+                  )}
+                  
+                  {selectedBatch.status === 'pending' && (
                     <>
                       <button
-                        onClick={() => handleEditBatch(selectedBatch)}
-                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        onClick={() => handleDryRunBatch(selectedBatch.id)}
+                        className="px-4 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
                       >
-                        Edit Batch
+                        Run Dry Run
                       </button>
                       <button
-                        onClick={() => handleStartBatch(selectedBatch.id)}
-                        className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
+                        onClick={() => handleStartBatch(selectedBatch.id, true)}
+                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
                       >
-                        Start Migration
+                        Skip & Migrate
                       </button>
                     </>
                   )}
+                  
+                  {selectedBatch.status === 'ready' && (
+                    <button
+                      onClick={() => handleStartBatch(selectedBatch.id)}
+                      className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
+                    >
+                      Start Migration
+                    </button>
+                  )}
+                  
                   {groupedRepos.failed.length > 0 && (
                     <button
                       onClick={handleRetryFailed}
@@ -381,10 +431,15 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
               e.stopPropagation();
               onStart();
             }}
-            className="text-sm px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="text-sm px-3 py-1 bg-gh-success text-white rounded hover:bg-gh-success-hover"
           >
             Start
           </button>
+        )}
+        {batch.status === 'pending' && (
+          <span className="text-xs text-gray-500">
+            Dry run needed
+          </span>
         )}
       </div>
     </div>

@@ -404,6 +404,9 @@ func applyAvailableForBatchFilter(query string, args []interface{}, filters map[
 		return query, args
 	}
 
+	// Exclude repos that are already assigned to a batch
+	query += " AND batch_id IS NULL"
+
 	// Exclude repos that are completed or in active migration
 	excludedStatuses := []string{
 		"complete",
@@ -1545,11 +1548,22 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 		return fmt.Errorf("repository not found")
 	}
 
-	// Update repository status to rolled_back
-	query := `UPDATE repositories SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
+	oldBatchID := repo.BatchID
+
+	// Update repository status to rolled_back and clear batch assignment
+	// This allows the repository to be reassigned to a new batch
+	query := `UPDATE repositories SET status = ?, batch_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
 	_, err = d.db.ExecContext(ctx, query, string(models.StatusRolledBack), fullName)
 	if err != nil {
 		return fmt.Errorf("failed to update repository status: %w", err)
+	}
+
+	// Update the old batch's repository count if it was in a batch
+	if oldBatchID != nil {
+		if err := d.updateBatchRepositoryCount(ctx, *oldBatchID); err != nil {
+			// Log but don't fail the rollback
+			return fmt.Errorf("failed to update batch repository count: %w", err)
+		}
 	}
 
 	// Create migration history entry for rollback

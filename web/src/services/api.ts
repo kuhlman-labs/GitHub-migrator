@@ -134,8 +134,15 @@ export const api = {
     return data;
   },
 
-  async startBatch(id: number) {
-    const { data } = await client.post(`/batches/${id}/start`);
+  async dryRunBatch(id: number) {
+    const { data } = await client.post(`/batches/${id}/dry-run`);
+    return data;
+  },
+
+  async startBatch(id: number, skipDryRun?: boolean) {
+    const { data } = await client.post(`/batches/${id}/start`, {
+      skip_dry_run: skipDryRun || false,
+    });
     return data;
   },
 

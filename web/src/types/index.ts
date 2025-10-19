@@ -194,6 +194,7 @@ export type MigrationStatus =
   | 'rolled_back';
 
 export type BatchStatus =
+  | 'pending'
   | 'ready'
   | 'in_progress'
   | 'completed'

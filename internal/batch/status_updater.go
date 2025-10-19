@@ -84,9 +84,9 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 
 	updated := 0
 	for _, batch := range batches {
-		// Only update batches that are not in a terminal state
-		if batch.Status == StatusReady {
-			continue // Ready batches don't need status updates
+		// Only update batches that are not in a terminal or stable state
+		if batch.Status == StatusReady || batch.Status == StatusPending {
+			continue // Ready and pending batches don't need status updates
 		}
 
 		newStatus, err := su.calculateBatchStatus(ctx, batch)
@@ -151,6 +151,8 @@ func CalculateBatchStatusFromRepos(repos []*models.Repository) string {
 	completedCount := 0
 	failedCount := 0
 	inProgressCount := 0
+	dryRunCompleteCount := 0
+	pendingCount := 0
 
 	for _, repo := range repos {
 		switch repo.Status {
@@ -167,6 +169,10 @@ func CalculateBatchStatusFromRepos(repos []*models.Repository) string {
 			string(models.StatusPostMigration),
 			string(models.StatusMigrationComplete):
 			inProgressCount++
+		case string(models.StatusDryRunComplete):
+			dryRunCompleteCount++
+		case string(models.StatusPending):
+			pendingCount++
 		}
 	}
 
@@ -177,20 +183,34 @@ func CalculateBatchStatusFromRepos(repos []*models.Repository) string {
 		return StatusInProgress
 	}
 
+	// If all migrations are complete
 	if completedCount == totalRepos {
 		return StatusCompleted
 	}
 
+	// If all migrations failed
 	if failedCount == totalRepos {
 		return StatusFailed
 	}
 
+	// If some completed and some failed
 	if completedCount > 0 && failedCount > 0 {
 		return StatusCompletedWithErrors
 	}
 
+	// If any failed during migration
 	if failedCount > 0 {
 		return StatusCompletedWithErrors
+	}
+
+	// If all dry runs are complete (batch is ready for migration)
+	if dryRunCompleteCount == totalRepos {
+		return StatusReady
+	}
+
+	// If some dry runs complete and some failed
+	if dryRunCompleteCount > 0 && failedCount > 0 {
+		return StatusReady
 	}
 
 	return StatusReady
