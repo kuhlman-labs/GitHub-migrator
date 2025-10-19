@@ -8,6 +8,7 @@ import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
 import { ProfileCard } from '../common/ProfileCard';
 import { ProfileItem } from '../common/ProfileItem';
+import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 import { formatBytes, formatDate } from '../../utils/format';
 import { useRepository, useBatches } from '../../hooks/useQueries';
 import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useRollbackRepository } from '../../hooks/useMutations';
@@ -508,25 +509,127 @@ export function RepositoryDetail() {
         <div className="p-6">
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ProfileCard title="Migration Complexity Assessment">
-                <ProfileItem label="Repository Size" value={formatBytes(repository.total_size)} />
-                <ProfileItem 
-                  label="Large Files (>100MB)" 
-                  value={repository.has_large_files ? `Yes (${repository.large_file_count}+)` : 'No'} 
-                />
-                {repository.largest_file && (
-                  <ProfileItem 
-                    label="Largest File" 
-                    value={`${repository.largest_file} (${formatBytes(repository.largest_file_size || 0)})`} 
-                  />
-                )}
-                <ProfileItem 
-                  label="Last Activity" 
-                  value={repository.last_commit_date ? formatDate(repository.last_commit_date) : 'Unknown'} 
-                />
-                <ProfileItem label="Uses LFS" value={repository.has_lfs ? 'Yes' : 'No'} />
-                <ProfileItem label="Has Submodules" value={repository.has_submodules ? 'Yes' : 'No'} />
-                <ProfileItem label="Total Commits" value={repository.commit_count.toLocaleString()} />
+              <ProfileCard title="Migration Complexity Score">
+                {(() => {
+                  const MB100 = 100 * 1024 * 1024;
+                  const GB1 = 1024 * 1024 * 1024;
+                  const GB5 = 5 * 1024 * 1024 * 1024;
+                  
+                  let sizePoints = 0;
+                  let sizeTier = 'Unknown';
+                  if (repository.total_size !== null && repository.total_size !== undefined) {
+                    if (repository.total_size >= GB5) {
+                      sizePoints = 9;
+                      sizeTier = '>5GB';
+                    } else if (repository.total_size >= GB1) {
+                      sizePoints = 6;
+                      sizeTier = '1-5GB';
+                    } else if (repository.total_size >= MB100) {
+                      sizePoints = 3;
+                      sizeTier = '100MB-1GB';
+                    } else {
+                      sizePoints = 0;
+                      sizeTier = '<100MB';
+                    }
+                  }
+                  
+                  const lfsPoints = repository.has_lfs ? 2 : 0;
+                  const submodulesPoints = repository.has_submodules ? 2 : 0;
+                  const largeFilesPoints = repository.has_large_files ? 4 : 0;
+                  const branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
+                  
+                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + branchProtectionsPoints;
+                  
+                  let category = 'Simple';
+                  let categoryColor = 'text-green-600';
+                  let categoryBg = 'bg-green-50';
+                  if (totalScore > 9) {
+                    category = 'Very Complex';
+                    categoryColor = 'text-red-600';
+                    categoryBg = 'bg-red-50';
+                  } else if (totalScore > 6) {
+                    category = 'Complex';
+                    categoryColor = 'text-orange-600';
+                    categoryBg = 'bg-orange-50';
+                  } else if (totalScore > 3) {
+                    category = 'Medium';
+                    categoryColor = 'text-yellow-600';
+                    categoryBg = 'bg-yellow-50';
+                  }
+                  
+                  return (
+                    <>
+                      <div className={`mb-4 p-4 ${categoryBg} rounded-lg border-l-4 ${categoryColor.replace('text-', 'border-')}`}>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-medium text-gray-700">Total Complexity Score</span>
+                          <span className={`text-3xl font-bold ${categoryColor}`}>{totalScore}</span>
+                        </div>
+                        <div className="text-sm">
+                          <span className="font-medium text-gray-700">Category: </span>
+                          <span className={`font-semibold ${categoryColor}`}>{category}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3 mb-4">
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Repository Size</div>
+                            <div className="text-xs text-gray-500">{formatBytes(repository.total_size)} ({sizeTier})</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${sizePoints > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                            +{sizePoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Large Files (&gt;100MB)</div>
+                            <div className="text-xs text-gray-500">
+                              {repository.has_large_files ? `Yes (${repository.large_file_count}+ detected)` : 'No'}
+                            </div>
+                          </div>
+                          <span className={`text-lg font-semibold ${largeFilesPoints > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            +{largeFilesPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Git LFS</div>
+                            <div className="text-xs text-gray-500">{repository.has_lfs ? 'Yes' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${lfsPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            +{lfsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Submodules</div>
+                            <div className="text-xs text-gray-500">{repository.has_submodules ? 'Yes' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${submodulesPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            +{submodulesPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Branch Protections</div>
+                            <div className="text-xs text-gray-500">{repository.branch_protections} rules</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${branchProtectionsPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                            +{branchProtectionsPoints}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="pt-2 border-t border-gray-200">
+                        <ComplexityInfoModal />
+                      </div>
+                    </>
+                  );
+                })()}
               </ProfileCard>
 
               <ProfileCard title="Verification Metrics">

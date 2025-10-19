@@ -2,6 +2,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useNavigate } from 'react-router-dom';
 import { ComplexityDistribution } from '../../types';
 import { getRepositoriesUrl } from '../../utils/filters';
+import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 
 interface ComplexityChartProps {
   data: ComplexityDistribution[];
@@ -44,10 +45,15 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
-      <h2 className="text-lg font-medium text-gray-900 mb-4">Repository Complexity Distribution</h2>
-      <p className="text-sm text-gray-600 mb-4">
-        Based on size, LFS, submodules, large files, and branch protections. Click bars to view repositories.
-      </p>
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Repository Complexity Distribution</h2>
+          <p className="text-sm text-gray-600">
+            Based on size, LFS, submodules, large files, and branch protections. Click bars to view repositories.
+          </p>
+        </div>
+        <ComplexityInfoModal />
+      </div>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />
