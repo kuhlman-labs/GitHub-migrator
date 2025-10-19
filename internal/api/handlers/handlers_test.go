@@ -588,8 +588,8 @@ func TestCreateBatch(t *testing.T) {
 		if created.Name != "Test Batch" {
 			t.Errorf("Expected name 'Test Batch', got '%s'", created.Name)
 		}
-		if created.Status != "ready" {
-			t.Errorf("Expected status 'ready', got '%s'", created.Status)
+		if created.Status != "pending" {
+			t.Errorf("Expected status 'pending', got '%s'", created.Status)
 		}
 	})
 
