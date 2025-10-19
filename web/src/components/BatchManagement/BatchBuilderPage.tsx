@@ -74,9 +74,9 @@ export function BatchBuilderPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="border-b border-gray-200 bg-white">
-        <div className="max-w-[1800px] mx-auto px-6 py-4">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="border-b border-gray-200 bg-white shadow-sm">
+        <div className="max-w-full px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
@@ -90,7 +90,7 @@ export function BatchBuilderPage() {
             </div>
             <button
               onClick={handleClose}
-              className="px-4 py-2 text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="px-4 py-2 text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancel
             </button>
@@ -98,7 +98,7 @@ export function BatchBuilderPage() {
         </div>
       </div>
 
-      <div className="max-w-[1800px] mx-auto p-6">
+      <div className="flex-1 overflow-hidden">
         <ErrorBoundary>
           <BatchBuilder
             batch={batch}
