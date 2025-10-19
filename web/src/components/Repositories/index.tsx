@@ -79,9 +79,13 @@ export function Repositories() {
     let count = 0;
     if (urlFilters.has_lfs) count++;
     if (urlFilters.has_submodules) count++;
+    if (urlFilters.has_large_files) count++;
     if (urlFilters.has_actions) count++;
     if (urlFilters.has_wiki) count++;
     if (urlFilters.has_pages) count++;
+    if (urlFilters.has_discussions) count++;
+    if (urlFilters.has_projects) count++;
+    if (urlFilters.has_branch_protections) count++;
     if (urlFilters.is_archived !== undefined) count++;
     if (urlFilters.complexity) count++;
     if (urlFilters.size_category) count++;
@@ -184,9 +188,13 @@ export function Repositories() {
               {/* Feature filters */}
               {urlFilters.has_lfs && <FilterBadge label="LFS" onRemove={() => removeFilter('has_lfs')} />}
               {urlFilters.has_submodules && <FilterBadge label="Submodules" onRemove={() => removeFilter('has_submodules')} />}
+              {urlFilters.has_large_files && <FilterBadge label="Large Files (>100MB)" onRemove={() => removeFilter('has_large_files')} />}
               {urlFilters.has_actions && <FilterBadge label="GitHub Actions" onRemove={() => removeFilter('has_actions')} />}
               {urlFilters.has_wiki && <FilterBadge label="Wiki" onRemove={() => removeFilter('has_wiki')} />}
               {urlFilters.has_pages && <FilterBadge label="Pages" onRemove={() => removeFilter('has_pages')} />}
+              {urlFilters.has_discussions && <FilterBadge label="Discussions" onRemove={() => removeFilter('has_discussions')} />}
+              {urlFilters.has_projects && <FilterBadge label="Projects" onRemove={() => removeFilter('has_projects')} />}
+              {urlFilters.has_branch_protections && <FilterBadge label="Branch Protections" onRemove={() => removeFilter('has_branch_protections')} />}
               {urlFilters.is_archived !== undefined && (
                 <FilterBadge 
                   label={urlFilters.is_archived ? "Archived" : "Not Archived"} 
