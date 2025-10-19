@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import type { Repository, MigrationHistory, MigrationLog } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -15,6 +16,7 @@ import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useR
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
+  const queryClient = useQueryClient();
   const { data, isLoading, isFetching } = useRepository(fullName || '');
   const repository: Repository | undefined = data;
   const { data: allBatches = [] } = useBatches();
@@ -33,8 +35,8 @@ export function RepositoryDetail() {
   const [showRollbackDialog, setShowRollbackDialog] = useState(false);
   const [rollbackReason, setRollbackReason] = useState('');
   
-  // Batch assignment state
-  const batches = allBatches.filter(b => b.status === 'ready');
+  // Batch assignment state - show pending and ready batches
+  const batches = allBatches.filter(b => b.status === 'pending' || b.status === 'ready');
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [assigningBatch, setAssigningBatch] = useState(false);
   
@@ -141,23 +143,29 @@ export function RepositoryDetail() {
   };
 
   const handleAssignToBatch = async () => {
-    if (!repository || !selectedBatchId || assigningBatch) return;
+    if (!repository || !selectedBatchId || assigningBatch || !fullName) return;
 
     setAssigningBatch(true);
     try {
       await api.addRepositoriesToBatch(selectedBatchId, [repository.id]);
+      
+      // Invalidate queries to refresh the data
+      await queryClient.invalidateQueries({ queryKey: ['repository', decodeURIComponent(fullName)] });
+      await queryClient.invalidateQueries({ queryKey: ['batches'] });
+      
       alert('Repository assigned to batch successfully!');
       setSelectedBatchId(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to assign to batch:', error);
-      alert('Failed to assign to batch. Please try again.');
+      const errorMsg = error.response?.data?.error || 'Failed to assign to batch. Please try again.';
+      alert(errorMsg);
     } finally {
       setAssigningBatch(false);
     }
   };
 
   const handleRemoveFromBatch = async () => {
-    if (!repository || !repository.batch_id || assigningBatch) return;
+    if (!repository || !repository.batch_id || assigningBatch || !fullName) return;
 
     if (!confirm('Are you sure you want to remove this repository from its batch?')) {
       return;
@@ -166,10 +174,16 @@ export function RepositoryDetail() {
     setAssigningBatch(true);
     try {
       await api.removeRepositoriesFromBatch(repository.batch_id, [repository.id]);
+      
+      // Invalidate queries to refresh the data
+      await queryClient.invalidateQueries({ queryKey: ['repository', decodeURIComponent(fullName)] });
+      await queryClient.invalidateQueries({ queryKey: ['batches'] });
+      
       alert('Repository removed from batch successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to remove from batch:', error);
-      alert('Failed to remove from batch. Please try again.');
+      const errorMsg = error.response?.data?.error || 'Failed to remove from batch. Please try again.';
+      alert(errorMsg);
     } finally {
       setAssigningBatch(false);
     }
@@ -362,7 +376,7 @@ export function RepositoryDetail() {
                       <option value="">Select a batch...</option>
                       {batches.map((batch) => (
                         <option key={batch.id} value={batch.id}>
-                          {batch.name} ({batch.type}) - {batch.repository_count} repos
+                          {batch.name} ({batch.type}) - {batch.status} - {batch.repository_count} repos
                         </option>
                       ))}
                     </select>
@@ -379,7 +393,7 @@ export function RepositoryDetail() {
                   {repository.batch_id
                     ? 'Repository is assigned to a batch'
                     : batches.length === 0
-                    ? 'No ready batches available. Create a batch first.'
+                    ? 'No pending or ready batches available. Create a batch first.'
                     : 'Assign this repository to a batch for grouped migration'}
                 </p>
               </div>
