@@ -128,28 +128,60 @@ export function Analytics() {
           {analytics.size_distribution && analytics.size_distribution.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Repository Size Distribution</h3>
-              <ResponsiveContainer width="100%" height={300}>
+              <p className="text-sm text-gray-600 mb-4">Click on the chart to view repositories by size category</p>
+              <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie
                     data={analytics.size_distribution.map(item => ({
                       name: sizeCategories[item.category] || item.category,
                       value: item.count,
                       fill: sizeColors[item.category] || '#9CA3AF',
+                      category: item.category,
                     }))}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, value, percent }) => `${name.split(' ')[0]}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                    label={false}
                     outerRadius={80}
                     dataKey="value"
+                    onClick={(data: any) => {
+                      if (data && data.category) {
+                        navigate(getRepositoriesUrl({ size_category: [data.category] }));
+                      }
+                    }}
+                    cursor="pointer"
                   >
                     {analytics.size_distribution.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={sizeColors[entry.category] || '#9CA3AF'} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip 
+                    formatter={(value: number, name: string, props: any) => [
+                      `${value} repositories`,
+                      props.payload.name
+                    ]}
+                  />
                 </PieChart>
               </ResponsiveContainer>
+              
+              {/* Legend */}
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {analytics.size_distribution.map((item) => (
+                  <button
+                    key={item.category}
+                    onClick={() => navigate(getRepositoriesUrl({ size_category: [item.category] }))}
+                    className="flex items-center gap-2 p-2 rounded hover:bg-gh-info-bg transition-colors cursor-pointer text-left"
+                  >
+                    <div 
+                      className="w-4 h-4 rounded flex-shrink-0" 
+                      style={{ backgroundColor: sizeColors[item.category] || '#9CA3AF' }}
+                    />
+                    <span className="text-sm text-gray-700 truncate">
+                      {sizeCategories[item.category] || item.category}: {item.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -207,7 +239,7 @@ export function Analytics() {
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
               <p className="text-sm text-gray-600 mb-4">Click on any feature to view repositories with that feature</p>
-              <div className="space-y-3">
+              <div className="space-y-1">
                 <FeatureStat 
                   label="Archived" 
                   count={analytics.feature_stats.is_archived} 
@@ -534,23 +566,23 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
   
   const content = (
     <>
-      <span className="text-sm text-gray-700">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-gray-900">{count}</span>
-        <span className="text-xs text-gray-500">({percentage}%)</span>
+      <span className="text-sm text-gray-700 flex-1">{label}</span>
+      <div className="flex items-center gap-2 ml-auto">
+        <span className="text-sm font-medium text-gray-900 min-w-[60px] text-right">{count}</span>
+        <span className="text-xs text-gray-500 min-w-[60px]">({percentage}%)</span>
       </div>
     </>
   );
 
-  if (onClick && count > 0) {
+  if (onClick) {
     return (
       <button
         onClick={onClick}
-        className="flex items-center justify-between w-full px-2 py-1 -mx-2 rounded hover:bg-gh-info-bg transition-colors cursor-pointer group"
+        className="flex items-center justify-between w-full px-3 py-2 -mx-3 rounded hover:bg-gh-info-bg transition-colors cursor-pointer group"
       >
         {content}
         <svg 
-          className="w-4 h-4 text-gh-text-secondary opacity-0 group-hover:opacity-100 transition-opacity ml-2" 
+          className="w-4 h-4 text-gh-text-secondary opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0" 
           fill="none" 
           stroke="currentColor" 
           viewBox="0 0 24 24"
@@ -562,7 +594,7 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
   }
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between py-2 px-3 -mx-3">
       {content}
     </div>
   );

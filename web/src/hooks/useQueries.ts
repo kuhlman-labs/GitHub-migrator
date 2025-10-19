@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { Organization, Repository, Analytics, Batch, MigrationHistoryEntry } from '../types';
+import { Organization, Repository, Analytics, Batch, MigrationHistoryEntry, RepositoryFilters } from '../types';
 
 // Organization queries
 export function useOrganizations() {
@@ -11,27 +11,10 @@ export function useOrganizations() {
 }
 
 // Repository queries
-interface RepositoryFilters {
-  organization?: string;
-  status?: string;
-  search?: string;
-  hasLfs?: boolean;
-  hasSubmodules?: boolean;
-}
-
 export function useRepositories(filters: RepositoryFilters = {}) {
   return useQuery<{ repositories: Repository[]; total?: number }, Error>({
     queryKey: ['repositories', filters],
-    queryFn: async () => {
-      const params: Record<string, string | undefined> = {};
-      if (filters.organization) params.organization = filters.organization;
-      if (filters.status) params.status = filters.status;
-      if (filters.search) params.search = filters.search;
-      if (filters.hasLfs !== undefined) params.has_lfs = String(filters.hasLfs);
-      if (filters.hasSubmodules !== undefined) params.has_submodules = String(filters.hasSubmodules);
-      
-      return api.listRepositories(params);
-    },
+    queryFn: () => api.listRepositories(filters),
   });
 }
 

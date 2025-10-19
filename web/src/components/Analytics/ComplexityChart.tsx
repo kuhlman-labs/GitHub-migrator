@@ -79,7 +79,11 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
       {/* Legend */}
       <div className="mt-4 flex flex-wrap gap-4 justify-center">
         {chartData.map((item) => (
-          <div key={item.category} className="flex items-center gap-2">
+          <button
+            key={item.category}
+            onClick={() => navigate(getRepositoriesUrl({ complexity: [item.category] }))}
+            className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-gray-100 transition-colors cursor-pointer"
+          >
             <div 
               className="w-4 h-4 rounded" 
               style={{ backgroundColor: item.fill }}
@@ -87,7 +91,7 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
             <span className="text-sm text-gray-700">
               {item.name}: {item.count}
             </span>
-          </div>
+          </button>
         ))}
       </div>
     </div>

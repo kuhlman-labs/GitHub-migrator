@@ -205,8 +205,38 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	if hasPages := r.URL.Query().Get("has_pages"); hasPages != "" {
 		filters["has_pages"] = hasPages == boolTrue
 	}
+	if hasDiscussions := r.URL.Query().Get("has_discussions"); hasDiscussions != "" {
+		filters["has_discussions"] = hasDiscussions == boolTrue
+	}
+	if hasProjects := r.URL.Query().Get("has_projects"); hasProjects != "" {
+		filters["has_projects"] = hasProjects == boolTrue
+	}
+	if hasLargeFiles := r.URL.Query().Get("has_large_files"); hasLargeFiles != "" {
+		filters["has_large_files"] = hasLargeFiles == boolTrue
+	}
+	if hasBranchProtections := r.URL.Query().Get("has_branch_protections"); hasBranchProtections != "" {
+		filters["has_branch_protections"] = hasBranchProtections == boolTrue
+	}
 	if isArchived := r.URL.Query().Get("is_archived"); isArchived != "" {
 		filters["is_archived"] = isArchived == boolTrue
+	}
+
+	// Size category filter (can be comma-separated list)
+	if sizeCategory := r.URL.Query().Get("size_category"); sizeCategory != "" {
+		if strings.Contains(sizeCategory, ",") {
+			filters["size_category"] = strings.Split(sizeCategory, ",")
+		} else {
+			filters["size_category"] = sizeCategory
+		}
+	}
+
+	// Complexity filter (can be comma-separated list)
+	if complexity := r.URL.Query().Get("complexity"); complexity != "" {
+		if strings.Contains(complexity, ",") {
+			filters["complexity"] = strings.Split(complexity, ",")
+		} else {
+			filters["complexity"] = complexity
+		}
 	}
 
 	// Search filter

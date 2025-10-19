@@ -33,8 +33,8 @@ export function Repositories() {
   // Parse filters from URL
   const urlFilters = searchParamsToFilters(searchParams);
   
-  // Fetch repositories with filters
-  const { data, isLoading, isFetching } = useRepositories(urlFilters);
+  // Fetch repositories with filters - backend now supports all filters
+  const { data, isLoading, isFetching} = useRepositories(urlFilters);
   const repositories = data?.repositories || [];
 
   // Initialize local search from URL

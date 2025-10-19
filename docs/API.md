@@ -122,11 +122,27 @@ List all repositories with optional filtering.
 **Query Parameters:**
 - `status` (string) - Filter by migration status (pending, profiled, ready, migrating, completed, failed)
 - `batch_id` (int) - Filter by batch ID
-- `organization` (string) - Filter by organization name
+- `source` (string) - Filter by source system
+- `organization` (string) - Filter by organization name (supports comma-separated list)
+- `search` (string) - Search repositories by name (case-insensitive)
+- `sort_by` (string) - Sort order: name, size, org, updated (default: name)
+- `available_for_batch` (bool) - Filter repositories available for batch assignment
+- `min_size` (int) - Minimum size in bytes
+- `max_size` (int) - Maximum size in bytes
+- `size_category` (string) - Filter by size category: small (<100MB), medium (100MB-1GB), large (1GB-5GB), very_large (>5GB), unknown (supports comma-separated list)
+- `complexity` (string) - Filter by complexity level: low (0-2), medium (3-5), high (6-8), very_high (9+) based on scoring: size, LFS, submodules, large files, branch protections, actions (supports comma-separated list)
 - `has_lfs` (bool) - Filter by LFS usage
 - `has_submodules` (bool) - Filter by submodule presence
-- `min_size` (int) - Minimum size in KB
-- `max_size` (int) - Maximum size in KB
+- `has_large_files` (bool) - Filter by large files (>100MB)
+- `has_actions` (bool) - Filter by GitHub Actions presence
+- `has_wiki` (bool) - Filter by wiki presence
+- `has_pages` (bool) - Filter by GitHub Pages presence
+- `has_discussions` (bool) - Filter by discussions presence
+- `has_projects` (bool) - Filter by projects presence
+- `has_branch_protections` (bool) - Filter by branch protection rules
+- `is_archived` (bool) - Filter by archived status
+- `limit` (int) - Limit number of results (enables pagination)
+- `offset` (int) - Offset for pagination
 
 **Response 200 OK:**
 ```json
@@ -177,8 +193,47 @@ curl "http://localhost:8080/api/v1/repositories?status=ready"
 # Filter by batch
 curl "http://localhost:8080/api/v1/repositories?batch_id=1"
 
-# Filter by multiple criteria
-curl "http://localhost:8080/api/v1/repositories?status=ready&has_lfs=true&min_size=1000"
+# Filter by organization
+curl "http://localhost:8080/api/v1/repositories?organization=acme-corp"
+
+# Filter by multiple organizations
+curl "http://localhost:8080/api/v1/repositories?organization=acme-corp,other-org"
+
+# Search by name
+curl "http://localhost:8080/api/v1/repositories?search=api"
+
+# Filter by features
+curl "http://localhost:8080/api/v1/repositories?has_lfs=true&has_actions=true"
+
+# Filter by size range
+curl "http://localhost:8080/api/v1/repositories?min_size=1000000&max_size=10000000"
+
+# Filter archived repositories
+curl "http://localhost:8080/api/v1/repositories?is_archived=true"
+
+# Filter repositories with branch protections
+curl "http://localhost:8080/api/v1/repositories?has_branch_protections=true"
+
+# Filter by size category
+curl "http://localhost:8080/api/v1/repositories?size_category=very_large"
+
+# Filter by multiple size categories
+curl "http://localhost:8080/api/v1/repositories?size_category=large,very_large"
+
+# Filter by complexity
+curl "http://localhost:8080/api/v1/repositories?complexity=high"
+
+# Filter by multiple complexity levels
+curl "http://localhost:8080/api/v1/repositories?complexity=high,very_high"
+
+# Complex filter with sorting
+curl "http://localhost:8080/api/v1/repositories?has_lfs=true&has_large_files=true&sort_by=size"
+
+# Filter very large repos with high complexity
+curl "http://localhost:8080/api/v1/repositories?size_category=very_large&complexity=high,very_high"
+
+# Paginated results
+curl "http://localhost:8080/api/v1/repositories?limit=50&offset=0"
 ```
 
 ### GET /api/v1/repositories/{fullName}

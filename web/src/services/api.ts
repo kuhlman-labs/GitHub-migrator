@@ -32,8 +32,17 @@ export const api = {
   async listRepositories(filters?: RepositoryFilters): Promise<RepositoryListResponse> {
     // Convert array filters to comma-separated strings for API
     const params: Record<string, any> = { ...filters };
+    
     if (filters?.organization && Array.isArray(filters.organization)) {
       params.organization = filters.organization.join(',');
+    }
+    
+    if (filters?.complexity && Array.isArray(filters.complexity)) {
+      params.complexity = filters.complexity.join(',');
+    }
+    
+    if (filters?.size_category && Array.isArray(filters.size_category)) {
+      params.size_category = filters.size_category.join(',');
     }
     
     const { data } = await client.get('/repositories', { params });

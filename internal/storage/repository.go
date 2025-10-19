@@ -159,6 +159,12 @@ func applyRepositoryFilters(query string, args []interface{}, filters map[string
 	// Apply feature filters
 	query, args = applyFeatureFilters(query, args, filters)
 
+	// Apply size category filter
+	query, args = applySizeCategoryFilter(query, args, filters)
+
+	// Apply complexity filter
+	query, args = applyComplexityFilter(query, args, filters)
+
 	// Apply available for batch filter
 	query, args = applyAvailableForBatchFilter(query, args, filters)
 
@@ -236,9 +242,12 @@ func applyFeatureFilters(query string, args []interface{}, filters map[string]in
 	}{
 		{"has_lfs", "has_lfs"},
 		{"has_submodules", "has_submodules"},
+		{"has_large_files", "has_large_files"},
 		{"has_actions", "has_actions"},
 		{"has_wiki", "has_wiki"},
 		{"has_pages", "has_pages"},
+		{"has_discussions", "has_discussions"},
+		{"has_projects", "has_projects"},
 		{"is_archived", "is_archived"},
 	}
 
@@ -247,6 +256,142 @@ func applyFeatureFilters(query string, args []interface{}, filters map[string]in
 			query += fmt.Sprintf(" AND %s = ?", f.column)
 			args = append(args, value)
 		}
+	}
+
+	// Special handling for branch_protections (checking if count > 0)
+	if hasBranchProtections, ok := filters["has_branch_protections"].(bool); ok {
+		if hasBranchProtections {
+			query += " AND branch_protections > 0"
+		} else {
+			query += " AND (branch_protections = 0 OR branch_protections IS NULL)"
+		}
+	}
+
+	return query, args
+}
+
+// applySizeCategoryFilter filters repositories by size category
+func applySizeCategoryFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	sizeCategoryValue, ok := filters["size_category"]
+	if !ok {
+		return query, args
+	}
+
+	// Size thresholds in bytes
+	const (
+		MB100 = 100 * 1024 * 1024      // 100MB
+		GB1   = 1024 * 1024 * 1024     // 1GB
+		GB5   = 5 * 1024 * 1024 * 1024 // 5GB
+	)
+
+	var conditions []string
+
+	categories := []string{}
+	switch v := sizeCategoryValue.(type) {
+	case string:
+		categories = []string{v}
+	case []string:
+		categories = v
+	}
+
+	for _, category := range categories {
+		switch category {
+		case "small":
+			conditions = append(conditions, "(total_size > 0 AND total_size < ?)")
+			args = append(args, MB100)
+		case "medium":
+			conditions = append(conditions, "(total_size >= ? AND total_size < ?)")
+			args = append(args, MB100, GB1)
+		case "large":
+			conditions = append(conditions, "(total_size >= ? AND total_size < ?)")
+			args = append(args, GB1, GB5)
+		case "very_large":
+			conditions = append(conditions, "(total_size >= ?)")
+			args = append(args, GB5)
+		case "unknown":
+			conditions = append(conditions, "(total_size IS NULL OR total_size = 0)")
+		}
+	}
+
+	if len(conditions) > 0 {
+		query += fmt.Sprintf(" AND (%s)", strings.Join(conditions, " OR "))
+	}
+
+	return query, args
+}
+
+// applyComplexityFilter filters repositories by complexity level
+// IMPORTANT: This calculation MUST match GetComplexityDistribution() in analytics
+func applyComplexityFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	complexityValue, ok := filters["complexity"]
+	if !ok {
+		return query, args
+	}
+
+	// Complexity scoring (matching analytics calculation):
+	// Size score (0-3) * 3, plus feature scores
+	// low: score <= 3
+	// medium: score 4-6
+	// high: score 7-9
+	// very_high: score >= 10
+	//
+	// Scoring factors:
+	// - Size tier * 3: NULL/unknown(0), <100MB(0), 100MB-1GB(1*3=3), 1GB-5GB(2*3=6), >5GB(3*3=9)
+	// - has_lfs: +2
+	// - has_submodules: +2
+	// - has_large_files: +2
+	// - branch_protections > 0: +1
+
+	const (
+		MB100 = 104857600  // 100MB
+		GB1   = 1073741824 // 1GB
+		GB5   = 5368709120 // 5GB
+	)
+
+	var conditions []string
+
+	categories := []string{}
+	switch v := complexityValue.(type) {
+	case string:
+		categories = []string{v}
+	case []string:
+		categories = v
+	}
+
+	// Build complexity score calculation (matches analytics exactly)
+	scoreCalc := `(
+		(CASE 
+			WHEN total_size IS NULL THEN 0
+			WHEN total_size < ? THEN 0
+			WHEN total_size < ? THEN 1
+			WHEN total_size < ? THEN 2
+			ELSE 3
+		END) * 3 +
+		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_large_files = 1 THEN 2 ELSE 0 END +
+		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END
+	)`
+
+	for _, category := range categories {
+		switch category {
+		case "low":
+			conditions = append(conditions, fmt.Sprintf("(%s <= 3)", scoreCalc))
+			args = append(args, MB100, GB1, GB5)
+		case "medium":
+			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 4 AND 6)", scoreCalc))
+			args = append(args, MB100, GB1, GB5)
+		case "high":
+			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 7 AND 9)", scoreCalc))
+			args = append(args, MB100, GB1, GB5)
+		case "very_high":
+			conditions = append(conditions, fmt.Sprintf("(%s >= 10)", scoreCalc))
+			args = append(args, MB100, GB1, GB5)
+		}
+	}
+
+	if len(conditions) > 0 {
+		query += fmt.Sprintf(" AND (%s)", strings.Join(conditions, " OR "))
 	}
 
 	return query, args
