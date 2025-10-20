@@ -14,48 +14,48 @@ func TestUpdateBatchStatus(t *testing.T) {
 
 	ctx := context.Background()
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testDefaultBranch
 
 	tests := []struct {
-		name             string
-		repoStatuses     []string
-		expectedStatus   string
+		name               string
+		repoStatuses       []string
+		expectedStatus     string
 		batchInitialStatus string
 	}{
 		{
-			name:             "all pending should be pending",
-			repoStatuses:     []string{string(models.StatusPending), string(models.StatusPending)},
-			expectedStatus:   "pending",
+			name:               "all pending should be pending",
+			repoStatuses:       []string{string(models.StatusPending), string(models.StatusPending)},
+			expectedStatus:     "pending",
 			batchInitialStatus: "pending",
 		},
 		{
-			name:             "all dry_run_complete should be ready",
-			repoStatuses:     []string{string(models.StatusDryRunComplete), string(models.StatusDryRunComplete)},
-			expectedStatus:   "ready",
+			name:               "all dry_run_complete should be ready",
+			repoStatuses:       []string{string(models.StatusDryRunComplete), string(models.StatusDryRunComplete)},
+			expectedStatus:     "ready",
 			batchInitialStatus: "pending",
 		},
 		{
-			name:             "mixed pending and dry_run_complete should be pending",
-			repoStatuses:     []string{string(models.StatusPending), string(models.StatusDryRunComplete)},
-			expectedStatus:   "pending",
+			name:               "mixed pending and dry_run_complete should be pending",
+			repoStatuses:       []string{string(models.StatusPending), string(models.StatusDryRunComplete)},
+			expectedStatus:     "pending",
 			batchInitialStatus: "ready",
 		},
 		{
-			name:             "dry_run_failed should make batch pending",
-			repoStatuses:     []string{string(models.StatusDryRunFailed), string(models.StatusDryRunComplete)},
-			expectedStatus:   "pending",
+			name:               "dry_run_failed should make batch pending",
+			repoStatuses:       []string{string(models.StatusDryRunFailed), string(models.StatusDryRunComplete)},
+			expectedStatus:     "pending",
 			batchInitialStatus: "ready",
 		},
 		{
-			name:             "rolled_back should make batch pending",
-			repoStatuses:     []string{string(models.StatusRolledBack), string(models.StatusDryRunComplete)},
-			expectedStatus:   "pending",
+			name:               "rolled_back should make batch pending",
+			repoStatuses:       []string{string(models.StatusRolledBack), string(models.StatusDryRunComplete)},
+			expectedStatus:     "pending",
 			batchInitialStatus: "ready",
 		},
 		{
-			name:             "migration_failed should make batch pending",
-			repoStatuses:     []string{string(models.StatusMigrationFailed), string(models.StatusDryRunComplete)},
-			expectedStatus:   "pending",
+			name:               "migration_failed should make batch pending",
+			repoStatuses:       []string{string(models.StatusMigrationFailed), string(models.StatusDryRunComplete)},
+			expectedStatus:     "pending",
 			batchInitialStatus: "ready",
 		},
 	}
@@ -118,13 +118,13 @@ func TestUpdateBatchStatusDoesNotAffectInProgressBatches(t *testing.T) {
 
 	ctx := context.Background()
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testDefaultBranch
 
 	// Create a batch in 'in_progress' state
 	batch := &models.Batch{
 		Name:            "In Progress Batch",
 		Type:            "pilot",
-		Status:          "in_progress",
+		Status:          batchStatusInProgress,
 		RepositoryCount: 0,
 		CreatedAt:       time.Now(),
 	}
@@ -159,7 +159,7 @@ func TestUpdateBatchStatusDoesNotAffectInProgressBatches(t *testing.T) {
 		t.Fatalf("GetBatch() error = %v", err)
 	}
 
-	if updatedBatch.Status != "in_progress" {
+	if updatedBatch.Status != batchStatusInProgress {
 		t.Errorf("Expected batch status to remain 'in_progress', got '%s'", updatedBatch.Status)
 	}
 }
@@ -170,7 +170,7 @@ func TestUpdateBatchStatusAfterRepositoryRemoval(t *testing.T) {
 
 	ctx := context.Background()
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testDefaultBranch
 
 	// Create a batch
 	batch := &models.Batch{
@@ -245,7 +245,7 @@ func TestAddingPendingRepoToReadyBatchMakesPending(t *testing.T) {
 
 	ctx := context.Background()
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testDefaultBranch
 
 	// Create a batch
 	batch := &models.Batch{
@@ -311,4 +311,3 @@ func TestAddingPendingRepoToReadyBatchMakesPending(t *testing.T) {
 		t.Errorf("Expected batch to become 'pending' after adding pending repo, got '%s'", updatedBatch.Status)
 	}
 }
-

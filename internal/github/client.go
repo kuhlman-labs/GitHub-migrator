@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v75/github"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
@@ -31,6 +34,11 @@ type ClientConfig struct {
 	Timeout     time.Duration
 	RetryConfig RetryConfig
 	Logger      *slog.Logger
+
+	// GitHub App authentication (optional, takes precedence over Token if provided)
+	AppID             int64  // GitHub App ID
+	AppPrivateKey     string // Private key (file path or inline PEM)
+	AppInstallationID int64  // Installation ID
 }
 
 // InstanceType represents the type of GitHub instance
@@ -100,7 +108,54 @@ func buildGraphQLURL(baseURL string) string {
 	}
 }
 
+// createAppTransport creates an http.RoundTripper for GitHub App authentication
+func createAppTransport(appID int64, privateKey string, installationID int64, baseURL string) (http.RoundTripper, error) {
+	var privateKeyBytes []byte
+	var err error
+
+	// Check if privateKey is a file path or inline PEM
+	if strings.HasPrefix(privateKey, "-----BEGIN") {
+		// Inline PEM string
+		privateKeyBytes = []byte(privateKey)
+	} else {
+		// File path
+		// #nosec G304 -- private key file path is provided by configuration, not user input
+		privateKeyBytes, err = os.ReadFile(privateKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read private key file: %w", err)
+		}
+	}
+
+	// Create the GitHub App transport
+	var tr http.RoundTripper
+	if baseURL == "" || baseURL == GitHubAPIURL {
+		// GitHub.com
+		tr, err = ghinstallation.New(http.DefaultTransport, appID, installationID, privateKeyBytes)
+	} else {
+		// GitHub Enterprise
+		tr, err = ghinstallation.NewKeyFromFile(http.DefaultTransport, appID, installationID, privateKey)
+		if err != nil && strings.HasPrefix(privateKey, "-----BEGIN") {
+			// Try with the bytes directly if it's inline PEM
+			tr, err = ghinstallation.New(http.DefaultTransport, appID, installationID, privateKeyBytes)
+		}
+		if err == nil {
+			// Set the base URL for enterprise
+			if appTr, ok := tr.(*ghinstallation.Transport); ok {
+				appTr.BaseURL = baseURL
+			}
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub App transport: %w", err)
+	}
+
+	return tr, nil
+}
+
 // NewClient creates a new GitHub client with rate limiting and retry logic
+// Supports both PAT and GitHub App authentication. If App credentials are provided,
+// they take precedence over PAT.
 func NewClient(cfg ClientConfig) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -110,13 +165,45 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		cfg.Timeout = 30 * time.Second
 	}
 
-	// Create OAuth2 client
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: cfg.Token},
-	)
-	httpClient := oauth2.NewClient(ctx, ts)
-	httpClient.Timeout = cfg.Timeout
+	var httpClient *http.Client
+	var authMethod string
+	var token string
+
+	// Determine authentication method
+	if cfg.AppID > 0 && cfg.AppPrivateKey != "" && cfg.AppInstallationID > 0 {
+		// Use GitHub App authentication
+		authMethod = "GitHub App"
+		cfg.Logger.Debug("Using GitHub App authentication",
+			"app_id", cfg.AppID,
+			"installation_id", cfg.AppInstallationID)
+
+		tr, err := createAppTransport(cfg.AppID, cfg.AppPrivateKey, cfg.AppInstallationID, cfg.BaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GitHub App transport: %w", err)
+		}
+
+		httpClient = &http.Client{
+			Transport: tr,
+			Timeout:   cfg.Timeout,
+		}
+		token = "" // App auth doesn't use a token string
+	} else {
+		// Use PAT authentication
+		authMethod = "PAT"
+		if cfg.Token == "" {
+			return nil, fmt.Errorf("either Token or GitHub App credentials (AppID, AppPrivateKey, AppInstallationID) must be provided")
+		}
+
+		cfg.Logger.Debug("Using PAT authentication")
+
+		ctx := context.Background()
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: cfg.Token},
+		)
+		httpClient = oauth2.NewClient(ctx, ts)
+		httpClient.Timeout = cfg.Timeout
+		token = cfg.Token
+	}
 
 	// Create REST client
 	var restClient *github.Client
@@ -142,7 +229,8 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	cfg.Logger.Debug("GraphQL client configured",
 		"base_url", cfg.BaseURL,
 		"graphql_url", graphqlURL,
-		"instance_type", detectInstanceType(cfg.BaseURL))
+		"instance_type", detectInstanceType(cfg.BaseURL),
+		"auth_method", authMethod)
 
 	// Initialize rate limiter and retry logic
 	rateLimiter := NewRateLimiter(cfg.Logger)
@@ -153,7 +241,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		rest:           restClient,
 		graphql:        graphqlClient,
 		baseURL:        cfg.BaseURL,
-		token:          cfg.Token,
+		token:          token,
 		rateLimiter:    rateLimiter,
 		retryer:        retryer,
 		circuitBreaker: circuitBreaker,

@@ -20,31 +20,34 @@ import (
 const (
 	statusInProgress = "in_progress"
 	statusReady      = "ready"
+	statusPending    = "pending"
 	boolTrue         = "true"
 )
 
 // Handler contains all HTTP handlers
 type Handler struct {
-	db           *storage.Database
-	logger       *slog.Logger
-	sourceClient *github.Client
-	destClient   *github.Client
-	collector    *discovery.Collector
+	db               *storage.Database
+	logger           *slog.Logger
+	sourceDualClient *github.DualClient
+	destDualClient   *github.DualClient
+	collector        *discovery.Collector
 }
 
 // NewHandler creates a new Handler instance
 // sourceProvider can be nil if discovery is not needed
-func NewHandler(db *storage.Database, logger *slog.Logger, sourceClient *github.Client, destClient *github.Client, sourceProvider source.Provider) *Handler {
+func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider) *Handler {
 	var collector *discovery.Collector
-	if sourceClient != nil && sourceProvider != nil {
-		collector = discovery.NewCollector(sourceClient, db, logger, sourceProvider)
+	// Use API client for discovery operations (will use App client if available, otherwise PAT)
+	if sourceDualClient != nil && sourceProvider != nil {
+		apiClient := sourceDualClient.APIClient()
+		collector = discovery.NewCollector(apiClient, db, logger, sourceProvider)
 	}
 	return &Handler{
-		db:           db,
-		logger:       logger,
-		sourceClient: sourceClient,
-		destClient:   destClient,
-		collector:    collector,
+		db:               db,
+		logger:           logger,
+		sourceDualClient: sourceDualClient,
+		destDualClient:   destDualClient,
+		collector:        collector,
 	}
 }
 
@@ -403,8 +406,9 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	org, repoName := parts[0], parts[1]
 
-	// Fetch repository from GitHub API
-	ghRepo, _, err := h.sourceClient.REST().Repositories.Get(ctx, org, repoName)
+	// Fetch repository from GitHub API using API client
+	apiClient := h.sourceDualClient.APIClient()
+	ghRepo, _, err := apiClient.REST().Repositories.Get(ctx, org, repoName)
 	if err != nil {
 		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", fullName)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository from GitHub")
@@ -436,7 +440,7 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.sourceClient == nil {
+	if h.sourceDualClient == nil {
 		h.sendError(w, http.StatusServiceUnavailable, "Source client not configured")
 		return
 	}
@@ -472,8 +476,9 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	org, repoName := parts[0], parts[1]
 
-	// Unlock the repository
-	err = h.sourceClient.UnlockRepository(ctx, org, repoName, *repo.SourceMigrationID)
+	// Unlock the repository using migration client (PAT required)
+	migrationClient := h.sourceDualClient.MigrationClient()
+	err = migrationClient.UnlockRepository(ctx, org, repoName, *repo.SourceMigrationID)
 	if err != nil {
 		h.logger.Error("Failed to unlock repository", "error", err, "repo", fullName)
 		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to unlock repository: %v", err))
@@ -569,7 +574,7 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	batch.CreatedAt = time.Now()
-	batch.Status = "pending" // Start batches in pending state
+	batch.Status = statusPending // Start batches in pending state
 
 	if err := h.db.CreateBatch(ctx, &batch); err != nil {
 		h.logger.Error("Failed to create batch", "error", err)
@@ -620,6 +625,8 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // DryRunBatch handles POST /api/v1/batches/{id}/dry-run
+//
+//nolint:gocyclo // HTTP handler with multiple validation and processing steps
 func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
@@ -651,7 +658,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Allow dry run for both "pending" and "ready" batches
 	// (You can re-run dry runs even on ready batches)
-	if batch.Status != "pending" && batch.Status != "ready" {
+	if batch.Status != statusPending && batch.Status != statusReady {
 		h.sendError(w, http.StatusBadRequest, "Can only run dry run on batches with 'pending' or 'ready' status")
 		return
 	}
@@ -778,12 +785,12 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate batch status
-	if batch.Status == "pending" && !req.SkipDryRun {
+	if batch.Status == statusPending && !req.SkipDryRun {
 		h.sendError(w, http.StatusBadRequest, "Batch is in 'pending' state. Run dry run first or set skip_dry_run=true")
 		return
 	}
 
-	if batch.Status != statusReady && batch.Status != "pending" {
+	if batch.Status != statusReady && batch.Status != statusPending {
 		h.sendError(w, http.StatusBadRequest, "Can only start batches with 'ready' or 'pending' status")
 		return
 	}
@@ -870,7 +877,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only allow updates for "pending" and "ready" batches
-	if batch.Status != statusReady && batch.Status != "pending" {
+	if batch.Status != statusReady && batch.Status != statusPending {
 		h.sendError(w, http.StatusBadRequest, "Can only edit batches with 'pending' or 'ready' status")
 		return
 	}
@@ -983,7 +990,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Only allow adding repos to "pending" and "ready" batches
-	if batch.Status != statusReady && batch.Status != "pending" {
+	if batch.Status != statusReady && batch.Status != statusPending {
 		h.sendError(w, http.StatusBadRequest, "Can only add repositories to batches with 'pending' or 'ready' status")
 		return
 	}
@@ -1073,7 +1080,7 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 	}
 
 	// Only allow removing repos from "pending" and "ready" batches
-	if batch.Status != statusReady && batch.Status != "pending" {
+	if batch.Status != statusReady && batch.Status != statusPending {
 		h.sendError(w, http.StatusBadRequest, "Can only remove repositories from batches with 'pending' or 'ready' status")
 		return
 	}

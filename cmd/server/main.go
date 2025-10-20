@@ -46,15 +46,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize GitHub clients
-	sourceClient := initializeSourceClient(cfg, logger)
-	destClient := initializeDestClient(cfg, logger)
+	// Initialize GitHub dual clients (PAT + optional App auth)
+	sourceDualClient := initializeSourceClient(cfg, logger)
+	destDualClient := initializeDestClient(cfg, logger)
 
 	// Create API server
-	server := api.NewServer(cfg, db, logger, sourceClient, destClient)
+	server := api.NewServer(cfg, db, logger, sourceDualClient, destDualClient)
 
 	// Initialize migration executor and worker (if both clients are available)
-	migrationWorker := initializeMigrationWorker(cfg, sourceClient, destClient, db, logger)
+	migrationWorker := initializeMigrationWorker(cfg, sourceDualClient, destDualClient, db, logger)
 
 	// Initialize and start batch status updater
 	statusUpdater := initializeBatchStatusUpdater(db, logger)
@@ -109,55 +109,83 @@ func main() {
 	slog.Info("Server exited")
 }
 
-// initializeSourceClient initializes the GitHub source client if configured
-func initializeSourceClient(cfg *config.Config, logger *slog.Logger) *github.Client {
-	return initializeGitHubClient(
+// initializeSourceClient initializes the GitHub source dual client if configured
+func initializeSourceClient(cfg *config.Config, logger *slog.Logger) *github.DualClient {
+	return initializeGitHubDualClient(
 		cfg.Source.Token,
 		cfg.Source.BaseURL,
 		cfg.Source.Type,
+		cfg.Source.AppID,
+		cfg.Source.AppPrivateKey,
+		cfg.Source.AppInstallationID,
 		"source",
 		logger,
 	)
 }
 
-// initializeDestClient initializes the GitHub destination client if configured
-func initializeDestClient(cfg *config.Config, logger *slog.Logger) *github.Client {
-	return initializeGitHubClient(
+// initializeDestClient initializes the GitHub destination dual client if configured
+func initializeDestClient(cfg *config.Config, logger *slog.Logger) *github.DualClient {
+	return initializeGitHubDualClient(
 		cfg.Destination.Token,
 		cfg.Destination.BaseURL,
 		cfg.Destination.Type,
+		cfg.Destination.AppID,
+		cfg.Destination.AppPrivateKey,
+		cfg.Destination.AppInstallationID,
 		"destination",
 		logger,
 	)
 }
 
-// initializeGitHubClient initializes a GitHub client with the given configuration
-func initializeGitHubClient(token, baseURL, clientType, name string, logger *slog.Logger) *github.Client {
+// initializeGitHubDualClient initializes a GitHub dual client with PAT and optional App auth
+func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, appPrivateKey string, appInstallationID int64, name string, logger *slog.Logger) *github.DualClient {
 	if token == "" || baseURL == "" || clientType != "github" {
 		return nil
 	}
 
-	client, err := github.NewClient(github.ClientConfig{
+	// Configure PAT client
+	patConfig := github.ClientConfig{
 		BaseURL:     baseURL,
 		Token:       token,
 		Timeout:     30 * time.Second,
 		RetryConfig: github.DefaultRetryConfig(),
 		Logger:      logger,
+	}
+
+	// Configure App client if credentials provided
+	var appConfig *github.ClientConfig
+	if appID > 0 && appPrivateKey != "" && appInstallationID > 0 {
+		appConfig = &github.ClientConfig{
+			BaseURL:           baseURL,
+			Timeout:           30 * time.Second,
+			RetryConfig:       github.DefaultRetryConfig(),
+			Logger:            logger,
+			AppID:             appID,
+			AppPrivateKey:     appPrivateKey,
+			AppInstallationID: appInstallationID,
+		}
+	}
+
+	dualClient, err := github.NewDualClient(github.DualClientConfig{
+		PATConfig: patConfig,
+		AppConfig: appConfig,
+		Logger:    logger,
 	})
 	if err != nil {
-		slog.Warn("Failed to initialize "+name+" GitHub client", "error", err)
+		slog.Warn("Failed to initialize "+name+" GitHub dual client", "error", err)
 		return nil
 	}
 
-	slog.Info(name+" GitHub client initialized",
+	slog.Info(name+" GitHub dual client initialized",
 		"base_url", baseURL,
-		"type", clientType)
-	return client
+		"type", clientType,
+		"has_app_auth", dualClient.HasAppClient())
+	return dualClient
 }
 
 // initializeMigrationWorker creates and starts the migration worker if configured
-func initializeMigrationWorker(cfg *config.Config, sourceClient, destClient *github.Client, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
-	if sourceClient == nil || destClient == nil {
+func initializeMigrationWorker(cfg *config.Config, sourceDualClient, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
+	if sourceDualClient == nil || destDualClient == nil {
 		return nil
 	}
 
@@ -189,10 +217,11 @@ func initializeMigrationWorker(cfg *config.Config, sourceClient, destClient *git
 		destRepoAction = migration.DestinationRepoExistsFail
 	}
 
-	// Create migration executor
+	// Create migration executor with PAT clients (required for migrations per GitHub API)
+	logger.Info("Creating migration executor with PAT clients (per GitHub migration API requirements)")
 	executor, err := migration.NewExecutor(migration.ExecutorConfig{
-		SourceClient:         sourceClient,
-		DestClient:           destClient,
+		SourceClient:         sourceDualClient.MigrationClient(),
+		DestClient:           destDualClient.MigrationClient(),
 		Storage:              db,
 		Logger:               logger,
 		PostMigrationMode:    postMigMode,

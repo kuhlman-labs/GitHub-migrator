@@ -30,16 +30,26 @@ type DatabaseConfig struct {
 type SourceConfig struct {
 	Type         string `mapstructure:"type"`         // "github", "gitlab", or "azuredevops"
 	BaseURL      string `mapstructure:"base_url"`     // API base URL
-	Token        string `mapstructure:"token"`        // Authentication token
+	Token        string `mapstructure:"token"`        // Authentication token (PAT)
 	Organization string `mapstructure:"organization"` // Organization name (required for Azure DevOps)
 	Username     string `mapstructure:"username"`     // Username (optional, for Azure DevOps)
+
+	// GitHub App authentication (optional, for non-migration operations)
+	AppID             int64  `mapstructure:"app_id"`              // GitHub App ID
+	AppPrivateKey     string `mapstructure:"app_private_key"`     // Private key (file path or inline PEM)
+	AppInstallationID int64  `mapstructure:"app_installation_id"` // Installation ID
 }
 
 // DestinationConfig defines the destination repository system configuration
 type DestinationConfig struct {
 	Type    string `mapstructure:"type"`     // "github", "gitlab", or "azuredevops"
 	BaseURL string `mapstructure:"base_url"` // API base URL
-	Token   string `mapstructure:"token"`    // Authentication token
+	Token   string `mapstructure:"token"`    // Authentication token (PAT)
+
+	// GitHub App authentication (optional, for non-migration operations)
+	AppID             int64  `mapstructure:"app_id"`              // GitHub App ID
+	AppPrivateKey     string `mapstructure:"app_private_key"`     // Private key (file path or inline PEM)
+	AppInstallationID int64  `mapstructure:"app_installation_id"` // Installation ID
 }
 
 // MigrationConfig defines migration worker configuration

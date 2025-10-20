@@ -12,6 +12,13 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/models"
 )
 
+const (
+	// Batch status constants
+	batchStatusPending    = "pending"
+	batchStatusReady      = "ready"
+	batchStatusInProgress = "in_progress"
+)
+
 // SaveRepository inserts or updates a repository in the database
 // nolint:dupl // SaveRepository and UpdateRepository have different SQL operations
 func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) error {
@@ -1022,7 +1029,9 @@ func (d *Database) DeleteBatch(ctx context.Context, batchID int64) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback() // Rollback is a no-op if commit succeeds
+	}()
 
 	// Clear batch_id from all repositories in this batch
 	clearReposQuery := `
@@ -1323,7 +1332,7 @@ func (d *Database) UpdateBatchStatus(ctx context.Context, batchID int64) error {
 // based on the dry run status of its repositories
 func calculateBatchReadiness(repos []*models.Repository) string {
 	if len(repos) == 0 {
-		return "pending"
+		return batchStatusPending
 	}
 
 	allDryRunComplete := true
@@ -1347,9 +1356,9 @@ func calculateBatchReadiness(repos []*models.Repository) string {
 	}
 
 	if allDryRunComplete {
-		return "ready"
+		return batchStatusReady
 	}
-	return "pending"
+	return batchStatusPending
 }
 
 // OrganizationStats represents statistics for a single organization

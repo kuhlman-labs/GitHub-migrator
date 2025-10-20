@@ -74,6 +74,28 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database) {
 	return handler, db
 }
 
+// createTestDualClient creates a DualClient with minimal configuration for testing
+func createTestDualClient(t *testing.T, logger *slog.Logger) *github.DualClient {
+	t.Helper()
+
+	cfg := github.DualClientConfig{
+		PATConfig: github.ClientConfig{
+			BaseURL:     "https://api.github.com",
+			Token:       "ghp_test_token",
+			RetryConfig: github.DefaultRetryConfig(),
+			Logger:      logger,
+		},
+		Logger: logger,
+	}
+
+	dc, err := github.NewDualClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create test DualClient: %v", err)
+	}
+
+	return dc
+}
+
 func TestNewHandler(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -89,9 +111,9 @@ func TestNewHandler(t *testing.T) {
 	})
 
 	t.Run("with GitHub clients but no source provider", func(t *testing.T) {
-		sourceClient := &github.Client{}
-		destClient := &github.Client{}
-		h := NewHandler(db, logger, sourceClient, destClient, nil)
+		sourceDualClient := createTestDualClient(t, logger)
+		destDualClient := createTestDualClient(t, logger)
+		h := NewHandler(db, logger, sourceDualClient, destDualClient, nil)
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
@@ -158,7 +180,8 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 func testStartDiscoveryValidation(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	h := NewHandler(db, logger, &github.Client{}, nil, nil)
+	sourceDualClient := createTestDualClient(t, logger)
+	h := NewHandler(db, logger, sourceDualClient, nil, nil)
 
 	tests := []struct {
 		name     string
@@ -211,14 +234,9 @@ func testStartDiscoveryOrganization(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	cfg := github.ClientConfig{
-		BaseURL: "https://api.github.com",
-		Token:   "test-token",
-		Logger:  logger,
-	}
-	client, _ := github.NewClient(cfg)
+	sourceDualClient := createTestDualClient(t, logger)
 	mockProvider := &mockSourceProvider{}
-	h := NewHandler(db, logger, client, nil, mockProvider)
+	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider)
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -250,14 +268,9 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	cfg := github.ClientConfig{
-		BaseURL: "https://api.github.com",
-		Token:   "test-token",
-		Logger:  logger,
-	}
-	client, _ := github.NewClient(cfg)
+	sourceDualClient := createTestDualClient(t, logger)
 	mockProvider := &mockSourceProvider{}
-	h := NewHandler(db, logger, client, nil, mockProvider)
+	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider)
 
 	reqBody := map[string]interface{}{
 		"enterprise_slug": "test-enterprise",

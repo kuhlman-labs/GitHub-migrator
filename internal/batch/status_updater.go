@@ -147,6 +147,8 @@ func (su *StatusUpdater) calculateBatchStatus(ctx context.Context, batch *models
 
 // CalculateBatchStatusFromRepos calculates batch status from repository statuses
 // This is exported so it can be used by other packages (e.g., scheduler)
+//
+//nolint:gocyclo // Complex status calculation logic
 func CalculateBatchStatusFromRepos(repos []*models.Repository) string {
 	completedCount := 0
 	failedCount := 0

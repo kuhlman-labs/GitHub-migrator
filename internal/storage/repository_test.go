@@ -699,6 +699,7 @@ func TestBatchOperations(t *testing.T) {
 	}
 }
 
+//nolint:gocyclo // Test function with multiple setup steps
 func TestRollbackRepositoryClearsBatchID(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

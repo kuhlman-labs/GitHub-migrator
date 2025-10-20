@@ -11,6 +11,12 @@ source:
   type: github
   base_url: "https://github.company.com/api/v3"  # GitHub Enterprise Server
   token: "${GITHUB_SOURCE_TOKEN}"
+  
+  # GitHub App authentication (optional, for non-migration operations)
+  # When configured, App tokens are used for discovery/profiling; PAT is used for migrations
+  # app_id: 123456
+  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  # app_installation_id: 789012
 
 # Destination repository system (where to migrate TO)
 # Supported types: github, gitlab
@@ -19,6 +25,12 @@ destination:
   type: github
   base_url: "https://api.github.com"  # GitHub Enterprise Cloud or GitHub.com
   token: "${GITHUB_DEST_TOKEN}"
+  
+  # GitHub App authentication (optional, for non-migration operations)
+  # When configured, App tokens are used for discovery/profiling; PAT is used for migrations
+  # app_id: 123456
+  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  # app_installation_id: 789012
 
 # Migration worker configuration
 migration:
@@ -32,7 +44,7 @@ migration:
   dest_repo_exists_action: "fail"
 
 logging:
-  level: info
+  level: debug
   format: json
   output_file: ./logs/migrator.log
   max_size: 100
