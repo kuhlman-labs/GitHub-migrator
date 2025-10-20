@@ -29,6 +29,8 @@ export function BatchBuilderPage() {
 
     try {
       const batchData = await api.getBatch(parseInt(batchId, 10));
+      console.log('Raw batch data from API:', batchData);
+      console.log('Batch structure check - has batch property?', 'batch' in (batchData as any));
       setBatch(batchData);
     } catch (err) {
       console.error('Failed to load batch:', err);
@@ -98,7 +100,7 @@ export function BatchBuilderPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1">
         <ErrorBoundary>
           <BatchBuilder
             batch={batch}

@@ -45,10 +45,53 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   // UI state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  // Update form fields when batch loads in edit mode
+  useEffect(() => {
+    if (batch) {
+      console.log('Populating form with batch data:', batch);
+      console.log('batch.name:', batch.name);
+      console.log('batch.id:', batch.id);
+      console.log('Has nested batch property?', 'batch' in (batch as any));
+      
+      // Handle nested batch structure from API
+      const batchData = (batch as any).batch || batch;
+      console.log('Using batch data:', batchData);
+      console.log('batchData.name:', batchData.name);
+      
+      setBatchName(batchData.name || '');
+      setBatchDescription(batchData.description || '');
+      setScheduledAt(
+        batchData.scheduled_at ? new Date(batchData.scheduled_at).toISOString().slice(0, 16) : ''
+      );
+    }
+  }, [batch]);
+
   // Load current batch repositories in edit mode
   useEffect(() => {
     if (isEditMode && batch) {
-      loadCurrentBatchRepos();
+      // Handle nested batch structure
+      const batchData = (batch as any).batch || batch;
+      const batchId = batchData?.id || batch.id;
+      
+      console.log('Edit mode: batch object:', batch);
+      console.log('Edit mode: extracted batch ID:', batchId);
+      
+      if (batchId) {
+        // Check if repositories are already included in the batch response
+        const repos = (batch as any).repositories;
+        if (repos && Array.isArray(repos)) {
+          console.log('✓ Using repositories from batch response:', repos.length);
+          setCurrentBatchRepos(repos);
+          const repoIds = repos.map((r: any) => r.id);
+          setSelectedRepoIds(new Set(repoIds));
+          console.log('✓ Auto-selected', repoIds.length, 'repository IDs:', repoIds);
+        } else {
+          console.log('Edit mode: Loading repos for batch', batchId);
+          loadCurrentBatchRepos();
+        }
+      }
+    } else if (isEditMode && !batch) {
+      console.log('Edit mode: Waiting for batch to load...');
     }
   }, [isEditMode, batch]);
 
@@ -58,12 +101,30 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   }, [filters]);
 
   const loadCurrentBatchRepos = async () => {
-    if (!batch) return;
+    // Handle nested batch structure
+    const batchData = (batch as any)?.batch || batch;
+    const batchId = batchData?.id || batch?.id;
+    
+    if (!batchId) {
+      console.error('Cannot load batch repos: batch ID is undefined', { batch, batchData, batchId });
+      return;
+    }
+    
     try {
-      const response = await api.listRepositories({ batch_id: batch.id });
-      setCurrentBatchRepos(response.repositories || response as any);
+      console.log('Fetching repos for batch ID:', batchId);
+      const response = await api.listRepositories({ batch_id: batchId });
+      // Ensure we only set repositories that belong to this batch
+      const repos = Array.isArray(response) ? response : (response.repositories || []);
+      console.log('✓ Loaded', repos.length, 'repositories for batch', batchId);
+      setCurrentBatchRepos(repos);
+      
+      // Auto-select these repositories
+      const repoIds = repos.map(r => r.id);
+      setSelectedRepoIds(new Set(repoIds));
+      console.log('✓ Auto-selected', repoIds.length, 'repository IDs:', repoIds);
     } catch (err) {
       console.error('Failed to load current batch repos:', err);
+      setCurrentBatchRepos([]);
     }
   };
 
@@ -71,11 +132,17 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     setAvailableLoading(true);
     try {
       const response = await api.listRepositories(filters);
-      setAvailableRepos(response.repositories || response as any);
-      setTotalAvailable(response.total || (response.repositories?.length || 0));
+      const repos = Array.isArray(response) ? response : (response.repositories || []);
+      const total = Array.isArray(response) ? response.length : (response.total || repos.length);
+      
+      console.log('Loading available repos:', repos.length, 'repositories, total:', total);
+      setAvailableRepos(repos);
+      setTotalAvailable(total);
     } catch (err) {
       console.error('Failed to load available repos:', err);
       setError('Failed to load repositories');
+      setAvailableRepos([]);
+      setTotalAvailable(0);
     } finally {
       setAvailableLoading(false);
     }
@@ -183,8 +250,18 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       let batchId: number;
 
       if (isEditMode && batch) {
+        // Handle nested batch structure
+        const batchData = (batch as any).batch || batch;
+        const existingBatchId = batchData?.id || batch.id;
+        
+        if (!existingBatchId) {
+          throw new Error('Cannot update batch: batch ID is undefined');
+        }
+        
+        console.log('Updating batch with ID:', existingBatchId);
+        
         // Update existing batch
-        await api.updateBatch(batch.id, {
+        await api.updateBatch(existingBatchId, {
           name: batchName.trim(),
           description: batchDescription.trim() || undefined,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
@@ -192,21 +269,23 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         
         // Update repositories - add new ones, remove old ones
         const currentIds = new Set(currentBatchRepos.map((r) => r.id));
-        const originalResponse = await api.listRepositories({ batch_id: batch.id });
+        const originalResponse = await api.listRepositories({ batch_id: existingBatchId });
         const originalRepos = originalResponse.repositories || originalResponse as any;
         const originalIds = new Set(originalRepos.map((r: Repository) => r.id));
         
         const toAdd = Array.from(currentIds).filter((id) => !originalIds.has(id));
         const toRemove = Array.from(originalIds).filter((id) => !currentIds.has(id));
         
+        console.log('Repository changes:', { toAdd, toRemove });
+        
         if (toAdd.length > 0) {
-          await api.addRepositoriesToBatch(batch.id, toAdd);
+          await api.addRepositoriesToBatch(existingBatchId, toAdd);
         }
         if (toRemove.length > 0) {
-          await api.removeRepositoriesFromBatch(batch.id, toRemove);
+          await api.removeRepositoriesFromBatch(existingBatchId, toRemove);
         }
         
-        batchId = batch.id;
+        batchId = existingBatchId;
       } else {
         // Create new batch
         const newBatch = await api.createBatch({
@@ -260,7 +339,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   };
 
   return (
-    <div className="bg-gray-50 h-full flex overflow-hidden">
+    <div className="bg-gray-50 h-full flex max-h-[calc(100vh-120px)]">
       {/* Filter Sidebar */}
       <FilterSidebar
         filters={filters}
@@ -270,8 +349,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       />
 
       {/* Middle Panel - Available Repositories */}
-      <div className={`flex-1 min-w-0 flex flex-col bg-white border-r border-gray-200 overflow-hidden transition-all duration-300 ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}>
-        <div className="p-4 border-b border-gray-200">
+      <div className={`flex-1 min-w-0 grid grid-rows-[auto_1fr_auto] bg-white border-r border-gray-200 transition-all duration-300 max-h-full ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}>
+        <div className="p-4 border-b border-gray-200 bg-white row-start-1">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Available Repositories</h3>
@@ -279,6 +358,13 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                 {totalAvailable} repositories available
               </p>
             </div>
+            {selectedRepoIds.size > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1.5 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">
+                  {selectedRepoIds.size} selected
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Quick Filter Buttons */}
@@ -333,8 +419,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           />
         </div>
 
-        {/* Repository List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Repository List - Scrollable */}
+        <div className="overflow-y-auto p-4 space-y-3 row-start-2 min-h-0">
           {availableLoading ? (
             <div className="flex items-center justify-center py-12">
               <LoadingSpinner />
@@ -361,51 +447,54 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           )}
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="border-t border-gray-200 px-4 py-3 bg-white">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Page {currentPage} of {totalPages}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
+        {/* Bottom Section - Pagination & Add Button */}
+        <div className="bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3">
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Add Selected Button */}
-        <div className="border-t border-gray-200 p-4 bg-white">
-          <button
-            onClick={handleAddSelected}
-            disabled={selectedRepoIds.size === 0 || loading}
-            className="w-full px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Selected ({selectedRepoIds.size})
-          </button>
+          {/* Add Selected Button - Always Visible */}
+          <div className="p-4">
+            <button
+              onClick={handleAddSelected}
+              disabled={selectedRepoIds.size === 0 || loading}
+              className="w-full px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Selected ({selectedRepoIds.size})
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Right Panel - Selected Repositories & Batch Info */}
-      <div className={`flex-shrink-0 flex flex-col bg-white overflow-hidden transition-all duration-300 ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}>
-        <div className="p-4 border-b border-gray-200">
+      <div className={`flex-shrink-0 grid grid-rows-[auto_1fr_auto] bg-white transition-all duration-300 max-h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}>
+        <div className="p-4 border-b border-gray-200 bg-white row-start-1">
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">
@@ -418,7 +507,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             {currentBatchRepos.length > 0 && (
               <button
                 onClick={handleClearAll}
-                className="text-sm text-red-600 hover:text-red-700 font-medium"
+                className="text-sm text-red-600 hover:text-red-700 font-medium transition-colors"
               >
                 Clear All
               </button>
@@ -426,7 +515,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="overflow-y-auto p-4 row-start-2 min-h-0">
           {currentBatchRepos.length === 0 ? (
             <div className="text-center py-12">
               <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -474,8 +563,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           )}
         </div>
 
-        {/* Batch Metadata Form */}
-        <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-4">
+        {/* Bottom Batch Metadata Form */}
+        <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3">
           <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
             <div className="text-xs font-medium text-blue-900 mb-1">Total Batch Size</div>
             <div className="text-xl font-bold text-blue-900">{formatBytes(totalSize)}</div>
@@ -533,7 +622,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             <button
               onClick={() => handleSubmit(false)}
               disabled={loading || currentBatchRepos.length === 0}
-              className="w-full px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
             >
               {loading ? 'Saving...' : isEditMode ? 'Update Batch' : 'Create Batch'}
             </button>
@@ -541,7 +630,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               <button
                 onClick={() => handleSubmit(true)}
                 disabled={loading || currentBatchRepos.length === 0}
-                className="w-full px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
               >
                 Create & Start
               </button>
