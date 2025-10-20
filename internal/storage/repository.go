@@ -2034,8 +2034,8 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 }
 
 // GetOrganizationStatsFiltered returns organization stats with batch filter
-func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, batchFilter string) ([]*OrganizationStats, error) {
-	//nolint:gosec // G202: Filter values are sanitized by buildBatchFilter
+func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, batchFilter string) ([]*OrganizationStats, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
 		SELECT 
 			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
@@ -2044,6 +2044,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, batchFilter
 			COUNT(*) as status_count
 		FROM repositories r
 		WHERE INSTR(full_name, '/') > 0
+			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 		GROUP BY org, status
 		ORDER BY total DESC, org ASC
@@ -2102,9 +2103,9 @@ func (d *Database) UpdateRepositoryValidation(ctx context.Context, fullName stri
 	return nil
 }
 
-// GetMigrationCompletionStatsByOrgFiltered returns migration completion stats with batch filter
-func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, batchFilter string) ([]*MigrationCompletionStats, error) {
-	//nolint:gosec // G202: Filter values are sanitized by buildBatchFilter
+// GetMigrationCompletionStatsByOrgFiltered returns migration completion stats with org and batch filters
+func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, orgFilter, batchFilter string) ([]*MigrationCompletionStats, error) {
+	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
 		SELECT 
 			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
@@ -2115,6 +2116,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			SUM(CASE WHEN status LIKE '%failed%' THEN 1 ELSE 0 END) as failed_count
 		FROM repositories r
 		WHERE full_name LIKE '%/%'
+			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 		GROUP BY organization
 		ORDER BY total_repos DESC

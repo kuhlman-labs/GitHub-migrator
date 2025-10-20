@@ -1489,7 +1489,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get discovery statistics with filters
-	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, batchFilter)
+	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get organization stats", "error", err)
 		orgStats = []*storage.OrganizationStats{}
@@ -1507,7 +1507,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		featureStats = &storage.FeatureStats{}
 	}
 
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, batchFilter)
+	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get migration completion stats", "error", err)
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
