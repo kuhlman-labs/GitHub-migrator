@@ -339,7 +339,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   };
 
   return (
-    <div className="bg-gray-50 h-full flex max-h-[calc(100vh-120px)]">
+    <div className="bg-gray-50 h-full flex">
       {/* Filter Sidebar */}
       <FilterSidebar
         filters={filters}
@@ -564,14 +564,14 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         </div>
 
         {/* Bottom Batch Metadata Form */}
-        <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3">
-          <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
-            <div className="text-xs font-medium text-blue-900 mb-1">Total Batch Size</div>
-            <div className="text-xl font-bold text-blue-900">{formatBytes(totalSize)}</div>
+        <div className="border-t border-gray-200 p-3 bg-gray-50 space-y-2.5 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3">
+          <div className="bg-blue-50 border border-blue-200 p-2 rounded-lg">
+            <div className="text-xs font-medium text-blue-900">Total Batch Size</div>
+            <div className="text-lg font-bold text-blue-900">{formatBytes(totalSize)}</div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
               Batch Name *
             </label>
             <input
@@ -579,50 +579,50 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               value={batchName}
               onChange={(e) => setBatchName(e.target.value)}
               placeholder="e.g., Wave 1, Q1 Migration"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={loading}
               required
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
               Description
             </label>
             <textarea
               value={batchDescription}
               onChange={(e) => setBatchDescription(e.target.value)}
               placeholder="Optional description"
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={1}
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
               disabled={loading}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
               Scheduled Date (Optional)
             </label>
             <input
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={loading}
             />
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-800 px-2.5 py-1.5 rounded-lg text-xs">
               {error}
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5 pt-1">
             <button
               onClick={() => handleSubmit(false)}
               disabled={loading || currentBatchRepos.length === 0}
-              className="w-full px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+              className="w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
             >
               {loading ? 'Saving...' : isEditMode ? 'Update Batch' : 'Create Batch'}
             </button>
@@ -630,7 +630,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               <button
                 onClick={() => handleSubmit(true)}
                 disabled={loading || currentBatchRepos.length === 0}
-                className="w-full px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+                className="w-full px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
               >
                 Create & Start
               </button>
@@ -639,7 +639,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="w-full px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              className="w-full px-3 py-1.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
             >
               Cancel
             </button>

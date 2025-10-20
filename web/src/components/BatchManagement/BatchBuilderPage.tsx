@@ -76,8 +76,8 @@ export function BatchBuilderPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="border-b border-gray-200 bg-white shadow-sm">
+    <div className="h-[calc(100vh-4rem)] bg-gray-50 flex flex-col overflow-hidden">
+      <div className="border-b border-gray-200 bg-white shadow-sm flex-shrink-0">
         <div className="max-w-full px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -100,7 +100,7 @@ export function BatchBuilderPage() {
         </div>
       </div>
 
-      <div className="flex-1">
+      <div className="flex-1 overflow-hidden">
         <ErrorBoundary>
           <BatchBuilder
             batch={batch}
