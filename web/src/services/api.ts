@@ -233,5 +233,24 @@ export const api = {
     });
     return data;
   },
+
+  // Self-Service
+  async selfServiceMigration(params: {
+    repositories: string[];
+    mappings?: Record<string, string>;
+    dry_run: boolean;
+  }): Promise<{
+    batch_id: number;
+    batch_name: string;
+    message: string;
+    total_repositories: number;
+    newly_discovered: number;
+    already_existed: number;
+    discovery_errors?: string[];
+    execution_started: boolean;
+  }> {
+    const { data } = await client.post('/self-service/migrate', params);
+    return data;
+  },
 };
 

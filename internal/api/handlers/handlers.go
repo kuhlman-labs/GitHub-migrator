@@ -2232,3 +2232,259 @@ func intPtrOrZero(i *int) int {
 	}
 	return *i
 }
+
+// SelfServiceMigrationRequest represents a request for self-service migration
+type SelfServiceMigrationRequest struct {
+	Repositories []string          `json:"repositories"`
+	Mappings     map[string]string `json:"mappings,omitempty"`
+	DryRun       bool              `json:"dry_run"`
+}
+
+// SelfServiceMigrationResponse represents the response from self-service migration
+type SelfServiceMigrationResponse struct {
+	BatchID           int64    `json:"batch_id"`
+	BatchName         string   `json:"batch_name"`
+	Message           string   `json:"message"`
+	TotalRepositories int      `json:"total_repositories"`
+	NewlyDiscovered   int      `json:"newly_discovered"`
+	AlreadyExisted    int      `json:"already_existed"`
+	DiscoveryErrors   []string `json:"discovery_errors,omitempty"`
+	ExecutionStarted  bool     `json:"execution_started"`
+}
+
+// HandleSelfServiceMigration handles POST /api/v1/self-service/migrate
+// This endpoint orchestrates discovery, batch creation, and execution for self-service migrations
+//
+//nolint:gocyclo // Complex orchestration logic with multiple validation and processing steps
+func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Request) {
+	var req SelfServiceMigrationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Validate input
+	if len(req.Repositories) == 0 {
+		h.sendError(w, http.StatusBadRequest, "No repositories provided")
+		return
+	}
+
+	// Validate repository format
+	for _, repoFullName := range req.Repositories {
+		if !strings.Contains(repoFullName, "/") {
+			h.sendError(w, http.StatusBadRequest, fmt.Sprintf("Invalid repository format: %s (must be 'org/repo')", repoFullName))
+			return
+		}
+	}
+
+	ctx := r.Context()
+
+	h.logger.Info("Processing self-service migration request",
+		"repo_count", len(req.Repositories),
+		"dry_run", req.DryRun,
+		"has_mappings", len(req.Mappings) > 0)
+
+	// Step 1: Check which repositories exist in database and which need discovery
+	var existingRepos []*models.Repository
+	var reposToDiscover []string
+	discoveryErrors := []string{}
+
+	for _, repoFullName := range req.Repositories {
+		repo, err := h.db.GetRepository(ctx, repoFullName)
+		if err != nil {
+			h.logger.Error("Failed to check repository existence", "repo", repoFullName, "error", err)
+			h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to check repository: %s", repoFullName))
+			return
+		}
+
+		if repo != nil {
+			existingRepos = append(existingRepos, repo)
+			h.logger.Debug("Repository already exists in database", "repo", repoFullName)
+		} else {
+			reposToDiscover = append(reposToDiscover, repoFullName)
+			h.logger.Debug("Repository needs discovery", "repo", repoFullName)
+		}
+	}
+
+	// Step 2: Discover new repositories
+	if len(reposToDiscover) > 0 {
+		h.logger.Info("Starting discovery for new repositories", "count", len(reposToDiscover))
+
+		if h.collector == nil {
+			h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
+			return
+		}
+
+		for _, repoFullName := range reposToDiscover {
+			// Parse org and repo name
+			parts := strings.SplitN(repoFullName, "/", 2)
+			if len(parts) != 2 {
+				discoveryErrors = append(discoveryErrors, fmt.Sprintf("%s: invalid format", repoFullName))
+				continue
+			}
+			org, repoName := parts[0], parts[1]
+
+			// Fetch repository from GitHub API
+			apiClient := h.sourceDualClient.APIClient()
+			ghRepo, _, err := apiClient.REST().Repositories.Get(ctx, org, repoName)
+			if err != nil {
+				h.logger.Error("Failed to fetch repository from GitHub", "repo", repoFullName, "error", err)
+				discoveryErrors = append(discoveryErrors, fmt.Sprintf("%s: not found on source", repoFullName))
+				continue
+			}
+
+			// Profile repository (includes cloning and git-sizer analysis)
+			if err := h.collector.ProfileRepository(ctx, ghRepo); err != nil {
+				h.logger.Error("Failed to profile repository", "repo", repoFullName, "error", err)
+				discoveryErrors = append(discoveryErrors, fmt.Sprintf("%s: discovery failed - %v", repoFullName, err))
+				continue
+			}
+
+			// Fetch the newly created repository from database
+			repo, err := h.db.GetRepository(ctx, repoFullName)
+			if err != nil || repo == nil {
+				h.logger.Error("Failed to retrieve discovered repository", "repo", repoFullName, "error", err)
+				discoveryErrors = append(discoveryErrors, fmt.Sprintf("%s: failed to save discovery data", repoFullName))
+				continue
+			}
+
+			existingRepos = append(existingRepos, repo)
+			h.logger.Info("Repository discovered and profiled", "repo", repoFullName)
+		}
+	}
+
+	// Check if we have any repositories to migrate
+	if len(existingRepos) == 0 {
+		h.sendError(w, http.StatusBadRequest, "No valid repositories to migrate. All repositories failed discovery or validation.")
+		return
+	}
+
+	// Step 3: Apply destination mappings if provided
+	if len(req.Mappings) > 0 {
+		h.logger.Info("Applying destination mappings", "count", len(req.Mappings))
+		for _, repo := range existingRepos {
+			if destFullName, ok := req.Mappings[repo.FullName]; ok {
+				repo.DestinationFullName = &destFullName
+				if err := h.db.UpdateRepository(ctx, repo); err != nil {
+					h.logger.Error("Failed to update repository destination", "repo", repo.FullName, "error", err)
+				} else {
+					h.logger.Debug("Updated destination mapping", "repo", repo.FullName, "destination", destFullName)
+				}
+			}
+		}
+	}
+
+	// Step 4: Create batch with timestamp-based name
+	batchName := fmt.Sprintf("Self-Service - %s", time.Now().Format(time.RFC3339))
+	batch := &models.Batch{
+		Name:            batchName,
+		Type:            "self-service",
+		Status:          statusPending,
+		RepositoryCount: len(existingRepos),
+		CreatedAt:       time.Now(),
+	}
+
+	if err := h.db.CreateBatch(ctx, batch); err != nil {
+		h.logger.Error("Failed to create batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to create batch")
+		return
+	}
+
+	h.logger.Info("Batch created", "batch_id", batch.ID, "batch_name", batch.Name)
+
+	// Step 5: Add repositories to batch
+	repoIDs := make([]int64, len(existingRepos))
+	for i, repo := range existingRepos {
+		repoIDs[i] = repo.ID
+	}
+
+	if err := h.db.AddRepositoriesToBatch(ctx, batch.ID, repoIDs); err != nil {
+		h.logger.Error("Failed to add repositories to batch", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to add repositories to batch")
+		return
+	}
+
+	h.logger.Info("Repositories added to batch", "batch_id", batch.ID, "count", len(repoIDs))
+
+	// Step 6: Execute batch (dry run or production)
+	executionStarted := false
+	var executionError error
+
+	if req.DryRun {
+		// Start dry run
+		h.logger.Info("Starting dry run for batch", "batch_id", batch.ID)
+
+		// Update batch status
+		batch.Status = statusInProgress
+		now := time.Now()
+		batch.StartedAt = &now
+		if err := h.db.UpdateBatch(ctx, batch); err != nil {
+			h.logger.Error("Failed to update batch status", "error", err)
+		}
+
+		// Queue repositories for dry run
+		priority := 0
+		for _, repo := range existingRepos {
+			repo.Status = string(models.StatusDryRunQueued)
+			repo.Priority = priority
+			if err := h.db.UpdateRepository(ctx, repo); err != nil {
+				h.logger.Error("Failed to queue repository for dry run", "repo", repo.FullName, "error", err)
+			}
+		}
+		executionStarted = true
+	} else {
+		// Start production migration
+		h.logger.Info("Starting production migration for batch", "batch_id", batch.ID)
+
+		// Update batch status
+		batch.Status = statusInProgress
+		now := time.Now()
+		batch.StartedAt = &now
+		if err := h.db.UpdateBatch(ctx, batch); err != nil {
+			h.logger.Error("Failed to update batch status", "error", err)
+		}
+
+		// Queue repositories for migration
+		priority := 0
+		for _, repo := range existingRepos {
+			repo.Status = string(models.StatusQueuedForMigration)
+			repo.Priority = priority
+			if err := h.db.UpdateRepository(ctx, repo); err != nil {
+				h.logger.Error("Failed to queue repository for migration", "repo", repo.FullName, "error", err)
+				executionError = err
+			}
+		}
+		executionStarted = executionError == nil
+	}
+
+	// Step 7: Build response
+	response := SelfServiceMigrationResponse{
+		BatchID:           batch.ID,
+		BatchName:         batch.Name,
+		TotalRepositories: len(existingRepos),
+		NewlyDiscovered:   len(reposToDiscover) - len(discoveryErrors),
+		AlreadyExisted:    len(existingRepos) - (len(reposToDiscover) - len(discoveryErrors)),
+		DiscoveryErrors:   discoveryErrors,
+		ExecutionStarted:  executionStarted,
+	}
+
+	if req.DryRun {
+		response.Message = fmt.Sprintf("Self-service dry run started for %d repositories in batch '%s'", len(existingRepos), batch.Name)
+	} else {
+		response.Message = fmt.Sprintf("Self-service migration started for %d repositories in batch '%s'", len(existingRepos), batch.Name)
+	}
+
+	if len(discoveryErrors) > 0 {
+		response.Message += fmt.Sprintf(" (Note: %d repositories failed discovery and were skipped)", len(discoveryErrors))
+	}
+
+	h.logger.Info("Self-service migration request processed",
+		"batch_id", batch.ID,
+		"total_repos", response.TotalRepositories,
+		"newly_discovered", response.NewlyDiscovered,
+		"already_existed", response.AlreadyExisted,
+		"discovery_errors", len(discoveryErrors),
+		"dry_run", req.DryRun)
+
+	h.sendJSON(w, http.StatusAccepted, response)
+}

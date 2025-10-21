@@ -93,5 +93,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/analytics/executive-report", s.handler.GetExecutiveReport)
 	mux.HandleFunc("GET /api/v1/analytics/executive-report/export", s.handler.ExportExecutiveReport)
 
+	// Self-service endpoints
+	mux.HandleFunc("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)
+
 	return handler
 }
