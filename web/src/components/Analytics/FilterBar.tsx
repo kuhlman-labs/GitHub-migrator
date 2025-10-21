@@ -17,19 +17,23 @@ export function FilterBar({
   const { data: organizations } = useOrganizations();
   const { data: batches } = useBatches();
 
-  const handleExport = async (format: 'csv' | 'json') => {
+  const handleExecutiveReportExport = async (format: 'csv' | 'json') => {
     try {
-      const blob = await api.exportMigrationHistory(format);
+      const filters = {
+        organization: selectedOrganization || undefined,
+        batch_id: selectedBatch || undefined,
+      };
+      const blob = await api.exportExecutiveReport(format, filters);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `migration-analytics.${format}`;
+      a.download = `executive-migration-report.${format}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
-      console.error('Failed to export data:', error);
+      console.error('Failed to export executive report:', error);
     }
   };
 
@@ -76,14 +80,16 @@ export function FilterBar({
 
         <div className="flex gap-2 items-end">
           <button
-            onClick={() => handleExport('csv')}
-            className="px-3 py-1.5 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg"
+            onClick={() => handleExecutiveReportExport('csv')}
+            className="px-6 py-2 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg transition-colors"
+            title="Export executive report as CSV"
           >
             Export CSV
           </button>
           <button
-            onClick={() => handleExport('json')}
-            className="px-3 py-1.5 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg"
+            onClick={() => handleExecutiveReportExport('json')}
+            className="px-6 py-2 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg transition-colors"
+            title="Export executive report as JSON"
           >
             Export JSON
           </button>

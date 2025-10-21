@@ -90,6 +90,8 @@ func (s *Server) Router() http.Handler {
 	// Analytics endpoints
 	mux.HandleFunc("GET /api/v1/analytics/summary", s.handler.GetAnalyticsSummary)
 	mux.HandleFunc("GET /api/v1/analytics/progress", s.handler.GetMigrationProgress)
+	mux.HandleFunc("GET /api/v1/analytics/executive-report", s.handler.GetExecutiveReport)
+	mux.HandleFunc("GET /api/v1/analytics/executive-report/export", s.handler.ExportExecutiveReport)
 
 	return handler
 }

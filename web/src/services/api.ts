@@ -3,6 +3,7 @@ import type {
   Repository, 
   Batch, 
   Analytics, 
+  ExecutiveReport,
   RepositoryDetailResponse, 
   MigrationLogsResponse,
   Organization,
@@ -204,6 +205,19 @@ export const api = {
 
   async getMigrationProgress() {
     const { data } = await client.get('/analytics/progress');
+    return data;
+  },
+
+  async getExecutiveReport(filters?: { organization?: string; batch_id?: string }): Promise<ExecutiveReport> {
+    const { data } = await client.get('/analytics/executive-report', { params: filters });
+    return data;
+  },
+
+  async exportExecutiveReport(format: 'csv' | 'json', filters?: { organization?: string; batch_id?: string }): Promise<Blob> {
+    const { data } = await client.get('/analytics/executive-report/export', {
+      params: { format, ...filters },
+      responseType: 'blob',
+    });
     return data;
   },
 

@@ -1564,6 +1564,480 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetExecutiveReport handles GET /api/v1/analytics/executive-report
+func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get filter parameters
+	orgFilter := r.URL.Query().Get("organization")
+	batchFilter := r.URL.Query().Get("batch_id")
+
+	// Get basic analytics
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get repository stats", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
+		return
+	}
+
+	// Calculate totals
+	total := 0
+	migrated := stats[string(models.StatusComplete)]
+	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)]
+	pending := stats[string(models.StatusPending)]
+
+	for _, count := range stats {
+		total += count
+	}
+
+	inProgress := total - migrated - failed - pending
+
+	// Calculate success rate
+	successRate := 0.0
+	if migrated+failed > 0 {
+		successRate = float64(migrated) / float64(migrated+failed) * 100
+	}
+
+	// Get migration velocity (last 30 days)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	if err != nil {
+		h.logger.Error("Failed to get migration velocity", "error", err)
+		migrationVelocity = &storage.MigrationVelocity{}
+	}
+
+	// Get migration time series for trend analysis
+	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get migration time series", "error", err)
+		migrationTimeSeries = []*storage.MigrationTimeSeriesPoint{}
+	}
+
+	// Get average migration time
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get average migration time", "error", err)
+		avgMigrationTime = 0
+	}
+
+	// Calculate estimated completion date
+	var estimatedCompletionDate *string
+	var daysRemaining int
+	remaining := total - migrated
+	if remaining > 0 && migrationVelocity.ReposPerDay > 0 {
+		daysRemainingFloat := float64(remaining) / migrationVelocity.ReposPerDay
+		daysRemaining = int(daysRemainingFloat)
+		completionDate := time.Now().Add(time.Duration(daysRemainingFloat*24) * time.Hour)
+		dateStr := completionDate.Format("2006-01-02")
+		estimatedCompletionDate = &dateStr
+	}
+
+	// Get organization breakdowns
+	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get migration completion stats", "error", err)
+		migrationCompletionStats = []*storage.MigrationCompletionStats{}
+	}
+
+	// Get complexity distribution
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get complexity distribution", "error", err)
+		complexityDistribution = []*storage.ComplexityDistribution{}
+	}
+
+	// Get size distribution
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get size distribution", "error", err)
+		sizeDistribution = []*storage.SizeDistribution{}
+	}
+
+	// Get feature stats
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get feature stats", "error", err)
+		featureStats = &storage.FeatureStats{}
+	}
+
+	// Calculate risk metrics
+	highComplexityPending := 0
+	veryLargePending := 0
+	for _, dist := range complexityDistribution {
+		if dist.Category == "complex" || dist.Category == "very_complex" {
+			highComplexityPending += dist.Count
+		}
+	}
+	for _, dist := range sizeDistribution {
+		if dist.Category == "very_large" {
+			veryLargePending += dist.Count
+		}
+	}
+
+	// Get batch statistics
+	batches, err := h.db.ListBatches(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get batches", "error", err)
+		batches = []*models.Batch{}
+	}
+
+	completedBatches := 0
+	inProgressBatches := 0
+	pendingBatches := 0
+	for _, batch := range batches {
+		switch batch.Status {
+		case "completed", "completed_with_errors":
+			completedBatches++
+		case "in_progress":
+			inProgressBatches++
+		case "pending", "ready":
+			pendingBatches++
+		}
+	}
+
+	// Get first migration date for timeline
+	var firstMigrationDate *string
+	if len(migrationTimeSeries) > 0 {
+		firstMigrationDate = &migrationTimeSeries[0].Date
+	}
+
+	// Calculate completion percentage
+	completionRate := 0.0
+	if total > 0 {
+		completionRate = float64(migrated) / float64(total) * 100
+	}
+
+	// Build executive report
+	report := map[string]interface{}{
+		// Executive Summary
+		"executive_summary": map[string]interface{}{
+			"total_repositories":        total,
+			"completion_percentage":     completionRate,
+			"migrated_count":            migrated,
+			"in_progress_count":         inProgress,
+			"pending_count":             pending,
+			"failed_count":              failed,
+			"success_rate":              successRate,
+			"estimated_completion_date": estimatedCompletionDate,
+			"days_remaining":            daysRemaining,
+			"first_migration_date":      firstMigrationDate,
+			"report_generated_at":       time.Now().Format(time.RFC3339),
+		},
+
+		// Migration Velocity & Timeline
+		"velocity_metrics": map[string]interface{}{
+			"repos_per_day":        migrationVelocity.ReposPerDay,
+			"repos_per_week":       migrationVelocity.ReposPerWeek,
+			"average_duration_sec": avgMigrationTime,
+			"migration_trend":      migrationTimeSeries,
+		},
+
+		// Organization Progress
+		"organization_progress": migrationCompletionStats,
+
+		// Risk & Complexity Analysis
+		"risk_analysis": map[string]interface{}{
+			"high_complexity_pending": highComplexityPending,
+			"very_large_pending":      veryLargePending,
+			"failed_migrations":       failed,
+			"complexity_distribution": complexityDistribution,
+			"size_distribution":       sizeDistribution,
+		},
+
+		// Batch Performance
+		"batch_performance": map[string]interface{}{
+			"total_batches":       len(batches),
+			"completed_batches":   completedBatches,
+			"in_progress_batches": inProgressBatches,
+			"pending_batches":     pendingBatches,
+		},
+
+		// Feature Migration Status
+		"feature_migration_status": featureStats,
+
+		// Detailed Status Breakdown
+		"status_breakdown": stats,
+	}
+
+	h.sendJSON(w, http.StatusOK, report)
+}
+
+// ExportExecutiveReport handles GET /api/v1/analytics/executive-report/export
+func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	format := r.URL.Query().Get("format")
+	orgFilter := r.URL.Query().Get("organization")
+	batchFilter := r.URL.Query().Get("batch_id")
+
+	if format != "csv" && format != "json" {
+		h.sendError(w, http.StatusBadRequest, "Invalid format. Must be 'csv' or 'json'")
+		return
+	}
+
+	// Get all the same data as GetExecutiveReport
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get repository stats", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
+		return
+	}
+
+	total := 0
+	migrated := stats[string(models.StatusComplete)]
+	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)]
+	pending := stats[string(models.StatusPending)]
+
+	for _, count := range stats {
+		total += count
+	}
+
+	inProgress := total - migrated - failed - pending
+	successRate := 0.0
+	if migrated+failed > 0 {
+		successRate = float64(migrated) / float64(migrated+failed) * 100
+	}
+
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	if err != nil {
+		migrationVelocity = &storage.MigrationVelocity{}
+	}
+
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	if err != nil {
+		avgMigrationTime = 0
+	}
+
+	var estimatedCompletionDate string
+	var daysRemaining int
+	remaining := total - migrated
+	if remaining > 0 && migrationVelocity.ReposPerDay > 0 {
+		daysRemainingFloat := float64(remaining) / migrationVelocity.ReposPerDay
+		daysRemaining = int(daysRemainingFloat)
+		completionDate := time.Now().Add(time.Duration(daysRemainingFloat*24) * time.Hour)
+		estimatedCompletionDate = completionDate.Format("2006-01-02")
+	}
+
+	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		migrationCompletionStats = []*storage.MigrationCompletionStats{}
+	}
+
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	if err != nil {
+		complexityDistribution = []*storage.ComplexityDistribution{}
+	}
+
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		sizeDistribution = []*storage.SizeDistribution{}
+	}
+
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	if err != nil {
+		featureStats = &storage.FeatureStats{}
+	}
+
+	batches, err := h.db.ListBatches(ctx)
+	if err != nil {
+		batches = []*models.Batch{}
+	}
+
+	completedBatches := 0
+	inProgressBatches := 0
+	pendingBatches := 0
+	for _, batch := range batches {
+		switch batch.Status {
+		case "completed", "completed_with_errors":
+			completedBatches++
+		case "in_progress":
+			inProgressBatches++
+		case "pending", "ready":
+			pendingBatches++
+		}
+	}
+
+	completionRate := 0.0
+	if total > 0 {
+		completionRate = float64(migrated) / float64(total) * 100
+	}
+
+	if format == "csv" {
+		h.exportExecutiveReportCSV(w, total, migrated, inProgress, pending, failed, completionRate, successRate,
+			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
+			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
+			stats, completedBatches, inProgressBatches, pendingBatches)
+	} else {
+		h.exportExecutiveReportJSON(w, total, migrated, inProgress, pending, failed, completionRate, successRate,
+			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
+			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
+			stats, completedBatches, inProgressBatches, pendingBatches)
+	}
+}
+
+func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrated, inProgress, pending, failed int,
+	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
+	velocity *storage.MigrationVelocity, avgMigrationTime int,
+	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
+	sizeDist []*storage.SizeDistribution, featureStats *storage.FeatureStats,
+	statusBreakdown map[string]int, completedBatches, inProgressBatches, pendingBatches int) {
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=executive_migration_report.csv")
+
+	var output strings.Builder
+
+	// Section 1: Executive Summary
+	output.WriteString("EXECUTIVE MIGRATION PROGRESS REPORT\n")
+	output.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
+	output.WriteString("\n")
+
+	output.WriteString("=== EXECUTIVE SUMMARY ===\n")
+	output.WriteString("Metric,Value\n")
+	output.WriteString(fmt.Sprintf("Total Repositories,%d\n", total))
+	output.WriteString(fmt.Sprintf("Completion Percentage,%.1f%%\n", completionRate))
+	output.WriteString(fmt.Sprintf("Successfully Migrated,%d\n", migrated))
+	output.WriteString(fmt.Sprintf("In Progress,%d\n", inProgress))
+	output.WriteString(fmt.Sprintf("Pending,%d\n", pending))
+	output.WriteString(fmt.Sprintf("Failed,%d\n", failed))
+	output.WriteString(fmt.Sprintf("Success Rate,%.1f%%\n", successRate))
+	if estimatedCompletionDate != "" {
+		output.WriteString(fmt.Sprintf("Estimated Completion,%s\n", estimatedCompletionDate))
+		output.WriteString(fmt.Sprintf("Days Remaining,%d\n", daysRemaining))
+	}
+	output.WriteString("\n")
+
+	// Section 2: Velocity Metrics
+	output.WriteString("=== MIGRATION VELOCITY ===\n")
+	output.WriteString("Metric,Value\n")
+	output.WriteString(fmt.Sprintf("Repos Per Day,%.1f\n", velocity.ReposPerDay))
+	output.WriteString(fmt.Sprintf("Repos Per Week,%.1f\n", velocity.ReposPerWeek))
+	if avgMigrationTime > 0 {
+		avgMinutes := avgMigrationTime / 60
+		output.WriteString(fmt.Sprintf("Average Migration Time,%d minutes\n", avgMinutes))
+	}
+	output.WriteString("\n")
+
+	// Section 3: Organization Progress
+	output.WriteString("=== ORGANIZATION PROGRESS ===\n")
+	output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	for _, org := range orgStats {
+		completionPct := 0.0
+		if org.TotalRepos > 0 {
+			completionPct = float64(org.CompletedCount) / float64(org.TotalRepos) * 100
+		}
+		output.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d,%d,%.1f%%\n",
+			escapesCSV(org.Organization),
+			org.TotalRepos,
+			org.CompletedCount,
+			org.InProgressCount,
+			org.PendingCount,
+			org.FailedCount,
+			completionPct))
+	}
+	output.WriteString("\n")
+
+	// Section 4: Risk Analysis - Complexity
+	output.WriteString("=== RISK ANALYSIS - COMPLEXITY ===\n")
+	output.WriteString("Complexity Category,Repository Count\n")
+	for _, dist := range complexityDist {
+		output.WriteString(fmt.Sprintf("%s,%d\n", escapesCSV(dist.Category), dist.Count))
+	}
+	output.WriteString("\n")
+
+	// Section 5: Risk Analysis - Size
+	output.WriteString("=== RISK ANALYSIS - SIZE ===\n")
+	output.WriteString("Size Category,Repository Count\n")
+	for _, dist := range sizeDist {
+		output.WriteString(fmt.Sprintf("%s,%d\n", escapesCSV(dist.Category), dist.Count))
+	}
+	output.WriteString("\n")
+
+	// Section 6: Feature Migration Status
+	output.WriteString("=== FEATURE MIGRATION STATUS ===\n")
+	output.WriteString("Feature,Repository Count,Percentage\n")
+	totalRepos := featureStats.TotalRepositories
+	if totalRepos > 0 {
+		output.WriteString(fmt.Sprintf("Archived,%d,%.1f%%\n", featureStats.IsArchived, float64(featureStats.IsArchived)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, float64(featureStats.HasLargeFiles)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, float64(featureStats.HasActions)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, float64(featureStats.HasWiki)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, float64(featureStats.HasPages)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("Discussions,%d,%.1f%%\n", featureStats.HasDiscussions, float64(featureStats.HasDiscussions)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("Projects,%d,%.1f%%\n", featureStats.HasProjects, float64(featureStats.HasProjects)/float64(totalRepos)*100))
+		output.WriteString(fmt.Sprintf("Branch Protections,%d,%.1f%%\n", featureStats.HasBranchProtections, float64(featureStats.HasBranchProtections)/float64(totalRepos)*100))
+	}
+	output.WriteString("\n")
+
+	// Section 7: Batch Performance
+	output.WriteString("=== BATCH PERFORMANCE ===\n")
+	output.WriteString("Status,Count\n")
+	output.WriteString(fmt.Sprintf("Completed,%d\n", completedBatches))
+	output.WriteString(fmt.Sprintf("In Progress,%d\n", inProgressBatches))
+	output.WriteString(fmt.Sprintf("Pending,%d\n", pendingBatches))
+	output.WriteString("\n")
+
+	// Section 8: Detailed Status Breakdown
+	output.WriteString("=== DETAILED STATUS BREAKDOWN ===\n")
+	output.WriteString("Status,Repository Count,Percentage\n")
+	for status, count := range statusBreakdown {
+		pct := 0.0
+		if total > 0 {
+			pct = float64(count) / float64(total) * 100
+		}
+		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapesCSV(status), count, pct))
+	}
+
+	w.Write([]byte(output.String()))
+}
+
+func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrated, inProgress, pending, failed int,
+	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
+	velocity *storage.MigrationVelocity, avgMigrationTime int,
+	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
+	sizeDist []*storage.SizeDistribution, featureStats *storage.FeatureStats,
+	statusBreakdown map[string]int, completedBatches, inProgressBatches, pendingBatches int) {
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=executive_migration_report.json")
+
+	report := map[string]interface{}{
+		"report_metadata": map[string]interface{}{
+			"generated_at": time.Now().Format(time.RFC3339),
+			"report_type":  "Executive Migration Progress Report",
+			"version":      "1.0",
+		},
+		"executive_summary": map[string]interface{}{
+			"total_repositories":        total,
+			"completion_percentage":     completionRate,
+			"migrated_count":            migrated,
+			"in_progress_count":         inProgress,
+			"pending_count":             pending,
+			"failed_count":              failed,
+			"success_rate":              successRate,
+			"estimated_completion_date": estimatedCompletionDate,
+			"days_remaining":            daysRemaining,
+		},
+		"velocity_metrics": map[string]interface{}{
+			"repos_per_day":        velocity.ReposPerDay,
+			"repos_per_week":       velocity.ReposPerWeek,
+			"average_duration_sec": avgMigrationTime,
+		},
+		"organization_progress":    orgStats,
+		"complexity_distribution":  complexityDist,
+		"size_distribution":        sizeDist,
+		"feature_migration_status": featureStats,
+		"batch_performance": map[string]interface{}{
+			"completed_batches":   completedBatches,
+			"in_progress_batches": inProgressBatches,
+			"pending_batches":     pendingBatches,
+		},
+		"status_breakdown": statusBreakdown,
+	}
+
+	json.NewEncoder(w).Encode(report)
+}
+
 // Helper methods
 
 func (h *Handler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
