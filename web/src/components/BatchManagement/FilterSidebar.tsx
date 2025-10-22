@@ -59,6 +59,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
     if (filters.has_pages) count++;
     if (filters.has_discussions) count++;
     if (filters.has_projects) count++;
+    if (filters.has_packages) count++;
     if (filters.has_branch_protections) count++;
     if (filters.is_archived !== undefined) count++;
     if (filters.is_fork !== undefined) count++;
@@ -265,6 +266,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
               { key: 'has_pages' as const, label: 'Pages' },
               { key: 'has_discussions' as const, label: 'Discussions' },
               { key: 'has_projects' as const, label: 'Projects' },
+              { key: 'has_packages' as const, label: 'Packages' },
               { key: 'has_branch_protections' as const, label: 'Branch Protections' },
               { key: 'is_archived' as const, label: 'Archived' },
               { key: 'is_fork' as const, label: 'Fork' },

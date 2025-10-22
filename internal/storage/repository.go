@@ -29,14 +29,14 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			has_lfs, has_submodules, has_large_files, large_file_count,
 			default_branch, branch_count, commit_count, last_commit_sha,
 			last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
-			has_discussions, has_actions, has_projects, branch_protections, 
-			environment_count, secret_count, variable_count, 
+			has_discussions, has_actions, has_projects, has_packages, 
+			branch_protections, environment_count, secret_count, variable_count, 
 			webhook_count, contributor_count, top_contributors,
 			issue_count, pull_request_count, tag_count, 
 			open_issue_count, open_pr_count,
 			status, batch_id, priority, destination_url, 
 			destination_full_name, discovered_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(full_name) DO UPDATE SET
 			source = excluded.source,
 			source_url = excluded.source_url,
@@ -61,6 +61,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			has_discussions = excluded.has_discussions,
 			has_actions = excluded.has_actions,
 			has_projects = excluded.has_projects,
+			has_packages = excluded.has_packages,
 			branch_protections = excluded.branch_protections,
 			environment_count = excluded.environment_count,
 			secret_count = excluded.secret_count,
@@ -86,7 +87,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.DefaultBranch, repo.BranchCount, repo.CommitCount,
 		repo.LastCommitSHA, repo.LastCommitDate,
 		repo.IsArchived, repo.IsFork, repo.HasWiki, repo.HasPages, repo.HasDiscussions,
-		repo.HasActions, repo.HasProjects, repo.BranchProtections,
+		repo.HasActions, repo.HasProjects, repo.HasPackages, repo.BranchProtections,
 		repo.EnvironmentCount, repo.SecretCount, repo.VariableCount,
 		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
 		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
@@ -108,8 +109,8 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 			   has_lfs, has_submodules, has_large_files, large_file_count,
 			   default_branch, branch_count, commit_count, last_commit_sha,
 			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
-			   has_discussions, has_actions, has_projects, branch_protections, 
-			   environment_count, secret_count, variable_count, 
+			   has_discussions, has_actions, has_projects, has_packages, 
+			   branch_protections, environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
@@ -129,7 +130,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
 		&repo.LastCommitSHA, &repo.LastCommitDate,
 		&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
-		&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
+		&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
 		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
 		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
@@ -257,6 +258,7 @@ func applyFeatureFilters(query string, args []interface{}, filters map[string]in
 		{"has_pages", "has_pages"},
 		{"has_discussions", "has_discussions"},
 		{"has_projects", "has_projects"},
+		{"has_packages", "has_packages"},
 		{"is_archived", "is_archived"},
 		{"is_fork", "is_fork"},
 	}
@@ -499,8 +501,8 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			   has_lfs, has_submodules, has_large_files, large_file_count,
 			   default_branch, branch_count, commit_count, last_commit_sha,
 			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
-			   has_discussions, has_actions, has_projects, branch_protections, 
-			   environment_count, secret_count, variable_count, 
+			   has_discussions, has_actions, has_projects, has_packages, 
+			   branch_protections, environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
@@ -549,7 +551,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
 			&repo.LastCommitSHA, &repo.LastCommitDate,
 			&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
-			&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
+			&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
 			&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
 			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
@@ -1739,7 +1741,7 @@ type ComplexityDistribution struct {
 //nolint:dupl // Similar query pattern but different business logic
 func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
 	// Calculate complexity score based on:
-	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4), Branch protections (weight: 1)
+	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4), Packages (weight: 3), Branch protections (weight: 1)
 	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
 		SELECT 
@@ -1762,6 +1764,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 				(CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END) +
+				(CASE WHEN has_packages = 1 THEN 3 ELSE 0 END) +
 				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as complexity_score
 			FROM repositories r
 			WHERE 1=1

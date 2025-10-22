@@ -60,6 +60,7 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	p.profileWebhooks(ctx, org, name, repo)
 	p.profileContributors(ctx, org, name, repo)
 	p.profileTags(ctx, org, name, repo)
+	p.profilePackages(ctx, org, name, repo)
 
 	// Check if wiki actually has content (not just enabled)
 	p.profileWikiContent(ctx, repo)
@@ -75,6 +76,7 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 		"has_wiki", repo.HasWiki,
 		"has_pages", repo.HasPages,
 		"has_discussions", repo.HasDiscussions,
+		"has_packages", repo.HasPackages,
 		"contributors", repo.ContributorCount,
 		"issues", repo.IssueCount,
 		"prs", repo.PullRequestCount,
@@ -158,6 +160,30 @@ func (p *Profiler) profileTags(ctx context.Context, org, name string, repo *mode
 	} else {
 		p.logger.Debug("Failed to get tags", "error", err)
 	}
+}
+
+// profilePackages checks for GitHub Packages
+func (p *Profiler) profilePackages(ctx context.Context, org, name string, repo *models.Repository) {
+	// List packages for the repository
+	// Note: The Packages API requires specific permissions and may not work for all repos
+	packages, _, err := p.client.REST().Organizations.ListPackages(ctx, org, nil)
+	if err == nil && packages != nil {
+		// Check if any packages belong to this repository
+		for _, pkg := range packages {
+			if pkg.Repository != nil && pkg.Repository.GetName() == name {
+				repo.HasPackages = true
+				p.logger.Debug("Found packages for repository", "repo", repo.FullName)
+				return
+			}
+		}
+	} else {
+		p.logger.Debug("Failed to list packages (may require additional permissions)",
+			"repo", repo.FullName,
+			"error", err)
+	}
+
+	// If we couldn't detect packages, default to false
+	repo.HasPackages = false
 }
 
 // countIssuesAndPRs counts issues and PRs separately for accurate verification data

@@ -10,7 +10,7 @@ interface RepositoryListItemProps {
 export function RepositoryListItem({ repository, selected, onToggle }: RepositoryListItemProps) {
   const getComplexityIndicator = () => {
     // Calculate complexity score matching backend logic:
-    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + branch_protections > 0 (1)
+    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + has_packages (3) + branch_protections > 0 (1)
     const MB100 = 100 * 1024 * 1024;
     const GB1 = 1024 * 1024 * 1024;
     const GB5 = 5 * 1024 * 1024 * 1024;
@@ -24,6 +24,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
     if (repository.has_lfs) score += 2;
     if (repository.has_submodules) score += 2;
     if (repository.has_large_files) score += 4;
+    if (repository.has_packages) score += 3; // Packages don't migrate with GEI
     if (repository.branch_protections > 0) score += 1;
 
     if (score <= 3) return { 
@@ -105,7 +106,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
         </div>
         
         {/* Feature tags */}
-        {(repository.is_archived || repository.is_fork || repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki) && (
+        {(repository.is_archived || repository.is_fork || repository.has_packages || repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki) && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {repository.is_archived && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-medium border border-gray-300">
@@ -122,6 +123,14 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
                   <path fillRule="evenodd" d="M7.707 3.293a1 1 0 010 1.414L5.414 7H11a7 7 0 017 7v2a1 1 0 11-2 0v-2a5 5 0 00-5-5H5.414l2.293 2.293a1 1 0 11-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
                 Fork
+              </span>
+            )}
+            {repository.has_packages && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-medium border border-amber-200">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
+                </svg>
+                Packages
               </span>
             )}
             {repository.has_lfs && (

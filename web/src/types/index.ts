@@ -24,6 +24,7 @@ export interface Repository {
   has_discussions: boolean;
   has_actions: boolean;
   has_projects: boolean;
+  has_packages: boolean;
   branch_protections: number;
   environment_count: number;
   secret_count: number;
@@ -107,6 +108,7 @@ export interface FeatureStats {
   has_discussions: number;
   has_actions: number;
   has_projects: number;
+  has_packages: number;
   has_branch_protections: number;
   total_repositories: number;
 }
@@ -266,6 +268,7 @@ export interface RepositoryFilters {
   has_pages?: boolean;
   has_discussions?: boolean;
   has_projects?: boolean;
+  has_packages?: boolean;
   has_branch_protections?: boolean;
   is_archived?: boolean;
   is_fork?: boolean;

@@ -236,6 +236,9 @@ func (o *Organizer) scoreRepositories(repos []*models.Repository) []scoredRepo {
 		if repo.HasProjects {
 			score += 2
 		}
+		if repo.HasPackages {
+			score += 7 // Packages don't migrate with GEI - important to test
+		}
 
 		// Commit count (prefer repos with reasonable activity)
 		if repo.CommitCount > 10 && repo.CommitCount < 10000 {
