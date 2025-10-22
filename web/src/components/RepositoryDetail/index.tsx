@@ -597,9 +597,10 @@ export function RepositoryDetail() {
                   const lfsPoints = repository.has_lfs ? 2 : 0;
                   const submodulesPoints = repository.has_submodules ? 2 : 0;
                   const largeFilesPoints = repository.has_large_files ? 4 : 0;
+                  const packagesPoints = repository.has_packages ? 3 : 0;
                   const branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
                   
-                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + branchProtectionsPoints;
+                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints;
                   
                   let category = 'Simple';
                   let categoryColor = 'text-green-600';
@@ -676,6 +677,16 @@ export function RepositoryDetail() {
                         
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
                           <div>
+                            <div className="text-sm font-medium text-gray-900">GitHub Packages</div>
+                            <div className="text-xs text-gray-500">{repository.has_packages ? 'Yes (requires manual migration)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${packagesPoints > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                            +{packagesPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
                             <div className="text-sm font-medium text-gray-900">Branch Protections</div>
                             <div className="text-xs text-gray-500">{repository.branch_protections} rules</div>
                           </div>
@@ -724,11 +735,13 @@ export function RepositoryDetail() {
 
               <ProfileCard title="GitHub Features">
                 <ProfileItem label="Archived" value={repository.is_archived ? 'Yes' : 'No'} />
+                <ProfileItem label="Fork" value={repository.is_fork ? 'Yes' : 'No'} />
                 <ProfileItem label="Wikis" value={repository.has_wiki ? 'Enabled' : 'Disabled'} />
                 <ProfileItem label="Pages" value={repository.has_pages ? 'Enabled' : 'Disabled'} />
                 <ProfileItem label="Discussions" value={repository.has_discussions ? 'Enabled' : 'Disabled'} />
                 <ProfileItem label="Actions" value={repository.has_actions ? 'Enabled' : 'Disabled'} />
                 <ProfileItem label="Projects" value={repository.has_projects ? 'Enabled' : 'Disabled'} />
+                <ProfileItem label="Packages" value={repository.has_packages ? 'Yes' : 'No'} />
                 <ProfileItem label="Branch Protections" value={repository.branch_protections} />
                 <ProfileItem label="Environments" value={repository.environment_count} />
                 <ProfileItem label="Secrets" value={repository.secret_count} />

@@ -100,6 +100,18 @@ export function ComplexityInfoModal() {
                     </p>
                   </div>
 
+                  {/* Packages */}
+                  <div className="border-l-4 border-amber-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">GitHub Packages</h4>
+                      <span className="text-sm font-semibold text-amber-600">Weight: 3 points</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Packages do not migrate with GEI APIs and require manual migration planning, 
+                      making them a significant complexity factor.
+                    </p>
+                  </div>
+
                   {/* Branch Protections */}
                   <div className="border-l-4 border-yellow-500 pl-4">
                     <div className="flex justify-between items-start mb-1">
@@ -161,10 +173,11 @@ export function ComplexityInfoModal() {
                     <li>• Size: 2.5 GB → <span className="font-semibold">6 points</span></li>
                     <li>• Has large files → <span className="font-semibold">+4 points</span></li>
                     <li>• Uses LFS → <span className="font-semibold">+2 points</span></li>
+                    <li>• Has packages → <span className="font-semibold">+3 points</span></li>
                     <li>• No submodules → <span className="font-semibold">+0 points</span></li>
                     <li>• Has branch protections → <span className="font-semibold">+1 point</span></li>
                   </ul>
-                  <p className="font-bold text-blue-900 pt-2">Total Score: 13 → Very Complex</p>
+                  <p className="font-bold text-blue-900 pt-2">Total Score: 16 → Very Complex</p>
                 </div>
               </div>
             </div>
