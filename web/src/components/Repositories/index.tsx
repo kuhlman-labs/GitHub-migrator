@@ -194,7 +194,20 @@ export function Repositories() {
               {urlFilters.has_pages && <FilterBadge label="Pages" onRemove={() => removeFilter('has_pages')} />}
               {urlFilters.has_discussions && <FilterBadge label="Discussions" onRemove={() => removeFilter('has_discussions')} />}
               {urlFilters.has_projects && <FilterBadge label="Projects" onRemove={() => removeFilter('has_projects')} />}
+              {urlFilters.has_packages && <FilterBadge label="Packages" onRemove={() => removeFilter('has_packages')} />}
               {urlFilters.has_branch_protections && <FilterBadge label="Branch Protections" onRemove={() => removeFilter('has_branch_protections')} />}
+              {urlFilters.has_code_scanning && <FilterBadge label="Code Scanning" onRemove={() => removeFilter('has_code_scanning')} />}
+              {urlFilters.has_dependabot && <FilterBadge label="Dependabot" onRemove={() => removeFilter('has_dependabot')} />}
+              {urlFilters.has_secret_scanning && <FilterBadge label="Secret Scanning" onRemove={() => removeFilter('has_secret_scanning')} />}
+              {urlFilters.has_codeowners && <FilterBadge label="CODEOWNERS" onRemove={() => removeFilter('has_codeowners')} />}
+              {urlFilters.has_self_hosted_runners && <FilterBadge label="Self-Hosted Runners" onRemove={() => removeFilter('has_self_hosted_runners')} />}
+              {urlFilters.has_release_assets && <FilterBadge label="Release Assets" onRemove={() => removeFilter('has_release_assets')} />}
+              {urlFilters.is_fork !== undefined && (
+                <FilterBadge 
+                  label={urlFilters.is_fork ? "Fork" : "Not Fork"} 
+                  onRemove={() => removeFilter('is_fork')} 
+                />
+              )}
               {urlFilters.is_archived !== undefined && (
                 <FilterBadge 
                   label={urlFilters.is_archived ? "Archived" : "Not Archived"} 

@@ -16,6 +16,7 @@ type FeatureFilter = {
 
 const FEATURE_FILTERS: FeatureFilter[] = [
   { key: 'is_archived', label: 'Archived', color: 'gray' },
+  { key: 'is_fork', label: 'Fork', color: 'purple' },
   { key: 'has_lfs', label: 'LFS', color: 'blue' },
   { key: 'has_submodules', label: 'Submodules', color: 'purple' },
   { key: 'has_large_files', label: 'Large Files (>100MB)', color: 'orange' },
@@ -24,7 +25,14 @@ const FEATURE_FILTERS: FeatureFilter[] = [
   { key: 'has_pages', label: 'Pages', color: 'pink' },
   { key: 'has_discussions', label: 'Discussions', color: 'indigo' },
   { key: 'has_projects', label: 'Projects', color: 'teal' },
+  { key: 'has_packages', label: 'Packages', color: 'orange' },
   { key: 'branch_protections', label: 'Branch Protections', color: 'red' },
+  { key: 'has_code_scanning', label: 'Code Scanning', color: 'green' },
+  { key: 'has_dependabot', label: 'Dependabot', color: 'green' },
+  { key: 'has_secret_scanning', label: 'Secret Scanning', color: 'green' },
+  { key: 'has_codeowners', label: 'CODEOWNERS', color: 'blue' },
+  { key: 'has_self_hosted_runners', label: 'Self-Hosted Runners', color: 'purple' },
+  { key: 'has_release_assets', label: 'Release Assets', color: 'pink' },
 ];
 
 // Map simplified filter values to actual backend statuses
