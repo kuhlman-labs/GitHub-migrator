@@ -326,15 +326,24 @@ function RepositoryCard({ repository }: { repository: Repository }) {
         <div>Branches: {repository.branch_count}</div>
         <div className="flex gap-1.5 flex-wrap mt-3">
           {repository.is_archived && <Badge color="gray">Archived</Badge>}
+          {repository.is_fork && <Badge color="purple">Fork</Badge>}
           {repository.has_lfs && <Badge color="blue">LFS</Badge>}
           {repository.has_submodules && <Badge color="purple">Submodules</Badge>}
           {repository.has_large_files && <Badge color="orange">Large Files</Badge>}
           {repository.has_actions && <Badge color="green">Actions</Badge>}
+          {repository.has_packages && <Badge color="orange">Packages</Badge>}
           {repository.has_wiki && <Badge color="yellow">Wiki</Badge>}
           {repository.has_pages && <Badge color="pink">Pages</Badge>}
           {repository.has_discussions && <Badge color="indigo">Discussions</Badge>}
           {repository.has_projects && <Badge color="teal">Projects</Badge>}
           {repository.branch_protections > 0 && <Badge color="red">Protected</Badge>}
+          {repository.has_code_scanning && <Badge color="green">Code Scanning</Badge>}
+          {repository.has_dependabot && <Badge color="green">Dependabot</Badge>}
+          {repository.has_secret_scanning && <Badge color="green">Secret Scanning</Badge>}
+          {repository.has_codeowners && <Badge color="blue">CODEOWNERS</Badge>}
+          {repository.has_self_hosted_runners && <Badge color="purple">Self-Hosted</Badge>}
+          {repository.visibility === 'internal' && <Badge color="yellow">Internal</Badge>}
+          {repository.has_release_assets && <Badge color="pink">Releases</Badge>}
         </div>
       </div>
     </Link>
