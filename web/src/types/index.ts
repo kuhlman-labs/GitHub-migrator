@@ -18,6 +18,7 @@ export interface Repository {
   last_commit_sha?: string;
   last_commit_date?: string;
   is_archived: boolean;
+  is_fork: boolean;
   has_wiki: boolean;
   has_pages: boolean;
   has_discussions: boolean;
@@ -97,6 +98,7 @@ export interface SizeDistribution {
 
 export interface FeatureStats {
   is_archived: number;
+  is_fork: number;
   has_lfs: number;
   has_submodules: number;
   has_large_files: number;
@@ -266,6 +268,7 @@ export interface RepositoryFilters {
   has_projects?: boolean;
   has_branch_protections?: boolean;
   is_archived?: boolean;
+  is_fork?: boolean;
   complexity?: string | string[];
   size_category?: string | string[];
   search?: string;

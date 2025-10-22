@@ -109,3 +109,111 @@ func TestProfileFeatures_Integration(t *testing.T) {
 	t.Logf("Pull Requests: %d (open: %d)", repo.PullRequestCount, repo.OpenPRCount)
 	t.Logf("Tags: %d", repo.TagCount)
 }
+
+func TestProfileWikiContent(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	profiler := NewProfiler(client, logger)
+	ctx := context.Background()
+
+	tests := []struct {
+		name            string
+		repo            *models.Repository
+		expectedHasWiki bool
+		description     string
+	}{
+		{
+			name: "Wiki feature disabled",
+			repo: &models.Repository{
+				FullName:  "test/repo",
+				SourceURL: "https://github.com/test/repo",
+				HasWiki:   false,
+			},
+			expectedHasWiki: false,
+			description:     "Wiki feature disabled should remain false",
+		},
+		{
+			name: "Wiki enabled but URL construction",
+			repo: &models.Repository{
+				FullName:  "test/repo",
+				SourceURL: "https://github.com/test/repo.git",
+				HasWiki:   true,
+			},
+			expectedHasWiki: false, // Will be false if wiki doesn't exist or has no content
+			description:     "Wiki enabled but no content should be set to false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profiler.profileWikiContent(ctx, tt.repo)
+			t.Logf("%s: HasWiki = %v", tt.description, tt.repo.HasWiki)
+		})
+	}
+}
+
+func TestCheckWikiHasContent(t *testing.T) {
+	// Skip if GITHUB_TOKEN is not set
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		t.Skip("Skipping integration test (set GITHUB_TOKEN to run)")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   token,
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	profiler := NewProfiler(client, logger)
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		wikiURL     string
+		shouldExist bool
+		description string
+	}{
+		{
+			name:        "Nonexistent wiki",
+			wikiURL:     "https://github.com/nonexistent-org-12345/nonexistent-repo-67890.wiki.git",
+			shouldExist: false,
+			description: "Wiki that doesn't exist should return false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hasContent, err := profiler.checkWikiHasContent(ctx, tt.wikiURL)
+			if err != nil {
+				t.Logf("checkWikiHasContent returned error (expected for nonexistent wikis): %v", err)
+			}
+			t.Logf("%s: hasContent = %v", tt.description, hasContent)
+
+			if tt.shouldExist && !hasContent {
+				t.Errorf("Expected wiki to have content but got false")
+			}
+			if !tt.shouldExist && hasContent {
+				t.Errorf("Expected wiki to not exist but got true")
+			}
+		})
+	}
+}

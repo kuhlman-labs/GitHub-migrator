@@ -105,8 +105,25 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
         </div>
         
         {/* Feature tags */}
-        {(repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki) && (
+        {(repository.is_archived || repository.is_fork || repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki) && (
           <div className="flex items-center gap-1.5 flex-wrap">
+            {repository.is_archived && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-medium border border-gray-300">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z" />
+                  <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
+                </svg>
+                Archived
+              </span>
+            )}
+            {repository.is_fork && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium border border-indigo-200">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M7.707 3.293a1 1 0 010 1.414L5.414 7H11a7 7 0 017 7v2a1 1 0 11-2 0v-2a5 5 0 00-5-5H5.414l2.293 2.293a1 1 0 11-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Fork
+              </span>
+            )}
             {repository.has_lfs && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-200">
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

@@ -61,6 +61,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
     if (filters.has_projects) count++;
     if (filters.has_branch_protections) count++;
     if (filters.is_archived !== undefined) count++;
+    if (filters.is_fork !== undefined) count++;
     if (filters.sort_by && filters.sort_by !== 'name') count++;
     return count;
   };
@@ -266,6 +267,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
               { key: 'has_projects' as const, label: 'Projects' },
               { key: 'has_branch_protections' as const, label: 'Branch Protections' },
               { key: 'is_archived' as const, label: 'Archived' },
+              { key: 'is_fork' as const, label: 'Fork' },
             ].map((feature) => (
               <label key={feature.key} className="flex items-center gap-2 cursor-pointer">
                 <input

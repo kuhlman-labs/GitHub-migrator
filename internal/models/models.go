@@ -30,6 +30,7 @@ type Repository struct {
 
 	// GitHub features
 	IsArchived        bool `json:"is_archived" db:"is_archived"`
+	IsFork            bool `json:"is_fork" db:"is_fork"`
 	HasWiki           bool `json:"has_wiki" db:"has_wiki"`
 	HasPages          bool `json:"has_pages" db:"has_pages"`
 	HasDiscussions    bool `json:"has_discussions" db:"has_discussions"`
