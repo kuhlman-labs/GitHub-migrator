@@ -552,6 +552,85 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// MarkRepositoryWontMigrate handles POST /api/v1/repositories/{fullName}/mark-wont-migrate
+func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get repository
+	repo, err := h.db.GetRepository(ctx, fullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Parse request body for action (mark or unmark)
+	var req struct {
+		Unmark bool `json:"unmark,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Empty body is okay, defaults to marking
+		req.Unmark = false
+	}
+
+	var newStatus string
+	var message string
+
+	if req.Unmark {
+		// Unmark: change from wont_migrate back to pending
+		if repo.Status != string(models.StatusWontMigrate) {
+			h.sendError(w, http.StatusBadRequest, "Repository is not marked as won't migrate")
+			return
+		}
+		newStatus = string(models.StatusPending)
+		message = "Repository unmarked - changed to pending status"
+	} else {
+		// Mark: only allow marking from certain statuses
+		allowedStatuses := map[string]bool{
+			string(models.StatusPending):         true,
+			string(models.StatusDryRunComplete):  true,
+			string(models.StatusDryRunFailed):    true,
+			string(models.StatusMigrationFailed): true,
+			string(models.StatusRolledBack):      true,
+		}
+
+		if !allowedStatuses[repo.Status] {
+			h.sendError(w, http.StatusBadRequest, fmt.Sprintf("Cannot mark repository with status '%s' as won't migrate", repo.Status))
+			return
+		}
+
+		newStatus = string(models.StatusWontMigrate)
+		message = "Repository marked as won't migrate"
+	}
+
+	// Remove from batch if assigned
+	if repo.BatchID != nil && !req.Unmark {
+		repo.BatchID = nil
+	}
+
+	// Update status
+	repo.Status = newStatus
+	repo.UpdatedAt = time.Now()
+	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+		h.logger.Error("Failed to update repository status", "error", err, "repo", fullName)
+		h.sendError(w, http.StatusInternalServerError, "Failed to update repository")
+		return
+	}
+
+	h.logger.Info("Repository wont_migrate status changed", "repo", fullName, "status", newStatus)
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    message,
+		"repository": repo,
+	})
+}
+
 // ListBatches handles GET /api/v1/batches
 func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -1439,14 +1518,16 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calculate totals
+	// Calculate totals (exclude wont_migrate from total count)
 	total := 0
 	migrated := stats[string(models.StatusComplete)]
 	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)]
 	pending := stats[string(models.StatusPending)]
 
-	for _, count := range stats {
-		total += count
+	for status, count := range stats {
+		if status != string(models.StatusWontMigrate) {
+			total += count
+		}
 	}
 
 	inProgress := total - migrated - failed - pending
@@ -1553,9 +1634,12 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Calculate total (exclude wont_migrate)
 	total := 0
-	for _, count := range stats {
-		total += count
+	for status, count := range stats {
+		if status != string(models.StatusWontMigrate) {
+			total += count
+		}
 	}
 
 	h.sendJSON(w, http.StatusOK, map[string]interface{}{
@@ -1580,14 +1664,16 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calculate totals
+	// Calculate totals (exclude wont_migrate from total count)
 	total := 0
 	migrated := stats[string(models.StatusComplete)]
 	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)]
 	pending := stats[string(models.StatusPending)]
 
-	for _, count := range stats {
-		total += count
+	for status, count := range stats {
+		if status != string(models.StatusWontMigrate) {
+			total += count
+		}
 	}
 
 	inProgress := total - migrated - failed - pending
@@ -2053,6 +2139,11 @@ func (h *Handler) sendError(w http.ResponseWriter, status int, message string) {
 }
 
 func canMigrate(status string) bool {
+	// Cannot migrate repositories marked as wont_migrate
+	if status == string(models.StatusWontMigrate) {
+		return false
+	}
+
 	allowedStatuses := []string{
 		string(models.StatusPending),         // Can queue pending repositories for migration
 		string(models.StatusDryRunQueued),    // Allow re-queuing dry runs

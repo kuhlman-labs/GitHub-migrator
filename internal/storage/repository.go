@@ -1379,6 +1379,7 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 			COUNT(*) as status_count
 		FROM repositories
 		WHERE INSTR(full_name, '/') > 0
+		AND status != 'wont_migrate'
 		GROUP BY org, status
 		ORDER BY total DESC, org ASC
 	`
@@ -1647,6 +1648,7 @@ func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*Mig
 			SUM(CASE WHEN status LIKE '%failed%' THEN 1 ELSE 0 END) as failed_count
 		FROM repositories
 		WHERE full_name LIKE '%/%'
+		AND status != 'wont_migrate'
 		GROUP BY organization
 		ORDER BY total_repos DESC
 	`
@@ -1760,6 +1762,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as complexity_score
 			FROM repositories r
 			WHERE 1=1
+				AND status != 'wont_migrate'
 				` + d.buildOrgFilter(orgFilter) + `
 				` + d.buildBatchFilter(batchFilter) + `
 		) as scored_repos
@@ -1807,6 +1810,7 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFil
 		WHERE mh.status = 'completed' 
 			AND mh.phase = 'migration'
 			AND mh.completed_at >= datetime('now', '-' || ? || ' days')
+			AND r.status != 'wont_migrate'
 			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 	`
@@ -1845,6 +1849,7 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 		WHERE mh.status = 'completed'
 			AND mh.phase = 'migration'
 			AND mh.completed_at >= datetime('now', '-30 days')
+			AND r.status != 'wont_migrate'
 			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 		GROUP BY DATE(mh.completed_at)
@@ -1879,6 +1884,7 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, batch
 		WHERE mh.status = 'completed'
 			AND mh.phase = 'migration'
 			AND mh.duration_seconds IS NOT NULL
+			AND r.status != 'wont_migrate'
 			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 	`
@@ -1968,6 +1974,7 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 			COUNT(*) as count
 		FROM repositories r
 		WHERE 1=1
+			AND status != 'wont_migrate'
 			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 		GROUP BY category
@@ -2017,6 +2024,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 			COUNT(*) as total
 		FROM repositories r
 		WHERE 1=1
+			AND status != 'wont_migrate'
 			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 	`
@@ -2053,6 +2061,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 			COUNT(*) as status_count
 		FROM repositories r
 		WHERE INSTR(full_name, '/') > 0
+			AND status != 'wont_migrate'
 			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 		GROUP BY org, status
@@ -2125,6 +2134,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			SUM(CASE WHEN status LIKE '%failed%' THEN 1 ELSE 0 END) as failed_count
 		FROM repositories r
 		WHERE full_name LIKE '%/%'
+			AND status != 'wont_migrate'
 			` + d.buildOrgFilter(orgFilter) + `
 			` + d.buildBatchFilter(batchFilter) + `
 		GROUP BY organization

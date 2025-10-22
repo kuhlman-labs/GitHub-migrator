@@ -38,6 +38,9 @@ export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
       
       // Cancelled (gray)
       cancelled: 'bg-gh-text-secondary text-white',
+      
+      // Won't Migrate (muted)
+      wont_migrate: 'bg-gray-500 text-white',
     };
     return colors[status] || 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default';
   };

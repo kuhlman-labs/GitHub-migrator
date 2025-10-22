@@ -150,3 +150,18 @@ export function useRollbackRepository() {
   });
 }
 
+export function useMarkRepositoryWontMigrate() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ fullName, unmark }: { fullName: string; unmark?: boolean }) => 
+      api.markRepositoryWontMigrate(fullName, unmark),
+    onSuccess: (_, { fullName }) => {
+      queryClient.invalidateQueries({ queryKey: ['repository', fullName] });
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+    },
+  });
+}
+

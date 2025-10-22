@@ -12,7 +12,7 @@ import { ProfileItem } from '../common/ProfileItem';
 import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 import { formatBytes, formatDate } from '../../utils/format';
 import { useRepository, useBatches } from '../../hooks/useQueries';
-import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useRollbackRepository } from '../../hooks/useMutations';
+import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useRollbackRepository, useMarkRepositoryWontMigrate } from '../../hooks/useMutations';
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
@@ -24,6 +24,7 @@ export function RepositoryDetail() {
   const updateRepositoryMutation = useUpdateRepository();
   const unlockMutation = useUnlockRepository();
   const rollbackMutation = useRollbackRepository();
+  const markWontMigrateMutation = useMarkRepositoryWontMigrate();
   
   const [history, setHistory] = useState<MigrationHistory[]>([]);
   const [logs, setLogs] = useState<MigrationLog[]>([]);
@@ -238,6 +239,32 @@ export function RepositoryDetail() {
     }
   };
 
+  const handleToggleWontMigrate = async () => {
+    if (!repository || !fullName || markWontMigrateMutation.isPending) return;
+
+    const isWontMigrate = repository.status === 'wont_migrate';
+    const action = isWontMigrate ? 'unmark' : 'mark as won\'t migrate';
+    const confirmMsg = isWontMigrate
+      ? 'Are you sure you want to unmark this repository? It will be changed to pending status.'
+      : 'Are you sure you want to mark this repository as won\'t migrate? It will be excluded from migration progress and cannot be added to batches.';
+
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    try {
+      await markWontMigrateMutation.mutateAsync({ 
+        fullName: decodeURIComponent(fullName), 
+        unmark: isWontMigrate 
+      });
+      alert(`Repository ${action}ed successfully!`);
+    } catch (error: any) {
+      console.error(`Failed to ${action} repository:`, error);
+      const errorMsg = error.response?.data?.error || `Failed to ${action} repository. Please try again.`;
+      alert(errorMsg);
+    }
+  };
+
   if (isLoading) return <LoadingSpinner />;
   if (!repository) return <div className="text-center py-12 text-gray-500">Repository not found</div>;
 
@@ -409,6 +436,26 @@ export function RepositoryDetail() {
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
             </button>
+            
+            {/* Won't Migrate Toggle */}
+            {!isInActiveMigration && repository.status !== 'complete' && (
+              <button
+                onClick={handleToggleWontMigrate}
+                disabled={markWontMigrateMutation.isPending}
+                className={`px-4 py-2 border rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
+                  repository.status === 'wont_migrate'
+                    ? 'border-blue-500 text-blue-600 hover:bg-blue-50'
+                    : 'border-gray-500 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {markWontMigrateMutation.isPending 
+                  ? 'Processing...' 
+                  : repository.status === 'wont_migrate' 
+                    ? 'Unmark Won\'t Migrate'
+                    : 'Mark as Won\'t Migrate'}
+              </button>
+            )}
+            
             {canMigrate && repository.status !== 'migration_failed' && repository.status !== 'dry_run_failed' && (
               <>
                 <button

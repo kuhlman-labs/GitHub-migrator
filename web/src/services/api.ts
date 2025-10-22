@@ -82,6 +82,13 @@ export const api = {
     return data.repository;
   },
 
+  async markRepositoryWontMigrate(fullName: string, unmark: boolean = false): Promise<Repository> {
+    const { data } = await client.post(`/repositories/${encodeURIComponent(fullName)}/mark-wont-migrate`, {
+      unmark,
+    });
+    return data.repository;
+  },
+
   // Organizations
   async listOrganizations(): Promise<Organization[]> {
     const { data } = await client.get('/organizations');

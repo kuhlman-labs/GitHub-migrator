@@ -18,6 +18,7 @@ const STATUS_COLORS: Record<string, string> = {
   complete: '#1A7F37',
   failed: '#D1242F',
   dry_run_complete: '#8250DF',
+  wont_migrate: '#6B7280',
 };
 
 export function Analytics() {
@@ -526,32 +527,37 @@ export function Analytics() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {Object.entries(analytics.status_breakdown)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([status, count]) => {
-                    const percentage = analytics.total_repositories > 0
-                      ? ((count / analytics.total_repositories) * 100).toFixed(1)
-                      : '0.0';
-                    return (
-                      <tr key={status}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div
-                              className="w-3 h-3 rounded-full mr-3"
-                              style={{ backgroundColor: STATUS_COLORS[status] || '#9CA3AF' }}
-                            ></div>
-                            <span className="text-sm text-gray-900">{status.replace(/_/g, ' ')}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {count}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {percentage}%
-                        </td>
-                      </tr>
-                    );
-                  })}
+                {(() => {
+                  // Calculate total from all status counts (including wont_migrate)
+                  const totalAllStatuses = Object.values(analytics.status_breakdown).reduce((sum, count) => sum + count, 0);
+                  
+                  return Object.entries(analytics.status_breakdown)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([status, count]) => {
+                      const percentage = totalAllStatuses > 0
+                        ? ((count / totalAllStatuses) * 100).toFixed(1)
+                        : '0.0';
+                      return (
+                        <tr key={status}>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div
+                                className="w-3 h-3 rounded-full mr-3"
+                                style={{ backgroundColor: STATUS_COLORS[status] || '#9CA3AF' }}
+                              ></div>
+                              <span className="text-sm text-gray-900">{status.replace(/_/g, ' ')}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {count}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {percentage}%
+                          </td>
+                        </tr>
+                      );
+                    });
+                })()}
               </tbody>
             </table>
           </div>

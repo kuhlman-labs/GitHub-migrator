@@ -368,6 +368,11 @@ func (s *Scheduler) IsBatchRunning(batchID int64) bool {
 
 // canMigrate checks if a repository can be migrated
 func canMigrate(status string) bool {
+	// Cannot migrate repositories marked as wont_migrate
+	if status == string(models.StatusWontMigrate) {
+		return false
+	}
+
 	switch models.MigrationStatus(status) {
 	case models.StatusQueuedForMigration, // Explicitly queued for migration
 		models.StatusDryRunQueued,    // Explicitly queued for dry run

@@ -81,13 +81,22 @@ func DefaultPilotCriteria() PilotCriteria {
 func (o *Organizer) SelectPilotRepositories(ctx context.Context, criteria PilotCriteria) ([]*models.Repository, error) {
 	o.logger.Info("Starting pilot repository selection", "criteria", criteria)
 
-	// Get all pending repositories
+	// Get all pending repositories (exclude wont_migrate)
 	repos, err := o.storage.ListRepositories(ctx, map[string]interface{}{
 		"status": models.StatusPending,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
+
+	// Filter out wont_migrate repositories
+	var eligibleRepos []*models.Repository
+	for _, repo := range repos {
+		if repo.Status != string(models.StatusWontMigrate) {
+			eligibleRepos = append(eligibleRepos, repo)
+		}
+	}
+	repos = eligibleRepos
 
 	if len(repos) == 0 {
 		o.logger.Warn("No pending repositories found for pilot selection")
@@ -379,7 +388,7 @@ func DefaultWaveCriteria() WaveCriteria {
 func (o *Organizer) OrganizeIntoWaves(ctx context.Context, criteria WaveCriteria) ([]*models.Batch, error) {
 	o.logger.Info("Organizing repositories into waves", "criteria", criteria)
 
-	// Get all pending repositories (not in any batch)
+	// Get all pending repositories (not in any batch, exclude wont_migrate)
 	repos, err := o.storage.ListRepositories(ctx, map[string]interface{}{
 		"status": models.StatusPending,
 	})
@@ -387,10 +396,10 @@ func (o *Organizer) OrganizeIntoWaves(ctx context.Context, criteria WaveCriteria
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
 
-	// Filter out repos that already have a batch
+	// Filter out repos that already have a batch or are marked wont_migrate
 	var unbatched []*models.Repository
 	for _, repo := range repos {
-		if repo.BatchID == nil {
+		if repo.BatchID == nil && repo.Status != string(models.StatusWontMigrate) {
 			unbatched = append(unbatched, repo)
 		}
 	}

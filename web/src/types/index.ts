@@ -237,7 +237,8 @@ export type MigrationStatus =
   | 'migration_failed'
   | 'post_migration'
   | 'complete'
-  | 'rolled_back';
+  | 'rolled_back'
+  | 'wont_migrate';
 
 export type BatchStatus =
   | 'pending'
