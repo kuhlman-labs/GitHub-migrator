@@ -139,35 +139,70 @@ func (p *Profiler) profileWebhooks(ctx context.Context, org, name string, repo *
 	}
 }
 
-// profileContributors gets contributor information
+// profileContributors gets contributor information with pagination
 func (p *Profiler) profileContributors(ctx context.Context, org, name string, repo *models.Repository) {
-	contributors, _, err := p.client.REST().Repositories.ListContributors(ctx, org, name, nil)
-	if err == nil {
-		repo.ContributorCount = len(contributors)
+	opts := &ghapi.ListContributorsOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 100},
+	}
 
-		// Store top contributors (up to 5)
-		topContributors := make([]string, 0, 5)
-		for i, contributor := range contributors {
-			if i >= 5 {
-				break
-			}
-			topContributors = append(topContributors, contributor.GetLogin())
+	var allContributors []*ghapi.Contributor
+	topContributors := make([]string, 0, 5)
+
+	// Paginate through all contributors
+	for {
+		contributors, resp, err := p.client.REST().Repositories.ListContributors(ctx, org, name, opts)
+		if err != nil {
+			p.logger.Debug("Failed to get contributors", "error", err)
+			return
 		}
+
+		allContributors = append(allContributors, contributors...)
+
+		// Store top 5 contributors from the first page (already sorted by contributions)
+		if opts.Page == 0 && len(topContributors) < 5 {
+			for i, contributor := range contributors {
+				if i >= 5 {
+					break
+				}
+				topContributors = append(topContributors, contributor.GetLogin())
+			}
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.ListOptions.Page = resp.NextPage
+	}
+
+	repo.ContributorCount = len(allContributors)
+	if len(topContributors) > 0 {
 		topContribStr := strings.Join(topContributors, ",")
 		repo.TopContributors = &topContribStr
-	} else {
-		p.logger.Debug("Failed to get contributors", "error", err)
 	}
 }
 
-// profileTags counts repository tags
+// profileTags counts repository tags with pagination
 func (p *Profiler) profileTags(ctx context.Context, org, name string, repo *models.Repository) {
-	tags, _, err := p.client.REST().Repositories.ListTags(ctx, org, name, nil)
-	if err == nil {
-		repo.TagCount = len(tags)
-	} else {
-		p.logger.Debug("Failed to get tags", "error", err)
+	opts := &ghapi.ListOptions{PerPage: 100}
+	totalTags := 0
+
+	// Paginate through all tags
+	for {
+		tags, resp, err := p.client.REST().Repositories.ListTags(ctx, org, name, opts)
+		if err != nil {
+			p.logger.Debug("Failed to get tags", "error", err)
+			return
+		}
+
+		totalTags += len(tags)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
+
+	repo.TagCount = totalTags
 }
 
 // profilePackages checks for GitHub Packages
@@ -228,13 +263,6 @@ func (p *Profiler) countIssuesAndPRs(ctx context.Context, org, name string, repo
 			break
 		}
 		allIssuesOpts.ListOptions.Page = resp.NextPage
-
-		// Limit pagination to avoid rate limit issues (max 10 pages = 1000 issues)
-		if allIssuesOpts.ListOptions.Page > 10 {
-			p.logger.Debug("Reached pagination limit for issues, counts may be underestimated",
-				"repo", repo.FullName)
-			break
-		}
 	}
 
 	repo.IssueCount = totalIssues
@@ -267,13 +295,6 @@ func (p *Profiler) countIssuesAndPRs(ctx context.Context, org, name string, repo
 			break
 		}
 		allPRsOpts.ListOptions.Page = resp.NextPage
-
-		// Limit pagination to avoid rate limit issues (max 10 pages = 1000 PRs)
-		if allPRsOpts.ListOptions.Page > 10 {
-			p.logger.Debug("Reached pagination limit for PRs, counts may be underestimated",
-				"repo", repo.FullName)
-			break
-		}
 	}
 
 	repo.PullRequestCount = totalPRs
