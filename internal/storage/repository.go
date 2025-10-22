@@ -1552,6 +1552,7 @@ func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution
 // FeatureStats represents aggregated feature usage statistics
 type FeatureStats struct {
 	IsArchived           int `json:"is_archived"`
+	IsFork               int `json:"is_fork"`
 	HasLFS               int `json:"has_lfs"`
 	HasSubmodules        int `json:"has_submodules"`
 	HasLargeFiles        int `json:"has_large_files"`
@@ -1560,7 +1561,14 @@ type FeatureStats struct {
 	HasDiscussions       int `json:"has_discussions"`
 	HasActions           int `json:"has_actions"`
 	HasProjects          int `json:"has_projects"`
+	HasPackages          int `json:"has_packages"`
 	HasBranchProtections int `json:"has_branch_protections"`
+	HasCodeScanning      int `json:"has_code_scanning"`
+	HasDependabot        int `json:"has_dependabot"`
+	HasSecretScanning    int `json:"has_secret_scanning"`
+	HasCodeowners        int `json:"has_codeowners"`
+	HasSelfHostedRunners int `json:"has_self_hosted_runners"`
+	HasReleaseAssets     int `json:"has_release_assets"`
 	TotalRepositories    int `json:"total_repositories"`
 }
 
@@ -1569,6 +1577,7 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	query := `
 		SELECT 
 			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN is_fork = 1 THEN 1 ELSE 0 END) as fork_count,
 			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
 			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
 			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
@@ -1577,7 +1586,14 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
 			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
 			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = 1 THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = 1 THEN 1 ELSE 0 END) as release_assets_count,
 			COUNT(*) as total
 		FROM repositories
 	`
@@ -1585,6 +1601,7 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	var stats FeatureStats
 	err := d.db.QueryRowContext(ctx, query).Scan(
 		&stats.IsArchived,
+		&stats.IsFork,
 		&stats.HasLFS,
 		&stats.HasSubmodules,
 		&stats.HasLargeFiles,
@@ -1593,7 +1610,14 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 		&stats.HasDiscussions,
 		&stats.HasActions,
 		&stats.HasProjects,
+		&stats.HasPackages,
 		&stats.HasBranchProtections,
+		&stats.HasCodeScanning,
+		&stats.HasDependabot,
+		&stats.HasSecretScanning,
+		&stats.HasCodeowners,
+		&stats.HasSelfHostedRunners,
+		&stats.HasReleaseAssets,
 		&stats.TotalRepositories,
 	)
 	if err != nil {
@@ -2092,6 +2116,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 	query := `
 		SELECT 
 			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN is_fork = 1 THEN 1 ELSE 0 END) as fork_count,
 			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
 			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
 			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
@@ -2100,7 +2125,14 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
 			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
 			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = 1 THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = 1 THEN 1 ELSE 0 END) as release_assets_count,
 			COUNT(*) as total
 		FROM repositories r
 		WHERE 1=1
@@ -2112,6 +2144,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 	var stats FeatureStats
 	err := d.db.QueryRowContext(ctx, query).Scan(
 		&stats.IsArchived,
+		&stats.IsFork,
 		&stats.HasLFS,
 		&stats.HasSubmodules,
 		&stats.HasLargeFiles,
@@ -2120,7 +2153,14 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 		&stats.HasDiscussions,
 		&stats.HasActions,
 		&stats.HasProjects,
+		&stats.HasPackages,
 		&stats.HasBranchProtections,
+		&stats.HasCodeScanning,
+		&stats.HasDependabot,
+		&stats.HasSecretScanning,
+		&stats.HasCodeowners,
+		&stats.HasSelfHostedRunners,
+		&stats.HasReleaseAssets,
 		&stats.TotalRepositories,
 	)
 	if err != nil {

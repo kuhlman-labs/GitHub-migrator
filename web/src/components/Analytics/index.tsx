@@ -248,6 +248,12 @@ export function Analytics() {
                   onClick={() => navigate(getRepositoriesUrl({ is_archived: true }))}
                 />
                 <FeatureStat 
+                  label="Forked Repositories" 
+                  count={analytics.feature_stats.is_fork} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ is_fork: true }))}
+                />
+                <FeatureStat 
                   label="LFS" 
                   count={analytics.feature_stats.has_lfs} 
                   total={analytics.feature_stats.total_repositories}
@@ -296,10 +302,52 @@ export function Analytics() {
                   onClick={() => navigate(getRepositoriesUrl({ has_projects: true }))}
                 />
                 <FeatureStat 
+                  label="Packages" 
+                  count={analytics.feature_stats.has_packages} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_packages: true }))}
+                />
+                <FeatureStat 
                   label="Branch Protections" 
                   count={analytics.feature_stats.has_branch_protections} 
                   total={analytics.feature_stats.total_repositories}
                   onClick={() => navigate(getRepositoriesUrl({ has_branch_protections: true }))}
+                />
+                <FeatureStat 
+                  label="Code Scanning" 
+                  count={analytics.feature_stats.has_code_scanning} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_code_scanning: true }))}
+                />
+                <FeatureStat 
+                  label="Dependabot" 
+                  count={analytics.feature_stats.has_dependabot} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_dependabot: true }))}
+                />
+                <FeatureStat 
+                  label="Secret Scanning" 
+                  count={analytics.feature_stats.has_secret_scanning} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_secret_scanning: true }))}
+                />
+                <FeatureStat 
+                  label="CODEOWNERS" 
+                  count={analytics.feature_stats.has_codeowners} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_codeowners: true }))}
+                />
+                <FeatureStat 
+                  label="Self-Hosted Runners" 
+                  count={analytics.feature_stats.has_self_hosted_runners} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_self_hosted_runners: true }))}
+                />
+                <FeatureStat 
+                  label="Release Assets" 
+                  count={analytics.feature_stats.has_release_assets} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_release_assets: true }))}
                 />
               </div>
             </div>
