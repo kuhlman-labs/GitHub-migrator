@@ -226,6 +226,35 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	if isArchived := r.URL.Query().Get("is_archived"); isArchived != "" {
 		filters["is_archived"] = isArchived == boolTrue
 	}
+	if isFork := r.URL.Query().Get("is_fork"); isFork != "" {
+		filters["is_fork"] = isFork == boolTrue
+	}
+	if hasPackages := r.URL.Query().Get("has_packages"); hasPackages != "" {
+		filters["has_packages"] = hasPackages == boolTrue
+	}
+	if hasCodeScanning := r.URL.Query().Get("has_code_scanning"); hasCodeScanning != "" {
+		filters["has_code_scanning"] = hasCodeScanning == boolTrue
+	}
+	if hasDependabot := r.URL.Query().Get("has_dependabot"); hasDependabot != "" {
+		filters["has_dependabot"] = hasDependabot == boolTrue
+	}
+	if hasSecretScanning := r.URL.Query().Get("has_secret_scanning"); hasSecretScanning != "" {
+		filters["has_secret_scanning"] = hasSecretScanning == boolTrue
+	}
+	if hasCodeowners := r.URL.Query().Get("has_codeowners"); hasCodeowners != "" {
+		filters["has_codeowners"] = hasCodeowners == boolTrue
+	}
+	if hasSelfHostedRunners := r.URL.Query().Get("has_self_hosted_runners"); hasSelfHostedRunners != "" {
+		filters["has_self_hosted_runners"] = hasSelfHostedRunners == boolTrue
+	}
+	if hasReleaseAssets := r.URL.Query().Get("has_release_assets"); hasReleaseAssets != "" {
+		filters["has_release_assets"] = hasReleaseAssets == boolTrue
+	}
+
+	// Visibility filter
+	if visibility := r.URL.Query().Get("visibility"); visibility != "" {
+		filters["visibility"] = visibility
+	}
 
 	// Size category filter (can be comma-separated list)
 	if sizeCategory := r.URL.Query().Get("size_category"); sizeCategory != "" {
