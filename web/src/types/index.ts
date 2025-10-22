@@ -26,6 +26,7 @@ export interface Repository {
   has_projects: boolean;
   has_packages: boolean;
   branch_protections: number;
+  has_rulesets: boolean;
   environment_count: number;
   secret_count: number;
   variable_count: number;
@@ -125,6 +126,7 @@ export interface FeatureStats {
   has_projects: number;
   has_packages: number;
   has_branch_protections: number;
+  has_rulesets: number;
   has_code_scanning: number;
   has_dependabot: number;
   has_secret_scanning: number;
@@ -291,6 +293,7 @@ export interface RepositoryFilters {
   has_projects?: boolean;
   has_packages?: boolean;
   has_branch_protections?: boolean;
+  has_rulesets?: boolean;
   is_archived?: boolean;
   is_fork?: boolean;
   has_code_scanning?: boolean;

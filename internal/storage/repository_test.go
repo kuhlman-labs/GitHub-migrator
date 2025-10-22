@@ -42,6 +42,7 @@ func createTestRepository(fullName string) *models.Repository {
 		HasProjects:          false,
 		HasPackages:          false,
 		BranchProtections:    0,
+		HasRulesets:          false,
 		EnvironmentCount:     0,
 		SecretCount:          0,
 		VariableCount:        0,

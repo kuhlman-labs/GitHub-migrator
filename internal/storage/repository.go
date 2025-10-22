@@ -30,7 +30,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			default_branch, branch_count, commit_count, last_commit_sha,
 			last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
 			has_discussions, has_actions, has_projects, has_packages, 
-			branch_protections, environment_count, secret_count, variable_count, 
+			branch_protections, has_rulesets, environment_count, secret_count, variable_count, 
 			webhook_count, contributor_count, top_contributors,
 			issue_count, pull_request_count, tag_count, 
 			open_issue_count, open_pr_count,
@@ -40,7 +40,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			status, batch_id, priority, destination_url, 
 			destination_full_name, source_migration_id, is_source_locked,
 			discovered_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(full_name) DO UPDATE SET
 			source = excluded.source,
 			source_url = excluded.source_url,
@@ -67,6 +67,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			has_projects = excluded.has_projects,
 			has_packages = excluded.has_packages,
 			branch_protections = excluded.branch_protections,
+			has_rulesets = excluded.has_rulesets,
 			environment_count = excluded.environment_count,
 			secret_count = excluded.secret_count,
 			variable_count = excluded.variable_count,
@@ -105,6 +106,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.LastCommitSHA, repo.LastCommitDate,
 		repo.IsArchived, repo.IsFork, repo.HasWiki, repo.HasPages, repo.HasDiscussions,
 		repo.HasActions, repo.HasProjects, repo.HasPackages, repo.BranchProtections,
+		repo.HasRulesets,
 		repo.EnvironmentCount, repo.SecretCount, repo.VariableCount,
 		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
 		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
@@ -131,7 +133,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 			   default_branch, branch_count, commit_count, last_commit_sha,
 			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
 			   has_discussions, has_actions, has_projects, has_packages, 
-			   branch_protections, environment_count, secret_count, variable_count, 
+			   branch_protections, has_rulesets, environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
@@ -156,6 +158,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.LastCommitSHA, &repo.LastCommitDate,
 		&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
 		&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
+		&repo.HasRulesets,
 		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
 		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
@@ -291,6 +294,7 @@ func applyFeatureFilters(query string, args []interface{}, filters map[string]in
 		{"has_discussions", "has_discussions"},
 		{"has_projects", "has_projects"},
 		{"has_packages", "has_packages"},
+		{"has_rulesets", "has_rulesets"},
 		{"is_archived", "is_archived"},
 		{"is_fork", "is_fork"},
 		{"has_code_scanning", "has_code_scanning"},
@@ -561,7 +565,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			   default_branch, branch_count, commit_count, last_commit_sha,
 			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
 			   has_discussions, has_actions, has_projects, has_packages, 
-			   branch_protections, environment_count, secret_count, variable_count, 
+			   branch_protections, has_rulesets, environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
@@ -615,6 +619,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.LastCommitSHA, &repo.LastCommitDate,
 			&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
 			&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
+			&repo.HasRulesets,
 			&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
 			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
@@ -1563,6 +1568,7 @@ type FeatureStats struct {
 	HasProjects          int `json:"has_projects"`
 	HasPackages          int `json:"has_packages"`
 	HasBranchProtections int `json:"has_branch_protections"`
+	HasRulesets          int `json:"has_rulesets"`
 	HasCodeScanning      int `json:"has_code_scanning"`
 	HasDependabot        int `json:"has_dependabot"`
 	HasSecretScanning    int `json:"has_secret_scanning"`
@@ -1588,6 +1594,7 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
 			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			SUM(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) as rulesets_count,
 			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
@@ -1612,6 +1619,7 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 		&stats.HasProjects,
 		&stats.HasPackages,
 		&stats.HasBranchProtections,
+		&stats.HasRulesets,
 		&stats.HasCodeScanning,
 		&stats.HasDependabot,
 		&stats.HasSecretScanning,
@@ -1833,7 +1841,7 @@ type ComplexityDistribution struct {
 func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
 	// Calculate complexity score based on:
 	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4),
-	// Packages (weight: 3), Branch protections (weight: 1), Security features (weight: 2),
+	// Packages (weight: 3), Branch protections (weight: 1), Rulesets (weight: 2), Security features (weight: 2),
 	// Self-hosted runners (weight: 3), GitHub Apps (weight: 2), Internal visibility (weight: 1), CODEOWNERS (weight: 1)
 	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
@@ -1859,6 +1867,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 				(CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END) +
 				(CASE WHEN has_packages = 1 THEN 3 ELSE 0 END) +
 				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) +
+				(CASE WHEN has_rulesets = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END) +
 				(CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END) +
@@ -2127,6 +2136,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
 			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			SUM(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) as rulesets_count,
 			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
@@ -2155,6 +2165,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 		&stats.HasProjects,
 		&stats.HasPackages,
 		&stats.HasBranchProtections,
+		&stats.HasRulesets,
 		&stats.HasCodeScanning,
 		&stats.HasDependabot,
 		&stats.HasSecretScanning,

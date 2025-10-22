@@ -314,6 +314,12 @@ export function Analytics() {
                   onClick={() => navigate(getRepositoriesUrl({ has_branch_protections: true }))}
                 />
                 <FeatureStat 
+                  label="Rulesets" 
+                  count={analytics.feature_stats.has_rulesets} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_rulesets: true }))}
+                />
+                <FeatureStat 
                   label="Code Scanning" 
                   count={analytics.feature_stats.has_code_scanning} 
                   total={analytics.feature_stats.total_repositories}

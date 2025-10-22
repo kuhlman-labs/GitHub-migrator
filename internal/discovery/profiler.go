@@ -56,6 +56,7 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	// Profile various GitHub features
 	p.profileWorkflowCount(ctx, org, name, repo)
 	p.profileBranchProtections(ctx, org, name, repo)
+	p.profileRulesets(ctx, org, name, repo)
 	p.profileEnvironments(ctx, org, name, repo)
 	p.profileWebhooks(ctx, org, name, repo)
 	p.profileContributors(ctx, org, name, repo)
@@ -86,6 +87,7 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 		"has_pages", repo.HasPages,
 		"has_discussions", repo.HasDiscussions,
 		"has_packages", repo.HasPackages,
+		"has_rulesets", repo.HasRulesets,
 		"has_code_scanning", repo.HasCodeScanning,
 		"has_dependabot", repo.HasDependabot,
 		"has_secret_scanning", repo.HasSecretScanning,
@@ -116,6 +118,22 @@ func (p *Profiler) profileBranchProtections(ctx context.Context, org, name strin
 		repo.BranchProtections = protectedCount
 	} else {
 		p.logger.Debug("Failed to get branches", "error", err)
+	}
+}
+
+// profileRulesets checks if the repository has any rulesets configured
+// Rulesets are the newer version of branch protections and don't migrate with GEI
+func (p *Profiler) profileRulesets(ctx context.Context, org, name string, repo *models.Repository) {
+	// List repository rulesets
+	includeParents := false
+	rulesets, _, err := p.client.REST().Repositories.GetAllRulesets(ctx, org, name, &ghapi.RepositoryListRulesetsOptions{
+		IncludesParents: &includeParents,
+	})
+	if err == nil && len(rulesets) > 0 {
+		repo.HasRulesets = true
+		p.logger.Debug("Repository has rulesets", "repo", repo.FullName, "count", len(rulesets))
+	} else if err != nil {
+		p.logger.Debug("Failed to get rulesets", "error", err)
 	}
 }
 

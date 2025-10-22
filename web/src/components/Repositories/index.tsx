@@ -196,6 +196,7 @@ export function Repositories() {
               {urlFilters.has_projects && <FilterBadge label="Projects" onRemove={() => removeFilter('has_projects')} />}
               {urlFilters.has_packages && <FilterBadge label="Packages" onRemove={() => removeFilter('has_packages')} />}
               {urlFilters.has_branch_protections && <FilterBadge label="Branch Protections" onRemove={() => removeFilter('has_branch_protections')} />}
+              {urlFilters.has_rulesets && <FilterBadge label="Rulesets" onRemove={() => removeFilter('has_rulesets')} />}
               {urlFilters.has_code_scanning && <FilterBadge label="Code Scanning" onRemove={() => removeFilter('has_code_scanning')} />}
               {urlFilters.has_dependabot && <FilterBadge label="Dependabot" onRemove={() => removeFilter('has_dependabot')} />}
               {urlFilters.has_secret_scanning && <FilterBadge label="Secret Scanning" onRemove={() => removeFilter('has_secret_scanning')} />}
@@ -337,6 +338,7 @@ function RepositoryCard({ repository }: { repository: Repository }) {
           {repository.has_discussions && <Badge color="indigo">Discussions</Badge>}
           {repository.has_projects && <Badge color="teal">Projects</Badge>}
           {repository.branch_protections > 0 && <Badge color="red">Protected</Badge>}
+          {repository.has_rulesets && <Badge color="red">Rulesets</Badge>}
           {repository.has_code_scanning && <Badge color="green">Code Scanning</Badge>}
           {repository.has_dependabot && <Badge color="green">Dependabot</Badge>}
           {repository.has_secret_scanning && <Badge color="green">Secret Scanning</Badge>}

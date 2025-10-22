@@ -27,6 +27,7 @@ const FEATURE_FILTERS: FeatureFilter[] = [
   { key: 'has_projects', label: 'Projects', color: 'teal' },
   { key: 'has_packages', label: 'Packages', color: 'orange' },
   { key: 'branch_protections', label: 'Branch Protections', color: 'red' },
+  { key: 'has_rulesets', label: 'Rulesets', color: 'red' },
   { key: 'has_code_scanning', label: 'Code Scanning', color: 'green' },
   { key: 'has_dependabot', label: 'Dependabot', color: 'green' },
   { key: 'has_secret_scanning', label: 'Secret Scanning', color: 'green' },
@@ -286,6 +287,7 @@ function RepositoryCard({ repository }: { repository: Repository }) {
           {repository.has_discussions && <Badge color="indigo">Discussions</Badge>}
           {repository.has_projects && <Badge color="teal">Projects</Badge>}
           {repository.branch_protections > 0 && <Badge color="red">Protected</Badge>}
+          {repository.has_rulesets && <Badge color="red">Rulesets</Badge>}
           {repository.has_code_scanning && <Badge color="green">Code Scanning</Badge>}
           {repository.has_dependabot && <Badge color="green">Dependabot</Badge>}
           {repository.has_secret_scanning && <Badge color="green">Secret Scanning</Badge>}

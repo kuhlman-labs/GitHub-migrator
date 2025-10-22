@@ -61,6 +61,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
     if (filters.has_projects) count++;
     if (filters.has_packages) count++;
     if (filters.has_branch_protections) count++;
+    if (filters.has_rulesets) count++;
     if (filters.is_archived !== undefined) count++;
     if (filters.is_fork !== undefined) count++;
     if (filters.has_code_scanning) count++;
@@ -275,6 +276,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
               { key: 'has_projects' as const, label: 'Projects' },
               { key: 'has_packages' as const, label: 'Packages' },
               { key: 'has_branch_protections' as const, label: 'Branch Protections' },
+              { key: 'has_rulesets' as const, label: 'Rulesets' },
               { key: 'is_archived' as const, label: 'Archived' },
               { key: 'is_fork' as const, label: 'Fork' },
               { key: 'has_code_scanning' as const, label: 'Code Scanning' },

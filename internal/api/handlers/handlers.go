@@ -232,6 +232,9 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	if hasPackages := r.URL.Query().Get("has_packages"); hasPackages != "" {
 		filters["has_packages"] = hasPackages == boolTrue
 	}
+	if hasRulesets := r.URL.Query().Get("has_rulesets"); hasRulesets != "" {
+		filters["has_rulesets"] = hasRulesets == boolTrue
+	}
 	if hasCodeScanning := r.URL.Query().Get("has_code_scanning"); hasCodeScanning != "" {
 		filters["has_code_scanning"] = hasCodeScanning == boolTrue
 	}

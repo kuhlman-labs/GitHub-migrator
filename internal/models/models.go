@@ -38,6 +38,7 @@ type Repository struct {
 	HasProjects       bool `json:"has_projects" db:"has_projects"`
 	HasPackages       bool `json:"has_packages" db:"has_packages"`
 	BranchProtections int  `json:"branch_protections" db:"branch_protections"`
+	HasRulesets       bool `json:"has_rulesets" db:"has_rulesets"`
 	EnvironmentCount  int  `json:"environment_count" db:"environment_count"`
 	SecretCount       int  `json:"secret_count" db:"secret_count"`
 	VariableCount     int  `json:"variable_count" db:"variable_count"`
