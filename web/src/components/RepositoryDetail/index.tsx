@@ -763,35 +763,6 @@ export function RepositoryDetail() {
                 })()}
               </ProfileCard>
 
-              <ProfileCard title="Verification Metrics">
-                <ProfileItem 
-                  label="Last Commit SHA" 
-                  value={repository.last_commit_sha ? (
-                    <code className="text-xs bg-gray-100 px-2 py-1 rounded">{repository.last_commit_sha.substring(0, 8)}</code>
-                  ) : 'Unknown'} 
-                />
-                <ProfileItem label="Branches" value={repository.branch_count} />
-                <ProfileItem label="Tags/Releases" value={repository.tag_count} />
-                <ProfileItem 
-                  label="Issues" 
-                  value={`${repository.open_issue_count} open / ${repository.issue_count} total`} 
-                />
-                <ProfileItem 
-                  label="Pull Requests" 
-                  value={`${repository.open_pr_count} open / ${repository.pull_request_count} total`} 
-                />
-                <ProfileItem label="Contributors" value={repository.contributor_count} />
-              </ProfileCard>
-
-              <ProfileCard title="Git Properties">
-                <ProfileItem label="Default Branch" value={repository.default_branch} />
-                <ProfileItem label="Total Size" value={formatBytes(repository.total_size)} />
-                <ProfileItem label="Branches" value={repository.branch_count} />
-                <ProfileItem label="Commits" value={repository.commit_count.toLocaleString()} />
-                <ProfileItem label="Has LFS" value={repository.has_lfs ? 'Yes' : 'No'} />
-                <ProfileItem label="Has Submodules" value={repository.has_submodules ? 'Yes' : 'No'} />
-              </ProfileCard>
-
               <ProfileCard title="GitHub Features">
                 <ProfileItem label="Archived" value={repository.is_archived ? 'Yes' : 'No'} />
                 <ProfileItem label="Fork" value={repository.is_fork ? 'Yes' : 'No'} />
@@ -816,6 +787,35 @@ export function RepositoryDetail() {
                 <ProfileItem label="GitHub Apps" value={repository.installed_apps_count} />
                 <ProfileItem label="Releases" value={repository.release_count} />
                 <ProfileItem label="Has Release Assets" value={repository.has_release_assets ? 'Yes' : 'No'} />
+              </ProfileCard>
+
+              <ProfileCard title="Git Properties">
+                <ProfileItem label="Default Branch" value={repository.default_branch} />
+                <ProfileItem label="Total Size" value={formatBytes(repository.total_size)} />
+                <ProfileItem label="Branches" value={repository.branch_count} />
+                <ProfileItem label="Commits" value={repository.commit_count.toLocaleString()} />
+                <ProfileItem label="Has LFS" value={repository.has_lfs ? 'Yes' : 'No'} />
+                <ProfileItem label="Has Submodules" value={repository.has_submodules ? 'Yes' : 'No'} />
+              </ProfileCard>
+
+              <ProfileCard title="Verification Metrics">
+                <ProfileItem 
+                  label="Last Commit SHA" 
+                  value={repository.last_commit_sha ? (
+                    <code className="text-xs bg-gray-100 px-2 py-1 rounded">{repository.last_commit_sha.substring(0, 8)}</code>
+                  ) : 'Unknown'} 
+                />
+                <ProfileItem label="Branches" value={repository.branch_count} />
+                <ProfileItem label="Tags/Releases" value={repository.tag_count} />
+                <ProfileItem 
+                  label="Issues" 
+                  value={`${repository.open_issue_count} open / ${repository.issue_count} total`} 
+                />
+                <ProfileItem 
+                  label="Pull Requests" 
+                  value={`${repository.open_pr_count} open / ${repository.pull_request_count} total`} 
+                />
+                <ProfileItem label="Contributors" value={repository.contributor_count} />
               </ProfileCard>
             </div>
           )}
