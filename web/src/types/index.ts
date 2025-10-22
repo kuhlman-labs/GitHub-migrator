@@ -30,6 +30,21 @@ export interface Repository {
   secret_count: number;
   variable_count: number;
   webhook_count: number;
+  // Security & Compliance
+  has_code_scanning: boolean;
+  has_dependabot: boolean;
+  has_secret_scanning: boolean;
+  has_codeowners: boolean;
+  // Repository Settings
+  visibility: 'public' | 'private' | 'internal';
+  workflow_count: number;
+  // Infrastructure & Access
+  has_self_hosted_runners: boolean;
+  collaborator_count: number;
+  installed_apps_count: number;
+  // Releases
+  release_count: number;
+  has_release_assets: boolean;
   contributor_count: number;
   top_contributors?: string;
   issue_count: number;
@@ -110,6 +125,12 @@ export interface FeatureStats {
   has_projects: number;
   has_packages: number;
   has_branch_protections: number;
+  has_code_scanning: number;
+  has_dependabot: number;
+  has_secret_scanning: number;
+  has_codeowners: number;
+  has_self_hosted_runners: number;
+  has_release_assets: number;
   total_repositories: number;
 }
 
@@ -272,6 +293,13 @@ export interface RepositoryFilters {
   has_branch_protections?: boolean;
   is_archived?: boolean;
   is_fork?: boolean;
+  has_code_scanning?: boolean;
+  has_dependabot?: boolean;
+  has_secret_scanning?: boolean;
+  has_codeowners?: boolean;
+  visibility?: 'public' | 'private' | 'internal' | string;
+  has_self_hosted_runners?: boolean;
+  has_release_assets?: boolean;
   complexity?: string | string[];
   size_category?: string | string[];
   search?: string;

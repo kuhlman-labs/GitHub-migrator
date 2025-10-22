@@ -63,6 +63,13 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
     if (filters.has_branch_protections) count++;
     if (filters.is_archived !== undefined) count++;
     if (filters.is_fork !== undefined) count++;
+    if (filters.has_code_scanning) count++;
+    if (filters.has_dependabot) count++;
+    if (filters.has_secret_scanning) count++;
+    if (filters.has_codeowners) count++;
+    if (filters.has_self_hosted_runners) count++;
+    if (filters.has_release_assets) count++;
+    if (filters.visibility) count++;
     if (filters.sort_by && filters.sort_by !== 'name') count++;
     return count;
   };
@@ -270,6 +277,12 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
               { key: 'has_branch_protections' as const, label: 'Branch Protections' },
               { key: 'is_archived' as const, label: 'Archived' },
               { key: 'is_fork' as const, label: 'Fork' },
+              { key: 'has_code_scanning' as const, label: 'Code Scanning' },
+              { key: 'has_dependabot' as const, label: 'Dependabot' },
+              { key: 'has_secret_scanning' as const, label: 'Secret Scanning' },
+              { key: 'has_codeowners' as const, label: 'CODEOWNERS' },
+              { key: 'has_self_hosted_runners' as const, label: 'Self-Hosted Runners' },
+              { key: 'has_release_assets' as const, label: 'Release Assets' },
             ].map((feature) => (
               <label key={feature.key} className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -284,6 +297,25 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
               </label>
             ))}
           </div>
+        </FilterSection>
+
+        {/* Visibility */}
+        <FilterSection title="Visibility" defaultExpanded={false}>
+          <select
+            value={filters.visibility || ''}
+            onChange={(e) =>
+              onChange({
+                ...filters,
+                visibility: e.target.value || undefined,
+              })
+            }
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">All</option>
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+            <option value="internal">Internal</option>
+          </select>
         </FilterSection>
 
         {/* Sort */}

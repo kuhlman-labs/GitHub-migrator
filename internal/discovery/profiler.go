@@ -54,13 +54,21 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	repo.HasProjects = ghRepo.GetHasProjects()
 
 	// Profile various GitHub features
-	p.profileWorkflows(ctx, org, name, repo)
+	p.profileWorkflowCount(ctx, org, name, repo)
 	p.profileBranchProtections(ctx, org, name, repo)
 	p.profileEnvironments(ctx, org, name, repo)
 	p.profileWebhooks(ctx, org, name, repo)
 	p.profileContributors(ctx, org, name, repo)
 	p.profileTags(ctx, org, name, repo)
 	p.profilePackages(ctx, org, name, repo)
+
+	// Profile advanced features
+	p.profileSecurity(ctx, org, name, repo)
+	p.profileCodeowners(ctx, org, name, repo)
+	p.profileRunners(ctx, org, name, repo)
+	p.profileCollaborators(ctx, org, name, repo)
+	p.profileApps(ctx, org, name, repo)
+	p.profileReleases(ctx, org, name, repo)
 
 	// Check if wiki actually has content (not just enabled)
 	p.profileWikiContent(ctx, repo)
@@ -73,26 +81,26 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	p.logger.Info("GitHub features profiled",
 		"repo", repo.FullName,
 		"has_actions", repo.HasActions,
+		"workflow_count", repo.WorkflowCount,
 		"has_wiki", repo.HasWiki,
 		"has_pages", repo.HasPages,
 		"has_discussions", repo.HasDiscussions,
 		"has_packages", repo.HasPackages,
+		"has_code_scanning", repo.HasCodeScanning,
+		"has_dependabot", repo.HasDependabot,
+		"has_secret_scanning", repo.HasSecretScanning,
+		"has_codeowners", repo.HasCodeowners,
+		"has_self_hosted_runners", repo.HasSelfHostedRunners,
+		"collaborator_count", repo.CollaboratorCount,
+		"installed_apps_count", repo.InstalledAppsCount,
+		"release_count", repo.ReleaseCount,
+		"has_release_assets", repo.HasReleaseAssets,
 		"contributors", repo.ContributorCount,
 		"issues", repo.IssueCount,
 		"prs", repo.PullRequestCount,
 		"tags", repo.TagCount)
 
 	return nil
-}
-
-// profileWorkflows checks for GitHub Actions workflows
-func (p *Profiler) profileWorkflows(ctx context.Context, org, name string, repo *models.Repository) {
-	workflows, _, err := p.client.REST().Actions.ListWorkflows(ctx, org, name, nil)
-	if err == nil && workflows != nil {
-		repo.HasActions = workflows.GetTotalCount() > 0
-	} else {
-		p.logger.Debug("Failed to get workflows", "error", err)
-	}
 }
 
 // profileBranchProtections counts protected branches
@@ -272,6 +280,173 @@ func (p *Profiler) countIssuesAndPRs(ctx context.Context, org, name string, repo
 	repo.OpenPRCount = openPRs
 
 	return nil
+}
+
+// profileSecurity checks for GitHub Advanced Security features
+func (p *Profiler) profileSecurity(ctx context.Context, org, name string, repo *models.Repository) {
+	// Code Scanning - check if the API endpoint is accessible
+	_, resp, err := p.client.REST().CodeScanning.ListAlertsForRepo(ctx, org, name, &ghapi.AlertListOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 1},
+	})
+	if err == nil && resp.StatusCode != 404 {
+		// If we can access the endpoint, code scanning is enabled
+		repo.HasCodeScanning = true
+	} else {
+		repo.HasCodeScanning = false
+		p.logger.Debug("Code scanning not available", "repo", repo.FullName)
+	}
+
+	// Dependabot - check if alerts endpoint is accessible
+	_, resp, err = p.client.REST().Dependabot.ListRepoAlerts(ctx, org, name, &ghapi.ListAlertsOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 1},
+	})
+	if err == nil && resp.StatusCode != 404 {
+		repo.HasDependabot = true
+	} else {
+		repo.HasDependabot = false
+		p.logger.Debug("Dependabot not available", "repo", repo.FullName)
+	}
+
+	// Secret Scanning - check if alerts endpoint is accessible
+	_, resp, err = p.client.REST().SecretScanning.ListAlertsForRepo(ctx, org, name, &ghapi.SecretScanningAlertListOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 1},
+	})
+	if err == nil && resp.StatusCode != 404 {
+		repo.HasSecretScanning = true
+	} else {
+		repo.HasSecretScanning = false
+		p.logger.Debug("Secret scanning not available", "repo", repo.FullName)
+	}
+}
+
+// profileCodeowners checks for CODEOWNERS file in common locations
+func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo *models.Repository) {
+	// Check common locations: .github/CODEOWNERS, docs/CODEOWNERS, CODEOWNERS
+	locations := []string{".github/CODEOWNERS", "docs/CODEOWNERS", "CODEOWNERS"}
+
+	for _, path := range locations {
+		_, _, resp, err := p.client.REST().Repositories.GetContents(ctx, org, name, path, nil)
+		if err == nil && resp.StatusCode == 200 {
+			repo.HasCodeowners = true
+			p.logger.Debug("Found CODEOWNERS file", "repo", repo.FullName, "path", path)
+			return
+		}
+	}
+
+	repo.HasCodeowners = false
+}
+
+// profileWorkflowCount counts GitHub Actions workflows (enhances existing workflow detection)
+func (p *Profiler) profileWorkflowCount(ctx context.Context, org, name string, repo *models.Repository) {
+	workflows, _, err := p.client.REST().Actions.ListWorkflows(ctx, org, name, nil)
+	if err == nil && workflows != nil {
+		repo.WorkflowCount = workflows.GetTotalCount()
+		repo.HasActions = workflows.GetTotalCount() > 0
+	} else {
+		repo.WorkflowCount = 0
+		repo.HasActions = false
+		p.logger.Debug("Failed to get workflows", "error", err)
+	}
+}
+
+// profileRunners checks for self-hosted runners
+func (p *Profiler) profileRunners(ctx context.Context, org, name string, repo *models.Repository) {
+	runners, _, err := p.client.REST().Actions.ListRunners(ctx, org, name, nil)
+	if err == nil && runners != nil {
+		// Check if any runners are self-hosted (not GitHub-hosted)
+		for _, runner := range runners.Runners {
+			if !isGitHubHosted(runner.GetName()) {
+				repo.HasSelfHostedRunners = true
+				p.logger.Debug("Found self-hosted runner", "repo", repo.FullName, "runner", runner.GetName())
+				return
+			}
+		}
+	} else {
+		p.logger.Debug("Failed to get runners", "error", err)
+	}
+	repo.HasSelfHostedRunners = false
+}
+
+// isGitHubHosted checks if a runner name indicates it's GitHub-hosted
+func isGitHubHosted(name string) bool {
+	// GitHub-hosted runners typically have names containing "GitHub Actions" or "Hosted Agent"
+	nameLower := strings.ToLower(name)
+	return strings.Contains(nameLower, "github actions") ||
+		strings.Contains(nameLower, "hosted agent") ||
+		strings.Contains(nameLower, "azure pipelines")
+}
+
+// profileCollaborators counts outside collaborators
+func (p *Profiler) profileCollaborators(ctx context.Context, org, name string, repo *models.Repository) {
+	// List collaborators with affiliation filter for outside collaborators
+	opts := &ghapi.ListCollaboratorsOptions{
+		Affiliation: "outside",
+		ListOptions: ghapi.ListOptions{PerPage: 100},
+	}
+
+	outsideCount := 0
+	for {
+		collaborators, resp, err := p.client.REST().Repositories.ListCollaborators(ctx, org, name, opts)
+		if err != nil {
+			p.logger.Debug("Failed to get collaborators", "error", err)
+			break
+		}
+
+		outsideCount += len(collaborators)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.ListOptions.Page = resp.NextPage
+	}
+
+	repo.CollaboratorCount = outsideCount
+}
+
+// profileApps counts installed GitHub Apps for the repository
+func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *models.Repository) {
+	// Get installations for this repository
+	// Note: This requires the app to have the appropriate permissions
+	installations, _, err := p.client.REST().Apps.ListRepos(ctx, &ghapi.ListOptions{PerPage: 100})
+	if err != nil {
+		p.logger.Debug("Failed to list app installations (requires app token)", "error", err)
+		repo.InstalledAppsCount = 0
+		return
+	}
+
+	// Count apps that have access to this specific repository
+	appCount := 0
+	for _, installation := range installations.Repositories {
+		if installation.GetFullName() == repo.FullName {
+			appCount++
+		}
+	}
+
+	repo.InstalledAppsCount = appCount
+}
+
+// profileReleases counts releases and checks for assets
+func (p *Profiler) profileReleases(ctx context.Context, org, name string, repo *models.Repository) {
+	releases, _, err := p.client.REST().Repositories.ListReleases(ctx, org, name, &ghapi.ListOptions{PerPage: 100})
+	if err != nil {
+		p.logger.Debug("Failed to list releases", "error", err)
+		repo.ReleaseCount = 0
+		repo.HasReleaseAssets = false
+		return
+	}
+
+	repo.ReleaseCount = len(releases)
+
+	// Check if any releases have assets
+	for _, release := range releases {
+		if len(release.Assets) > 0 {
+			repo.HasReleaseAssets = true
+			p.logger.Debug("Found release assets", "repo", repo.FullName, "release", release.GetTagName())
+			return
+		}
+	}
+
+	repo.HasReleaseAssets = false
 }
 
 // profileWikiContent checks if the wiki actually has content, not just if it's enabled

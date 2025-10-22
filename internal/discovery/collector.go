@@ -220,6 +220,7 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		HasWiki:       ghRepo.GetHasWiki(),
 		HasPages:      ghRepo.GetHasPages(),
 		HasPackages:   false, // Will be detected by profiler
+		Visibility:    ghRepo.GetVisibility(),
 		Status:        string(models.StatusComplete),
 		DiscoveredAt:  time.Now(),
 		UpdatedAt:     time.Now(),
@@ -292,6 +293,7 @@ func (c *Collector) ProfileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 		HasWiki:       ghRepo.GetHasWiki(),
 		HasPages:      ghRepo.GetHasPages(),
 		HasPackages:   false, // Will be detected by profiler
+		Visibility:    ghRepo.GetVisibility(),
 		Status:        string(models.StatusPending),
 		DiscoveredAt:  time.Now(),
 		UpdatedAt:     time.Now(),

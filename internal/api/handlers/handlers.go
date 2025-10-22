@@ -22,6 +22,9 @@ const (
 	statusReady      = "ready"
 	statusPending    = "pending"
 	boolTrue         = "true"
+
+	formatCSV  = "csv"
+	formatJSON = "json"
 )
 
 // Handler contains all HTTP handlers
@@ -1773,9 +1776,9 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		switch batch.Status {
 		case "completed", "completed_with_errors":
 			completedBatches++
-		case "in_progress":
+		case statusInProgress:
 			inProgressBatches++
-		case "pending", "ready":
+		case statusPending, statusReady:
 			pendingBatches++
 		}
 	}
@@ -1854,7 +1857,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	orgFilter := r.URL.Query().Get("organization")
 	batchFilter := r.URL.Query().Get("batch_id")
 
-	if format != "csv" && format != "json" {
+	if format != formatCSV && format != formatJSON {
 		h.sendError(w, http.StatusBadRequest, "Invalid format. Must be 'csv' or 'json'")
 		return
 	}
@@ -1946,7 +1949,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		completionRate = float64(migrated) / float64(total) * 100
 	}
 
-	if format == "csv" {
+	if format == formatCSV {
 		h.exportExecutiveReportCSV(w, total, migrated, inProgress, pending, failed, completionRate, successRate,
 			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
@@ -2074,7 +2077,9 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapesCSV(status), count, pct))
 	}
 
-	w.Write([]byte(output.String()))
+	if _, err := w.Write([]byte(output.String())); err != nil {
+		h.logger.Error("Failed to write CSV response", "error", err)
+	}
 }
 
 func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrated, inProgress, pending, failed int,
@@ -2121,7 +2126,9 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrat
 		"status_breakdown": statusBreakdown,
 	}
 
-	json.NewEncoder(w).Encode(report)
+	if err := json.NewEncoder(w).Encode(report); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
 }
 
 // Helper methods
@@ -2255,7 +2262,7 @@ func (h *Handler) ExportMigrationHistory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if format == "csv" {
+	if format == formatCSV {
 		h.exportMigrationHistoryCSV(w, migrations)
 	} else {
 		h.exportMigrationHistoryJSON(w, migrations)

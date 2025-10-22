@@ -43,6 +43,25 @@ type Repository struct {
 	VariableCount     int  `json:"variable_count" db:"variable_count"`
 	WebhookCount      int  `json:"webhook_count" db:"webhook_count"`
 
+	// Security & Compliance
+	HasCodeScanning   bool `json:"has_code_scanning" db:"has_code_scanning"`
+	HasDependabot     bool `json:"has_dependabot" db:"has_dependabot"`
+	HasSecretScanning bool `json:"has_secret_scanning" db:"has_secret_scanning"`
+	HasCodeowners     bool `json:"has_codeowners" db:"has_codeowners"`
+
+	// Repository Settings
+	Visibility    string `json:"visibility" db:"visibility"` // "public", "private", "internal"
+	WorkflowCount int    `json:"workflow_count" db:"workflow_count"`
+
+	// Infrastructure & Access
+	HasSelfHostedRunners bool `json:"has_self_hosted_runners" db:"has_self_hosted_runners"`
+	CollaboratorCount    int  `json:"collaborator_count" db:"collaborator_count"`
+	InstalledAppsCount   int  `json:"installed_apps_count" db:"installed_apps_count"`
+
+	// Releases
+	ReleaseCount     int  `json:"release_count" db:"release_count"`
+	HasReleaseAssets bool `json:"has_release_assets" db:"has_release_assets"`
+
 	// Contributors
 	ContributorCount int     `json:"contributor_count" db:"contributor_count"`
 	TopContributors  *string `json:"top_contributors,omitempty" db:"top_contributors"` // JSON array

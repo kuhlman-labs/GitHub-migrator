@@ -122,6 +122,63 @@ export function ComplexityInfoModal() {
                       Branch protection rules require manual reconfiguration after migration.
                     </p>
                   </div>
+
+                  {/* Advanced Security */}
+                  <div className="border-l-4 border-green-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">Advanced Security Features</h4>
+                      <span className="text-sm font-semibold text-green-600">Weight: 2 points</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Code scanning, Dependabot, or secret scanning require GitHub Advanced Security licenses 
+                      and special configuration on the destination.
+                    </p>
+                  </div>
+
+                  {/* Self-Hosted Runners */}
+                  <div className="border-l-4 border-purple-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">Self-Hosted Runners</h4>
+                      <span className="text-sm font-semibold text-purple-600">Weight: 3 points</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Self-hosted runners require infrastructure setup and configuration on the destination, 
+                      making migration more complex.
+                    </p>
+                  </div>
+
+                  {/* GitHub Apps */}
+                  <div className="border-l-4 border-blue-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">GitHub Apps</h4>
+                      <span className="text-sm font-semibold text-blue-600">Weight: 2 points</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Installed GitHub Apps need to be reconfigured or reinstalled on the destination repository.
+                    </p>
+                  </div>
+
+                  {/* Internal Visibility */}
+                  <div className="border-l-4 border-yellow-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">Internal Visibility</h4>
+                      <span className="text-sm font-semibold text-yellow-600">Weight: 1 point</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Internal repositories become private when migrating to GitHub.com, requiring permission review.
+                    </p>
+                  </div>
+
+                  {/* CODEOWNERS */}
+                  <div className="border-l-4 border-blue-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">CODEOWNERS</h4>
+                      <span className="text-sm font-semibold text-blue-600">Weight: 1 point</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      CODEOWNERS files require verification after migration to ensure team references are correct.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -174,10 +231,14 @@ export function ComplexityInfoModal() {
                     <li>• Has large files → <span className="font-semibold">+4 points</span></li>
                     <li>• Uses LFS → <span className="font-semibold">+2 points</span></li>
                     <li>• Has packages → <span className="font-semibold">+3 points</span></li>
-                    <li>• No submodules → <span className="font-semibold">+0 points</span></li>
                     <li>• Has branch protections → <span className="font-semibold">+1 point</span></li>
+                    <li>• Has Advanced Security (code scanning) → <span className="font-semibold">+2 points</span></li>
+                    <li>• Has self-hosted runners → <span className="font-semibold">+3 points</span></li>
+                    <li>• Has GitHub Apps installed → <span className="font-semibold">+2 points</span></li>
+                    <li>• Internal visibility → <span className="font-semibold">+1 point</span></li>
+                    <li>• Has CODEOWNERS → <span className="font-semibold">+1 point</span></li>
                   </ul>
-                  <p className="font-bold text-blue-900 pt-2">Total Score: 16 → Very Complex</p>
+                  <p className="font-bold text-blue-900 pt-2">Total Score: 25 → Very Complex</p>
                 </div>
               </div>
             </div>

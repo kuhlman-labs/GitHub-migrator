@@ -199,62 +199,7 @@ func (o *Organizer) scoreRepositories(repos []*models.Repository) []scoredRepo {
 	scored := make([]scoredRepo, 0, len(repos))
 
 	for _, repo := range repos {
-		score := 0.0
-
-		// Size diversity (prefer medium-sized repos)
-		// Score based on logarithmic scale
-		sizeScore := 0.0
-		if repo.TotalSize != nil && *repo.TotalSize > 0 {
-			sizeKB := *repo.TotalSize / 1024
-			// Prefer repos around 100MB (102400 KB)
-			targetSize := 102400.0
-			sizeRatio := float64(sizeKB) / targetSize
-			if sizeRatio > 1 {
-				sizeScore = 1.0 / sizeRatio
-			} else {
-				sizeScore = sizeRatio
-			}
-			score += sizeScore * 10
-		}
-
-		// Feature diversity (more features = higher score)
-		if repo.HasLFS {
-			score += 5
-		}
-		if repo.HasSubmodules {
-			score += 5
-		}
-		if repo.HasActions {
-			score += 8 // Actions are important to test
-		}
-		if repo.HasWiki {
-			score += 3
-		}
-		if repo.HasPages {
-			score += 3
-		}
-		if repo.HasProjects {
-			score += 2
-		}
-		if repo.HasPackages {
-			score += 7 // Packages don't migrate with GEI - important to test
-		}
-
-		// Commit count (prefer repos with reasonable activity)
-		if repo.CommitCount > 10 && repo.CommitCount < 10000 {
-			score += 5
-		}
-
-		// Branch count (prefer repos with multiple branches)
-		if repo.BranchCount > 1 {
-			score += float64(repo.BranchCount) * 0.5
-		}
-
-		// Protection rules (important to test)
-		if repo.BranchProtections > 0 {
-			score += 7
-		}
-
+		score := o.calculateRepoScore(repo)
 		scored = append(scored, scoredRepo{
 			Repo:  repo,
 			Score: score,
@@ -262,6 +207,107 @@ func (o *Organizer) scoreRepositories(repos []*models.Repository) []scoredRepo {
 	}
 
 	return scored
+}
+
+// calculateRepoScore calculates the diversity score for a single repository
+func (o *Organizer) calculateRepoScore(repo *models.Repository) float64 {
+	score := 0.0
+
+	// Size diversity
+	score += o.scoreSizeDiversity(repo)
+
+	// Feature diversity
+	score += o.scoreFeatureDiversity(repo)
+
+	// Activity and complexity
+	score += o.scoreActivityComplexity(repo)
+
+	return score
+}
+
+// scoreSizeDiversity scores repository based on size (prefer medium-sized repos)
+func (o *Organizer) scoreSizeDiversity(repo *models.Repository) float64 {
+	if repo.TotalSize == nil || *repo.TotalSize == 0 {
+		return 0.0
+	}
+
+	sizeKB := *repo.TotalSize / 1024
+	// Prefer repos around 100MB (102400 KB)
+	targetSize := 102400.0
+	sizeRatio := float64(sizeKB) / targetSize
+
+	sizeScore := sizeRatio
+	if sizeRatio > 1 {
+		sizeScore = 1.0 / sizeRatio
+	}
+
+	return sizeScore * 10
+}
+
+// scoreFeatureDiversity scores repository based on GitHub features
+func (o *Organizer) scoreFeatureDiversity(repo *models.Repository) float64 {
+	score := 0.0
+
+	if repo.HasLFS {
+		score += 5
+	}
+	if repo.HasSubmodules {
+		score += 5
+	}
+	if repo.HasActions {
+		score += 8 // Actions are important to test
+	}
+	if repo.HasWiki {
+		score += 3
+	}
+	if repo.HasPages {
+		score += 3
+	}
+	if repo.HasProjects {
+		score += 2
+	}
+	if repo.HasPackages {
+		score += 7 // Packages don't migrate with GEI - important to test
+	}
+	if repo.HasCodeScanning || repo.HasDependabot || repo.HasSecretScanning {
+		score += 7 // GHAS features are critical to test
+	}
+	if repo.HasSelfHostedRunners {
+		score += 8 // Infrastructure dependency - important to test
+	}
+	if repo.HasCodeowners {
+		score += 3 // Important for PR approval workflows
+	}
+	if repo.InstalledAppsCount > 0 {
+		score += 5 // App reconfiguration needed
+	}
+	if repo.Visibility == "internal" {
+		score += 4 // Internal repos have special migration considerations
+	}
+
+	return score
+}
+
+// scoreActivityComplexity scores repository based on activity and complexity indicators
+func (o *Organizer) scoreActivityComplexity(repo *models.Repository) float64 {
+	score := 0.0
+
+	// Commit count (prefer repos with reasonable activity)
+	if repo.CommitCount > 10 && repo.CommitCount < 10000 {
+		score += 5
+	}
+
+	// Branch count (prefer repos with multiple branches)
+	if repo.BranchCount > 1 {
+		score += float64(repo.BranchCount) * 0.5
+	}
+
+	// Protection rules (important to test)
+	if repo.BranchProtections > 0 {
+		score += 7
+	}
+
+	return score
 }
 
 // selectDiverse selects repositories ensuring feature diversity

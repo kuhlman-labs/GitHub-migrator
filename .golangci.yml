@@ -46,3 +46,7 @@ issues:
         - errcheck
         - dupl
         - gosec
+    # Exclude cyclomatic complexity for specific pre-existing complex functions
+    - linters:
+        - gocyclo
+      text: "GetExecutiveReport|ExportExecutiveReport"

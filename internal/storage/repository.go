@@ -34,9 +34,13 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			webhook_count, contributor_count, top_contributors,
 			issue_count, pull_request_count, tag_count, 
 			open_issue_count, open_pr_count,
+			has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
+			visibility, workflow_count, has_self_hosted_runners, collaborator_count,
+			installed_apps_count, release_count, has_release_assets,
 			status, batch_id, priority, destination_url, 
-			destination_full_name, discovered_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			destination_full_name, source_migration_id, is_source_locked,
+			discovered_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(full_name) DO UPDATE SET
 			source = excluded.source,
 			source_url = excluded.source_url,
@@ -74,8 +78,21 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			tag_count = excluded.tag_count,
 			open_issue_count = excluded.open_issue_count,
 			open_pr_count = excluded.open_pr_count,
+			has_code_scanning = excluded.has_code_scanning,
+			has_dependabot = excluded.has_dependabot,
+			has_secret_scanning = excluded.has_secret_scanning,
+			has_codeowners = excluded.has_codeowners,
+			visibility = excluded.visibility,
+			workflow_count = excluded.workflow_count,
+			has_self_hosted_runners = excluded.has_self_hosted_runners,
+			collaborator_count = excluded.collaborator_count,
+			installed_apps_count = excluded.installed_apps_count,
+			release_count = excluded.release_count,
+			has_release_assets = excluded.has_release_assets,
 			destination_url = excluded.destination_url,
 			destination_full_name = excluded.destination_full_name,
+			source_migration_id = excluded.source_migration_id,
+			is_source_locked = excluded.is_source_locked,
 			updated_at = excluded.updated_at
 	`
 
@@ -92,8 +109,12 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
 		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
 		repo.OpenIssueCount, repo.OpenPRCount,
+		repo.HasCodeScanning, repo.HasDependabot, repo.HasSecretScanning, repo.HasCodeowners,
+		repo.Visibility, repo.WorkflowCount, repo.HasSelfHostedRunners, repo.CollaboratorCount,
+		repo.InstalledAppsCount, repo.ReleaseCount, repo.HasReleaseAssets,
 		repo.Status, repo.BatchID, repo.Priority,
 		repo.DestinationURL, repo.DestinationFullName,
+		repo.SourceMigrationID, repo.IsSourceLocked,
 		repo.DiscoveredAt, repo.UpdatedAt,
 	)
 
@@ -114,8 +135,12 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
+			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
+			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
+			   installed_apps_count, release_count, has_release_assets,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, validation_status, validation_details, 
+			   destination_full_name, source_migration_id, is_source_locked,
+			   validation_status, validation_details, 
 			   destination_data, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE full_name = ?
@@ -135,8 +160,12 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
 		&repo.OpenIssueCount, &repo.OpenPRCount,
+		&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
+		&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
+		&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
 		&repo.Status, &repo.BatchID, &repo.Priority,
 		&repo.DestinationURL, &repo.DestinationFullName,
+		&repo.SourceMigrationID, &repo.IsSourceLocked,
 		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 	)
@@ -168,6 +197,9 @@ func applyRepositoryFilters(query string, args []interface{}, filters map[string
 
 	// Apply feature filters
 	query, args = applyFeatureFilters(query, args, filters)
+
+	// Apply visibility filter
+	query, args = applyVisibilityFilter(query, args, filters)
 
 	// Apply size category filter
 	query, args = applySizeCategoryFilter(query, args, filters)
@@ -261,6 +293,12 @@ func applyFeatureFilters(query string, args []interface{}, filters map[string]in
 		{"has_packages", "has_packages"},
 		{"is_archived", "is_archived"},
 		{"is_fork", "is_fork"},
+		{"has_code_scanning", "has_code_scanning"},
+		{"has_dependabot", "has_dependabot"},
+		{"has_secret_scanning", "has_secret_scanning"},
+		{"has_codeowners", "has_codeowners"},
+		{"has_self_hosted_runners", "has_self_hosted_runners"},
+		{"has_release_assets", "has_release_assets"},
 	}
 
 	for _, f := range featureFilters {
@@ -279,6 +317,15 @@ func applyFeatureFilters(query string, args []interface{}, filters map[string]in
 		}
 	}
 
+	return query, args
+}
+
+// applyVisibilityFilter applies visibility filter (public, private, internal)
+func applyVisibilityFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
+	if visibility, ok := filters["visibility"].(string); ok && visibility != "" {
+		query += " AND visibility = ?"
+		args = append(args, visibility)
+	}
 	return query, args
 }
 
@@ -352,7 +399,13 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 	// - has_lfs: +2
 	// - has_submodules: +2
 	// - has_large_files: +4 (higher weight due to remediation requirements)
+	// - has_packages: +3
 	// - branch_protections > 0: +1
+	// - Security features (GHAS): +2
+	// - Self-hosted runners: +3
+	// - GitHub Apps: +2
+	// - Internal visibility: +1
+	// - CODEOWNERS: +1
 
 	const (
 		MB100 = 104857600  // 100MB
@@ -382,7 +435,13 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
 		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
 		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
-		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END
+		CASE WHEN has_packages = 1 THEN 3 ELSE 0 END +
+		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
+		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
+		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
+		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
+		CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END
 	)`
 
 	for _, category := range categories {
@@ -506,8 +565,12 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
+			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
+			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
+			   installed_apps_count, release_count, has_release_assets,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, validation_status, validation_details, 
+			   destination_full_name, source_migration_id, is_source_locked,
+			   validation_status, validation_details, 
 			   destination_data, discovered_at, updated_at, migrated_at
 		FROM repositories 
 		WHERE 1=1
@@ -556,8 +619,12 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
 			&repo.OpenIssueCount, &repo.OpenPRCount,
+			&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
+			&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
+			&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
 			&repo.Status, &repo.BatchID, &repo.Priority,
 			&repo.DestinationURL, &repo.DestinationFullName,
+			&repo.SourceMigrationID, &repo.IsSourceLocked,
 			&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 		)
@@ -1741,7 +1808,9 @@ type ComplexityDistribution struct {
 //nolint:dupl // Similar query pattern but different business logic
 func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
 	// Calculate complexity score based on:
-	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4), Packages (weight: 3), Branch protections (weight: 1)
+	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4),
+	// Packages (weight: 3), Branch protections (weight: 1), Security features (weight: 2),
+	// Self-hosted runners (weight: 3), GitHub Apps (weight: 2), Internal visibility (weight: 1), CODEOWNERS (weight: 1)
 	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
 		SELECT 
@@ -1765,7 +1834,12 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 				(CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END) +
 				(CASE WHEN has_packages = 1 THEN 3 ELSE 0 END) +
-				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as complexity_score
+				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) +
+				(CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END) +
+				(CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END) +
+				(CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END) +
+				(CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END) +
+				(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as complexity_score
 			FROM repositories r
 			WHERE 1=1
 				AND status != 'wont_migrate'

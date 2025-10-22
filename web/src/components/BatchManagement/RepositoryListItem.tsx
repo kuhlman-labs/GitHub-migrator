@@ -10,7 +10,8 @@ interface RepositoryListItemProps {
 export function RepositoryListItem({ repository, selected, onToggle }: RepositoryListItemProps) {
   const getComplexityIndicator = () => {
     // Calculate complexity score matching backend logic:
-    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + has_packages (3) + branch_protections > 0 (1)
+    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + has_packages (3) + 
+    // branch_protections > 0 (1) + GHAS (2) + self-hosted runners (3) + apps (2) + internal (1) + codeowners (1)
     const MB100 = 100 * 1024 * 1024;
     const GB1 = 1024 * 1024 * 1024;
     const GB5 = 5 * 1024 * 1024 * 1024;
@@ -26,6 +27,11 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
     if (repository.has_large_files) score += 4;
     if (repository.has_packages) score += 3; // Packages don't migrate with GEI
     if (repository.branch_protections > 0) score += 1;
+    if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 2; // GHAS
+    if (repository.has_self_hosted_runners) score += 3;
+    if (repository.installed_apps_count > 0) score += 2;
+    if (repository.visibility === 'internal') score += 1;
+    if (repository.has_codeowners) score += 1;
 
     if (score <= 3) return { 
       label: 'Simple', 
@@ -106,7 +112,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
         </div>
         
         {/* Feature tags */}
-        {(repository.is_archived || repository.is_fork || repository.has_packages || repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki) && (
+        {(repository.is_archived || repository.is_fork || repository.has_packages || repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki || repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning || repository.has_self_hosted_runners || repository.visibility === 'internal' || repository.has_codeowners) && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {repository.is_archived && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-medium border border-gray-300">
@@ -171,6 +177,38 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
                   <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
                 </svg>
                 Wiki
+              </span>
+            )}
+            {(repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium border border-green-200">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                Security
+              </span>
+            )}
+            {repository.has_self_hosted_runners && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-200">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
+                </svg>
+                Self-Hosted
+              </span>
+            )}
+            {repository.visibility === 'internal' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded text-xs font-medium border border-yellow-200">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clipRule="evenodd" />
+                </svg>
+                Internal
+              </span>
+            )}
+            {repository.has_codeowners && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium border border-blue-200">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                </svg>
+                CODEOWNERS
               </span>
             )}
           </div>

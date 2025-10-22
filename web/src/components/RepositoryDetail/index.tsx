@@ -599,8 +599,13 @@ export function RepositoryDetail() {
                   const largeFilesPoints = repository.has_large_files ? 4 : 0;
                   const packagesPoints = repository.has_packages ? 3 : 0;
                   const branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
+                  const securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 2 : 0;
+                  const runnersPoints = repository.has_self_hosted_runners ? 3 : 0;
+                  const appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
+                  const visibilityPoints = repository.visibility === 'internal' ? 1 : 0;
+                  const codeownersPoints = repository.has_codeowners ? 1 : 0;
                   
-                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints;
+                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints + securityPoints + runnersPoints + appsPoints + visibilityPoints + codeownersPoints;
                   
                   let category = 'Simple';
                   let categoryColor = 'text-green-600';
@@ -694,6 +699,60 @@ export function RepositoryDetail() {
                             +{branchProtectionsPoints}
                           </span>
                         </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Advanced Security</div>
+                            <div className="text-xs text-gray-500">
+                              {repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning 
+                                ? 'Enabled (requires GHAS license)' 
+                                : 'Not enabled'}
+                            </div>
+                          </div>
+                          <span className={`text-lg font-semibold ${securityPoints > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                            +{securityPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Self-Hosted Runners</div>
+                            <div className="text-xs text-gray-500">{repository.has_self_hosted_runners ? 'Yes (infrastructure dependency)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${runnersPoints > 0 ? 'text-purple-600' : 'text-gray-400'}`}>
+                            +{runnersPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">GitHub Apps</div>
+                            <div className="text-xs text-gray-500">{repository.installed_apps_count > 0 ? `${repository.installed_apps_count} installed` : 'None'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${appsPoints > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                            +{appsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Internal Visibility</div>
+                            <div className="text-xs text-gray-500">{repository.visibility === 'internal' ? 'Yes (becomes private on .com)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${visibilityPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                            +{visibilityPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">CODEOWNERS</div>
+                            <div className="text-xs text-gray-500">{repository.has_codeowners ? 'Yes (requires verification)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${codeownersPoints > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                            +{codeownersPoints}
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="pt-2 border-t border-gray-200">
@@ -746,6 +805,17 @@ export function RepositoryDetail() {
                 <ProfileItem label="Environments" value={repository.environment_count} />
                 <ProfileItem label="Secrets" value={repository.secret_count} />
                 <ProfileItem label="Webhooks" value={repository.webhook_count} />
+                <ProfileItem label="Visibility" value={repository.visibility} />
+                <ProfileItem label="Workflows" value={repository.workflow_count} />
+                <ProfileItem label="Code Scanning" value={repository.has_code_scanning ? 'Enabled' : 'Disabled'} />
+                <ProfileItem label="Dependabot" value={repository.has_dependabot ? 'Enabled' : 'Disabled'} />
+                <ProfileItem label="Secret Scanning" value={repository.has_secret_scanning ? 'Enabled' : 'Disabled'} />
+                <ProfileItem label="CODEOWNERS" value={repository.has_codeowners ? 'Yes' : 'No'} />
+                <ProfileItem label="Self-Hosted Runners" value={repository.has_self_hosted_runners ? 'Yes' : 'No'} />
+                <ProfileItem label="Outside Collaborators" value={repository.collaborator_count} />
+                <ProfileItem label="GitHub Apps" value={repository.installed_apps_count} />
+                <ProfileItem label="Releases" value={repository.release_count} />
+                <ProfileItem label="Has Release Assets" value={repository.has_release_assets ? 'Yes' : 'No'} />
               </ProfileCard>
             </div>
           )}

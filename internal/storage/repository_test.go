@@ -15,6 +15,63 @@ const (
 	testMessage       = "Test message"
 )
 
+// createTestRepository creates a minimal repository with all required fields
+func createTestRepository(fullName string) *models.Repository {
+	totalSize := int64(1024 * 1024)
+	defaultBranch := testDefaultBranch
+	topContrib := "user1,user2"
+
+	return &models.Repository{
+		FullName:             fullName,
+		Source:               "ghes",
+		SourceURL:            fmt.Sprintf("https://github.com/%s", fullName),
+		TotalSize:            &totalSize,
+		DefaultBranch:        &defaultBranch,
+		HasLFS:               false,
+		HasSubmodules:        false,
+		HasLargeFiles:        false,
+		LargeFileCount:       0,
+		BranchCount:          5,
+		CommitCount:          100,
+		IsArchived:           false,
+		IsFork:               false,
+		HasWiki:              false,
+		HasPages:             false,
+		HasDiscussions:       false,
+		HasActions:           false,
+		HasProjects:          false,
+		HasPackages:          false,
+		BranchProtections:    0,
+		EnvironmentCount:     0,
+		SecretCount:          0,
+		VariableCount:        0,
+		WebhookCount:         0,
+		HasCodeScanning:      false,
+		HasDependabot:        false,
+		HasSecretScanning:    false,
+		HasCodeowners:        false,
+		Visibility:           "private",
+		WorkflowCount:        0,
+		HasSelfHostedRunners: false,
+		CollaboratorCount:    0,
+		InstalledAppsCount:   0,
+		ReleaseCount:         0,
+		HasReleaseAssets:     false,
+		ContributorCount:     2,
+		TopContributors:      &topContrib,
+		IssueCount:           0,
+		PullRequestCount:     0,
+		TagCount:             0,
+		OpenIssueCount:       0,
+		OpenPRCount:          0,
+		Status:               string(models.StatusPending),
+		Priority:             0,
+		IsSourceLocked:       false,
+		DiscoveredAt:         time.Now(),
+		UpdatedAt:            time.Now(),
+	}
+}
+
 func setupTestDB(t *testing.T) *Database {
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
@@ -38,28 +95,10 @@ func TestSaveRepository(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
-	topContrib := "user1,user2"
 
-	repo := &models.Repository{
-		FullName:         "test/repo",
-		Source:           "ghes",
-		SourceURL:        "https://github.com/test/repo",
-		TotalSize:        &totalSize,
-		DefaultBranch:    &defaultBranch,
-		HasWiki:          true,
-		HasPages:         false,
-		HasLFS:           true,
-		HasSubmodules:    false,
-		BranchCount:      5,
-		CommitCount:      100,
-		ContributorCount: 2,
-		TopContributors:  &topContrib,
-		Status:           string(models.StatusPending),
-		DiscoveredAt:     time.Now(),
-		UpdatedAt:        time.Now(),
-	}
+	repo := createTestRepository("test/repo")
+	repo.HasWiki = true
+	repo.HasLFS = true
 
 	// Test insert
 	if err := db.SaveRepository(ctx, repo); err != nil {
@@ -79,19 +118,8 @@ func TestGetRepository(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
 
-	original := &models.Repository{
-		FullName:      "test/repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/test/repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	original := createTestRepository("test/repo")
 
 	if err := db.SaveRepository(ctx, original); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)

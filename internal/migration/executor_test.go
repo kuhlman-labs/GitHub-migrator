@@ -14,6 +14,63 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
 
+// createTestRepository creates a minimal repository with all required fields for testing
+func createTestRepository(fullName string) *models.Repository {
+	totalSize := int64(1024 * 1024)
+	defaultBranch := "main"
+	topContrib := "user1,user2"
+
+	return &models.Repository{
+		FullName:             fullName,
+		Source:               "ghes",
+		SourceURL:            fmt.Sprintf("https://github.com/%s", fullName),
+		TotalSize:            &totalSize,
+		DefaultBranch:        &defaultBranch,
+		HasLFS:               false,
+		HasSubmodules:        false,
+		HasLargeFiles:        false,
+		LargeFileCount:       0,
+		BranchCount:          5,
+		CommitCount:          100,
+		IsArchived:           false,
+		IsFork:               false,
+		HasWiki:              false,
+		HasPages:             false,
+		HasDiscussions:       false,
+		HasActions:           false,
+		HasProjects:          false,
+		HasPackages:          false,
+		BranchProtections:    0,
+		EnvironmentCount:     0,
+		SecretCount:          0,
+		VariableCount:        0,
+		WebhookCount:         0,
+		HasCodeScanning:      false,
+		HasDependabot:        false,
+		HasSecretScanning:    false,
+		HasCodeowners:        false,
+		Visibility:           "private",
+		WorkflowCount:        0,
+		HasSelfHostedRunners: false,
+		CollaboratorCount:    0,
+		InstalledAppsCount:   0,
+		ReleaseCount:         0,
+		HasReleaseAssets:     false,
+		ContributorCount:     2,
+		TopContributors:      &topContrib,
+		IssueCount:           0,
+		PullRequestCount:     0,
+		TagCount:             0,
+		OpenIssueCount:       0,
+		OpenPRCount:          0,
+		Status:               string(models.StatusPending),
+		Priority:             0,
+		IsSourceLocked:       false,
+		DiscoveredAt:         time.Now(),
+		UpdatedAt:            time.Now(),
+	}
+}
+
 func TestNewExecutor(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -289,14 +346,7 @@ func TestExecutor_DryRunExecution(t *testing.T) {
 	_ = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	// Create a test repository
-	repo := &models.Repository{
-		FullName:     "test-org/test-repo",
-		Source:       "ghes",
-		SourceURL:    "https://github.test.com/test-org/test-repo",
-		Status:       string(models.StatusPending),
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository("test-org/test-repo")
 
 	// Save repository to database
 	if err := db.SaveRepository(context.Background(), repo); err != nil {
