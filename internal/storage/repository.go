@@ -405,6 +405,7 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 	// - has_large_files: +4 (higher weight due to remediation requirements)
 	// - has_packages: +3
 	// - branch_protections > 0: +1
+	// - has_rulesets: +1
 	// - Security features (GHAS): +2
 	// - Self-hosted runners: +3
 	// - GitHub Apps: +2
@@ -441,6 +442,7 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
 		CASE WHEN has_packages = 1 THEN 3 ELSE 0 END +
 		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
+		CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END +
 		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END +
 		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
 		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
@@ -1841,7 +1843,7 @@ type ComplexityDistribution struct {
 func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
 	// Calculate complexity score based on:
 	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4),
-	// Packages (weight: 3), Branch protections (weight: 1), Rulesets (weight: 2), Security features (weight: 2),
+	// Packages (weight: 3), Branch protections (weight: 1), Rulesets (weight: 1), Security features (weight: 2),
 	// Self-hosted runners (weight: 3), GitHub Apps (weight: 2), Internal visibility (weight: 1), CODEOWNERS (weight: 1)
 	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
@@ -1867,7 +1869,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 				(CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END) +
 				(CASE WHEN has_packages = 1 THEN 3 ELSE 0 END) +
 				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) +
-				(CASE WHEN has_rulesets = 1 THEN 2 ELSE 0 END) +
+				(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) +
 				(CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END) +
 				(CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END) +

@@ -599,13 +599,14 @@ export function RepositoryDetail() {
                   const largeFilesPoints = repository.has_large_files ? 4 : 0;
                   const packagesPoints = repository.has_packages ? 3 : 0;
                   const branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
+                  const rulesetsPoints = repository.has_rulesets ? 1 : 0;
                   const securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 2 : 0;
                   const runnersPoints = repository.has_self_hosted_runners ? 3 : 0;
                   const appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
                   const visibilityPoints = repository.visibility === 'internal' ? 1 : 0;
                   const codeownersPoints = repository.has_codeowners ? 1 : 0;
                   
-                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints + securityPoints + runnersPoints + appsPoints + visibilityPoints + codeownersPoints;
+                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints + rulesetsPoints + securityPoints + runnersPoints + appsPoints + visibilityPoints + codeownersPoints;
                   
                   let category = 'Simple';
                   let categoryColor = 'text-green-600';
@@ -702,6 +703,16 @@ export function RepositoryDetail() {
                         
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
                           <div>
+                            <div className="text-sm font-medium text-gray-900">Rulesets</div>
+                            <div className="text-xs text-gray-500">{repository.has_rulesets ? 'Yes (requires manual recreation)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${rulesetsPoints > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            +{rulesetsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
                             <div className="text-sm font-medium text-gray-900">Advanced Security</div>
                             <div className="text-xs text-gray-500">
                               {repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning 
@@ -773,6 +784,7 @@ export function RepositoryDetail() {
                 <ProfileItem label="Projects" value={repository.has_projects ? 'Enabled' : 'Disabled'} />
                 <ProfileItem label="Packages" value={repository.has_packages ? 'Yes' : 'No'} />
                 <ProfileItem label="Branch Protections" value={repository.branch_protections} />
+                <ProfileItem label="Rulesets" value={repository.has_rulesets ? 'Yes' : 'No'} />
                 <ProfileItem label="Environments" value={repository.environment_count} />
                 <ProfileItem label="Secrets" value={repository.secret_count} />
                 <ProfileItem label="Webhooks" value={repository.webhook_count} />

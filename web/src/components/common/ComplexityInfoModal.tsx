@@ -123,6 +123,17 @@ export function ComplexityInfoModal() {
                     </p>
                   </div>
 
+                  {/* Rulesets */}
+                  <div className="border-l-4 border-red-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">Rulesets</h4>
+                      <span className="text-sm font-semibold text-red-600">Weight: 1 point</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Repository rulesets do not migrate with GEI APIs and must be manually recreated on the destination repository.
+                    </p>
+                  </div>
+
                   {/* Advanced Security */}
                   <div className="border-l-4 border-green-500 pl-4">
                     <div className="flex justify-between items-start mb-1">
@@ -232,13 +243,14 @@ export function ComplexityInfoModal() {
                     <li>• Uses LFS → <span className="font-semibold">+2 points</span></li>
                     <li>• Has packages → <span className="font-semibold">+3 points</span></li>
                     <li>• Has branch protections → <span className="font-semibold">+1 point</span></li>
+                    <li>• Has rulesets → <span className="font-semibold">+1 point</span></li>
                     <li>• Has Advanced Security (code scanning) → <span className="font-semibold">+2 points</span></li>
                     <li>• Has self-hosted runners → <span className="font-semibold">+3 points</span></li>
                     <li>• Has GitHub Apps installed → <span className="font-semibold">+2 points</span></li>
                     <li>• Internal visibility → <span className="font-semibold">+1 point</span></li>
                     <li>• Has CODEOWNERS → <span className="font-semibold">+1 point</span></li>
                   </ul>
-                  <p className="font-bold text-blue-900 pt-2">Total Score: 25 → Very Complex</p>
+                  <p className="font-bold text-blue-900 pt-2">Total Score: 26 → Very Complex</p>
                 </div>
               </div>
             </div>

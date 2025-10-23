@@ -11,7 +11,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
   const getComplexityIndicator = () => {
     // Calculate complexity score matching backend logic:
     // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + has_packages (3) + 
-    // branch_protections > 0 (1) + GHAS (2) + self-hosted runners (3) + apps (2) + internal (1) + codeowners (1)
+    // branch_protections > 0 (1) + has_rulesets (1) + GHAS (2) + self-hosted runners (3) + apps (2) + internal (1) + codeowners (1)
     const MB100 = 100 * 1024 * 1024;
     const GB1 = 1024 * 1024 * 1024;
     const GB5 = 5 * 1024 * 1024 * 1024;
@@ -27,6 +27,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
     if (repository.has_large_files) score += 4;
     if (repository.has_packages) score += 3; // Packages don't migrate with GEI
     if (repository.branch_protections > 0) score += 1;
+    if (repository.has_rulesets) score += 1; // Rulesets don't migrate with GEI
     if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 2; // GHAS
     if (repository.has_self_hosted_runners) score += 3;
     if (repository.installed_apps_count > 0) score += 2;
