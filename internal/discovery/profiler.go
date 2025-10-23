@@ -7,25 +7,30 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
 	ghapi "github.com/google/go-github/v75/github"
+	"github.com/shurcooL/githubv4"
 )
 
 // Profiler profiles GitHub-specific features via API
 type Profiler struct {
-	client *github.Client
-	logger *slog.Logger
-	token  string // GitHub token for authenticated git operations
+	client         *github.Client
+	logger         *slog.Logger
+	token          string          // GitHub token for authenticated git operations
+	packageCache   map[string]bool // Cache of repo names that have packages
+	packageCacheMu sync.RWMutex    // Mutex for thread-safe cache access
 }
 
 // NewProfiler creates a new GitHub features profiler
 func NewProfiler(client *github.Client, logger *slog.Logger) *Profiler {
 	return &Profiler{
-		client: client,
-		logger: logger,
-		token:  client.Token(),
+		client:       client,
+		logger:       logger,
+		token:        client.Token(),
+		packageCache: make(map[string]bool),
 	}
 }
 
@@ -223,28 +228,123 @@ func (p *Profiler) profileTags(ctx context.Context, org, name string, repo *mode
 	repo.TagCount = totalTags
 }
 
-// profilePackages checks for GitHub Packages
-func (p *Profiler) profilePackages(ctx context.Context, org, name string, repo *models.Repository) {
-	// List packages for the repository
-	// Note: The Packages API requires specific permissions and may not work for all repos
-	packages, _, err := p.client.REST().Organizations.ListPackages(ctx, org, nil)
-	if err == nil && packages != nil {
-		// Check if any packages belong to this repository
-		for _, pkg := range packages {
-			if pkg.Repository != nil && pkg.Repository.GetName() == name {
-				repo.HasPackages = true
-				p.logger.Debug("Found packages for repository", "repo", repo.FullName)
-				return
-			}
+// LoadPackageCache loads all packages for an organization into the cache
+// This should be called once per organization before profiling repositories
+func (p *Profiler) LoadPackageCache(ctx context.Context, org string) error {
+	p.logger.Info("Loading package cache for organization", "org", org)
+
+	// GitHub package types to check
+	packageTypes := []string{"npm", "maven", "rubygems", "docker", "nuget", "container"}
+
+	p.packageCacheMu.Lock()
+	defer p.packageCacheMu.Unlock()
+
+	// Clear existing cache for this org
+	p.packageCache = make(map[string]bool)
+
+	packagesFound := 0
+	for _, pkgType := range packageTypes {
+		opts := &ghapi.PackageListOptions{
+			PackageType: ghapi.String(pkgType),
+			ListOptions: ghapi.ListOptions{PerPage: 100},
 		}
-	} else {
-		p.logger.Debug("Failed to list packages (may require additional permissions)",
-			"repo", repo.FullName,
-			"error", err)
+
+		for {
+			packages, resp, err := p.client.REST().Organizations.ListPackages(ctx, org, opts)
+			if err != nil {
+				// Some package types may not be available or may require different permissions
+				p.logger.Debug("Failed to list packages for type (continuing with other types)",
+					"org", org,
+					"type", pkgType,
+					"error", err)
+				break
+			}
+
+			// Mark repositories that have packages
+			for _, pkg := range packages {
+				if pkg.Repository != nil {
+					repoName := pkg.Repository.GetName()
+					if !p.packageCache[repoName] {
+						p.packageCache[repoName] = true
+						packagesFound++
+						p.logger.Debug("Found package for repository",
+							"org", org,
+							"repo", repoName,
+							"package_type", pkgType,
+							"package_name", pkg.GetName())
+					}
+				}
+			}
+
+			if resp.NextPage == 0 {
+				break
+			}
+			opts.Page = resp.NextPage
+		}
 	}
+
+	p.logger.Info("Package cache loaded",
+		"org", org,
+		"repos_with_packages", len(p.packageCache),
+		"total_packages", packagesFound)
+
+	return nil
+}
+
+// profilePackages checks for GitHub Packages using the cache
+func (p *Profiler) profilePackages(ctx context.Context, org, name string, repo *models.Repository) {
+	// Check cache first (thread-safe read)
+	p.packageCacheMu.RLock()
+	hasPackages, inCache := p.packageCache[name]
+	p.packageCacheMu.RUnlock()
+
+	if inCache {
+		repo.HasPackages = hasPackages
+		if hasPackages {
+			p.logger.Debug("Found packages for repository (from cache)", "repo", repo.FullName)
+		}
+		return
+	}
+
+	// If not in cache, try GraphQL as fallback
+	hasPackages, err := p.detectPackagesViaGraphQL(ctx, org, name)
+	if err == nil {
+		repo.HasPackages = hasPackages
+		if hasPackages {
+			p.logger.Debug("Found packages for repository via GraphQL", "repo", repo.FullName)
+		}
+		return
+	}
+
+	p.logger.Debug("GraphQL package detection failed",
+		"repo", repo.FullName,
+		"error", err)
 
 	// If we couldn't detect packages, default to false
 	repo.HasPackages = false
+}
+
+// detectPackagesViaGraphQL uses GraphQL to detect if a repository has packages
+func (p *Profiler) detectPackagesViaGraphQL(ctx context.Context, org, name string) (bool, error) {
+	var query struct {
+		Repository struct {
+			Packages struct {
+				TotalCount int
+			} `graphql:"packages(first: 1)"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner": githubv4.String(org),
+		"name":  githubv4.String(name),
+	}
+
+	err := p.client.QueryWithRetry(ctx, "DetectPackages", &query, variables)
+	if err != nil {
+		return false, err
+	}
+
+	return query.Repository.Packages.TotalCount > 0, nil
 }
 
 // countIssuesAndPRs counts issues and PRs separately for accurate verification data

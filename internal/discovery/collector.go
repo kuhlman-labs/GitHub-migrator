@@ -56,8 +56,16 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 
 	c.logger.Info("Found repositories", "count", len(repos))
 
+	// Create profiler and load package cache for the organization
+	profiler := NewProfiler(c.client, c.logger)
+	if err := profiler.LoadPackageCache(ctx, org); err != nil {
+		c.logger.Warn("Failed to load package cache, package detection may be slower",
+			"org", org,
+			"error", err)
+	}
+
 	// Process repositories in parallel
-	return c.processRepositories(ctx, repos)
+	return c.processRepositoriesWithProfiler(ctx, repos, profiler)
 }
 
 // DiscoverEnterpriseRepositories discovers all repositories across all organizations in an enterprise
@@ -74,7 +82,10 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 		"enterprise", enterpriseSlug,
 		"org_count", len(orgs))
 
-	// Collect repositories from all organizations
+	// Create a shared profiler for all organizations
+	profiler := NewProfiler(c.client, c.logger)
+
+	// Collect repositories from all organizations and load package caches
 	var allRepos []*ghapi.Repository
 	for _, org := range orgs {
 		c.logger.Info("Discovering repositories for organization",
@@ -96,6 +107,14 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			"organization", org,
 			"count", len(repos))
 
+		// Load package cache for this organization
+		if err := profiler.LoadPackageCache(ctx, org); err != nil {
+			c.logger.Warn("Failed to load package cache for organization",
+				"enterprise", enterpriseSlug,
+				"org", org,
+				"error", err)
+		}
+
 		allRepos = append(allRepos, repos...)
 	}
 
@@ -104,8 +123,8 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 		"total_orgs", len(orgs),
 		"total_repos", len(allRepos))
 
-	// Process all repositories in parallel
-	return c.processRepositories(ctx, allRepos)
+	// Process all repositories in parallel using the shared profiler
+	return c.processRepositoriesWithProfiler(ctx, allRepos, profiler)
 }
 
 // listAllRepositories lists all repositories for an organization with pagination
@@ -132,8 +151,13 @@ func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*gha
 	return allRepos, nil
 }
 
-// processRepositories processes repositories in parallel using worker pool
+// processRepositories processes repositories in parallel using worker pool (without profiler cache)
 func (c *Collector) processRepositories(ctx context.Context, repos []*ghapi.Repository) error {
+	return c.processRepositoriesWithProfiler(ctx, repos, nil)
+}
+
+// processRepositoriesWithProfiler processes repositories in parallel using worker pool with a shared profiler
+func (c *Collector) processRepositoriesWithProfiler(ctx context.Context, repos []*ghapi.Repository, profiler *Profiler) error {
 	jobs := make(chan *ghapi.Repository, len(repos))
 	errors := make(chan error, len(repos))
 	var wg sync.WaitGroup
@@ -141,7 +165,7 @@ func (c *Collector) processRepositories(ctx context.Context, repos []*ghapi.Repo
 	// Start workers
 	for i := 0; i < c.workers; i++ {
 		wg.Add(1)
-		go c.worker(ctx, &wg, jobs, errors)
+		go c.workerWithProfiler(ctx, &wg, jobs, errors, profiler)
 	}
 
 	// Send jobs
@@ -173,12 +197,17 @@ func (c *Collector) processRepositories(ctx context.Context, repos []*ghapi.Repo
 	return nil
 }
 
-// worker processes repositories from the jobs channel
+// worker processes repositories from the jobs channel (deprecated, use workerWithProfiler)
 func (c *Collector) worker(ctx context.Context, wg *sync.WaitGroup, jobs <-chan *ghapi.Repository, errors chan<- error) {
+	c.workerWithProfiler(ctx, wg, jobs, errors, nil)
+}
+
+// workerWithProfiler processes repositories from the jobs channel with an optional shared profiler
+func (c *Collector) workerWithProfiler(ctx context.Context, wg *sync.WaitGroup, jobs <-chan *ghapi.Repository, errors chan<- error, profiler *Profiler) {
 	defer wg.Done()
 
 	for repo := range jobs {
-		if err := c.ProfileRepository(ctx, repo); err != nil {
+		if err := c.ProfileRepositoryWithProfiler(ctx, repo, profiler); err != nil {
 			c.logger.Error("Failed to profile repository",
 				"repo", repo.GetFullName(),
 				"error", err)
@@ -277,6 +306,12 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 
 // ProfileRepository profiles a single repository with both Git and GitHub features
 func (c *Collector) ProfileRepository(ctx context.Context, ghRepo *ghapi.Repository) error {
+	return c.ProfileRepositoryWithProfiler(ctx, ghRepo, nil)
+}
+
+// ProfileRepositoryWithProfiler profiles a single repository with both Git and GitHub features
+// using an optional shared profiler (with package cache)
+func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *ghapi.Repository, profiler *Profiler) error {
 	c.logger.Debug("Profiling repository", "repo", ghRepo.GetFullName())
 
 	// Create basic repository profile from GitHub API data
@@ -333,7 +368,11 @@ func (c *Collector) ProfileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 	}
 
 	// Profile GitHub features via API (no clone needed)
-	profiler := NewProfiler(c.client, c.logger)
+	// Use shared profiler if provided, otherwise create a new one
+	if profiler == nil {
+		profiler = NewProfiler(c.client, c.logger)
+	}
+
 	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
 		c.logger.Warn("Failed to profile features",
 			"repo", repo.FullName,

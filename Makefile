@@ -95,6 +95,32 @@ clean: ## Clean build artifacts
 	rm -f $(APP_NAME)-server $(APP_NAME)-cli
 	rm -rf web/dist web/node_modules
 
+create-test-repos: ## Create test repositories in GitHub organization (requires GITHUB_TOKEN and ORG env vars)
+	@if [ -z "$(ORG)" ]; then \
+		echo "Error: ORG environment variable is required"; \
+		echo "Usage: make create-test-repos ORG=your-org-name"; \
+		exit 1; \
+	fi
+	@if [ -z "$(GITHUB_TOKEN)" ]; then \
+		echo "Error: GITHUB_TOKEN environment variable is required"; \
+		exit 1; \
+	fi
+	@echo "Creating test repositories in organization: $(ORG)"
+	go run scripts/create-test-repos.go -org $(ORG)
+
+cleanup-test-repos: ## Delete all test repositories from GitHub organization (requires GITHUB_TOKEN and ORG env vars)
+	@if [ -z "$(ORG)" ]; then \
+		echo "Error: ORG environment variable is required"; \
+		echo "Usage: make cleanup-test-repos ORG=your-org-name"; \
+		exit 1; \
+	fi
+	@if [ -z "$(GITHUB_TOKEN)" ]; then \
+		echo "Error: GITHUB_TOKEN environment variable is required"; \
+		exit 1; \
+	fi
+	@echo "Cleaning up test repositories in organization: $(ORG)"
+	go run scripts/create-test-repos.go -org $(ORG) -cleanup
+
 all: lint test build web-build ## Run all checks and build
 
 .DEFAULT_GOAL := help

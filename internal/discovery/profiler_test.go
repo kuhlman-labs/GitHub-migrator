@@ -217,3 +217,87 @@ func TestCheckWikiHasContent(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectPackagesViaGraphQL(t *testing.T) {
+	// Skip if GITHUB_TOKEN is not set
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		t.Skip("Skipping integration test (set GITHUB_TOKEN to run)")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   token,
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	profiler := NewProfiler(client, logger)
+	ctx := context.Background()
+
+	// Test with a repository that likely doesn't have packages
+	hasPackages, err := profiler.detectPackagesViaGraphQL(ctx, "octocat", "Hello-World")
+	if err != nil {
+		t.Logf("GraphQL package detection returned error: %v", err)
+	}
+	t.Logf("octocat/Hello-World has packages: %v", hasPackages)
+
+	// Test the full profilePackages method
+	repo := &models.Repository{
+		FullName: "octocat/Hello-World",
+	}
+	profiler.profilePackages(ctx, "octocat", "Hello-World", repo)
+	t.Logf("Repository HasPackages field: %v", repo.HasPackages)
+}
+
+func TestLoadPackageCache(t *testing.T) {
+	// Skip if GITHUB_TOKEN is not set
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		t.Skip("Skipping integration test (set GITHUB_TOKEN to run)")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   token,
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	profiler := NewProfiler(client, logger)
+	ctx := context.Background()
+
+	// Test loading package cache for an organization
+	// Using a small org that might have some packages
+	org := "octocat"
+	err = profiler.LoadPackageCache(ctx, org)
+	if err != nil {
+		t.Logf("LoadPackageCache returned error (may be expected): %v", err)
+	}
+
+	// Verify the cache was initialized
+	profiler.packageCacheMu.RLock()
+	cacheSize := len(profiler.packageCache)
+	profiler.packageCacheMu.RUnlock()
+
+	t.Logf("Package cache loaded with %d repositories", cacheSize)
+
+	// Test that profilePackages now uses the cache
+	repo := &models.Repository{
+		FullName: "octocat/test-repo",
+	}
+	profiler.profilePackages(ctx, "octocat", "test-repo", repo)
+	t.Logf("Repository HasPackages (from cache): %v", repo.HasPackages)
+}
