@@ -442,6 +442,20 @@ export function BatchManagement() {
                   </div>
                 )}
 
+                {/* Dry Run Complete (Ready for Migration) */}
+                {groupedRepos.dry_run_complete.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-medium text-blue-800 mb-3">
+                      Ready for Migration ({groupedRepos.dry_run_complete.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {groupedRepos.dry_run_complete.map((repo) => (
+                        <RepositoryItem key={repo.id} repository={repo} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Pending Repositories */}
                 {groupedRepos.pending.length > 0 && (
                   <div>
