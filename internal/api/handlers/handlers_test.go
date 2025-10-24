@@ -1897,3 +1897,76 @@ func TestExportMigrationHistory(t *testing.T) {
 		}
 	})
 }
+
+func TestSelfServiceMigrationBatchAssignment(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	// Create a test repository
+	totalSize := int64(1024)
+	defaultBranch := testMainBranch
+	repo := &models.Repository{
+		FullName:      "test-org/test-repo",
+		Source:        "ghes",
+		SourceURL:     "https://github.com/test-org/test-repo",
+		TotalSize:     &totalSize,
+		DefaultBranch: &defaultBranch,
+		Status:        string(models.StatusPending),
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+
+	// Prepare self-service migration request (dry run = false for production migration)
+	reqBody := map[string]interface{}{
+		"repositories": []string{"test-org/test-repo"},
+		"dry_run":      false,
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/api/v1/self-service/migrate", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	h.HandleSelfServiceMigration(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("Expected status %d, got %d. Response: %s", http.StatusAccepted, w.Code, w.Body.String())
+	}
+
+	// Parse response to get batch ID
+	var response struct {
+		BatchID int64 `json:"batch_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// Verify repository was assigned to the batch
+	updatedRepo, err := db.GetRepository(ctx, "test-org/test-repo")
+	if err != nil {
+		t.Fatalf("Failed to get repository: %v", err)
+	}
+
+	if updatedRepo.BatchID == nil {
+		t.Errorf("Expected repository to have batch_id set, but it was nil")
+	} else if *updatedRepo.BatchID != response.BatchID {
+		t.Errorf("Expected repository batch_id to be %d, got %d", response.BatchID, *updatedRepo.BatchID)
+	}
+
+	// Verify repository appears when listing by batch_id
+	repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": response.BatchID})
+	if err != nil {
+		t.Fatalf("Failed to list repositories: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Errorf("Expected 1 repository in batch, got %d", len(repos))
+	}
+
+	if len(repos) > 0 && repos[0].FullName != "test-org/test-repo" {
+		t.Errorf("Expected repository 'test-org/test-repo', got '%s'", repos[0].FullName)
+	}
+}

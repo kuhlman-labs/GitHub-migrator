@@ -2536,6 +2536,12 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 	h.logger.Info("Repositories added to batch", "batch_id", batch.ID, "count", len(repoIDs))
 
+	// Update the in-memory repo objects to include the batch_id
+	// This is critical because UpdateRepository will use these objects
+	for _, repo := range existingRepos {
+		repo.BatchID = &batch.ID
+	}
+
 	// Step 6: Execute batch (dry run or production)
 	executionStarted := false
 	var executionError error
