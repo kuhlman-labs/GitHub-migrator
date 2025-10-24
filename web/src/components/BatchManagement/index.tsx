@@ -295,8 +295,18 @@ export function BatchManagement() {
                     </span>
                   </div>
                   {selectedBatch.scheduled_at && (
-                    <div className="text-sm text-gh-text-secondary mt-2">
-                      Scheduled: {formatDate(selectedBatch.scheduled_at)}
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-800 font-medium">🗓️ Scheduled:</span>
+                        <span className="text-blue-900 font-semibold">
+                          {formatDate(selectedBatch.scheduled_at)}
+                        </span>
+                      </div>
+                      {new Date(selectedBatch.scheduled_at) > new Date() && (
+                        <p className="text-xs text-blue-700 mt-1">
+                          Will automatically start when the scheduled time arrives (if status is "ready")
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -513,6 +523,11 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
             <StatusBadge status={batch.status} size="sm" />
             <span className="text-xs text-gray-600">{batch.repository_count} repos</span>
           </div>
+          {batch.scheduled_at && (
+            <div className="mt-2 text-xs text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block">
+              🗓️ {formatDate(batch.scheduled_at)}
+            </div>
+          )}
         </div>
         {batch.status === 'ready' && (
           <button
@@ -525,7 +540,7 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
             Start
           </button>
         )}
-        {batch.status === 'pending' && (
+        {batch.status === 'pending' && !batch.scheduled_at && (
           <span className="text-xs text-gray-500">
             Dry run needed
           </span>
