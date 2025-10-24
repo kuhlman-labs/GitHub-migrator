@@ -1,6 +1,32 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-gh-blue: #0969DA;
+  --color-gh-blue-hover: #0860CA;
+  --color-gh-text-primary: #1F2328;
+  --color-gh-text-secondary: #656D76;
+  --color-gh-text-muted: #8C959F;
+  --color-gh-canvas-default: #F6F8FA;
+  --color-gh-canvas-raised: #FFFFFF;
+  --color-gh-canvas-inset: #F6F8FA;
+  --color-gh-border-default: #D1D9E0;
+  --color-gh-border-muted: #E5E9ED;
+  --color-gh-border-hover: #8C959F;
+  --color-gh-header-bg: #0D1117;
+  --color-gh-header-text: #FFFFFF;
+  --color-gh-success: #1A7F37;
+  --color-gh-success-hover: #1A7F37;
+  --color-gh-success-emphasis: #2DA44E;
+  --color-gh-danger: #D1242F;
+  --color-gh-danger-hover: #B52324;
+  --color-gh-warning: #9A6700;
+  --color-gh-warning-emphasis: #BF8700;
+  --color-gh-success-bg: #DFF7E9;
+  --color-gh-danger-bg: #FFEBEC;
+  --color-gh-warning-bg: #FFF8C5;
+  --color-gh-info-bg: #DBF0FF;
+  --color-gh-neutral-bg: #F6F8FA;
+}
 
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
