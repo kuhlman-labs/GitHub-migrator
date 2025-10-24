@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/kuhlman-labs/GitHub-migrator/tree/main/docs
+    about: Check out our documentation for guides and API references
+  - name: Discussions
+    url: https://github.com/kuhlman-labs/GitHub-migrator/discussions
+    about: Ask questions and discuss ideas with the community
+
