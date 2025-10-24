@@ -11,3 +11,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      
+  # Enable version updates for npm (frontend)
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
