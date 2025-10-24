@@ -1,0 +1,150 @@
+name: Test Task
+description: Track testing tasks and test coverage improvements
+title: "[Test]: "
+labels: ["testing", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to track testing tasks, test coverage improvements, or test infrastructure work.
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Testing Objective
+      description: What needs to be tested or improved?
+      placeholder: Describe the testing objective
+    validations:
+      required: true
+
+  - type: dropdown
+    id: test-type
+    attributes:
+      label: Test Type
+      description: What type of testing is this?
+      options:
+        - Unit Tests
+        - Integration Tests
+        - End-to-End Tests
+        - Performance Tests
+        - Security Tests
+        - Regression Tests
+        - Test Infrastructure
+        - Test Coverage Improvement
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component needs testing?
+      options:
+        - Backend API
+        - Frontend UI
+        - Migration Engine
+        - Batch Processing
+        - Discovery Service
+        - GitHub Client
+        - Storage/Database
+        - Worker Pool
+        - Rate Limiter
+        - Multiple Components
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How critical is this testing task?
+      options:
+        - Critical - Blocking release
+        - High - Important for quality
+        - Medium - Should be done
+        - Low - Nice to have
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Test Scope
+      description: What specifically needs to be tested?
+      placeholder: |
+        - Test scenario 1
+        - Test scenario 2
+        - Edge case 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: test-cases
+    attributes:
+      label: Test Cases / Scenarios
+      description: List the specific test cases or scenarios to implement
+      placeholder: |
+        1. Test case description
+           - Input: 
+           - Expected: 
+           - Actual: 
+        
+        2. Test case description
+           - Input: 
+           - Expected: 
+           - Actual: 
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-coverage
+    attributes:
+      label: Current Coverage
+      description: What is the current test coverage for this area?
+      placeholder: |
+        - Current coverage: X%
+        - Missing coverage areas: 
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: When is this testing task considered complete?
+      placeholder: |
+        - [ ] All test cases pass
+        - [ ] Coverage meets X% threshold
+        - [ ] No flaky tests
+        - [ ] Tests are documented
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: requirements
+    attributes:
+      label: Requirements
+      description: What's needed to complete this testing?
+      options:
+        - label: Test data setup
+        - label: Mock services
+        - label: Test fixtures
+        - label: CI/CD integration
+        - label: Documentation updates
+        - label: Performance benchmarks
+
+  - type: textarea
+    id: related-files
+    attributes:
+      label: Related Files/Functions
+      description: List the files, functions, or endpoints being tested
+      placeholder: |
+        - internal/migration/executor.go
+        - internal/api/handlers/handlers.go
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, links, or references
+      placeholder: Related issues, documentation, test patterns to follow, etc.
+
