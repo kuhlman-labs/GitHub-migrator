@@ -316,9 +316,9 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 		migrationMode = "dry run migration (lock_repositories: false)"
 	}
 
-	e.logger.Info("Generating archives on GHES", "repo", repo.FullName, "mode", migrationMode)
+	e.logger.Info("Generating archives on source repository", "repo", repo.FullName, "mode", migrationMode)
 	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "initiate",
-		fmt.Sprintf("Initiating archive generation on GHES (%s)", migrationMode), nil)
+		fmt.Sprintf("Initiating archive generation on %s (%s)", e.sourceClient.BaseURL(), migrationMode), nil)
 
 	archiveID, err := e.generateArchivesOnGHES(ctx, repo, lockRepos)
 	if err != nil {
