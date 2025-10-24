@@ -40,6 +40,7 @@ func main() {
 	}
 
 	// Set token in environment for git operations (needed for wiki setup)
+	// #nosec G104 -- Acceptable for test script; errors would appear during git operations
 	os.Setenv("GITHUB_TOKEN", *token)
 
 	ctx := context.Background()
@@ -255,10 +256,10 @@ func createTestRepo(ctx context.Context, client *github.Client, org string, conf
 
 	// Create the repository
 	repo := &github.Repository{
-		Name:        github.String(config.Name),
-		Description: github.String(config.Description),
-		Private:     github.Bool(config.Private),
-		AutoInit:    github.Bool(config.AutoInit),
+		Name:        github.Ptr(config.Name),
+		Description: github.Ptr(config.Description),
+		Private:     github.Ptr(config.Private),
+		AutoInit:    github.Ptr(config.AutoInit),
 	}
 
 	createdRepo, _, err := client.Repositories.Create(ctx, org, repo)
@@ -326,7 +327,7 @@ func cleanupTestRepos(ctx context.Context, client *github.Client, org string) {
 		// Unarchive if archived (can't delete archived repos)
 		if repo.GetArchived() {
 			log.Printf("  Unarchiving %s...", repo.GetName())
-			repo.Archived = github.Bool(false)
+			repo.Archived = github.Ptr(false)
 			_, _, err := client.Repositories.Edit(ctx, org, repo.GetName(), repo)
 			if err != nil {
 				log.Printf("  ⚠️  Failed to unarchive: %v", err)
@@ -425,7 +426,7 @@ jobs:
 func setupWikiRepo(ctx context.Context, client *github.Client, org, repo string) error {
 	// Enable wiki
 	repository := &github.Repository{
-		HasWiki: github.Bool(true),
+		HasWiki: github.Ptr(true),
 	}
 
 	_, _, err := client.Repositories.Edit(ctx, org, repo, repository)
@@ -455,6 +456,7 @@ func setupWikiRepo(ctx context.Context, client *github.Client, org, repo string)
 	// Initialize new git repo
 	log.Printf("  📝 Creating wiki pages via git")
 
+	// #nosec G204 -- tmpDir is a newly created temp directory, not user input
 	initCmd := exec.CommandContext(ctx, "git", "init", tmpDir)
 	if output, err := initCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to initialize git: %w - %s", err, string(output))
@@ -466,6 +468,7 @@ func setupWikiRepo(ctx context.Context, client *github.Client, org, repo string)
 		{"git", "-C", tmpDir, "config", "user.email", "test@example.com"},
 	}
 	for _, cmdArgs := range configCmds {
+		// #nosec G204 -- cmdArgs are hardcoded in the slice above, no user input
 		cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("git config failed: %w - %s", err, string(output))
@@ -502,7 +505,7 @@ Add code examples and tutorials here.
 
 	// Write Home.md
 	homeFile := filepath.Join(tmpDir, "Home.md")
-	if err := os.WriteFile(homeFile, []byte(homeContent), 0644); err != nil {
+	if err := os.WriteFile(homeFile, []byte(homeContent), 0600); err != nil {
 		return fmt.Errorf("failed to write Home.md: %w", err)
 	}
 
@@ -525,16 +528,18 @@ Explain configuration options here.
 `
 
 	docsFile := filepath.Join(tmpDir, "Documentation.md")
-	if err := os.WriteFile(docsFile, []byte(docsContent), 0644); err != nil {
+	if err := os.WriteFile(docsFile, []byte(docsContent), 0600); err != nil {
 		return fmt.Errorf("failed to write Documentation.md: %w", err)
 	}
 
 	// Git add and commit
+	// #nosec G204 -- tmpDir is a newly created temp directory, not user input
 	addCmd := exec.CommandContext(ctx, "git", "-C", tmpDir, "add", ".")
 	if output, err := addCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git add failed: %w - %s", err, string(output))
 	}
 
+	// #nosec G204 -- tmpDir is a newly created temp directory, not user input
 	commitCmd := exec.CommandContext(ctx, "git", "-C", tmpDir, "commit", "-m", "Initialize wiki with test content")
 	if output, err := commitCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git commit failed: %w - %s", err, string(output))
@@ -543,18 +548,21 @@ Explain configuration options here.
 	// Add remote and push
 	wikiURL := fmt.Sprintf("https://%s@github.com/%s/%s.wiki.git", token, org, repo)
 
+	// #nosec G204 -- wikiURL is constructed from org/repo, tmpDir is a temp directory, not user input
 	remoteCmd := exec.CommandContext(ctx, "git", "-C", tmpDir, "remote", "add", "origin", wikiURL)
 	if output, err := remoteCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git remote add failed: %w - %s", err, string(output))
 	}
 
 	// Try pushing to master first, then main if master fails
+	// #nosec G204 -- tmpDir is a temp directory, not user input
 	pushCmd := exec.CommandContext(ctx, "git", "-C", tmpDir, "push", "-u", "origin", "master")
 	pushCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	output, err := pushCmd.CombinedOutput()
 	if err != nil {
 		log.Printf("  ⚠️  Push to master failed, trying main: %v - %s", err, string(output))
 		// Try main branch
+		// #nosec G204 -- tmpDir is a temp directory, not user input
 		pushCmd = exec.CommandContext(ctx, "git", "-C", tmpDir, "push", "-u", "origin", "HEAD:main")
 		pushCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		output, err = pushCmd.CombinedOutput()
@@ -588,8 +596,8 @@ func setupPagesRepo(ctx context.Context, client *github.Client, org, repo string
 
 	// Enable Pages with source from main branch root
 	pagesSource := &github.PagesSource{
-		Branch: github.String("main"),
-		Path:   github.String("/"),
+		Branch: github.Ptr("main"),
+		Path:   github.Ptr("/"),
 	}
 
 	pages := &github.Pages{
@@ -703,12 +711,12 @@ func setupReleasesRepo(ctx context.Context, client *github.Client, org, repo str
 	} else if resp != nil && resp.StatusCode == 404 {
 		// Release doesn't exist, create it
 		release := &github.RepositoryRelease{
-			TagName:         github.String(tagName),
-			Name:            github.String("Release v1.0.0"),
-			Body:            github.String("Test release with notes\n\n## Changes\n- Initial release\n- Test features"),
-			Draft:           github.Bool(false),
-			Prerelease:      github.Bool(false),
-			TargetCommitish: github.String("main"),
+			TagName:         github.Ptr(tagName),
+			Name:            github.Ptr("Release v1.0.0"),
+			Body:            github.Ptr("Test release with notes\n\n## Changes\n- Initial release\n- Test features"),
+			Draft:           github.Ptr(false),
+			Prerelease:      github.Ptr(false),
+			TargetCommitish: github.Ptr("main"),
 		}
 
 		createdRelease, _, err := client.Repositories.CreateRelease(ctx, org, repo, release)
@@ -731,12 +739,12 @@ func setupReleasesRepo(ctx context.Context, client *github.Client, org, repo str
 		log.Printf("  ℹ️  Release %s already exists, skipping", tagName2)
 	} else if resp2 != nil && resp2.StatusCode == 404 {
 		release2 := &github.RepositoryRelease{
-			TagName:         github.String(tagName2),
-			Name:            github.String("Beta Release"),
-			Body:            github.String("Pre-release version"),
-			Draft:           github.Bool(false),
-			Prerelease:      github.Bool(true),
-			TargetCommitish: github.String("main"),
+			TagName:         github.Ptr(tagName2),
+			Name:            github.Ptr("Beta Release"),
+			Body:            github.Ptr("Pre-release version"),
+			Draft:           github.Ptr(false),
+			Prerelease:      github.Ptr(true),
+			TargetCommitish: github.Ptr("main"),
 		}
 
 		_, _, err := client.Repositories.CreateRelease(ctx, org, repo, release2)
@@ -762,8 +770,8 @@ func setupIssuesPRsRepo(ctx context.Context, client *github.Client, org, repo st
 
 	for i, issue := range issues {
 		issueReq := &github.IssueRequest{
-			Title: github.String(issue.title),
-			Body:  github.String(issue.body),
+			Title: github.Ptr(issue.title),
+			Body:  github.Ptr(issue.body),
 		}
 
 		createdIssue, _, err := client.Issues.Create(ctx, org, repo, issueReq)
@@ -802,10 +810,10 @@ func setupIssuesPRsRepo(ctx context.Context, client *github.Client, org, repo st
 
 	// Create a pull request
 	pr := &github.NewPullRequest{
-		Title: github.String("Test Pull Request"),
-		Body:  github.String("This is a test pull request for discovery testing"),
-		Head:  github.String("test-pr-branch"),
-		Base:  github.String("main"),
+		Title: github.Ptr("Test Pull Request"),
+		Body:  github.Ptr("This is a test pull request for discovery testing"),
+		Head:  github.Ptr("test-pr-branch"),
+		Base:  github.Ptr("main"),
 	}
 
 	createdPR, _, err := client.PullRequests.Create(ctx, org, repo, pr)
@@ -912,7 +920,7 @@ func setupArchivedRepo(ctx context.Context, client *github.Client, org, repo str
 
 	// Archive the repository
 	repository := &github.Repository{
-		Archived: github.Bool(true),
+		Archived: github.Ptr(true),
 	}
 
 	_, _, err := client.Repositories.Edit(ctx, org, repo, repository)
@@ -973,8 +981,8 @@ jobs:
 
 	// Issue
 	issueReq := &github.IssueRequest{
-		Title: github.String("Test Issue"),
-		Body:  github.String("Complex repo test issue"),
+		Title: github.Ptr("Test Issue"),
+		Body:  github.Ptr("Complex repo test issue"),
 	}
 	_, _, err := client.Issues.Create(ctx, org, repo, issueReq)
 	if err != nil {
@@ -983,8 +991,8 @@ jobs:
 
 	// Enable features
 	repository := &github.Repository{
-		HasWiki:     github.Bool(true),
-		HasProjects: github.Bool(true),
+		HasWiki:     github.Ptr(true),
+		HasProjects: github.Ptr(true),
 	}
 	_, _, err = client.Repositories.Edit(ctx, org, repo, repository)
 	if err != nil {
@@ -1456,9 +1464,9 @@ func createOrUpdateFileOnBranch(ctx context.Context, client *github.Client, org,
 	})
 
 	opts := &github.RepositoryContentFileOptions{
-		Message: github.String(message),
+		Message: github.Ptr(message),
 		Content: []byte(content),
-		Branch:  github.String(branch),
+		Branch:  github.Ptr(branch),
 	}
 
 	if err == nil && resp.StatusCode == 200 {
@@ -1520,12 +1528,12 @@ func createTag(ctx context.Context, client *github.Client, org, repo, tagName st
 	// Note: We create tags via releases since the direct Git API has interface complications
 	// This approach also provides better test coverage for the migration tool
 	release := &github.RepositoryRelease{
-		TagName:         github.String(tagName),
-		Name:            github.String("Test Tag " + tagName),
-		Body:            github.String(fmt.Sprintf("Automated test tag created at %s", time.Now().Format(time.RFC3339))),
-		Draft:           github.Bool(false),
-		Prerelease:      github.Bool(false),
-		TargetCommitish: github.String("main"),
+		TagName:         github.Ptr(tagName),
+		Name:            github.Ptr("Test Tag " + tagName),
+		Body:            github.Ptr(fmt.Sprintf("Automated test tag created at %s", time.Now().Format(time.RFC3339))),
+		Draft:           github.Ptr(false),
+		Prerelease:      github.Ptr(false),
+		TargetCommitish: github.Ptr("main"),
 	}
 
 	_, _, err = client.Repositories.CreateRelease(ctx, org, repo, release)

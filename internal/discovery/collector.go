@@ -151,11 +151,6 @@ func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*gha
 	return allRepos, nil
 }
 
-// processRepositories processes repositories in parallel using worker pool (without profiler cache)
-func (c *Collector) processRepositories(ctx context.Context, repos []*ghapi.Repository) error {
-	return c.processRepositoriesWithProfiler(ctx, repos, nil)
-}
-
 // processRepositoriesWithProfiler processes repositories in parallel using worker pool with a shared profiler
 func (c *Collector) processRepositoriesWithProfiler(ctx context.Context, repos []*ghapi.Repository, profiler *Profiler) error {
 	jobs := make(chan *ghapi.Repository, len(repos))
@@ -195,11 +190,6 @@ func (c *Collector) processRepositoriesWithProfiler(ctx context.Context, repos [
 
 	c.logger.Info("Discovery completed successfully", "total_repos", len(repos))
 	return nil
-}
-
-// worker processes repositories from the jobs channel (deprecated, use workerWithProfiler)
-func (c *Collector) worker(ctx context.Context, wg *sync.WaitGroup, jobs <-chan *ghapi.Repository, errors chan<- error) {
-	c.workerWithProfiler(ctx, wg, jobs, errors, nil)
 }
 
 // workerWithProfiler processes repositories from the jobs channel with an optional shared profiler

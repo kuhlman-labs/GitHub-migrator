@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import type { Repository, RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -28,21 +28,16 @@ const SIZE_CATEGORY_LABELS: Record<string, string> = {
 
 export function Repositories() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [localSearch, setLocalSearch] = useState('');
   
   // Parse filters from URL
   const urlFilters = searchParamsToFilters(searchParams);
   
+  // Initialize local search from URL (directly in state initialization)
+  const [localSearch, setLocalSearch] = useState(urlFilters.search || '');
+  
   // Fetch repositories with filters - backend now supports all filters
   const { data, isLoading, isFetching} = useRepositories(urlFilters);
   const repositories = data?.repositories || [];
-
-  // Initialize local search from URL
-  useEffect(() => {
-    if (urlFilters.search) {
-      setLocalSearch(urlFilters.search);
-    }
-  }, []);
 
   // Update filters and URL
   const updateFilters = (newFilters: Partial<RepositoryFilters>) => {

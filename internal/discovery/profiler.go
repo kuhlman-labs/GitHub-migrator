@@ -245,7 +245,7 @@ func (p *Profiler) LoadPackageCache(ctx context.Context, org string) error {
 	packagesFound := 0
 	for _, pkgType := range packageTypes {
 		opts := &ghapi.PackageListOptions{
-			PackageType: ghapi.String(pkgType),
+			PackageType: ghapi.Ptr(pkgType),
 			ListOptions: ghapi.ListOptions{PerPage: 100},
 		}
 

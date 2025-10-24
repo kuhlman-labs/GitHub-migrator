@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -30,6 +30,14 @@ export function Analytics() {
     organization: selectedOrganization || undefined,
     batch_id: selectedBatch || undefined,
   });
+
+  // Calculate days until completion (must be before early returns to satisfy rules of hooks)
+  const daysUntilCompletion = useMemo(() => {
+    if (!analytics || !analytics.estimated_completion_date) return null;
+    const estimatedDate = new Date(analytics.estimated_completion_date).getTime();
+    const today = new Date().setHours(0, 0, 0, 0); // Use Date constructor instead of Date.now()
+    return Math.ceil((estimatedDate - today) / (1000 * 60 * 60 * 24));
+  }, [analytics]);
 
   if (isLoading) return <LoadingSpinner />;
   if (!analytics) return <div className="text-center py-12 text-gh-text-secondary">No analytics data available</div>;
@@ -396,7 +404,7 @@ export function Analytics() {
           <KPICard
             title="Est. Completion"
             value={analytics.estimated_completion_date ? new Date(analytics.estimated_completion_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
-            subtitle={analytics.estimated_completion_date ? `${Math.ceil((new Date(analytics.estimated_completion_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} days` : ''}
+            subtitle={daysUntilCompletion !== null ? `${daysUntilCompletion} days` : ''}
             color="yellow"
             tooltip="Estimated completion date based on current velocity"
           />
@@ -416,7 +424,7 @@ export function Analytics() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                  label={(entry: any) => `${entry.name}: ${entry.value} (${(entry.percent * 100).toFixed(0)}%)`}
                   outerRadius={80}
                   dataKey="value"
                 >
