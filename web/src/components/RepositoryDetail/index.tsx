@@ -268,7 +268,7 @@ export function RepositoryDetail() {
   if (isLoading) return <LoadingSpinner />;
   if (!repository) return <div className="text-center py-12 text-gray-500">Repository not found</div>;
 
-  const canMigrate = ['pending', 'dry_run_complete', 'pre_migration_complete', 'migration_failed', 'rolled_back'].includes(
+  const canMigrate = ['pending', 'dry_run_complete', 'dry_run_failed', 'pre_migration_complete', 'migration_failed', 'rolled_back'].includes(
     repository.status
   );
 
