@@ -212,7 +212,10 @@ export function BatchManagement() {
         repo.status === 'queued_for_migration' ||
         repo.status === 'migrating_content' ||
         repo.status === 'dry_run_in_progress' ||
-        repo.status === 'dry_run_queued'
+        repo.status === 'dry_run_queued' ||
+        repo.status === 'pre_migration' ||
+        repo.status === 'archive_generating' ||
+        repo.status === 'post_migration'
       ) {
         groups.in_progress.push(repo);
       } else if (repo.status === 'dry_run_complete') {

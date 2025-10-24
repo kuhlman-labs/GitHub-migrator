@@ -277,6 +277,7 @@ export function RepositoryDetail() {
     'dry_run_in_progress',
     'dry_run_queued',
     'migrating_content',
+    'pre_migration',
     'archive_generating',
     'post_migration',
   ].includes(repository.status);
