@@ -324,8 +324,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       }
 
       onSuccess();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save batch');
+    } catch (err: any) {
+      // Extract error message from axios error response
+      let errorMessage = 'Failed to save batch';
+      
+      if (err.response?.data?.error) {
+        // Backend returned a structured error message
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        // Use the error message from the Error object
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

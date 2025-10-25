@@ -686,12 +686,26 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate batch name is provided
+	if strings.TrimSpace(batch.Name) == "" {
+		h.sendError(w, http.StatusBadRequest, "Batch name is required")
+		return
+	}
+
 	ctx := r.Context()
 	batch.CreatedAt = time.Now()
 	batch.Status = statusPending // Start batches in pending state
 
 	if err := h.db.CreateBatch(ctx, &batch); err != nil {
-		h.logger.Error("Failed to create batch", "error", err)
+		h.logger.Error("Failed to create batch", "error", err, "name", batch.Name)
+
+		// Check for unique constraint violation
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
+			strings.Contains(err.Error(), "unique constraint") {
+			h.sendError(w, http.StatusConflict, fmt.Sprintf("A batch with the name '%s' already exists. Please choose a different name.", batch.Name))
+			return
+		}
+
 		h.sendError(w, http.StatusInternalServerError, "Failed to create batch")
 		return
 	}

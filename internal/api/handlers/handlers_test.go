@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -614,6 +615,84 @@ func TestCreateBatch(t *testing.T) {
 
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	t.Run("duplicate batch name", func(t *testing.T) {
+		// Create first batch
+		desc := "Original Description"
+		batch1 := models.Batch{
+			Name:        "Duplicate Test Batch",
+			Description: &desc,
+			Type:        "pilot",
+		}
+		body1, _ := json.Marshal(batch1)
+
+		req1 := httptest.NewRequest(http.MethodPost, "/api/v1/batches", bytes.NewReader(body1))
+		w1 := httptest.NewRecorder()
+
+		h.CreateBatch(w1, req1)
+
+		if w1.Code != http.StatusCreated {
+			t.Fatalf("Expected first batch to be created, got status %d", w1.Code)
+		}
+
+		// Attempt to create second batch with same name
+		desc2 := "Duplicate Description"
+		batch2 := models.Batch{
+			Name:        "Duplicate Test Batch",
+			Description: &desc2,
+			Type:        "wave",
+		}
+		body2, _ := json.Marshal(batch2)
+
+		req2 := httptest.NewRequest(http.MethodPost, "/api/v1/batches", bytes.NewReader(body2))
+		w2 := httptest.NewRecorder()
+
+		h.CreateBatch(w2, req2)
+
+		if w2.Code != http.StatusConflict {
+			t.Errorf("Expected status %d (Conflict), got %d", http.StatusConflict, w2.Code)
+		}
+
+		// Verify error message mentions the batch name
+		var errResp map[string]string
+		if err := json.NewDecoder(w2.Body).Decode(&errResp); err != nil {
+			t.Fatalf("Failed to decode error response: %v", err)
+		}
+
+		if !strings.Contains(errResp["error"], "Duplicate Test Batch") {
+			t.Errorf("Error message should mention the batch name, got: %s", errResp["error"])
+		}
+
+		if !strings.Contains(errResp["error"], "already exists") {
+			t.Errorf("Error message should indicate batch already exists, got: %s", errResp["error"])
+		}
+	})
+
+	t.Run("empty batch name", func(t *testing.T) {
+		batch := models.Batch{
+			Name: "   ", // Empty/whitespace-only name
+			Type: "pilot",
+		}
+		body, _ := json.Marshal(batch)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/batches", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+
+		h.CreateBatch(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d (Bad Request), got %d", http.StatusBadRequest, w.Code)
+		}
+
+		var errResp map[string]string
+		if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+			t.Fatalf("Failed to decode error response: %v", err)
+		}
+
+		if !strings.Contains(errResp["error"], "required") {
+			t.Errorf("Error message should indicate name is required, got: %s", errResp["error"])
 		}
 	})
 }

@@ -385,6 +385,10 @@ Create a new migration batch.
 }
 ```
 
+**Validation:**
+- `name` is required and cannot be empty or whitespace-only
+- `name` must be unique across all batches
+
 **Response 201 Created:**
 ```json
 {
@@ -394,6 +398,20 @@ Create a new migration batch.
   "status": "ready",
   "repository_count": 5,
   "created_at": "2024-01-15T12:00:00Z"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "error": "Batch name is required"
+}
+```
+
+**Response 409 Conflict:**
+```json
+{
+  "error": "A batch with the name 'Wave 2 - Backend Services' already exists. Please choose a different name."
 }
 ```
 
