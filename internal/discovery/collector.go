@@ -390,7 +390,10 @@ func (c *Collector) setupTempDir(fullName string) (string, error) {
 		return "", fmt.Errorf("failed to create temp base directory: %w", err)
 	}
 
-	tempDir := filepath.Join(tempBase, filepath.Base(fullName))
+	// Use full name with slashes replaced to avoid collisions between org1/repo and org2/repo
+	// For example: "kuhlman-labs-org/node" becomes "kuhlman-labs-org_node"
+	safeName := strings.ReplaceAll(fullName, "/", "_")
+	tempDir := filepath.Join(tempBase, safeName)
 
 	// Remove if it already exists
 	if err := os.RemoveAll(tempDir); err != nil {
