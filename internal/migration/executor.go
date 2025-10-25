@@ -521,11 +521,11 @@ func (e *Executor) generateArchivesOnGHES(ctx context.Context, repo *models.Repo
 	})
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to start migration on GHES: %w", err)
+		return 0, fmt.Errorf("failed to start migration for repository %s: %w", repo.FullName, err)
 	}
 
 	if migration == nil || migration.ID == nil {
-		return 0, fmt.Errorf("invalid migration response from GHES")
+		return 0, fmt.Errorf("invalid migration response from source: %w", err)
 	}
 
 	return *migration.ID, nil
@@ -589,7 +589,7 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 				}, nil
 
 			case "failed":
-				return nil, fmt.Errorf("archive generation failed on GHES")
+				return nil, fmt.Errorf("archive generation failed for repository %s: %w", repo.FullName, err)
 
 			case "pending", "exporting":
 				// Continue polling

@@ -843,12 +843,10 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update batch status to in_progress during dry run
-	batch.Status = statusInProgress
+	// Use UpdateBatchProgress to preserve user-configured fields like scheduled_at
 	now := time.Now()
-	batch.StartedAt = &now
-	batch.LastDryRunAt = &now
-	if err := h.db.UpdateBatch(ctx, batch); err != nil {
-		h.logger.Error("Failed to update batch", "error", err)
+	if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, &now, nil); err != nil {
+		h.logger.Error("Failed to update batch progress", "error", err)
 	}
 
 	message := fmt.Sprintf("Started dry run for %d repositories in batch '%s'", len(dryRunIDs), batch.Name)
@@ -949,12 +947,10 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update batch status
-	batch.Status = statusInProgress
+	// Use UpdateBatchProgress to preserve user-configured fields like scheduled_at
 	now := time.Now()
-	batch.StartedAt = &now
-	batch.LastMigrationAttemptAt = &now
-	if err := h.db.UpdateBatch(ctx, batch); err != nil {
-		h.logger.Error("Failed to update batch", "error", err)
+	if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, nil, &now); err != nil {
+		h.logger.Error("Failed to update batch progress", "error", err)
 	}
 
 	response := map[string]interface{}{
@@ -1557,17 +1553,31 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	// Calculate totals (exclude wont_migrate from total count)
 	total := 0
-	migrated := stats[string(models.StatusComplete)]
-	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)]
-	pending := stats[string(models.StatusPending)]
-
 	for status, count := range stats {
 		if status != string(models.StatusWontMigrate) {
 			total += count
 		}
 	}
 
-	inProgress := total - migrated - failed - pending
+	// Explicitly categorize statuses to match organization table calculation
+	migrated := stats[string(models.StatusComplete)] + stats[string(models.StatusMigrationComplete)]
+
+	failed := stats[string(models.StatusMigrationFailed)] +
+		stats[string(models.StatusDryRunFailed)] +
+		stats[string(models.StatusRolledBack)]
+
+	// Pending includes initial state and dry run phase
+	pending := stats[string(models.StatusPending)] +
+		stats[string(models.StatusDryRunQueued)] +
+		stats[string(models.StatusDryRunInProgress)] +
+		stats[string(models.StatusDryRunComplete)]
+
+	// In progress includes actual migration phases
+	inProgress := stats[string(models.StatusPreMigration)] +
+		stats[string(models.StatusArchiveGenerating)] +
+		stats[string(models.StatusQueuedForMigration)] +
+		stats[string(models.StatusMigratingContent)] +
+		stats[string(models.StatusPostMigration)]
 
 	// Calculate success rate
 	successRate := 0.0
@@ -1703,17 +1713,31 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	// Calculate totals (exclude wont_migrate from total count)
 	total := 0
-	migrated := stats[string(models.StatusComplete)]
-	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)]
-	pending := stats[string(models.StatusPending)]
-
 	for status, count := range stats {
 		if status != string(models.StatusWontMigrate) {
 			total += count
 		}
 	}
 
-	inProgress := total - migrated - failed - pending
+	// Explicitly categorize statuses to match organization table calculation
+	migrated := stats[string(models.StatusComplete)] + stats[string(models.StatusMigrationComplete)]
+
+	failed := stats[string(models.StatusMigrationFailed)] +
+		stats[string(models.StatusDryRunFailed)] +
+		stats[string(models.StatusRolledBack)]
+
+	// Pending includes initial state and dry run phase
+	pending := stats[string(models.StatusPending)] +
+		stats[string(models.StatusDryRunQueued)] +
+		stats[string(models.StatusDryRunInProgress)] +
+		stats[string(models.StatusDryRunComplete)]
+
+	// In progress includes actual migration phases
+	inProgress := stats[string(models.StatusPreMigration)] +
+		stats[string(models.StatusArchiveGenerating)] +
+		stats[string(models.StatusQueuedForMigration)] +
+		stats[string(models.StatusMigratingContent)] +
+		stats[string(models.StatusPostMigration)]
 
 	// Calculate success rate
 	successRate := 0.0
@@ -1904,16 +1928,34 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Calculate totals (exclude wont_migrate from total count)
 	total := 0
-	migrated := stats[string(models.StatusComplete)]
-	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)]
-	pending := stats[string(models.StatusPending)]
-
-	for _, count := range stats {
-		total += count
+	for status, count := range stats {
+		if status != string(models.StatusWontMigrate) {
+			total += count
+		}
 	}
 
-	inProgress := total - migrated - failed - pending
+	// Explicitly categorize statuses to match organization table calculation
+	migrated := stats[string(models.StatusComplete)] + stats[string(models.StatusMigrationComplete)]
+
+	failed := stats[string(models.StatusMigrationFailed)] +
+		stats[string(models.StatusDryRunFailed)] +
+		stats[string(models.StatusRolledBack)]
+
+	// Pending includes initial state and dry run phase
+	pending := stats[string(models.StatusPending)] +
+		stats[string(models.StatusDryRunQueued)] +
+		stats[string(models.StatusDryRunInProgress)] +
+		stats[string(models.StatusDryRunComplete)]
+
+	// In progress includes actual migration phases
+	inProgress := stats[string(models.StatusPreMigration)] +
+		stats[string(models.StatusArchiveGenerating)] +
+		stats[string(models.StatusQueuedForMigration)] +
+		stats[string(models.StatusMigratingContent)] +
+		stats[string(models.StatusPostMigration)]
+
 	successRate := 0.0
 	if migrated+failed > 0 {
 		successRate = float64(migrated) / float64(migrated+failed) * 100
@@ -2552,11 +2594,9 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		// Start dry run
 		h.logger.Info("Starting dry run for batch", "batch_id", batch.ID)
 
-		// Update batch status
-		batch.Status = statusInProgress
+		// Update batch status - use UpdateBatchProgress to preserve scheduled_at
 		now := time.Now()
-		batch.StartedAt = &now
-		if err := h.db.UpdateBatch(ctx, batch); err != nil {
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, &now, nil); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 
@@ -2574,11 +2614,9 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		// Start production migration
 		h.logger.Info("Starting production migration for batch", "batch_id", batch.ID)
 
-		// Update batch status
-		batch.Status = statusInProgress
+		// Update batch status - use UpdateBatchProgress to preserve scheduled_at
 		now := time.Now()
-		batch.StartedAt = &now
-		if err := h.db.UpdateBatch(ctx, batch); err != nil {
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, nil, &now); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 

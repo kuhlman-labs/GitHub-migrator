@@ -5,7 +5,7 @@ import { FilterSidebar } from './FilterSidebar';
 import { ActiveFilterPills } from './ActiveFilterPills';
 import { RepositoryGroup } from './RepositoryGroup';
 import { LoadingSpinner } from '../common/LoadingSpinner';
-import { formatBytes } from '../../utils/format';
+import { formatBytes, formatDateForInput } from '../../utils/format';
 
 interface BatchBuilderProps {
   batch?: Batch; // If provided, we're editing; otherwise creating
@@ -19,9 +19,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   // Batch metadata
   const [batchName, setBatchName] = useState(batch?.name || '');
   const [batchDescription, setBatchDescription] = useState(batch?.description || '');
-  const [scheduledAt, setScheduledAt] = useState(
-    batch?.scheduled_at ? new Date(batch.scheduled_at).toISOString().slice(0, 16) : ''
-  );
+  const [scheduledAt, setScheduledAt] = useState(formatDateForInput(batch?.scheduled_at));
 
   // Repository lists
   const [availableRepos, setAvailableRepos] = useState<Repository[]>([]);
@@ -60,9 +58,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       
       setBatchName(batchData.name || '');
       setBatchDescription(batchData.description || '');
-      setScheduledAt(
-        batchData.scheduled_at ? new Date(batchData.scheduled_at).toISOString().slice(0, 16) : ''
-      );
+      setScheduledAt(formatDateForInput(batchData.scheduled_at));
     }
   }, [batch]);
 
@@ -241,6 +237,25 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     if (currentBatchRepos.length === 0) {
       setError('Please add at least one repository to the batch');
       return;
+    }
+
+    // Validate scheduled time if provided
+    if (scheduledAt) {
+      const scheduledDate = new Date(scheduledAt);
+      const now = new Date();
+      
+      // Check if the date is valid
+      if (isNaN(scheduledDate.getTime())) {
+        setError('Invalid scheduled date format');
+        return;
+      }
+      
+      // Allow scheduling up to 5 minutes in the past to account for clock drift/processing time
+      const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+      if (scheduledDate < fiveMinutesAgo) {
+        setError('Scheduled time cannot be in the past. Please select a future date and time.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -607,9 +622,14 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
+              min={formatDateForInput(new Date().toISOString())}
               className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={loading}
+              placeholder="Select date and time"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Batch will auto-start at the scheduled time (after dry run is complete)
+            </p>
           </div>
 
           {error && (

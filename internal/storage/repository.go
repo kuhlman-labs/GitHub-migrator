@@ -747,6 +747,22 @@ func (d *Database) UpdateBatchMigrationAttemptTimestamp(ctx context.Context, bat
 	return err
 }
 
+// UpdateBatchProgress updates batch status and operational timestamps without affecting user-configured fields
+// This preserves scheduled_at and other user-set fields while updating execution state
+func (d *Database) UpdateBatchProgress(ctx context.Context, batchID int64, status string, startedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error {
+	query := `
+		UPDATE batches SET
+			status = ?,
+			started_at = COALESCE(?, started_at),
+			last_dry_run_at = COALESCE(?, last_dry_run_at),
+			last_migration_attempt_at = COALESCE(?, last_migration_attempt_at)
+		WHERE id = ?
+	`
+
+	_, err := d.db.ExecContext(ctx, query, status, startedAt, lastDryRunAt, lastMigrationAttemptAt, batchID)
+	return err
+}
+
 // DeleteRepository deletes a repository by full name
 func (d *Database) DeleteRepository(ctx context.Context, fullName string) error {
 	query := `DELETE FROM repositories WHERE full_name = ?`
@@ -1116,13 +1132,13 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 // CreateBatch creates a new batch
 func (d *Database) CreateBatch(ctx context.Context, batch *models.Batch) error {
 	query := `
-		INSERT INTO batches (name, description, type, repository_count, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO batches (name, description, type, repository_count, status, scheduled_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
 	result, err := d.db.ExecContext(ctx, query,
 		batch.Name, batch.Description, batch.Type,
-		batch.RepositoryCount, batch.Status, batch.CreatedAt,
+		batch.RepositoryCount, batch.Status, batch.ScheduledAt, batch.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
@@ -1785,10 +1801,10 @@ func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*Mig
 		SELECT 
 			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
 			COUNT(*) as total_repos,
-			SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as completed_count,
-			SUM(CASE WHEN status IN ('in_progress', 'pre_migration', 'queued_for_migration', 'migrating_content') THEN 1 ELSE 0 END) as in_progress_count,
-			SUM(CASE WHEN status IN ('pending', 'discovered') THEN 1 ELSE 0 END) as pending_count,
-			SUM(CASE WHEN status LIKE '%failed%' THEN 1 ELSE 0 END) as failed_count
+			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
 		FROM repositories
 		WHERE full_name LIKE '%/%'
 		AND status != 'wont_migrate'
@@ -2298,10 +2314,10 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 		SELECT 
 			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
 			COUNT(*) as total_repos,
-			SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as completed_count,
-			SUM(CASE WHEN status IN ('in_progress', 'pre_migration', 'queued_for_migration', 'migrating_content') THEN 1 ELSE 0 END) as in_progress_count,
-			SUM(CASE WHEN status IN ('pending', 'discovered') THEN 1 ELSE 0 END) as pending_count,
-			SUM(CASE WHEN status LIKE '%failed%' THEN 1 ELSE 0 END) as failed_count
+			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
 		FROM repositories r
 		WHERE full_name LIKE '%/%'
 			AND status != 'wont_migrate'

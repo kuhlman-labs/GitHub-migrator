@@ -159,48 +159,57 @@ func (s *Scheduler) executeBatchAsync(ctx context.Context, batch *models.Batch, 
 		"repo_count", len(repos),
 		"dry_run", dryRun)
 
-	// Execute migrations sequentially for each repository
-	successCount := 0
-	failCount := 0
+	// Queue all repositories for migration (let the worker pool handle them concurrently)
+	queuedCount := 0
+	priority := 0
+	if batch.Type == "pilot" {
+		priority = 1
+	}
+
+	// Set the appropriate status for dry run or production migration
+	targetStatus := models.StatusQueuedForMigration
+	if dryRun {
+		targetStatus = models.StatusDryRunQueued
+	}
 
 	for _, repo := range repos {
 		select {
 		case <-ctx.Done():
-			s.logger.Warn("Batch execution cancelled",
+			s.logger.Warn("Batch execution cancelled during queueing",
 				"batch_id", batch.ID,
-				"completed", successCount,
-				"failed", failCount)
+				"queued", queuedCount)
 			return
 		default:
 		}
 
-		s.logger.Info("Executing migration",
+		s.logger.Debug("Queueing repository for migration",
 			"batch_id", batch.ID,
 			"repo", repo.FullName,
+			"status", targetStatus,
 			"dry_run", dryRun)
 
-		// Execute migration
-		if err := s.executor.ExecuteMigration(ctx, repo, dryRun); err != nil {
-			s.logger.Error("Migration failed",
+		// Update repository status to queue it for the worker pool
+		repo.Status = string(targetStatus)
+		repo.Priority = priority
+		if err := s.storage.UpdateRepository(ctx, repo); err != nil {
+			s.logger.Error("Failed to queue repository",
 				"batch_id", batch.ID,
 				"repo", repo.FullName,
 				"error", err)
-			failCount++
-		} else {
-			s.logger.Info("Migration completed",
-				"batch_id", batch.ID,
-				"repo", repo.FullName)
-			successCount++
+			continue
 		}
+		queuedCount++
 	}
 
-	// Update batch completion
-	s.logger.Info("Batch execution completed",
+	s.logger.Info("Batch repositories queued for worker pool",
 		"batch_id", batch.ID,
-		"success", successCount,
-		"failed", failCount)
+		"queued_count", queuedCount,
+		"total_count", len(repos),
+		"dry_run", dryRun,
+		"message", "Worker pool will process repositories concurrently")
 
-	s.completeBatch(context.Background(), batch.ID, successCount, failCount)
+	// Note: The batch will be marked complete by the status updater once all repositories finish
+	// We don't call completeBatch here because we're now using the async worker pool
 }
 
 // completeBatch marks a batch as completed

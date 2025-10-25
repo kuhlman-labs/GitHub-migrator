@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import type { Repository, MigrationHistory, MigrationLog } from '../../types';
@@ -17,7 +17,9 @@ import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useR
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const locationState = location.state as { fromBatch?: boolean; batchId?: number; batchName?: string } | null;
   const { data, isLoading, isFetching } = useRepository(fullName || '');
   const repository: Repository | undefined = data;
   const { data: allBatches = [] } = useBatches();
@@ -297,12 +299,22 @@ export function RepositoryDetail() {
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
         <div className="mb-4">
-          <Link 
-            to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
-            className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-          >
-            ← Back to Repositories
-          </Link>
+          {locationState?.fromBatch && locationState?.batchId ? (
+            <Link 
+              to="/batches"
+              state={{ selectedBatchId: locationState.batchId }}
+              className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+            >
+              ← Back to Batch {locationState.batchName ? `"${locationState.batchName}"` : `#${locationState.batchId}`}
+            </Link>
+          ) : (
+            <Link 
+              to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
+              className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+            >
+              ← Back to Repositories
+            </Link>
+          )}
         </div>
         <div className="flex justify-between items-start">
           <div className="flex-1">

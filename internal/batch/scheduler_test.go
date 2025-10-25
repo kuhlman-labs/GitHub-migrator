@@ -222,7 +222,7 @@ func TestScheduleBatch(t *testing.T) {
 
 func TestExecuteBatch(t *testing.T) {
 	t.Run("execute batch successfully", func(t *testing.T) {
-		scheduler, db, executor, cleanup := setupTestScheduler(t)
+		scheduler, db, _, cleanup := setupTestScheduler(t)
 		defer cleanup()
 
 		ctx := context.Background()
@@ -283,16 +283,26 @@ func TestExecuteBatch(t *testing.T) {
 			t.Error("Expected StartedAt to be set")
 		}
 
-		// Wait for async execution to complete
-		waitForBatchCompletion(t, scheduler, batch.ID, 2*time.Second)
+		// Give the scheduler time to queue all repositories
+		time.Sleep(100 * time.Millisecond)
 
-		// Give the scheduler time to finish all background database updates
-		time.Sleep(500 * time.Millisecond)
+		// Verify repositories were queued for the worker pool
+		// (The new behavior queues repos instead of executing them directly)
+		repos, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch.ID})
+		queuedCount := 0
+		for _, repo := range repos {
+			if repo.Status == string(models.StatusQueuedForMigration) {
+				queuedCount++
+			}
+		}
+		if queuedCount != 2 {
+			t.Errorf("Expected 2 repos queued for migration, got %d", queuedCount)
+		}
 
-		// Verify repositories were executed
-		executedRepos := executor.GetExecutedRepos()
-		if len(executedRepos) != 2 {
-			t.Errorf("Expected 2 repos executed, got %d", len(executedRepos))
+		// Verify batch is still marked as in progress (workers would normally pick up the queued repos)
+		updated, _ = db.GetBatch(ctx, batch.ID)
+		if updated.Status != StatusInProgress {
+			t.Errorf("Expected batch status to remain '%s', got %s", StatusInProgress, updated.Status)
 		}
 	})
 
@@ -437,7 +447,7 @@ func TestCancelBatch(t *testing.T) {
 }
 
 func TestGetRunningBatches(t *testing.T) {
-	scheduler, db, executor, cleanup := setupTestScheduler(t)
+	scheduler, db, _, cleanup := setupTestScheduler(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -494,24 +504,22 @@ func TestGetRunningBatches(t *testing.T) {
 		t.Fatalf("Failed to create repo2: %v", err)
 	}
 
-	// Set delay to keep batches running
-	executor.SetDelay(2 * time.Second)
-
 	t.Run("track running batches", func(t *testing.T) {
-		// Initially no batches running
-		running := scheduler.GetRunningBatches()
-		if len(running) != 0 {
-			t.Errorf("Expected 0 running batches, got %d", len(running))
-		}
+		// With the new implementation, batches queue repositories and exit immediately
+		// So we check database batch status instead of the running map
 
 		// Start first batch
 		if err := scheduler.ExecuteBatch(ctx, batch1.ID, false); err != nil {
 			t.Fatalf("ExecuteBatch(batch1) error = %v", err)
 		}
 
-		running = scheduler.GetRunningBatches()
-		if len(running) != 1 {
-			t.Errorf("Expected 1 running batch, got %d", len(running))
+		// Give it time to queue repositories
+		time.Sleep(100 * time.Millisecond)
+
+		// Check batch1 is in progress in the database
+		batch1Updated, _ := db.GetBatch(ctx, batch1.ID)
+		if batch1Updated.Status != StatusInProgress {
+			t.Errorf("Expected batch1 status '%s', got %s", StatusInProgress, batch1Updated.Status)
 		}
 
 		// Start second batch
@@ -519,18 +527,24 @@ func TestGetRunningBatches(t *testing.T) {
 			t.Fatalf("ExecuteBatch(batch2) error = %v", err)
 		}
 
-		running = scheduler.GetRunningBatches()
-		if len(running) != 2 {
-			t.Errorf("Expected 2 running batches, got %d", len(running))
+		// Give it time to queue repositories
+		time.Sleep(100 * time.Millisecond)
+
+		// Check batch2 is also in progress in the database
+		batch2Updated, _ := db.GetBatch(ctx, batch2.ID)
+		if batch2Updated.Status != StatusInProgress {
+			t.Errorf("Expected batch2 status '%s', got %s", StatusInProgress, batch2Updated.Status)
 		}
 
-		// Cancel both
-		scheduler.CancelBatch(ctx, batch1.ID)
-		scheduler.CancelBatch(ctx, batch2.ID)
+		// Verify both batches have repositories queued
+		repos1, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch1.ID})
+		if repos1[0].Status != string(models.StatusQueuedForMigration) {
+			t.Errorf("Expected batch1 repo queued, got status %s", repos1[0].Status)
+		}
 
-		running = scheduler.GetRunningBatches()
-		if len(running) != 0 {
-			t.Errorf("Expected 0 running batches after cancel, got %d", len(running))
+		repos2, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch2.ID})
+		if repos2[0].Status != string(models.StatusQueuedForMigration) {
+			t.Errorf("Expected batch2 repo queued, got status %s", repos2[0].Status)
 		}
 	})
 }

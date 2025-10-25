@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -9,6 +9,8 @@ import { formatBytes, formatDate } from '../../utils/format';
 
 export function BatchManagement() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state as { selectedBatchId?: number } | null;
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [batchRepositories, setBatchRepositories] = useState<Repository[]>([]);
@@ -23,7 +25,18 @@ export function BatchManagement() {
     }, 30000);
 
     return () => clearInterval(batchListInterval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Handle location state to auto-select batch when navigating from repository detail
+  useEffect(() => {
+    if (locationState?.selectedBatchId && batches.length > 0 && !selectedBatch) {
+      const batch = batches.find((b) => b.id === locationState.selectedBatchId);
+      if (batch) {
+        setSelectedBatch(batch);
+      }
+    }
+  }, [locationState, batches, selectedBatch]);
 
   useEffect(() => {
     if (selectedBatch) {
@@ -348,7 +361,19 @@ export function BatchManagement() {
                   </div>
                   
                   {/* Batch Timestamps */}
-                  <div className="mt-4 space-y-2 border-t border-gh-border-default pt-3">
+                  <div className="mt-4 space-y-1.5 border-t border-gh-border-default pt-3">
+                    {selectedBatch.scheduled_at && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-blue-700">🗓️</span>
+                        <span className="text-gh-text-secondary">Scheduled:</span>
+                        <span className="font-medium text-blue-900">
+                          {formatDate(selectedBatch.scheduled_at)}
+                        </span>
+                        {new Date(selectedBatch.scheduled_at) > new Date() && (
+                          <span className="text-xs text-blue-600 italic">(auto-start when ready)</span>
+                        )}
+                      </div>
+                    )}
                     {selectedBatch.last_dry_run_at && (
                       <TimestampDisplay 
                         timestamp={selectedBatch.last_dry_run_at} 
@@ -369,22 +394,6 @@ export function BatchManagement() {
                       </div>
                     )}
                   </div>
-
-                  {selectedBatch.scheduled_at && (
-                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                      <div className="flex items-center gap-2">
-                        <span className="text-blue-800 font-medium">🗓️ Scheduled:</span>
-                        <span className="text-blue-900 font-semibold">
-                          {formatDate(selectedBatch.scheduled_at)}
-                        </span>
-                      </div>
-                      {new Date(selectedBatch.scheduled_at) > new Date() && (
-                        <p className="text-xs text-blue-700 mt-1">
-                          Will automatically start when the scheduled time arrives (if status is "ready")
-                        </p>
-                      )}
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex gap-2">
@@ -508,6 +517,8 @@ export function BatchManagement() {
                           key={repo.id}
                           repository={repo}
                           onRetry={() => handleRetryRepository(repo)}
+                          batchId={selectedBatch.id}
+                          batchName={selectedBatch.name}
                         />
                       ))}
                     </div>
@@ -522,7 +533,12 @@ export function BatchManagement() {
                     </h3>
                     <div className="space-y-2">
                       {groupedRepos.in_progress.map((repo) => (
-                        <RepositoryItem key={repo.id} repository={repo} />
+                        <RepositoryItem 
+                          key={repo.id} 
+                          repository={repo}
+                          batchId={selectedBatch.id}
+                          batchName={selectedBatch.name}
+                        />
                       ))}
                     </div>
                   </div>
@@ -536,7 +552,12 @@ export function BatchManagement() {
                     </h3>
                     <div className="space-y-2">
                       {groupedRepos.complete.map((repo) => (
-                        <RepositoryItem key={repo.id} repository={repo} />
+                        <RepositoryItem 
+                          key={repo.id} 
+                          repository={repo}
+                          batchId={selectedBatch.id}
+                          batchName={selectedBatch.name}
+                        />
                       ))}
                     </div>
                   </div>
@@ -550,7 +571,12 @@ export function BatchManagement() {
                     </h3>
                     <div className="space-y-2">
                       {groupedRepos.dry_run_complete.map((repo) => (
-                        <RepositoryItem key={repo.id} repository={repo} />
+                        <RepositoryItem 
+                          key={repo.id} 
+                          repository={repo}
+                          batchId={selectedBatch.id}
+                          batchName={selectedBatch.name}
+                        />
                       ))}
                     </div>
                   </div>
@@ -564,7 +590,12 @@ export function BatchManagement() {
                     </h3>
                     <div className="space-y-2">
                       {groupedRepos.pending.map((repo) => (
-                        <RepositoryItem key={repo.id} repository={repo} />
+                        <RepositoryItem 
+                          key={repo.id} 
+                          repository={repo}
+                          batchId={selectedBatch.id}
+                          batchName={selectedBatch.name}
+                        />
                       ))}
                     </div>
                   </div>
@@ -614,7 +645,7 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
             <span className="text-xs text-gray-600">{batch.repository_count} repos</span>
           </div>
           {batch.scheduled_at && (
-            <div className="mt-2 text-xs text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block">
+            <div className="mt-1.5 text-xs text-blue-700 flex items-center gap-1">
               🗓️ {formatDate(batch.scheduled_at)}
             </div>
           )}
@@ -630,7 +661,7 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
             Start
           </button>
         )}
-        {batch.status === 'pending' && !batch.scheduled_at && (
+        {batch.status === 'pending' && (
           <span className="text-xs text-gray-500">
             Dry run needed
           </span>
@@ -643,20 +674,39 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
 interface RepositoryItemProps {
   repository: Repository;
   onRetry?: () => void;
+  batchId?: number;
+  batchName?: string;
 }
 
-function RepositoryItem({ repository, onRetry }: RepositoryItemProps) {
+function RepositoryItem({ repository, onRetry, batchId, batchName }: RepositoryItemProps) {
   const isFailed = repository.status === 'migration_failed' || repository.status === 'dry_run_failed';
   const isDryRunFailed = repository.status === 'dry_run_failed';
+  const destination = repository.destination_full_name || repository.full_name;
+  const isCustomDestination = repository.destination_full_name && repository.destination_full_name !== repository.full_name;
 
   return (
     <div className="flex justify-between items-center p-3 border border-gh-border-default rounded-lg hover:bg-gh-neutral-bg group">
-      <Link to={`/repository/${encodeURIComponent(repository.full_name)}`} className="flex-1 min-w-0">
+      <Link 
+        to={`/repository/${encodeURIComponent(repository.full_name)}`} 
+        state={{ fromBatch: true, batchId, batchName }}
+        className="flex-1 min-w-0"
+      >
         <div className="font-semibold text-gh-text-primary group-hover:text-gh-blue transition-colors">
           {repository.full_name}
         </div>
-        <div className="text-sm text-gh-text-secondary mt-1">
-          {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
+        <div className="text-sm text-gh-text-secondary mt-1 space-y-0.5">
+          <div>
+            {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs">→ Destination:</span>
+            <span className={`text-xs font-medium ${isCustomDestination ? 'text-blue-600' : 'text-gray-600'}`}>
+              {destination}
+            </span>
+            {isCustomDestination && (
+              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">custom</span>
+            )}
+          </div>
         </div>
       </Link>
       <div className="flex items-center gap-3">

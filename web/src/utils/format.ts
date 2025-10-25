@@ -64,3 +64,25 @@ export function formatTimestampWithStaleness(dateString: string, daysThreshold: 
   };
 }
 
+/**
+ * Formats a date string for use in datetime-local inputs.
+ * Converts to local timezone and returns format: YYYY-MM-DDTHH:MM
+ * 
+ * This is needed because .toISOString() converts to UTC, but datetime-local
+ * inputs interpret the value as local time, causing timezone mismatches.
+ */
+export function formatDateForInput(dateString: string | null | undefined): string {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  
+  // Get local time components
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
