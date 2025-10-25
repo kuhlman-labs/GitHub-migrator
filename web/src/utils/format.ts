@@ -34,7 +34,33 @@ export function formatRelativeTime(dateString: string): string {
   if (diffSec < 60) return 'just now';
   if (diffMin < 60) return `${diffMin}m ago`;
   if (diffHour < 24) return `${diffHour}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return formatDate(dateString);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  
+  // For older dates, show months/years
+  const diffMonth = Math.floor(diffDay / 30);
+  const diffYear = Math.floor(diffDay / 365);
+  
+  if (diffMonth < 12) return `${diffMonth}mo ago`;
+  return `${diffYear}y ago`;
+}
+
+export function isStaleTimestamp(dateString: string, daysThreshold: number = 30): boolean {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  return diffDays > daysThreshold;
+}
+
+export function formatTimestampWithStaleness(dateString: string, daysThreshold: number = 30): { 
+  formatted: string; 
+  isStale: boolean;
+  fullDate: string;
+} {
+  return {
+    formatted: formatRelativeTime(dateString),
+    isStale: isStaleTimestamp(dateString, daysThreshold),
+    fullDate: formatDate(dateString)
+  };
 }
 

@@ -846,6 +846,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	batch.Status = statusInProgress
 	now := time.Now()
 	batch.StartedAt = &now
+	batch.LastDryRunAt = &now
 	if err := h.db.UpdateBatch(ctx, batch); err != nil {
 		h.logger.Error("Failed to update batch", "error", err)
 	}
@@ -951,6 +952,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	batch.Status = statusInProgress
 	now := time.Now()
 	batch.StartedAt = &now
+	batch.LastMigrationAttemptAt = &now
 	if err := h.db.UpdateBatch(ctx, batch); err != nil {
 		h.logger.Error("Failed to update batch", "error", err)
 	}

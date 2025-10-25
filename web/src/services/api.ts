@@ -172,10 +172,10 @@ export const api = {
     return data;
   },
 
-  async retryRepository(repositoryId: number) {
+  async retryRepository(repositoryId: number, dryRun: boolean = false) {
     const { data } = await client.post('/migrations/start', {
       repository_ids: [repositoryId],
-      dry_run: false,
+      dry_run: dryRun,
       priority: 0,
     });
     return data;

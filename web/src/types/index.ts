@@ -63,6 +63,8 @@ export interface Repository {
   discovered_at: string;
   updated_at: string;
   migrated_at?: string;
+  last_discovery_at?: string;
+  last_dry_run_at?: string;
 }
 
 export interface MigrationHistory {
@@ -100,6 +102,8 @@ export interface Batch {
   started_at?: string;
   completed_at?: string;
   created_at: string;
+  last_dry_run_at?: string;
+  last_migration_attempt_at?: string;
 }
 
 export interface Organization {

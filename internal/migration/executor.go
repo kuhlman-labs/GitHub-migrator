@@ -480,8 +480,12 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	repo.Status = string(completionStatus)
 	now := time.Now()
 
-	// Only set MigratedAt for production migrations, not dry runs
-	if !dryRun {
+	// Set appropriate timestamps based on migration type
+	if dryRun {
+		// Set last dry run timestamp
+		repo.LastDryRunAt = &now
+	} else {
+		// Set migrated timestamp for production migrations
 		repo.MigratedAt = &now
 	}
 

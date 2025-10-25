@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
+import { TimestampDisplay } from '../common/TimestampDisplay';
 import { formatBytes, formatDate } from '../../utils/format';
 
 export function BatchManagement() {
@@ -15,18 +16,31 @@ export function BatchManagement() {
 
   useEffect(() => {
     loadBatches();
+
+    // Poll for batch list updates every 30 seconds to catch scheduled batches starting
+    const batchListInterval = setInterval(() => {
+      loadBatches();
+    }, 30000);
+
+    return () => clearInterval(batchListInterval);
   }, []);
 
   useEffect(() => {
     if (selectedBatch) {
       loadBatchRepositories(selectedBatch.id);
       
-      // Poll for updates every 10 seconds if batch is in progress
-      if (selectedBatch.status === 'in_progress') {
+      // Poll for updates more frequently if batch is in progress or scheduled/ready
+      const shouldPoll = 
+        selectedBatch.status === 'in_progress' || 
+        selectedBatch.status === 'ready' ||
+        (selectedBatch.scheduled_at && new Date(selectedBatch.scheduled_at) > new Date());
+
+      if (shouldPoll) {
+        const pollInterval = selectedBatch.status === 'in_progress' ? 10000 : 30000;
         const interval = setInterval(() => {
           loadBatches();
           loadBatchRepositories(selectedBatch.id);
-        }, 10000);
+        }, pollInterval);
         return () => clearInterval(interval);
       }
     }
@@ -120,12 +134,28 @@ export function BatchManagement() {
 
     if (failedRepos.length === 0) return;
 
-    if (!confirm(`Retry migration for ${failedRepos.length} failed repositories?`)) {
+    const dryRunFailedCount = failedRepos.filter(r => r.status === 'dry_run_failed').length;
+    const migrationFailedCount = failedRepos.filter(r => r.status === 'migration_failed').length;
+    
+    let confirmMessage = '';
+    if (dryRunFailedCount > 0 && migrationFailedCount > 0) {
+      confirmMessage = `Retry ${dryRunFailedCount} failed dry run(s) and ${migrationFailedCount} failed migration(s)?`;
+    } else if (dryRunFailedCount > 0) {
+      confirmMessage = `Re-run dry run for ${dryRunFailedCount} failed repositories?`;
+    } else {
+      confirmMessage = `Retry migration for ${migrationFailedCount} failed repositories?`;
+    }
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
     try {
-      await api.retryBatchFailures(selectedBatch.id);
+      // Retry each repository individually with the correct dry_run flag
+      for (const repo of failedRepos) {
+        const isDryRunFailed = repo.status === 'dry_run_failed';
+        await api.retryRepository(repo.id, isDryRunFailed);
+      }
       alert(`Queued ${failedRepos.length} repositories for retry`);
       await loadBatchRepositories(selectedBatch.id);
     } catch (error) {
@@ -134,10 +164,13 @@ export function BatchManagement() {
     }
   };
 
-  const handleRetryRepository = async (repoId: number) => {
+  const handleRetryRepository = async (repo: Repository) => {
+    const isDryRunFailed = repo.status === 'dry_run_failed';
+    const actionType = isDryRunFailed ? 'dry run' : 'migration';
+    
     try {
-      await api.retryRepository(repoId);
-      alert('Repository queued for retry');
+      await api.retryRepository(repo.id, isDryRunFailed);
+      alert(`Repository queued for ${actionType} retry`);
       if (selectedBatch) {
         await loadBatchRepositories(selectedBatch.id);
       }
@@ -241,16 +274,35 @@ export function BatchManagement() {
   const progress = selectedBatch ? getBatchProgress(selectedBatch, batchRepositories) : null;
   const groupedRepos = groupReposByStatus(batchRepositories);
 
+  const handleManualRefresh = async () => {
+    await loadBatches();
+    if (selectedBatch) {
+      await loadBatchRepositories(selectedBatch.id);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-gh-text-primary">Batch Management</h1>
-        <button
-          onClick={handleCreateBatch}
-          className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
-        >
-          Create New Batch
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={handleManualRefresh}
+            className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg flex items-center gap-2"
+            title="Refresh batch data"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+          <button
+            onClick={handleCreateBatch}
+            className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
+          >
+            Create New Batch
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -294,6 +346,30 @@ export function BatchManagement() {
                       {selectedBatch.repository_count} repositories
                     </span>
                   </div>
+                  
+                  {/* Batch Timestamps */}
+                  <div className="mt-4 space-y-2 border-t border-gh-border-default pt-3">
+                    {selectedBatch.last_dry_run_at && (
+                      <TimestampDisplay 
+                        timestamp={selectedBatch.last_dry_run_at} 
+                        label="Last dry run"
+                        size="sm"
+                      />
+                    )}
+                    {selectedBatch.last_migration_attempt_at && (
+                      <TimestampDisplay 
+                        timestamp={selectedBatch.last_migration_attempt_at} 
+                        label="Last migration"
+                        size="sm"
+                      />
+                    )}
+                    {selectedBatch.created_at && (
+                      <div className="text-xs text-gh-text-secondary">
+                        Created: {formatDate(selectedBatch.created_at)}
+                      </div>
+                    )}
+                  </div>
+
                   {selectedBatch.scheduled_at && (
                     <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
                       <div className="flex items-center gap-2">
@@ -375,14 +451,28 @@ export function BatchManagement() {
                     </>
                   )}
                   
-                  {groupedRepos.failed.length > 0 && (
-                    <button
-                      onClick={handleRetryFailed}
-                      className="px-4 py-1.5 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis"
-                    >
-                      Retry All Failed ({groupedRepos.failed.length})
-                    </button>
-                  )}
+                  {groupedRepos.failed.length > 0 && (() => {
+                    const dryRunFailed = groupedRepos.failed.filter(r => r.status === 'dry_run_failed').length;
+                    const migrationFailed = groupedRepos.failed.filter(r => r.status === 'migration_failed').length;
+                    
+                    let buttonText = '';
+                    if (dryRunFailed > 0 && migrationFailed > 0) {
+                      buttonText = `Retry All Failed (${dryRunFailed} dry run, ${migrationFailed} migration)`;
+                    } else if (dryRunFailed > 0) {
+                      buttonText = `Re-run All Dry Runs (${dryRunFailed})`;
+                    } else {
+                      buttonText = `Retry All Migrations (${migrationFailed})`;
+                    }
+                    
+                    return (
+                      <button
+                        onClick={handleRetryFailed}
+                        className="px-4 py-1.5 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis whitespace-nowrap"
+                      >
+                        {buttonText}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -417,7 +507,7 @@ export function BatchManagement() {
                         <RepositoryItem
                           key={repo.id}
                           repository={repo}
-                          onRetry={() => handleRetryRepository(repo.id)}
+                          onRetry={() => handleRetryRepository(repo)}
                         />
                       ))}
                     </div>
@@ -577,10 +667,10 @@ function RepositoryItem({ repository, onRetry }: RepositoryItemProps) {
               e.preventDefault();
               onRetry();
             }}
-            className="text-sm px-3 py-1.5 bg-gh-warning text-white rounded-md font-medium hover:bg-gh-warning-emphasis"
-            title={isDryRunFailed ? 'Re-run dry run or view details to start migration' : 'Retry migration'}
+            className="text-sm px-3 py-1.5 bg-gh-warning text-white rounded-md font-medium hover:bg-gh-warning-emphasis whitespace-nowrap"
+            title={isDryRunFailed ? 'Re-run the dry run for this repository' : 'Retry the production migration'}
           >
-            Retry
+            {isDryRunFailed ? 'Re-run Dry Run' : 'Retry Migration'}
           </button>
         )}
       </div>

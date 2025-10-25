@@ -65,6 +65,12 @@ func main() {
 		go statusUpdater.Start(ctx)
 	}
 
+	// Initialize and start scheduler worker for scheduled batches
+	schedulerWorker := initializeSchedulerWorker(cfg, sourceDualClient, destDualClient, db, logger)
+	if schedulerWorker != nil {
+		go schedulerWorker.Start(ctx)
+	}
+
 	// Start HTTP server
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
@@ -276,4 +282,69 @@ func initializeBatchStatusUpdater(db *storage.Database, logger *slog.Logger) *ba
 
 	slog.Info("Batch status updater initialized", "interval", "30s")
 	return statusUpdater
+}
+
+// initializeSchedulerWorker creates the scheduler worker for scheduled batches
+func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.SchedulerWorker {
+	if sourceDualClient == nil || destDualClient == nil {
+		logger.Info("Scheduler worker not started - GitHub clients not configured")
+		return nil
+	}
+
+	// Create migration executor (required for batch orchestrator)
+	var postMigMode migration.PostMigrationMode
+	switch cfg.Migration.PostMigrationMode {
+	case "never":
+		postMigMode = migration.PostMigrationNever
+	case "production_only":
+		postMigMode = migration.PostMigrationProductionOnly
+	case "dry_run_only":
+		postMigMode = migration.PostMigrationDryRunOnly
+	case "always":
+		postMigMode = migration.PostMigrationAlways
+	default:
+		postMigMode = migration.PostMigrationProductionOnly
+	}
+
+	var destRepoAction migration.DestinationRepoExistsAction
+	switch cfg.Migration.DestRepoExistsAction {
+	case "fail":
+		destRepoAction = migration.DestinationRepoExistsFail
+	case "skip":
+		destRepoAction = migration.DestinationRepoExistsSkip
+	case "delete":
+		destRepoAction = migration.DestinationRepoExistsDelete
+	default:
+		destRepoAction = migration.DestinationRepoExistsFail
+	}
+
+	executor, err := migration.NewExecutor(migration.ExecutorConfig{
+		SourceClient:         sourceDualClient.MigrationClient(),
+		DestClient:           destDualClient.MigrationClient(),
+		Storage:              db,
+		Logger:               logger,
+		PostMigrationMode:    postMigMode,
+		DestRepoExistsAction: destRepoAction,
+	})
+	if err != nil {
+		slog.Error("Failed to create executor for scheduler", "error", err)
+		return nil
+	}
+
+	// Create orchestrator (which internally creates scheduler and organizer)
+	orchestrator, err := batch.NewOrchestrator(batch.OrchestratorConfig{
+		Storage:  db,
+		Executor: executor,
+		Logger:   logger,
+	})
+	if err != nil {
+		slog.Error("Failed to create batch orchestrator", "error", err)
+		return nil
+	}
+
+	// Create scheduler worker
+	schedulerWorker := worker.NewSchedulerWorker(orchestrator, logger)
+	slog.Info("Scheduler worker initialized - will check for scheduled batches every minute")
+	
+	return schedulerWorker
 }

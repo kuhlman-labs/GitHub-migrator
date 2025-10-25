@@ -10,6 +10,7 @@ import { Badge } from '../common/Badge';
 import { ProfileCard } from '../common/ProfileCard';
 import { ProfileItem } from '../common/ProfileItem';
 import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
+import { TimestampDisplay } from '../common/TimestampDisplay';
 import { formatBytes, formatDate } from '../../utils/format';
 import { useRepository, useBatches } from '../../hooks/useQueries';
 import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useRollbackRepository, useMarkRepositoryWontMigrate } from '../../hooks/useMutations';
@@ -313,6 +314,50 @@ export function RepositoryDetail() {
               {repository.priority === 1 && <Badge color="purple">High Priority</Badge>}
               {currentBatch && <Badge color="blue">{currentBatch.name}</Badge>}
               {repository.is_source_locked && <Badge color="orange">🔒 Source Locked</Badge>}
+            </div>
+
+            {/* Compact Timestamp Display */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gh-text-secondary mb-4 pb-4 border-b border-gh-border-default">
+              <div className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <TimestampDisplay 
+                  timestamp={repository.discovered_at} 
+                  label="Discovered"
+                  size="sm"
+                />
+              </div>
+              {repository.last_discovery_at && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gh-text-secondary">•</span>
+                  <TimestampDisplay 
+                    timestamp={repository.last_discovery_at} 
+                    label="Data refreshed"
+                    size="sm"
+                  />
+                </div>
+              )}
+              {repository.last_dry_run_at && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gh-text-secondary">•</span>
+                  <TimestampDisplay 
+                    timestamp={repository.last_dry_run_at} 
+                    label="Dry run"
+                    size="sm"
+                  />
+                </div>
+              )}
+              {repository.migrated_at && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gh-text-secondary">•</span>
+                  <TimestampDisplay 
+                    timestamp={repository.migrated_at} 
+                    label="Migrated"
+                    size="sm"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Destination Configuration */}

@@ -93,9 +93,11 @@ type Repository struct {
 	DestinationData   *string `json:"destination_data,omitempty" db:"destination_data"`     // JSON with destination repo data (only on validation failure)
 
 	// Timestamps
-	DiscoveredAt time.Time  `json:"discovered_at" db:"discovered_at"`
-	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
-	MigratedAt   *time.Time `json:"migrated_at,omitempty" db:"migrated_at"`
+	DiscoveredAt    time.Time  `json:"discovered_at" db:"discovered_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+	MigratedAt      *time.Time `json:"migrated_at,omitempty" db:"migrated_at"`
+	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty" db:"last_discovery_at"` // Latest discovery refresh
+	LastDryRunAt    *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at"`     // Latest dry run execution
 }
 
 // MigrationStatus represents the status of a repository migration
@@ -147,16 +149,18 @@ type MigrationLog struct {
 
 // Batch represents a group of repositories to be migrated together
 type Batch struct {
-	ID              int64      `json:"id" db:"id"`
-	Name            string     `json:"name" db:"name"`
-	Description     *string    `json:"description,omitempty" db:"description"`
-	Type            string     `json:"type" db:"type"` // "pilot", "wave_1", "wave_2", etc.
-	RepositoryCount int        `json:"repository_count" db:"repository_count"`
-	Status          string     `json:"status" db:"status"`
-	ScheduledAt     *time.Time `json:"scheduled_at,omitempty" db:"scheduled_at"`
-	StartedAt       *time.Time `json:"started_at,omitempty" db:"started_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at"`
-	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	ID                     int64      `json:"id" db:"id"`
+	Name                   string     `json:"name" db:"name"`
+	Description            *string    `json:"description,omitempty" db:"description"`
+	Type                   string     `json:"type" db:"type"` // "pilot", "wave_1", "wave_2", etc.
+	RepositoryCount        int        `json:"repository_count" db:"repository_count"`
+	Status                 string     `json:"status" db:"status"`
+	ScheduledAt            *time.Time `json:"scheduled_at,omitempty" db:"scheduled_at"`
+	StartedAt              *time.Time `json:"started_at,omitempty" db:"started_at"`
+	CompletedAt            *time.Time `json:"completed_at,omitempty" db:"completed_at"`
+	CreatedAt              time.Time  `json:"created_at" db:"created_at"`
+	LastDryRunAt           *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at"`                     // When batch dry run was last executed
+	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at"` // When migration was last attempted
 }
 
 // Organization extracts the organization from full_name (org/repo)

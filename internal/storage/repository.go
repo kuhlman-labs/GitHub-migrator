@@ -39,62 +39,63 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			installed_apps_count, release_count, has_release_assets,
 			status, batch_id, priority, destination_url, 
 			destination_full_name, source_migration_id, is_source_locked,
-			discovered_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(full_name) DO UPDATE SET
-			source = excluded.source,
-			source_url = excluded.source_url,
-			total_size = excluded.total_size,
-			largest_file = excluded.largest_file,
-			largest_file_size = excluded.largest_file_size,
-			largest_commit = excluded.largest_commit,
-			largest_commit_size = excluded.largest_commit_size,
-			has_lfs = excluded.has_lfs,
-			has_submodules = excluded.has_submodules,
-			has_large_files = excluded.has_large_files,
-			large_file_count = excluded.large_file_count,
-			default_branch = excluded.default_branch,
-			branch_count = excluded.branch_count,
-			commit_count = excluded.commit_count,
-			last_commit_sha = excluded.last_commit_sha,
-			last_commit_date = excluded.last_commit_date,
-			is_archived = excluded.is_archived,
-			is_fork = excluded.is_fork,
-			has_wiki = excluded.has_wiki,
-			has_pages = excluded.has_pages,
-			has_discussions = excluded.has_discussions,
-			has_actions = excluded.has_actions,
-			has_projects = excluded.has_projects,
-			has_packages = excluded.has_packages,
-			branch_protections = excluded.branch_protections,
-			has_rulesets = excluded.has_rulesets,
-			environment_count = excluded.environment_count,
-			secret_count = excluded.secret_count,
-			variable_count = excluded.variable_count,
-			webhook_count = excluded.webhook_count,
-			contributor_count = excluded.contributor_count,
-			top_contributors = excluded.top_contributors,
-			issue_count = excluded.issue_count,
-			pull_request_count = excluded.pull_request_count,
-			tag_count = excluded.tag_count,
-			open_issue_count = excluded.open_issue_count,
-			open_pr_count = excluded.open_pr_count,
-			has_code_scanning = excluded.has_code_scanning,
-			has_dependabot = excluded.has_dependabot,
-			has_secret_scanning = excluded.has_secret_scanning,
-			has_codeowners = excluded.has_codeowners,
-			visibility = excluded.visibility,
-			workflow_count = excluded.workflow_count,
-			has_self_hosted_runners = excluded.has_self_hosted_runners,
-			collaborator_count = excluded.collaborator_count,
-			installed_apps_count = excluded.installed_apps_count,
-			release_count = excluded.release_count,
-			has_release_assets = excluded.has_release_assets,
-			destination_url = excluded.destination_url,
-			destination_full_name = excluded.destination_full_name,
-			source_migration_id = excluded.source_migration_id,
-			is_source_locked = excluded.is_source_locked,
-			updated_at = excluded.updated_at
+			discovered_at, updated_at, last_discovery_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	ON CONFLICT(full_name) DO UPDATE SET
+		source = excluded.source,
+		source_url = excluded.source_url,
+		total_size = excluded.total_size,
+		largest_file = excluded.largest_file,
+		largest_file_size = excluded.largest_file_size,
+		largest_commit = excluded.largest_commit,
+		largest_commit_size = excluded.largest_commit_size,
+		has_lfs = excluded.has_lfs,
+		has_submodules = excluded.has_submodules,
+		has_large_files = excluded.has_large_files,
+		large_file_count = excluded.large_file_count,
+		default_branch = excluded.default_branch,
+		branch_count = excluded.branch_count,
+		commit_count = excluded.commit_count,
+		last_commit_sha = excluded.last_commit_sha,
+		last_commit_date = excluded.last_commit_date,
+		is_archived = excluded.is_archived,
+		is_fork = excluded.is_fork,
+		has_wiki = excluded.has_wiki,
+		has_pages = excluded.has_pages,
+		has_discussions = excluded.has_discussions,
+		has_actions = excluded.has_actions,
+		has_projects = excluded.has_projects,
+		has_packages = excluded.has_packages,
+		branch_protections = excluded.branch_protections,
+		has_rulesets = excluded.has_rulesets,
+		environment_count = excluded.environment_count,
+		secret_count = excluded.secret_count,
+		variable_count = excluded.variable_count,
+		webhook_count = excluded.webhook_count,
+		contributor_count = excluded.contributor_count,
+		top_contributors = excluded.top_contributors,
+		issue_count = excluded.issue_count,
+		pull_request_count = excluded.pull_request_count,
+		tag_count = excluded.tag_count,
+		open_issue_count = excluded.open_issue_count,
+		open_pr_count = excluded.open_pr_count,
+		has_code_scanning = excluded.has_code_scanning,
+		has_dependabot = excluded.has_dependabot,
+		has_secret_scanning = excluded.has_secret_scanning,
+		has_codeowners = excluded.has_codeowners,
+		visibility = excluded.visibility,
+		workflow_count = excluded.workflow_count,
+		has_self_hosted_runners = excluded.has_self_hosted_runners,
+		collaborator_count = excluded.collaborator_count,
+		installed_apps_count = excluded.installed_apps_count,
+		release_count = excluded.release_count,
+		has_release_assets = excluded.has_release_assets,
+		source_migration_id = excluded.source_migration_id,
+		is_source_locked = excluded.is_source_locked,
+		updated_at = excluded.updated_at,
+		last_discovery_at = CURRENT_TIMESTAMP
+		-- Note: destination_url and destination_full_name are intentionally excluded
+		-- from updates to preserve manually configured destination settings during re-discovery
 	`
 
 	_, err := d.db.ExecContext(ctx, query,
@@ -143,7 +144,8 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 			   status, batch_id, priority, destination_url, 
 			   destination_full_name, source_migration_id, is_source_locked,
 			   validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at
+			   destination_data, discovered_at, updated_at, migrated_at,
+			   last_discovery_at, last_dry_run_at
 		FROM repositories 
 		WHERE full_name = ?
 	`
@@ -171,6 +173,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.SourceMigrationID, &repo.IsSourceLocked,
 		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
+		&repo.LastDiscoveryAt, &repo.LastDryRunAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -577,7 +580,8 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			   status, batch_id, priority, destination_url, 
 			   destination_full_name, source_migration_id, is_source_locked,
 			   validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at
+			   destination_data, discovered_at, updated_at, migrated_at,
+			   last_discovery_at, last_dry_run_at
 		FROM repositories 
 		WHERE 1=1
 	`
@@ -634,6 +638,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.SourceMigrationID, &repo.IsSourceLocked,
 			&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
+			&repo.LastDiscoveryAt, &repo.LastDryRunAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan repository: %w", err)
@@ -718,6 +723,27 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 func (d *Database) UpdateRepositoryStatus(ctx context.Context, fullName string, status models.MigrationStatus) error {
 	query := `UPDATE repositories SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
 	_, err := d.db.ExecContext(ctx, query, string(status), fullName)
+	return err
+}
+
+// UpdateRepositoryDryRunTimestamp updates the last_dry_run_at timestamp for a repository
+func (d *Database) UpdateRepositoryDryRunTimestamp(ctx context.Context, fullName string) error {
+	query := `UPDATE repositories SET last_dry_run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
+	_, err := d.db.ExecContext(ctx, query, fullName)
+	return err
+}
+
+// UpdateBatchDryRunTimestamp updates the last_dry_run_at timestamp for a batch
+func (d *Database) UpdateBatchDryRunTimestamp(ctx context.Context, batchID int64) error {
+	query := `UPDATE batches SET last_dry_run_at = CURRENT_TIMESTAMP WHERE id = ?`
+	_, err := d.db.ExecContext(ctx, query, batchID)
+	return err
+}
+
+// UpdateBatchMigrationAttemptTimestamp updates the last_migration_attempt_at timestamp for a batch
+func (d *Database) UpdateBatchMigrationAttemptTimestamp(ctx context.Context, batchID int64) error {
+	query := `UPDATE batches SET last_migration_attempt_at = CURRENT_TIMESTAMP WHERE id = ?`
+	_, err := d.db.ExecContext(ctx, query, batchID)
 	return err
 }
 
@@ -819,7 +845,8 @@ func (d *Database) GetRepositoriesByIDs(ctx context.Context, ids []int64) ([]*mo
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
 			   destination_full_name, validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at
+			   destination_data, discovered_at, updated_at, migrated_at,
+			   last_discovery_at, last_dry_run_at
 		FROM repositories 
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -861,7 +888,8 @@ func (d *Database) GetRepositoriesByNames(ctx context.Context, names []string) (
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
 			   destination_full_name, validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at
+			   destination_data, discovered_at, updated_at, migrated_at,
+			   last_discovery_at, last_dry_run_at
 		FROM repositories 
 		WHERE full_name IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -891,7 +919,8 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 			   open_issue_count, open_pr_count,
 			   status, batch_id, priority, destination_url, 
 			   destination_full_name, validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at
+			   destination_data, discovered_at, updated_at, migrated_at,
+			   last_discovery_at, last_dry_run_at
 		FROM repositories 
 		WHERE id = ?
 	`
@@ -914,6 +943,7 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 		&repo.DestinationURL, &repo.DestinationFullName,
 		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
+		&repo.LastDiscoveryAt, &repo.LastDryRunAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -1006,7 +1036,8 @@ func (d *Database) GetMigrationLogs(ctx context.Context, repoID int64, level, ph
 func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error) {
 	query := `
 		SELECT id, name, description, type, repository_count, status, 
-			   scheduled_at, started_at, completed_at, created_at
+			   scheduled_at, started_at, completed_at, created_at,
+			   last_dry_run_at, last_migration_attempt_at
 		FROM batches 
 		WHERE id = ?
 	`
@@ -1016,6 +1047,7 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 		&batch.ID, &batch.Name, &batch.Description, &batch.Type,
 		&batch.RepositoryCount, &batch.Status, &batch.ScheduledAt,
 		&batch.StartedAt, &batch.CompletedAt, &batch.CreatedAt,
+		&batch.LastDryRunAt, &batch.LastMigrationAttemptAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -1033,13 +1065,15 @@ func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
 	query := `
 		UPDATE batches SET
 			name = ?, description = ?, type = ?, repository_count = ?,
-			status = ?, scheduled_at = ?, started_at = ?, completed_at = ?
+			status = ?, scheduled_at = ?, started_at = ?, completed_at = ?,
+			last_dry_run_at = ?, last_migration_attempt_at = ?
 		WHERE id = ?
 	`
 
 	_, err := d.db.ExecContext(ctx, query,
 		batch.Name, batch.Description, batch.Type, batch.RepositoryCount,
 		batch.Status, batch.ScheduledAt, batch.StartedAt, batch.CompletedAt,
+		batch.LastDryRunAt, batch.LastMigrationAttemptAt,
 		batch.ID,
 	)
 
@@ -1050,7 +1084,8 @@ func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
 func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 	query := `
 		SELECT id, name, description, type, repository_count, status, 
-			   scheduled_at, started_at, completed_at, created_at
+			   scheduled_at, started_at, completed_at, created_at,
+			   last_dry_run_at, last_migration_attempt_at
 		FROM batches 
 		ORDER BY created_at DESC
 	`
@@ -1068,6 +1103,7 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 			&batch.ID, &batch.Name, &batch.Description, &batch.Type,
 			&batch.RepositoryCount, &batch.Status, &batch.ScheduledAt,
 			&batch.StartedAt, &batch.CompletedAt, &batch.CreatedAt,
+			&batch.LastDryRunAt, &batch.LastMigrationAttemptAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan batch: %w", err)
 		}
@@ -1170,6 +1206,7 @@ func (d *Database) scanRepositories(rows *sql.Rows) ([]*models.Repository, error
 			&repo.DestinationURL, &repo.DestinationFullName,
 			&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
+			&repo.LastDiscoveryAt, &repo.LastDryRunAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan repository: %w", err)
 		}

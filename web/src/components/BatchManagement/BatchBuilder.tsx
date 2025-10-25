@@ -349,7 +349,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       />
 
       {/* Middle Panel - Available Repositories */}
-      <div className={`flex-1 min-w-0 grid grid-rows-[auto_1fr_auto] bg-white border-r border-gray-200 transition-all duration-300 max-h-full ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}>
+      <div className={`flex-1 min-w-0 grid grid-rows-[auto_1fr_auto] bg-white border-r border-gray-200 transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}>
         <div className="p-4 border-b border-gray-200 bg-white row-start-1">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -493,7 +493,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       </div>
 
       {/* Right Panel - Selected Repositories & Batch Info */}
-      <div className={`flex-shrink-0 grid grid-rows-[auto_1fr_auto] bg-white transition-all duration-300 max-h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}>
+      <div className={`flex-shrink-0 grid grid-rows-[auto_1fr_auto] bg-white transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}>
         <div className="p-4 border-b border-gray-200 bg-white row-start-1">
           <div className="flex justify-between items-center">
             <div>
@@ -564,7 +564,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         </div>
 
         {/* Bottom Batch Metadata Form */}
-        <div className="border-t border-gray-200 p-3 bg-gray-50 space-y-2.5 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3">
+        <div className="border-t border-gray-200 p-3 bg-gray-50 space-y-2.5 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-50 relative row-start-3">
           <div className="bg-blue-50 border border-blue-200 p-2 rounded-lg">
             <div className="text-xs font-medium text-blue-900">Total Batch Size</div>
             <div className="text-lg font-bold text-blue-900">{formatBytes(totalSize)}</div>
@@ -599,7 +599,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             />
           </div>
 
-          <div>
+          <div className="relative z-[60]">
             <label className="block text-xs font-semibold text-gray-700 mb-1">
               Scheduled Date (Optional)
             </label>
@@ -618,7 +618,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5 pt-1">
+          <div className="flex flex-col gap-1.5 pt-1 min-h-[140px]">
             <button
               onClick={() => handleSubmit(false)}
               disabled={loading || currentBatchRepos.length === 0}
