@@ -1,4 +1,4 @@
-.PHONY: help build test lint clean docker-build docker-run install-tools install-dependencies install setup web-install web-build web-dev web-lint
+.PHONY: help build test lint clean docker-build docker-run install-tools install-dependencies install setup web-install web-build web-dev web-lint download-binaries
 
 # Variables
 APP_NAME=github-migrator
@@ -32,7 +32,12 @@ setup: install-dependencies install-tools web-install ## Install all dependencie
 
 install: setup ## Alias for setup
 
-build: ## Build the application (backend only)
+download-binaries: ## Download git-sizer binaries for embedding
+	@echo "Downloading git-sizer binaries..."
+	@./scripts/download-git-sizer.sh
+	@echo "Binaries downloaded!"
+
+build: download-binaries ## Build the application (backend only)
 	@echo "Building backend..."
 	CGO_ENABLED=1 go build -o bin/$(APP_NAME)-server cmd/server/main.go
 	@echo "Build complete!"

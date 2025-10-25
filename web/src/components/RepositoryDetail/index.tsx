@@ -866,6 +866,46 @@ export function RepositoryDetail() {
                 <ProfileItem label="Commits" value={repository.commit_count.toLocaleString()} />
                 <ProfileItem label="Has LFS" value={repository.has_lfs ? 'Yes' : 'No'} />
                 <ProfileItem label="Has Submodules" value={repository.has_submodules ? 'Yes' : 'No'} />
+                
+                {/* Largest File */}
+                {repository.largest_file && (
+                  <ProfileItem 
+                    label="Largest File" 
+                    value={
+                      <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+                        {repository.largest_file}
+                      </code>
+                    } 
+                  />
+                )}
+                
+                {/* Largest File Size */}
+                {repository.largest_file_size && (
+                  <ProfileItem 
+                    label="Largest File Size" 
+                    value={formatBytes(repository.largest_file_size)} 
+                  />
+                )}
+                
+                {/* Largest Commit */}
+                {repository.largest_commit && (
+                  <ProfileItem 
+                    label="Largest Commit" 
+                    value={
+                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        {repository.largest_commit.substring(0, 8)}
+                      </code>
+                    } 
+                  />
+                )}
+                
+                {/* Largest Commit Size */}
+                {repository.largest_commit_size && (
+                  <ProfileItem 
+                    label="Largest Commit Size" 
+                    value={formatBytes(repository.largest_commit_size)} 
+                  />
+                )}
               </ProfileCard>
 
               <ProfileCard title="Verification Metrics">

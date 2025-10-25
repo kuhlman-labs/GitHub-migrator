@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/brettkuhlman/github-migrator/internal/embedded"
 	"github.com/brettkuhlman/github-migrator/internal/models"
 )
 
@@ -170,8 +171,15 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 }
 
 // runGitSizer executes git-sizer and parses its JSON output
+// Uses the embedded git-sizer binary for portability
 func (a *Analyzer) runGitSizer(ctx context.Context, repoPath string) (*GitSizerOutput, error) {
-	cmd := exec.CommandContext(ctx, "git-sizer", "--json", "--json-version=2")
+	// Get the path to the embedded git-sizer binary
+	gitSizerPath, err := embedded.GetGitSizerPath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get git-sizer binary: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, gitSizerPath, "--json", "--json-version=2")
 	cmd.Dir = repoPath
 
 	var stdout, stderr bytes.Buffer

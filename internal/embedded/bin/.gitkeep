@@ -1,0 +1,3 @@
+# This directory contains embedded git-sizer binaries for different platforms
+# Binaries are downloaded during the build process
+

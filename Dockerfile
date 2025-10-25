@@ -3,20 +3,21 @@ FROM golang:1.23-alpine AS backend-builder
 
 WORKDIR /app
 
-# Install dependencies
-RUN apk add --no-cache git gcc musl-dev sqlite-dev
+# Install dependencies (including curl for downloading binaries)
+RUN apk add --no-cache git gcc musl-dev sqlite-dev curl bash
 
 # Copy go mod files
 COPY go.mod go.sum ./
 RUN GOTOOLCHAIN=auto go mod download
 
-# Install git-sizer for repository analysis
-RUN go install github.com/github/git-sizer@latest
-
-# Copy source code
+# Copy source code and scripts
 COPY . .
 
-# Build binaries
+# Download git-sizer binaries for embedding
+RUN chmod +x scripts/download-git-sizer.sh && \
+    ./scripts/download-git-sizer.sh
+
+# Build binaries with embedded git-sizer
 RUN GOTOOLCHAIN=auto CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o server cmd/server/main.go
 
 # Final stage
@@ -26,9 +27,8 @@ RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs
 
 WORKDIR /app
 
-# Copy binaries from backend builder
+# Copy server binary from backend builder (git-sizer is now embedded)
 COPY --from=backend-builder /app/server .
-COPY --from=backend-builder /go/bin/git-sizer /usr/local/bin/
 
 # Copy configs
 COPY configs ./configs

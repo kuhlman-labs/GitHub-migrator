@@ -8,6 +8,9 @@
 github-migrator-server
 github-migrator-cli
 
+# Embedded binaries (downloaded during build)
+internal/embedded/bin/git-sizer-*
+
 # Test binary
 *.test
 
