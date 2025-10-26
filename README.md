@@ -476,4 +476,4 @@ We welcome contributions! Please see our **[Contributing Guide](./docs/CONTRIBUT
 **Version**: 1.0.0  
 **Last Updated**: October 2025  
 **Status**: Production Ready  
-**Maintained by**: [Your Team/Organization]
+**Maintained by**: @kuhlman-labs
