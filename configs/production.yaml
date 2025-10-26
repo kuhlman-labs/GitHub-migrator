@@ -1,4 +1,4 @@
-# GitHub Migration Server - Production Configuration
+# GitHub Migrator - Production Configuration
 # This configuration is optimized for production deployments
 
 server:

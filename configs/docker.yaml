@@ -1,4 +1,4 @@
-# GitHub Migration Server - Docker Configuration
+# GitHub Migrator - Docker Configuration
 # This configuration is optimized for Docker deployments
 
 server:

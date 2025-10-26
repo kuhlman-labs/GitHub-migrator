@@ -1,4 +1,4 @@
-# GitHub Migration Server - Deployment Guide
+# GitHub Migrator - Deployment Guide
 
 ## Table of Contents
 
@@ -474,7 +474,7 @@ Create systemd service file `/etc/systemd/system/github-migrator.service`:
 
 ```ini
 [Unit]
-Description=GitHub Migration Server
+Description=GitHub Migrator
 After=network.target
 
 [Service]

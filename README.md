@@ -29,7 +29,7 @@ A comprehensive, production-ready solution for migrating repositories from GitHu
 
 ## Overview
 
-The GitHub Migration Server provides an automated, scalable platform for managing large-scale GitHub-to-GitHub repository migrations. It features intelligent discovery, batch organization, detailed profiling, and comprehensive migration execution with a modern web dashboard for monitoring and control.
+The GitHub Migrator provides an automated, scalable platform for managing large-scale GitHub-to-GitHub repository migrations. It features intelligent discovery, batch organization, detailed profiling, and comprehensive migration execution with a modern web dashboard for monitoring and control.
 
 ### Supported Migrations
 

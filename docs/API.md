@@ -1,8 +1,8 @@
-# GitHub Migration Server - API Documentation
+# GitHub Migrator - API Documentation
 
 ## Overview
 
-The GitHub Migration Server provides a comprehensive REST API for managing repository discovery, profiling, batch organization, and migration execution. All endpoints return JSON responses and follow RESTful conventions.
+The GitHub Migrator provides a comprehensive REST API for managing repository discovery, profiling, batch organization, and migration execution. All endpoints return JSON responses and follow RESTful conventions.
 
 **Base URL:** `http://localhost:8080`  
 **API Version:** v1  

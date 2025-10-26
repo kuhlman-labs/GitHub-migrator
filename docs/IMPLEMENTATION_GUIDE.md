@@ -1,6 +1,6 @@
-# GitHub Migration Server - Implementation Guide
+# GitHub Migrator - Implementation Guide
 
-This guide provides deep technical insights into the architecture, implementation details, and internal workings of the GitHub Migration Server.
+This guide provides deep technical insights into the architecture, implementation details, and internal workings of the GitHub Migrator.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ This guide provides deep technical insights into the architecture, implementatio
 
 ### Overview
 
-The GitHub Migration Server is built as a monolithic Go application with an embedded React frontend. It uses a polling-based architecture for migration status updates and supports both SQLite (development) and PostgreSQL (production).
+The GitHub Migrator is built as a monolithic Go application with an embedded React frontend. It uses a polling-based architecture for migration status updates and supports both SQLite (development) and PostgreSQL (production).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1878,7 +1878,7 @@ go func() {
 
 ## Summary
 
-This implementation guide covers the internal architecture and technical details of the GitHub Migration Server. For operational procedures, see [OPERATIONS.md](./OPERATIONS.md). For API usage, see [API.md](./API.md). For contributing, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+This implementation guide covers the internal architecture and technical details of the GitHub Migrator. For operational procedures, see [OPERATIONS.md](./OPERATIONS.md). For API usage, see [API.md](./API.md). For contributing, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 **Key Takeaways:**
 

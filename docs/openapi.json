@@ -1,11 +1,11 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "GitHub Migration Server API",
+    "title": "GitHub Migrator API",
     "description": "API for managing repository discovery, profiling, batch organization, and migration execution between GitHub instances.",
     "version": "1.0.0",
     "contact": {
-      "name": "GitHub Migration Server"
+      "name": "GitHub Migrator"
     }
   },
   "servers": [

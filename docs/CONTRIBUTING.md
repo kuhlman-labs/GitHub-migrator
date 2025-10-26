@@ -1089,5 +1089,5 @@ For other questions, open an issue or reach out to the maintainers.
 
 ---
 
-**Thank you for contributing to the GitHub Migration Server!** 🎉
+**Thank you for contributing to the GitHub Migrator!** 🎉
 

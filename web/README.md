@@ -1,6 +1,6 @@
 # GitHub Migrator - Frontend
 
-Modern React frontend for the GitHub Migration Server built with Vite, TypeScript, and Tailwind CSS.
+Modern React frontend for the GitHub Migrator built with Vite, TypeScript, and Tailwind CSS.
 
 ## Tech Stack
 

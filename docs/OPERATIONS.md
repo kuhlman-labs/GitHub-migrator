@@ -1,4 +1,4 @@
-# GitHub Migration Server - Operations Runbook
+# GitHub Migrator - Operations Runbook
 
 ## Table of Contents
 
