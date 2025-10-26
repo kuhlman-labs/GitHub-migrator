@@ -1,4 +1,4 @@
-# GitHub Migration Server
+# GitHub Migrator
 
 A comprehensive, production-ready solution for migrating repositories from GitHub Enterprise Server or GitHub.com to GitHub.com, GitHub with data residency, or GitHub Enterprise Cloud with EMU.
 
