@@ -81,8 +81,17 @@ export function Repositories() {
     if (urlFilters.has_pages) count++;
     if (urlFilters.has_discussions) count++;
     if (urlFilters.has_projects) count++;
+    if (urlFilters.has_packages) count++;
     if (urlFilters.has_branch_protections) count++;
+    if (urlFilters.has_rulesets) count++;
+    if (urlFilters.has_code_scanning) count++;
+    if (urlFilters.has_dependabot) count++;
+    if (urlFilters.has_secret_scanning) count++;
+    if (urlFilters.has_codeowners) count++;
+    if (urlFilters.has_self_hosted_runners) count++;
+    if (urlFilters.has_release_assets) count++;
     if (urlFilters.is_archived !== undefined) count++;
+    if (urlFilters.is_fork !== undefined) count++;
     if (urlFilters.complexity) count++;
     if (urlFilters.size_category) count++;
     if (urlFilters.organization) count++;

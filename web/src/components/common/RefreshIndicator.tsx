@@ -14,7 +14,7 @@ export const RefreshIndicator: React.FC<RefreshIndicatorProps> = ({
   const [showIndicator, setShowIndicator] = useState(false);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: number | undefined;
 
     if (isRefreshing) {
       // Only show indicator if refresh takes longer than the delay
