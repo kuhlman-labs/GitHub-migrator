@@ -164,16 +164,19 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		h.logger.Info("User logged out", "user", user.Login)
 	}
 
-	// Clear auth cookie
+	// Clear auth cookie - must match all attributes from when cookie was set
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "Logged out successfully",
 	}); err != nil {

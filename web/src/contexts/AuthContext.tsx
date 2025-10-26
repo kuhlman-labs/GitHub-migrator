@@ -88,10 +88,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       await api.logout();
       setUser(null);
-      // Redirect to home after logout
-      window.location.href = '/';
+      // Redirect to login page after logout
+      window.location.href = '/login';
     } catch (error) {
       console.error('Logout failed:', error);
+      // Even if API call fails, clear local state and redirect
+      setUser(null);
+      window.location.href = '/login';
     }
   };
 
