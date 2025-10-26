@@ -1,4 +1,4 @@
-# Contributing to GitHub Migration Server
+# Contributing to GitHub Migrator
 
 Thank you for your interest in contributing to the GitHub Migration Server! This guide will help you get started with development, understand our standards, and make effective contributions.
 
