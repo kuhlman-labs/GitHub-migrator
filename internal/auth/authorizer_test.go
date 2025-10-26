@@ -12,6 +12,8 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/config"
 )
 
+const testTeamMembershipPath = "/orgs/test-org/teams/admin-team/memberships/testuser"
+
 func TestNewAuthorizer(t *testing.T) {
 	cfg := &config.AuthConfig{}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -39,6 +41,7 @@ func TestNewAuthorizer(t *testing.T) {
 			authorizer := NewAuthorizer(cfg, logger, tt.baseURL)
 			if authorizer == nil {
 				t.Error("Expected non-nil authorizer")
+				return
 			}
 			if authorizer.baseURL == "" {
 				t.Error("Base URL should not be empty")
@@ -142,7 +145,7 @@ func TestCheckTeamMembership(t *testing.T) {
 		}
 
 		// Parse the URL to determine which team is being checked
-		if r.URL.Path == "/orgs/test-org/teams/admin-team/memberships/testuser" {
+		if r.URL.Path == testTeamMembershipPath {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
@@ -273,7 +276,7 @@ func TestAuthorizeWithMultipleRules(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/orgs/test-org/members/testuser" {
 			w.WriteHeader(http.StatusNoContent)
-		} else if r.URL.Path == "/orgs/test-org/teams/admin-team/memberships/testuser" {
+		} else if r.URL.Path == testTeamMembershipPath {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
@@ -347,7 +350,7 @@ func TestIsOrgMember(t *testing.T) {
 func TestIsTeamMember(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/orgs/test-org/teams/admin-team/memberships/testuser" {
+		if r.URL.Path == testTeamMembershipPath {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",

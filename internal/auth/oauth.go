@@ -16,6 +16,8 @@ import (
 	"golang.org/x/oauth2/github"
 )
 
+const githubDotComURL = "https://github.com"
+
 // OAuthHandler handles GitHub OAuth authentication flow
 type OAuthHandler struct {
 	config  *config.AuthConfig
@@ -299,17 +301,17 @@ func GetTokenFromContext(ctx context.Context) (string, bool) {
 // BuildOAuthURL builds the GitHub OAuth URL for a given base URL
 func BuildOAuthURL(baseURL string) string {
 	if baseURL == "" {
-		return "https://github.com"
+		return githubDotComURL
 	}
 
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
-		return "https://github.com"
+		return githubDotComURL
 	}
 
 	// For api.github.com, return github.com
 	if parsedURL.Host == "api.github.com" {
-		return "https://github.com"
+		return githubDotComURL
 	}
 
 	// For GHES, remove "/api/v3" from path if present
