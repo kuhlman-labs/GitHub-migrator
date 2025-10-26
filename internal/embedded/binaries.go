@@ -10,6 +10,12 @@ import (
 	"sync"
 )
 
+const (
+	archAmd64      = "amd64"
+	osWindows      = "windows"
+	binaryGitSizer = "git-sizer"
+)
+
 // Embed git-sizer binaries for different platforms
 // These files should be placed in internal/embedded/bin/ directory
 
@@ -65,28 +71,28 @@ func extractGitSizer() (string, error) {
 	switch goos {
 	case "linux":
 		switch goarch {
-		case "amd64":
+		case archAmd64:
 			binaryData = gitSizerLinuxAmd64
-			binaryName = "git-sizer"
+			binaryName = binaryGitSizer
 		case "arm64":
 			binaryData = gitSizerLinuxArm64
-			binaryName = "git-sizer"
+			binaryName = binaryGitSizer
 		default:
 			return "", fmt.Errorf("unsupported Linux architecture: %s", goarch)
 		}
 	case "darwin":
 		switch goarch {
-		case "amd64":
+		case archAmd64:
 			binaryData = gitSizerDarwinAmd64
-			binaryName = "git-sizer"
+			binaryName = binaryGitSizer
 		case "arm64":
 			binaryData = gitSizerDarwinArm64
-			binaryName = "git-sizer"
+			binaryName = binaryGitSizer
 		default:
 			return "", fmt.Errorf("unsupported macOS architecture: %s", goarch)
 		}
-	case "windows":
-		if goarch == "amd64" {
+	case osWindows:
+		if goarch == archAmd64 {
 			binaryData = gitSizerWindowsAmd64
 			binaryName = "git-sizer.exe"
 		} else {
@@ -143,7 +149,7 @@ func verifyBinary(path string) error {
 	}
 
 	// Check file permissions on Unix-like systems
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != osWindows {
 		if info.Mode()&0111 == 0 {
 			return fmt.Errorf("binary is not executable")
 		}

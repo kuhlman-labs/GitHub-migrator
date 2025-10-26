@@ -179,6 +179,7 @@ func (a *Analyzer) runGitSizer(ctx context.Context, repoPath string) (*GitSizerO
 		return nil, fmt.Errorf("failed to get git-sizer binary: %w", err)
 	}
 
+	// #nosec G204 -- gitSizerPath is from embedded binary extraction, not user input
 	cmd := exec.CommandContext(ctx, gitSizerPath, "--json", "--json-version=2")
 	cmd.Dir = repoPath
 

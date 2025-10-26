@@ -234,10 +234,10 @@ func (o *Orchestrator) ExecuteSequentialWaves(ctx context.Context, dryRun bool) 
 		return fmt.Errorf("failed to list batches: %w", err)
 	}
 
-	// Filter and sort wave batches
+	// Filter and sort wave batches (exclude pilot batches and batches with no type)
 	var waves []*models.Batch
 	for _, batch := range batches {
-		if batch.Type != "pilot" && batch.Type != "ready" && batch.Type != "" {
+		if batch.Type != TypePilot && batch.Type != "" {
 			waves = append(waves, batch)
 		}
 	}

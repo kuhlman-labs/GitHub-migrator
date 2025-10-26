@@ -162,7 +162,7 @@ func (s *Scheduler) executeBatchAsync(ctx context.Context, batch *models.Batch, 
 	// Queue all repositories for migration (let the worker pool handle them concurrently)
 	queuedCount := 0
 	priority := 0
-	if batch.Type == "pilot" {
+	if batch.Type == TypePilot {
 		priority = 1
 	}
 
@@ -209,53 +209,6 @@ func (s *Scheduler) executeBatchAsync(ctx context.Context, batch *models.Batch, 
 		"message", "Worker pool will process repositories concurrently")
 
 	// Note: The batch will be marked complete by the status updater once all repositories finish
-	// We don't call completeBatch here because we're now using the async worker pool
-}
-
-// completeBatch marks a batch as completed
-func (s *Scheduler) completeBatch(ctx context.Context, batchID int64, successCount, failCount int) {
-	batch, err := s.storage.GetBatch(ctx, batchID)
-	if err != nil {
-		s.logger.Error("Failed to get batch for completion", "batch_id", batchID, "error", err)
-		return
-	}
-
-	if batch == nil {
-		s.logger.Error("Batch not found for completion", "batch_id", batchID)
-		return
-	}
-
-	now := time.Now()
-	batch.CompletedAt = &now
-
-	// Get all repos to calculate accurate status
-	repos, err := s.storage.ListRepositories(ctx, map[string]interface{}{
-		"batch_id": batchID,
-	})
-	if err != nil {
-		s.logger.Error("Failed to list repositories for batch completion", "batch_id", batchID, "error", err)
-		// Fallback to simple logic
-		if failCount == 0 {
-			batch.Status = StatusCompleted
-		} else if successCount == 0 {
-			batch.Status = StatusFailed
-		} else {
-			batch.Status = StatusCompletedWithErrors
-		}
-	} else {
-		// Use consistent status calculation
-		batch.Status = CalculateBatchStatusFromRepos(repos)
-	}
-
-	if err := s.storage.UpdateBatch(ctx, batch); err != nil {
-		s.logger.Error("Failed to update batch completion", "batch_id", batchID, "error", err)
-	}
-
-	s.logger.Info("Batch marked as complete",
-		"batch_id", batchID,
-		"status", batch.Status,
-		"success", successCount,
-		"failed", failCount)
 }
 
 // CancelBatch cancels a running batch execution

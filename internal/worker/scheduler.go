@@ -53,4 +53,3 @@ func (sw *SchedulerWorker) checkScheduledBatches(ctx context.Context) {
 		sw.logger.Error("Failed to execute scheduled batches", "error", err)
 	}
 }
-

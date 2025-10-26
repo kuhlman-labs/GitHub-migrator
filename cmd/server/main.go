@@ -345,6 +345,6 @@ func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualCli
 	// Create scheduler worker
 	schedulerWorker := worker.NewSchedulerWorker(orchestrator, logger)
 	slog.Info("Scheduler worker initialized - will check for scheduled batches every minute")
-	
+
 	return schedulerWorker
 }
