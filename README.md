@@ -54,6 +54,7 @@ The GitHub Migrator provides an automated, scalable platform for managing large-
 - 🎨 **Modern Dashboard** - Professional web UI for visualization, analytics, and control
 - 🔌 **Complete REST API** - Full programmatic access for automation and CI/CD integration
 - 🔐 **Dual Authentication** - PAT required for migrations; optional GitHub App for discovery with better rate limits
+- 🔒 **Optional OAuth Security** - GitHub OAuth authentication with configurable org/team/enterprise access controls
 - 📉 **Comprehensive Analytics** - Track metrics, completion rates, duration stats, and trends
 
 ### Why Use This Tool?
@@ -194,6 +195,22 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - Export data in CSV or JSON formats
 - Comprehensive OpenAPI 3.0 specification
 - See [API.md](./docs/API.md) for full documentation
+
+</details>
+
+<details>
+<summary><strong>🔒 Security & Authentication (Optional)</strong></summary>
+
+- **GitHub OAuth 2.0** - Native GitHub authentication for self-hosted deployments
+- **Configurable Authorization** - Control access based on:
+  - Organization membership
+  - Team membership  
+  - Enterprise administrator role
+- **JWT Session Management** - Secure, encrypted token storage with configurable expiration
+- **Multi-Factor Support** - Leverages GitHub's existing SAML/SSO if configured
+- **Backward Compatible** - Authentication is disabled by default, opt-in for production
+- **Audit Logging** - All authentication events are logged for security monitoring
+- See [OPERATIONS.md](./docs/OPERATIONS.md#authentication-setup) for configuration guide
 
 </details>
 

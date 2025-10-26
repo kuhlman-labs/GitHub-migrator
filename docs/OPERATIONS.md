@@ -2,6 +2,7 @@
 
 ## Table of Contents
 
+- [Authentication Setup](#authentication-setup)
 - [Daily Operations](#daily-operations)
 - [Migration Workflows](#migration-workflows)
 - [Monitoring & Alerts](#monitoring--alerts)
@@ -9,6 +10,220 @@
 - [Maintenance Tasks](#maintenance-tasks)
 - [Troubleshooting Guide](#troubleshooting-guide)
 - [Runbooks](#runbooks)
+
+---
+
+## Authentication Setup
+
+The GitHub Migration Server supports optional authentication using GitHub OAuth. When enabled, users must authenticate with GitHub and meet configurable authorization requirements to access the system.
+
+### Prerequisites
+
+- GitHub organization or GitHub Enterprise account
+- Admin access to create OAuth Apps
+- SSL/TLS certificate (recommended for production)
+
+### Creating a GitHub OAuth App
+
+#### For GitHub.com
+
+1. Navigate to your organization's settings or your personal account settings
+2. Go to **Developer settings** > **OAuth Apps** > **New OAuth App**
+3. Fill in the application details:
+   - **Application name**: `GitHub Migrator`
+   - **Homepage URL**: Your server URL (e.g., `https://migrator.example.com`)
+   - **Authorization callback URL**: `https://migrator.example.com/api/v1/auth/callback`
+   - **Application description**: Optional description
+4. Click **Register application**
+5. Note the **Client ID** and generate a **Client Secret**
+
+#### For GitHub Enterprise Server
+
+1. Navigate to `https://your-ghes-instance.com/settings/applications/new`
+2. Fill in the same details as above, adjusting URLs for your GHES instance
+3. The authorization callback URL should be: `https://your-migrator.example.com/api/v1/auth/callback`
+
+### Configuration
+
+Add the following to your `configs/config.yaml`:
+
+```yaml
+auth:
+  enabled: true
+  github_oauth_client_id: "Iv1.your_client_id_here"
+  github_oauth_client_secret: "your_client_secret_here"
+  callback_url: "https://migrator.example.com/api/v1/auth/callback"
+  session_secret: "generate-a-random-secret-key-here"
+  session_duration_hours: 24
+  
+  authorization_rules:
+    # Require user to be member of these organizations (at least one)
+    require_org_membership:
+      - "my-github-org"
+    
+    # Require user to be member of these teams (at least one)
+    # Format: "org/team-slug"
+    require_team_membership:
+      - "my-github-org/migration-admins"
+      - "my-github-org/platform-team"
+    
+    # Require user to be enterprise admin
+    require_enterprise_admin: false
+    
+    # Enterprise slug (required if require_enterprise_admin is true)
+    require_enterprise_slug: "my-enterprise"
+```
+
+### Generating Session Secret
+
+Generate a secure random session secret:
+
+```bash
+# Using OpenSSL
+openssl rand -base64 32
+
+# Using Python
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Using /dev/urandom
+head -c 32 /dev/urandom | base64
+```
+
+### Authorization Rules
+
+The system supports three types of authorization checks:
+
+#### 1. Organization Membership
+
+```yaml
+authorization_rules:
+  require_org_membership:
+    - "my-org"
+    - "another-org"
+```
+
+Users must be a member of at least one of the listed organizations.
+
+#### 2. Team Membership
+
+```yaml
+authorization_rules:
+  require_team_membership:
+    - "my-org/platform-team"
+    - "my-org/migration-admins"
+```
+
+Users must be a member of at least one of the listed teams. Format is `organization/team-slug`.
+
+#### 3. Enterprise Admin
+
+```yaml
+authorization_rules:
+  require_enterprise_admin: true
+  require_enterprise_slug: "my-enterprise"
+```
+
+Users must be an enterprise administrator.
+
+**Note**: You can combine multiple rules. All configured rules must pass for a user to be authorized.
+
+### Environment Variables
+
+For sensitive configuration, use environment variables:
+
+```bash
+export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID="Iv1.your_client_id"
+export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET="your_secret"
+export GHMIG_AUTH_SESSION_SECRET="your_session_secret"
+```
+
+### Testing Authentication
+
+1. Start the server with authentication enabled
+2. Navigate to `http://localhost:8080` (or your server URL)
+3. You should be redirected to `/login`
+4. Click "Sign in with GitHub"
+5. Authorize the application
+6. You should be redirected back to the dashboard
+
+### Verifying Authorization
+
+Test with different users to verify authorization rules:
+
+```bash
+# Check auth config endpoint
+curl http://localhost:8080/api/v1/auth/config
+
+# Try accessing protected endpoint without auth (should get 401)
+curl -i http://localhost:8080/api/v1/repositories
+```
+
+### Disabling Authentication
+
+To disable authentication and allow open access:
+
+```yaml
+auth:
+  enabled: false
+```
+
+Or via environment variable:
+
+```bash
+export GHMIG_AUTH_ENABLED=false
+```
+
+### Troubleshooting Authentication
+
+#### User sees "Access Denied"
+
+Check the following:
+1. User is a member of required organizations (verify in GitHub)
+2. User is a member of required teams (check team membership)
+3. Team slugs are correct (lowercase, hyphen-separated)
+4. Organization names are correct
+
+View server logs for authorization failures:
+
+```bash
+# Look for authorization check failures
+docker logs github-migrator | grep "not authorized"
+
+# Check what rules failed
+docker logs github-migrator | grep "authorization"
+```
+
+#### OAuth callback fails
+
+1. Verify callback URL in OAuth App matches `auth.callback_url` in config
+2. Check that callback URL is accessible (not behind firewall)
+3. Verify client ID and secret are correct
+4. Check server logs for OAuth errors
+
+#### Session expires immediately
+
+1. Verify `session_secret` is set and consistent across restarts
+2. Check `session_duration_hours` is set appropriately
+3. For HTTPS deployments, ensure cookies are marked secure
+
+#### Cannot access after enabling auth
+
+1. Ensure you have a user account that meets the authorization requirements
+2. Check logs for authorization failures
+3. Temporarily disable auth to verify the issue:
+   ```bash
+   export GHMIG_AUTH_ENABLED=false
+   ```
+
+### Security Best Practices
+
+1. **Use HTTPS**: Always use HTTPS in production for OAuth callbacks
+2. **Secure Session Secret**: Use a strong, random session secret (32+ characters)
+3. **Rotate Secrets**: Periodically rotate OAuth client secrets and session secrets
+4. **Audit Access**: Monitor authentication logs for suspicious activity
+5. **Principle of Least Privilege**: Only grant access to users who need it
+6. **Team-Based Access**: Use team membership for fine-grained access control
+7. **Session Duration**: Set appropriate session duration based on security requirements
 
 ---
 

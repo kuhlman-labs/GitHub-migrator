@@ -9,13 +9,36 @@ import { BatchBuilderPage } from './components/BatchManagement/BatchBuilderPage'
 import { SelfServiceMigration } from './components/SelfService';
 import { MigrationHistory } from './components/MigrationHistory';
 import { Navigation } from './components/common/Navigation';
+import { Login } from './components/Auth/Login';
+import { ProtectedRoute } from './components/Auth/ProtectedRoute';
+import { AuthProvider } from './contexts/AuthContext';
 
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-gh-canvas-default">
-        <Navigation />
-        <Routes>
+      <AuthProvider>
+        <div className="min-h-screen bg-gh-canvas-default">
+          <Routes>
+            {/* Login page (public) */}
+            <Route path="/login" element={<Login />} />
+            
+            {/* Protected routes with navigation */}
+            <Route path="*" element={
+              <ProtectedRoute>
+                <Navigation />
+                <ProtectedRoutes />
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </div>
+      </AuthProvider>
+    </Router>
+  );
+}
+
+function ProtectedRoutes() {
+  return (
+    <Routes>
           {/* Full-width pages (no container) */}
           <Route path="/batches/new" element={<BatchBuilderPage />} />
           <Route path="/batches/:batchId/edit" element={<BatchBuilderPage />} />
@@ -62,8 +85,6 @@ function App() {
             </main>
           } />
         </Routes>
-      </div>
-    </Router>
   );
 }
 

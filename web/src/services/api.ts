@@ -15,7 +15,23 @@ import type {
 const client = axios.create({
   baseURL: '/api/v1',
   timeout: 30000,
+  withCredentials: true, // Send cookies with requests
 });
+
+// Response interceptor to handle 401 errors
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Only redirect if not already on login page or auth endpoints
+      const currentPath = window.location.pathname;
+      if (!currentPath.includes('/login') && !currentPath.includes('/auth/')) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const api = {
   // Discovery
@@ -258,6 +274,43 @@ export const api = {
   }> {
     const { data } = await client.post('/self-service/migrate', params);
     return data;
+  },
+
+  // Authentication
+  async getAuthConfig(): Promise<{
+    enabled: boolean;
+    login_url?: string;
+    authorization_rules?: {
+      requires_org_membership?: boolean;
+      required_orgs?: string[];
+      requires_team_membership?: boolean;
+      required_teams?: string[];
+      requires_enterprise_admin?: boolean;
+      enterprise?: string;
+    };
+  }> {
+    const { data } = await client.get('/auth/config');
+    return data;
+  },
+
+  async getCurrentUser(): Promise<{
+    id: number;
+    login: string;
+    name: string;
+    email: string;
+    avatar_url: string;
+    roles?: string[];
+  }> {
+    const { data } = await client.get('/auth/user');
+    return data;
+  },
+
+  async logout(): Promise<void> {
+    await client.post('/auth/logout');
+  },
+
+  async refreshToken(): Promise<void> {
+    await client.post('/auth/refresh');
   },
 };
 

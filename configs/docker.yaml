@@ -50,3 +50,13 @@ logging:
   max_size: "${GHMIG_LOGGING_MAX_SIZE:-200}"
   max_backups: "${GHMIG_LOGGING_MAX_BACKUPS:-5}"
   max_age: "${GHMIG_LOGGING_MAX_AGE:-30}"
+
+# Authentication (disabled by default for Docker)
+# See OPERATIONS.md for setup instructions
+auth:
+  enabled: "${GHMIG_AUTH_ENABLED:-false}"
+  github_oauth_client_id: "${GITHUB_OAUTH_CLIENT_ID}"
+  github_oauth_client_secret: "${GITHUB_OAUTH_CLIENT_SECRET}"
+  callback_url: "${GITHUB_OAUTH_CALLBACK_URL}"
+  session_secret: "${AUTH_SESSION_SECRET}"
+  session_duration_hours: "${GHMIG_AUTH_SESSION_DURATION_HOURS:-24}"

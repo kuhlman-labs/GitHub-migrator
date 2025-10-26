@@ -51,3 +51,24 @@ logging:
   max_size: "${GHMIG_LOGGING_MAX_SIZE:-500}"  # Maximum size in megabytes
   max_backups: "${GHMIG_LOGGING_MAX_BACKUPS:-10}"  # Number of old log files to keep
   max_age: "${GHMIG_LOGGING_MAX_AGE:-90}"  # Maximum number of days to keep old log files
+
+# Authentication & Authorization
+# RECOMMENDED: Enable for production to control access
+# See OPERATIONS.md for OAuth App setup instructions
+auth:
+  enabled: "${GHMIG_AUTH_ENABLED:-false}"
+  github_oauth_client_id: "${GITHUB_OAUTH_CLIENT_ID}"
+  github_oauth_client_secret: "${GITHUB_OAUTH_CLIENT_SECRET}"
+  callback_url: "${GITHUB_OAUTH_CALLBACK_URL}"
+  session_secret: "${AUTH_SESSION_SECRET}"
+  session_duration_hours: "${GHMIG_AUTH_SESSION_DURATION_HOURS:-24}"
+  
+  authorization_rules:
+    # Require org membership (comma-separated list via env var)
+    require_org_membership: "${GHMIG_AUTH_REQUIRE_ORG_MEMBERSHIP}"
+    # Require team membership (comma-separated list via env var, format: org/team-slug)
+    require_team_membership: "${GHMIG_AUTH_REQUIRE_TEAM_MEMBERSHIP}"
+    # Require enterprise admin
+    require_enterprise_admin: "${GHMIG_AUTH_REQUIRE_ENTERPRISE_ADMIN:-false}"
+    # Enterprise slug for admin verification
+    require_enterprise_slug: "${GHMIG_AUTH_ENTERPRISE_SLUG}"

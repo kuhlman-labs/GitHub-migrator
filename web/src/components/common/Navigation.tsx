@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { UserProfile } from './UserProfile';
 
 export function Navigation() {
   const location = useLocation();
@@ -44,6 +45,11 @@ export function Navigation() {
                 Self-Service
               </Link>
             </div>
+          </div>
+          
+          {/* User Profile */}
+          <div className="flex items-center">
+            <UserProfile />
           </div>
         </div>
       </div>

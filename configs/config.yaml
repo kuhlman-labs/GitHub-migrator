@@ -55,3 +55,24 @@ logging:
   max_size: 100
   max_backups: 3
   max_age: 28
+
+# Authentication (optional, disabled by default)
+auth:
+  enabled: false
+  # github_oauth_client_id: "Iv1.abcd1234"
+  # github_oauth_client_secret: "your-secret-here"
+  # callback_url: "http://localhost:8080/api/v1/auth/callback"
+  # session_secret: "your-random-secret-key-here"
+  # session_duration_hours: 24
+  # authorization_rules:
+  #   # Require user to be member of these orgs (empty = no requirement)
+  #   require_org_membership:
+  #     - "my-github-org"
+  #   # Require user to be member of these teams (empty = no requirement)
+  #   # Format: "org/team-slug"
+  #   require_team_membership:
+  #     - "my-github-org/migration-admins"
+  #   # Require user to be enterprise admin (default: false)
+  #   require_enterprise_admin: false
+  #   # Enterprise slug to check admin status (required if require_enterprise_admin is true)
+  #   require_enterprise_slug: "my-enterprise"

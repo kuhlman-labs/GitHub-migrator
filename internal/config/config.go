@@ -13,6 +13,7 @@ type Config struct {
 	Destination DestinationConfig `mapstructure:"destination"`
 	Migration   MigrationConfig   `mapstructure:"migration"`
 	Logging     LoggingConfig     `mapstructure:"logging"`
+	Auth        AuthConfig        `mapstructure:"auth"`
 	// Deprecated: Use Source and Destination instead
 	GitHub GitHubConfig `mapstructure:"github"`
 }
@@ -81,6 +82,25 @@ type LoggingConfig struct {
 	MaxAge     int    `mapstructure:"max_age"` // days
 }
 
+// AuthConfig defines authentication and authorization settings
+type AuthConfig struct {
+	Enabled                 bool               `mapstructure:"enabled"`
+	GitHubOAuthClientID     string             `mapstructure:"github_oauth_client_id"`
+	GitHubOAuthClientSecret string             `mapstructure:"github_oauth_client_secret"`
+	CallbackURL             string             `mapstructure:"callback_url"`
+	SessionSecret           string             `mapstructure:"session_secret"`
+	SessionDurationHours    int                `mapstructure:"session_duration_hours"`
+	AuthorizationRules      AuthorizationRules `mapstructure:"authorization_rules"`
+}
+
+// AuthorizationRules defines rules for authorizing users
+type AuthorizationRules struct {
+	RequireOrgMembership   []string `mapstructure:"require_org_membership"`
+	RequireTeamMembership  []string `mapstructure:"require_team_membership"`
+	RequireEnterpriseAdmin bool     `mapstructure:"require_enterprise_admin"`
+	RequireEnterpriseSlug  string   `mapstructure:"require_enterprise_slug"`
+}
+
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -127,6 +147,9 @@ func setDefaults() {
 	viper.SetDefault("logging.max_size", 100)
 	viper.SetDefault("logging.max_backups", 3)
 	viper.SetDefault("logging.max_age", 28)
+	viper.SetDefault("auth.enabled", false)
+	viper.SetDefault("auth.session_duration_hours", 24)
+	viper.SetDefault("auth.authorization_rules.require_enterprise_admin", false)
 }
 
 // MigrateDeprecatedConfig migrates old GitHub config format to new Source/Destination format

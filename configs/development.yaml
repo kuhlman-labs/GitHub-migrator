@@ -51,3 +51,8 @@ logging:
   max_size: 100
   max_backups: 3
   max_age: 7  # Shorter retention for dev
+
+# Authentication (disabled for development)
+# See OPERATIONS.md for setup instructions
+auth:
+  enabled: false
