@@ -1,3 +1,6 @@
+# GitHub Migration Server - Default Configuration
+# This is the default configuration file for local development
+
 server:
   port: 8080
 
@@ -6,30 +9,32 @@ database:
   dsn: ./data/migrator.db
 
 # Source repository system (where to migrate FROM)
-# Supported types: github, gitlab, azuredevops
+# Only GitHub to GitHub migrations are supported
+# Source can be: GitHub.com or GitHub Enterprise Server
 source:
   type: github
-  base_url: "https://github.company.com/api/v3"  # GitHub Enterprise Server
-  token: "${GITHUB_SOURCE_TOKEN}"
+  base_url: "https://api.github.com"
+  token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED for migrations
   
-  # GitHub App authentication (optional, for non-migration operations)
-  # When configured, App tokens are used for discovery/profiling; PAT is used for migrations
+  # GitHub App authentication (optional for discovery/profiling)
+  # When configured: GitHub App used for discovery, PAT used for migrations
   # app_id: 123456
-  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  # app_private_key: "/path/to/private-key.pem"
   # app_installation_id: 789012
 
 # Destination repository system (where to migrate TO)
-# Supported types: github, gitlab
-# Note: Destination organization is determined per-repository, defaulting to source org
+# Only GitHub to GitHub migrations are supported
+# Destination can be: GitHub.com, GitHub with data residency, or GitHub Enterprise Server
+# Note: Destination organization can be customized per-repository via API/UI
 destination:
   type: github
-  base_url: "https://api.github.com"  # GitHub Enterprise Cloud or GitHub.com
-  token: "${GITHUB_DEST_TOKEN}"
+  base_url: "https://api.github.com"
+  token: "${GITHUB_DEST_TOKEN}"  # REQUIRED for migrations
   
-  # GitHub App authentication (optional, for non-migration operations)
-  # When configured, App tokens are used for discovery/profiling; PAT is used for migrations
+  # GitHub App authentication (optional for discovery/profiling)
+  # When configured: GitHub App used for discovery, PAT used for migrations
   # app_id: 123456
-  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  # app_private_key: "/path/to/private-key.pem"
   # app_installation_id: 789012
 
 # Migration worker configuration
@@ -45,7 +50,7 @@ migration:
 
 logging:
   level: debug
-  format: json
+  format: text
   output_file: ./logs/migrator.log
   max_size: 100
   max_backups: 3

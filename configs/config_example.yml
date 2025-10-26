@@ -1,0 +1,230 @@
+# GitHub Migration Server - Configuration Example
+# This file documents all available configuration options
+# Copy this file to config.yaml and customize for your environment
+
+# =============================================================================
+# Server Configuration
+# =============================================================================
+server:
+  # HTTP server port (default: 8080)
+  port: 8080
+
+# =============================================================================
+# Database Configuration
+# =============================================================================
+database:
+  # Database type: "sqlite" or "postgres"
+  # - sqlite: Recommended for development and small deployments
+  # - postgres: Recommended for production
+  type: sqlite
+  
+  # Database connection string (DSN)
+  # SQLite example:
+  dsn: ./data/migrator.db
+  
+  # PostgreSQL example:
+  # dsn: postgres://user:password@localhost:5432/migrator?sslmode=disable
+  
+  # Or use environment variable:
+  # dsn: "${DATABASE_URL}"
+
+# =============================================================================
+# Source Repository System Configuration
+# =============================================================================
+# This is where you're migrating FROM
+# Only GitHub to GitHub migrations are currently supported
+source:
+  # Source system type
+  # Only "github" is supported
+  type: github
+  
+  # API base URL
+  # For GitHub Enterprise Server: https://github.company.com/api/v3
+  # For GitHub.com: https://api.github.com
+  base_url: "https://github.company.com/api/v3"
+  
+  # Personal Access Token (PAT) - REQUIRED
+  # This token is REQUIRED for all migration operations
+  # If GitHub App is configured, PAT is used for migrations only
+  # Required permissions:
+  # - Organization admin access (both source and destination)
+  # - Scopes: repo, read:org, read:user, admin:org
+  token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  
+  # GitHub App Authentication (Optional)
+  # When configured, GitHub App tokens are used for discovery and profiling operations
+  # while the PAT above is used for migrations.
+  # Benefits: Better rate limits, separation of concerns, reduced PAT usage
+  # app_id: 123456
+  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  # app_installation_id: 789012
+
+# =============================================================================
+# Destination Repository System Configuration
+# =============================================================================
+# This is where you're migrating TO
+# Only GitHub to GitHub migrations are currently supported
+destination:
+  # Destination system type
+  # Only "github" is supported
+  type: github
+  
+  # API base URL
+  # For GitHub.com: https://api.github.com
+  # For GitHub with data residency: https://api.github.com
+  # For GitHub Enterprise Server: https://github.company.com/api/v3
+  base_url: "https://api.github.com"
+  
+  # Personal Access Token (PAT) - REQUIRED
+  # This token is REQUIRED for all migration operations
+  # If GitHub App is configured, PAT is used for migrations only
+  # Required permissions:
+  # - Organization admin access (both source and destination)
+  # - Scopes: repo, admin:org, workflow
+  token: "ghp_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  
+  # GitHub App Authentication (Optional)
+  # When configured, GitHub App tokens are used for discovery and profiling operations
+  # while the PAT above is used for migrations.
+  # Benefits: Better rate limits, separation of concerns, reduced PAT usage
+  # app_id: 123456
+  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  # app_installation_id: 789012
+
+# =============================================================================
+# Migration Worker Configuration
+# =============================================================================
+migration:
+  # Number of parallel migration workers
+  # Higher values = faster migrations but more API rate limit usage
+  # Recommended: 5-10 for most deployments
+  # Default: 5
+  workers: 5
+  
+  # Polling interval in seconds
+  # How often workers check for new repositories to migrate
+  # Default: 30
+  poll_interval_seconds: 30
+  
+  # Post-migration validation mode
+  # When to run validation after migration completes:
+  # - "never": No validation
+  # - "production_only": Validate only production migrations (recommended)
+  # - "dry_run_only": Validate only dry runs
+  # - "always": Validate all migrations
+  # Default: "production_only"
+  post_migration_mode: "production_only"
+  
+  # What to do if destination repository already exists
+  # Options:
+  # - "fail": Fail the migration (safest, recommended)
+  # - "skip": Skip this repository and continue
+  # - "delete": Delete the existing destination repo and recreate (dangerous!)
+  # Default: "fail"
+  dest_repo_exists_action: "fail"
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  # Log level: "debug", "info", "warn", "error"
+  # - debug: Verbose logging, includes all operations
+  # - info: Standard logging (recommended for production)
+  # - warn: Only warnings and errors
+  # - error: Only errors
+  # Default: "info"
+  level: info
+  
+  # Log format: "json" or "text"
+  # - json: Structured JSON logs (recommended for production)
+  # - text: Human-readable format (good for development)
+  # Default: "json"
+  format: json
+  
+  # Log file path
+  # Logs are rotated automatically based on settings below
+  # Default: "./logs/migrator.log"
+  output_file: ./logs/migrator.log
+  
+  # Maximum log file size in megabytes before rotation
+  # Default: 100
+  max_size: 100
+  
+  # Maximum number of old log files to retain
+  # Default: 3
+  max_backups: 3
+  
+  # Maximum number of days to retain old log files
+  # Default: 28
+  max_age: 28
+
+# =============================================================================
+# Legacy GitHub Configuration (Deprecated)
+# =============================================================================
+# This section is maintained for backward compatibility only
+# New deployments should use the source/destination format above
+
+# github:
+#   source:
+#     base_url: "https://github.company.com/api/v3"
+#     token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#   
+#   destination:
+#     base_url: "https://api.github.com"
+#     token: "ghp_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+
+# =============================================================================
+# Environment Variable Overrides
+# =============================================================================
+# All configuration values can be overridden with environment variables
+# using the GHMIG_ prefix and uppercase keys with underscores
+#
+# Examples:
+#   GHMIG_SERVER_PORT=8080
+#   GHMIG_DATABASE_TYPE=postgres
+#   GHMIG_DATABASE_DSN=postgres://...
+#   GHMIG_SOURCE_TYPE=github
+#   GHMIG_SOURCE_BASE_URL=https://...
+#   GHMIG_SOURCE_TOKEN=ghp_...
+#   GHMIG_DESTINATION_TYPE=github
+#   GHMIG_DESTINATION_BASE_URL=https://...
+#   GHMIG_DESTINATION_TOKEN=ghp_...
+#   GHMIG_MIGRATION_WORKERS=10
+#   GHMIG_MIGRATION_POLL_INTERVAL_SECONDS=30
+#   GHMIG_MIGRATION_POST_MIGRATION_MODE=production_only
+#   GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION=fail
+#   GHMIG_LOGGING_LEVEL=info
+#   GHMIG_LOGGING_FORMAT=json
+#   GHMIG_LOGGING_OUTPUT_FILE=./logs/migrator.log
+#   GHMIG_LOGGING_MAX_SIZE=100
+#   GHMIG_LOGGING_MAX_BACKUPS=3
+#   GHMIG_LOGGING_MAX_AGE=28
+#
+# See configs/env.example for a complete list of environment variables
+
+# =============================================================================
+# Notes
+# =============================================================================
+# 1. SUPPORTED MIGRATIONS:
+#    - GitHub to GitHub migrations only
+#    - Source: GitHub.com or GitHub Enterprise Server
+#    - Destination: GitHub.com, GitHub with data residency, or GHEC EMU
+#
+# 2. AUTHENTICATION:
+#    - PAT (Personal Access Token) is REQUIRED for migrations
+#    - GitHub App authentication is OPTIONAL for discovery/profiling
+#    - When both are configured: GitHub App used for discovery, PAT used for migrations
+#    - Tokens MUST have organization admin access on both source and destination
+#
+# 3. DESTINATION ORGANIZATIONS:
+#    - The destination organization for each repository can be customized per-repo
+#      via the API or web interface (defaults to source organization name)
+#
+# 4. SECURITY:
+#    - Sensitive values (tokens, passwords) should use environment variables
+#      rather than being stored in this file
+#
+# 5. PRODUCTION:
+#    - Use PostgreSQL instead of SQLite for production deployments
+#    - Log rotation happens automatically - no need to configure logrotate
+

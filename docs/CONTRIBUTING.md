@@ -563,7 +563,7 @@ go test -v -tags=integration ./internal/api/
 
 Use descriptive branch names with prefixes:
 
-- `feature/` - New features (e.g., `feature/add-gitlab-support`)
+- `feature/` - New features (e.g., `feature/add-retry-logic`)
 - `fix/` - Bug fixes (e.g., `fix/migration-status-update`)
 - `docs/` - Documentation (e.g., `docs/update-contributing-guide`)
 - `refactor/` - Code refactoring (e.g., `refactor/simplify-client-logic`)

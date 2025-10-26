@@ -1379,7 +1379,7 @@ The system uses a provider abstraction for source systems:
 
 ```go
 type Provider interface {
-    // GetType returns the provider type (e.g., "github", "gitlab")
+    // GetType returns the provider type (currently only "github" is implemented)
     GetType() string
     
     // ListRepositories fetches repositories from the source
@@ -1393,46 +1393,19 @@ type Provider interface {
 }
 ```
 
-**Example: GitLab Provider**
+**Current Implementation Status:**
 
-```go
-type GitLabProvider struct {
-    client *gitlab.Client
-    logger *slog.Logger
-}
+The provider interface is designed to support multiple source systems, but currently only GitHub to GitHub migrations are supported.
 
-func (p *GitLabProvider) GetType() string {
-    return "gitlab"
-}
+**Supported:**
+- ✅ GitHub to GitHub migrations
+  - Source: GitHub.com or GitHub Enterprise Server
+  - Destination: GitHub.com, GitHub with data residency, or GitHub Enterprise Server
+  - Both PAT and GitHub App authentication fully implemented
 
-func (p *GitLabProvider) ListRepositories(ctx context.Context, org string) ([]*Repository, error) {
-    // Use GitLab API to list projects
-    projects, _, err := p.client.Groups.ListGroupProjects(org, &gitlab.ListGroupProjectsOptions{})
-    if err != nil {
-        return nil, err
-    }
-    
-    // Convert to common Repository model
-    repos := make([]*Repository, len(projects))
-    for i, project := range projects {
-        repos[i] = &Repository{
-            FullName: fmt.Sprintf("%s/%s", project.Namespace.FullPath, project.Path),
-            Source:   "gitlab",
-            // ... map other fields
-        }
-    }
-    
-    return repos, nil
-}
-```
+**Future Considerations:**
 
-**Registration:**
-
-```go
-func init() {
-    source.RegisterProvider("gitlab", NewGitLabProvider)
-}
-```
+The provider abstraction allows for potential future support of other source systems (GitLab, Azure DevOps, etc.), but these are not currently implemented or on the roadmap. The focus is on providing the best possible GitHub to GitHub migration experience.
 
 ### Custom Migration Workflows
 

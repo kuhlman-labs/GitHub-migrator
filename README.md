@@ -1,409 +1,270 @@
 # GitHub Migration Server
 
-A comprehensive, production-ready solution for migrating repositories from various source control systems (GitHub Enterprise Server, Azure DevOps, GitLab, Bitbucket) to GitHub Enterprise Cloud.
+A comprehensive, production-ready solution for migrating repositories from GitHub Enterprise Server or GitHub.com to GitHub.com, GitHub with data residency, or GitHub Enterprise Cloud with EMU.
+
+[![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org/dl/)
+[![Node Version](https://img.shields.io/badge/node-20+-green.svg)](https://nodejs.org/)
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+  - [Supported Migrations](#supported-migrations)
+  - [Key Capabilities](#key-capabilities)
+  - [Why Use This Tool?](#why-use-this-tool)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Installation & Setup](#installation--setup)
+  - [First Migration](#first-migration)
+- [Features](#features)
+- [Documentation](#documentation)
+- [Development](#development)
+- [Deployment](#deployment)
+- [Contributing](#contributing)
+- [Tech Stack](#tech-stack)
+- [License](#license)
+
+---
 
 ## Overview
 
-The GitHub Migration Server provides an automated, scalable platform for managing large-scale repository migrations. It features intelligent discovery, batch organization, detailed profiling, and comprehensive migration execution with a modern web dashboard for monitoring and control.
+The GitHub Migration Server provides an automated, scalable platform for managing large-scale GitHub-to-GitHub repository migrations. It features intelligent discovery, batch organization, detailed profiling, and comprehensive migration execution with a modern web dashboard for monitoring and control.
+
+### Supported Migrations
+
+**Source:**
+- GitHub.com
+- GitHub Enterprise Server
+
+**Destination:**
+- GitHub.com
+- GitHub with data residency
+- GitHub Enterprise Cloud with EMU (Managed Users)
+
+> **Note**: Only GitHub to GitHub migrations are currently supported with plans to add support for more sources.
 
 ### Key Capabilities
 
-- **Automated Discovery**: Scan entire organizations or enterprises to identify and profile repositories
-- **Intelligent Profiling**: Analyze repository characteristics including size, Git LFS usage, submodules, large files, GitHub features (Actions, Pages, Wikis), branch protections, and more
-- **Flexible Migration Workflows**: Support for single repository, batch, bulk, and self-service migrations
-- **Batch Management**: Organize repositories into pilot groups and migration waves for controlled rollouts
-- **Real-time Monitoring**: Track migration progress with detailed status updates through all phases
-- **Modern Web Dashboard**: Professional UI for visualization, analytics, and migration control
-- **Full REST API**: Complete programmatic access for automation and CI/CD integration
-- **Dual Authentication**: Support for both Personal Access Tokens (PAT) and GitHub Apps
-- **Comprehensive Analytics**: Track metrics, completion rates, duration statistics, and migration trends
+- 🔍 **Automated Discovery** - Scan entire organizations or enterprises to identify and profile repositories
+- 📊 **Intelligent Profiling** - Analyze size, LFS usage, submodules, large files, Actions, branch protections, and more
+- 🎯 **Flexible Workflows** - Single repository, batch, bulk, and self-service migration options
+- 📦 **Batch Management** - Organize into pilot groups and migration waves for controlled rollouts
+- 📈 **Real-time Monitoring** - Track progress with detailed status updates through all migration phases
+- 🎨 **Modern Dashboard** - Professional web UI for visualization, analytics, and control
+- 🔌 **Complete REST API** - Full programmatic access for automation and CI/CD integration
+- 🔐 **Dual Authentication** - PAT required for migrations; optional GitHub App for discovery with better rate limits
+- 📉 **Comprehensive Analytics** - Track metrics, completion rates, duration stats, and trends
 
 ### Why Use This Tool?
 
-Migrating repositories at scale is complex. This tool solves common challenges:
+Migrating repositories at scale is complex. This tool provides:
 
-- **Visibility**: Know exactly what you're migrating before you start
-- **Control**: Organize migrations into manageable batches and waves
-- **Safety**: Dry-run testing and detailed validation before actual migration
-- **Efficiency**: Parallel processing and intelligent rate limiting
-- **Tracking**: Complete audit trail and migration history
-- **Self-Service**: Enable developers to migrate their own repositories
-- **Recovery**: Built-in rollback and retry mechanisms
+| Challenge | Solution |
+|-----------|----------|
+| **Visibility** | Know exactly what you're migrating before you start |
+| **Control** | Organize migrations into manageable batches and waves |
+| **Safety** | Dry-run testing and detailed validation before migration |
+| **Efficiency** | Parallel processing with intelligent rate limiting |
+| **Tracking** | Complete audit trail and migration history |
+| **Self-Service** | Enable developers to migrate their own repositories |
+| **Recovery** | Built-in rollback and retry mechanisms |
 
-## Features
-
-### Repository Discovery & Profiling
-
-- Discover repositories from organizations or entire enterprises
-- Profile Git properties: size, LFS usage, submodules, large files (>100MB), commit count, branch count
-- Identify GitHub features: Actions workflows, Wikis, Pages, Discussions, Projects
-- Detect advanced settings: branch protections, environments, secrets, webhooks, rulesets
-- Calculate complexity scores for migration planning
-- Track contributors, issues, pull requests, and tags
-
-### Migration Execution
-
-- **Single Repository**: Migrate individual repositories on-demand
-- **Batch Migration**: Group repositories and migrate entire batches together
-- **Bulk Migration**: Select multiple repositories and migrate simultaneously
-- **Self-Service**: Enable developers to migrate their repositories via UI or API
-- **Dry Run**: Test migrations without actual execution
-- **Phase Tracking**: Monitor progress through all migration phases (pending → pre-migration → migration → post-migration → complete)
-- **Lock Management**: Automatically lock source repositories during migration
-- **Rollback Support**: Revert completed migrations if needed
-
-### Dashboard & Analytics
-
-- Real-time migration status visualization
-- Repository grid with advanced filtering and search
-- Detailed repository views with complete migration history
-- Analytics charts showing progress trends and completion stats
-- Complexity and size distribution analysis
-- Organization-level statistics
-- Migration velocity tracking and ETA calculations
-- Export capabilities for reporting
-
-### Batch Management
-
-- Create and manage migration batches
-- Assign repositories to batches
-- Set priorities for migration ordering
-- Schedule batch migrations
-- Retry failed migrations
-- Track batch-level progress and statistics
-
-### API & Automation
-
-- Complete REST API for all operations
-- Programmatic migration triggering
-- Status polling and monitoring
-- Integration with CI/CD pipelines
-- Webhook support (planned)
-- Export data in CSV or JSON formats
+---
 
 ## Quick Start
 
 ### Prerequisites
 
 - **Go** 1.21 or higher
-- **Node.js** 20 or higher
+- **Node.js** 20 or higher  
 - **Git** 2.30+ with Git LFS support
 - **Docker** (optional, for containerized deployment)
 
-### 1. Clone the Repository
+### Installation & Setup
+
+**1. Clone and install dependencies:**
 
 ```bash
-git clone https://github.com/your-org/github-migrator.git
-cd github-migrator
+git clone https://github.com/kuhlman-labs/GitHub-migrator.git
+cd GitHub-migrator
+make install  # Installs Go dependencies, golangci-lint, gosec, git-sizer, and npm packages
 ```
 
-### 2. Install Dependencies
+**2. Configure authentication:**
 
 ```bash
-# Install all dependencies (Go + Node.js) and development tools
-make install
-```
-
-This command will:
-- Download Go module dependencies
-- Install `golangci-lint`, `gosec`, and `git-sizer`
-- Install frontend npm packages
-
-### 3. Configure the Application
-
-Create a configuration file at `configs/config.yaml`:
-
-```yaml
-server:
-  port: 8080
-
-database:
-  type: sqlite
-  dsn: ./data/migrator.db
-
-source:
-  type: github
-  base_url: "https://github.company.com/api/v3"  # Your GitHub Enterprise Server
-  token: "${GITHUB_SOURCE_TOKEN}"
-
-destination:
-  type: github
-  base_url: "https://api.github.com"  # GitHub Enterprise Cloud or GitHub.com
-  token: "${GITHUB_DEST_TOKEN}"
-
-migration:
-  workers: 10
-  poll_interval_seconds: 30
-
-logging:
-  level: info
-  format: json
-  output_file: ./logs/migrator.log
-```
-
-Set your GitHub tokens as environment variables:
-
-```bash
+# Set environment variables
 export GITHUB_SOURCE_TOKEN="ghp_xxxxxxxxxxxx"  # Source system token
 export GITHUB_DEST_TOKEN="ghp_yyyyyyyyyyyy"    # Destination system token
 ```
 
 **Token Requirements:**
-- **Source Token**: Organization admin access with `repo`, `read:org`, `read:user`, `admin:org` scopes
-- **Destination Token**: Organization admin access with `repo`, `admin:org`, `workflow` scopes
+- **PAT (Personal Access Token) - REQUIRED for migrations**
+  - **Source**: Org admin access with `repo`, `read:user`, `admin:org` scopes
+  - **Destination**: Org admin access with `repo`, `admin:org`, `workflow` scopes
+- **GitHub App - OPTIONAL for discovery** (provides better rate limits)
 
-### 4. Build the Application
+See [config_example.yml](./configs/config_example.yml) for complete configuration options.
 
-```bash
-# Build backend and frontend
-make build-all
-```
-
-### 5. Run Locally
-
-**Option A: Run in separate terminals**
-
-Terminal 1 - Backend:
-```bash
-make run-server
-```
-
-Terminal 2 - Frontend:
-```bash
-make web-dev
-```
-
-- Backend API: http://localhost:8080
-- Frontend UI: http://localhost:3000
-
-**Option B: Run with Docker**
+**3. Run the application:**
 
 ```bash
-# Build and run with Docker Compose
-make docker-build
-make docker-run
+# Option A: Development mode (separate terminals)
+make run-server  # Terminal 1 - Backend at http://localhost:8080
+make web-dev     # Terminal 2 - Frontend at http://localhost:3000
 
-# Access at http://localhost:8080
+# Option B: Docker
+make docker-build && make docker-run  # Access at http://localhost:8080
 ```
 
-### 6. Start Your First Migration
+### First Migration
 
-1. **Open the dashboard** at http://localhost:3000 (or http://localhost:8080 with Docker)
+1. **Open the dashboard** at http://localhost:3000 (or :8080 with Docker)
+2. **Discover repositories** - Enter your organization name and start discovery
+3. **Create a pilot batch** - Select 3-5 simple repositories for testing
+4. **Run dry run** - Test without actual migration
+5. **Execute migration** - Start the actual migration
+6. **Monitor progress** - Watch real-time status and detailed logs
 
-2. **Discover repositories**:
-   - Navigate to the Dashboard
-   - Click "Start Discovery"
-   - Enter your organization name
-   - Wait for discovery to complete
+For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workflows).
 
-3. **Create a pilot batch**:
-   - Go to "Batch Management"
-   - Create a new batch (e.g., "Pilot - Wave 1")
-   - Select 3-5 simple repositories
-   - Click "Start Batch Migration"
+---
 
-4. **Monitor progress**:
-   - Watch real-time status updates
-   - View detailed logs for each repository
-   - Check analytics for overall progress
+## Features
+
+<details>
+<summary><strong>🔍 Repository Discovery & Profiling</strong></summary>
+
+- Discover repositories from organizations or entire enterprises
+- Profile Git properties: size, LFS usage, submodules, large files (>100MB), commits, branches
+- Identify GitHub features: Actions, Wikis, Pages, Discussions, Projects, Environments
+- Detect advanced settings: branch protections, secrets, webhooks, rulesets, packages
+- Calculate complexity scores for migration planning
+- Track contributors, issues, pull requests, and tags
+
+</details>
+
+<details>
+<summary><strong>🚀 Migration Execution</strong></summary>
+
+- **Single Repository** - On-demand individual repository migrations
+- **Batch Migration** - Group repositories and migrate entire batches together  
+- **Bulk Migration** - Select multiple repositories and migrate simultaneously
+- **Self-Service** - Enable developers to migrate their own repositories via UI or API
+- **Dry Run** - Test migrations without actual execution
+- **Phase Tracking** - Monitor through all phases: pending → pre-migration → migration → post-migration → complete
+- **Lock Management** - Automatically lock source repositories during migration
+- **Rollback Support** - Revert completed migrations if validation fails
+
+</details>
+
+<details>
+<summary><strong>📊 Dashboard & Analytics</strong></summary>
+
+- Real-time migration status visualization
+- Repository grid with advanced filtering and search
+- Detailed repository views with complete migration history
+- Analytics charts showing progress trends and completion statistics
+- Complexity and size distribution analysis
+- Organization-level statistics and reporting
+- Migration velocity tracking and ETA calculations
+- Export capabilities for reporting (CSV, JSON)
+
+</details>
+
+<details>
+<summary><strong>📦 Batch Management</strong></summary>
+
+- Create and manage migration batches
+- Assign repositories to batches with priority ordering
+- Schedule batch migrations for planned rollouts
+- Retry failed migrations automatically or manually
+- Track batch-level progress and statistics
+- Support for pilot, wave, and self-service batch types
+
+</details>
+
+<details>
+<summary><strong>🔌 API & Automation</strong></summary>
+
+- Complete REST API for all operations
+- Programmatic migration triggering and status monitoring
+- Integration with CI/CD pipelines
+- Export data in CSV or JSON formats
+- Comprehensive OpenAPI 3.0 specification
+- See [API.md](./docs/API.md) for full documentation
+
+</details>
+
+---
 
 ## Documentation
 
-### Getting Started
-- **[Quick Start](#quick-start)** - Get up and running quickly (above)
-- **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)** - Contributor guide with development setup, coding standards, and debugging tips
+### 📚 Getting Started
+- **[Quick Start](#quick-start)** - Get up and running in minutes (above)
+- **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)** - Development setup, coding standards, testing, and debugging
 
-### Operations
-- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Production deployment guide for Docker, Kubernetes, and manual deployment
-- **[OPERATIONS.md](./docs/OPERATIONS.md)** - Operations runbook with daily checklists, monitoring, and incident response
-- **[API.md](./docs/API.md)** - Complete REST API documentation with examples
+### 🚀 Operations & Deployment
+- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Production deployment for Docker, Kubernetes, and manual installation
+- **[OPERATIONS.md](./docs/OPERATIONS.md)** - Daily operations, monitoring, incident response, and troubleshooting
+- **[API.md](./docs/API.md)** - Complete REST API reference with examples
 
-### Technical Details
-- **[IMPLEMENTATION_GUIDE.md](./docs/IMPLEMENTATION_GUIDE.md)** - Deep dive into architecture, components, and implementation details
+### 🔧 Technical Reference
+- **[IMPLEMENTATION_GUIDE.md](./docs/IMPLEMENTATION_GUIDE.md)** - Architecture, components, and implementation details
 - **[OpenAPI Specification](./docs/openapi.json)** - Machine-readable API specification
 
-### Configuration
+### ⚙️ Configuration
+- **[config_example.yml](./configs/config_example.yml)** - Complete configuration reference (start here)
+- [env.example](./configs/env.example) - Environment variables template
 - [config.yaml](./configs/config.yaml) - Default configuration
 - [production.yaml](./configs/production.yaml) - Production settings
 - [development.yaml](./configs/development.yaml) - Development settings
 - [docker.yaml](./configs/docker.yaml) - Docker-specific configuration
-- [env.example](./configs/env.example) - Environment variables template
 
-## Tech Stack
-
-### Backend
-- **Go 1.21+**: Core backend implementation
-- **SQLite/PostgreSQL**: Data storage (SQLite for development, PostgreSQL for production)
-- **GitHub APIs**: `google/go-github/v75` (REST) and `shurcooL/githubv4` (GraphQL)
-- **Viper**: Configuration management
-- **Lumberjack**: Log rotation
-
-### Frontend
-- **React 18**: UI framework
-- **TypeScript**: Type-safe JavaScript
-- **Vite**: Fast build tooling
-- **Tailwind CSS**: Utility-first styling
-- **React Router**: Navigation
-- **Recharts**: Analytics visualizations
-- **TanStack Query**: Data fetching and caching
-
-### DevOps
-- **Docker**: Containerized deployment
-- **Docker Compose**: Multi-container orchestration
-- **golangci-lint**: Go code linting
-- **gosec**: Security scanning
-- **Makefile**: Build automation
-
-## Project Structure
-
-```
-github-migrator/
-├── cmd/
-│   ├── server/             # HTTP server entry point
-│   └── cli/                # CLI commands (future)
-├── internal/
-│   ├── api/                # HTTP API handlers and middleware
-│   ├── analytics/          # Analytics and reporting
-│   ├── batch/              # Batch management and orchestration
-│   ├── config/             # Configuration loading
-│   ├── discovery/          # Repository discovery and profiling
-│   ├── embedded/           # Embedded binaries (git-sizer)
-│   ├── github/             # GitHub API clients (REST + GraphQL)
-│   ├── logging/            # Logging setup
-│   ├── migration/          # Migration execution engine
-│   ├── models/             # Data models
-│   ├── source/             # Source provider abstraction
-│   ├── storage/            # Database layer
-│   └── worker/             # Background worker scheduler
-├── web/
-│   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── services/       # API services
-│   │   └── types/          # TypeScript types
-│   └── dist/               # Built frontend (served by backend)
-├── configs/                # Configuration files
-├── docs/                   # Documentation
-├── scripts/                # Utility scripts
-├── Makefile                # Build automation
-├── Dockerfile              # Container definition
-└── docker-compose.yml      # Container orchestration
-```
+---
 
 ## Development
 
-### Available Commands
+### Quick Reference
 
 ```bash
-make help                   # Show all available commands
-make install                # Install all dependencies and tools
-make build                  # Build backend only
-make web-build              # Build frontend only
-make build-all              # Build both backend and frontend
-make test                   # Run backend tests
-make test-coverage          # Generate coverage report
-make lint                   # Lint backend code
-make web-lint               # Lint frontend code
-make lint-all               # Lint everything
-make fmt                    # Format Go code
-make run-server             # Run backend server
-make web-dev                # Run frontend dev server
-make docker-build           # Build Docker image
-make docker-run             # Run with Docker Compose
-make docker-down            # Stop Docker containers
-make clean                  # Clean build artifacts
-make all                    # Run all checks and build
+make help          # Show all available commands
+make install       # Install dependencies and tools
+make build-all     # Build backend and frontend
+make test          # Run backend tests
+make lint-all      # Lint backend and frontend
+make run-server    # Run backend (http://localhost:8080)
+make web-dev       # Run frontend dev server (http://localhost:3000)
 ```
 
-### Running Tests
+### Project Structure
 
-```bash
-# Backend tests
-make test
-
-# With coverage report
-make test-coverage
-
-# Frontend tests
-cd web && npm test
+```
+github-migrator/
+├── cmd/server/            # HTTP server entry point
+├── internal/              # Backend Go packages
+│   ├── api/              # HTTP handlers and middleware
+│   ├── discovery/        # Repository discovery and profiling
+│   ├── migration/        # Migration execution engine
+│   ├── batch/            # Batch orchestration
+│   ├── storage/          # Database layer
+│   └── github/           # GitHub API clients
+├── web/src/              # React frontend
+│   ├── components/       # UI components
+│   ├── hooks/            # Custom React hooks
+│   └── services/         # API client
+├── configs/              # Configuration files
+└── docs/                 # Documentation
 ```
 
-### Code Quality
+For comprehensive development information, see **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)**.
 
-```bash
-# Lint backend
-make lint
-
-# Lint frontend
-make web-lint
-
-# Format code
-make fmt
-
-# Run everything
-make all
-```
-
-## Migration Workflows
-
-### 1. Single Repository Migration
-
-- Navigate to repository detail page
-- Click "Start Migration" or "Dry Run"
-- Monitor real-time status updates
-- View detailed logs
-
-### 2. Batch Migration (Recommended for Pilots)
-
-- Create a batch (e.g., "Pilot Repositories")
-- Assign 5-10 repositories to the batch
-- Start with dry run to validate
-- Execute actual migration
-- Perfect for organized, phased rollouts
-
-### 3. Bulk Migration
-
-- Select multiple repositories from dashboard using checkboxes
-- Use "Bulk Migrate" or "Bulk Dry Run"
-- Ideal for migrating groups of similar repositories
-
-### 4. Self-Service Migration
-
-- Developers access self-service page
-- Enter repository names (`org/repo` format)
-- Submit for migration
-- Track progress in dashboard
-
-### 5. Programmatic Migration
-
-```bash
-# Single repository migration
-curl -X POST http://localhost:8080/api/v1/migrations/start \
-  -H "Content-Type: application/json" \
-  -d '{"repository_ids": [123], "dry_run": false}'
-
-# Self-service by repository name
-curl -X POST http://localhost:8080/api/v1/migrations/start \
-  -H "Content-Type: application/json" \
-  -d '{"full_names": ["org/repo"], "dry_run": false}'
-
-# Batch migration
-curl -X POST http://localhost:8080/api/v1/batches/5/start
-```
-
-## Security
-
-- **Token Management**: Tokens stored in environment variables or secret managers
-- **No Credentials in Code**: All sensitive data configured externally
-- **Parameterized Queries**: SQL injection prevention
-- **Input Validation**: Request validation and sanitization
-- **Security Scanning**: Regular `gosec` scans
-- **Dependency Updates**: Automated dependency checks
-- **Container Security**: Non-root user in containers
+---
 
 ## Deployment
 
-### Quick Deploy with Docker
+### Docker Quick Deploy
 
 ```bash
 # 1. Set environment variables
@@ -419,51 +280,78 @@ make docker-run
 
 ### Production Deployment
 
-See **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** for comprehensive deployment instructions including:
-- Docker and Docker Compose setup
-- Kubernetes deployment with manifests
-- PostgreSQL configuration
-- Security hardening
-- Monitoring and alerting
-- Backup and recovery procedures
+For production deployments, see **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** which covers:
+
+- 🐳 Docker and Docker Compose configuration
+- ☸️ Kubernetes deployment with manifests  
+- 🗄️ PostgreSQL database setup and optimization
+- 🔒 Security hardening and best practices
+- 📊 Monitoring and alerting setup
+- 💾 Backup and recovery procedures
+- 🔧 Troubleshooting common issues
+
+---
 
 ## Contributing
 
-We welcome contributions! Please see our **[Contributing Guide](./docs/CONTRIBUTING.md)** for:
+We welcome contributions! Please see **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)** for:
 
 - Development environment setup
 - Coding standards and conventions
-- Testing requirements
+- Testing requirements and coverage
 - Pull request process
 - Architecture overview
-- Debugging tips
+- Debugging tips and techniques
 
 ### Quick Contribution Steps
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
+3. Make your changes and add tests
 4. Run tests and linters (`make all`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to your branch (`git push origin feature/amazing-feature`)
+5. Commit your changes with a descriptive message
+6. Push to your branch
 7. Open a Pull Request
+
+---
+
+## Tech Stack
+
+### Backend
+- **Go 1.21+** - Core backend implementation
+- **SQLite/PostgreSQL** - Data storage (SQLite for dev, PostgreSQL for production)
+- **GitHub APIs** - `google/go-github/v75` (REST) and `shurcooL/githubv4` (GraphQL)
+- **Viper** - Configuration management
+- **Lumberjack** - Log rotation
+
+### Frontend
+- **React 18** - UI framework with TypeScript
+- **Vite** - Fast build tooling
+- **Tailwind CSS** - Utility-first styling
+- **TanStack Query** - Data fetching and caching
+- **Recharts** - Analytics visualizations
+
+### DevOps
+- **Docker** - Containerized deployment
+- **golangci-lint** - Go code linting
+- **gosec** - Security scanning
+
+---
 
 ## Support & Resources
 
-### Documentation
+### Internal Documentation
 - [API Documentation](./docs/API.md) - Complete API reference
 - [Operations Guide](./docs/OPERATIONS.md) - Day-to-day operations
 - [Implementation Guide](./docs/IMPLEMENTATION_GUIDE.md) - Technical deep dive
 - [Deployment Guide](./docs/DEPLOYMENT.md) - Production deployment
 
-### GitHub Resources
-- [GitHub Migrations API](https://docs.github.com/en/rest/migrations)
-- [GitHub App Authentication](https://docs.github.com/en/apps)
-- [GitHub Rate Limiting](https://docs.github.com/en/rest/overview/resources-in-the-rest-api#rate-limiting)
+### External Resources
+- [GitHub Migrations API](https://docs.github.com/en/rest/migrations) - Official API documentation
+- [GitHub App Authentication](https://docs.github.com/en/apps) - App authentication guide
+- [GitHub Rate Limiting](https://docs.github.com/en/rest/overview/resources-in-the-rest-api#rate-limiting) - Rate limit information
 
-## License
-
-[Add your license here]
+---
 
 ## Acknowledgments
 
@@ -473,7 +361,11 @@ We welcome contributions! Please see our **[Contributing Guide](./docs/CONTRIBUT
 
 ---
 
+<div align="center">
+
 **Version**: 1.0.0  
 **Last Updated**: October 2025  
 **Status**: Production Ready  
-**Maintained by**: @kuhlman-labs
+**Maintained by**: [@kuhlman-labs](https://github.com/kuhlman-labs)
+
+</div>

@@ -3,148 +3,51 @@
 
 server:
   port: 8080
-  read_timeout: 60s
-  write_timeout: 60s
-  idle_timeout: 120s
 
 database:
   # Use PostgreSQL for production
-  type: postgresql
+  type: "${GHMIG_DATABASE_TYPE:-postgresql}"
   dsn: "${DATABASE_URL}"  # postgres://user:pass@host:port/dbname?sslmode=require
-  max_open_conns: 50
-  max_idle_conns: 10
-  conn_max_lifetime: 10m
-  conn_max_idle_time: 5m
 
 # Source repository system configuration
-# Supported types: github, gitlab, azuredevops
+# Only GitHub to GitHub migrations are supported
+# Source: GitHub.com or GitHub Enterprise Server
 source:
-  type: "${SOURCE_TYPE:-github}"
-  base_url: "${GITHUB_SOURCE_URL}"  # e.g., https://github.company.com/api/v3
-  token: "${GITHUB_SOURCE_TOKEN}"
-  # For GitLab: base_url would be https://gitlab.company.com
-  # For Azure DevOps:
-  organization: "${ADO_ORGANIZATION:-}"  # Required for ADO
-  username: "${ADO_USERNAME:-}"  # Optional for ADO
+  type: "${GHMIG_SOURCE_TYPE:-github}"
+  base_url: "${GITHUB_SOURCE_URL}"
+  token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED for migrations
+  
+  # GitHub App authentication (optional for discovery/profiling)
+  # app_id: "${GITHUB_SOURCE_APP_ID}"
+  # app_private_key: "${GITHUB_SOURCE_APP_PRIVATE_KEY}"
+  # app_installation_id: "${GITHUB_SOURCE_APP_INSTALLATION_ID}"
 
-# Destination repository system configuration  
-# Supported types: github, gitlab
+# Destination repository system configuration
+# Only GitHub to GitHub migrations are supported
+# Destination: GitHub.com, GitHub with data residency, or GitHub Enterprise Server
 destination:
-  type: "${DESTINATION_TYPE:-github}"
-  base_url: "${GITHUB_DEST_URL}"  # e.g., https://api.github.com
-  token: "${GITHUB_DEST_TOKEN}"
+  type: "${GHMIG_DESTINATION_TYPE:-github}"
+  base_url: "${GITHUB_DEST_URL}"
+  token: "${GITHUB_DEST_TOKEN}"  # REQUIRED for migrations
+  
+  # GitHub App authentication (optional for discovery/profiling)
+  # app_id: "${GITHUB_DEST_APP_ID}"
+  # app_private_key: "${GITHUB_DEST_APP_PRIVATE_KEY}"
+  # app_installation_id: "${GITHUB_DEST_APP_INSTALLATION_ID}"
 
-# Legacy GitHub-specific configuration (maintained for backward compatibility)
-# The source/destination format above is the recommended approach
-github:
-  source:
-    graphql_url: "${GITHUB_SOURCE_GRAPHQL_URL}"  # e.g., https://github.company.com/api/graphql
-  
-  destination:
-    graphql_url: "${GITHUB_DEST_GRAPHQL_URL}"  # e.g., https://api.github.com/graphql
-  
-  rate_limit:
-    requests_per_hour: 5000
-    wait_on_exhaustion: true
-    check_interval: 60s
-  
-  retry:
-    max_attempts: 5
-    initial_backoff: 2s
-    max_backoff: 60s
-    multiplier: 2.0
-
-logging:
-  level: info  # debug, info, warn, error
-  format: json  # json for production, text for development
-  output_file: /var/log/github-migrator/migrator.log
-  
-  # Log rotation settings
-  max_size: 500        # Maximum size in megabytes
-  max_backups: 10      # Maximum number of old log files to keep
-  max_age: 90          # Maximum number of days to keep old log files
-  compress: true       # Compress rotated files
-
+# Migration worker configuration
 migration:
-  # Number of parallel migration workers
-  parallel_workers: 10
-  
-  # Maximum time for a single migration
-  timeout: 60m
-  
-  # Default to dry run for safety
-  dry_run_default: true
-  
-  # Retry failed migrations
-  retry_failed: true
-  max_retries: 3
-  retry_delay: 5m
+  # Higher number of workers for production throughput
+  workers: "${GHMIG_MIGRATION_WORKERS:-10}"
+  poll_interval_seconds: "${GHMIG_MIGRATION_POLL_INTERVAL_SECONDS:-30}"
+  post_migration_mode: "${GHMIG_MIGRATION_POST_MIGRATION_MODE:-production_only}"
+  dest_repo_exists_action: "${GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION:-fail}"
 
-discovery:
-  # Number of parallel discovery workers
-  parallel_workers: 20
-  
-  # Profiling depth: basic, standard, full
-  profile_depth: full
-  
-  # Discovery timeout
-  timeout: 2h
-  
-  # Batch size for organization repository listing
-  batch_size: 100
-
-batch:
-  # Maximum repositories per batch
-  max_batch_size: 100
-  
-  # Batch execution strategy: sequential, parallel
-  execution_strategy: parallel
-  
-  # Maximum parallel batch executions
-  max_parallel_batches: 3
-
-# Circuit breaker settings
-circuit_breaker:
-  max_requests: 100
-  interval: 60s
-  timeout: 30s
-  max_consecutive_failures: 5
-
-# Monitoring and metrics (future)
-monitoring:
-  enabled: true
-  prometheus_port: 9090
-  health_check_interval: 30s
-
-# Security settings
-security:
-  # Enable CORS
-  cors_enabled: true
-  cors_allowed_origins:
-    - "https://migrator.company.com"
-    - "https://admin.company.com"
-  
-  # API rate limiting (future)
-  api_rate_limit:
-    enabled: false
-    requests_per_minute: 100
-  
-  # Authentication (future)
-  auth:
-    enabled: false
-    provider: "oauth2"  # oauth2, jwt, api_key
-
-# Feature flags
-features:
-  # Enable self-service migration
-  self_service_enabled: true
-  
-  # Enable batch management
-  batch_management_enabled: true
-  
-  # Enable analytics
-  analytics_enabled: true
-  
-  # Enable webhooks (future)
-  webhooks_enabled: false
-
+# Production logging - structured JSON format
+logging:
+  level: "${GHMIG_LOGGING_LEVEL:-info}"  # info, warn, or error for production
+  format: "${GHMIG_LOGGING_FORMAT:-json}"  # JSON for production logging systems
+  output_file: "${GHMIG_LOGGING_OUTPUT_FILE:-/var/log/github-migrator/migrator.log}"
+  max_size: "${GHMIG_LOGGING_MAX_SIZE:-500}"  # Maximum size in megabytes
+  max_backups: "${GHMIG_LOGGING_MAX_BACKUPS:-10}"  # Number of old log files to keep
+  max_age: "${GHMIG_LOGGING_MAX_AGE:-90}"  # Maximum number of days to keep old log files

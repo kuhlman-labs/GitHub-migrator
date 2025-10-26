@@ -3,8 +3,6 @@
 
 server:
   port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
 
 database:
   # Use SQLite for development
@@ -12,75 +10,44 @@ database:
   dsn: ./data/migrator.db
 
 # Source repository system configuration
-# Supported types: github, gitlab, azuredevops
+# Only GitHub to GitHub migrations are supported
+# Source: GitHub.com or GitHub Enterprise Server
 source:
-  type: github  # Change to 'gitlab' or 'azuredevops' for other platforms
-  base_url: "https://github.company.com/api/v3"
-  token: "${GITHUB_SOURCE_TOKEN}"
-  # For Azure DevOps, also specify:
-  # organization: "your-org-name"
-  # username: "your-username"  # Optional
+  type: github
+  base_url: "${GITHUB_SOURCE_URL}"
+  token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED for migrations
+  
+  # GitHub App authentication (optional for discovery/profiling)
+  # app_id: 123456
+  # app_private_key: "/path/to/private-key.pem"
+  # app_installation_id: 789012
 
 # Destination repository system configuration
-# Supported types: github, gitlab
+# Only GitHub to GitHub migrations are supported
+# Destination: GitHub.com, GitHub with data residency, or GitHub Enterprise Server
 destination:
   type: github
-  base_url: "https://api.github.com"
-  token: "${GITHUB_DEST_TOKEN}"
+  base_url: "${GITHUB_DEST_URL:-https://api.github.com}"
+  token: "${GITHUB_DEST_TOKEN}"  # REQUIRED for migrations
+  
+  # GitHub App authentication (optional for discovery/profiling)
+  # app_id: 123456
+  # app_private_key: "/path/to/private-key.pem"
+  # app_installation_id: 789012
 
-# Legacy GitHub-specific configuration (if needed for backward compatibility)
-# The source/destination format above is preferred
-github:
-  source:
-    graphql_url: "https://github.company.com/api/graphql"
-  
-  destination:
-    graphql_url: "https://api.github.com/graphql"
-  
-  rate_limit:
-    requests_per_hour: 5000
-    wait_on_exhaustion: true
-  
-  retry:
-    max_attempts: 3
-    initial_backoff: 1s
-    max_backoff: 30s
+# Migration worker configuration
+migration:
+  # Fewer workers for development to reduce rate limit usage
+  workers: 3
+  poll_interval_seconds: 30
+  post_migration_mode: "production_only"
+  dest_repo_exists_action: "fail"
 
+# Development logging - verbose and human-readable
 logging:
   level: debug  # Verbose logging for development
   format: text  # Human-readable format
   output_file: ./logs/migrator.log
   max_size: 100
   max_backups: 3
-  max_age: 7
-  compress: false
-
-migration:
-  parallel_workers: 3
-  timeout: 30m
-  dry_run_default: true
-
-discovery:
-  parallel_workers: 5
-  profile_depth: full
-  timeout: 1h
-
-batch:
-  max_batch_size: 50
-  execution_strategy: sequential
-
-monitoring:
-  enabled: false
-
-security:
-  cors_enabled: true
-  cors_allowed_origins:
-    - "http://localhost:3000"
-    - "http://localhost:5173"
-
-features:
-  self_service_enabled: true
-  batch_management_enabled: true
-  analytics_enabled: true
-  webhooks_enabled: false
-
+  max_age: 7  # Shorter retention for dev
