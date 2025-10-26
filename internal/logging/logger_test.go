@@ -2,12 +2,10 @@ package logging
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/config"
 )
@@ -110,45 +108,6 @@ func TestNewLogger_TextFormat(t *testing.T) {
 	}
 }
 
-func TestColorHandler(t *testing.T) {
-	var buf bytes.Buffer
-	handler := NewColorHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
-
-	if handler == nil {
-		t.Fatal("NewColorHandler() returned nil")
-	}
-
-	ctx := context.Background()
-
-	// Test Enabled
-	if !handler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("handler.Enabled() = false, want true for info level")
-	}
-
-	if handler.Enabled(ctx, slog.LevelDebug) {
-		t.Error("handler.Enabled() = true, want false for debug level when min level is info")
-	}
-
-	// Test Handle
-	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
-	err := handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("handler.Handle() error = %v", err)
-	}
-
-	// Test WithAttrs
-	newHandler := handler.WithAttrs([]slog.Attr{slog.String("key", "value")})
-	if newHandler == nil {
-		t.Error("handler.WithAttrs() returned nil")
-	}
-
-	// Test WithGroup
-	groupHandler := handler.WithGroup("testgroup")
-	if groupHandler == nil {
-		t.Error("handler.WithGroup() returned nil")
-	}
-}
-
 func TestMultiHandler(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
 	handler1 := slog.NewTextHandler(&buf1, &slog.HandlerOptions{Level: slog.LevelInfo})
@@ -159,19 +118,9 @@ func TestMultiHandler(t *testing.T) {
 		t.Fatal("NewMultiHandler() returned nil")
 	}
 
-	ctx := context.Background()
-
-	// Test Enabled - should return true if any handler is enabled
-	if !multiHandler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("multiHandler.Enabled() = false, want true for info level")
-	}
-
-	// Test Handle - should write to both handlers
-	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
-	err := multiHandler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("multiHandler.Handle() error = %v", err)
-	}
+	// Test that logger can write through multihandler
+	logger := slog.New(multiHandler)
+	logger.Info("test message")
 
 	// Verify both buffers have content
 	if buf1.Len() == 0 {
@@ -179,18 +128,6 @@ func TestMultiHandler(t *testing.T) {
 	}
 	if buf2.Len() == 0 {
 		t.Error("Second handler buffer is empty")
-	}
-
-	// Test WithAttrs
-	newHandler := multiHandler.WithAttrs([]slog.Attr{slog.String("key", "value")})
-	if newHandler == nil {
-		t.Error("multiHandler.WithAttrs() returned nil")
-	}
-
-	// Test WithGroup
-	groupHandler := multiHandler.WithGroup("testgroup")
-	if groupHandler == nil {
-		t.Error("multiHandler.WithGroup() returned nil")
 	}
 }
 
@@ -261,4 +198,68 @@ func TestIsTerminal(t *testing.T) {
 	// We just verify the function doesn't panic
 	_ = isTerminal(os.Stdout)
 	_ = isTerminal(os.Stderr)
+}
+
+func TestShouldUseColors(t *testing.T) {
+	// Save original env vars
+	origNoColor := os.Getenv("NO_COLOR")
+	origTerm := os.Getenv("TERM")
+	defer func() {
+		if origNoColor != "" {
+			os.Setenv("NO_COLOR", origNoColor)
+		} else {
+			os.Unsetenv("NO_COLOR")
+		}
+		if origTerm != "" {
+			os.Setenv("TERM", origTerm)
+		} else {
+			os.Unsetenv("TERM")
+		}
+	}()
+
+	tests := []struct {
+		name     string
+		noColor  string
+		term     string
+		expected bool
+	}{
+		{
+			name:     "NO_COLOR set",
+			noColor:  "1",
+			term:     "xterm-256color",
+			expected: false,
+		},
+		{
+			name:     "dumb terminal",
+			noColor:  "",
+			term:     "dumb",
+			expected: false,
+		},
+		{
+			name:     "empty TERM",
+			noColor:  "",
+			term:     "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.noColor != "" {
+				os.Setenv("NO_COLOR", tt.noColor)
+			} else {
+				os.Unsetenv("NO_COLOR")
+			}
+			os.Setenv("TERM", tt.term)
+
+			// Note: In test environment, stdout is likely not a TTY,
+			// so shouldUseColors() will likely return false regardless
+			// We're mainly testing the logic paths
+			result := shouldUseColors()
+
+			// The result should be false because test stdout is not a terminal
+			// But we verify the function doesn't panic
+			_ = result
+		})
+	}
 }

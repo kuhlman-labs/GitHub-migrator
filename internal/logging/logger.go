@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/fatih/color"
+	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -35,16 +35,15 @@ func NewLogger(cfg config.LoggingConfig) *slog.Logger {
 			Level: level,
 		})
 	} else {
-		// Text format to file, colorized to stdout only if it's a terminal
+		// Text format to file (plain), tinted/colored to stdout (if terminal supports it)
 		fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{Level: level})
 
-		var stdoutHandler slog.Handler
-		// Only use colors if stdout is a terminal (not redirected/piped)
-		if isTerminal(os.Stdout) {
-			stdoutHandler = NewColorHandler(os.Stdout, &slog.HandlerOptions{Level: level})
-		} else {
-			stdoutHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
-		}
+		// Use tint for colored console output
+		// tint automatically handles color detection based on terminal capabilities
+		stdoutHandler := tint.NewHandler(os.Stdout, &tint.Options{
+			Level:   level,
+			NoColor: !shouldUseColors(),
+		})
 
 		handler = NewMultiHandler(stdoutHandler, fileHandler)
 	}
@@ -72,47 +71,26 @@ func isTerminal(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
 
-// ColorHandler wraps slog.Handler to add color output
-type ColorHandler struct {
-	handler slog.Handler
-}
-
-func NewColorHandler(w io.Writer, opts *slog.HandlerOptions) *ColorHandler {
-	return &ColorHandler{
-		handler: slog.NewTextHandler(w, opts),
-	}
-}
-
-func (h *ColorHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return h.handler.Enabled(ctx, level)
-}
-
-func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
-	// Colorize based on level
-	var colorFunc func(string, ...interface{}) string
-	switch r.Level {
-	case slog.LevelDebug:
-		colorFunc = color.CyanString
-	case slog.LevelInfo:
-		colorFunc = color.GreenString
-	case slog.LevelWarn:
-		colorFunc = color.YellowString
-	case slog.LevelError:
-		colorFunc = color.RedString
-	default:
-		colorFunc = color.WhiteString
+// shouldUseColors determines if colored output should be used
+// based on terminal capabilities and environment settings
+func shouldUseColors() bool {
+	// Check if stdout is a terminal
+	if !isTerminal(os.Stdout) {
+		return false
 	}
 
-	r.Message = colorFunc(r.Message)
-	return h.handler.Handle(ctx, r)
-}
+	// Respect NO_COLOR environment variable (https://no-color.org/)
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
 
-func (h *ColorHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &ColorHandler{handler: h.handler.WithAttrs(attrs)}
-}
+	// Don't use colors for dumb terminals
+	term := os.Getenv("TERM")
+	if term == "dumb" || term == "" {
+		return false
+	}
 
-func (h *ColorHandler) WithGroup(name string) slog.Handler {
-	return &ColorHandler{handler: h.handler.WithGroup(name)}
+	return true
 }
 
 // MultiHandler writes to multiple handlers
