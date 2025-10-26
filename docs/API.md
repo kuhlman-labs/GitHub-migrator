@@ -328,6 +328,120 @@ curl -X PATCH http://localhost:8080/api/v1/repositories/acme-corp/api-gateway \
   -d '{"batch_id": 2, "priority": 10}'
 ```
 
+### POST /api/v1/repositories/{fullName}/rediscover
+
+Re-run discovery and profiling for a specific repository to refresh its data.
+
+**Path Parameters:**
+- `fullName` (string) - Repository full name (URL-encoded)
+
+**Response 202 Accepted:**
+```json
+{
+  "message": "Re-discovery started",
+  "full_name": "acme-corp/api-gateway",
+  "status": "in_progress"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/repositories/acme-corp%2Fapi-gateway/rediscover
+```
+
+### POST /api/v1/repositories/{fullName}/unlock
+
+Unlock a repository that was locked during migration.
+
+**Path Parameters:**
+- `fullName` (string) - Repository full name (URL-encoded)
+
+**Response 200 OK:**
+```json
+{
+  "message": "Repository unlocked successfully",
+  "full_name": "acme-corp/api-gateway",
+  "migration_id": 12345
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/repositories/acme-corp%2Fapi-gateway/unlock
+```
+
+### POST /api/v1/repositories/{fullName}/rollback
+
+Rollback a completed migration by deleting the destination repository.
+
+**Path Parameters:**
+- `fullName` (string) - Repository full name (URL-encoded)
+
+**Request Body (optional):**
+```json
+{
+  "reason": "Migration validation failed"
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "message": "Repository rolled back successfully",
+  "repository": {
+    "id": 1,
+    "full_name": "acme-corp/api-gateway",
+    "status": "rolled_back",
+    "destination_url": null
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/repositories/acme-corp%2Fapi-gateway/rollback \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Need to fix source repository first"}'
+```
+
+### POST /api/v1/repositories/{fullName}/mark-wont-migrate
+
+Mark or unmark a repository as "won't migrate" to exclude it from migration planning.
+
+**Path Parameters:**
+- `fullName` (string) - Repository full name (URL-encoded)
+
+**Request Body (optional):**
+```json
+{
+  "unmark": false
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "message": "Repository marked as won't migrate",
+  "repository": {
+    "id": 1,
+    "full_name": "acme-corp/legacy-app",
+    "status": "wont_migrate",
+    "batch_id": null
+  }
+}
+```
+
+**Example:**
+```bash
+# Mark repository as won't migrate
+curl -X POST http://localhost:8080/api/v1/repositories/acme-corp%2Flegacy-app/mark-wont-migrate
+
+# Unmark repository (change back to pending)
+curl -X POST http://localhost:8080/api/v1/repositories/acme-corp%2Flegacy-app/mark-wont-migrate \
+  -H "Content-Type: application/json" \
+  -d '{"unmark": true}'
+```
+
 ---
 
 ## Batches
@@ -504,6 +618,106 @@ curl -X POST http://localhost:8080/api/v1/batches/1/start
 
 # Start dry run
 curl -X POST "http://localhost:8080/api/v1/batches/1/start?dry_run=true"
+```
+
+### POST /api/v1/batches/{id}/dry-run
+
+Start dry run migration for all repositories in a batch.
+
+**Path Parameters:**
+- `id` (int) - Batch ID
+
+**Request Body (optional):**
+```json
+{
+  "only_pending": true
+}
+```
+
+**Response 202 Accepted:**
+```json
+{
+  "batch_id": 1,
+  "batch_name": "Pilot Repositories",
+  "dry_run_ids": [1, 2, 3, 4, 5],
+  "count": 5,
+  "skipped_count": 0,
+  "message": "Started dry run for 5 repositories in batch 'Pilot Repositories'",
+  "only_pending": true
+}
+```
+
+**Example:**
+```bash
+# Start dry run for all eligible repositories
+curl -X POST http://localhost:8080/api/v1/batches/1/dry-run
+
+# Start dry run only for pending repositories
+curl -X POST http://localhost:8080/api/v1/batches/1/dry-run \
+  -H "Content-Type: application/json" \
+  -d '{"only_pending": true}'
+```
+
+### POST /api/v1/batches/{id}/retry
+
+Retry failed migrations in a batch.
+
+**Path Parameters:**
+- `id` (int) - Batch ID
+
+**Request Body (optional):**
+```json
+{
+  "repository_ids": [10, 11]
+}
+```
+
+**Response 202 Accepted:**
+```json
+{
+  "batch_id": 1,
+  "batch_name": "Pilot Repositories",
+  "retried_count": 2,
+  "retried_ids": [10, 11],
+  "message": "Queued 2 repositories for retry"
+}
+```
+
+**Example:**
+```bash
+# Retry all failed repositories in batch
+curl -X POST http://localhost:8080/api/v1/batches/1/retry
+
+# Retry specific failed repositories
+curl -X POST http://localhost:8080/api/v1/batches/1/retry \
+  -H "Content-Type: application/json" \
+  -d '{"repository_ids": [10, 11]}'
+```
+
+### DELETE /api/v1/batches/{id}
+
+Delete a batch (only allowed for batches not in progress).
+
+**Path Parameters:**
+- `id` (int) - Batch ID
+
+**Response 200 OK:**
+```json
+{
+  "message": "Batch deleted successfully"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "error": "Cannot delete batch in 'in_progress' status"
+}
+```
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/api/v1/batches/1
 ```
 
 ---
@@ -716,6 +930,74 @@ curl "http://localhost:8080/api/v1/migrations/101/logs?limit=50"
 
 ---
 
+## Self-Service
+
+### POST /api/v1/self-service/migrate
+
+Self-service migration endpoint that orchestrates repository discovery, batch creation, and migration execution.
+
+**Request Body:**
+```json
+{
+  "repositories": ["acme-corp/api-gateway", "acme-corp/web-app"],
+  "mappings": {
+    "acme-corp/api-gateway": "new-org/api-gateway",
+    "acme-corp/web-app": "new-org/web-app"
+  },
+  "dry_run": true
+}
+```
+
+**Request Parameters:**
+- `repositories` (array, required) - List of repository full names to migrate
+- `mappings` (object, optional) - Optional destination repository name mappings
+- `dry_run` (boolean, required) - Whether to run in dry run mode
+
+**Response 202 Accepted:**
+```json
+{
+  "batch_id": 15,
+  "batch_name": "Self-Service - 2025-01-15T10:30:00Z",
+  "message": "Self-service dry run started for 2 repositories in batch 'Self-Service - 2025-01-15T10:30:00Z'",
+  "total_repositories": 2,
+  "newly_discovered": 1,
+  "already_existed": 1,
+  "discovery_errors": [],
+  "execution_started": true
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "error": "No repositories provided"
+}
+```
+
+**Example:**
+```bash
+# Start dry run migration
+curl -X POST http://localhost:8080/api/v1/self-service/migrate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repositories": ["acme-corp/api-gateway", "acme-corp/web-app"],
+    "mappings": {
+      "acme-corp/api-gateway": "new-org/api-gateway"
+    },
+    "dry_run": true
+  }'
+
+# Start production migration
+curl -X POST http://localhost:8080/api/v1/self-service/migrate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repositories": ["acme-corp/api-gateway"],
+    "dry_run": false
+  }'
+```
+
+---
+
 ## Analytics
 
 ### GET /api/v1/analytics/summary
@@ -816,6 +1098,184 @@ curl http://localhost:8080/api/v1/analytics/progress
 
 # Get 7-day progress grouped by hour
 curl "http://localhost:8080/api/v1/analytics/progress?days=7&group_by=hour"
+```
+
+### GET /api/v1/analytics/executive-report
+
+Get a comprehensive executive-level migration progress report with key metrics, velocity analysis, risk assessment, and completion projections.
+
+**Query Parameters:**
+- `organization` (string, optional) - Filter by organization name
+- `batch_id` (string, optional) - Filter by batch ID
+
+**Response 200 OK:**
+```json
+{
+  "executive_summary": {
+    "total_repositories": 500,
+    "completion_percentage": 68.5,
+    "migrated_count": 342,
+    "in_progress_count": 23,
+    "pending_count": 120,
+    "failed_count": 15,
+    "success_rate": 95.8,
+    "estimated_completion_date": "2025-02-15",
+    "days_remaining": 21,
+    "first_migration_date": "2024-12-01T00:00:00Z",
+    "report_generated_at": "2025-01-15T10:30:00Z"
+  },
+  "velocity_metrics": {
+    "repos_per_day": 16.3,
+    "repos_per_week": 114,
+    "average_duration_sec": 450,
+    "migration_trend": [
+      {
+        "date": "2025-01-01",
+        "completed_migrations": 12,
+        "cumulative_completed": 298
+      }
+    ]
+  },
+  "organization_progress": [
+    {
+      "organization": "acme-corp",
+      "total": 150,
+      "migrated": 120,
+      "pending": 25,
+      "in_progress": 3,
+      "failed": 2,
+      "completion_percentage": 80.0
+    }
+  ],
+  "risk_analysis": {
+    "high_complexity_pending": 8,
+    "very_large_pending": 5,
+    "failed_migrations": 15,
+    "complexity_distribution": [
+      {
+        "complexity": "low",
+        "count": 280
+      },
+      {
+        "complexity": "medium",
+        "count": 150
+      },
+      {
+        "complexity": "high",
+        "count": 70
+      }
+    ],
+    "size_distribution": [
+      {
+        "size_category": "small (<100MB)",
+        "count": 320
+      },
+      {
+        "size_category": "medium (100MB-1GB)",
+        "count": 150
+      },
+      {
+        "size_category": "large (>1GB)",
+        "count": 30
+      }
+    ]
+  },
+  "batch_performance": {
+    "total_batches": 15,
+    "completed_batches": 10,
+    "in_progress_batches": 3,
+    "pending_batches": 2
+  },
+  "feature_migration_status": {
+    "total_with_lfs": 45,
+    "total_with_actions": 120,
+    "total_with_packages": 32,
+    "total_with_environments": 18
+  },
+  "status_breakdown": {
+    "pending": 120,
+    "completed": 342,
+    "migrating": 23,
+    "failed": 15
+  }
+}
+```
+
+**Example:**
+```bash
+# Get full executive report
+curl http://localhost:8080/api/v1/analytics/executive-report
+
+# Get report for specific organization
+curl "http://localhost:8080/api/v1/analytics/executive-report?organization=acme-corp"
+
+# Get report for specific batch
+curl "http://localhost:8080/api/v1/analytics/executive-report?batch_id=5"
+```
+
+### GET /api/v1/analytics/executive-report/export
+
+Export executive report in CSV or JSON format for offline analysis and reporting.
+
+**Query Parameters:**
+- `format` (string, required) - Export format: `csv` or `json`
+- `organization` (string, optional) - Filter by organization name
+- `batch_id` (string, optional) - Filter by batch ID
+
+**Response 200 OK (CSV):**
+```
+Content-Type: text/csv
+Content-Disposition: attachment; filename=executive_migration_report.csv
+
+[CSV content with executive summary, organization progress, and risk analysis]
+```
+
+**Response 200 OK (JSON):**
+```json
+{
+  "report_metadata": {
+    "generated_at": "2025-01-15T10:30:00Z",
+    "report_type": "Executive Migration Progress Report",
+    "version": "1.0"
+  },
+  "executive_summary": {
+    "total_repositories": 500,
+    "completion_percentage": 68.5,
+    "migrated_count": 342,
+    "in_progress_count": 23,
+    "pending_count": 120,
+    "failed_count": 15,
+    "success_rate": 95.8,
+    "estimated_completion_date": "2025-02-15",
+    "days_remaining": 21
+  },
+  "velocity_metrics": {
+    "repos_per_day": 16.3,
+    "repos_per_week": 114,
+    "average_duration_sec": 450
+  },
+  "organization_progress": [...],
+  "complexity_distribution": [...],
+  "size_distribution": [...],
+  "feature_migration_status": {...},
+  "batch_performance": {
+    "completed_batches": 10,
+    "in_progress_batches": 3,
+    "pending_batches": 2
+  },
+  "status_breakdown": {...}
+}
+```
+
+**Example:**
+```bash
+# Export as CSV
+curl "http://localhost:8080/api/v1/analytics/executive-report/export?format=csv" \
+  -o executive_report.csv
+
+# Export as JSON for specific organization
+curl "http://localhost:8080/api/v1/analytics/executive-report/export?format=json&organization=acme-corp" \
+  -o acme_corp_report.json
 ```
 
 ---
@@ -1139,15 +1599,16 @@ func getRepositories() ([]Repository, error) {
 
 ## Support
 
-For detailed implementation information, see:
-- [README.md](../README.md) - Project overview
+For detailed information, see:
+- [README.md](../README.md) - Project overview and quickstart
 - [DEPLOYMENT.md](./DEPLOYMENT.md) - Deployment guide
 - [OPERATIONS.md](./OPERATIONS.md) - Operations runbook
-- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) - Detailed implementation guide
+- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) - Technical implementation details
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - Development and contributing guide
 
 ---
 
 **API Version:** 1.0.0  
-**Last Updated:** January 2024  
+**Last Updated:** October 2025  
 **Status:** Production Ready
 

@@ -28,13 +28,15 @@
 
 ### GitHub Tokens
 
-You need two GitHub Personal Access Tokens (PATs):
+You need two GitHub Personal Access Tokens (PATs) with organization admin access:
 
 1. **Source Token** (GitHub Enterprise Server)
-   - Scopes: `repo`, `read:org`, `read:user`
-   - Used for discovering and reading source repositories
+   - **Requirements**: Organization admin access
+   - Scopes: `repo`, `read:org`, `read:user`, `admin:org`
+   - Used for discovering, reading, and migrating source repositories
 
 2. **Destination Token** (GitHub Enterprise Cloud)
+   - **Requirements**: Organization admin access
    - Scopes: `repo`, `admin:org`, `workflow`
    - Used for creating migrations and importing repositories
 
@@ -1170,14 +1172,15 @@ psql -U migrator_user -d migrator -c "SELECT pg_size_pretty(pg_database_size('mi
 
 For additional help:
 
+- **Project Overview:** [README.md](../README.md)
 - **API Documentation:** [API.md](./API.md)
 - **Operations Guide:** [OPERATIONS.md](./OPERATIONS.md)
-- **Implementation Details:** [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)
-- **Project Overview:** [README.md](../README.md)
+- **Implementation Guide:** [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)
+- **Contributing Guide:** [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ---
 
 **Deployment Guide Version:** 1.0.0  
-**Last Updated:** January 2024  
+**Last Updated:** October 2025  
 **Status:** Production Ready
 

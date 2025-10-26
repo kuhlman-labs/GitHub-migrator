@@ -895,6 +895,14 @@ discovery:
 - **Development Team:** dev-team@company.com
 - **On-Call:** oncall@company.com
 
+### Internal Documentation
+
+- **[README.md](../README.md)** - Project overview and quickstart
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development setup and contributing guidelines
+- **[IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)** - Technical architecture and implementation details
+- **[API.md](./API.md)** - Complete API reference
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Production deployment instructions
+
 ### External Resources
 
 - **GitHub Support:** https://support.github.com
@@ -904,6 +912,6 @@ discovery:
 ---
 
 **Operations Runbook Version:** 1.0.0  
-**Last Updated:** January 2024  
+**Last Updated:** October 2025  
 **Next Review:** Quarterly
 
