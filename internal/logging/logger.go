@@ -8,6 +8,7 @@ import (
 
 	"github.com/brettkuhlman/github-migrator/internal/config"
 	"github.com/fatih/color"
+	"github.com/mattn/go-isatty"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -34,9 +35,17 @@ func NewLogger(cfg config.LoggingConfig) *slog.Logger {
 			Level: level,
 		})
 	} else {
-		// Text format to file, colorized to stdout
+		// Text format to file, colorized to stdout only if it's a terminal
 		fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{Level: level})
-		stdoutHandler := NewColorHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+
+		var stdoutHandler slog.Handler
+		// Only use colors if stdout is a terminal (not redirected/piped)
+		if isTerminal(os.Stdout) {
+			stdoutHandler = NewColorHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+		} else {
+			stdoutHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+		}
+
 		handler = NewMultiHandler(stdoutHandler, fileHandler)
 	}
 
@@ -56,6 +65,11 @@ func parseLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// isTerminal checks if the given file is a terminal (TTY)
+func isTerminal(f *os.File) bool {
+	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
 
 // ColorHandler wraps slog.Handler to add color output

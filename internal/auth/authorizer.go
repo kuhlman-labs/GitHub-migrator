@@ -160,43 +160,104 @@ func (a *Authorizer) CheckTeamMembership(ctx context.Context, username string, r
 	return false, nil
 }
 
-// CheckEnterpriseAdmin checks if user is an enterprise admin
+// CheckEnterpriseAdmin checks if user is an enterprise admin using GraphQL API
 func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, enterpriseSlug string, token string) (bool, error) {
-	url := fmt.Sprintf("%s/enterprises/%s/users/%s", a.baseURL, enterpriseSlug, username)
+	// Use GraphQL API to check enterprise admin status
+	// This works with OAuth tokens, unlike the REST API endpoint
+	graphqlURL := "https://api.github.com/graphql"
+	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
+		// For GHES, GraphQL endpoint is at /api/graphql
+		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	query := `query($enterpriseSlug: String!) {
+		enterprise(slug: $enterpriseSlug) {
+			slug
+			viewerIsAdmin
+		}
+	}`
+
+	payload := map[string]interface{}{
+		"query": query,
+		"variables": map[string]string{
+			"enterpriseSlug": enterpriseSlug,
+		},
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal GraphQL query: %w", err)
+	}
+
+	a.logger.Debug("Checking enterprise admin status via GraphQL",
+		"url", graphqlURL,
+		"username", username,
+		"enterprise", enterpriseSlug)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", graphqlURL, strings.NewReader(string(jsonPayload)))
 	if err != nil {
 		return false, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		a.logger.Error("Enterprise admin check failed with error", "error", err, "url", graphqlURL)
 		return false, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
+	body, _ := io.ReadAll(resp.Body)
+	a.logger.Debug("Enterprise admin GraphQL response",
+		"status", resp.StatusCode,
+		"body", string(body))
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return false, fmt.Errorf("github API returned status %d: %s", resp.StatusCode, string(body))
+		a.logger.Error("GitHub GraphQL API returned non-OK status",
+			"status", resp.StatusCode,
+			"body", string(body))
+		return false, fmt.Errorf("github GraphQL API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
-		Role string `json:"role"`
+		Data struct {
+			Enterprise struct {
+				Slug          string `json:"slug"`
+				ViewerIsAdmin bool   `json:"viewerIsAdmin"`
+			} `json:"enterprise"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		a.logger.Error("Failed to parse GraphQL response", "error", err, "body", string(body))
 		return false, err
 	}
 
-	// Check if user has admin role
-	return result.Role == "admin" || result.Role == "owner", nil
+	// Check for GraphQL errors
+	if len(result.Errors) > 0 {
+		errMsg := result.Errors[0].Message
+		a.logger.Warn("GraphQL query returned errors",
+			"error", errMsg,
+			"enterprise", enterpriseSlug,
+			"user", username)
+		// If enterprise not found or user doesn't have access, treat as not admin
+		return false, nil
+	}
+
+	isAdmin := result.Data.Enterprise.ViewerIsAdmin
+	a.logger.Info("Enterprise admin check result",
+		"username", username,
+		"enterprise", enterpriseSlug,
+		"is_admin", isAdmin)
+
+	return isAdmin, nil
 }
 
 // isOrgMember checks if a user is a member of an organization

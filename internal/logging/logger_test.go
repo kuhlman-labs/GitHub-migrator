@@ -193,3 +193,72 @@ func TestMultiHandler(t *testing.T) {
 		t.Error("multiHandler.WithGroup() returned nil")
 	}
 }
+
+func TestNewLogger_TextFormat_NoANSICodes(t *testing.T) {
+	tmpfile, err := os.CreateTemp("", "log-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+
+	cfg := config.LoggingConfig{
+		Level:      "info",
+		Format:     "text",
+		OutputFile: tmpfile.Name(),
+		MaxSize:    10,
+		MaxBackups: 2,
+		MaxAge:     7,
+	}
+
+	logger := NewLogger(cfg)
+	if logger == nil {
+		t.Fatal("NewLogger() returned nil")
+	}
+
+	// Test that logger can write with different levels
+	logger.Info("info message")
+	logger.Debug("debug message")
+	logger.Error("error message")
+
+	// Read the log file
+	content, err := os.ReadFile(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	contentStr := string(content)
+
+	// Verify no ANSI escape codes are present in file output
+	ansiCodes := []string{"\x1b[", "\\x1b[", "\033[", "\\033["}
+	for _, code := range ansiCodes {
+		if strings.Contains(contentStr, code) {
+			t.Errorf("Log file contains ANSI escape codes: found %q in output:\n%s", code, contentStr)
+		}
+	}
+
+	// Verify the log message is present
+	if !strings.Contains(contentStr, "info message") {
+		t.Errorf("Expected log file to contain 'info message', got: %s", contentStr)
+	}
+}
+
+func TestIsTerminal(t *testing.T) {
+	// Test with a regular file (should not be a terminal)
+	tmpfile, err := os.CreateTemp("", "test-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	defer tmpfile.Close()
+
+	if isTerminal(tmpfile) {
+		t.Error("isTerminal() = true for a regular file, want false")
+	}
+
+	// Note: Testing with actual stdout/stderr is tricky in unit tests
+	// because they may be redirected in test environments
+	// We just verify the function doesn't panic
+	_ = isTerminal(os.Stdout)
+	_ = isTerminal(os.Stderr)
+}

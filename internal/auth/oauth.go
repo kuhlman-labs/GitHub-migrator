@@ -48,7 +48,7 @@ func NewOAuthHandler(cfg *config.AuthConfig, logger *slog.Logger, githubBaseURL 
 		ClientSecret: cfg.GitHubOAuthClientSecret,
 		Endpoint:     endpoint,
 		RedirectURL:  cfg.CallbackURL,
-		Scopes:       []string{"read:org", "read:user", "user:email"},
+		Scopes:       []string{"read:org", "read:user", "user:email", "admin:enterprise"},
 	}
 
 	return &OAuthHandler{

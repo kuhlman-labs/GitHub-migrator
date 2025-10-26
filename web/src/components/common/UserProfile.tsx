@@ -59,7 +59,7 @@ export function UserProfile() {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-gh-canvas-overlay border border-gh-border-default rounded-md shadow-lg z-50">
+        <div className="absolute right-0 mt-2 w-64 bg-gh-canvas-default border border-gh-border-default rounded-md shadow-lg overflow-hidden z-50">
           {/* User Info Section */}
           <div className="px-4 py-3 border-b border-gh-border-default">
             <div className="flex items-center gap-3">
