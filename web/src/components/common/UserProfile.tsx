@@ -44,7 +44,7 @@ export function UserProfile() {
           alt={user.login}
           className="w-8 h-8 rounded-full"
         />
-        <span className="text-sm font-medium text-gh-fg-default hidden md:inline">
+        <span className="text-sm font-medium text-white hidden md:inline">
           {user.login}
         </span>
         <svg
