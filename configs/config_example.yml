@@ -183,6 +183,12 @@ auth:
   # Format: https://your-migrator-domain.com/api/v1/auth/callback
   # callback_url: "https://migrator.company.com/api/v1/auth/callback"
   
+  # Frontend URL to redirect to after successful login
+  # In production with integrated frontend/backend: use "/" (same domain)
+  # In development with separate ports: use "http://localhost:3000"
+  # Default: "http://localhost:3000"
+  # frontend_url: "/"
+  
   # Session secret key for JWT signing
   # MUST be a strong random string (32+ characters)
   # Generate with: openssl rand -base64 32

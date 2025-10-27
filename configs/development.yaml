@@ -56,3 +56,4 @@ logging:
 # See OPERATIONS.md for setup instructions
 auth:
   enabled: false
+  # frontend_url: "http://localhost:3000"  # Uncomment and set when enabling auth in dev

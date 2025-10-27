@@ -58,5 +58,6 @@ auth:
   github_oauth_client_id: "${GITHUB_OAUTH_CLIENT_ID}"
   github_oauth_client_secret: "${GITHUB_OAUTH_CLIENT_SECRET}"
   callback_url: "${GITHUB_OAUTH_CALLBACK_URL}"
+  frontend_url: "${GHMIG_AUTH_FRONTEND_URL:-/}"  # URL to redirect after login (use "/" for integrated frontend)
   session_secret: "${AUTH_SESSION_SECRET}"
   session_duration_hours: "${GHMIG_AUTH_SESSION_DURATION_HOURS:-24}"
