@@ -169,6 +169,17 @@ export function ComplexityInfoModal() {
                     </p>
                   </div>
 
+                  {/* Public Visibility */}
+                  <div className="border-l-4 border-blue-500 pl-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-medium text-gray-900">Public Visibility</h4>
+                      <span className="text-sm font-semibold text-blue-600">Weight: 1 point</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Public repositories may require visibility transformation. EMU and data residency environments don't support public repos.
+                    </p>
+                  </div>
+
                   {/* Internal Visibility */}
                   <div className="border-l-4 border-yellow-500 pl-4">
                     <div className="flex justify-between items-start mb-1">
@@ -176,7 +187,7 @@ export function ComplexityInfoModal() {
                       <span className="text-sm font-semibold text-yellow-600">Weight: 1 point</span>
                     </div>
                     <p className="text-sm text-gray-600">
-                      Internal repositories become private when migrating to GitHub.com, requiring permission review.
+                      Internal repositories may require visibility transformation. Configuration controls whether they become private or stay internal.
                     </p>
                   </div>
 

@@ -661,10 +661,11 @@ export function RepositoryDetail() {
                   const securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 2 : 0;
                   const runnersPoints = repository.has_self_hosted_runners ? 3 : 0;
                   const appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
-                  const visibilityPoints = repository.visibility === 'internal' ? 1 : 0;
+                  const publicVisibilityPoints = repository.visibility === 'public' ? 1 : 0;
+                  const internalVisibilityPoints = repository.visibility === 'internal' ? 1 : 0;
                   const codeownersPoints = repository.has_codeowners ? 1 : 0;
                   
-                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints + rulesetsPoints + securityPoints + runnersPoints + appsPoints + visibilityPoints + codeownersPoints;
+                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints + rulesetsPoints + securityPoints + runnersPoints + appsPoints + publicVisibilityPoints + internalVisibilityPoints + codeownersPoints;
                   
                   let category = 'Simple';
                   let categoryColor = 'text-green-600';
@@ -805,11 +806,21 @@ export function RepositoryDetail() {
                         
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">Internal Visibility</div>
-                            <div className="text-xs text-gray-500">{repository.visibility === 'internal' ? 'Yes (becomes private on .com)' : 'No'}</div>
+                            <div className="text-sm font-medium text-gray-900">Public Visibility</div>
+                            <div className="text-xs text-gray-500">{repository.visibility === 'public' ? 'Yes (transformation may be required)' : 'No'}</div>
                           </div>
-                          <span className={`text-lg font-semibold ${visibilityPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
-                            +{visibilityPoints}
+                          <span className={`text-lg font-semibold ${publicVisibilityPoints > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                            +{publicVisibilityPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Internal Visibility</div>
+                            <div className="text-xs text-gray-500">{repository.visibility === 'internal' ? 'Yes (transformation may be required)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${internalVisibilityPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                            +{internalVisibilityPoints}
                           </span>
                         </div>
                         

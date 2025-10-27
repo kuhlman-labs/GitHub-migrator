@@ -164,6 +164,7 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - **Phase Tracking** - Monitor through all phases: pending → pre-migration → migration → post-migration → complete
 - **Lock Management** - Automatically lock source repositories during migration
 - **Rollback Support** - Revert completed migrations if validation fails
+- **Visibility Handling** - Configurable visibility transformations (public/internal/private) with EMU and data residency support
 
 </details>
 

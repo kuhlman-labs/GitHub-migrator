@@ -30,7 +30,7 @@ source:
 
 # Destination repository system (where to migrate TO)
 # Only GitHub to GitHub migrations are supported
-# Destination can be: GitHub.com, GitHub with data residency, or GitHub Enterprise Server
+# Destination can be: GitHub.com, GitHub with data residency, or GitHub Enterprise Cloud
 # Note: Destination organization can be customized per-repository via API/UI
 destination:
   type: github
@@ -53,6 +53,15 @@ migration:
   post_migration_mode: "production_only"
   # What to do if destination repo exists: fail, skip, delete (default: fail)
   dest_repo_exists_action: "fail"
+  
+  # Visibility transformation rules (default: all repos become private)
+  # Controls how repository visibility is mapped from source to destination
+  visibility_handling:
+    # How to handle public repositories: public, internal, or private (default: private)
+    # Note: EMU and data residency environments do NOT support public repositories
+    public_repos: "private"
+    # How to handle internal repositories: internal or private (default: private)
+    internal_repos: "private"
 
 logging:
   level: debug

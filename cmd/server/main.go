@@ -224,8 +224,16 @@ func initializeMigrationWorker(cfg *config.Config, sourceDualClient, destDualCli
 		destRepoAction = migration.DestinationRepoExistsFail
 	}
 
+	// Parse visibility handling configuration
+	visibilityHandling := migration.VisibilityHandling{
+		PublicRepos:   cfg.Migration.VisibilityHandling.PublicRepos,
+		InternalRepos: cfg.Migration.VisibilityHandling.InternalRepos,
+	}
+
 	// Create migration executor with PAT clients (required for migrations per GitHub API)
-	logger.Info("Creating migration executor with PAT clients (per GitHub migration API requirements)")
+	logger.Info("Creating migration executor with PAT clients (per GitHub migration API requirements)",
+		"visibility_public_to", visibilityHandling.PublicRepos,
+		"visibility_internal_to", visibilityHandling.InternalRepos)
 	executor, err := migration.NewExecutor(migration.ExecutorConfig{
 		SourceClient:         sourceDualClient.MigrationClient(),
 		DestClient:           destDualClient.MigrationClient(),
@@ -233,6 +241,7 @@ func initializeMigrationWorker(cfg *config.Config, sourceDualClient, destDualCli
 		Logger:               logger,
 		PostMigrationMode:    postMigMode,
 		DestRepoExistsAction: destRepoAction,
+		VisibilityHandling:   visibilityHandling,
 	})
 	if err != nil {
 		slog.Error("Failed to create migration executor", "error", err)
@@ -319,6 +328,11 @@ func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualCli
 		destRepoAction = migration.DestinationRepoExistsFail
 	}
 
+	visibilityHandlingScheduler := migration.VisibilityHandling{
+		PublicRepos:   cfg.Migration.VisibilityHandling.PublicRepos,
+		InternalRepos: cfg.Migration.VisibilityHandling.InternalRepos,
+	}
+
 	executor, err := migration.NewExecutor(migration.ExecutorConfig{
 		SourceClient:         sourceDualClient.MigrationClient(),
 		DestClient:           destDualClient.MigrationClient(),
@@ -326,6 +340,7 @@ func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualCli
 		Logger:               logger,
 		PostMigrationMode:    postMigMode,
 		DestRepoExistsAction: destRepoAction,
+		VisibilityHandling:   visibilityHandlingScheduler,
 	})
 	if err != nil {
 		slog.Error("Failed to create executor for scheduler", "error", err)

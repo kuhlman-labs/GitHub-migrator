@@ -412,7 +412,8 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 	// - Security features (GHAS): +2
 	// - Self-hosted runners: +3
 	// - GitHub Apps: +2
-	// - Internal visibility: +1
+	// - Public visibility: +1 (visibility transformation may be required)
+	// - Internal visibility: +1 (visibility transformation may be required)
 	// - CODEOWNERS: +1
 
 	const (
@@ -449,6 +450,7 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END +
 		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
 		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
+		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
 		CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END
 	)`
@@ -1897,7 +1899,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 	// Calculate complexity score based on:
 	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4),
 	// Packages (weight: 3), Branch protections (weight: 1), Rulesets (weight: 1), Security features (weight: 2),
-	// Self-hosted runners (weight: 3), GitHub Apps (weight: 2), Internal visibility (weight: 1), CODEOWNERS (weight: 1)
+	// Self-hosted runners (weight: 3), GitHub Apps (weight: 2), Public visibility (weight: 1), Internal visibility (weight: 1), CODEOWNERS (weight: 1)
 	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
 		SELECT 
@@ -1926,6 +1928,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 				(CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END) +
 				(CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END) +
 				(CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END) +
+				(CASE WHEN visibility = 'public' THEN 1 ELSE 0 END) +
 				(CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END) +
 				(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as complexity_score
 			FROM repositories r

@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Authentication Setup](#authentication-setup)
+- [Visibility Handling Configuration](#visibility-handling-configuration)
 - [Daily Operations](#daily-operations)
 - [Migration Workflows](#migration-workflows)
 - [Monitoring & Alerts](#monitoring--alerts)
@@ -463,6 +464,168 @@ docker logs github-migrator | grep "authorization"
    # Count errors by type
    tail -10000 logs/migrator.log | jq -r '.msg' | sort | uniq -c | sort -rn
    ```
+
+---
+
+## Visibility Handling Configuration
+
+### Overview
+
+GitHub repository visibility controls **who can read the repository**:
+
+- **Public**: Anyone with the URL can read/clone the repository
+- **Internal**: Anyone in the GitHub Enterprise can read/clone the repository
+- **Private**: Only users with explicit access can read/write to the repository
+
+The GitHub Migrator provides configurable visibility transformation rules to handle migrations to different destination environments, particularly **GitHub Enterprise Cloud with EMU** and **GitHub with data residency**, which **do not support public repositories**.
+
+### Configuration
+
+Configure visibility handling in your `configs/config.yaml`:
+
+```yaml
+migration:
+  visibility_handling:
+    # How to handle public repositories: public, internal, or private
+    # Default: private (safest, works in all environments)
+    public_repos: "private"
+    
+    # How to handle internal repositories: internal or private
+    # Default: private (safest for GitHub.com migrations)
+    internal_repos: "private"
+```
+
+**Note**: Private repositories always migrate as private and cannot be changed.
+
+### Visibility Mappings
+
+#### Public Repositories
+
+When migrating **public** repositories, you can configure one of three behaviors:
+
+| Setting | Result | Use Case | Considerations |
+|---------|--------|----------|----------------|
+| `public` | Keep as public | Standard GitHub.com migrations | **Fails** in EMU and data residency environments |
+| `internal` | Convert to internal | Maintain enterprise-wide read access | Requires Enterprise Cloud, preserves broad access |
+| `private` | Convert to private | Maximum security, works everywhere | Most restrictive, requires explicit access grants |
+
+#### Internal Repositories
+
+When migrating **internal** repositories, you can configure one of two behaviors:
+
+| Setting | Result | Use Case | Considerations |
+|---------|--------|----------|----------------|
+| `internal` | Keep as internal | Enterprise Cloud migrations | Requires destination to support internal visibility |
+| `private` | Convert to private | GitHub.com, EMU, data residency | Works everywhere, most restrictive |
+
+### Environment-Specific Recommendations
+
+#### GitHub Enterprise Cloud (EMU)
+
+EMU environments **do not support public repositories**. Recommended configuration:
+
+```yaml
+visibility_handling:
+  public_repos: "internal"  # Maintains enterprise-wide read access
+  internal_repos: "internal" # Maintain Enterprise visibility
+```
+
+#### GitHub with Data Residency
+
+Data residency environments **do not support public repositories**. Recommended configuration:
+
+```yaml
+visibility_handling:
+  public_repos: "internal"  # Maintains broad read access
+  internal_repos: "internal" # If destination supports it
+```
+
+#### GitHub.com (Non Enterprise)
+
+For standard GitHub.com migrations where public repos are supported:
+
+```yaml
+visibility_handling:
+  public_repos: "public"   # Preserve public access
+  internal_repos: "private" # GitHub.com (non Enterprise) doesn't have internal visibility
+```
+
+#### GitHub Enterprise Server → GitHub Enterprise
+
+When migrating from GHES to GHEC:
+
+```yaml
+visibility_handling:
+  public_repos: "public"   # Keep public if desired
+  internal_repos: "internal" # Keep internal to maintain Enterprise visibility
+```
+
+### Environment Variables
+
+For production deployments, use environment variables:
+
+```bash
+export GHMIG_MIGRATION_VISIBILITY_PUBLIC_REPOS=private
+export GHMIG_MIGRATION_VISIBILITY_INTERNAL_REPOS=private
+```
+
+See `configs/env.example` for complete documentation.
+
+### Complexity Scoring
+
+Repositories with **public** or **internal** visibility receive **+1 complexity point** each, as they may require visibility transformation during migration. This helps with:
+
+- Migration planning and estimation
+- Identifying repositories that need access review
+- Batch organization by complexity
+
+The complexity score is visible in:
+- Repository detail pages
+- Batch management interface
+- Analytics dashboards
+- API responses
+
+### Migration Logs
+
+During migration, visibility transformations are logged:
+
+```json
+{
+  "level": "info",
+  "msg": "Applying visibility transformation",
+  "repo": "acme-corp/api-service",
+  "source_visibility": "public",
+  "target_visibility": "internal"
+}
+```
+
+This provides a clear audit trail of all visibility changes.
+
+### Best Practices
+
+1. **Test with Pilot Batch**: Always test visibility transformations with a pilot batch first
+2. **Document Changes**: Maintain documentation of visibility changes for stakeholder communication
+3. **Access Review**: Plan for post-migration access review, especially for public → private conversions
+4. **Team Communication**: Inform teams about visibility changes before migration
+5. **Validate Settings**: Ensure destination environment supports your configured visibility settings
+
+### Troubleshooting
+
+**Problem**: Migration fails with "public repositories not supported"
+
+**Solution**: Your destination is EMU or data residency. Update configuration:
+```yaml
+visibility_handling:
+  public_repos: "internal"  # or "private"
+```
+
+**Problem**: Internal repositories become private unexpectedly
+
+**Solution**: Check your configuration. Default is `internal_repos: "private"`. To preserve internal visibility:
+```yaml
+visibility_handling:
+  internal_repos: "internal"
+```
 
 ---
 

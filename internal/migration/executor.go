@@ -47,6 +47,12 @@ const (
 	DestinationRepoExistsDelete DestinationRepoExistsAction = "delete"
 )
 
+// VisibilityHandling defines how to map source visibility to destination
+type VisibilityHandling struct {
+	PublicRepos   string // public, internal, or private (default: private)
+	InternalRepos string // internal or private (default: private)
+}
+
 // Executor handles repository migrations from GHES to GHEC
 type Executor struct {
 	sourceClient         *github.Client // GHES client
@@ -57,6 +63,7 @@ type Executor struct {
 	logger               *slog.Logger
 	postMigrationMode    PostMigrationMode           // When to run post-migration tasks
 	destRepoExistsAction DestinationRepoExistsAction // What to do if destination repo exists
+	visibilityHandling   VisibilityHandling          // How to handle visibility transformations
 }
 
 // ExecutorConfig configures the migration executor
@@ -67,6 +74,7 @@ type ExecutorConfig struct {
 	Logger               *slog.Logger
 	PostMigrationMode    PostMigrationMode           // When to run post-migration tasks (default: production_only)
 	DestRepoExistsAction DestinationRepoExistsAction // What to do if destination repo exists (default: fail)
+	VisibilityHandling   VisibilityHandling          // How to handle visibility transformations (default: all private)
 }
 
 // ArchiveURLs contains the URLs for migration archives
@@ -102,6 +110,15 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 		destRepoAction = DestinationRepoExistsFail
 	}
 
+	// Default visibility handling to private if not specified (safest option)
+	visibilityHandling := cfg.VisibilityHandling
+	if visibilityHandling.PublicRepos == "" {
+		visibilityHandling.PublicRepos = "private"
+	}
+	if visibilityHandling.InternalRepos == "" {
+		visibilityHandling.InternalRepos = "private"
+	}
+
 	return &Executor{
 		sourceClient:         cfg.SourceClient,
 		destClient:           cfg.DestClient,
@@ -110,6 +127,7 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 		logger:               cfg.Logger,
 		postMigrationMode:    postMigMode,
 		destRepoExistsAction: destRepoAction,
+		visibilityHandling:   visibilityHandling,
 	}, nil
 }
 
@@ -150,6 +168,45 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 
 	// Default to source repo name
 	return repo.Name()
+}
+
+// determineTargetVisibility determines the target visibility based on source visibility and config
+func (e *Executor) determineTargetVisibility(sourceVisibility string) string {
+	switch strings.ToLower(sourceVisibility) {
+	case "public":
+		// Apply configured mapping for public repos
+		targetVis := strings.ToLower(e.visibilityHandling.PublicRepos)
+		// Validate target visibility
+		if targetVis == "public" || targetVis == "internal" || targetVis == "private" {
+			return targetVis
+		}
+		// Default to private if invalid
+		e.logger.Warn("Invalid target visibility for public repos, defaulting to private",
+			"configured", e.visibilityHandling.PublicRepos)
+		return "private"
+
+	case "internal":
+		// Apply configured mapping for internal repos
+		targetVis := strings.ToLower(e.visibilityHandling.InternalRepos)
+		// Validate target visibility (internal repos can only become internal or private)
+		if targetVis == "internal" || targetVis == "private" {
+			return targetVis
+		}
+		// Default to private if invalid
+		e.logger.Warn("Invalid target visibility for internal repos, defaulting to private",
+			"configured", e.visibilityHandling.InternalRepos)
+		return "private"
+
+	case "private":
+		// Private repos always stay private
+		return "private"
+
+	default:
+		// Unknown visibility, default to private (safest)
+		e.logger.Warn("Unknown source visibility, defaulting to private",
+			"source_visibility", sourceVisibility)
+		return "private"
+	}
 }
 
 // getOrFetchDestOrgID returns the destination org ID for a given org name, fetching it if not cached
@@ -656,7 +713,16 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 
 	// Create pointers for optional fields
 	continueOnError := githubv4.Boolean(true)
-	targetRepoVisibility := githubv4.String("private")
+
+	// Apply visibility transformation based on source visibility and config
+	targetVisibility := e.determineTargetVisibility(repo.Visibility)
+	targetRepoVisibility := githubv4.String(targetVisibility)
+
+	e.logger.Info("Applying visibility transformation",
+		"repo", repo.FullName,
+		"source_visibility", repo.Visibility,
+		"target_visibility", targetVisibility)
+
 	gitArchiveURL := githubv4.String(urls.GitSource)
 	metadataArchiveURL := githubv4.String(urls.Metadata)
 
