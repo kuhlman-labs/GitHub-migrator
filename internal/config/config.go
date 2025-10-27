@@ -88,6 +88,7 @@ type AuthConfig struct {
 	GitHubOAuthClientID     string             `mapstructure:"github_oauth_client_id"`
 	GitHubOAuthClientSecret string             `mapstructure:"github_oauth_client_secret"`
 	CallbackURL             string             `mapstructure:"callback_url"`
+	FrontendURL             string             `mapstructure:"frontend_url"`
 	SessionSecret           string             `mapstructure:"session_secret"`
 	SessionDurationHours    int                `mapstructure:"session_duration_hours"`
 	AuthorizationRules      AuthorizationRules `mapstructure:"authorization_rules"`
@@ -148,6 +149,7 @@ func setDefaults() {
 	viper.SetDefault("logging.max_backups", 3)
 	viper.SetDefault("logging.max_age", 28)
 	viper.SetDefault("auth.enabled", false)
+	viper.SetDefault("auth.frontend_url", "http://localhost:5173")
 	viper.SetDefault("auth.session_duration_hours", 24)
 	viper.SetDefault("auth.authorization_rules.require_enterprise_admin", false)
 }

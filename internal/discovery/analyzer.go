@@ -155,13 +155,35 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 	// Get tag count
 	repo.TagCount = a.getTagCount(ctx, repoPath)
 
+	// Log analysis results (dereference pointers for proper display)
+	var logTotalSize int64
+	if repo.TotalSize != nil {
+		logTotalSize = *repo.TotalSize
+	}
+	var logLargestFile string
+	if repo.LargestFile != nil {
+		logLargestFile = *repo.LargestFile
+	}
+	var logLargestFileSize int64
+	if repo.LargestFileSize != nil {
+		logLargestFileSize = *repo.LargestFileSize
+	}
+	var logLargestCommit string
+	if repo.LargestCommit != nil {
+		logLargestCommit = *repo.LargestCommit
+	}
+	var logLargestCommitSize int64
+	if repo.LargestCommitSize != nil {
+		logLargestCommitSize = *repo.LargestCommitSize
+	}
+
 	a.logger.Info("Git analysis complete",
 		"repo", repo.FullName,
-		"total_size", repo.TotalSize,
-		"largest_file", repo.LargestFile,
-		"largest_file_size", repo.LargestFileSize,
-		"largest_commit", repo.LargestCommit,
-		"largest_commit_size", repo.LargestCommitSize,
+		"total_size", logTotalSize,
+		"largest_file", logLargestFile,
+		"largest_file_size", logLargestFileSize,
+		"largest_commit", logLargestCommit,
+		"largest_commit_size", logLargestCommitSize,
 		"commits", repo.CommitCount,
 		"has_lfs", repo.HasLFS,
 		"has_submodules", repo.HasSubmodules,

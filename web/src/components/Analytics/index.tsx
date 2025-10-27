@@ -69,10 +69,10 @@ export function Analytics() {
   };
 
   const sizeColors: Record<string, string> = {
-    small: '#1A7F37',
-    medium: '#0969DA',
-    large: '#9A6700',
-    very_large: '#D1242F',
+    small: '#10B981',      // Match 'simple' complexity - green
+    medium: '#F59E0B',     // Match 'medium' complexity - orange
+    large: '#F97316',      // Match 'complex' complexity - dark orange
+    very_large: '#EF4444', // Match 'very_complex' complexity - red
     unknown: '#656D76',
   };
 
@@ -417,24 +417,76 @@ export function Analytics() {
           {/* Status Breakdown Pie Chart */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h2 className="text-lg font-medium text-gray-900 mb-4">Current Status Distribution</h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
                   data={progressData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={(entry: any) => `${entry.name}: ${entry.value} (${(entry.percent * 100).toFixed(0)}%)`}
+                  label={false}
                   outerRadius={80}
                   dataKey="value"
+                  onClick={(data: any) => {
+                    if (data && data.name) {
+                      const statusMap: Record<string, string> = {
+                        'Migrated': 'migration_complete',
+                        'In Progress': 'in_progress',
+                        'Failed': 'failed',
+                        'Pending': 'pending',
+                      };
+                      const status = statusMap[data.name];
+                      if (status) {
+                        navigate(getRepositoriesUrl({ status: [status] }));
+                      }
+                    }
+                  }}
+                  cursor="pointer"
                 >
                   {progressData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip 
+                  formatter={(value: number, _name: string, props: any) => [
+                    `${value} repositories`,
+                    props.payload.name
+                  ]}
+                />
               </PieChart>
             </ResponsiveContainer>
+            
+            {/* Legend */}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {progressData.map((item) => {
+                const statusMap: Record<string, string> = {
+                  'Migrated': 'migration_complete',
+                  'In Progress': 'in_progress',
+                  'Failed': 'failed',
+                  'Pending': 'pending',
+                };
+                const status = statusMap[item.name];
+                const percentage = analytics.total_repositories > 0 
+                  ? ((item.value / analytics.total_repositories) * 100).toFixed(0)
+                  : '0';
+                
+                return (
+                  <button
+                    key={item.name}
+                    onClick={() => status && navigate(getRepositoriesUrl({ status: [status] }))}
+                    className="flex items-center gap-2 p-2 rounded hover:bg-gh-info-bg transition-colors cursor-pointer text-left"
+                  >
+                    <div 
+                      className="w-4 h-4 rounded flex-shrink-0" 
+                      style={{ backgroundColor: item.fill }}
+                    />
+                    <span className="text-sm text-gray-700 truncate">
+                      {item.name}: {item.value} ({percentage}%)
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 

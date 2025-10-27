@@ -284,9 +284,14 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 			"error", err)
 	}
 
+	// Log the profiled repository with dereferenced values
+	destSizeBytes := int64(0)
+	if repo.TotalSize != nil {
+		destSizeBytes = *repo.TotalSize
+	}
 	c.logger.Info("Destination repository profiled",
 		"repo", repo.FullName,
-		"size", repo.TotalSize,
+		"size_bytes", destSizeBytes,
 		"commits", repo.CommitCount,
 		"branches", repo.BranchCount,
 		"tags", repo.TagCount)
@@ -374,9 +379,14 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 		return fmt.Errorf("failed to save repository: %w", err)
 	}
 
+	// Log the profiled repository with dereferenced values
+	sizeBytes := int64(0)
+	if repo.TotalSize != nil {
+		sizeBytes = *repo.TotalSize
+	}
 	c.logger.Info("Repository profiled and saved",
 		"repo", repo.FullName,
-		"size", repo.TotalSize,
+		"size_bytes", sizeBytes,
 		"commits", repo.CommitCount)
 
 	return nil

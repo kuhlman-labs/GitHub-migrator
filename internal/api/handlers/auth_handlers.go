@@ -152,8 +152,13 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("User logged in successfully", "user", user.Login)
 
-	// Redirect to home page
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	// Redirect to frontend URL
+	redirectURL := h.config.FrontendURL
+	if redirectURL == "" {
+		redirectURL = "/" // Fallback to root if not configured
+	}
+	h.logger.Debug("Redirecting after login", "url", redirectURL, "user", user.Login)
+	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }
 
 // HandleLogout logs out the user
