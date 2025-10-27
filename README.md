@@ -100,13 +100,20 @@ export GITHUB_SOURCE_TOKEN="ghp_xxxxxxxxxxxx"  # Source system token
 export GITHUB_DEST_TOKEN="ghp_yyyyyyyyyyyy"    # Destination system token
 ```
 
-**Token Requirements:**
-- **PAT (Personal Access Token) - REQUIRED for migrations**
-  - **Source**: Org admin access with `repo`, `read:user`, `admin:org` scopes
-  - **Destination**: Org admin access with `repo`, `admin:org`, `workflow` scopes
-- **GitHub App - OPTIONAL for discovery** (provides better rate limits)
+**Authentication Options:**
 
-See [config_example.yml](./configs/config_example.yml) for complete configuration options.
+**PAT (Personal Access Token) - REQUIRED for migrations:**
+- **Source**: Org admin access with `repo`, `read:user`, `admin:org` scopes
+- **Destination**: Org admin access with `repo`, `admin:org`, `workflow` scopes
+
+**GitHub App - OPTIONAL for discovery** (recommended for better rate limits):
+- Provides higher rate limits for discovery and profiling operations
+- PAT still used for migration operations (GitHub requirement)
+- Supports two modes:
+  - **With Installation ID**: Simplest setup, uses single installation token
+  - **Without Installation ID**: Auto-discovers all installations, creates per-org tokens (best for multi-org apps)
+
+See [GitHub App Setup Guide](./docs/OPERATIONS.md#github-app-authentication) for detailed configuration.
 
 **3. Run the application:**
 

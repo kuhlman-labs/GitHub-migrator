@@ -3,6 +3,7 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/api/handlers"
 	"github.com/brettkuhlman/github-migrator/internal/api/middleware"
@@ -32,6 +33,20 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		}
 	}
 
+	// Create base config for per-org client creation (if GitHub App auth is configured)
+	var sourceBaseConfig *github.ClientConfig
+	if cfg.Source.AppID > 0 && cfg.Source.AppPrivateKey != "" {
+		sourceBaseConfig = &github.ClientConfig{
+			BaseURL:           cfg.Source.BaseURL,
+			Timeout:           30 * time.Second,
+			RetryConfig:       github.DefaultRetryConfig(),
+			Logger:            logger,
+			AppID:             cfg.Source.AppID,
+			AppPrivateKey:     cfg.Source.AppPrivateKey,
+			AppInstallationID: cfg.Source.AppInstallationID, // May be 0 for JWT-only auth
+		}
+	}
+
 	// Create auth handler if enabled
 	var authHandler *handlers.AuthHandler
 	if cfg.Auth.Enabled {
@@ -48,7 +63,7 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		config:      cfg,
 		db:          db,
 		logger:      logger,
-		handler:     handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider),
+		handler:     handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig),
 		authHandler: authHandler,
 	}
 }

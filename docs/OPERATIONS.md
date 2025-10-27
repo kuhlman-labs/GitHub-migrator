@@ -15,7 +15,167 @@
 
 ## Authentication Setup
 
-The GitHub Migration Server supports optional authentication using GitHub OAuth. When enabled, users must authenticate with GitHub and meet configurable authorization requirements to access the system.
+The GitHub Migrator supports two types of authentication:
+
+1. **GitHub OAuth** - For controlling user access to the web UI (optional)
+2. **GitHub App Authentication** - For API operations with better rate limits (optional, recommended for large migrations)
+
+### GitHub App Authentication
+
+GitHub App authentication provides significantly better rate limits for discovery and profiling operations while maintaining PAT-based authentication for migration operations (as required by GitHub's migration APIs).
+
+#### Benefits of GitHub Apps
+
+- **Higher Rate Limits**: 15,000 requests/hour per installation vs 5,000/hour shared with PAT
+- **Better Isolation**: Per-organization tokens with proper scoping
+- **Parallel Processing**: Multiple organizations can be processed simultaneously with their own tokens
+- **Separation of Concerns**: Discovery uses App tokens, migrations use PAT
+
+#### Two Operation Modes
+
+##### Mode 1: With Installation ID (Simpler)
+
+Best for:
+- Single organization migrations
+- GitHub Apps installed on one organization
+- Testing and development
+- Backwards compatibility
+
+```yaml
+source:
+  token: "ghp_..." # PAT - required for migrations
+  app_id: 123456
+  app_private_key: "/path/to/private-key.pem"
+  app_installation_id: 789012  # Provide for single-org mode
+```
+
+**How it works:**
+- Uses the provided installation token for all API operations
+- Single token used for discovery across enterprise (requires enterprise-level access)
+
+##### Mode 2: Without Installation ID (Enterprise Multi-Org)
+
+Best for:
+- GitHub Enterprise Apps with multiple organizations
+- Installations across many organizations
+- Maximum rate limit efficiency
+- Proper token isolation per organization
+
+```yaml
+source:
+  token: "ghp_..." # PAT - required for migrations
+  app_id: 123456
+  app_private_key: "/path/to/private-key.pem"
+  # app_installation_id omitted - system auto-discovers
+```
+
+**How it works:**
+1. Uses JWT authentication to call GitHub App Installations API
+2. Discovers all organizations where the app is installed
+3. Creates per-org clients with org-specific installation tokens
+4. Processes organizations in parallel (5 workers by default)
+5. Each org uses its own token for complete isolation
+
+#### Creating a GitHub App
+
+**For GitHub.com:**
+1. Navigate to your organization settings
+2. Go to **Developer settings** > **GitHub Apps** > **New GitHub App**
+3. Fill in the details:
+   - **Name**: `GitHub Migrator Discovery`
+   - **Homepage URL**: Your server URL
+   - **Webhook**: Uncheck "Active" (not needed)
+4. **Permissions** (Repository permissions):
+   - **Contents**: Read-only (for cloning repositories)
+   - **Metadata**: Read-only (for repository information)
+   - **Administration**: Read-only (for settings)
+5. **Where can this GitHub App be installed?**
+   - Choose "Any account" or "Only on this account"
+6. Click **Create GitHub App**
+7. Generate and download private key (.pem file)
+8. Note the **App ID**
+
+**Installing the App:**
+1. Go to app settings > **Install App**
+2. Select your organization(s)
+3. Choose **All repositories** or **Select repositories**
+4. Note the **Installation ID** (found in URL: `/settings/installations/[ID]`)
+
+**For GitHub Enterprise Server:**
+- Similar process but navigate to `https://your-ghes.com/settings/apps/new`
+- Requires enterprise admin access to create enterprise-level apps
+
+#### Configuration Examples
+
+**Environment Variables:**
+```bash
+# Source system with GitHub App
+export GHMIG_SOURCE_APP_ID=123456
+export GHMIG_SOURCE_APP_PRIVATE_KEY="/path/to/key.pem"
+export GHMIG_SOURCE_APP_INSTALLATION_ID=789012  # Optional
+
+# Or inline PEM (useful for containers):
+export GHMIG_SOURCE_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA...
+-----END RSA PRIVATE KEY-----"
+```
+
+**Config File:**
+```yaml
+source:
+  type: github
+  base_url: "https://api.github.com"
+  token: "ghp_..." # REQUIRED for migrations
+  
+  # GitHub App for discovery (optional)
+  app_id: 123456
+  app_private_key: "./data/github-app-key.pem"
+  # app_installation_id: 789012  # Omit for multi-org discovery
+```
+
+#### Operation Flow
+
+**Enterprise Discovery with Multi-Org Mode:**
+```
+1. JWT Auth → List all app installations
+2. Found: org1, org2, org3, org4, org5
+3. Create 5 workers
+4. Worker 1: org1 → get installation token → discover repos → profile
+5. Worker 2: org2 → get installation token → discover repos → profile
+6. Worker 3: org3 → get installation token → discover repos → profile
+7. Worker 4: org4 → get installation token → discover repos → profile  
+8. Worker 5: org5 → get installation token → discover repos → profile
+```
+
+**Single Repository Operations (Rediscovery, Pre-Migration):**
+- System automatically creates org-specific client on-demand
+- Uses JWT to get installation ID for repository's org
+- Creates temporary client with that installation token
+- Performs operation with proper authentication
+
+#### Troubleshooting GitHub Apps
+
+**"Bad credentials" errors:**
+- Verify App ID is correct
+- Ensure private key file path is accessible
+- Check private key format (should start with `-----BEGIN RSA PRIVATE KEY-----`)
+- Confirm app is installed on the target organization
+
+**Slow discovery performance:**
+- If using installation ID: Check that app has enterprise-level access
+- If not using installation ID: Verify `app_installation_id` is omitted (set to 0 or removed)
+- Check that multiple workers are being used (5 by default)
+
+**"Installation not found" errors:**
+- Verify app is installed on the organization
+- Check installation ID is correct (found in GitHub UI)
+- Ensure installation hasn't been suspended or removed
+
+---
+
+### GitHub OAuth (User Authentication)
+
+The GitHub Migration Server also supports optional authentication using GitHub OAuth. When enabled, users must authenticate with GitHub and meet configurable authorization requirements to access the system.
 
 ### Prerequisites
 

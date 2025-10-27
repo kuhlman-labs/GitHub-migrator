@@ -1,11 +1,11 @@
 module github.com/brettkuhlman/github-migrator
 
-go 1.24.0
+go 1.25
 
 require (
-	github.com/bradleyfalzon/ghinstallation/v2 v2.17.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v75 v75.0.0
+	github.com/jferrl/go-githubauth v1.4.2
 	github.com/lmittmann/tint v1.1.2
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-sqlite3 v1.14.32
@@ -18,6 +18,8 @@ require (
 require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
+	github.com/google/go-github/v74 v74.0.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect

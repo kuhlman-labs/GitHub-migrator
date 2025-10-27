@@ -18,9 +18,17 @@ source:
   token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED for migrations
   
   # GitHub App authentication (optional for discovery/profiling)
+  # Provides better rate limits for discovery operations
+  # When configured: GitHub App used for discovery, PAT used for migrations
+  # 
+  # app_installation_id is OPTIONAL:
+  #   - Provide installation ID: Uses that installation's token for all operations
+  #   - Omit installation ID: Auto-discovers all app installations, creates per-org clients
+  #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
+  # 
   # app_id: "${GHMIG_SOURCE_APP_ID}"
   # app_private_key: "${GHMIG_SOURCE_APP_PRIVATE_KEY}"
-  # app_installation_id: "${GHMIG_SOURCE_APP_INSTALLATION_ID}"
+  # app_installation_id: "${GHMIG_SOURCE_APP_INSTALLATION_ID}"  # Optional
 
 # Destination repository system configuration
 # Only GitHub to GitHub migrations are supported
@@ -31,9 +39,17 @@ destination:
   token: "${GITHUB_DEST_TOKEN}"  # REQUIRED for migrations
   
   # GitHub App authentication (optional for discovery/profiling)
+  # Provides better rate limits for discovery operations
+  # When configured: GitHub App used for discovery, PAT used for migrations
+  # 
+  # app_installation_id is OPTIONAL:
+  #   - Provide installation ID: Uses that installation's token for all operations
+  #   - Omit installation ID: Auto-discovers all app installations, creates per-org clients
+  #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
+  # 
   # app_id: "${GHMIG_DEST_APP_ID}"
   # app_private_key: "${GHMIG_DEST_APP_PRIVATE_KEY}"
-  # app_installation_id: "${GHMIG_DEST_APP_INSTALLATION_ID}"
+  # app_installation_id: "${GHMIG_DEST_APP_INSTALLATION_ID}"  # Optional
 
 # Migration worker configuration
 migration:

@@ -71,7 +71,7 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database) {
 	t.Helper()
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	handler := NewHandler(db, logger, nil, nil, nil)
+	handler := NewHandler(db, logger, nil, nil, nil, nil)
 	return handler, db
 }
 
@@ -102,7 +102,7 @@ func TestNewHandler(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	t.Run("without GitHub clients", func(t *testing.T) {
-		h := NewHandler(db, logger, nil, nil, nil)
+		h := NewHandler(db, logger, nil, nil, nil, nil)
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
@@ -114,7 +114,7 @@ func TestNewHandler(t *testing.T) {
 	t.Run("with GitHub clients but no source provider", func(t *testing.T) {
 		sourceDualClient := createTestDualClient(t, logger)
 		destDualClient := createTestDualClient(t, logger)
-		h := NewHandler(db, logger, sourceDualClient, destDualClient, nil)
+		h := NewHandler(db, logger, sourceDualClient, destDualClient, nil, nil)
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
@@ -161,7 +161,7 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	h := NewHandler(db, logger, nil, nil, nil)
+	h := NewHandler(db, logger, nil, nil, nil, nil)
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -182,7 +182,7 @@ func testStartDiscoveryValidation(t *testing.T) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	sourceDualClient := createTestDualClient(t, logger)
-	h := NewHandler(db, logger, sourceDualClient, nil, nil)
+	h := NewHandler(db, logger, sourceDualClient, nil, nil, nil)
 
 	tests := []struct {
 		name     string
@@ -237,7 +237,7 @@ func testStartDiscoveryOrganization(t *testing.T) {
 
 	sourceDualClient := createTestDualClient(t, logger)
 	mockProvider := &mockSourceProvider{}
-	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider)
+	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil)
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -271,7 +271,7 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 
 	sourceDualClient := createTestDualClient(t, logger)
 	mockProvider := &mockSourceProvider{}
-	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider)
+	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil)
 
 	reqBody := map[string]interface{}{
 		"enterprise_slug": "test-enterprise",
@@ -1827,7 +1827,7 @@ func TestListOrganizations(t *testing.T) {
 		}
 	}
 
-	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{})
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil)
 
 	req := httptest.NewRequest("GET", "/api/v1/organizations", nil)
 	w := httptest.NewRecorder()
@@ -1880,7 +1880,7 @@ func TestGetMigrationHistoryList(t *testing.T) {
 		}
 	}
 
-	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{})
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil)
 
 	req := httptest.NewRequest("GET", "/api/v1/migrations/history", nil)
 	w := httptest.NewRecorder()
@@ -1926,7 +1926,7 @@ func TestExportMigrationHistory(t *testing.T) {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
 
-	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{})
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil)
 
 	t.Run("CSV export", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/v1/migrations/history/export?format=csv", nil)

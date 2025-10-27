@@ -51,13 +51,44 @@ source:
   # - Scopes: repo, read:org, read:user, admin:org
   token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   
-  # GitHub App Authentication (Optional)
-  # When configured, GitHub App tokens are used for discovery and profiling operations
-  # while the PAT above is used for migrations.
-  # Benefits: Better rate limits, separation of concerns, reduced PAT usage
-  # app_id: 123456
-  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
-  # app_installation_id: 789012
+  # ==========================================================================
+  # GitHub App Authentication (Optional but Recommended for Large Migrations)
+  # ==========================================================================
+  # Benefits:
+  # - 5,000 requests/hour PER installation vs 5,000/hour total with PAT
+  # - Better isolation with per-organization tokens
+  # - Parallel organization processing for enterprise migrations
+  # - Separation of concerns: App for discovery, PAT for migrations
+  #
+  # Two Operation Modes:
+  #
+  # MODE 1: With Installation ID (Simpler)
+  #   Best for: Single org, testing, GitHub Apps installed on one organization
+  #   Behavior: Uses that installation's token for all API operations
+  #   
+  #   app_id: 123456
+  #   app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  #   app_installation_id: 789012  # Provide for single-org mode
+  #
+  # MODE 2: Without Installation ID (Enterprise Multi-Org)
+  #   Best for: GitHub Enterprise Apps, multi-org migrations
+  #   Behavior: Auto-discovers all installations via JWT, creates per-org clients,
+  #             processes organizations in parallel (5 workers by default)
+  #   
+  #   app_id: 123456
+  #   app_private_key: "/path/to/private-key.pem"  # or inline PEM string
+  #   # app_installation_id omitted - system auto-discovers
+  #
+  # Private Key Options:
+  # 1. File path: "/path/to/private-key.pem"
+  # 2. Inline PEM: "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----"
+  # 3. Environment variable: "${GHMIG_SOURCE_APP_PRIVATE_KEY}"
+  #
+  # See OPERATIONS.md for complete setup guide including:
+  # - Creating GitHub Apps
+  # - Configuring permissions
+  # - Finding installation IDs
+  # - Troubleshooting
 
 # =============================================================================
 # Destination Repository System Configuration
@@ -83,13 +114,27 @@ destination:
   # - Scopes: repo, admin:org, workflow
   token: "ghp_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
   
-  # GitHub App Authentication (Optional)
-  # When configured, GitHub App tokens are used for discovery and profiling operations
-  # while the PAT above is used for migrations.
-  # Benefits: Better rate limits, separation of concerns, reduced PAT usage
-  # app_id: 123456
-  # app_private_key: "/path/to/private-key.pem"  # or inline PEM string
-  # app_installation_id: 789012
+  # ==========================================================================
+  # GitHub App Authentication (Optional but Recommended for Large Migrations)
+  # ==========================================================================
+  # Same configuration options as source above.
+  # Benefits:
+  # - 5,000 requests/hour PER installation vs 5,000/hour total with PAT
+  # - Better isolation with per-organization tokens
+  # - Parallel organization processing for enterprise migrations
+  # - Separation of concerns: App for discovery, PAT for migrations
+  #
+  # MODE 1: With Installation ID (Simpler)
+  #   app_id: 123456
+  #   app_private_key: "/path/to/private-key.pem"
+  #   app_installation_id: 789012
+  #
+  # MODE 2: Without Installation ID (Enterprise Multi-Org)
+  #   app_id: 123456
+  #   app_private_key: "/path/to/private-key.pem"
+  #   # app_installation_id omitted for auto-discovery
+  #
+  # See OPERATIONS.md for complete setup guide
 
 # =============================================================================
 # Migration Worker Configuration

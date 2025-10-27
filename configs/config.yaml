@@ -18,9 +18,15 @@ source:
   
   # GitHub App authentication (optional for discovery/profiling)
   # When configured: GitHub App used for discovery, PAT used for migrations
-  # app_id: 123456
+  # 
+  # app_installation_id is OPTIONAL:
+  #   - Provide installation ID: Uses that installation's token for enterprise operations
+  #   - Omit installation ID: System uses GitHub App Installations API to discover
+  #     all organizations where the app is installed, then creates per-org clients
+  #     (best for multi-org GitHub Apps, requires JWT auth)
+  # app_id: 1234567
   # app_private_key: "/path/to/private-key.pem"
-  # app_installation_id: 789012
+  # app_installation_id: 1234567  # Optional: omit to auto-discover all app installations
 
 # Destination repository system (where to migrate TO)
 # Only GitHub to GitHub migrations are supported

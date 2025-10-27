@@ -159,8 +159,9 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 	}
 
 	// Configure App client if credentials provided
+	// Note: AppInstallationID is optional - if omitted, JWT-only client is created for enterprise discovery
 	var appConfig *github.ClientConfig
-	if appID > 0 && appPrivateKey != "" && appInstallationID > 0 {
+	if appID > 0 && appPrivateKey != "" {
 		appConfig = &github.ClientConfig{
 			BaseURL:           baseURL,
 			Timeout:           30 * time.Second,
@@ -168,7 +169,7 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 			Logger:            logger,
 			AppID:             appID,
 			AppPrivateKey:     appPrivateKey,
-			AppInstallationID: appInstallationID,
+			AppInstallationID: appInstallationID, // May be 0 for JWT-only auth
 		}
 	}
 

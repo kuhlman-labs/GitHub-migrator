@@ -24,6 +24,7 @@ type Collector struct {
 	logger         *slog.Logger
 	workers        int // Number of parallel workers
 	sourceProvider source.Provider
+	baseConfig     *github.ClientConfig // Base config for creating per-org clients (optional)
 }
 
 // NewCollector creates a new repository collector
@@ -37,6 +38,13 @@ func NewCollector(client *github.Client, storage *storage.Database, logger *slog
 	}
 }
 
+// WithBaseConfig sets the base configuration for creating per-org clients
+// This enables automatic per-org client creation for GitHub Enterprise Apps
+func (c *Collector) WithBaseConfig(config github.ClientConfig) *Collector {
+	c.baseConfig = &config
+	return c
+}
+
 // SetWorkers sets the number of parallel workers for processing
 func (c *Collector) SetWorkers(workers int) {
 	if workers > 0 {
@@ -48,16 +56,49 @@ func (c *Collector) SetWorkers(workers int) {
 func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error {
 	c.logger.Info("Starting repository discovery", "organization", org)
 
-	// List all repositories
-	repos, err := c.listAllRepositories(ctx, org)
+	// Check if we need to create an org-specific client (JWT-only mode)
+	var orgClient *github.Client
+	var profiler *Profiler
+
+	if c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0 {
+		// JWT-only mode: create org-specific client
+		c.logger.Info("Creating org-specific client for single-org discovery",
+			"org", org,
+			"app_id", c.baseConfig.AppID)
+
+		// Get installation ID for this org
+		installationID, err := c.client.GetOrganizationInstallationID(ctx, org)
+		if err != nil {
+			return fmt.Errorf("failed to get installation ID for org %s: %w", org, err)
+		}
+
+		// Create org-specific client
+		orgConfig := *c.baseConfig
+		orgConfig.AppInstallationID = installationID
+
+		orgClient, err = github.NewClient(orgConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create org-specific client for %s: %w", org, err)
+		}
+
+		c.logger.Debug("Created org-specific client",
+			"org", org,
+			"installation_id", installationID)
+	} else {
+		// Use the default client (PAT or App with installation ID)
+		orgClient = c.client
+	}
+
+	// List all repositories using the appropriate client
+	repos, err := c.listAllRepositoriesWithClient(ctx, org, orgClient)
 	if err != nil {
 		return fmt.Errorf("failed to list repositories: %w", err)
 	}
 
 	c.logger.Info("Found repositories", "count", len(repos))
 
-	// Create profiler and load package cache for the organization
-	profiler := NewProfiler(c.client, c.logger)
+	// Create profiler with the appropriate client and load package cache
+	profiler = NewProfiler(orgClient, c.logger)
 	if err := profiler.LoadPackageCache(ctx, org); err != nil {
 		c.logger.Warn("Failed to load package cache, package detection may be slower",
 			"org", org,
@@ -69,53 +110,105 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 }
 
 // DiscoverEnterpriseRepositories discovers all repositories across all organizations in an enterprise
+// For GitHub Enterprise Apps without an installation ID, this will:
+//  1. Use JWT auth to list all app installations (discovers orgs automatically)
+//  2. Create per-org clients with org-specific installation tokens
+//  3. Use org-specific clients for all repo operations (higher rate limits, proper isolation)
 func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpriseSlug string) error {
 	c.logger.Info("Starting enterprise-wide repository discovery", "enterprise", enterpriseSlug)
 
-	// Get all organizations in the enterprise
-	orgs, err := c.client.ListEnterpriseOrganizations(ctx, enterpriseSlug)
-	if err != nil {
-		return fmt.Errorf("failed to list enterprise organizations: %w", err)
+	// Check if we need to use per-org clients (GitHub App without installation ID)
+	useAppInstallations := c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0
+
+	var orgs []string
+	var orgInstallations map[string]int64
+
+	if useAppInstallations {
+		// Use GitHub App Installations API to discover all organizations
+		// This is the proper way for GitHub Apps to find their installations
+		c.logger.Info("Using GitHub App Installations API to discover organizations",
+			"app_id", c.baseConfig.AppID)
+
+		installations, err := c.client.ListAppInstallations(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to list app installations: %w", err)
+		}
+
+		orgInstallations = installations
+		orgs = make([]string, 0, len(installations))
+		for org := range installations {
+			orgs = append(orgs, org)
+		}
+
+		c.logger.Info("Discovered organizations via app installations",
+			"org_count", len(orgs))
+	} else {
+		// Use enterprise GraphQL API (requires installation token or PAT with enterprise access)
+		var err error
+		orgs, err = c.client.ListEnterpriseOrganizations(ctx, enterpriseSlug)
+		if err != nil {
+			return fmt.Errorf("failed to list enterprise organizations: %w", err)
+		}
+
+		c.logger.Info("Found organizations in enterprise",
+			"enterprise", enterpriseSlug,
+			"org_count", len(orgs))
 	}
 
-	c.logger.Info("Found organizations in enterprise",
-		"enterprise", enterpriseSlug,
-		"org_count", len(orgs))
-
-	// Create a shared profiler for all organizations
-	profiler := NewProfiler(c.client, c.logger)
-
-	// Collect repositories from all organizations and load package caches
+	// Collect repositories from all organizations
 	var allRepos []*ghapi.Repository
-	for _, org := range orgs {
-		c.logger.Info("Discovering repositories for organization",
-			"enterprise", enterpriseSlug,
-			"organization", org)
+	var profiler *Profiler
 
-		repos, err := c.listAllRepositories(ctx, org)
-		if err != nil {
-			c.logger.Error("Failed to list repositories for organization",
+	// If not using per-org clients, create a single shared profiler
+	if !useAppInstallations {
+		profiler = NewProfiler(c.client, c.logger)
+	}
+
+	if useAppInstallations {
+		// Process organizations in parallel when using per-org clients
+		// Each org has its own isolated client and installation token
+		c.logger.Info("Processing organizations in parallel",
+			"org_count", len(orgs),
+			"workers", c.workers)
+
+		allRepos = c.processOrganizationsInParallel(ctx, enterpriseSlug, orgs, orgInstallations)
+	} else {
+		// Sequential processing for PAT/shared client mode
+		for _, org := range orgs {
+			c.logger.Info("Discovering repositories for organization",
+				"enterprise", enterpriseSlug,
+				"organization", org)
+
+			// Use shared client and profiler
+			orgClient := c.client
+			orgProfiler := profiler
+
+			// Use org-specific client for listing repos
+			repos, err := c.listAllRepositoriesWithClient(ctx, org, orgClient)
+			if err != nil {
+				c.logger.Error("Failed to list repositories for organization",
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"error", err)
+				// Continue with other organizations even if one fails
+				continue
+			}
+
+			c.logger.Info("Found repositories in organization",
 				"enterprise", enterpriseSlug,
 				"organization", org,
-				"error", err)
-			// Continue with other organizations even if one fails
-			continue
+				"count", len(repos))
+
+			// Load package cache for this organization using org-specific profiler
+			if err := orgProfiler.LoadPackageCache(ctx, org); err != nil {
+				c.logger.Warn("Failed to load package cache for organization",
+					"enterprise", enterpriseSlug,
+					"org", org,
+					"error", err)
+			}
+
+			allRepos = append(allRepos, repos...)
 		}
-
-		c.logger.Info("Found repositories in organization",
-			"enterprise", enterpriseSlug,
-			"organization", org,
-			"count", len(repos))
-
-		// Load package cache for this organization
-		if err := profiler.LoadPackageCache(ctx, org); err != nil {
-			c.logger.Warn("Failed to load package cache for organization",
-				"enterprise", enterpriseSlug,
-				"org", org,
-				"error", err)
-		}
-
-		allRepos = append(allRepos, repos...)
 	}
 
 	c.logger.Info("Enterprise discovery complete",
@@ -123,19 +216,130 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 		"total_orgs", len(orgs),
 		"total_repos", len(allRepos))
 
-	// Process all repositories in parallel using the shared profiler
-	return c.processRepositoriesWithProfiler(ctx, allRepos, profiler)
+	// If not using per-org clients, process all repositories in parallel using the shared profiler
+	if !useAppInstallations {
+		return c.processRepositoriesWithProfiler(ctx, allRepos, profiler)
+	}
+
+	return nil
 }
 
-// listAllRepositories lists all repositories for an organization with pagination
-func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*ghapi.Repository, error) {
+// processOrganizationsInParallel processes multiple organizations concurrently
+// Each org gets its own client with its own installation token for complete isolation
+func (c *Collector) processOrganizationsInParallel(ctx context.Context, enterpriseSlug string, orgs []string, orgInstallations map[string]int64) []*ghapi.Repository {
+	// Create channels for work distribution
+	orgJobs := make(chan string, len(orgs))
+	allRepos := make([]*ghapi.Repository, 0)
+	var reposMu sync.Mutex // Protect allRepos slice
+	var wg sync.WaitGroup
+
+	// Start worker goroutines
+	for i := 0; i < c.workers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			for org := range orgJobs {
+				c.logger.Info("Worker processing organization",
+					"worker_id", workerID,
+					"enterprise", enterpriseSlug,
+					"organization", org)
+
+				// Create org-specific client with installation token
+				installationID := orgInstallations[org]
+				orgConfig := *c.baseConfig
+				orgConfig.AppInstallationID = installationID
+
+				orgClient, err := github.NewClient(orgConfig)
+				if err != nil {
+					c.logger.Error("Failed to create org-specific client",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"organization", org,
+						"installation_id", installationID,
+						"error", err)
+					continue
+				}
+
+				c.logger.Debug("Created org-specific client",
+					"worker_id", workerID,
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"installation_id", installationID)
+
+				// Create org-specific profiler
+				orgProfiler := NewProfiler(orgClient, c.logger)
+
+				// List repositories for this org
+				repos, err := c.listAllRepositoriesWithClient(ctx, org, orgClient)
+				if err != nil {
+					c.logger.Error("Failed to list repositories for organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"organization", org,
+						"error", err)
+					continue
+				}
+
+				c.logger.Info("Found repositories in organization",
+					"worker_id", workerID,
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"count", len(repos))
+
+				// Load package cache for this organization
+				if err := orgProfiler.LoadPackageCache(ctx, org); err != nil {
+					c.logger.Warn("Failed to load package cache for organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"org", org,
+						"error", err)
+				}
+
+				// Add repos to global list (thread-safe)
+				reposMu.Lock()
+				allRepos = append(allRepos, repos...)
+				reposMu.Unlock()
+
+				// Process this org's repos with its profiler
+				if err := c.processRepositoriesWithProfiler(ctx, repos, orgProfiler); err != nil {
+					c.logger.Error("Failed to process repositories for organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"organization", org,
+						"error", err)
+				} else {
+					c.logger.Info("Completed processing organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"organization", org,
+						"repo_count", len(repos))
+				}
+			}
+		}(i)
+	}
+
+	// Queue all organizations
+	for _, org := range orgs {
+		orgJobs <- org
+	}
+	close(orgJobs)
+
+	// Wait for all workers to complete
+	wg.Wait()
+
+	return allRepos
+}
+
+// listAllRepositoriesWithClient lists all repositories for an organization using a specific client
+func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org string, client *github.Client) ([]*ghapi.Repository, error) {
 	var allRepos []*ghapi.Repository
 	opts := &ghapi.RepositoryListByOrgOptions{
 		ListOptions: ghapi.ListOptions{PerPage: 100},
 	}
 
 	for {
-		repos, resp, err := c.client.REST().Repositories.ListByOrg(ctx, org, opts)
+		repos, resp, err := client.REST().Repositories.ListByOrg(ctx, org, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list repositories: %w", err)
 		}
@@ -149,6 +353,12 @@ func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*gha
 	}
 
 	return allRepos, nil
+}
+
+// listAllRepositories lists all repositories for an organization with pagination
+// Uses the collector's default client
+func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*ghapi.Repository, error) {
+	return c.listAllRepositoriesWithClient(ctx, org, c.client)
 }
 
 // processRepositoriesWithProfiler processes repositories in parallel using worker pool with a shared profiler
@@ -365,7 +575,54 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 	// Profile GitHub features via API (no clone needed)
 	// Use shared profiler if provided, otherwise create a new one
 	if profiler == nil {
-		profiler = NewProfiler(c.client, c.logger)
+		// Check if we need to create an org-specific client (JWT-only mode)
+		var profilerClient *github.Client
+		if c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0 {
+			// JWT-only mode: create org-specific client for this repo
+			parts := strings.Split(repo.FullName, "/")
+			if len(parts) != 2 {
+				c.logger.Error("Invalid repository full name",
+					"repo", repo.FullName)
+			} else {
+				org := parts[0]
+				c.logger.Debug("Creating org-specific client for single-repo profiling",
+					"org", org,
+					"repo", repo.FullName)
+
+				// Get installation ID for this org
+				installationID, err := c.client.GetOrganizationInstallationID(ctx, org)
+				if err != nil {
+					c.logger.Error("Failed to get installation ID for org",
+						"org", org,
+						"error", err)
+					// Fall back to default client (will likely fail but better than nothing)
+					profilerClient = c.client
+				} else {
+					// Create org-specific client
+					orgConfig := *c.baseConfig
+					orgConfig.AppInstallationID = installationID
+
+					orgClient, err := github.NewClient(orgConfig)
+					if err != nil {
+						c.logger.Error("Failed to create org-specific client",
+							"org", org,
+							"error", err)
+						// Fall back to default client
+						profilerClient = c.client
+					} else {
+						c.logger.Debug("Created org-specific client for profiling",
+							"org", org,
+							"installation_id", installationID)
+						profilerClient = orgClient
+					}
+				}
+			}
+		} else {
+			// PAT or App with installation ID: use default client
+			profilerClient = c.client
+		}
+
+		profiler = NewProfiler(profilerClient, c.logger)
 	}
 
 	if err := profiler.ProfileFeatures(ctx, repo); err != nil {

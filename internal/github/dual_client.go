@@ -71,14 +71,19 @@ func NewDualClient(cfg DualClientConfig) (*DualClient, error) {
 	}
 
 	// Optionally create App client if credentials are provided
+	// Note: AppInstallationID is optional - if 0, creates JWT-only client for enterprise discovery
 	if cfg.AppConfig != nil &&
 		cfg.AppConfig.AppID > 0 &&
-		cfg.AppConfig.AppPrivateKey != "" &&
-		cfg.AppConfig.AppInstallationID > 0 {
+		cfg.AppConfig.AppPrivateKey != "" {
 
-		cfg.Logger.Info("Initializing GitHub App client",
-			"app_id", cfg.AppConfig.AppID,
-			"installation_id", cfg.AppConfig.AppInstallationID)
+		if cfg.AppConfig.AppInstallationID > 0 {
+			cfg.Logger.Info("Initializing GitHub App client (Installation mode)",
+				"app_id", cfg.AppConfig.AppID,
+				"installation_id", cfg.AppConfig.AppInstallationID)
+		} else {
+			cfg.Logger.Info("Initializing GitHub App client (JWT-only mode for enterprise discovery)",
+				"app_id", cfg.AppConfig.AppID)
+		}
 
 		appClient, err := NewClient(*cfg.AppConfig)
 		if err != nil {
@@ -87,7 +92,11 @@ func NewDualClient(cfg DualClientConfig) (*DualClient, error) {
 				"error", err)
 		} else {
 			dc.appClient = appClient
-			cfg.Logger.Info("GitHub App client initialized successfully")
+			if cfg.AppConfig.AppInstallationID > 0 {
+				cfg.Logger.Info("GitHub App client initialized successfully (Installation mode)")
+			} else {
+				cfg.Logger.Info("GitHub App client initialized successfully (JWT-only mode)")
+			}
 		}
 	} else {
 		cfg.Logger.Info("No GitHub App credentials provided, using PAT for all operations")

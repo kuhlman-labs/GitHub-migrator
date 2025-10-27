@@ -34,16 +34,24 @@ type Handler struct {
 	sourceDualClient *github.DualClient
 	destDualClient   *github.DualClient
 	collector        *discovery.Collector
+	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
 }
 
 // NewHandler creates a new Handler instance
 // sourceProvider can be nil if discovery is not needed
-func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider) *Handler {
+// sourceBaseConfig is used for per-org client creation in enterprise discovery (can be nil for PAT-only mode)
+func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig) *Handler {
 	var collector *discovery.Collector
 	// Use API client for discovery operations (will use App client if available, otherwise PAT)
 	if sourceDualClient != nil && sourceProvider != nil {
 		apiClient := sourceDualClient.APIClient()
 		collector = discovery.NewCollector(apiClient, db, logger, sourceProvider)
+
+		// If we have a base config with GitHub App credentials, set it on the collector
+		// This enables per-org client creation for enterprise-wide discovery
+		if sourceBaseConfig != nil {
+			collector.WithBaseConfig(*sourceBaseConfig)
+		}
 	}
 	return &Handler{
 		db:               db,
@@ -51,6 +59,7 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 		sourceDualClient: sourceDualClient,
 		destDualClient:   destDualClient,
 		collector:        collector,
+		sourceBaseConfig: sourceBaseConfig,
 	}
 }
 
@@ -60,6 +69,47 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		"status": "healthy",
 		"time":   time.Now().Format(time.RFC3339),
 	})
+}
+
+// getClientForOrg returns the appropriate GitHub client for an organization
+// If using JWT-only mode, creates an org-specific client with installation token
+// Otherwise, returns the existing API client
+func (h *Handler) getClientForOrg(ctx context.Context, org string) (*github.Client, error) {
+	// Check if we're in JWT-only mode (App auth without installation ID)
+	isJWTOnlyMode := h.sourceBaseConfig != nil &&
+		h.sourceBaseConfig.AppID > 0 &&
+		h.sourceBaseConfig.AppInstallationID == 0
+
+	if isJWTOnlyMode {
+		h.logger.Debug("Creating org-specific client for single-repo operation",
+			"org", org,
+			"app_id", h.sourceBaseConfig.AppID)
+
+		// Use the JWT client to get the installation ID for this org
+		jwtClient := h.sourceDualClient.APIClient()
+		installationID, err := jwtClient.GetOrganizationInstallationID(ctx, org)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get installation ID for org %s: %w", org, err)
+		}
+
+		// Create org-specific client
+		orgConfig := *h.sourceBaseConfig
+		orgConfig.AppInstallationID = installationID
+
+		orgClient, err := github.NewClient(orgConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create org-specific client for %s: %w", org, err)
+		}
+
+		h.logger.Debug("Created org-specific client",
+			"org", org,
+			"installation_id", installationID)
+
+		return orgClient, nil
+	}
+
+	// Use the existing API client (PAT or App with installation ID)
+	return h.sourceDualClient.APIClient(), nil
 }
 
 // StartDiscovery handles POST /api/v1/discovery/start
@@ -441,9 +491,17 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	org, repoName := parts[0], parts[1]
 
-	// Fetch repository from GitHub API using API client
-	apiClient := h.sourceDualClient.APIClient()
-	ghRepo, _, err := apiClient.REST().Repositories.Get(ctx, org, repoName)
+	// Get the appropriate client for this organization
+	// In JWT-only mode, this creates an org-specific client with installation token
+	client, err := h.getClientForOrg(ctx, org)
+	if err != nil {
+		h.logger.Error("Failed to get client for organization", "error", err, "org", org)
+		h.sendError(w, http.StatusInternalServerError, "Failed to initialize client for repository")
+		return
+	}
+
+	// Fetch repository from GitHub API
+	ghRepo, _, err := client.REST().Repositories.Get(ctx, org, repoName)
 	if err != nil {
 		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", fullName)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository from GitHub")
@@ -2512,9 +2570,17 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 			}
 			org, repoName := parts[0], parts[1]
 
+			// Get the appropriate client for this organization
+			// In JWT-only mode, this creates an org-specific client with installation token
+			client, err := h.getClientForOrg(ctx, org)
+			if err != nil {
+				h.logger.Error("Failed to get client for organization", "repo", repoFullName, "org", org, "error", err)
+				discoveryErrors = append(discoveryErrors, fmt.Sprintf("%s: failed to initialize client", repoFullName))
+				continue
+			}
+
 			// Fetch repository from GitHub API
-			apiClient := h.sourceDualClient.APIClient()
-			ghRepo, _, err := apiClient.REST().Repositories.Get(ctx, org, repoName)
+			ghRepo, _, err := client.REST().Repositories.Get(ctx, org, repoName)
 			if err != nil {
 				h.logger.Error("Failed to fetch repository from GitHub", "repo", repoFullName, "error", err)
 				discoveryErrors = append(discoveryErrors, fmt.Sprintf("%s: not found on source", repoFullName))

@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v75/github"
+	"github.com/jferrl/go-githubauth"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
@@ -38,7 +39,7 @@ type ClientConfig struct {
 	// GitHub App authentication (optional, takes precedence over Token if provided)
 	AppID             int64  // GitHub App ID
 	AppPrivateKey     string // Private key (file path or inline PEM)
-	AppInstallationID int64  // Installation ID
+	AppInstallationID int64  // Installation ID (optional: if 0, creates JWT-only client for enterprise-wide discovery)
 }
 
 // InstanceType represents the type of GitHub instance
@@ -108,8 +109,42 @@ func buildGraphQLURL(baseURL string) string {
 	}
 }
 
-// createAppTransport creates an http.RoundTripper for GitHub App authentication
-func createAppTransport(appID int64, privateKey string, installationID int64, baseURL string) (http.RoundTripper, error) {
+// CreateOrgSpecificClient creates a GitHub client with an org-specific installation token
+// This is used for GitHub Enterprise Apps where each org has its own installation
+// Parameters:
+//   - jwtClient: A JWT-authenticated client (created with AppID + AppPrivateKey, no InstallationID)
+//   - org: The organization name
+//   - baseConfig: The base configuration (with AppID and AppPrivateKey)
+//
+// Returns a new client configured with the org's installation token
+func CreateOrgSpecificClient(ctx context.Context, jwtClient *Client, org string, baseConfig ClientConfig) (*Client, error) {
+	// Get the installation ID for this org
+	installationID, err := jwtClient.GetOrganizationInstallationID(ctx, org)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get installation ID for org %s: %w", org, err)
+	}
+
+	jwtClient.logger.Info("Creating org-specific client",
+		"org", org,
+		"installation_id", installationID)
+
+	// Create a new client config with the org's installation ID
+	orgConfig := baseConfig
+	orgConfig.AppInstallationID = installationID
+
+	// Create the org-specific client
+	orgClient, err := NewClient(orgConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client for org %s: %w", org, err)
+	}
+
+	return orgClient, nil
+}
+
+// createGitHubAppTokenSource creates an oauth2.TokenSource for GitHub App authentication
+// using the go-githubauth library which provides intelligent token caching and
+// avoids mutex contention for concurrent requests
+func createGitHubAppTokenSource(appID int64, privateKey string, installationID int64, baseURL string) (oauth2.TokenSource, error) {
 	var privateKeyBytes []byte
 	var err error
 
@@ -126,31 +161,20 @@ func createAppTransport(appID int64, privateKey string, installationID int64, ba
 		}
 	}
 
-	// Create the GitHub App transport
-	var tr http.RoundTripper
-	if baseURL == "" || baseURL == GitHubAPIURL {
-		// GitHub.com
-		tr, err = ghinstallation.New(http.DefaultTransport, appID, installationID, privateKeyBytes)
-	} else {
-		// GitHub Enterprise
-		tr, err = ghinstallation.NewKeyFromFile(http.DefaultTransport, appID, installationID, privateKey)
-		if err != nil && strings.HasPrefix(privateKey, "-----BEGIN") {
-			// Try with the bytes directly if it's inline PEM
-			tr, err = ghinstallation.New(http.DefaultTransport, appID, installationID, privateKeyBytes)
-		}
-		if err == nil {
-			// Set the base URL for enterprise
-			if appTr, ok := tr.(*ghinstallation.Transport); ok {
-				appTr.BaseURL = baseURL
-			}
-		}
-	}
-
+	// Create GitHub App JWT token source (Application-level authentication)
+	// This generates JWTs for authenticating as the GitHub App itself
+	appTokenSource, err := githubauth.NewApplicationTokenSource(appID, privateKeyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GitHub App transport: %w", err)
+		return nil, fmt.Errorf("failed to create application token source: %w", err)
 	}
 
-	return tr, nil
+	// Create Installation token source (Installation-level authentication)
+	// This exchanges the App JWT for an installation access token
+	// The go-githubauth library handles token caching and refresh automatically,
+	// avoiding mutex contention that caused performance issues with concurrent requests
+	installationTokenSource := githubauth.NewInstallationTokenSource(installationID, appTokenSource)
+
+	return installationTokenSource, nil
 }
 
 // NewClient creates a new GitHub client with rate limiting and retry logic
@@ -170,23 +194,81 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	var token string
 
 	// Determine authentication method
-	if cfg.AppID > 0 && cfg.AppPrivateKey != "" && cfg.AppInstallationID > 0 {
-		// Use GitHub App authentication
-		authMethod = "GitHub App"
-		cfg.Logger.Debug("Using GitHub App authentication",
-			"app_id", cfg.AppID,
-			"installation_id", cfg.AppInstallationID)
+	if cfg.AppID > 0 && cfg.AppPrivateKey != "" {
+		// GitHub App authentication (with or without installation token)
+		var tokenSource oauth2.TokenSource
+		var err error
 
-		tr, err := createAppTransport(cfg.AppID, cfg.AppPrivateKey, cfg.AppInstallationID, cfg.BaseURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create GitHub App transport: %w", err)
+		if cfg.AppInstallationID > 0 {
+			// Use installation token (for org-specific operations)
+			authMethod = "GitHub App (Installation)"
+			cfg.Logger.Debug("Using GitHub App installation authentication",
+				"app_id", cfg.AppID,
+				"installation_id", cfg.AppInstallationID)
+
+			tokenSource, err = createGitHubAppTokenSource(cfg.AppID, cfg.AppPrivateKey, cfg.AppInstallationID, cfg.BaseURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create GitHub App token source: %w", err)
+			}
+		} else {
+			// Use JWT-only authentication (for App-level APIs like finding installations)
+			authMethod = "GitHub App (JWT)"
+			cfg.Logger.Debug("Using GitHub App JWT authentication (no installation)",
+				"app_id", cfg.AppID)
+
+			var privateKeyBytes []byte
+			if strings.HasPrefix(cfg.AppPrivateKey, "-----BEGIN") {
+				privateKeyBytes = []byte(cfg.AppPrivateKey)
+			} else {
+				// #nosec G304 -- private key file path is provided by configuration, not user input
+				privateKeyBytes, err = os.ReadFile(cfg.AppPrivateKey)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read private key file: %w", err)
+				}
+			}
+
+			// Create JWT-only token source for App-level authentication
+			tokenSource, err = githubauth.NewApplicationTokenSource(cfg.AppID, privateKeyBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create application token source: %w", err)
+			}
 		}
 
+		// Create a custom transport with higher concurrency limits
+		// The default http.DefaultTransport has MaxIdleConnsPerHost: 2, which severely
+		// limits concurrent requests. With 5 discovery workers, increase to 100 to allow
+		// all workers to make concurrent requests without blocking.
+		customTransport := &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   100, // Increased from default 2 to support concurrent workers
+			MaxConnsPerHost:       0,   // 0 means unlimited
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}
+
+		// Create HTTP client with OAuth2 transport and optimized settings for concurrent access
 		httpClient = &http.Client{
-			Transport: tr,
-			Timeout:   cfg.Timeout,
+			Transport: &oauth2.Transport{
+				Source: oauth2.ReuseTokenSource(nil, tokenSource),
+				Base:   customTransport,
+			},
+			Timeout: cfg.Timeout,
 		}
-		token = "" // App auth doesn't use a token string
+
+		// Get the initial token for logging/debugging
+		initialToken, err := tokenSource.Token()
+		if err != nil {
+			cfg.Logger.Warn("Failed to get initial token", "error", err)
+		} else {
+			token = initialToken.AccessToken
+		}
 	} else {
 		// Use PAT authentication
 		authMethod = "PAT"
@@ -248,9 +330,13 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		logger:         cfg.Logger,
 	}
 
-	// Initialize rate limits
-	if err := client.updateRateLimits(context.Background()); err != nil {
-		cfg.Logger.Warn("Failed to initialize rate limits", "error", err)
+	// Initialize rate limits (skip for JWT-only clients as they can't access rate limit API)
+	if cfg.AppInstallationID != 0 || cfg.Token != "" {
+		if err := client.updateRateLimits(context.Background()); err != nil {
+			cfg.Logger.Warn("Failed to initialize rate limits", "error", err)
+		}
+	} else {
+		cfg.Logger.Debug("Skipping rate limit initialization for JWT-only client")
 	}
 
 	return client, nil
@@ -274,6 +360,62 @@ func (c *Client) Token() string {
 // GraphQL returns the underlying GitHub GraphQL client
 func (c *Client) GraphQL() *githubv4.Client {
 	return c.graphql
+}
+
+// GetOrganizationInstallationID gets the installation ID for a specific organization
+// This is needed when using Enterprise-level GitHub Apps to get org-specific tokens
+// Requires JWT authentication (AppID + AppPrivateKey without InstallationID)
+func (c *Client) GetOrganizationInstallationID(ctx context.Context, org string) (int64, error) {
+	c.logger.Debug("Getting installation ID for organization", "org", org)
+
+	installation, _, err := c.rest.Apps.FindOrganizationInstallation(ctx, org)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get installation for org %s: %w", org, err)
+	}
+
+	if installation == nil || installation.ID == nil {
+		return 0, fmt.Errorf("no installation found for org %s", org)
+	}
+
+	c.logger.Debug("Found installation for organization", "org", org, "installation_id", *installation.ID)
+	return *installation.ID, nil
+}
+
+// ListAppInstallations lists all installations for the GitHub App
+// This is the proper way for GitHub Apps to discover all organizations they're installed in
+// Requires JWT authentication (AppID + AppPrivateKey without InstallationID)
+// Returns a map of org login -> installation ID
+func (c *Client) ListAppInstallations(ctx context.Context) (map[string]int64, error) {
+	c.logger.Debug("Listing all app installations")
+
+	installations := make(map[string]int64)
+	opts := &github.ListOptions{PerPage: 100}
+
+	for {
+		installs, resp, err := c.rest.Apps.ListInstallations(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list app installations: %w", err)
+		}
+
+		for _, install := range installs {
+			if install.Account != nil && install.Account.Login != nil && install.ID != nil {
+				orgLogin := *install.Account.Login
+				installations[orgLogin] = *install.ID
+				c.logger.Debug("Found app installation",
+					"org", orgLogin,
+					"installation_id", *install.ID,
+					"type", install.Account.GetType())
+			}
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	c.logger.Info("Listed all app installations", "count", len(installations))
+	return installations, nil
 }
 
 // GetRateLimiter returns the rate limiter
