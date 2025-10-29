@@ -27,6 +27,7 @@ export interface Repository {
   has_packages: boolean;
   branch_protections: number;
   has_rulesets: boolean;
+  tag_protection_count: number;
   environment_count: number;
   secret_count: number;
   variable_count: number;
@@ -65,6 +66,8 @@ export interface Repository {
   migrated_at?: string;
   last_discovery_at?: string;
   last_dry_run_at?: string;
+  // Computed fields
+  complexity_score?: number;
 }
 
 export interface MigrationHistory {

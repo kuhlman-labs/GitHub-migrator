@@ -29,20 +29,21 @@ type Repository struct {
 	LastCommitDate    *time.Time `json:"last_commit_date,omitempty" db:"last_commit_date"`
 
 	// GitHub features
-	IsArchived        bool `json:"is_archived" db:"is_archived"`
-	IsFork            bool `json:"is_fork" db:"is_fork"`
-	HasWiki           bool `json:"has_wiki" db:"has_wiki"`
-	HasPages          bool `json:"has_pages" db:"has_pages"`
-	HasDiscussions    bool `json:"has_discussions" db:"has_discussions"`
-	HasActions        bool `json:"has_actions" db:"has_actions"`
-	HasProjects       bool `json:"has_projects" db:"has_projects"`
-	HasPackages       bool `json:"has_packages" db:"has_packages"`
-	BranchProtections int  `json:"branch_protections" db:"branch_protections"`
-	HasRulesets       bool `json:"has_rulesets" db:"has_rulesets"`
-	EnvironmentCount  int  `json:"environment_count" db:"environment_count"`
-	SecretCount       int  `json:"secret_count" db:"secret_count"`
-	VariableCount     int  `json:"variable_count" db:"variable_count"`
-	WebhookCount      int  `json:"webhook_count" db:"webhook_count"`
+	IsArchived         bool `json:"is_archived" db:"is_archived"`
+	IsFork             bool `json:"is_fork" db:"is_fork"`
+	HasWiki            bool `json:"has_wiki" db:"has_wiki"`
+	HasPages           bool `json:"has_pages" db:"has_pages"`
+	HasDiscussions     bool `json:"has_discussions" db:"has_discussions"`
+	HasActions         bool `json:"has_actions" db:"has_actions"`
+	HasProjects        bool `json:"has_projects" db:"has_projects"`
+	HasPackages        bool `json:"has_packages" db:"has_packages"`
+	BranchProtections  int  `json:"branch_protections" db:"branch_protections"`
+	HasRulesets        bool `json:"has_rulesets" db:"has_rulesets"`
+	TagProtectionCount int  `json:"tag_protection_count" db:"tag_protection_count"`
+	EnvironmentCount   int  `json:"environment_count" db:"environment_count"`
+	SecretCount        int  `json:"secret_count" db:"secret_count"`
+	VariableCount      int  `json:"variable_count" db:"variable_count"`
+	WebhookCount       int  `json:"webhook_count" db:"webhook_count"`
 
 	// Security & Compliance
 	HasCodeScanning   bool `json:"has_code_scanning" db:"has_code_scanning"`
@@ -98,6 +99,9 @@ type Repository struct {
 	MigratedAt      *time.Time `json:"migrated_at,omitempty" db:"migrated_at"`
 	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty" db:"last_discovery_at"` // Latest discovery refresh
 	LastDryRunAt    *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at"`     // Latest dry run execution
+
+	// Computed fields (not stored in DB)
+	ComplexityScore *int `json:"complexity_score,omitempty" db:"-"` // Calculated server-side
 }
 
 // MigrationStatus represents the status of a repository migration

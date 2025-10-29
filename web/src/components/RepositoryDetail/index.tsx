@@ -630,6 +630,8 @@ export function RepositoryDetail() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <ProfileCard title="Migration Complexity Score">
                 {(() => {
+                  // Use backend-calculated score when available
+                  // Only calculate individual components for display breakdown
                   const MB100 = 100 * 1024 * 1024;
                   const GB1 = 1024 * 1024 * 1024;
                   const GB5 = 5 * 1024 * 1024 * 1024;
@@ -652,33 +654,59 @@ export function RepositoryDetail() {
                     }
                   }
                   
+                  // High impact features
+                  const largeFilesPoints = repository.has_large_files ? 4 : 0;
+                  const environmentsPoints = repository.environment_count > 0 ? 3 : 0;
+                  const secretsPoints = repository.secret_count > 0 ? 3 : 0;
+                  const packagesPoints = repository.has_packages ? 3 : 0;
+                  const runnersPoints = repository.has_self_hosted_runners ? 3 : 0;
+                  
+                  // Moderate impact features
+                  const variablesPoints = repository.variable_count > 0 ? 2 : 0;
+                  const discussionsPoints = repository.has_discussions ? 2 : 0;
+                  const releasesPoints = repository.release_count > 0 ? 2 : 0;
                   const lfsPoints = repository.has_lfs ? 2 : 0;
                   const submodulesPoints = repository.has_submodules ? 2 : 0;
-                  const largeFilesPoints = repository.has_large_files ? 4 : 0;
-                  const packagesPoints = repository.has_packages ? 3 : 0;
+                  const appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
+                  
+                  // Low impact features
+                  const securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 1 : 0;
+                  const webhooksPoints = repository.webhook_count > 0 ? 1 : 0;
+                  const tagProtectionsPoints = repository.tag_protection_count > 0 ? 1 : 0;
                   const branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
                   const rulesetsPoints = repository.has_rulesets ? 1 : 0;
-                  const securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 2 : 0;
-                  const runnersPoints = repository.has_self_hosted_runners ? 3 : 0;
-                  const appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
                   const publicVisibilityPoints = repository.visibility === 'public' ? 1 : 0;
                   const internalVisibilityPoints = repository.visibility === 'internal' ? 1 : 0;
                   const codeownersPoints = repository.has_codeowners ? 1 : 0;
                   
-                  const totalScore = sizePoints + lfsPoints + submodulesPoints + largeFilesPoints + packagesPoints + branchProtectionsPoints + rulesetsPoints + securityPoints + runnersPoints + appsPoints + publicVisibilityPoints + internalVisibilityPoints + codeownersPoints;
+                  // Activity-based scoring (approximated) - high activity needs extensive coordination
+                  const activityScore = 
+                    (repository.branch_count > 50 ? 0.5 : repository.branch_count > 10 ? 0.25 : 0) +
+                    (repository.commit_count > 1000 ? 0.5 : repository.commit_count > 100 ? 0.25 : 0) +
+                    (repository.issue_count > 100 ? 0.5 : repository.issue_count > 10 ? 0.25 : 0) +
+                    (repository.pull_request_count > 50 ? 0.5 : repository.pull_request_count > 10 ? 0.25 : 0);
+                  const activityPoints = activityScore >= 1.5 ? 4 : activityScore >= 0.5 ? 2 : 0;
+                  
+                  // Use backend score when available, otherwise calculate
+                  const totalPoints = repository.complexity_score ?? (
+                    sizePoints + largeFilesPoints + environmentsPoints + secretsPoints + packagesPoints + runnersPoints +
+                    variablesPoints + discussionsPoints + releasesPoints + lfsPoints + submodulesPoints + securityPoints + appsPoints +
+                    webhooksPoints + tagProtectionsPoints + branchProtectionsPoints + rulesetsPoints + publicVisibilityPoints + internalVisibilityPoints + codeownersPoints +
+                    activityPoints
+                  );
                   
                   let category = 'Simple';
                   let categoryColor = 'text-green-600';
                   let categoryBg = 'bg-green-50';
-                  if (totalScore > 9) {
+                  if (totalPoints > 17) {
                     category = 'Very Complex';
                     categoryColor = 'text-red-600';
                     categoryBg = 'bg-red-50';
-                  } else if (totalScore > 6) {
+                  } else if (totalPoints > 10) {
                     category = 'Complex';
                     categoryColor = 'text-orange-600';
                     categoryBg = 'bg-orange-50';
-                  } else if (totalScore > 3) {
+                  } else if (totalPoints > 5) {
                     category = 'Medium';
                     categoryColor = 'text-yellow-600';
                     categoryBg = 'bg-yellow-50';
@@ -689,7 +717,7 @@ export function RepositoryDetail() {
                       <div className={`mb-4 p-4 ${categoryBg} rounded-lg border-l-4 ${categoryColor.replace('text-', 'border-')}`}>
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-sm font-medium text-gray-700">Total Complexity Score</span>
-                          <span className={`text-3xl font-bold ${categoryColor}`}>{totalScore}</span>
+                          <span className={`text-3xl font-bold ${categoryColor}`}>{totalPoints}</span>
                         </div>
                         <div className="text-sm">
                           <span className="font-medium text-gray-700">Category: </span>
@@ -745,15 +773,85 @@ export function RepositoryDetail() {
                             <div className="text-sm font-medium text-gray-900">GitHub Packages</div>
                             <div className="text-xs text-gray-500">{repository.has_packages ? 'Yes (requires manual migration)' : 'No'}</div>
                           </div>
-                          <span className={`text-lg font-semibold ${packagesPoints > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                          <span className={`text-lg font-semibold ${packagesPoints > 0 ? 'text-red-600' : 'text-gray-400'}`}>
                             +{packagesPoints}
                           </span>
                         </div>
                         
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
                           <div>
+                            <div className="text-sm font-medium text-gray-900">Environments</div>
+                            <div className="text-xs text-gray-500">{repository.environment_count > 0 ? `${repository.environment_count} (manual recreation required)` : 'None'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${environmentsPoints > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            +{environmentsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Secrets</div>
+                            <div className="text-xs text-gray-500">{repository.secret_count > 0 ? `${repository.secret_count} (manual recreation required)` : 'None'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${secretsPoints > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            +{secretsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Variables</div>
+                            <div className="text-xs text-gray-500">{repository.variable_count > 0 ? `${repository.variable_count} (manual recreation required)` : 'None'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${variablesPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            +{variablesPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Discussions</div>
+                            <div className="text-xs text-gray-500">{repository.has_discussions ? 'Yes (don\'t migrate)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${discussionsPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            +{discussionsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Releases</div>
+                            <div className="text-xs text-gray-500">{repository.release_count > 0 ? `${repository.release_count} (GHES 3.5.0+ only)` : 'None'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${releasesPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            +{releasesPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Webhooks</div>
+                            <div className="text-xs text-gray-500">{repository.webhook_count > 0 ? `${repository.webhook_count} (must re-enable)` : 'None'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${webhooksPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                            +{webhooksPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Tag Protections</div>
+                            <div className="text-xs text-gray-500">{repository.tag_protection_count > 0 ? `${repository.tag_protection_count} rules` : 'None'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${tagProtectionsPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                            +{tagProtectionsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
                             <div className="text-sm font-medium text-gray-900">Branch Protections</div>
-                            <div className="text-xs text-gray-500">{repository.branch_protections} rules</div>
+                            <div className="text-xs text-gray-500">{repository.branch_protections > 0 ? `${repository.branch_protections} rules` : 'None'}</div>
                           </div>
                           <span className={`text-lg font-semibold ${branchProtectionsPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
                             +{branchProtectionsPoints}
@@ -765,21 +863,21 @@ export function RepositoryDetail() {
                             <div className="text-sm font-medium text-gray-900">Rulesets</div>
                             <div className="text-xs text-gray-500">{repository.has_rulesets ? 'Yes (requires manual recreation)' : 'No'}</div>
                           </div>
-                          <span className={`text-lg font-semibold ${rulesetsPoints > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          <span className={`text-lg font-semibold ${rulesetsPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
                             +{rulesetsPoints}
                           </span>
                         </div>
                         
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">Advanced Security</div>
+                            <div className="text-sm font-medium text-gray-900">Advanced Security (GHAS)</div>
                             <div className="text-xs text-gray-500">
                               {repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning 
-                                ? 'Enabled (requires GHAS license)' 
+                                ? 'Enabled (simple re-enablement)' 
                                 : 'Not enabled'}
                             </div>
                           </div>
-                          <span className={`text-lg font-semibold ${securityPoints > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          <span className={`text-lg font-semibold ${securityPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
                             +{securityPoints}
                           </span>
                         </div>
@@ -789,7 +887,7 @@ export function RepositoryDetail() {
                             <div className="text-sm font-medium text-gray-900">Self-Hosted Runners</div>
                             <div className="text-xs text-gray-500">{repository.has_self_hosted_runners ? 'Yes (infrastructure dependency)' : 'No'}</div>
                           </div>
-                          <span className={`text-lg font-semibold ${runnersPoints > 0 ? 'text-purple-600' : 'text-gray-400'}`}>
+                          <span className={`text-lg font-semibold ${runnersPoints > 0 ? 'text-red-600' : 'text-gray-400'}`}>
                             +{runnersPoints}
                           </span>
                         </div>
@@ -799,7 +897,7 @@ export function RepositoryDetail() {
                             <div className="text-sm font-medium text-gray-900">GitHub Apps</div>
                             <div className="text-xs text-gray-500">{repository.installed_apps_count > 0 ? `${repository.installed_apps_count} installed` : 'None'}</div>
                           </div>
-                          <span className={`text-lg font-semibold ${appsPoints > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                          <span className={`text-lg font-semibold ${appsPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
                             +{appsPoints}
                           </span>
                         </div>
@@ -829,10 +927,29 @@ export function RepositoryDetail() {
                             <div className="text-sm font-medium text-gray-900">CODEOWNERS</div>
                             <div className="text-xs text-gray-500">{repository.has_codeowners ? 'Yes (requires verification)' : 'No'}</div>
                           </div>
-                          <span className={`text-lg font-semibold ${codeownersPoints > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                          <span className={`text-lg font-semibold ${codeownersPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
                             +{codeownersPoints}
                           </span>
                         </div>
+                        
+                        <div className="flex justify-between items-center py-2">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Activity Level</div>
+                            <div className="text-xs text-gray-500">
+                              {activityPoints === 4 ? 'High (top 25% - extensive coordination needed)' : 
+                               activityPoints === 2 ? 'Moderate (25-75% - some coordination needed)' : 
+                               'Low (bottom 25%)'}
+                            </div>
+                          </div>
+                          <span className={`text-lg font-semibold ${activityPoints > 0 ? 'text-purple-600' : 'text-gray-400'}`}>
+                            +{activityPoints}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 p-3 bg-blue-50 rounded text-xs text-blue-700">
+                        <p className="font-medium mb-1">💡 Scoring based on GitHub migration documentation</p>
+                        <p>Weights reflect remediation difficulty for features that don't migrate automatically.</p>
                       </div>
                       
                       <div className="pt-2 border-t border-gray-200">

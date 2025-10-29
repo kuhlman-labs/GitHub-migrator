@@ -62,6 +62,7 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	p.profileWorkflowCount(ctx, org, name, repo)
 	p.profileBranchProtections(ctx, org, name, repo)
 	p.profileRulesets(ctx, org, name, repo)
+	p.profileTagProtections(ctx, org, name, repo)
 	p.profileEnvironments(ctx, org, name, repo)
 	p.profileWebhooks(ctx, org, name, repo)
 	p.profileContributors(ctx, org, name, repo)
@@ -78,6 +79,9 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 
 	// Check if wiki actually has content (not just enabled)
 	p.profileWikiContent(ctx, repo)
+
+	// Check if projects (classic) actually exist (not just enabled)
+	p.profileProjectContent(ctx, org, name, repo)
 
 	// Get issue counts for verification
 	if err := p.countIssuesAndPRs(ctx, org, name, repo); err != nil {
@@ -139,6 +143,23 @@ func (p *Profiler) profileRulesets(ctx context.Context, org, name string, repo *
 		p.logger.Debug("Repository has rulesets", "repo", repo.FullName, "count", len(rulesets))
 	} else if err != nil {
 		p.logger.Debug("Failed to get rulesets", "error", err)
+	}
+}
+
+// profileTagProtections counts tag protection rules
+// Tag protection rules don't migrate with GEI and must be manually configured
+func (p *Profiler) profileTagProtections(ctx context.Context, org, name string, repo *models.Repository) {
+	// List tag protection rules for the repository
+	// This API endpoint was added in GitHub Enterprise Server 3.4+
+	tagProtections, _, err := p.client.REST().Repositories.ListTagProtection(ctx, org, name)
+	if err == nil && tagProtections != nil {
+		repo.TagProtectionCount = len(tagProtections)
+		if len(tagProtections) > 0 {
+			p.logger.Debug("Repository has tag protections", "repo", repo.FullName, "count", len(tagProtections))
+		}
+	} else {
+		p.logger.Debug("Failed to get tag protections", "error", err)
+		repo.TagProtectionCount = 0
 	}
 }
 
@@ -463,16 +484,40 @@ func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo
 	// Check common locations: .github/CODEOWNERS, docs/CODEOWNERS, CODEOWNERS
 	locations := []string{".github/CODEOWNERS", "docs/CODEOWNERS", "CODEOWNERS"}
 
+	p.logger.Debug("Checking for CODEOWNERS file", "repo", repo.FullName)
+
 	for _, path := range locations {
-		_, _, resp, err := p.client.REST().Repositories.GetContents(ctx, org, name, path, nil)
-		if err == nil && resp.StatusCode == 200 {
-			repo.HasCodeowners = true
-			p.logger.Debug("Found CODEOWNERS file", "repo", repo.FullName, "path", path)
-			return
+		fileContent, _, resp, err := p.client.REST().Repositories.GetContents(ctx, org, name, path, nil)
+
+		if err != nil {
+			p.logger.Debug("CODEOWNERS check failed at location",
+				"repo", repo.FullName,
+				"path", path,
+				"error", err.Error(),
+				"is_404", resp != nil && resp.StatusCode == 404)
+			continue
+		}
+
+		if resp != nil && resp.StatusCode == 200 {
+			// Verify it's a file, not a directory
+			if fileContent != nil && fileContent.GetType() == "file" {
+				repo.HasCodeowners = true
+				p.logger.Debug("Found CODEOWNERS file",
+					"repo", repo.FullName,
+					"path", path,
+					"size", fileContent.GetSize())
+				return
+			} else {
+				p.logger.Debug("Path exists but is not a file",
+					"repo", repo.FullName,
+					"path", path,
+					"type", fileContent.GetType())
+			}
 		}
 	}
 
 	repo.HasCodeowners = false
+	p.logger.Debug("No CODEOWNERS file found", "repo", repo.FullName)
 }
 
 // profileWorkflowCount counts GitHub Actions workflows (enhances existing workflow detection)
@@ -624,6 +669,60 @@ func (p *Profiler) profileWikiContent(ctx context.Context, repo *models.Reposito
 		p.logger.Debug("Wiki feature enabled but no content found",
 			"repo", repo.FullName)
 	}
+}
+
+// profileProjectContent checks if the repository has actual project boards with content
+// Similar to profileWikiContent, this verifies actual usage vs just having the feature enabled
+// Note: Projects (classic) DO migrate with GEI, but we track them for completeness
+func (p *Profiler) profileProjectContent(ctx context.Context, org, name string, repo *models.Repository) {
+	// If projects feature is not enabled, skip the check
+	if !repo.HasProjects {
+		return
+	}
+
+	// Check for actual project boards using GraphQL
+	hasProjects, err := p.detectProjectsViaGraphQL(ctx, org, name)
+	if err != nil {
+		p.logger.Debug("Failed to check for projects via GraphQL",
+			"repo", repo.FullName,
+			"error", err)
+		// If we can't check, assume no projects to avoid false positives
+		repo.HasProjects = false
+		return
+	}
+
+	// Update HasProjects to reflect actual project boards present
+	repo.HasProjects = hasProjects
+
+	if !hasProjects {
+		p.logger.Debug("Projects feature enabled but no project boards found",
+			"repo", repo.FullName)
+	} else {
+		p.logger.Debug("Found project boards (classic)", "repo", repo.FullName)
+	}
+}
+
+// detectProjectsViaGraphQL uses GraphQL to detect if a repository has project boards
+func (p *Profiler) detectProjectsViaGraphQL(ctx context.Context, org, name string) (bool, error) {
+	var query struct {
+		Repository struct {
+			Projects struct {
+				TotalCount int
+			} `graphql:"projects(first: 1)"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner": githubv4.String(org),
+		"name":  githubv4.String(name),
+	}
+
+	err := p.client.QueryWithRetry(ctx, "DetectProjects", &query, variables)
+	if err != nil {
+		return false, err
+	}
+
+	return query.Repository.Projects.TotalCount > 0, nil
 }
 
 // checkWikiHasContent checks if a wiki repository exists and has content

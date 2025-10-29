@@ -573,17 +573,106 @@ See `configs/env.example` for complete documentation.
 
 ### Complexity Scoring
 
-Repositories with **public** or **internal** visibility receive **+1 complexity point** each, as they may require visibility transformation during migration. This helps with:
+The system uses **GitHub-specific complexity scoring** to estimate migration effort and identify potential challenges. The score is calculated based on remediation difficulty of features that don't migrate automatically.
 
-- Migration planning and estimation
-- Identifying repositories that need access review
-- Batch organization by complexity
+#### Scoring Formula
+
+The complexity score combines repository size, non-migrated features, and activity level:
+
+**High Impact Features (3-4 points each):**
+- Large files (>100MB): **4 points** - Must be remediated before migration
+- Environments: **3 points** - Manual recreation of configs and protection rules required
+- Secrets: **3 points** - Manual recreation required, high security sensitivity
+- Packages: **3 points** - Don't migrate with GEI, manual migration required
+- Self-hosted runners: **3 points** - Infrastructure reconfiguration needed
+
+**Note:** Projects (classic) card-based boards DO migrate with GEI and are not scored. The new Projects experience (table-based at org level) doesn't migrate but isn't repository-level data.
+
+**Moderate Impact Features (2 points each):**
+- Variables: **2 points** - Manual recreation required
+- Discussions: **2 points** - Don't migrate, community impact
+- Releases: **2 points** - Only migrate on GHES 3.5.0+
+- Git LFS: **2 points** - Special handling required
+- Submodules: **2 points** - Dependency management complexity
+- GitHub Apps: **2 points** - Reconfiguration/reinstallation needed
+
+**Low Impact Features (1 point each):**
+- GHAS (Code scanning/Dependabot/Secret scanning): **1 point** - Simple toggles to re-enable
+- Webhooks: **1 point** - Must re-enable after migration
+- Tag protections: **1 point** - Manual configuration required
+- Branch protections: **1 point** - Some rules don't migrate
+- Rulesets: **1 point** - Manual recreation required
+- Public visibility: **1 point** - May need transformation
+- Internal visibility: **1 point** - May need transformation
+- CODEOWNERS: **1 point** - File detected in `.github/CODEOWNERS`, `docs/CODEOWNERS`, or `CODEOWNERS` on default branch. Verify file still exists and is valid.
+
+**Repository Size (0-9 points):**
+- <100MB: **0 points**
+- 100MB-1GB: **3 points**
+- 1GB-5GB: **6 points**
+- >5GB: **9 points**
+
+**Activity Level (0-4 points):**
+Activity is calculated using **quantiles** relative to your repository dataset. High-activity repositories require significantly more planning, coordination, and stakeholder communication:
+- High activity (top 25%): **4 points** - Many users, extensive coordination, high impact
+- Moderate activity (25-75%): **2 points** - Some coordination needed
+- Low activity (bottom 25%): **0 points** - Few users, minimal coordination
+
+Activity combines: branch count, commit count, issue count, and pull request count.
+
+#### Complexity Categories
+
+Based on total score:
+- **Simple** (≤5 points): Standard migration, minimal remediation
+- **Medium** (6-10 points): Moderate effort, some planning needed
+- **Complex** (11-17 points): Significant effort, careful planning required
+- **Very Complex** (≥18 points): High effort, likely needs extensive remediation
+
+#### Using Complexity Scores
+
+Complexity scores help with:
+- **Migration Planning**: Estimate effort and timeline
+- **Resource Allocation**: Assign appropriate resources to complex migrations
+- **Batch Organization**: Group repositories by complexity
+- **Risk Assessment**: Identify high-risk migrations requiring extra attention
+- **Remediation Planning**: Focus on repositories with high-weight features
 
 The complexity score is visible in:
 - Repository detail pages
 - Batch management interface
 - Analytics dashboards
-- API responses
+- API responses (`GET /api/v1/analytics/complexity-distribution`)
+
+#### Feature Detection Notes
+
+The discovery process automatically detects repository features using the GitHub API. Here are important considerations:
+
+**CODEOWNERS Detection:**
+- Checks for files at: `.github/CODEOWNERS`, `docs/CODEOWNERS`, or `CODEOWNERS` (root)
+- Only checks the repository's default branch
+- Verifies the path is a file (not a directory)
+- **Note**: Detection happens at discovery time. If files are added/removed after discovery, you should re-run discovery to update the detection
+
+**Common False Positives:**
+- Files that existed during discovery but were later deleted
+- Empty or placeholder CODEOWNERS files
+- Files on non-default branches (these are not detected)
+
+**Troubleshooting Feature Detection:**
+1. **Re-run Discovery**: Use the "Re-run Discovery" button in the UI to refresh feature detection
+2. **Check Logs**: Enable debug logging (`LOG_LEVEL=debug`) to see detailed detection information including:
+   - Which paths were checked
+   - Whether files were found or returned 404
+   - File types (file vs directory)
+   - File sizes
+3. **Manual Verification**: For critical features, manually verify in the source repository before migration
+
+**Example Debug Log Output:**
+```
+level=debug msg="Checking for CODEOWNERS file" repo=org/repo
+level=debug msg="CODEOWNERS check failed at location" repo=org/repo path=".github/CODEOWNERS" error="404 Not Found" is_404=true
+level=debug msg="No CODEOWNERS file found" repo=org/repo
+```
 
 ### Migration Logs
 

@@ -9,47 +9,80 @@ interface RepositoryListItemProps {
 
 export function RepositoryListItem({ repository, selected, onToggle }: RepositoryListItemProps) {
   const getComplexityIndicator = () => {
-    // Calculate complexity score matching backend logic:
-    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + has_packages (3) + 
-    // branch_protections > 0 (1) + has_rulesets (1) + GHAS (2) + self-hosted runners (3) + apps (2) + public (1) + internal (1) + codeowners (1)
-    const MB100 = 100 * 1024 * 1024;
-    const GB1 = 1024 * 1024 * 1024;
-    const GB5 = 5 * 1024 * 1024 * 1024;
+    // Use backend-calculated score if available (uses proper quantile-based activity scoring)
+    // Only fallback to frontend calculation if backend score is missing
+    let score: number;
     
-    let sizeTier = 0;
-    if (repository.total_size >= GB5) sizeTier = 3;
-    else if (repository.total_size >= GB1) sizeTier = 2;
-    else if (repository.total_size >= MB100) sizeTier = 1;
+    if (repository.complexity_score !== undefined && repository.complexity_score !== null) {
+      score = repository.complexity_score;
+    } else {
+      // Fallback: Calculate complexity score matching GitHub-specific backend logic
+      // Note: This uses static thresholds for activity, not quantiles like the backend
+      const MB100 = 100 * 1024 * 1024;
+      const GB1 = 1024 * 1024 * 1024;
+      const GB5 = 5 * 1024 * 1024 * 1024;
+      
+      // Size tier scoring (0-9 points)
+      let sizeTier = 0;
+      if (repository.total_size >= GB5) sizeTier = 3;
+      else if (repository.total_size >= GB1) sizeTier = 2;
+      else if (repository.total_size >= MB100) sizeTier = 1;
+      
+      score = sizeTier * 3;
     
-    let score = sizeTier * 3;
+    // High impact features (3-4 points each)
+    if (repository.has_large_files) score += 4;
+    if (repository.environment_count > 0) score += 3;
+    if (repository.secret_count > 0) score += 3;
+    if (repository.has_packages) score += 3;
+    if (repository.has_self_hosted_runners) score += 3;
+    
+    // Moderate impact features (2 points each)
+    if (repository.variable_count > 0) score += 2;
+    if (repository.has_discussions) score += 2;
+    if (repository.release_count > 0) score += 2;
     if (repository.has_lfs) score += 2;
     if (repository.has_submodules) score += 2;
-    if (repository.has_large_files) score += 4;
-    if (repository.has_packages) score += 3; // Packages don't migrate with GEI
-    if (repository.branch_protections > 0) score += 1;
-    if (repository.has_rulesets) score += 1; // Rulesets don't migrate with GEI
-    if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 2; // GHAS
-    if (repository.has_self_hosted_runners) score += 3;
     if (repository.installed_apps_count > 0) score += 2;
+    
+    // Low impact features (1 point each)
+    if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 1;
+    if (repository.webhook_count > 0) score += 1;
+    if (repository.tag_protection_count > 0) score += 1;
+    if (repository.branch_protections > 0) score += 1;
+    if (repository.has_rulesets) score += 1;
     if (repository.visibility === 'public') score += 1;
     if (repository.visibility === 'internal') score += 1;
     if (repository.has_codeowners) score += 1;
+    
+    // Activity-based scoring (0-4 points) - approximated with static thresholds
+    // Backend uses quantiles for more accurate per-customer calculation
+    // High-activity repos require significantly more coordination and planning
+    const activityScore = 
+      (repository.branch_count > 50 ? 0.5 : repository.branch_count > 10 ? 0.25 : 0) +
+      (repository.commit_count > 1000 ? 0.5 : repository.commit_count > 100 ? 0.25 : 0) +
+      (repository.issue_count > 100 ? 0.5 : repository.issue_count > 10 ? 0.25 : 0) +
+      (repository.pull_request_count > 50 ? 0.5 : repository.pull_request_count > 10 ? 0.25 : 0);
+    
+      if (activityScore >= 1.5) score += 4; // High activity - many users, extensive coordination
+      else if (activityScore >= 0.5) score += 2; // Moderate activity - some coordination needed
+    }
 
-    if (score <= 3) return { 
+    if (score <= 5) return { 
       label: 'Simple', 
       bgColor: 'bg-green-100', 
       textColor: 'text-green-800',
       borderColor: 'border-green-200'
     };
-    if (score <= 6) return { 
+    if (score <= 10) return { 
       label: 'Medium', 
       bgColor: 'bg-yellow-100', 
       textColor: 'text-yellow-800',
       borderColor: 'border-yellow-200'
     };
-    if (score <= 9) return { 
+    if (score <= 17) return { 
       label: 'Complex', 
-      bgColor: 'bg-orange-100', 
+      bgColor: 'bg-orange-100',
       textColor: 'text-orange-800',
       borderColor: 'border-orange-200'
     };
