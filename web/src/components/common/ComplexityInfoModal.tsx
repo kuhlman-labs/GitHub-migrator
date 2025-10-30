@@ -39,9 +39,12 @@ export function ComplexityInfoModal() {
               {/* Overview */}
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">Overview</h3>
-                <p className="text-gray-700">
-                  We calculate a complexity score for each repository to estimate migration effort and potential challenges. 
-                  The score combines multiple factors, each weighted by their impact on migration complexity.
+                <p className="text-gray-700 mb-2">
+                  We calculate a GitHub-specific complexity score for each repository to estimate migration effort and potential challenges. 
+                  The score combines multiple factors, each weighted by their remediation difficulty based on GitHub's migration documentation.
+                </p>
+                <p className="text-sm text-gray-600 italic">
+                  Activity levels are calculated using quantiles relative to your repository dataset, making the scoring adaptive to your specific environment.
                 </p>
               </div>
 
@@ -66,128 +69,226 @@ export function ComplexityInfoModal() {
                     </ul>
                   </div>
 
-                  {/* Large Files */}
-                  <div className="border-l-4 border-red-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Large Files (&gt;100MB)</h4>
-                      <span className="text-sm font-semibold text-red-600">Weight: 4 points</span>
+                  {/* High Impact Features */}
+                  <div className="mb-3">
+                    <h4 className="font-semibold text-gray-900 mb-2">High Impact (3-4 points)</h4>
+                    <p className="text-sm text-gray-600 mb-3">Features requiring significant remediation effort before or after migration</p>
+                    
+                    <div className="space-y-3">
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Large Files (&gt;100MB)</h5>
+                          <span className="text-sm font-semibold text-red-600">4 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Must be remediated before migration (migrate to LFS, remove from history). Highest weight.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Environments</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate. Manual recreation of all configs, protection rules, and deployment branches required.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Secrets</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate. Manual recreation required with high security sensitivity, affects CI/CD.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">GitHub Packages</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate with GEI. Manual migration planning and execution required.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Self-Hosted Runners</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Infrastructure reconfiguration and setup required on destination.
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-600">
-                      Files larger than 100MB typically require remediation (migration to LFS, removal from history) 
-                      before migration can succeed. This is the highest individual feature weight.
-                    </p>
                   </div>
 
-                  {/* LFS */}
-                  <div className="border-l-4 border-orange-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Git LFS Usage</h4>
-                      <span className="text-sm font-semibold text-orange-600">Weight: 2 points</span>
+                  {/* Moderate Impact Features */}
+                  <div className="mb-3">
+                    <h4 className="font-semibold text-gray-900 mb-2">Moderate Impact (2 points)</h4>
+                    <p className="text-sm text-gray-600 mb-3">Features requiring manual intervention but less complexity</p>
+                    
+                    <div className="space-y-3">
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Variables</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate. Manual recreation required, less sensitive than secrets.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Discussions</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate. Community impact, manual recreation loses history.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Releases</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Only migrate on GHES 3.5.0+. May require manual migration on older versions.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Git LFS</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Special handling during migration, proper configuration required on destination.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Submodules</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Dependencies on other repositories that must be migrated first.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">GitHub Apps</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Reconfiguration or reinstallation required on destination.
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-600">
-                      LFS requires special handling during migration and must be properly configured on the destination.
-                    </p>
                   </div>
 
-                  {/* Submodules */}
-                  <div className="border-l-4 border-orange-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Submodules</h4>
-                      <span className="text-sm font-semibold text-orange-600">Weight: 2 points</span>
+                  {/* Low Impact Features */}
+                  <div className="mb-3">
+                    <h4 className="font-semibold text-gray-900 mb-2">Low Impact (1 point)</h4>
+                    <p className="text-sm text-gray-600 mb-3">Features requiring straightforward manual steps</p>
+                    
+                    <div className="space-y-3">
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Advanced Security (GHAS)</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Code scanning, Dependabot, secret scanning. Simple toggles to re-enable.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Webhooks</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Must re-enable after migration. Straightforward but critical for integrations.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Tag Protections</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate. Manual configuration required, similar to branch protections.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Branch Protections</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Migrate but certain rules don't (e.g., bypass actors, force push settings).
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Rulesets</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate. Manual recreation on destination repository required.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Public/Internal Visibility</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1 point each</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          May require visibility transformation (e.g., EMU doesn't support public repos).
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">CODEOWNERS</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Migrates but verification required to ensure team references are correct.
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-600">
-                      Submodules add complexity due to dependencies on other repositories that must be migrated first.
-                    </p>
                   </div>
 
-                  {/* Packages */}
-                  <div className="border-l-4 border-amber-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">GitHub Packages</h4>
-                      <span className="text-sm font-semibold text-amber-600">Weight: 3 points</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Packages do not migrate with GEI APIs and require manual migration planning, 
-                      making them a significant complexity factor.
-                    </p>
-                  </div>
-
-                  {/* Branch Protections */}
-                  <div className="border-l-4 border-yellow-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Branch Protections</h4>
-                      <span className="text-sm font-semibold text-yellow-600">Weight: 1 point</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Branch protection rules require manual reconfiguration after migration.
-                    </p>
-                  </div>
-
-                  {/* Rulesets */}
-                  <div className="border-l-4 border-red-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Rulesets</h4>
-                      <span className="text-sm font-semibold text-red-600">Weight: 1 point</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Repository rulesets do not migrate with GEI APIs and must be manually recreated on the destination repository.
-                    </p>
-                  </div>
-
-                  {/* Advanced Security */}
-                  <div className="border-l-4 border-green-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Advanced Security Features</h4>
-                      <span className="text-sm font-semibold text-green-600">Weight: 2 points</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Code scanning, Dependabot, or secret scanning require GitHub Advanced Security licenses 
-                      and special configuration on the destination.
-                    </p>
-                  </div>
-
-                  {/* Self-Hosted Runners */}
+                  {/* Activity-Based Scoring */}
                   <div className="border-l-4 border-purple-500 pl-4">
                     <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Self-Hosted Runners</h4>
-                      <span className="text-sm font-semibold text-purple-600">Weight: 3 points</span>
+                      <h4 className="font-medium text-gray-900">Activity Level (Quantile-Based)</h4>
+                      <span className="text-sm font-semibold text-purple-600">0-4 points</span>
                     </div>
-                    <p className="text-sm text-gray-600">
-                      Self-hosted runners require infrastructure setup and configuration on the destination, 
-                      making migration more complex.
+                    <p className="text-sm text-gray-600 mb-2">
+                      Activity level is calculated using quantiles relative to all your repositories. High-activity repos require significantly more planning, coordination, and stakeholder communication.
                     </p>
-                  </div>
-
-                  {/* GitHub Apps */}
-                  <div className="border-l-4 border-blue-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">GitHub Apps</h4>
-                      <span className="text-sm font-semibold text-blue-600">Weight: 2 points</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Installed GitHub Apps need to be reconfigured or reinstalled on the destination repository.
-                    </p>
-                  </div>
-
-                  {/* Internal Visibility */}
-                  <div className="border-l-4 border-yellow-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Internal Visibility</h4>
-                      <span className="text-sm font-semibold text-yellow-600">Weight: 1 point</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Internal repositories become private when migrating to GitHub.com, requiring permission review.
-                    </p>
-                  </div>
-
-                  {/* CODEOWNERS */}
-                  <div className="border-l-4 border-blue-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">CODEOWNERS</h4>
-                      <span className="text-sm font-semibold text-blue-600">Weight: 1 point</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      CODEOWNERS files require verification after migration to ensure team references are correct.
+                    <ul className="text-sm text-gray-700 space-y-1">
+                      <li>• High activity (top 25%): <span className="font-medium">+4 points</span> - Many users, extensive coordination needed</li>
+                      <li>• Moderate activity (25-75%): <span className="font-medium">+2 points</span> - Some coordination needed</li>
+                      <li>• Low activity (bottom 25%): <span className="font-medium">0 points</span> - Few users, minimal coordination</li>
+                    </ul>
+                    <p className="text-xs text-gray-500 mt-2 italic">
+                      Combines: branch count, commit count, issue count, and pull request count
                     </p>
                   </div>
                 </div>
@@ -201,7 +302,7 @@ export function ComplexityInfoModal() {
                     <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                     <div className="flex-1">
                       <span className="font-medium text-green-900">Simple</span>
-                      <span className="text-sm text-green-700 ml-2">(Score ≤ 3)</span>
+                      <span className="text-sm text-green-700 ml-2">(Score ≤ 5)</span>
                     </div>
                     <span className="text-xs text-green-600">Low effort, standard migration</span>
                   </div>
@@ -209,7 +310,7 @@ export function ComplexityInfoModal() {
                     <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                     <div className="flex-1">
                       <span className="font-medium text-yellow-900">Medium</span>
-                      <span className="text-sm text-yellow-700 ml-2">(Score 4-6)</span>
+                      <span className="text-sm text-yellow-700 ml-2">(Score 6-10)</span>
                     </div>
                     <span className="text-xs text-yellow-600">Moderate effort, may need planning</span>
                   </div>
@@ -217,7 +318,7 @@ export function ComplexityInfoModal() {
                     <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
                     <div className="flex-1">
                       <span className="font-medium text-orange-900">Complex</span>
-                      <span className="text-sm text-orange-700 ml-2">(Score 7-9)</span>
+                      <span className="text-sm text-orange-700 ml-2">(Score 11-17)</span>
                     </div>
                     <span className="text-xs text-orange-600">High effort, requires careful planning</span>
                   </div>
@@ -225,7 +326,7 @@ export function ComplexityInfoModal() {
                     <div className="w-3 h-3 bg-red-500 rounded-full"></div>
                     <div className="flex-1">
                       <span className="font-medium text-red-900">Very Complex</span>
-                      <span className="text-sm text-red-700 ml-2">(Score ≥ 10)</span>
+                      <span className="text-sm text-red-700 ml-2">(Score ≥ 18)</span>
                     </div>
                     <span className="text-xs text-red-600">Significant effort, likely needs remediation</span>
                   </div>
@@ -240,17 +341,21 @@ export function ComplexityInfoModal() {
                   <ul className="ml-4 space-y-1">
                     <li>• Size: 2.5 GB → <span className="font-semibold">6 points</span></li>
                     <li>• Has large files → <span className="font-semibold">+4 points</span></li>
+                    <li>• Has 3 environments → <span className="font-semibold">+3 points</span></li>
+                    <li>• Has 15 secrets → <span className="font-semibold">+3 points</span></li>
+                    <li>• Has 8 variables → <span className="font-semibold">+2 points</span></li>
+                    <li>• Has discussions → <span className="font-semibold">+2 points</span></li>
                     <li>• Uses LFS → <span className="font-semibold">+2 points</span></li>
-                    <li>• Has packages → <span className="font-semibold">+3 points</span></li>
+                    <li>• Has Advanced Security → <span className="font-semibold">+1 point</span></li>
+                    <li>• Has 2 webhooks → <span className="font-semibold">+1 point</span></li>
                     <li>• Has branch protections → <span className="font-semibold">+1 point</span></li>
                     <li>• Has rulesets → <span className="font-semibold">+1 point</span></li>
-                    <li>• Has Advanced Security (code scanning) → <span className="font-semibold">+2 points</span></li>
-                    <li>• Has self-hosted runners → <span className="font-semibold">+3 points</span></li>
-                    <li>• Has GitHub Apps installed → <span className="font-semibold">+2 points</span></li>
-                    <li>• Internal visibility → <span className="font-semibold">+1 point</span></li>
-                    <li>• Has CODEOWNERS → <span className="font-semibold">+1 point</span></li>
+                    <li>• High activity (top 25%) → <span className="font-semibold">+4 points</span></li>
                   </ul>
-                  <p className="font-bold text-blue-900 pt-2">Total Score: 26 → Very Complex</p>
+                  <p className="font-bold text-blue-900 pt-2">Total Score: 31 → Very Complex</p>
+                  <p className="text-xs text-blue-700 pt-1 italic">
+                    This repository requires significant planning for environments, secrets, and variables that don't migrate.
+                  </p>
                 </div>
               </div>
             </div>

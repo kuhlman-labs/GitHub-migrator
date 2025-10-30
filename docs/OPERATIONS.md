@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Authentication Setup](#authentication-setup)
+- [Visibility Handling Configuration](#visibility-handling-configuration)
 - [Daily Operations](#daily-operations)
 - [Migration Workflows](#migration-workflows)
 - [Monitoring & Alerts](#monitoring--alerts)
@@ -466,6 +467,418 @@ docker logs github-migrator | grep "authorization"
 
 ---
 
+## Visibility Handling Configuration
+
+### Overview
+
+GitHub repository visibility controls **who can read the repository**:
+
+- **Public**: Anyone with the URL can read/clone the repository
+- **Internal**: Anyone in the GitHub Enterprise can read/clone the repository
+- **Private**: Only users with explicit access can read/write to the repository
+
+The GitHub Migrator provides configurable visibility transformation rules to handle migrations to different destination environments, particularly **GitHub Enterprise Cloud with EMU** and **GitHub with data residency**, which **do not support public repositories**.
+
+### Configuration
+
+Configure visibility handling in your `configs/config.yaml`:
+
+```yaml
+migration:
+  visibility_handling:
+    # How to handle public repositories: public, internal, or private
+    # Default: private (safest, works in all environments)
+    public_repos: "private"
+    
+    # How to handle internal repositories: internal or private
+    # Default: private (safest for GitHub.com migrations)
+    internal_repos: "private"
+```
+
+**Note**: Private repositories always migrate as private and cannot be changed.
+
+### Visibility Mappings
+
+#### Public Repositories
+
+When migrating **public** repositories, you can configure one of three behaviors:
+
+| Setting | Result | Use Case | Considerations |
+|---------|--------|----------|----------------|
+| `public` | Keep as public | Standard GitHub.com migrations | **Fails** in EMU and data residency environments |
+| `internal` | Convert to internal | Maintain enterprise-wide read access | Requires Enterprise Cloud, preserves broad access |
+| `private` | Convert to private | Maximum security, works everywhere | Most restrictive, requires explicit access grants |
+
+#### Internal Repositories
+
+When migrating **internal** repositories, you can configure one of two behaviors:
+
+| Setting | Result | Use Case | Considerations |
+|---------|--------|----------|----------------|
+| `internal` | Keep as internal | Enterprise Cloud migrations | Requires destination to support internal visibility |
+| `private` | Convert to private | GitHub.com, EMU, data residency | Works everywhere, most restrictive |
+
+### Environment-Specific Recommendations
+
+#### GitHub Enterprise Cloud (EMU)
+
+EMU environments **do not support public repositories**. Recommended configuration:
+
+```yaml
+visibility_handling:
+  public_repos: "internal"  # Maintains enterprise-wide read access
+  internal_repos: "internal" # Maintain Enterprise visibility
+```
+
+#### GitHub with Data Residency
+
+Data residency environments **do not support public repositories**. Recommended configuration:
+
+```yaml
+visibility_handling:
+  public_repos: "internal"  # Maintains broad read access
+  internal_repos: "internal" # If destination supports it
+```
+
+#### GitHub.com (Non Enterprise)
+
+For standard GitHub.com migrations where public repos are supported:
+
+```yaml
+visibility_handling:
+  public_repos: "public"   # Preserve public access
+  internal_repos: "private" # GitHub.com (non Enterprise) doesn't have internal visibility
+```
+
+#### GitHub Enterprise Server → GitHub Enterprise
+
+When migrating from GHES to GHEC:
+
+```yaml
+visibility_handling:
+  public_repos: "public"   # Keep public if desired
+  internal_repos: "internal" # Keep internal to maintain Enterprise visibility
+```
+
+### Environment Variables
+
+For production deployments, use environment variables:
+
+```bash
+export GHMIG_MIGRATION_VISIBILITY_PUBLIC_REPOS=private
+export GHMIG_MIGRATION_VISIBILITY_INTERNAL_REPOS=private
+```
+
+See `configs/env.example` for complete documentation.
+
+### Complexity Scoring
+
+The system uses **GitHub-specific complexity scoring** to estimate migration effort and identify potential challenges. The score is calculated based on remediation difficulty of features that don't migrate automatically.
+
+#### Scoring Formula
+
+The complexity score combines repository size, non-migrated features, and activity level:
+
+**High Impact Features (3-4 points each):**
+- Large files (>100MB): **4 points** - Must be remediated before migration
+- Environments: **3 points** - Manual recreation of configs and protection rules required
+- Secrets: **3 points** - Manual recreation required, high security sensitivity
+- Packages: **3 points** - Don't migrate with GEI, manual migration required
+- Self-hosted runners: **3 points** - Infrastructure reconfiguration needed
+
+**Note:** Projects (classic) card-based boards DO migrate with GEI and are not scored. The new Projects experience (table-based at org level) doesn't migrate but isn't repository-level data.
+
+**Moderate Impact Features (2 points each):**
+- Variables: **2 points** - Manual recreation required
+- Discussions: **2 points** - Don't migrate, community impact
+- Releases: **2 points** - Only migrate on GHES 3.5.0+
+- Git LFS: **2 points** - Special handling required
+- Submodules: **2 points** - Dependency management complexity
+- GitHub Apps: **2 points** - Reconfiguration/reinstallation needed
+
+**Low Impact Features (1 point each):**
+- GHAS (Code scanning/Dependabot/Secret scanning): **1 point** - Simple toggles to re-enable
+- Webhooks: **1 point** - Must re-enable after migration
+- Tag protections: **1 point** - Manual configuration required
+- Branch protections: **1 point** - Some rules don't migrate
+- Rulesets: **1 point** - Manual recreation required
+- Public visibility: **1 point** - May need transformation
+- Internal visibility: **1 point** - May need transformation
+- CODEOWNERS: **1 point** - File detected in `.github/CODEOWNERS`, `docs/CODEOWNERS`, or `CODEOWNERS` on default branch. Verify file still exists and is valid.
+
+**Repository Size (0-9 points):**
+- <100MB: **0 points**
+- 100MB-1GB: **3 points**
+- 1GB-5GB: **6 points**
+- >5GB: **9 points**
+
+**Activity Level (0-4 points):**
+Activity is calculated using **quantiles** relative to your repository dataset. High-activity repositories require significantly more planning, coordination, and stakeholder communication:
+- High activity (top 25%): **4 points** - Many users, extensive coordination, high impact
+- Moderate activity (25-75%): **2 points** - Some coordination needed
+- Low activity (bottom 25%): **0 points** - Few users, minimal coordination
+
+Activity combines: branch count, commit count, issue count, and pull request count.
+
+#### Complexity Categories
+
+Based on total score:
+- **Simple** (≤5 points): Standard migration, minimal remediation
+- **Medium** (6-10 points): Moderate effort, some planning needed
+- **Complex** (11-17 points): Significant effort, careful planning required
+- **Very Complex** (≥18 points): High effort, likely needs extensive remediation
+
+#### Using Complexity Scores
+
+Complexity scores help with:
+- **Migration Planning**: Estimate effort and timeline
+- **Resource Allocation**: Assign appropriate resources to complex migrations
+- **Batch Organization**: Group repositories by complexity
+- **Risk Assessment**: Identify high-risk migrations requiring extra attention
+- **Remediation Planning**: Focus on repositories with high-weight features
+
+The complexity score is visible in:
+- Repository detail pages
+- Batch management interface
+- Analytics dashboards
+- API responses (`GET /api/v1/analytics/complexity-distribution`)
+
+#### Feature Detection Notes
+
+The discovery process automatically detects repository features using the GitHub API. Here are important considerations:
+
+**CODEOWNERS Detection:**
+- Checks for files at: `.github/CODEOWNERS`, `docs/CODEOWNERS`, or `CODEOWNERS` (root)
+- Only checks the repository's default branch
+- Verifies the path is a file (not a directory)
+- **Note**: Detection happens at discovery time. If files are added/removed after discovery, you should re-run discovery to update the detection
+
+**Common False Positives:**
+- Files that existed during discovery but were later deleted
+- Empty or placeholder CODEOWNERS files
+- Files on non-default branches (these are not detected)
+
+**Troubleshooting Feature Detection:**
+1. **Re-run Discovery**: Use the "Re-run Discovery" button in the UI to refresh feature detection
+2. **Check Logs**: Enable debug logging (`LOG_LEVEL=debug`) to see detailed detection information including:
+   - Which paths were checked
+   - Whether files were found or returned 404
+   - File types (file vs directory)
+   - File sizes
+3. **Manual Verification**: For critical features, manually verify in the source repository before migration
+
+**Example Debug Log Output:**
+```
+level=debug msg="Checking for CODEOWNERS file" repo=org/repo
+level=debug msg="CODEOWNERS check failed at location" repo=org/repo path=".github/CODEOWNERS" error="404 Not Found" is_404=true
+level=debug msg="No CODEOWNERS file found" repo=org/repo
+```
+
+### Migration Logs
+
+During migration, visibility transformations are logged:
+
+```json
+{
+  "level": "info",
+  "msg": "Applying visibility transformation",
+  "repo": "acme-corp/api-service",
+  "source_visibility": "public",
+  "target_visibility": "internal"
+}
+```
+
+This provides a clear audit trail of all visibility changes.
+
+### Best Practices
+
+1. **Test with Pilot Batch**: Always test visibility transformations with a pilot batch first
+2. **Document Changes**: Maintain documentation of visibility changes for stakeholder communication
+3. **Access Review**: Plan for post-migration access review, especially for public → private conversions
+4. **Team Communication**: Inform teams about visibility changes before migration
+5. **Validate Settings**: Ensure destination environment supports your configured visibility settings
+
+### Troubleshooting
+
+**Problem**: Migration fails with "public repositories not supported"
+
+**Solution**: Your destination is EMU or data residency. Update configuration:
+```yaml
+visibility_handling:
+  public_repos: "internal"  # or "private"
+```
+
+**Problem**: Internal repositories become private unexpectedly
+
+**Solution**: Check your configuration. Default is `internal_repos: "private"`. To preserve internal visibility:
+```yaml
+visibility_handling:
+  internal_repos: "internal"
+```
+
+---
+
+## GitHub Enterprise Importer Limitations
+
+The GitHub Migrator automatically detects and manages GitHub Enterprise Importer API limitations to prevent migration failures.
+
+### Repository Size Limit (40 GiB)
+
+GitHub enforces a **40 GiB total repository size limit** for migrations. Repositories exceeding this limit are automatically blocked and require remediation.
+
+**Detection:**
+- Automatically detected during repository discovery using git-sizer
+- Repositories over 40 GiB are marked with `has_oversized_repository: true`
+- Status automatically set to `remediation_required`
+
+**Remediation Strategies:**
+
+1. **Convert Large Files to Git LFS:**
+   ```bash
+   # Install git-lfs
+   git lfs install
+   
+   # Track large file types
+   git lfs track "*.psd"
+   git lfs track "*.zip"
+   
+   # Migrate existing files to LFS
+   git lfs migrate import --include="*.psd,*.zip" --everything
+   
+   # Push changes
+   git push origin --all --force
+   ```
+
+2. **Remove Large Assets from History:**
+   ```bash
+   # Using BFG Repo-Cleaner
+   java -jar bfg.jar --strip-blobs-bigger-than 100M repo.git
+   
+   # Or using git-filter-repo
+   git filter-repo --strip-blobs-bigger-than 100M
+   
+   # Force push cleaned history
+   git push origin --all --force
+   ```
+
+3. **Split Repository:**
+   - Consider splitting monolithic repositories into smaller components
+   - Move large assets to separate artifact storage
+
+**After Remediation:**
+1. In the web UI, click "Mark as Remediated" button
+2. System will re-run discovery to verify size is under limit
+3. Status will change from `remediation_required` to `pending` if successful
+
+### Metadata Size Limit (40 GiB)
+
+GitHub also enforces a **40 GiB metadata limit** (issues, PRs, releases, attachments).
+
+**Detection:**
+- Estimated during discovery based on:
+  - Issue count × 5 KB average
+  - PR count × 10 KB average
+  - Actual release asset sizes from GitHub API
+  - Estimated attachment sizes (10% of issue/PR data)
+
+**Handling Large Metadata:**
+
+If estimated metadata exceeds 35 GiB, the system shows warnings and recommends using exclusion flags.
+
+**Exclusion Flags (Per-Repository Settings):**
+
+Configure in the web UI under "Migration Options" or via API:
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/repositories/acme-corp%2Flarge-repo \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exclude_releases": true,
+    "exclude_attachments": true
+  }'
+```
+
+Available exclusion flags:
+
+| Flag | Description | Use Case |
+|------|-------------|----------|
+| `exclude_releases` | Skip releases and assets | Large release assets (ISOs, binaries) |
+| `exclude_attachments` | Skip issue/PR attachments | Many images/files attached to issues |
+| `exclude_metadata` | Skip ALL metadata (issues, PRs, releases, wikis) | Code-only migration |
+| `exclude_git_data` | Skip git data (rarely used) | Metadata-only migration (not recommended) |
+| `exclude_owner_projects` | Skip org/user project boards | Org-level projects not needed |
+
+**Example Workflow for Large Metadata:**
+
+```bash
+# 1. Check metadata size estimate
+curl http://localhost:8080/api/v1/repositories/acme-corp%2Fmy-repo | \
+  jq '{
+    estimated_metadata_gb: (.estimated_metadata_size / 1073741824),
+    metadata_details: .metadata_size_details | fromjson
+  }'
+
+# 2. If approaching limit, enable exclude_releases
+curl -X PATCH http://localhost:8080/api/v1/repositories/acme-corp%2Fmy-repo \
+  -H "Content-Type: application/json" \
+  -d '{"exclude_releases": true}'
+
+# 3. Migrate repository
+curl -X POST http://localhost:8080/api/v1/migrations/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "full_names": ["acme-corp/my-repo"],
+    "dry_run": false
+  }'
+
+# 4. Manually migrate releases after repository migration completes
+# Use gh CLI or GitHub API to recreate releases on destination
+```
+
+### Other Migration Limits
+
+The system also validates:
+
+- **2 GiB Commit Limit**: Single commits >2 GiB are blocked
+- **255 Byte Reference Name Limit**: Git refs (branches/tags) >255 bytes blocked
+- **400 MiB File Limit**: Individual files >400 MiB blocked during migration
+- **100 MiB Post-Migration Limit**: Files 100-400 MiB allowed during migration but flagged for post-migration remediation
+
+### Viewing Limitation Details
+
+**Web UI:**
+1. Navigate to repository detail page
+2. View "Migration Limits" section
+3. Shows blocking issues (red) and warnings (yellow)
+4. Configure exclusion flags in "Migration Options" section
+
+**API:**
+```bash
+# Get repository with limit details
+curl http://localhost:8080/api/v1/repositories/acme-corp%2Fmy-repo | jq '{
+  repository: .full_name,
+  status: .status,
+  size_gb: (.total_size / 1073741824),
+  blocking_issues: {
+    oversized_repository: .has_oversized_repository,
+    oversized_commits: .has_oversized_commits,
+    long_refs: .has_long_refs,
+    blocking_files: .has_blocking_files
+  },
+  warnings: {
+    large_files: .has_large_file_warnings,
+    large_metadata: (.estimated_metadata_size > 37580963840)
+  },
+  exclusion_flags: {
+    exclude_releases: .exclude_releases,
+    exclude_attachments: .exclude_attachments,
+    exclude_metadata: .exclude_metadata
+  }
+}'
+```
+
+---
+
 ## Migration Workflows
 
 ### Starting a New Migration Wave
@@ -549,6 +962,106 @@ curl -X POST http://localhost:8080/api/v1/migrations/start \
 # Or share self-service web UI
 # http://localhost:8080/#/self-service
 ```
+
+### GitHub Migration Limits Detection
+
+The migrator automatically detects repositories that violate GitHub's migration limits and flags them for remediation before migration can proceed.
+
+#### Detected Limitations
+
+**Blocking Issues** (prevent migration):
+- **2 GiB Commit Limit**: No single commit can exceed 2 GiB
+- **255 Byte Reference Limit**: Git references (branches, tags) cannot exceed 255 bytes
+- **400 MiB File Limit**: Files cannot exceed 400 MiB during migration
+
+**Warnings** (non-blocking but require post-migration attention):
+- **100 MiB File Warning**: Files 100-400 MiB are allowed during migration but exceed GitHub's 100 MiB post-migration limit
+
+#### Status: Remediation Required
+
+When a repository has blocking issues, it will be automatically marked with status `remediation_required`:
+
+```bash
+# List repositories requiring remediation
+curl "http://localhost:8080/api/v1/repositories?status=remediation_required"
+```
+
+**Via Web UI:**
+1. Navigate to repository detail page
+2. View "Migration Limits" section showing all issues
+3. See specific commits, refs, or files that need fixing
+
+#### Remediation Workflow
+
+**1. Fix Blocking Issues in Source Repository**
+
+For oversized commits (>2 GiB):
+```bash
+# Split large commits using git filter-repo
+git filter-repo --commit-callback '
+  # Custom logic to split commits
+'
+```
+
+For long git references (>255 bytes):
+```bash
+# Rename long branches
+git branch -m "very-long-branch-name..." "shorter-name"
+
+# Rename long tags
+git tag new-name old-very-long-tag-name
+git tag -d old-very-long-tag-name
+```
+
+For large files (>400 MiB):
+```bash
+# Option 1: Use Git LFS
+git lfs track "*.zip"
+git lfs migrate import --include="*.zip"
+
+# Option 2: Remove from history
+git filter-repo --path-glob '*.large-file' --invert-paths
+```
+
+**2. Mark Repository as Remediated**
+
+After fixing issues, trigger re-validation:
+
+```bash
+# Via API
+curl -X POST http://localhost:8080/api/v1/repositories/org/repo/mark-remediated
+
+# Via Web UI
+# 1. Go to repository detail page
+# 2. Click "Mark as Remediated" button in Migration Limits section
+# 3. System will re-analyze the repository
+```
+
+**3. Verify Resolution**
+
+The system will:
+- Re-clone the repository
+- Re-run all git validation checks
+- Update status to `pending` if all issues resolved
+- Keep status as `remediation_required` if issues remain
+
+#### Large File Warnings (100-400 MiB)
+
+Files in this range don't block migration but should be addressed:
+
+**Options:**
+1. **Git LFS**: Convert files to LFS before migration
+2. **Post-Migration**: Fix after migration completes
+3. **External Storage**: Move to external storage system
+
+**Recommendation**: Fix before migration when possible to avoid post-migration work.
+
+#### Documentation References
+
+- [GitHub Migration Limitations](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/about-migrations-between-github-products#limitations-of-github)
+- [Managing Large Files with Git LFS](https://docs.github.com/en/repositories/working-with-files/managing-large-files)
+- [Removing Files from Git History](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
+- [git-filter-repo Tool](https://github.com/newren/git-filter-repo)
 
 ### Migration Best Practices
 

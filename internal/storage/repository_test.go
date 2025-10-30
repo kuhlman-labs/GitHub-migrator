@@ -26,7 +26,13 @@ func createTestRepository(fullName string) *models.Repository {
 		Source:               "ghes",
 		SourceURL:            fmt.Sprintf("https://github.com/%s", fullName),
 		TotalSize:            &totalSize,
+		LargestFile:          nil,
+		LargestFileSize:      nil,
+		LargestCommit:        nil,
+		LargestCommitSize:    nil,
 		DefaultBranch:        &defaultBranch,
+		LastCommitSHA:        nil,
+		LastCommitDate:       nil,
 		HasLFS:               false,
 		HasSubmodules:        false,
 		HasLargeFiles:        false,
@@ -43,6 +49,7 @@ func createTestRepository(fullName string) *models.Repository {
 		HasPackages:          false,
 		BranchProtections:    0,
 		HasRulesets:          false,
+		TagProtectionCount:   0,
 		EnvironmentCount:     0,
 		SecretCount:          0,
 		VariableCount:        0,
@@ -65,11 +72,39 @@ func createTestRepository(fullName string) *models.Repository {
 		TagCount:             0,
 		OpenIssueCount:       0,
 		OpenPRCount:          0,
+		// GitHub Migration Limit Validations
+		HasOversizedCommits:        false,
+		OversizedCommitDetails:     nil,
+		HasLongRefs:                false,
+		LongRefDetails:             nil,
+		HasBlockingFiles:           false,
+		BlockingFileDetails:        nil,
+		HasLargeFileWarnings:       false,
+		LargeFileWarningDetails:    nil,
+		HasOversizedRepository:     false,
+		OversizedRepositoryDetails: nil,
+		EstimatedMetadataSize:      nil,
+		MetadataSizeDetails:        nil,
+		// Migration Exclusion Flags
+		ExcludeReleases:      false,
+		ExcludeAttachments:   false,
+		ExcludeMetadata:      false,
+		ExcludeGitData:       false,
+		ExcludeOwnerProjects: false,
 		Status:               string(models.StatusPending),
+		BatchID:              nil,
 		Priority:             0,
+		DestinationURL:       nil,
+		DestinationFullName:  nil,
+		SourceMigrationID:    nil,
 		IsSourceLocked:       false,
+		ValidationStatus:     nil,
+		ValidationDetails:    nil,
+		DestinationData:      nil,
 		DiscoveredAt:         time.Now(),
 		UpdatedAt:            time.Now(),
+		MigratedAt:           nil,
+		LastDryRunAt:         nil,
 	}
 }
 
@@ -155,45 +190,19 @@ func TestListRepositories(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
 
 	// Create test repositories
-	repos := []*models.Repository{
-		{
-			FullName:      "org/repo1",
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo1",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			HasLFS:        true,
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		},
-		{
-			FullName:      "org/repo2",
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo2",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusComplete),
-			HasLFS:        false,
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		},
-		{
-			FullName:      "org/repo3",
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo3",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusQueuedForMigration),
-			HasLFS:        false,
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		},
-	}
+	repo1 := createTestRepository("org/repo1")
+	repo1.Status = string(models.StatusPending)
+	repo1.HasLFS = true
+
+	repo2 := createTestRepository("org/repo2")
+	repo2.Status = string(models.StatusComplete)
+
+	repo3 := createTestRepository("org/repo3")
+	repo3.Status = string(models.StatusQueuedForMigration)
+
+	repos := []*models.Repository{repo1, repo2, repo3}
 
 	for _, repo := range repos {
 		if err := db.SaveRepository(ctx, repo); err != nil {
@@ -257,19 +266,8 @@ func TestUpdateRepository(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
 
-	repo := &models.Repository{
-		FullName:      "test/repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/test/repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
@@ -308,19 +306,8 @@ func TestUpdateRepositoryStatus(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
 
-	repo := &models.Repository{
-		FullName:      "test/repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/test/repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
@@ -347,19 +334,8 @@ func TestDeleteRepository(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
 
-	repo := &models.Repository{
-		FullName:      "test/repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/test/repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
@@ -385,8 +361,6 @@ func TestCountRepositories(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
 
 	// Create test repositories
 	for i := 1; i <= 5; i++ {
@@ -395,16 +369,8 @@ func TestCountRepositories(t *testing.T) {
 			status = models.StatusComplete
 		}
 
-		repo := &models.Repository{
-			FullName:      "org/repo" + string(rune('0'+i)),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(status),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository("org/repo" + string(rune('0'+i)))
+		repo.Status = string(status)
 
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository: %v", err)
@@ -457,8 +423,6 @@ func TestGetRepositoryStatsByStatus(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024 * 1024)
-	defaultBranch := testDefaultBranch
 
 	// Create test repositories with different statuses
 	statuses := []models.MigrationStatus{
@@ -471,16 +435,8 @@ func TestGetRepositoryStatsByStatus(t *testing.T) {
 	}
 
 	for i, status := range statuses {
-		repo := &models.Repository{
-			FullName:      "org/repo" + string(rune('0'+i)),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(status),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository("org/repo" + string(rune('0'+i)))
+		repo.Status = string(status)
 
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository: %v", err)
@@ -508,21 +464,11 @@ func TestGetRepositoriesByIDs(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Save test repositories
 	var ids []int64
 	for i := 0; i < 3; i++ {
-		repo := &models.Repository{
-			FullName:      fmt.Sprintf("org/repo%d", i),
-			Source:        "ghes",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository(fmt.Sprintf("org/repo%d", i))
 
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
@@ -558,21 +504,11 @@ func TestGetRepositoriesByNames(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Save test repositories
 	names := []string{"org/repoa", "org/repob", "org/repoc"}
 	for _, name := range names {
-		repo := &models.Repository{
-			FullName:      name,
-			Source:        "ghes",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository(name)
 
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
@@ -605,18 +541,8 @@ func TestGetRepositoryByID(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
-	repo := &models.Repository{
-		FullName:      "org/repo1",
-		Source:        "ghes",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo := createTestRepository("org/repo1")
 
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("SaveRepository() error = %v", err)
@@ -734,8 +660,6 @@ func TestRollbackRepositoryClearsBatchID(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Create a batch
 	batch := &models.Batch{
@@ -750,17 +674,10 @@ func TestRollbackRepositoryClearsBatchID(t *testing.T) {
 	}
 
 	// Create a repository and assign it to the batch
-	repo := &models.Repository{
-		FullName:      "org/test-repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/test-repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusComplete),
-		BatchID:       &batch.ID,
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo := createTestRepository("org/test-repo")
+	repo.Status = string(models.StatusComplete)
+	repo.BatchID = &batch.ID
+
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("SaveRepository() error = %v", err)
 	}
@@ -849,14 +766,7 @@ func TestGetMigrationHistory(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test repository
-	repo := &models.Repository{
-		FullName:     "test/repo",
-		Source:       "ghes",
-		SourceURL:    "https://github.com/test/repo",
-		Status:       string(models.StatusPending),
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
@@ -905,14 +815,7 @@ func TestCreateMigrationHistory(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test repository
-	repo := &models.Repository{
-		FullName:     "test/repo",
-		Source:       "ghes",
-		SourceURL:    "https://github.com/test/repo",
-		Status:       string(models.StatusPending),
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
@@ -943,14 +846,7 @@ func TestUpdateMigrationHistory(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test repository
-	repo := &models.Repository{
-		FullName:     "test/repo",
-		Source:       "ghes",
-		SourceURL:    "https://github.com/test/repo",
-		Status:       string(models.StatusPending),
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
@@ -985,14 +881,7 @@ func TestGetMigrationLogs(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test repository
-	repo := &models.Repository{
-		FullName:     "test/repo",
-		Source:       "ghes",
-		SourceURL:    "https://github.com/test/repo",
-		Status:       string(models.StatusPending),
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
@@ -1075,14 +964,7 @@ func TestCreateMigrationLog(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test repository
-	repo := &models.Repository{
-		FullName:     "test/repo",
-		Source:       "ghes",
-		SourceURL:    "https://github.com/test/repo",
-		Status:       string(models.StatusPending),
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository("test/repo")
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
@@ -1122,20 +1004,9 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 	}
 
 	// Create test repositories
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 	var repoIDs []int64
 	for i := 0; i < 3; i++ {
-		repo := &models.Repository{
-			FullName:      fmt.Sprintf("org/repo%d", i),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository(fmt.Sprintf("org/repo%d", i))
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -1191,21 +1062,10 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	}
 
 	// Create and assign repositories to batch
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 	var repoIDs []int64
 	for i := 0; i < 3; i++ {
-		repo := &models.Repository{
-			FullName:      fmt.Sprintf("org/repo%d", i),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			BatchID:       &batch.ID,
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository(fmt.Sprintf("org/repo%d", i))
+		repo.BatchID = &batch.ID
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -1253,8 +1113,6 @@ func TestListRepositoriesWithSearch(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Create test repositories with different names
 	repos := []string{
@@ -1265,16 +1123,7 @@ func TestListRepositoriesWithSearch(t *testing.T) {
 	}
 
 	for _, name := range repos {
-		repo := &models.Repository{
-			FullName:      name,
-			Source:        "ghes",
-			SourceURL:     "https://github.com/" + name,
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository(name)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -1335,9 +1184,6 @@ func TestListRepositoriesAvailableForBatch(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
-
 	// Create a batch first
 	batch := &models.Batch{
 		Name:            "Test Batch",
@@ -1368,17 +1214,9 @@ func TestListRepositoriesAvailableForBatch(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		repo := &models.Repository{
-			FullName:      tc.name,
-			Source:        "ghes",
-			SourceURL:     "https://github.com/" + tc.name,
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(tc.status),
-			BatchID:       tc.batchID,
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository(tc.name)
+		repo.Status = string(tc.status)
+		repo.BatchID = tc.batchID
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -1426,21 +1264,10 @@ func TestListRepositoriesWithPagination(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Create 10 test repositories
 	for i := 0; i < 10; i++ {
-		repo := &models.Repository{
-			FullName:      fmt.Sprintf("org/repo%02d", i),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepository(fmt.Sprintf("org/repo%02d", i))
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -1513,14 +1340,8 @@ func TestGetOrganizationStats(t *testing.T) {
 	}
 
 	for _, r := range repos {
-		repo := &models.Repository{
-			FullName:     r.fullName,
-			Source:       "ghes",
-			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
-			Status:       r.status,
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-		}
+		repo := createTestRepository(r.fullName)
+		repo.Status = r.status
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
 		}
@@ -1582,15 +1403,8 @@ func TestGetSizeDistribution(t *testing.T) {
 	}
 
 	for i, size := range sizes {
-		repo := &models.Repository{
-			FullName:     fmt.Sprintf("test/repo%d", i),
-			Source:       "ghes",
-			SourceURL:    fmt.Sprintf("https://github.com/test/repo%d", i),
-			TotalSize:    &size,
-			Status:       string(models.StatusPending),
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-		}
+		repo := createTestRepository(fmt.Sprintf("test/repo%d", i))
+		repo.TotalSize = &size
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository %d: %v", i, err)
 		}
@@ -1642,17 +1456,10 @@ func TestGetFeatureStats(t *testing.T) {
 	}
 
 	for _, r := range repos {
-		repo := &models.Repository{
-			FullName:     r.fullName,
-			Source:       "ghes",
-			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
-			HasLFS:       r.hasLFS,
-			HasActions:   r.hasActions,
-			HasWiki:      r.hasWiki,
-			Status:       string(models.StatusPending),
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-		}
+		repo := createTestRepository(r.fullName)
+		repo.HasLFS = r.hasLFS
+		repo.HasActions = r.hasActions
+		repo.HasWiki = r.hasWiki
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
 		}
@@ -1680,14 +1487,8 @@ func TestGetFeatureStats(t *testing.T) {
 
 func createRepoWithHistory(t *testing.T, db *Database, ctx context.Context, fullName, status string) {
 	now := time.Now()
-	repo := &models.Repository{
-		FullName:     fullName,
-		Source:       "ghes",
-		SourceURL:    fmt.Sprintf("https://github.com/%s", fullName),
-		Status:       status,
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository(fullName)
+	repo.Status = status
 	if status == string(models.StatusComplete) {
 		repo.MigratedAt = &now
 	}
@@ -1823,14 +1624,8 @@ func createTestReposForOrgStats(t *testing.T, db *Database, ctx context.Context)
 	}
 
 	for _, r := range repos {
-		repo := &models.Repository{
-			FullName:     r.fullName,
-			Source:       "ghes",
-			SourceURL:    fmt.Sprintf("https://github.com/%s", r.fullName),
-			Status:       r.status,
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-		}
+		repo := createTestRepository(r.fullName)
+		repo.Status = r.status
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
 		}

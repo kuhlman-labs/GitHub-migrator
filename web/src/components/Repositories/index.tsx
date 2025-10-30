@@ -369,6 +369,7 @@ function RepositoryCard({ repository }: { repository: Repository }) {
         {repository.has_secret_scanning && <Badge color="green">Secret Scanning</Badge>}
         {repository.has_codeowners && <Badge color="blue">CODEOWNERS</Badge>}
         {repository.has_self_hosted_runners && <Badge color="purple">Self-Hosted</Badge>}
+        {repository.visibility === 'public' && <Badge color="blue">Public</Badge>}
         {repository.visibility === 'internal' && <Badge color="yellow">Internal</Badge>}
         {repository.has_release_assets && <Badge color="pink">Releases</Badge>}
       </div>

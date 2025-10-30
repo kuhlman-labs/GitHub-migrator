@@ -23,6 +23,97 @@ func (m *MockOrchestratorInterface) ExecuteScheduledBatches(ctx context.Context,
 	return m.executeError
 }
 
+// createTestRepository creates a repository with all required fields for testing
+func createTestRepository(fullName string) *models.Repository {
+	totalSize := int64(1024 * 1024)
+	defaultBranch := "main"
+	topContrib := "user1,user2"
+
+	return &models.Repository{
+		FullName:                   fullName,
+		Source:                     "github",
+		SourceURL:                  "https://github.com/" + fullName,
+		TotalSize:                  &totalSize,
+		LargestFile:                nil,
+		LargestFileSize:            nil,
+		LargestCommit:              nil,
+		LargestCommitSize:          nil,
+		DefaultBranch:              &defaultBranch,
+		LastCommitSHA:              nil,
+		LastCommitDate:             nil,
+		HasLFS:                     false,
+		HasSubmodules:              false,
+		HasLargeFiles:              false,
+		LargeFileCount:             0,
+		BranchCount:                5,
+		CommitCount:                100,
+		IsArchived:                 false,
+		IsFork:                     false,
+		HasWiki:                    false,
+		HasPages:                   false,
+		HasDiscussions:             false,
+		HasActions:                 false,
+		HasProjects:                false,
+		HasPackages:                false,
+		BranchProtections:          0,
+		HasRulesets:                false,
+		TagProtectionCount:         0,
+		EnvironmentCount:           0,
+		SecretCount:                0,
+		VariableCount:              0,
+		WebhookCount:               0,
+		HasCodeScanning:            false,
+		HasDependabot:              false,
+		HasSecretScanning:          false,
+		HasCodeowners:              false,
+		Visibility:                 "private",
+		WorkflowCount:              0,
+		HasSelfHostedRunners:       false,
+		CollaboratorCount:          0,
+		InstalledAppsCount:         0,
+		ReleaseCount:               0,
+		HasReleaseAssets:           false,
+		ContributorCount:           2,
+		TopContributors:            &topContrib,
+		IssueCount:                 0,
+		PullRequestCount:           0,
+		TagCount:                   0,
+		OpenIssueCount:             0,
+		OpenPRCount:                0,
+		HasOversizedCommits:        false,
+		OversizedCommitDetails:     nil,
+		HasLongRefs:                false,
+		LongRefDetails:             nil,
+		HasBlockingFiles:           false,
+		BlockingFileDetails:        nil,
+		HasLargeFileWarnings:       false,
+		LargeFileWarningDetails:    nil,
+		HasOversizedRepository:     false,
+		OversizedRepositoryDetails: nil,
+		EstimatedMetadataSize:      nil,
+		MetadataSizeDetails:        nil,
+		ExcludeReleases:            false,
+		ExcludeAttachments:         false,
+		ExcludeMetadata:            false,
+		ExcludeGitData:             false,
+		ExcludeOwnerProjects:       false,
+		Status:                     string(models.StatusPending),
+		BatchID:                    nil,
+		Priority:                   0,
+		DestinationURL:             nil,
+		DestinationFullName:        nil,
+		SourceMigrationID:          nil,
+		IsSourceLocked:             false,
+		ValidationStatus:           nil,
+		ValidationDetails:          nil,
+		DestinationData:            nil,
+		DiscoveredAt:               time.Now(),
+		UpdatedAt:                  time.Now(),
+		MigratedAt:                 nil,
+		LastDryRunAt:               nil,
+	}
+}
+
 func TestSchedulerWorker_Start(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping scheduler worker tests in short mode")
@@ -130,15 +221,9 @@ func TestSchedulerWorker_Integration(t *testing.T) {
 	}
 
 	// Create a repository in the batch with dry_run_complete status
-	repo := &models.Repository{
-		FullName:     "test/repo",
-		Source:       "github",
-		SourceURL:    "https://github.com/test/repo",
-		Status:       string(models.StatusDryRunComplete),
-		BatchID:      &testBatch.ID,
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	repo := createTestRepository("test/repo")
+	repo.Status = string(models.StatusDryRunComplete)
+	repo.BatchID = &testBatch.ID
 
 	if err := db.SaveRepository(context.Background(), repo); err != nil {
 		t.Fatalf("Failed to create repository: %v", err)
@@ -185,22 +270,7 @@ func TestSchedulerWorker_OnlyExecutesReadyBatches(t *testing.T) {
 		t.Skip("Skipping integration test")
 	}
 
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
-
 	logger := slog.Default()
-	mockExecutor := &MockExecutor{}
-
-	orchestrator, err := batch.NewOrchestrator(batch.OrchestratorConfig{
-		Storage:  db,
-		Executor: mockExecutor,
-		Logger:   logger,
-	})
-	if err != nil {
-		t.Fatalf("Failed to create orchestrator: %v", err)
-	}
-
-	ctx := context.Background()
 	pastTime := time.Now().Add(-5 * time.Minute)
 
 	testCases := []struct {
@@ -217,6 +287,22 @@ func TestSchedulerWorker_OnlyExecutesReadyBatches(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Create fresh database for each subtest
+			db, cleanup := setupTestDB(t)
+			defer cleanup()
+
+			mockExecutor := &MockExecutor{}
+			orchestrator, err := batch.NewOrchestrator(batch.OrchestratorConfig{
+				Storage:  db,
+				Executor: mockExecutor,
+				Logger:   logger,
+			})
+			if err != nil {
+				t.Fatalf("Failed to create orchestrator: %v", err)
+			}
+
+			ctx := context.Background()
+
 			batch := &models.Batch{
 				Name:            tc.name,
 				Type:            "test",
@@ -232,15 +318,9 @@ func TestSchedulerWorker_OnlyExecutesReadyBatches(t *testing.T) {
 
 			// Add a repository if needed
 			if tc.batchStatus == "ready" {
-				repo := &models.Repository{
-					FullName:     "test/repo-" + tc.name,
-					Source:       "github",
-					SourceURL:    "https://github.com/test/repo",
-					Status:       string(models.StatusDryRunComplete),
-					BatchID:      &batch.ID,
-					DiscoveredAt: time.Now(),
-					UpdatedAt:    time.Now(),
-				}
+				repo := createTestRepository("test/repo-" + tc.name)
+				repo.Status = string(models.StatusDryRunComplete)
+				repo.BatchID = &batch.ID
 
 				if err := db.SaveRepository(ctx, repo); err != nil {
 					t.Fatalf("Failed to create repository: %v", err)

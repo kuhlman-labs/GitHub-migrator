@@ -33,6 +33,13 @@ const (
 	PostMigrationAlways PostMigrationMode = "always"
 )
 
+// Visibility constants
+const (
+	visibilityPrivate  = "private"
+	visibilityPublic   = "public"
+	visibilityInternal = "internal"
+)
+
 // DestinationRepoExistsAction defines what to do if destination repo already exists
 type DestinationRepoExistsAction string
 
@@ -47,6 +54,12 @@ const (
 	DestinationRepoExistsDelete DestinationRepoExistsAction = "delete"
 )
 
+// VisibilityHandling defines how to map source visibility to destination
+type VisibilityHandling struct {
+	PublicRepos   string // public, internal, or private (default: private)
+	InternalRepos string // internal or private (default: private)
+}
+
 // Executor handles repository migrations from GHES to GHEC
 type Executor struct {
 	sourceClient         *github.Client // GHES client
@@ -57,6 +70,7 @@ type Executor struct {
 	logger               *slog.Logger
 	postMigrationMode    PostMigrationMode           // When to run post-migration tasks
 	destRepoExistsAction DestinationRepoExistsAction // What to do if destination repo exists
+	visibilityHandling   VisibilityHandling          // How to handle visibility transformations
 }
 
 // ExecutorConfig configures the migration executor
@@ -67,6 +81,7 @@ type ExecutorConfig struct {
 	Logger               *slog.Logger
 	PostMigrationMode    PostMigrationMode           // When to run post-migration tasks (default: production_only)
 	DestRepoExistsAction DestinationRepoExistsAction // What to do if destination repo exists (default: fail)
+	VisibilityHandling   VisibilityHandling          // How to handle visibility transformations (default: all private)
 }
 
 // ArchiveURLs contains the URLs for migration archives
@@ -102,6 +117,15 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 		destRepoAction = DestinationRepoExistsFail
 	}
 
+	// Default visibility handling to private if not specified (safest option)
+	visibilityHandling := cfg.VisibilityHandling
+	if visibilityHandling.PublicRepos == "" {
+		visibilityHandling.PublicRepos = visibilityPrivate
+	}
+	if visibilityHandling.InternalRepos == "" {
+		visibilityHandling.InternalRepos = visibilityPrivate
+	}
+
 	return &Executor{
 		sourceClient:         cfg.SourceClient,
 		destClient:           cfg.DestClient,
@@ -110,6 +134,7 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 		logger:               cfg.Logger,
 		postMigrationMode:    postMigMode,
 		destRepoExistsAction: destRepoAction,
+		visibilityHandling:   visibilityHandling,
 	}, nil
 }
 
@@ -150,6 +175,45 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 
 	// Default to source repo name
 	return repo.Name()
+}
+
+// determineTargetVisibility determines the target visibility based on source visibility and config
+func (e *Executor) determineTargetVisibility(sourceVisibility string) string {
+	switch strings.ToLower(sourceVisibility) {
+	case visibilityPublic:
+		// Apply configured mapping for public repos
+		targetVis := strings.ToLower(e.visibilityHandling.PublicRepos)
+		// Validate target visibility
+		if targetVis == visibilityPublic || targetVis == visibilityInternal || targetVis == visibilityPrivate {
+			return targetVis
+		}
+		// Default to private if invalid
+		e.logger.Warn("Invalid target visibility for public repos, defaulting to private",
+			"configured", e.visibilityHandling.PublicRepos)
+		return visibilityPrivate
+
+	case visibilityInternal:
+		// Apply configured mapping for internal repos
+		targetVis := strings.ToLower(e.visibilityHandling.InternalRepos)
+		// Validate target visibility (internal repos can only become internal or private)
+		if targetVis == visibilityInternal || targetVis == visibilityPrivate {
+			return targetVis
+		}
+		// Default to private if invalid
+		e.logger.Warn("Invalid target visibility for internal repos, defaulting to private",
+			"configured", e.visibilityHandling.InternalRepos)
+		return visibilityPrivate
+
+	case visibilityPrivate:
+		// Private repos always stay private
+		return visibilityPrivate
+
+	default:
+		// Unknown visibility, default to private (safest)
+		e.logger.Warn("Unknown source visibility, defaulting to private",
+			"source_visibility", sourceVisibility)
+		return visibilityPrivate
+	}
 }
 
 // getOrFetchDestOrgID returns the destination org ID for a given org name, fetching it if not cached
@@ -608,6 +672,7 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 }
 
 // startRepositoryMigration starts migration on GHEC using GraphQL
+// nolint:gocyclo // Migration startup involves multiple steps and validations
 func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Repository, urls *ArchiveURLs) (string, error) {
 	// Get destination org name for this repository
 	destOrgName := e.getDestinationOrg(repo)
@@ -656,7 +721,16 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 
 	// Create pointers for optional fields
 	continueOnError := githubv4.Boolean(true)
-	targetRepoVisibility := githubv4.String("private")
+
+	// Apply visibility transformation based on source visibility and config
+	targetVisibility := e.determineTargetVisibility(repo.Visibility)
+	targetRepoVisibility := githubv4.String(targetVisibility)
+
+	e.logger.Info("Applying visibility transformation",
+		"repo", repo.FullName,
+		"source_visibility", repo.Visibility,
+		"target_visibility", targetVisibility)
+
 	gitArchiveURL := githubv4.String(urls.GitSource)
 	metadataArchiveURL := githubv4.String(urls.Metadata)
 
@@ -681,6 +755,13 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 		MetadataArchiveURL:   &metadataArchiveURL,
 		AccessToken:          &sourceToken, // Source GHES token
 		GitHubPat:            &destToken,   // Destination GHEC token
+	}
+
+	// Add skipReleases flag if enabled
+	if repo.ExcludeReleases {
+		skipReleases := githubv4.Boolean(true)
+		input.SkipReleases = &skipReleases
+		e.logger.Info("Excluding releases from migration (skipReleases=true)", "repo", repo.FullName)
 	}
 
 	err = e.destClient.MutateWithRetry(ctx, "StartRepositoryMigration", &mutation, input, nil)
@@ -783,7 +864,13 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 }
 
 // validatePreMigration performs pre-migration validation
+// nolint:gocyclo // Complex validation logic - refactoring would reduce readability
 func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Repository) error {
+	// Check for GitHub Enterprise Importer blocking issues
+	if repo.HasOversizedRepository {
+		return fmt.Errorf("repository exceeds GitHub's 40 GiB size limit and requires remediation before migration (reduce repository size using Git LFS or history rewriting)")
+	}
+
 	// Check for blockers
 	var issues []string
 

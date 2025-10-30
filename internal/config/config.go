@@ -55,10 +55,17 @@ type DestinationConfig struct {
 
 // MigrationConfig defines migration worker configuration
 type MigrationConfig struct {
-	Workers              int    `mapstructure:"workers"`                 // Number of parallel workers
-	PollIntervalSeconds  int    `mapstructure:"poll_interval_seconds"`   // Polling interval in seconds
-	PostMigrationMode    string `mapstructure:"post_migration_mode"`     // never, production_only, dry_run_only, always
-	DestRepoExistsAction string `mapstructure:"dest_repo_exists_action"` // fail, skip, delete
+	Workers              int                      `mapstructure:"workers"`                 // Number of parallel workers
+	PollIntervalSeconds  int                      `mapstructure:"poll_interval_seconds"`   // Polling interval in seconds
+	PostMigrationMode    string                   `mapstructure:"post_migration_mode"`     // never, production_only, dry_run_only, always
+	DestRepoExistsAction string                   `mapstructure:"dest_repo_exists_action"` // fail, skip, delete
+	VisibilityHandling   VisibilityHandlingConfig `mapstructure:"visibility_handling"`     // Visibility transformation rules
+}
+
+// VisibilityHandlingConfig defines how to handle repository visibility during migration
+type VisibilityHandlingConfig struct {
+	PublicRepos   string `mapstructure:"public_repos"`   // public, internal, or private (default: private)
+	InternalRepos string `mapstructure:"internal_repos"` // internal or private (default: private)
 }
 
 // GitHubConfig is deprecated but kept for backward compatibility
@@ -142,6 +149,8 @@ func setDefaults() {
 	viper.SetDefault("migration.poll_interval_seconds", 30)
 	viper.SetDefault("migration.post_migration_mode", "production_only")
 	viper.SetDefault("migration.dest_repo_exists_action", "fail")
+	viper.SetDefault("migration.visibility_handling.public_repos", "private")
+	viper.SetDefault("migration.visibility_handling.internal_repos", "private")
 	viper.SetDefault("logging.level", "info")
 	viper.SetDefault("logging.format", "json")
 	viper.SetDefault("logging.output_file", "./logs/migrator.log")

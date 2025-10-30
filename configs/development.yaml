@@ -58,6 +58,11 @@ migration:
   poll_interval_seconds: 30
   post_migration_mode: "production_only"
   dest_repo_exists_action: "fail"
+  
+  # Visibility transformation rules (default: all repos become private)
+  visibility_handling:
+    public_repos: "private"
+    internal_repos: "private"
 
 # Development logging - verbose and human-readable
 logging:

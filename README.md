@@ -47,7 +47,12 @@ The GitHub Migrator provides an automated, scalable platform for managing large-
 ### Key Capabilities
 
 - 🔍 **Automated Discovery** - Scan entire organizations or enterprises to identify and profile repositories
-- 📊 **Intelligent Profiling** - Analyze size, LFS usage, submodules, large files, Actions, branch protections, and more
+- 📊 **Intelligent Profiling** - Analyze size, LFS usage, submodules, large files, Actions, branch protections, releases, and more
+- ⚠️ **Migration Limits Detection** - Automatically detect and flag repositories violating GitHub Enterprise Importer limits:
+  - 40 GiB repository size limit (automatic blocking)
+  - 40 GiB metadata size limit (warnings with size estimates)
+  - 2 GiB commit limit, 255-byte ref limit, 400 MiB file limit
+- ⚙️ **Migration Exclusion Flags** - Configure per-repository settings to exclude releases, attachments, or metadata to reduce migration size
 - 🎯 **Flexible Workflows** - Single repository, batch, bulk, and self-service migration options
 - 📦 **Batch Management** - Organize into pilot groups and migration waves for controlled rollouts
 - 📈 **Real-time Monitoring** - Track progress with detailed status updates through all migration phases
@@ -146,10 +151,11 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 
 - Discover repositories from organizations or entire enterprises
 - Profile Git properties: size, LFS usage, submodules, large files (>100MB), commits, branches
-- Identify GitHub features: Actions, Wikis, Pages, Discussions, Projects, Environments
-- Detect advanced settings: branch protections, secrets, webhooks, rulesets, packages
-- Calculate complexity scores for migration planning
-- Track contributors, issues, pull requests, and tags
+- Identify GitHub features: Actions, Wikis, Pages, Discussions, Projects, Environments, Releases
+- Detect advanced settings: branch protections, tag protections, secrets, variables, webhooks, rulesets, packages
+- Calculate **source-aware complexity scores** for migration planning (GitHub-specific scoring based on remediation difficulty)
+- Track contributors, issues, pull requests, tags, and repository activity levels
+- Use **quantile-based activity scoring** adaptive to your repository dataset
 
 </details>
 
@@ -164,6 +170,7 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - **Phase Tracking** - Monitor through all phases: pending → pre-migration → migration → post-migration → complete
 - **Lock Management** - Automatically lock source repositories during migration
 - **Rollback Support** - Revert completed migrations if validation fails
+- **Visibility Handling** - Configurable visibility transformations (public/internal/private) with EMU and data residency support
 
 </details>
 

@@ -9,46 +9,80 @@ interface RepositoryListItemProps {
 
 export function RepositoryListItem({ repository, selected, onToggle }: RepositoryListItemProps) {
   const getComplexityIndicator = () => {
-    // Calculate complexity score matching backend logic:
-    // Size tier * 3 + has_lfs (2) + has_submodules (2) + has_large_files (4) + has_packages (3) + 
-    // branch_protections > 0 (1) + has_rulesets (1) + GHAS (2) + self-hosted runners (3) + apps (2) + internal (1) + codeowners (1)
-    const MB100 = 100 * 1024 * 1024;
-    const GB1 = 1024 * 1024 * 1024;
-    const GB5 = 5 * 1024 * 1024 * 1024;
+    // Use backend-calculated score if available (uses proper quantile-based activity scoring)
+    // Only fallback to frontend calculation if backend score is missing
+    let score: number;
     
-    let sizeTier = 0;
-    if (repository.total_size >= GB5) sizeTier = 3;
-    else if (repository.total_size >= GB1) sizeTier = 2;
-    else if (repository.total_size >= MB100) sizeTier = 1;
+    if (repository.complexity_score !== undefined && repository.complexity_score !== null) {
+      score = repository.complexity_score;
+    } else {
+      // Fallback: Calculate complexity score matching GitHub-specific backend logic
+      // Note: This uses static thresholds for activity, not quantiles like the backend
+      const MB100 = 100 * 1024 * 1024;
+      const GB1 = 1024 * 1024 * 1024;
+      const GB5 = 5 * 1024 * 1024 * 1024;
+      
+      // Size tier scoring (0-9 points)
+      let sizeTier = 0;
+      if (repository.total_size >= GB5) sizeTier = 3;
+      else if (repository.total_size >= GB1) sizeTier = 2;
+      else if (repository.total_size >= MB100) sizeTier = 1;
+      
+      score = sizeTier * 3;
     
-    let score = sizeTier * 3;
+    // High impact features (3-4 points each)
+    if (repository.has_large_files) score += 4;
+    if (repository.environment_count > 0) score += 3;
+    if (repository.secret_count > 0) score += 3;
+    if (repository.has_packages) score += 3;
+    if (repository.has_self_hosted_runners) score += 3;
+    
+    // Moderate impact features (2 points each)
+    if (repository.variable_count > 0) score += 2;
+    if (repository.has_discussions) score += 2;
+    if (repository.release_count > 0) score += 2;
     if (repository.has_lfs) score += 2;
     if (repository.has_submodules) score += 2;
-    if (repository.has_large_files) score += 4;
-    if (repository.has_packages) score += 3; // Packages don't migrate with GEI
-    if (repository.branch_protections > 0) score += 1;
-    if (repository.has_rulesets) score += 1; // Rulesets don't migrate with GEI
-    if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 2; // GHAS
-    if (repository.has_self_hosted_runners) score += 3;
     if (repository.installed_apps_count > 0) score += 2;
+    
+    // Low impact features (1 point each)
+    if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 1;
+    if (repository.webhook_count > 0) score += 1;
+    if (repository.tag_protection_count > 0) score += 1;
+    if (repository.branch_protections > 0) score += 1;
+    if (repository.has_rulesets) score += 1;
+    if (repository.visibility === 'public') score += 1;
     if (repository.visibility === 'internal') score += 1;
     if (repository.has_codeowners) score += 1;
+    
+    // Activity-based scoring (0-4 points) - approximated with static thresholds
+    // Backend uses quantiles for more accurate per-customer calculation
+    // High-activity repos require significantly more coordination and planning
+    const activityScore = 
+      (repository.branch_count > 50 ? 0.5 : repository.branch_count > 10 ? 0.25 : 0) +
+      (repository.commit_count > 1000 ? 0.5 : repository.commit_count > 100 ? 0.25 : 0) +
+      (repository.issue_count > 100 ? 0.5 : repository.issue_count > 10 ? 0.25 : 0) +
+      (repository.pull_request_count > 50 ? 0.5 : repository.pull_request_count > 10 ? 0.25 : 0);
+    
+      if (activityScore >= 1.5) score += 4; // High activity - many users, extensive coordination
+      else if (activityScore >= 0.5) score += 2; // Moderate activity - some coordination needed
+    }
 
-    if (score <= 3) return { 
+    if (score <= 5) return { 
       label: 'Simple', 
       bgColor: 'bg-green-100', 
       textColor: 'text-green-800',
       borderColor: 'border-green-200'
     };
-    if (score <= 6) return { 
+    if (score <= 10) return { 
       label: 'Medium', 
       bgColor: 'bg-yellow-100', 
       textColor: 'text-yellow-800',
       borderColor: 'border-yellow-200'
     };
-    if (score <= 9) return { 
+    if (score <= 17) return { 
       label: 'Complex', 
-      bgColor: 'bg-orange-100', 
+      bgColor: 'bg-orange-100',
       textColor: 'text-orange-800',
       borderColor: 'border-orange-200'
     };
@@ -113,7 +147,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
         </div>
         
         {/* Feature tags */}
-        {(repository.is_archived || repository.is_fork || repository.has_packages || repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki || repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning || repository.has_self_hosted_runners || repository.visibility === 'internal' || repository.has_codeowners) && (
+        {(repository.is_archived || repository.is_fork || repository.has_packages || repository.has_lfs || repository.has_actions || repository.has_submodules || repository.has_large_files || repository.has_wiki || repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning || repository.has_self_hosted_runners || repository.visibility === 'public' || repository.visibility === 'internal' || repository.has_codeowners) && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {repository.is_archived && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-medium border border-gray-300">
@@ -194,6 +228,14 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
                   <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
                 </svg>
                 Self-Hosted
+              </span>
+            )}
+            {repository.visibility === 'public' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium border border-blue-200">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />
+                </svg>
+                Public
               </span>
             )}
             {repository.visibility === 'internal' && (
