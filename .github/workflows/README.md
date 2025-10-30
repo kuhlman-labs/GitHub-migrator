@@ -4,6 +4,57 @@ This directory contains CI/CD workflows for building and deploying the GitHub Mi
 
 ## Workflows
 
+### terraform-dev.yml - Infrastructure Deployment (Dev)
+
+**Triggers:**
+- Manual workflow dispatch
+
+**Actions:**
+- `plan` - Preview infrastructure changes
+- `apply` - Create/update infrastructure
+- `destroy` - Destroy infrastructure
+
+**What it does:**
+1. Creates `terraform.tfvars` from GitHub Secrets
+2. Runs Terraform commands in `terraform/environments/dev/`
+3. Deploys Azure App Service with SQLite
+4. Outputs app service name and URL
+
+**Required Secrets:**
+- All secrets from [GITHUB_SECRETS_SETUP.md](../../docs/GITHUB_SECRETS_SETUP.md)
+
+**Usage:**
+```
+Actions → Terraform Deploy - Dev → Run workflow
+Select action: plan (to preview) or apply (to create)
+```
+
+### terraform-prod.yml - Infrastructure Deployment (Production)
+
+**Triggers:**
+- Manual workflow dispatch
+- Requires `production` environment approval
+
+**Actions:**
+- `plan` - Preview infrastructure changes
+- `apply` - Create/update infrastructure
+- `destroy` - Destroy infrastructure
+
+**What it does:**
+1. Creates `terraform.tfvars` from GitHub Secrets
+2. Runs Terraform commands in `terraform/environments/prod/`
+3. Deploys Azure App Service + PostgreSQL
+4. Outputs app service name, URL, and database info
+
+**Required Secrets:**
+- All secrets from [GITHUB_SECRETS_SETUP.md](../../docs/GITHUB_SECRETS_SETUP.md)
+
+**Usage:**
+```
+Actions → Terraform Deploy - Production → Run workflow
+Select action: plan (to preview) or apply (to create)
+```
+
 ### ci.yml - Continuous Integration
 
 **Triggers:**

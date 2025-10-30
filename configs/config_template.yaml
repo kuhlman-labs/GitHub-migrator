@@ -1,0 +1,106 @@
+# GitHub Migrator Configuration Template
+# 
+# This file contains PLACEHOLDER values only.
+# Real secrets are injected via environment variables at runtime.
+#
+# To use locally:
+# 1. Copy this to config.yaml: cp config_template.yaml config.yaml
+# 2. Replace placeholders with your values
+# 3. DO NOT commit config.yaml (it's in .gitignore)
+
+# Server configuration
+server:
+  port: 8080
+
+# Database configuration
+database:
+  type: sqlite  # or "postgres" for production
+  dsn: "./data/migrator.db"  # or postgres connection string
+
+# Source repository system (where to migrate FROM)
+source:
+  type: github
+  base_url: "https://api.github.com"
+  token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED - Set via env var GHMIG_SOURCE_TOKEN
+  
+  # GitHub App authentication (optional for discovery/profiling)
+  # When configured: GitHub App used for discovery, PAT used for migrations
+  # Scenarios:
+  #   - Include installation ID: System uses that specific GitHub App installation
+  #     (best for single-org GitHub Apps)
+  #   - Omit installation ID: System uses GitHub App Installations API to discover
+  #     all organizations where the app is installed, then creates per-org clients
+  #     (best for multi-org GitHub Apps, requires JWT auth)
+  # app_id: 0  # Set via env var GHMIG_SOURCE_APP_ID
+  # app_private_key: ""  # Path or PEM content, set via GHMIG_SOURCE_APP_PRIVATE_KEY
+  # app_installation_id: 0  # Optional: omit to auto-discover all app installations
+
+# Destination repository system (where to migrate TO)
+# Supports same providers as source: github, gitlab, azuredevops
+# Most common: GitHub Enterprise Cloud or GitHub.com
+destination:
+  type: github
+  base_url: "https://api.github.com"
+  token: "${GITHUB_DEST_TOKEN}"  # REQUIRED - Set via env var GHMIG_DESTINATION_TOKEN
+  
+  # GitHub App authentication (optional for discovery/profiling)
+  # When configured: GitHub App used for discovery, PAT used for migrations
+  # app_id: 0
+  # app_private_key: ""
+  # app_installation_id: 0
+
+# Migration worker configuration
+migration:
+  workers: 5  # Number of parallel migration workers
+  poll_interval_seconds: 30  # How often to check migration status
+  
+  # Post-migration deletion mode
+  # - never: Never delete source repo after migration
+  # - production_only: Delete only in production migrations (not dry runs)
+  # - dry_run_only: Delete only in dry runs (for testing)
+  # - always: Always delete after successful migration
+  post_migration_mode: "production_only"
+  
+  # What to do if destination repo already exists
+  # - fail: Fail the migration
+  # - skip: Skip this repo and continue
+  # - delete: Delete destination repo and proceed
+  dest_repo_exists_action: "fail"
+  
+  # Visibility handling for migrated repos
+  visibility_handling:
+    public_repos: "private"    # How to handle public repos: public, internal, private
+    internal_repos: "private"  # How to handle internal repos: internal, private
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json or text
+  output_file: "./logs/migrator.log"
+  max_size: 100  # MB
+  max_backups: 3
+  max_age: 28  # days
+
+# Authentication and authorization (optional)
+auth:
+  enabled: false  # Set via env var GHMIG_AUTH_ENABLED
+  
+  # GitHub OAuth configuration (required if auth.enabled = true)
+  github_oauth_client_id: ""      # Set via GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID
+  github_oauth_client_secret: ""  # Set via GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET
+  callback_url: ""                # e.g., https://your-app.com/api/v1/auth/callback
+  frontend_url: ""                # e.g., https://your-app.com
+  
+  # Session configuration
+  session_secret: ""  # REQUIRED if auth enabled - Set via GHMIG_AUTH_SESSION_SECRET
+  session_duration_hours: 24
+  
+  # Authorization rules (optional - restrict access)
+  authorization_rules:
+    # require_org_membership:
+    #   - "your-github-org"
+    # require_team_membership:
+    #   - "your-github-org/your-team"
+    # require_enterprise_admin: false
+    # require_enterprise_slug: "your-enterprise"
+
