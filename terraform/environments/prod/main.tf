@@ -9,13 +9,12 @@ terraform {
   }
 
   # Configure backend for state storage
-  # Uncomment and configure for remote state
-  # backend "azurerm" {
-  #   resource_group_name  = "terraform-state-rg"
-  #   storage_account_name = "tfstateaccount"
-  #   container_name       = "tfstate"
-  #   key                  = "github-migrator-prod.tfstate"
-  # }
+  backend "azurerm" {
+    resource_group_name  = "terraform-state-rg"
+    storage_account_name = "tfstateghmig854248"
+    container_name       = "tfstate"
+    key                  = "github-migrator-prod.tfstate"
+  }
 }
 
 provider "azurerm" {
