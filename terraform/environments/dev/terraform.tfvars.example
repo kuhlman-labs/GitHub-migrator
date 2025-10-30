@@ -1,0 +1,57 @@
+# Azure Configuration
+azure_subscription_id = "YOUR_AZURE_SUBSCRIPTION_ID"
+resource_group_name   = "YOUR_RESOURCE_GROUP_NAME"
+
+# Application Configuration
+app_name_prefix = "github-migrator"
+app_service_sku = "B1"
+always_on       = false
+
+# Docker Configuration
+docker_registry_url       = "ghcr.io"
+docker_image_repository   = "YOUR_GITHUB_USERNAME/github-migrator"
+docker_image_tag          = "dev"
+docker_registry_username  = "YOUR_GITHUB_USERNAME"
+docker_registry_password  = "YOUR_GITHUB_TOKEN"
+
+# Source Configuration
+source_type     = "github"
+source_base_url = "https://api.github.com"
+source_token    = "YOUR_SOURCE_GITHUB_TOKEN"
+
+# Destination Configuration
+destination_type     = "github"
+destination_base_url = "https://api.github.com"
+destination_token    = "YOUR_DESTINATION_GITHUB_TOKEN"
+
+# Migration Configuration
+migration_workers                      = 3
+migration_poll_interval_seconds        = 30
+migration_post_migration_mode          = "production_only"
+migration_dest_repo_exists_action      = "fail"
+migration_visibility_public_repos      = "private"
+migration_visibility_internal_repos    = "private"
+
+# Logging Configuration
+logging_level  = "info"
+logging_format = "json"
+
+# Auth Configuration (optional)
+auth_enabled                     = false
+auth_github_oauth_client_id      = ""
+auth_github_oauth_client_secret  = ""
+auth_callback_url                = ""
+auth_frontend_url                = ""
+auth_session_secret              = ""
+auth_session_duration_hours      = 24
+
+# CORS Configuration
+cors_allowed_origins = ["*"]
+
+# Tags
+tags = {
+  Project     = "GitHub Migrator"
+  Environment = "dev"
+  ManagedBy   = "Terraform"
+}
+

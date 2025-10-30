@@ -1,0 +1,120 @@
+name: Deploy to Production Environment
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: true
+        default: 'prod'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+      url: ${{ steps.deploy.outputs.webapp-url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: image-tag
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          else
+            TAG="prod"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Using image tag: ${TAG}"
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Pre-deployment backup (optional)
+        run: |
+          echo "ℹ️ Consider backing up database before production deployment"
+          echo "This can be automated with Azure CLI commands if needed"
+
+      - name: Deploy to Azure App Service
+        id: deploy
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}
+
+      - name: Wait for deployment to stabilize
+        run: sleep 45
+
+      - name: Health check
+        run: |
+          APP_URL="${{ steps.deploy.outputs.webapp-url }}"
+          echo "Checking health endpoint: ${APP_URL}/health"
+          
+          for i in {1..15}; do
+            if curl -f -s "${APP_URL}/health" > /dev/null; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            echo "⏳ Waiting for app to be ready... (attempt $i/15)"
+            sleep 10
+          done
+          
+          echo "❌ Health check failed after 15 attempts"
+          exit 1
+
+      - name: Post-deployment verification
+        run: |
+          APP_URL="${{ steps.deploy.outputs.webapp-url }}"
+          
+          echo "Running post-deployment verification..."
+          
+          # Check if API responds
+          if curl -f -s "${APP_URL}/api/v1/analytics/summary" > /dev/null 2>&1; then
+            echo "✅ API endpoints are responding"
+          else
+            echo "⚠️ API endpoints may require authentication"
+          fi
+          
+          echo "✅ Post-deployment verification complete"
+
+      - name: Deployment summary
+        run: |
+          echo "## Production Deployment Successful! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deploy.outputs.webapp-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed at:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Post-Deployment Tasks" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Verify application functionality" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Monitor application logs" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Check database connectivity" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Verify authentication if enabled" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "## ❌ Production Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the logs and consider rolling back if necessary." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Attempted Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Logout from Azure
+        run: az logout
+        if: ${{ !cancelled() }}
+

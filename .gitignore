@@ -65,3 +65,19 @@ yarn-error.log*
 
 #configs
 configs/config.yaml
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/terraform.tfvars
+**/.terraformrc
+**/terraform.rc
+**/crash.log
+**/crash.*.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+**/outputs.json

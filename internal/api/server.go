@@ -3,6 +3,9 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/api/handlers"
@@ -152,6 +155,9 @@ func (s *Server) Router() http.Handler {
 	// Self-service endpoints
 	protect("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)
 
+	// Serve static frontend files for SPA
+	mux.HandleFunc("/", s.serveFrontend)
+
 	// Apply middleware
 	handler := middleware.CORS(
 		middleware.Logging(s.logger)(
@@ -160,4 +166,101 @@ func (s *Server) Router() http.Handler {
 	)
 
 	return handler
+}
+
+// serveFrontend serves the React frontend static files and handles SPA routing
+func (s *Server) serveFrontend(w http.ResponseWriter, r *http.Request) {
+	frontendDir := "./web/dist"
+
+	// Validate and resolve the requested path
+	absDir, absPath, ok := s.validateFrontendPath(r.URL.Path, frontendDir)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Try to serve the requested file if it exists
+	if s.tryServeFile(w, r, absPath) {
+		return
+	}
+
+	// Fall back to index.html for SPA routing
+	s.serveSPAFallback(w, r, filepath.Clean(r.URL.Path), absDir)
+}
+
+// validateFrontendPath validates and resolves a path within the frontend directory
+func (s *Server) validateFrontendPath(requestPath, frontendDir string) (absDir, absPath string, ok bool) {
+	// Clean the path to prevent traversal attacks
+	cleanPath := filepath.Clean(requestPath)
+	fullPath := filepath.Join(frontendDir, cleanPath)
+
+	// Get absolute paths for security validation
+	absDir, err := filepath.Abs(frontendDir)
+	if err != nil {
+		s.logger.Error("Failed to get absolute path for frontend directory", "error", err)
+		return "", "", false
+	}
+
+	absPath, err = filepath.Abs(fullPath)
+	if err != nil {
+		s.logger.Error("Failed to get absolute path for requested file", "error", err)
+		return "", "", false
+	}
+
+	// Validate that the requested path is within the frontend directory
+	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) && absPath != absDir {
+		s.logger.Warn("Path traversal attempt detected", "requested_path", requestPath, "resolved_path", absPath)
+		return "", "", false
+	}
+
+	return absDir, absPath, true
+}
+
+// tryServeFile attempts to serve a file if it exists and is not a directory
+func (s *Server) tryServeFile(w http.ResponseWriter, r *http.Request, absPath string) bool {
+	info, err := os.Stat(absPath)
+	if err != nil || info.IsDir() {
+		return false
+	}
+
+	// Set appropriate content type
+	s.setContentType(w, absPath)
+	http.ServeFile(w, r, absPath)
+	return true
+}
+
+// setContentType sets the HTTP content type header based on file extension
+func (s *Server) setContentType(w http.ResponseWriter, filePath string) {
+	ext := filepath.Ext(filePath)
+	contentTypes := map[string]string{
+		".js":   "application/javascript",
+		".css":  "text/css",
+		".json": "application/json",
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".svg":  "image/svg+xml",
+		".ico":  "image/x-icon",
+	}
+
+	if contentType, ok := contentTypes[ext]; ok {
+		w.Header().Set("Content-Type", contentType)
+	}
+}
+
+// serveSPAFallback serves index.html for SPA routing
+func (s *Server) serveSPAFallback(w http.ResponseWriter, r *http.Request, path, absDir string) {
+	// Only serve SPA fallback for non-API routes
+	if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/health") {
+		http.NotFound(w, r)
+		return
+	}
+
+	indexPath := filepath.Join(absDir, "index.html")
+	if _, err := os.Stat(indexPath); err == nil {
+		http.ServeFile(w, r, indexPath)
+		return
+	}
+
+	http.NotFound(w, r)
 }

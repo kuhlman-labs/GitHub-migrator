@@ -1,3 +1,20 @@
+# Build stage - Frontend
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/web
+
+# Copy package files
+COPY web/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy frontend source
+COPY web/ ./
+
+# Build frontend
+RUN npm run build
+
 # Build stage - Backend
 FROM golang:1.23-alpine AS backend-builder
 
@@ -32,6 +49,9 @@ COPY --from=backend-builder /app/server .
 
 # Copy configs
 COPY configs ./configs
+
+# Copy frontend static files from frontend builder
+COPY --from=frontend-builder /app/web/dist ./web/dist
 
 # Create data and logs directories
 RUN mkdir -p /app/data /app/logs
