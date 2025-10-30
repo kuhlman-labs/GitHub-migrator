@@ -33,7 +33,7 @@ jobs:
         id: deploy
         uses: azure/webapps-deploy@v2
         with:
-          app-name: ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}
+          app-name: ${{ vars.APP_SERVICE_NAME }}
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
 
       - name: Wait for deployment to stabilize

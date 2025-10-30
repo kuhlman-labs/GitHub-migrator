@@ -90,6 +90,7 @@ Click **Add variable** for each:
 |--------------|-------|-------------|
 | `ENVIRONMENT_NAME` | `dev` | Environment identifier |
 | `APP_NAME_PREFIX` | `github-migrator` | App name prefix |
+| `APP_SERVICE_NAME` | `github-migrator-dev` | **IMPORTANT**: Full App Service name (from Terraform output) |
 | `APP_SERVICE_SKU` | `B1` | App Service tier (Basic) |
 | `ALWAYS_ON` | `false` | Keep app always on (saves costs in dev) |
 | `DOCKER_IMAGE_TAG` | `dev` | Container image tag |
@@ -151,6 +152,7 @@ Click **Add variable** for each:
 |--------------|-------|-------------|
 | `ENVIRONMENT_NAME` | `production` | Environment identifier |
 | `APP_NAME_PREFIX` | `github-migrator` | App name prefix |
+| `APP_SERVICE_NAME` | `github-migrator-prod` | **IMPORTANT**: Full App Service name (from Terraform output) |
 | `APP_SERVICE_SKU` | `S1` | App Service tier (Standard) |
 | `ALWAYS_ON` | `true` | Keep app always on |
 | `DOCKER_IMAGE_TAG` | `prod` | Container image tag |
@@ -297,6 +299,31 @@ Here's a checklist format for faster setup:
 ☐ AUTH_GITHUB_OAUTH_CLIENT_SECRET
 ☐ AUTH_SESSION_SECRET
 ```
+
+## 🎯 Getting App Service Names
+
+After running Terraform, you'll need to add the actual app service names to your environments.
+
+**Get the app service names:**
+```bash
+# For dev
+cd terraform/environments/dev
+terraform output app_service_name
+
+# For prod  
+cd terraform/environments/prod
+terraform output app_service_name
+```
+
+**Add to environments:**
+1. Copy the output value (e.g., `github-migrator-dev-abc123`)
+2. Go to **Settings → Environments → dev** (or production)
+3. Click **Variables** tab
+4. Find `APP_SERVICE_NAME` and click **Edit** (or add if missing)
+5. Update the value with the full name from Terraform output
+6. Click **Update variable**
+
+> 💡 **Tip**: The Terraform workflow shows this output automatically after running. You can also find it in Azure Portal under App Services.
 
 ## 🔄 How Workflows Use Environments
 

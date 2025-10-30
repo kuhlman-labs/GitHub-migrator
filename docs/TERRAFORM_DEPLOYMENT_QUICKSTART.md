@@ -78,12 +78,22 @@ Add these **minimum required secrets**:
 
 ### Step 4: Update Deployment Secrets (2 minutes)
 
-Add these secrets with values from Terraform outputs:
+After Terraform completes, update the App Service name in your environment:
 
-| Secret Name | Value |
-|------------|-------|
-| `AZURE_APP_SERVICE_NAME_DEV` | `github-migrator-dev` |
-| `AZURE_APP_SERVICE_NAME_PROD` | `github-migrator-prod` |
+1. Get the output from Terraform:
+   ```bash
+   cd terraform/environments/dev
+   terraform output app_service_name
+   # Example output: github-migrator-dev-abc123
+   ```
+
+2. Add to GitHub Environment:
+   - Go to **Settings → Environments → dev**
+   - Click **Variables** tab
+   - Find `APP_SERVICE_NAME` variable
+   - Update with the full name from Terraform output
+
+> 💡 **Note**: The `APP_SERVICE_NAME` placeholder value is already in your environment variables, you just need to update it with the actual name after Terraform runs.
 
 ### Step 5: Build and Deploy Application (5 minutes)
 

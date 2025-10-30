@@ -141,9 +141,9 @@ Select action: plan (to preview) or apply (to create)
 3. Runs health checks
 4. Generates deployment summary
 
-**Required Secrets:**
-- `AZURE_CREDENTIALS` - Service principal JSON
-- `AZURE_APP_SERVICE_NAME_DEV` - Dev App Service name
+**Required:**
+- Repository Secret: `AZURE_CREDENTIALS` - Service principal JSON
+- Environment Variable: `APP_SERVICE_NAME` - Dev App Service name (from Terraform output)
 
 **Environment:** `dev`
 
@@ -161,9 +161,9 @@ Select action: plan (to preview) or apply (to create)
 5. Generates deployment summary
 6. Notifies on failure
 
-**Required Secrets:**
-- `AZURE_CREDENTIALS` - Service principal JSON
-- `AZURE_APP_SERVICE_NAME_PROD` - Production App Service name
+**Required:**
+- Repository Secret: `AZURE_CREDENTIALS` - Service principal JSON
+- Environment Variable: `APP_SERVICE_NAME` - Production App Service name (from Terraform output)
 
 **Environment:** `production` (with required reviewers)
 
@@ -191,15 +191,29 @@ Navigate to: Repository → Settings → Secrets and variables → Actions
 
 Add these secrets:
 
-#### Required for All Workflows
+#### Required Repository-Level Secrets
 
 | Secret | Description | How to Get |
 |--------|-------------|------------|
 | `AZURE_CREDENTIALS` | Service principal JSON | See "Create Service Principal" below |
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id -o tsv` |
 | `AZURE_RESOURCE_GROUP` | Resource group name | From Terraform outputs |
-| `AZURE_APP_SERVICE_NAME_DEV` | Dev App Service name | From Terraform dev outputs |
-| `AZURE_APP_SERVICE_NAME_PROD` | Production App Service name | From Terraform prod outputs |
+
+#### Required Environment Variables (per environment)
+
+After running Terraform, add the App Service name to each environment:
+
+**For Dev Environment** (`Settings → Environments → dev → Variables`)
+| Variable | Value | How to Get |
+|----------|-------|------------|
+| `APP_SERVICE_NAME` | `github-migrator-dev-abc123` | `terraform output app_service_name` in `terraform/environments/dev/` |
+
+**For Production Environment** (`Settings → Environments → production → Variables`)
+| Variable | Value | How to Get |
+|----------|-------|------------|
+| `APP_SERVICE_NAME` | `github-migrator-prod-xyz789` | `terraform output app_service_name` in `terraform/environments/prod/` |
+
+> 💡 **Note**: These use GitHub Environments (recommended) for better organization and protection rules. See [GITHUB_ENVIRONMENTS_SETUP.md](../../docs/GITHUB_ENVIRONMENTS_SETUP.md) for complete setup.
 
 ### 2. Create Azure Service Principal
 
