@@ -357,6 +357,7 @@ func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org strin
 
 // listAllRepositories lists all repositories for an organization with pagination
 // Uses the collector's default client
+// nolint:unused // Convenience method for testing and future use
 func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*ghapi.Repository, error) {
 	return c.listAllRepositoriesWithClient(ctx, org, c.client)
 }
@@ -516,6 +517,7 @@ func (c *Collector) ProfileRepository(ctx context.Context, ghRepo *ghapi.Reposit
 
 // ProfileRepositoryWithProfiler profiles a single repository with both Git and GitHub features
 // using an optional shared profiler (with package cache)
+// nolint:gocyclo // Repository profiling involves many sequential checks
 func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *ghapi.Repository, profiler *Profiler) error {
 	c.logger.Debug("Profiling repository", "repo", ghRepo.GetFullName())
 
@@ -629,6 +631,16 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 		c.logger.Warn("Failed to profile features",
 			"repo", repo.FullName,
 			"error", err)
+	}
+
+	// Check for GitHub migration limit violations and set status accordingly
+	if repo.HasOversizedCommits || repo.HasLongRefs || repo.HasBlockingFiles {
+		repo.Status = string(models.StatusRemediationRequired)
+		c.logger.Warn("Repository requires remediation before migration",
+			"repo", repo.FullName,
+			"has_oversized_commits", repo.HasOversizedCommits,
+			"has_long_refs", repo.HasLongRefs,
+			"has_blocking_files", repo.HasBlockingFiles)
 	}
 
 	// Save to database

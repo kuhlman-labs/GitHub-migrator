@@ -30,17 +30,25 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 			default_branch, branch_count, commit_count, last_commit_sha,
 			last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
 			has_discussions, has_actions, has_projects, has_packages, 
-			branch_protections, has_rulesets, environment_count, secret_count, variable_count, 
+			branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
 			webhook_count, contributor_count, top_contributors,
 			issue_count, pull_request_count, tag_count, 
 			open_issue_count, open_pr_count,
 			has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
 			visibility, workflow_count, has_self_hosted_runners, collaborator_count,
 			installed_apps_count, release_count, has_release_assets,
+			has_oversized_commits, oversized_commit_details,
+			has_long_refs, long_ref_details,
+			has_blocking_files, blocking_file_details,
+			has_large_file_warnings, large_file_warning_details,
+			has_oversized_repository, oversized_repository_details,
+			estimated_metadata_size, metadata_size_details,
+			exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
 			status, batch_id, priority, destination_url, 
 			destination_full_name, source_migration_id, is_source_locked,
-			discovered_at, updated_at, last_discovery_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			validation_status, validation_details, destination_data,
+			discovered_at, updated_at, migrated_at, last_dry_run_at, last_discovery_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	ON CONFLICT(full_name) DO UPDATE SET
 		source = excluded.source,
 		source_url = excluded.source_url,
@@ -90,12 +98,24 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		installed_apps_count = excluded.installed_apps_count,
 		release_count = excluded.release_count,
 		has_release_assets = excluded.has_release_assets,
+		has_oversized_commits = excluded.has_oversized_commits,
+		oversized_commit_details = excluded.oversized_commit_details,
+		has_long_refs = excluded.has_long_refs,
+		long_ref_details = excluded.long_ref_details,
+		has_blocking_files = excluded.has_blocking_files,
+		blocking_file_details = excluded.blocking_file_details,
+		has_large_file_warnings = excluded.has_large_file_warnings,
+		large_file_warning_details = excluded.large_file_warning_details,
+		has_oversized_repository = excluded.has_oversized_repository,
+		oversized_repository_details = excluded.oversized_repository_details,
+		estimated_metadata_size = excluded.estimated_metadata_size,
+		metadata_size_details = excluded.metadata_size_details,
 		source_migration_id = excluded.source_migration_id,
 		is_source_locked = excluded.is_source_locked,
 		updated_at = excluded.updated_at,
 		last_discovery_at = CURRENT_TIMESTAMP
-		-- Note: destination_url and destination_full_name are intentionally excluded
-		-- from updates to preserve manually configured destination settings during re-discovery
+		-- Note: destination_url, destination_full_name, and exclusion flags are intentionally excluded
+		-- from updates to preserve manually configured settings during re-discovery
 	`
 
 	_, err := d.db.ExecContext(ctx, query,
@@ -107,7 +127,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.LastCommitSHA, repo.LastCommitDate,
 		repo.IsArchived, repo.IsFork, repo.HasWiki, repo.HasPages, repo.HasDiscussions,
 		repo.HasActions, repo.HasProjects, repo.HasPackages, repo.BranchProtections,
-		repo.HasRulesets,
+		repo.HasRulesets, repo.TagProtectionCount,
 		repo.EnvironmentCount, repo.SecretCount, repo.VariableCount,
 		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
 		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
@@ -115,10 +135,18 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.HasCodeScanning, repo.HasDependabot, repo.HasSecretScanning, repo.HasCodeowners,
 		repo.Visibility, repo.WorkflowCount, repo.HasSelfHostedRunners, repo.CollaboratorCount,
 		repo.InstalledAppsCount, repo.ReleaseCount, repo.HasReleaseAssets,
+		repo.HasOversizedCommits, repo.OversizedCommitDetails,
+		repo.HasLongRefs, repo.LongRefDetails,
+		repo.HasBlockingFiles, repo.BlockingFileDetails,
+		repo.HasLargeFileWarnings, repo.LargeFileWarningDetails,
+		repo.HasOversizedRepository, repo.OversizedRepositoryDetails,
+		repo.EstimatedMetadataSize, repo.MetadataSizeDetails,
+		repo.ExcludeReleases, repo.ExcludeAttachments, repo.ExcludeMetadata, repo.ExcludeGitData, repo.ExcludeOwnerProjects,
 		repo.Status, repo.BatchID, repo.Priority,
 		repo.DestinationURL, repo.DestinationFullName,
 		repo.SourceMigrationID, repo.IsSourceLocked,
-		repo.DiscoveredAt, repo.UpdatedAt,
+		repo.ValidationStatus, repo.ValidationDetails, repo.DestinationData,
+		repo.DiscoveredAt, repo.UpdatedAt, repo.MigratedAt, repo.LastDryRunAt,
 	)
 
 	return err
@@ -134,13 +162,20 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 			   default_branch, branch_count, commit_count, last_commit_sha,
 			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
 			   has_discussions, has_actions, has_projects, has_packages, 
-			   branch_protections, has_rulesets, environment_count, secret_count, variable_count, 
+			   branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
 			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
 			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
 			   installed_apps_count, release_count, has_release_assets,
+			   has_oversized_commits, oversized_commit_details,
+			   has_long_refs, long_ref_details,
+			   has_blocking_files, blocking_file_details,
+			   has_large_file_warnings, large_file_warning_details,
+			   has_oversized_repository, oversized_repository_details,
+			   estimated_metadata_size, metadata_size_details,
+			   exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
 			   status, batch_id, priority, destination_url, 
 			   destination_full_name, source_migration_id, is_source_locked,
 			   validation_status, validation_details, 
@@ -160,7 +195,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.LastCommitSHA, &repo.LastCommitDate,
 		&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
 		&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
-		&repo.HasRulesets,
+		&repo.HasRulesets, &repo.TagProtectionCount,
 		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
 		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
@@ -168,6 +203,13 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
 		&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
 		&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
+		&repo.HasOversizedCommits, &repo.OversizedCommitDetails,
+		&repo.HasLongRefs, &repo.LongRefDetails,
+		&repo.HasBlockingFiles, &repo.BlockingFileDetails,
+		&repo.HasLargeFileWarnings, &repo.LargeFileWarningDetails,
+		&repo.HasOversizedRepository, &repo.OversizedRepositoryDetails,
+		&repo.EstimatedMetadataSize, &repo.MetadataSizeDetails,
+		&repo.ExcludeReleases, &repo.ExcludeAttachments, &repo.ExcludeMetadata, &repo.ExcludeGitData, &repo.ExcludeOwnerProjects,
 		&repo.Status, &repo.BatchID, &repo.Priority,
 		&repo.DestinationURL, &repo.DestinationFullName,
 		&repo.SourceMigrationID, &repo.IsSourceLocked,
@@ -182,6 +224,9 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
+
+	// Calculate complexity score
+	_ = d.populateComplexityScores(ctx, []*models.Repository{&repo})
 
 	return &repo, nil
 }
@@ -386,6 +431,222 @@ func applySizeCategoryFilter(query string, args []interface{}, filters map[strin
 	return query, args
 }
 
+// buildGitHubComplexityScoreSQL generates the SQL expression for calculating GitHub-specific complexity scores
+// This includes activity-based scoring using quantiles from the repository dataset
+func buildGitHubComplexityScoreSQL() string {
+	// GitHub-specific complexity scoring (refined based on GEI migration documentation)
+	// Categories: simple (≤5), medium (6-10), complex (11-17), very_complex (≥18)
+	//
+	// Scoring factors based on remediation difficulty:
+	// HIGH IMPACT (3-4 points):
+	//   - Large files: +4 (requires remediation before migration)
+	//   - Environments: +3 (manual recreation of configs, protection rules)
+	//   - Secrets: +3 (manual recreation, high security sensitivity)
+	//   - Packages: +3 (don't migrate with GEI)
+	//   - Self-hosted runners: +3 (infrastructure reconfiguration)
+	//
+	// MODERATE IMPACT (2 points):
+	//   - Variables: +2 (manual recreation, less sensitive than secrets)
+	//   - Discussions: +2 (don't migrate, community impact)
+	//   - Releases: +2 (GHES 3.5.0+ only, may need manual migration)
+	//   - LFS: +2 (special handling required)
+	//   - Submodules: +2 (dependency management complexity)
+	//   - GitHub Apps: +2 (reconfiguration/reinstallation)
+	//
+	// LOW IMPACT (1 point):
+	//   - GHAS features: +1 (code scanning, dependabot, secret scanning - simple toggles)
+	//   - Webhooks: +1 (must re-enable, straightforward)
+	//   - Tag protections: +1 (manual configuration)
+	//   - Branch protections: +1 (migrates but may need adjustment)
+	//   - Rulesets: +1 (manual recreation)
+	//   - Public visibility: +1 (transformation considerations)
+	//   - Internal visibility: +1 (transformation considerations)
+	//   - CODEOWNERS: +1 (verification required)
+	//
+	// ACTIVITY TIER (0-4 points):
+	//   Uses quantiles to determine activity level relative to customer's repos
+	//   High-activity repos require significantly more planning and coordination
+	//   - High (top 25%): +4 (many users, extensive coordination, high impact)
+	//   - Moderate (25-75%): +2 (some coordination needed)
+	//   - Low (bottom 25%): +0 (few users, low coordination needs)
+	//   Activity combines: branch_count, commit_count, issue_count, pull_request_count
+
+	const (
+		MB100 = 104857600  // 100MB
+		GB1   = 1073741824 // 1GB
+		GB5   = 5368709120 // 5GB
+	)
+
+	return fmt.Sprintf(`(
+		-- Size tier scoring (0-9 points)
+		(CASE 
+			WHEN total_size IS NULL THEN 0
+			WHEN total_size < %d THEN 0
+			WHEN total_size < %d THEN 1
+			WHEN total_size < %d THEN 2
+			ELSE 3
+		END) * 3 +
+		
+		-- High impact features (3-4 points each)
+		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
+		CASE WHEN environment_count > 0 THEN 3 ELSE 0 END +
+		CASE WHEN secret_count > 0 THEN 3 ELSE 0 END +
+		CASE WHEN has_packages = 1 THEN 3 ELSE 0 END +
+		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
+		
+		-- Moderate impact features (2 points each)
+		CASE WHEN variable_count > 0 THEN 2 ELSE 0 END +
+		CASE WHEN has_discussions = 1 THEN 2 ELSE 0 END +
+		CASE WHEN release_count > 0 THEN 2 ELSE 0 END +
+		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
+		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
+		
+		-- Low impact features (1 point each)
+		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 1 ELSE 0 END +
+		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
+		CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END +
+		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
+		CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END +
+		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
+		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
+		CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END +
+		
+		-- Activity-based scoring (0-4 points) using quantiles
+		-- High-activity repos need significantly more coordination and planning
+		-- Calculate percentile rank for each activity metric and average them
+		(CASE 
+			WHEN (
+				-- Average percentile across activity metrics
+				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
+				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
+				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
+				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
+			) >= 0.75 THEN 4
+			WHEN (
+				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
+				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
+				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
+				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
+			) >= 0.25 THEN 2
+			ELSE 0
+		END)
+	)`, MB100, GB1, GB5)
+}
+
+// Individual complexity component SQL builders
+// These match the logic in buildGitHubComplexityScoreSQL() but return individual scores
+
+func buildSizePointsSQL() string {
+	const (
+		MB100 = 104857600  // 100MB
+		GB1   = 1073741824 // 1GB
+		GB5   = 5368709120 // 5GB
+	)
+	return fmt.Sprintf(`(CASE 
+		WHEN total_size IS NULL THEN 0
+		WHEN total_size < %d THEN 0
+		WHEN total_size < %d THEN 1
+		WHEN total_size < %d THEN 2
+		ELSE 3
+	END) * 3`, MB100, GB1, GB5)
+}
+
+func buildLargeFilesPointsSQL() string {
+	return "CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END"
+}
+
+func buildEnvironmentsPointsSQL() string {
+	return "CASE WHEN environment_count > 0 THEN 3 ELSE 0 END"
+}
+
+func buildSecretsPointsSQL() string {
+	return "CASE WHEN secret_count > 0 THEN 3 ELSE 0 END"
+}
+
+func buildPackagesPointsSQL() string {
+	return "CASE WHEN has_packages = 1 THEN 3 ELSE 0 END"
+}
+
+func buildRunnersPointsSQL() string {
+	return "CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END"
+}
+
+func buildVariablesPointsSQL() string {
+	return "CASE WHEN variable_count > 0 THEN 2 ELSE 0 END"
+}
+
+func buildDiscussionsPointsSQL() string {
+	return "CASE WHEN has_discussions = 1 THEN 2 ELSE 0 END"
+}
+
+func buildReleasesPointsSQL() string {
+	return "CASE WHEN release_count > 0 THEN 2 ELSE 0 END"
+}
+
+func buildLFSPointsSQL() string {
+	return "CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END"
+}
+
+func buildSubmodulesPointsSQL() string {
+	return "CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END"
+}
+
+func buildAppsPointsSQL() string {
+	return "CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END"
+}
+
+func buildSecurityPointsSQL() string {
+	return "CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 1 ELSE 0 END"
+}
+
+func buildWebhooksPointsSQL() string {
+	return "CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END"
+}
+
+func buildTagProtectionsPointsSQL() string {
+	return "CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END"
+}
+
+func buildBranchProtectionsPointsSQL() string {
+	return "CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END"
+}
+
+func buildRulesetsPointsSQL() string {
+	return "CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END"
+}
+
+func buildPublicVisibilityPointsSQL() string {
+	return "CASE WHEN visibility = 'public' THEN 1 ELSE 0 END"
+}
+
+func buildInternalVisibilityPointsSQL() string {
+	return "CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END"
+}
+
+func buildCodeownersPointsSQL() string {
+	return "CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END"
+}
+
+func buildActivityPointsSQL() string {
+	return `(CASE 
+		WHEN (
+			-- Average percentile across activity metrics
+			(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
+			 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
+			 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
+			 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
+		) >= 0.75 THEN 4
+		WHEN (
+			(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
+			 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
+			 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
+			 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
+		) >= 0.25 THEN 2
+		ELSE 0
+	END)`
+}
+
 // applyComplexityFilter filters repositories by complexity level
 // IMPORTANT: This calculation MUST match GetComplexityDistribution() in analytics
 func applyComplexityFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
@@ -393,33 +654,6 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 	if !ok {
 		return query, args
 	}
-
-	// Complexity scoring (matching analytics calculation):
-	// Size score (0-3) * 3, plus feature scores
-	// simple: score <= 3
-	// medium: score 4-6
-	// complex: score 7-9
-	// very_complex: score >= 10
-	//
-	// Scoring factors:
-	// - Size tier * 3: NULL/unknown(0), <100MB(0), 100MB-1GB(1*3=3), 1GB-5GB(2*3=6), >5GB(3*3=9)
-	// - has_lfs: +2
-	// - has_submodules: +2
-	// - has_large_files: +4 (higher weight due to remediation requirements)
-	// - has_packages: +3
-	// - branch_protections > 0: +1
-	// - has_rulesets: +1
-	// - Security features (GHAS): +2
-	// - Self-hosted runners: +3
-	// - GitHub Apps: +2
-	// - Internal visibility: +1
-	// - CODEOWNERS: +1
-
-	const (
-		MB100 = 104857600  // 100MB
-		GB1   = 1073741824 // 1GB
-		GB5   = 5368709120 // 5GB
-	)
 
 	var conditions []string
 
@@ -431,42 +665,21 @@ func applyComplexityFilter(query string, args []interface{}, filters map[string]
 		categories = v
 	}
 
-	// Build complexity score calculation (matches analytics exactly)
-	scoreCalc := `(
-		(CASE 
-			WHEN total_size IS NULL THEN 0
-			WHEN total_size < ? THEN 0
-			WHEN total_size < ? THEN 1
-			WHEN total_size < ? THEN 2
-			ELSE 3
-		END) * 3 +
-		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
-		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
-		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
-		CASE WHEN has_packages = 1 THEN 3 ELSE 0 END +
-		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
-		CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END +
-		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END +
-		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
-		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
-		CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END
-	)`
+	// Build source-aware complexity score calculation
+	// For GitHub sources (ghes), use the refined GitHub-specific formula
+	// For other sources, maintain backward compatibility with existing formula
+	scoreCalc := buildGitHubComplexityScoreSQL()
 
 	for _, category := range categories {
 		switch category {
 		case "simple":
-			conditions = append(conditions, fmt.Sprintf("(%s <= 3)", scoreCalc))
-			args = append(args, MB100, GB1, GB5)
+			conditions = append(conditions, fmt.Sprintf("(%s <= 5)", scoreCalc))
 		case "medium":
-			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 4 AND 6)", scoreCalc))
-			args = append(args, MB100, GB1, GB5)
+			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 6 AND 10)", scoreCalc))
 		case "complex":
-			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 7 AND 9)", scoreCalc))
-			args = append(args, MB100, GB1, GB5)
+			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 11 AND 17)", scoreCalc))
 		case "very_complex":
-			conditions = append(conditions, fmt.Sprintf("(%s >= 10)", scoreCalc))
-			args = append(args, MB100, GB1, GB5)
+			conditions = append(conditions, fmt.Sprintf("(%s >= 18)", scoreCalc))
 		}
 	}
 
@@ -570,13 +783,20 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			   default_branch, branch_count, commit_count, last_commit_sha,
 			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
 			   has_discussions, has_actions, has_projects, has_packages, 
-			   branch_protections, has_rulesets, environment_count, secret_count, variable_count, 
+			   branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
 			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
 			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
 			   installed_apps_count, release_count, has_release_assets,
+			   has_oversized_commits, oversized_commit_details,
+			   has_long_refs, long_ref_details,
+			   has_blocking_files, blocking_file_details,
+			   has_large_file_warnings, large_file_warning_details,
+			   has_oversized_repository, oversized_repository_details,
+			   estimated_metadata_size, metadata_size_details,
+			   exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
 			   status, batch_id, priority, destination_url, 
 			   destination_full_name, source_migration_id, is_source_locked,
 			   validation_status, validation_details, 
@@ -625,7 +845,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.LastCommitSHA, &repo.LastCommitDate,
 			&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
 			&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
-			&repo.HasRulesets,
+			&repo.HasRulesets, &repo.TagProtectionCount,
 			&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
 			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
@@ -633,6 +853,13 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 			&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
 			&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
 			&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
+			&repo.HasOversizedCommits, &repo.OversizedCommitDetails,
+			&repo.HasLongRefs, &repo.LongRefDetails,
+			&repo.HasBlockingFiles, &repo.BlockingFileDetails,
+			&repo.HasLargeFileWarnings, &repo.LargeFileWarningDetails,
+			&repo.HasOversizedRepository, &repo.OversizedRepositoryDetails,
+			&repo.EstimatedMetadataSize, &repo.MetadataSizeDetails,
+			&repo.ExcludeReleases, &repo.ExcludeAttachments, &repo.ExcludeMetadata, &repo.ExcludeGitData, &repo.ExcludeOwnerProjects,
 			&repo.Status, &repo.BatchID, &repo.Priority,
 			&repo.DestinationURL, &repo.DestinationFullName,
 			&repo.SourceMigrationID, &repo.IsSourceLocked,
@@ -646,7 +873,125 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 		repos = append(repos, &repo)
 	}
 
+	// Calculate and populate complexity scores
+	// Complexity scores are nice-to-have, not critical, so we don't fail the request on error
+	_ = d.populateComplexityScores(ctx, repos)
+
 	return repos, rows.Err()
+}
+
+// populateComplexityScores calculates and sets the complexity_score and complexity_breakdown fields for repositories
+func (d *Database) populateComplexityScores(ctx context.Context, repos []*models.Repository) error {
+	if len(repos) == 0 {
+		return nil
+	}
+
+	// Build a map of repo IDs for quick lookup
+	repoIDs := make([]string, len(repos))
+	repoMap := make(map[int64]*models.Repository)
+	for i, repo := range repos {
+		repoIDs[i] = fmt.Sprintf("%d", repo.ID)
+		repoMap[repo.ID] = repo
+	}
+
+	// Calculate complexity scores AND individual components in one query
+	query := fmt.Sprintf(`
+		SELECT 
+			id,
+			%s as complexity_score,
+			%s as size_points,
+			%s as large_files_points,
+			%s as environments_points,
+			%s as secrets_points,
+			%s as packages_points,
+			%s as runners_points,
+			%s as variables_points,
+			%s as discussions_points,
+			%s as releases_points,
+			%s as lfs_points,
+			%s as submodules_points,
+			%s as apps_points,
+			%s as security_points,
+			%s as webhooks_points,
+			%s as tag_protections_points,
+			%s as branch_protections_points,
+			%s as rulesets_points,
+			%s as public_visibility_points,
+			%s as internal_visibility_points,
+			%s as codeowners_points,
+			%s as activity_points
+		FROM repositories
+		WHERE id IN (%s)
+	`,
+		buildGitHubComplexityScoreSQL(),
+		buildSizePointsSQL(),
+		buildLargeFilesPointsSQL(),
+		buildEnvironmentsPointsSQL(),
+		buildSecretsPointsSQL(),
+		buildPackagesPointsSQL(),
+		buildRunnersPointsSQL(),
+		buildVariablesPointsSQL(),
+		buildDiscussionsPointsSQL(),
+		buildReleasesPointsSQL(),
+		buildLFSPointsSQL(),
+		buildSubmodulesPointsSQL(),
+		buildAppsPointsSQL(),
+		buildSecurityPointsSQL(),
+		buildWebhooksPointsSQL(),
+		buildTagProtectionsPointsSQL(),
+		buildBranchProtectionsPointsSQL(),
+		buildRulesetsPointsSQL(),
+		buildPublicVisibilityPointsSQL(),
+		buildInternalVisibilityPointsSQL(),
+		buildCodeownersPointsSQL(),
+		buildActivityPointsSQL(),
+		strings.Join(repoIDs, ","))
+
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var score int
+		breakdown := &models.ComplexityBreakdown{}
+
+		if err := rows.Scan(
+			&id, &score,
+			&breakdown.SizePoints,
+			&breakdown.LargeFilesPoints,
+			&breakdown.EnvironmentsPoints,
+			&breakdown.SecretsPoints,
+			&breakdown.PackagesPoints,
+			&breakdown.RunnersPoints,
+			&breakdown.VariablesPoints,
+			&breakdown.DiscussionsPoints,
+			&breakdown.ReleasesPoints,
+			&breakdown.LFSPoints,
+			&breakdown.SubmodulesPoints,
+			&breakdown.AppsPoints,
+			&breakdown.SecurityPoints,
+			&breakdown.WebhooksPoints,
+			&breakdown.TagProtectionsPoints,
+			&breakdown.BranchProtectionsPoints,
+			&breakdown.RulesetsPoints,
+			&breakdown.PublicVisibilityPoints,
+			&breakdown.InternalVisibilityPoints,
+			&breakdown.CodeownersPoints,
+			&breakdown.ActivityPoints,
+		); err != nil {
+			return err
+		}
+
+		if repo, ok := repoMap[id]; ok {
+			repo.ComplexityScore = &score
+			repo.ComplexityBreakdown = breakdown
+		}
+	}
+
+	return rows.Err()
 }
 
 // UpdateRepository updates a repository's fields
@@ -927,14 +1272,25 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 			   largest_file_size, largest_commit, largest_commit_size,
 			   has_lfs, has_submodules, has_large_files, large_file_count,
 			   default_branch, branch_count, commit_count, last_commit_sha,
-			   last_commit_date, has_wiki, has_pages, has_discussions, 
-			   has_actions, has_projects, branch_protections, 
-			   environment_count, secret_count, variable_count, 
+			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
+			   has_discussions, has_actions, has_projects, has_packages, 
+			   branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
 			   webhook_count, contributor_count, top_contributors,
 			   issue_count, pull_request_count, tag_count,
 			   open_issue_count, open_pr_count,
+			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
+			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
+			   installed_apps_count, release_count, has_release_assets,
+			   has_oversized_commits, oversized_commit_details,
+			   has_long_refs, long_ref_details,
+			   has_blocking_files, blocking_file_details,
+			   has_large_file_warnings, large_file_warning_details,
+			   has_oversized_repository, oversized_repository_details,
+			   estimated_metadata_size, metadata_size_details,
+			   exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
 			   status, batch_id, priority, destination_url, 
-			   destination_full_name, validation_status, validation_details, 
+			   destination_full_name, source_migration_id, is_source_locked,
+			   validation_status, validation_details, 
 			   destination_data, discovered_at, updated_at, migrated_at,
 			   last_discovery_at, last_dry_run_at
 		FROM repositories 
@@ -949,14 +1305,26 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 		&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
 		&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
 		&repo.LastCommitSHA, &repo.LastCommitDate,
-		&repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
-		&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
+		&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
+		&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
+		&repo.HasRulesets, &repo.TagProtectionCount,
 		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
 		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
 		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
 		&repo.OpenIssueCount, &repo.OpenPRCount,
+		&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
+		&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
+		&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
+		&repo.HasOversizedCommits, &repo.OversizedCommitDetails,
+		&repo.HasLongRefs, &repo.LongRefDetails,
+		&repo.HasBlockingFiles, &repo.BlockingFileDetails,
+		&repo.HasLargeFileWarnings, &repo.LargeFileWarningDetails,
+		&repo.HasOversizedRepository, &repo.OversizedRepositoryDetails,
+		&repo.EstimatedMetadataSize, &repo.MetadataSizeDetails,
+		&repo.ExcludeReleases, &repo.ExcludeAttachments, &repo.ExcludeMetadata, &repo.ExcludeGitData, &repo.ExcludeOwnerProjects,
 		&repo.Status, &repo.BatchID, &repo.Priority,
 		&repo.DestinationURL, &repo.DestinationFullName,
+		&repo.SourceMigrationID, &repo.IsSourceLocked,
 		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
 		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
 		&repo.LastDiscoveryAt, &repo.LastDryRunAt,
@@ -968,6 +1336,9 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repository by ID: %w", err)
 	}
+
+	// Calculate complexity score
+	_ = d.populateComplexityScores(ctx, []*models.Repository{&repo})
 
 	return &repo, nil
 }
@@ -1894,40 +2265,20 @@ type ComplexityDistribution struct {
 //
 //nolint:dupl // Similar query pattern but different business logic
 func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
-	// Calculate complexity score based on:
-	// Size (weight: 3), LFS (weight: 2), Submodules (weight: 2), Large files (weight: 4),
-	// Packages (weight: 3), Branch protections (weight: 1), Rulesets (weight: 1), Security features (weight: 2),
-	// Self-hosted runners (weight: 3), GitHub Apps (weight: 2), Internal visibility (weight: 1), CODEOWNERS (weight: 1)
+	// Calculate complexity score using GitHub-specific formula with activity quantiles
+	// This matches the calculation in applyComplexityFilter()
 	//nolint:gosec // G202: Filter values are sanitized by buildOrgFilter and buildBatchFilter
 	query := `
 		SELECT 
 			CASE 
-				WHEN complexity_score <= 3 THEN 'simple'
-				WHEN complexity_score <= 6 THEN 'medium'
-				WHEN complexity_score <= 9 THEN 'complex'
+				WHEN complexity_score <= 5 THEN 'simple'
+				WHEN complexity_score <= 10 THEN 'medium'
+				WHEN complexity_score <= 17 THEN 'complex'
 				ELSE 'very_complex'
 			END as category,
 			COUNT(*) as count
 		FROM (
-			SELECT 
-				(CASE 
-					WHEN total_size IS NULL THEN 0
-					WHEN total_size < 104857600 THEN 0
-					WHEN total_size < 1073741824 THEN 1
-					WHEN total_size < 5368709120 THEN 2
-					ELSE 3
-				END) * 3 +
-				(CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END) +
-				(CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END) +
-				(CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END) +
-				(CASE WHEN has_packages = 1 THEN 3 ELSE 0 END) +
-				(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) +
-				(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) +
-				(CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 2 ELSE 0 END) +
-				(CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END) +
-				(CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END) +
-				(CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END) +
-				(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as complexity_score
+			SELECT ` + buildGitHubComplexityScoreSQL() + ` as complexity_score
 			FROM repositories r
 			WHERE 1=1
 				AND status != 'wont_migrate'

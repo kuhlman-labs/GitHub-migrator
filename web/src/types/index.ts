@@ -27,6 +27,7 @@ export interface Repository {
   has_packages: boolean;
   branch_protections: number;
   has_rulesets: boolean;
+  tag_protection_count: number;
   environment_count: number;
   secret_count: number;
   variable_count: number;
@@ -65,6 +66,54 @@ export interface Repository {
   migrated_at?: string;
   last_discovery_at?: string;
   last_dry_run_at?: string;
+  // GitHub Migration Limit Validations
+  has_oversized_commits: boolean;
+  oversized_commit_details?: string;
+  has_long_refs: boolean;
+  long_ref_details?: string;
+  has_blocking_files: boolean;
+  blocking_file_details?: string;
+  has_large_file_warnings: boolean;
+  large_file_warning_details?: string;
+  // Repository Size Validation (40 GiB limit)
+  has_oversized_repository: boolean;
+  oversized_repository_details?: string;
+  // Metadata Size Estimation (40 GiB metadata limit)
+  estimated_metadata_size?: number;
+  metadata_size_details?: string;
+  // Migration Exclusion Flags (per-repository settings)
+  exclude_releases: boolean;
+  exclude_attachments: boolean;
+  exclude_metadata: boolean;
+  exclude_git_data: boolean;
+  exclude_owner_projects: boolean;
+  // Computed fields
+  complexity_score?: number;
+  complexity_breakdown?: ComplexityBreakdown;
+}
+
+export interface ComplexityBreakdown {
+  size_points: number;
+  large_files_points: number;
+  environments_points: number;
+  secrets_points: number;
+  packages_points: number;
+  runners_points: number;
+  variables_points: number;
+  discussions_points: number;
+  releases_points: number;
+  lfs_points: number;
+  submodules_points: number;
+  apps_points: number;
+  security_points: number;
+  webhooks_points: number;
+  tag_protections_points: number;
+  branch_protections_points: number;
+  rulesets_points: number;
+  public_visibility_points: number;
+  internal_visibility_points: number;
+  codeowners_points: number;
+  activity_points: number;
 }
 
 export interface MigrationHistory {
@@ -256,6 +305,7 @@ export interface RollbackRequest {
 
 export type MigrationStatus = 
   | 'pending'
+  | 'remediation_required'
   | 'dry_run_queued'
   | 'dry_run_in_progress'
   | 'dry_run_complete'

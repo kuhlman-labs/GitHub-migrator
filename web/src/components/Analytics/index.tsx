@@ -437,7 +437,7 @@ export function Analytics() {
                       };
                       const status = statusMap[data.name];
                       if (status) {
-                        navigate(getRepositoriesUrl({ status: [status] }));
+                        navigate(getRepositoriesUrl({ status: status }));
                       }
                     }
                   }}
@@ -473,7 +473,7 @@ export function Analytics() {
                 return (
                   <button
                     key={item.name}
-                    onClick={() => status && navigate(getRepositoriesUrl({ status: [status] }))}
+                    onClick={() => status && navigate(getRepositoriesUrl({ status: status }))}
                     className="flex items-center gap-2 p-2 rounded hover:bg-gh-info-bg transition-colors cursor-pointer text-left"
                   >
                     <div 

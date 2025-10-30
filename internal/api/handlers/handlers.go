@@ -452,6 +452,27 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 		repo.DestinationFullName = &destFullName
 	}
 
+	// Allow updating exclusion flags
+	if excludeReleases, ok := updates["exclude_releases"].(bool); ok {
+		repo.ExcludeReleases = excludeReleases
+	}
+
+	if excludeAttachments, ok := updates["exclude_attachments"].(bool); ok {
+		repo.ExcludeAttachments = excludeAttachments
+	}
+
+	if excludeMetadata, ok := updates["exclude_metadata"].(bool); ok {
+		repo.ExcludeMetadata = excludeMetadata
+	}
+
+	if excludeGitData, ok := updates["exclude_git_data"].(bool); ok {
+		repo.ExcludeGitData = excludeGitData
+	}
+
+	if excludeOwnerProjects, ok := updates["exclude_owner_projects"].(bool); ok {
+		repo.ExcludeOwnerProjects = excludeOwnerProjects
+	}
+
 	if err := h.db.UpdateRepository(ctx, repo); err != nil {
 		h.logger.Error("Failed to update repository", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to update repository")
@@ -522,6 +543,83 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 		"message":   "Re-discovery started",
 		"full_name": fullName,
 		"status":    "in_progress",
+	})
+}
+
+// MarkRepositoryRemediated handles POST /api/v1/repositories/{fullName}/mark-remediated
+// This endpoint triggers a full re-discovery after the user has fixed blocking migration issues
+func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	if h.collector == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Check if repository exists and has remediation_required status
+	repo, err := h.db.GetRepository(ctx, fullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Verify the repository is in remediation_required status
+	if repo.Status != string(models.StatusRemediationRequired) {
+		h.sendError(w, http.StatusBadRequest,
+			fmt.Sprintf("Repository status must be 'remediation_required', current status: '%s'", repo.Status))
+		return
+	}
+
+	// Extract org and repo name from fullName
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 {
+		h.sendError(w, http.StatusBadRequest, "Invalid repository name format")
+		return
+	}
+	org, repoName := parts[0], parts[1]
+
+	// Get the appropriate client for this organization
+	client, err := h.getClientForOrg(ctx, org)
+	if err != nil {
+		h.logger.Error("Failed to get client for organization", "error", err, "org", org)
+		h.sendError(w, http.StatusInternalServerError, "Failed to initialize client for repository")
+		return
+	}
+
+	// Fetch repository from GitHub API
+	ghRepo, _, err := client.REST().Repositories.Get(ctx, org, repoName)
+	if err != nil {
+		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", fullName)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository from GitHub")
+		return
+	}
+
+	h.logger.Info("Starting re-validation after remediation",
+		"repo", fullName,
+		"had_oversized_commits", repo.HasOversizedCommits,
+		"had_long_refs", repo.HasLongRefs,
+		"had_blocking_files", repo.HasBlockingFiles)
+
+	// Run full discovery asynchronously (git analysis + API profiling + validation)
+	go func() {
+		bgCtx := context.Background()
+		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
+			h.logger.Error("Re-validation after remediation failed", "error", err, "repo", fullName)
+		} else {
+			h.logger.Info("Re-validation completed", "repo", fullName)
+		}
+	}()
+
+	h.sendJSON(w, http.StatusAccepted, map[string]string{
+		"message":   "Re-validation started - repository will be re-analyzed for migration limits",
+		"full_name": fullName,
+		"status":    "validating",
 	})
 }
 
@@ -2337,6 +2435,11 @@ func isRepositoryEligibleForBatch(repo *models.Repository) (bool, string) {
 	// Check if already in a batch
 	if repo.BatchID != nil {
 		return false, "repository is already assigned to a batch"
+	}
+
+	// Check if repository exceeds GitHub's 40 GiB size limit
+	if repo.HasOversizedRepository {
+		return false, "repository exceeds GitHub's 40 GiB size limit and requires remediation"
 	}
 
 	// Check if status is eligible

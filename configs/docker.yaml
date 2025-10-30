@@ -57,6 +57,11 @@ migration:
   poll_interval_seconds: "${GHMIG_MIGRATION_POLL_INTERVAL_SECONDS:-30}"
   post_migration_mode: "${GHMIG_MIGRATION_POST_MIGRATION_MODE:-production_only}"
   dest_repo_exists_action: "${GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION:-fail}"
+  
+  # Visibility transformation rules (default: all repos become private)
+  visibility_handling:
+    public_repos: "${GHMIG_MIGRATION_VISIBILITY_PUBLIC_REPOS:-private}"
+    internal_repos: "${GHMIG_MIGRATION_VISIBILITY_INTERNAL_REPOS:-private}"
 
 # Docker logging configuration
 logging:

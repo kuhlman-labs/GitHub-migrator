@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -55,13 +56,49 @@ func (m *MockMigrationExecutor) SetDelay(d time.Duration) {
 	m.delay = d
 }
 
+// waitForQueuedRepositories waits for repositories to be queued with retries
+func waitForQueuedRepositories(t *testing.T, db *storage.Database, ctx context.Context, batchID int64, expectedCount int) int {
+	t.Helper()
+	maxRetries := 50 // 50 * 100ms = 5 seconds max wait
+	for i := 0; i < maxRetries; i++ {
+		time.Sleep(100 * time.Millisecond)
+
+		repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batchID})
+		if err != nil {
+			continue
+		}
+
+		queuedCount := 0
+		for _, repo := range repos {
+			if repo.Status == string(models.StatusQueuedForMigration) {
+				queuedCount++
+			}
+		}
+
+		if queuedCount == expectedCount {
+			return queuedCount
+		}
+	}
+
+	// Final check to get the actual count
+	repos, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batchID})
+	queuedCount := 0
+	for _, repo := range repos {
+		if repo.Status == string(models.StatusQueuedForMigration) {
+			queuedCount++
+		}
+	}
+	return queuedCount
+}
+
 func setupTestScheduler(t *testing.T) (*Scheduler, *storage.Database, *MockMigrationExecutor, func()) {
 	t.Helper()
 
-	// Create in-memory database
+	// Create temporary database file for better concurrency support with race detector
+	tmpFile := filepath.Join(t.TempDir(), "test.db")
 	db, err := storage.NewDatabase(config.DatabaseConfig{
 		Type: "sqlite",
-		DSN:  ":memory:",
+		DSN:  tmpFile + "?cache=shared&mode=rwc",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
@@ -283,18 +320,8 @@ func TestExecuteBatch(t *testing.T) {
 			t.Error("Expected StartedAt to be set")
 		}
 
-		// Give the scheduler time to queue all repositories
-		time.Sleep(100 * time.Millisecond)
-
-		// Verify repositories were queued for the worker pool
-		// (The new behavior queues repos instead of executing them directly)
-		repos, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch.ID})
-		queuedCount := 0
-		for _, repo := range repos {
-			if repo.Status == string(models.StatusQueuedForMigration) {
-				queuedCount++
-			}
-		}
+		// Wait for the scheduler to queue all repositories
+		queuedCount := waitForQueuedRepositories(t, db, ctx, batch.ID, 2)
 		if queuedCount != 2 {
 			t.Errorf("Expected 2 repos queued for migration, got %d", queuedCount)
 		}

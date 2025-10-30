@@ -101,9 +101,8 @@ destination:
   type: github
   
   # API base URL
-  # For GitHub.com: https://api.github.com
-  # For GitHub with data residency: https://api.github.com
-  # For GitHub Enterprise Server: https://github.company.com/api/v3
+  # For GitHub with data residency: https://api.company.ghe.com
+  # For GitHub Enterprise Cloud: https://api.github.com
   base_url: "https://api.github.com"
   
   # Personal Access Token (PAT) - REQUIRED
@@ -167,6 +166,32 @@ migration:
   # - "delete": Delete the existing destination repo and recreate (dangerous!)
   # Default: "fail"
   dest_repo_exists_action: "fail"
+  
+  # Visibility transformation rules
+  # Controls how repository visibility is mapped from source to destination
+  # IMPORTANT: GitHub visibility controls who can read the repository:
+  # - public: Anyone with the URL can read/clone
+  # - internal: Anyone in the Enterprise can read/clone
+  # - private: Only users with explicit access can read/write
+  #
+  # Note: EMU and data residency environments do NOT support public repositories
+  visibility_handling:
+    # How to handle public repositories
+    # Options: "public", "internal", or "private"
+    # Default: "private" (safest, works in all environments)
+    # - "public": Keep as public (fails in EMU/data residency)
+    # - "internal": Convert to internal (maintains enterprise-wide read access)
+    # - "private": Convert to private (most restrictive)
+    public_repos: "private"
+    
+    # How to handle internal repositories
+    # Options: "internal" or "private"
+    # Default: "private" (safest for GitHub.com migrations)
+    # - "internal": Keep as internal (requires Enterprise Cloud)
+    # - "private": Convert to private (works everywhere)
+    internal_repos: "private"
+    
+    # Note: Private repositories always migrate as private
 
 # =============================================================================
 # Logging Configuration

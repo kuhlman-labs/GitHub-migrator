@@ -11,6 +11,9 @@ export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
       pending: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
       ready: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
       
+      // Requires Attention (orange/amber)
+      remediation_required: 'bg-amber-500 text-white',
+      
       // In Progress (blue)
       dry_run_queued: 'bg-gh-blue text-white',
       dry_run_in_progress: 'bg-gh-blue text-white',

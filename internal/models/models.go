@@ -29,20 +29,21 @@ type Repository struct {
 	LastCommitDate    *time.Time `json:"last_commit_date,omitempty" db:"last_commit_date"`
 
 	// GitHub features
-	IsArchived        bool `json:"is_archived" db:"is_archived"`
-	IsFork            bool `json:"is_fork" db:"is_fork"`
-	HasWiki           bool `json:"has_wiki" db:"has_wiki"`
-	HasPages          bool `json:"has_pages" db:"has_pages"`
-	HasDiscussions    bool `json:"has_discussions" db:"has_discussions"`
-	HasActions        bool `json:"has_actions" db:"has_actions"`
-	HasProjects       bool `json:"has_projects" db:"has_projects"`
-	HasPackages       bool `json:"has_packages" db:"has_packages"`
-	BranchProtections int  `json:"branch_protections" db:"branch_protections"`
-	HasRulesets       bool `json:"has_rulesets" db:"has_rulesets"`
-	EnvironmentCount  int  `json:"environment_count" db:"environment_count"`
-	SecretCount       int  `json:"secret_count" db:"secret_count"`
-	VariableCount     int  `json:"variable_count" db:"variable_count"`
-	WebhookCount      int  `json:"webhook_count" db:"webhook_count"`
+	IsArchived         bool `json:"is_archived" db:"is_archived"`
+	IsFork             bool `json:"is_fork" db:"is_fork"`
+	HasWiki            bool `json:"has_wiki" db:"has_wiki"`
+	HasPages           bool `json:"has_pages" db:"has_pages"`
+	HasDiscussions     bool `json:"has_discussions" db:"has_discussions"`
+	HasActions         bool `json:"has_actions" db:"has_actions"`
+	HasProjects        bool `json:"has_projects" db:"has_projects"`
+	HasPackages        bool `json:"has_packages" db:"has_packages"`
+	BranchProtections  int  `json:"branch_protections" db:"branch_protections"`
+	HasRulesets        bool `json:"has_rulesets" db:"has_rulesets"`
+	TagProtectionCount int  `json:"tag_protection_count" db:"tag_protection_count"`
+	EnvironmentCount   int  `json:"environment_count" db:"environment_count"`
+	SecretCount        int  `json:"secret_count" db:"secret_count"`
+	VariableCount      int  `json:"variable_count" db:"variable_count"`
+	WebhookCount       int  `json:"webhook_count" db:"webhook_count"`
 
 	// Security & Compliance
 	HasCodeScanning   bool `json:"has_code_scanning" db:"has_code_scanning"`
@@ -92,33 +93,88 @@ type Repository struct {
 	ValidationDetails *string `json:"validation_details,omitempty" db:"validation_details"` // JSON with comparison results
 	DestinationData   *string `json:"destination_data,omitempty" db:"destination_data"`     // JSON with destination repo data (only on validation failure)
 
+	// GitHub Migration Limit Validations
+	HasOversizedCommits     bool    `json:"has_oversized_commits" db:"has_oversized_commits"`                     // Commits >2 GiB
+	OversizedCommitDetails  *string `json:"oversized_commit_details,omitempty" db:"oversized_commit_details"`     // JSON: [{sha, size}]
+	HasLongRefs             bool    `json:"has_long_refs" db:"has_long_refs"`                                     // Git refs >255 bytes
+	LongRefDetails          *string `json:"long_ref_details,omitempty" db:"long_ref_details"`                     // JSON: [ref names]
+	HasBlockingFiles        bool    `json:"has_blocking_files" db:"has_blocking_files"`                           // Files >400 MiB
+	BlockingFileDetails     *string `json:"blocking_file_details,omitempty" db:"blocking_file_details"`           // JSON: [{path, size}]
+	HasLargeFileWarnings    bool    `json:"has_large_file_warnings" db:"has_large_file_warnings"`                 // Files 100-400 MiB
+	LargeFileWarningDetails *string `json:"large_file_warning_details,omitempty" db:"large_file_warning_details"` // JSON: [{path, size}]
+
+	// Repository Size Validation (40 GiB limit)
+	HasOversizedRepository     bool    `json:"has_oversized_repository" db:"has_oversized_repository"`                   // Repository >40 GiB
+	OversizedRepositoryDetails *string `json:"oversized_repository_details,omitempty" db:"oversized_repository_details"` // JSON: {size, limit}
+
+	// Metadata Size Estimation (40 GiB metadata limit)
+	EstimatedMetadataSize *int64  `json:"estimated_metadata_size,omitempty" db:"estimated_metadata_size"` // Estimated metadata size in bytes
+	MetadataSizeDetails   *string `json:"metadata_size_details,omitempty" db:"metadata_size_details"`     // JSON: breakdown of metadata components
+
+	// Migration Exclusion Flags (per-repository settings for GitHub Enterprise Importer API)
+	ExcludeReleases      bool `json:"exclude_releases" db:"exclude_releases"`             // Skip releases during migration
+	ExcludeAttachments   bool `json:"exclude_attachments" db:"exclude_attachments"`       // Skip attachments during migration
+	ExcludeMetadata      bool `json:"exclude_metadata" db:"exclude_metadata"`             // Exclude all metadata (issues, PRs, etc.)
+	ExcludeGitData       bool `json:"exclude_git_data" db:"exclude_git_data"`             // Exclude git data (commits, refs)
+	ExcludeOwnerProjects bool `json:"exclude_owner_projects" db:"exclude_owner_projects"` // Exclude organization/user projects
+
 	// Timestamps
 	DiscoveredAt    time.Time  `json:"discovered_at" db:"discovered_at"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
 	MigratedAt      *time.Time `json:"migrated_at,omitempty" db:"migrated_at"`
 	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty" db:"last_discovery_at"` // Latest discovery refresh
 	LastDryRunAt    *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at"`     // Latest dry run execution
+
+	// Computed fields (not stored in DB)
+	ComplexityScore     *int                 `json:"complexity_score,omitempty" db:"-"`     // Calculated server-side
+	ComplexityBreakdown *ComplexityBreakdown `json:"complexity_breakdown,omitempty" db:"-"` // Individual component scores
+}
+
+// ComplexityBreakdown provides individual component scores for transparency
+type ComplexityBreakdown struct {
+	SizePoints               int `json:"size_points"`                // 0-9 points based on repository size
+	LargeFilesPoints         int `json:"large_files_points"`         // 4 points if has large files
+	EnvironmentsPoints       int `json:"environments_points"`        // 3 points if has environments
+	SecretsPoints            int `json:"secrets_points"`             // 3 points if has secrets
+	PackagesPoints           int `json:"packages_points"`            // 3 points if has packages
+	RunnersPoints            int `json:"runners_points"`             // 3 points if has self-hosted runners
+	VariablesPoints          int `json:"variables_points"`           // 2 points if has variables
+	DiscussionsPoints        int `json:"discussions_points"`         // 2 points if has discussions
+	ReleasesPoints           int `json:"releases_points"`            // 2 points if has releases
+	LFSPoints                int `json:"lfs_points"`                 // 2 points if has LFS
+	SubmodulesPoints         int `json:"submodules_points"`          // 2 points if has submodules
+	AppsPoints               int `json:"apps_points"`                // 2 points if has installed apps
+	SecurityPoints           int `json:"security_points"`            // 1 point if has GHAS features
+	WebhooksPoints           int `json:"webhooks_points"`            // 1 point if has webhooks
+	TagProtectionsPoints     int `json:"tag_protections_points"`     // 1 point if has tag protections
+	BranchProtectionsPoints  int `json:"branch_protections_points"`  // 1 point if has branch protections
+	RulesetsPoints           int `json:"rulesets_points"`            // 1 point if has rulesets
+	PublicVisibilityPoints   int `json:"public_visibility_points"`   // 1 point if public
+	InternalVisibilityPoints int `json:"internal_visibility_points"` // 1 point if internal
+	CodeownersPoints         int `json:"codeowners_points"`          // 1 point if has CODEOWNERS
+	ActivityPoints           int `json:"activity_points"`            // 0, 2, or 4 points based on quantile
 }
 
 // MigrationStatus represents the status of a repository migration
 type MigrationStatus string
 
 const (
-	StatusPending            MigrationStatus = "pending"
-	StatusDryRunQueued       MigrationStatus = "dry_run_queued"
-	StatusDryRunInProgress   MigrationStatus = "dry_run_in_progress"
-	StatusDryRunComplete     MigrationStatus = "dry_run_complete"
-	StatusDryRunFailed       MigrationStatus = "dry_run_failed"
-	StatusPreMigration       MigrationStatus = "pre_migration"
-	StatusArchiveGenerating  MigrationStatus = "archive_generating"
-	StatusQueuedForMigration MigrationStatus = "queued_for_migration"
-	StatusMigratingContent   MigrationStatus = "migrating_content"
-	StatusMigrationComplete  MigrationStatus = "migration_complete"
-	StatusMigrationFailed    MigrationStatus = "migration_failed"
-	StatusPostMigration      MigrationStatus = "post_migration"
-	StatusComplete           MigrationStatus = "complete"
-	StatusRolledBack         MigrationStatus = "rolled_back"
-	StatusWontMigrate        MigrationStatus = "wont_migrate"
+	StatusPending             MigrationStatus = "pending"
+	StatusRemediationRequired MigrationStatus = "remediation_required"
+	StatusDryRunQueued        MigrationStatus = "dry_run_queued"
+	StatusDryRunInProgress    MigrationStatus = "dry_run_in_progress"
+	StatusDryRunComplete      MigrationStatus = "dry_run_complete"
+	StatusDryRunFailed        MigrationStatus = "dry_run_failed"
+	StatusPreMigration        MigrationStatus = "pre_migration"
+	StatusArchiveGenerating   MigrationStatus = "archive_generating"
+	StatusQueuedForMigration  MigrationStatus = "queued_for_migration"
+	StatusMigratingContent    MigrationStatus = "migrating_content"
+	StatusMigrationComplete   MigrationStatus = "migration_complete"
+	StatusMigrationFailed     MigrationStatus = "migration_failed"
+	StatusPostMigration       MigrationStatus = "post_migration"
+	StatusComplete            MigrationStatus = "complete"
+	StatusRolledBack          MigrationStatus = "rolled_back"
+	StatusWontMigrate         MigrationStatus = "wont_migrate"
 )
 
 // MigrationHistory tracks the migration lifecycle of a repository

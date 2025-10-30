@@ -180,6 +180,7 @@ func createGitHubAppTokenSource(appID int64, privateKey string, installationID i
 // NewClient creates a new GitHub client with rate limiting and retry logic
 // Supports both PAT and GitHub App authentication. If App credentials are provided,
 // they take precedence over PAT.
+// nolint:gocyclo // Client initialization involves multiple authentication paths and validations
 func NewClient(cfg ClientConfig) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
