@@ -110,6 +110,10 @@ Click **Add variable** for each:
 | `AUTH_CALLBACK_URL` | `https://github-migrator-dev.azurewebsites.net/api/v1/auth/callback` | OAuth callback URL |
 | `AUTH_FRONTEND_URL` | `https://github-migrator-dev.azurewebsites.net` | Frontend URL |
 | `AUTH_SESSION_DURATION_HOURS` | `24` | Session duration |
+| `AUTH_REQUIRE_ORG_MEMBERSHIP` | `[]` | Required GitHub org membership (JSON array, e.g. `["my-org"]`) |
+| `AUTH_REQUIRE_TEAM_MEMBERSHIP` | `[]` | Required team membership (JSON array, e.g. `["my-org/admins"]`) |
+| `AUTH_REQUIRE_ENTERPRISE_ADMIN` | `false` | Require enterprise admin |
+| `AUTH_REQUIRE_ENTERPRISE_SLUG` | `""` | Enterprise slug (if require_enterprise_admin is true) |
 | `CORS_ALLOWED_ORIGINS` | `["*"]` | CORS origins (permissive for dev) |
 
 **Optional: GitHub App Variables** (for enhanced discovery/profiling)
@@ -172,6 +176,10 @@ Click **Add variable** for each:
 | `AUTH_CALLBACK_URL` | `https://github-migrator-prod.azurewebsites.net/api/v1/auth/callback` | OAuth callback URL |
 | `AUTH_FRONTEND_URL` | `https://github-migrator-prod.azurewebsites.net` | Frontend URL |
 | `AUTH_SESSION_DURATION_HOURS` | `24` | Session duration |
+| `AUTH_REQUIRE_ORG_MEMBERSHIP` | `["your-org"]` | Required GitHub org membership (JSON array) |
+| `AUTH_REQUIRE_TEAM_MEMBERSHIP` | `["your-org/migration-admins"]` | Required team membership (JSON array) |
+| `AUTH_REQUIRE_ENTERPRISE_ADMIN` | `false` | Require enterprise admin |
+| `AUTH_REQUIRE_ENTERPRISE_SLUG` | `""` | Enterprise slug (if require_enterprise_admin is true) |
 | `CORS_ALLOWED_ORIGINS` | `["https://github-migrator-prod.azurewebsites.net"]` | CORS origins (restrictive) |
 
 #### Production-Specific Database Variables
@@ -257,6 +265,10 @@ Here's a checklist format for faster setup:
 ☐ AUTH_CALLBACK_URL = https://github-migrator-dev.azurewebsites.net/api/v1/auth/callback
 ☐ AUTH_FRONTEND_URL = https://github-migrator-dev.azurewebsites.net
 ☐ AUTH_SESSION_DURATION_HOURS = 24
+☐ AUTH_REQUIRE_ORG_MEMBERSHIP = []
+☐ AUTH_REQUIRE_TEAM_MEMBERSHIP = []
+☐ AUTH_REQUIRE_ENTERPRISE_ADMIN = false
+☐ AUTH_REQUIRE_ENTERPRISE_SLUG = ""
 ☐ CORS_ALLOWED_ORIGINS = ["*"]
 ```
 
@@ -283,6 +295,10 @@ Here's a checklist format for faster setup:
   - AUTH_ENABLED = true
   - AUTH_CALLBACK_URL = https://github-migrator-prod.azurewebsites.net/api/v1/auth/callback
   - AUTH_FRONTEND_URL = https://github-migrator-prod.azurewebsites.net
+  - AUTH_REQUIRE_ORG_MEMBERSHIP = ["your-org"]  # EXAMPLE: Restrict to your org
+  - AUTH_REQUIRE_TEAM_MEMBERSHIP = ["your-org/migration-admins"]  # EXAMPLE: Restrict to team
+  - AUTH_REQUIRE_ENTERPRISE_ADMIN = false
+  - AUTH_REQUIRE_ENTERPRISE_SLUG = ""
   - CORS_ALLOWED_ORIGINS = ["https://github-migrator-prod.azurewebsites.net"]
 
 ☐ DATABASE_NAME = migrator

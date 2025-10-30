@@ -188,6 +188,30 @@ variable "auth_session_duration_hours" {
   default     = 24
 }
 
+variable "auth_require_org_membership" {
+  description = "List of GitHub organizations users must be members of (empty = no requirement)"
+  type        = list(string)
+  default     = []
+}
+
+variable "auth_require_team_membership" {
+  description = "List of GitHub teams users must be members of in format 'org/team-slug' (empty = no requirement)"
+  type        = list(string)
+  default     = []
+}
+
+variable "auth_require_enterprise_admin" {
+  description = "Require user to be enterprise admin"
+  type        = bool
+  default     = false
+}
+
+variable "auth_require_enterprise_slug" {
+  description = "Enterprise slug to check admin status (required if require_enterprise_admin is true)"
+  type        = string
+  default     = ""
+}
+
 # CORS Configuration
 variable "cors_allowed_origins" {
   description = "Allowed origins for CORS"

@@ -128,6 +128,12 @@ jobs:
           auth_frontend_url                = "${{ vars.AUTH_FRONTEND_URL }}"
           auth_session_secret              = "${{ secrets.AUTH_SESSION_SECRET }}"
           auth_session_duration_hours      = ${{ vars.AUTH_SESSION_DURATION_HOURS }}
+          
+          # Auth Authorization Rules
+          auth_require_org_membership      = ${{ vars.AUTH_REQUIRE_ORG_MEMBERSHIP }}
+          auth_require_team_membership     = ${{ vars.AUTH_REQUIRE_TEAM_MEMBERSHIP }}
+          auth_require_enterprise_admin    = ${{ vars.AUTH_REQUIRE_ENTERPRISE_ADMIN }}
+          auth_require_enterprise_slug     = "${{ vars.AUTH_REQUIRE_ENTERPRISE_SLUG }}"
 
           # CORS Configuration
           cors_allowed_origins = ${{ vars.CORS_ALLOWED_ORIGINS }}
