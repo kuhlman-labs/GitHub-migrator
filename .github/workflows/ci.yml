@@ -27,6 +27,11 @@ jobs:
           go-version: '1.23'
           cache: true
 
+      - name: Download git-sizer binaries (required for embed directives)
+        run: |
+          chmod +x scripts/download-git-sizer.sh
+          ./scripts/download-git-sizer.sh
+
       - name: Download dependencies
         run: go mod download
 
@@ -52,11 +57,6 @@ jobs:
       - name: Run golangci-lint
         run: golangci-lint run --timeout=5m --skip-dirs=web
         continue-on-error: true
-
-      - name: Download git-sizer for tests
-        run: |
-          chmod +x scripts/download-git-sizer.sh
-          ./scripts/download-git-sizer.sh
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
