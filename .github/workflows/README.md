@@ -116,18 +116,27 @@ Select action: plan (to preview) or apply (to create)
 1. Builds multi-stage Docker image (frontend + backend)
 2. Tags image appropriately based on trigger
 3. Pushes to GitHub Container Registry (GHCR)
-4. Caches layers for faster builds
+4. **Generates build provenance attestation** 🔐
+5. Pushes attestation to registry
+6. Caches layers for faster builds
 
 **Image Tags:**
 - `dev` - Latest from main branch
 - `latest` - Latest from main branch
 - `main-sha-xxxxxx` - Specific commit from main
 - `v1.0.0` - Semantic version tags
-- `pr-123` - Pull request builds
+- `pr-123` - Pull request builds (not pushed)
 
 **Required Permissions:**
 - `contents: read` - Read repository
 - `packages: write` - Push to GHCR
+- `id-token: write` - Generate attestations
+- `attestations: write` - Publish attestations
+
+**Security Features:**
+- ✅ Build provenance attestations using [actions/attest-build-provenance](https://github.com/actions/attest-build-provenance)
+- ✅ SLSA-compliant supply chain security
+- ✅ Verifiable image authenticity
 
 ### deploy-dev.yml - Deploy to Dev Environment
 
@@ -182,6 +191,67 @@ graph LR
 2. Merge PR → triggers build → creates container image
 3. Build success → auto-deploys to dev
 4. Manual trigger → deploys to production
+
+## 🔐 Build Attestations & Verification
+
+### What are Build Provenance Attestations?
+
+Build provenance attestations provide cryptographic proof about:
+- **Where** the container was built (GitHub Actions)
+- **When** it was built (workflow run timestamp)
+- **How** it was built (exact workflow and commit)
+- **Who** triggered the build (user/event)
+
+This helps prevent supply chain attacks by ensuring images haven't been tampered with.
+
+### Verifying Attestations
+
+After an image is built, you can verify its authenticity:
+
+**Using GitHub CLI:**
+```bash
+# Install GitHub CLI if needed
+# https://cli.github.com/
+
+# Verify an image
+gh attestation verify oci://ghcr.io/brettkuhlman/github-migrator:dev \
+  --owner brettkuhlman
+```
+
+**Using Docker/Cosign:**
+```bash
+# Get image digest
+IMAGE_DIGEST=$(docker inspect ghcr.io/brettkuhlman/github-migrator:dev \
+  --format='{{.RepoDigests}}' | cut -d'@' -f2)
+
+# Verify with GitHub CLI
+gh attestation verify oci://ghcr.io/brettkuhlman/github-migrator@${IMAGE_DIGEST} \
+  --owner brettkuhlman
+```
+
+**Automated Verification in Deployment:**
+```yaml
+- name: Verify image attestation before deployment
+  run: |
+    gh attestation verify oci://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev \
+      --owner ${{ github.repository_owner }}
+```
+
+### Viewing Attestations
+
+Attestations are stored in the GitHub Container Registry and can be viewed:
+
+1. Go to your repository
+2. Click **Packages** → Select your image
+3. View the **Attestations** tab
+4. See all build provenance records
+
+### Benefits
+
+✅ **Supply Chain Security**: Prove the image came from your official build process  
+✅ **Compliance**: Meet security requirements for regulated industries  
+✅ **Trust**: Users can verify images before deployment  
+✅ **Audit Trail**: Complete record of all builds and their origins  
 
 ## Setup Instructions
 
