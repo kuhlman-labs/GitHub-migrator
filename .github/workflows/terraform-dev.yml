@@ -41,6 +41,22 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Extract Azure credentials for Terraform
+        id: azure-creds
+        run: |
+          # Extract credentials from AZURE_CREDENTIALS JSON
+          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
+          CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
+          TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
+          SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
+          
+          # Set as environment variables for Terraform
+          echo "ARM_CLIENT_ID=${CLIENT_ID}" >> $GITHUB_ENV
+          echo "ARM_CLIENT_SECRET=${CLIENT_SECRET}" >> $GITHUB_ENV
+          echo "ARM_TENANT_ID=${TENANT_ID}" >> $GITHUB_ENV
+          echo "ARM_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}" >> $GITHUB_ENV
+          echo "ARM_USE_CLI=false" >> $GITHUB_ENV
+
       - name: Create terraform.tfvars from environment secrets
         run: |
           cat > terraform.tfvars <<EOF

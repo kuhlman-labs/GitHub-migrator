@@ -227,6 +227,8 @@ Click **Add secret** for each:
 
 ## 🎯 Quick Setup Script
 
+> ⚠️ **CRITICAL**: `APP_SERVICE_NAME` must be updated after Terraform runs. Start with placeholder value, then update with actual name from Terraform output. Deployments will fail without this!
+
 Here's a checklist format for faster setup:
 
 ### Dev Environment
@@ -235,6 +237,7 @@ Here's a checklist format for faster setup:
 ```
 ☐ ENVIRONMENT_NAME = dev
 ☐ APP_NAME_PREFIX = github-migrator
+☐ APP_SERVICE_NAME = github-migrator-dev  # ⚠️ UPDATE AFTER TERRAFORM - see note below
 ☐ APP_SERVICE_SKU = B1
 ☐ ALWAYS_ON = false
 ☐ DOCKER_IMAGE_TAG = dev
@@ -272,6 +275,7 @@ Here's a checklist format for faster setup:
 ```
 ☐ Same as dev but with these changes:
   - ENVIRONMENT_NAME = production
+  - APP_SERVICE_NAME = github-migrator-prod  # ⚠️ UPDATE AFTER TERRAFORM - see note below
   - APP_SERVICE_SKU = S1
   - ALWAYS_ON = true
   - DOCKER_IMAGE_TAG = prod
