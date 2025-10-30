@@ -33,6 +33,13 @@ const (
 	PostMigrationAlways PostMigrationMode = "always"
 )
 
+// Visibility constants
+const (
+	visibilityPrivate  = "private"
+	visibilityPublic   = "public"
+	visibilityInternal = "internal"
+)
+
 // DestinationRepoExistsAction defines what to do if destination repo already exists
 type DestinationRepoExistsAction string
 
@@ -113,10 +120,10 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 	// Default visibility handling to private if not specified (safest option)
 	visibilityHandling := cfg.VisibilityHandling
 	if visibilityHandling.PublicRepos == "" {
-		visibilityHandling.PublicRepos = "private"
+		visibilityHandling.PublicRepos = visibilityPrivate
 	}
 	if visibilityHandling.InternalRepos == "" {
-		visibilityHandling.InternalRepos = "private"
+		visibilityHandling.InternalRepos = visibilityPrivate
 	}
 
 	return &Executor{
@@ -173,39 +180,39 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 // determineTargetVisibility determines the target visibility based on source visibility and config
 func (e *Executor) determineTargetVisibility(sourceVisibility string) string {
 	switch strings.ToLower(sourceVisibility) {
-	case "public":
+	case visibilityPublic:
 		// Apply configured mapping for public repos
 		targetVis := strings.ToLower(e.visibilityHandling.PublicRepos)
 		// Validate target visibility
-		if targetVis == "public" || targetVis == "internal" || targetVis == "private" {
+		if targetVis == visibilityPublic || targetVis == visibilityInternal || targetVis == visibilityPrivate {
 			return targetVis
 		}
 		// Default to private if invalid
 		e.logger.Warn("Invalid target visibility for public repos, defaulting to private",
 			"configured", e.visibilityHandling.PublicRepos)
-		return "private"
+		return visibilityPrivate
 
-	case "internal":
+	case visibilityInternal:
 		// Apply configured mapping for internal repos
 		targetVis := strings.ToLower(e.visibilityHandling.InternalRepos)
 		// Validate target visibility (internal repos can only become internal or private)
-		if targetVis == "internal" || targetVis == "private" {
+		if targetVis == visibilityInternal || targetVis == visibilityPrivate {
 			return targetVis
 		}
 		// Default to private if invalid
 		e.logger.Warn("Invalid target visibility for internal repos, defaulting to private",
 			"configured", e.visibilityHandling.InternalRepos)
-		return "private"
+		return visibilityPrivate
 
-	case "private":
+	case visibilityPrivate:
 		// Private repos always stay private
-		return "private"
+		return visibilityPrivate
 
 	default:
 		// Unknown visibility, default to private (safest)
 		e.logger.Warn("Unknown source visibility, defaulting to private",
 			"source_visibility", sourceVisibility)
-		return "private"
+		return visibilityPrivate
 	}
 }
 
@@ -665,6 +672,7 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 }
 
 // startRepositoryMigration starts migration on GHEC using GraphQL
+// nolint:gocyclo // Migration startup involves multiple steps and validations
 func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Repository, urls *ArchiveURLs) (string, error) {
 	// Get destination org name for this repository
 	destOrgName := e.getDestinationOrg(repo)
@@ -747,6 +755,13 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 		MetadataArchiveURL:   &metadataArchiveURL,
 		AccessToken:          &sourceToken, // Source GHES token
 		GitHubPat:            &destToken,   // Destination GHEC token
+	}
+
+	// Add skipReleases flag if enabled
+	if repo.ExcludeReleases {
+		skipReleases := githubv4.Boolean(true)
+		input.SkipReleases = &skipReleases
+		e.logger.Info("Excluding releases from migration (skipReleases=true)", "repo", repo.FullName)
 	}
 
 	err = e.destClient.MutateWithRetry(ctx, "StartRepositoryMigration", &mutation, input, nil)
@@ -849,7 +864,13 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 }
 
 // validatePreMigration performs pre-migration validation
+// nolint:gocyclo // Complex validation logic - refactoring would reduce readability
 func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Repository) error {
+	// Check for GitHub Enterprise Importer blocking issues
+	if repo.HasOversizedRepository {
+		return fmt.Errorf("repository exceeds GitHub's 40 GiB size limit and requires remediation before migration (reduce repository size using Git LFS or history rewriting)")
+	}
+
 	// Check for blockers
 	var issues []string
 

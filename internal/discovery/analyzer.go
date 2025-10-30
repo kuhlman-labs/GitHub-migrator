@@ -19,6 +19,13 @@ const (
 	// LargeFileThreshold is the size threshold for detecting large files (100MB)
 	// Files larger than this may cause issues during migration
 	LargeFileThreshold = 100 * 1024 * 1024
+
+	// GitHub Migration Limits (from GitHub docs)
+	MaxCommitSize       = 2 * 1024 * 1024 * 1024  // 2 GiB
+	MaxRefNameLength    = 255                     // 255 bytes
+	BlockingFileSize    = 400 * 1024 * 1024       // 400 MiB during migration
+	LargeFileWarningMin = 100 * 1024 * 1024       // 100 MiB (post-migration limit)
+	MaxRepositorySize   = 40 * 1024 * 1024 * 1024 // 40 GiB total repository size limit
 )
 
 // Repository Analysis Strategy:
@@ -154,6 +161,12 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 
 	// Get tag count
 	repo.TagCount = a.getTagCount(ctx, repoPath)
+
+	// Validate GitHub migration limits
+	a.validateCommitSizes(output, repo)
+	a.validateGitReferences(ctx, repoPath, repo)
+	a.categorizeFileSizeIssues(output, repo)
+	a.validateRepositorySize(repo)
 
 	// Log analysis results (dereference pointers for proper display)
 	var logTotalSize int64
@@ -612,4 +625,154 @@ func (a *Analyzer) CheckRepositoryProblems(output *GitSizerOutput) []string {
 	}
 
 	return problems
+}
+
+// validateCommitSizes checks for commits exceeding GitHub's 2 GiB limit
+// Uses git-sizer's MaxCommitSize which is already captured during analysis
+func (a *Analyzer) validateCommitSizes(output *GitSizerOutput, repo *models.Repository) {
+	if output.MaxCommitSize.Value > MaxCommitSize {
+		repo.HasOversizedCommits = true
+
+		// Create JSON details with commit info
+		commitSizeMB := output.MaxCommitSize.Value / (1024 * 1024)
+		details := fmt.Sprintf(`[{"sha":"%s","size_bytes":%d,"size_mb":%d}]`,
+			output.MaxCommitSize.ObjectName,
+			output.MaxCommitSize.Value,
+			commitSizeMB)
+		repo.OversizedCommitDetails = &details
+
+		a.logger.Warn("Repository has oversized commit exceeding GitHub limit",
+			"repo_path", repo.FullName,
+			"commit_sha", output.MaxCommitSize.ObjectName,
+			"size_mb", commitSizeMB,
+			"limit_mb", MaxCommitSize/(1024*1024))
+	}
+}
+
+// validateGitReferences checks for git references exceeding GitHub's 255 byte limit
+// Git references include branches, tags, and other refs
+func (a *Analyzer) validateGitReferences(ctx context.Context, repoPath string, repo *models.Repository) {
+	cmd := exec.CommandContext(ctx, "git", "for-each-ref", "--format=%(refname)")
+	cmd.Dir = repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		a.logger.Warn("Failed to validate git references", "error", err)
+		return
+	}
+
+	var longRefs []string
+	lines := bytes.Split(output, []byte("\n"))
+
+	for _, line := range lines {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+
+		// Check byte length (not character length) for multi-byte characters
+		if len(line) > MaxRefNameLength {
+			longRefs = append(longRefs, string(line))
+		}
+	}
+
+	if len(longRefs) > 0 {
+		repo.HasLongRefs = true
+
+		// Create JSON array of long ref names
+		details, err := json.Marshal(longRefs)
+		if err != nil {
+			a.logger.Warn("Failed to marshal long ref details", "error", err)
+			detailsStr := fmt.Sprintf(`["%s"]`, strings.Join(longRefs, `","`))
+			repo.LongRefDetails = &detailsStr
+		} else {
+			detailsStr := string(details)
+			repo.LongRefDetails = &detailsStr
+		}
+
+		a.logger.Warn("Repository has git references exceeding GitHub limit",
+			"repo_path", repo.FullName,
+			"long_ref_count", len(longRefs),
+			"limit_bytes", MaxRefNameLength)
+	}
+}
+
+// categorizeFileSizeIssues categorizes files into blocking (>400 MiB) and warnings (100-400 MiB)
+// Uses git-sizer's MaxBlobSize which is already captured during analysis
+func (a *Analyzer) categorizeFileSizeIssues(output *GitSizerOutput, repo *models.Repository) {
+	maxBlobSize := output.MaxBlobSize.Value
+
+	// Extract filename if available
+	filename := ""
+	if output.MaxBlobSize.ObjectDescription != "" {
+		filename = a.extractFilenameFromBlobInfo(output.MaxBlobSize.ObjectDescription)
+	}
+
+	if maxBlobSize > BlockingFileSize {
+		// Files >400 MiB are blocking for migration
+		repo.HasBlockingFiles = true
+
+		fileSizeMB := maxBlobSize / (1024 * 1024)
+		details := fmt.Sprintf(`[{"path":"%s","size_bytes":%d,"size_mb":%d}]`,
+			filename,
+			maxBlobSize,
+			fileSizeMB)
+		repo.BlockingFileDetails = &details
+
+		a.logger.Warn("Repository has blocking file exceeding GitHub migration limit",
+			"repo_path", repo.FullName,
+			"file", filename,
+			"size_mb", fileSizeMB,
+			"limit_mb", BlockingFileSize/(1024*1024))
+
+	} else if maxBlobSize > LargeFileWarningMin {
+		// Files 100-400 MiB are warnings (allowed during migration, need post-migration remediation)
+		repo.HasLargeFileWarnings = true
+
+		fileSizeMB := maxBlobSize / (1024 * 1024)
+		details := fmt.Sprintf(`[{"path":"%s","size_bytes":%d,"size_mb":%d}]`,
+			filename,
+			maxBlobSize,
+			fileSizeMB)
+		repo.LargeFileWarningDetails = &details
+
+		a.logger.Info("Repository has large file requiring post-migration attention",
+			"repo_path", repo.FullName,
+			"file", filename,
+			"size_mb", fileSizeMB,
+			"migration_limit_mb", BlockingFileSize/(1024*1024),
+			"post_migration_limit_mb", LargeFileWarningMin/(1024*1024))
+	}
+}
+
+// validateRepositorySize checks if the repository exceeds GitHub's 40 GiB limit
+// Repositories exceeding this limit will be automatically marked for remediation
+func (a *Analyzer) validateRepositorySize(repo *models.Repository) {
+	if repo.TotalSize == nil {
+		return
+	}
+
+	totalSize := *repo.TotalSize
+
+	if totalSize > MaxRepositorySize {
+		repo.HasOversizedRepository = true
+
+		// Create JSON details with size information
+		sizeGB := float64(totalSize) / (1024 * 1024 * 1024)
+		limitGB := float64(MaxRepositorySize) / (1024 * 1024 * 1024)
+		details := fmt.Sprintf(`{"size_bytes":%d,"size_gb":%.2f,"limit_gb":%.0f}`,
+			totalSize,
+			sizeGB,
+			limitGB)
+		repo.OversizedRepositoryDetails = &details
+
+		// Automatically set repository status to remediation_required
+		repo.Status = string(models.StatusRemediationRequired)
+
+		a.logger.Warn("Repository exceeds GitHub's 40 GiB size limit - remediation required",
+			"repo_path", repo.FullName,
+			"size_gb", sizeGB,
+			"limit_gb", limitGB,
+			"status", repo.Status)
+	}
 }

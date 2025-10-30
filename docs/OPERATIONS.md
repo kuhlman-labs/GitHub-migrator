@@ -718,6 +718,167 @@ visibility_handling:
 
 ---
 
+## GitHub Enterprise Importer Limitations
+
+The GitHub Migrator automatically detects and manages GitHub Enterprise Importer API limitations to prevent migration failures.
+
+### Repository Size Limit (40 GiB)
+
+GitHub enforces a **40 GiB total repository size limit** for migrations. Repositories exceeding this limit are automatically blocked and require remediation.
+
+**Detection:**
+- Automatically detected during repository discovery using git-sizer
+- Repositories over 40 GiB are marked with `has_oversized_repository: true`
+- Status automatically set to `remediation_required`
+
+**Remediation Strategies:**
+
+1. **Convert Large Files to Git LFS:**
+   ```bash
+   # Install git-lfs
+   git lfs install
+   
+   # Track large file types
+   git lfs track "*.psd"
+   git lfs track "*.zip"
+   
+   # Migrate existing files to LFS
+   git lfs migrate import --include="*.psd,*.zip" --everything
+   
+   # Push changes
+   git push origin --all --force
+   ```
+
+2. **Remove Large Assets from History:**
+   ```bash
+   # Using BFG Repo-Cleaner
+   java -jar bfg.jar --strip-blobs-bigger-than 100M repo.git
+   
+   # Or using git-filter-repo
+   git filter-repo --strip-blobs-bigger-than 100M
+   
+   # Force push cleaned history
+   git push origin --all --force
+   ```
+
+3. **Split Repository:**
+   - Consider splitting monolithic repositories into smaller components
+   - Move large assets to separate artifact storage
+
+**After Remediation:**
+1. In the web UI, click "Mark as Remediated" button
+2. System will re-run discovery to verify size is under limit
+3. Status will change from `remediation_required` to `pending` if successful
+
+### Metadata Size Limit (40 GiB)
+
+GitHub also enforces a **40 GiB metadata limit** (issues, PRs, releases, attachments).
+
+**Detection:**
+- Estimated during discovery based on:
+  - Issue count × 5 KB average
+  - PR count × 10 KB average
+  - Actual release asset sizes from GitHub API
+  - Estimated attachment sizes (10% of issue/PR data)
+
+**Handling Large Metadata:**
+
+If estimated metadata exceeds 35 GiB, the system shows warnings and recommends using exclusion flags.
+
+**Exclusion Flags (Per-Repository Settings):**
+
+Configure in the web UI under "Migration Options" or via API:
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/repositories/acme-corp%2Flarge-repo \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exclude_releases": true,
+    "exclude_attachments": true
+  }'
+```
+
+Available exclusion flags:
+
+| Flag | Description | Use Case |
+|------|-------------|----------|
+| `exclude_releases` | Skip releases and assets | Large release assets (ISOs, binaries) |
+| `exclude_attachments` | Skip issue/PR attachments | Many images/files attached to issues |
+| `exclude_metadata` | Skip ALL metadata (issues, PRs, releases, wikis) | Code-only migration |
+| `exclude_git_data` | Skip git data (rarely used) | Metadata-only migration (not recommended) |
+| `exclude_owner_projects` | Skip org/user project boards | Org-level projects not needed |
+
+**Example Workflow for Large Metadata:**
+
+```bash
+# 1. Check metadata size estimate
+curl http://localhost:8080/api/v1/repositories/acme-corp%2Fmy-repo | \
+  jq '{
+    estimated_metadata_gb: (.estimated_metadata_size / 1073741824),
+    metadata_details: .metadata_size_details | fromjson
+  }'
+
+# 2. If approaching limit, enable exclude_releases
+curl -X PATCH http://localhost:8080/api/v1/repositories/acme-corp%2Fmy-repo \
+  -H "Content-Type: application/json" \
+  -d '{"exclude_releases": true}'
+
+# 3. Migrate repository
+curl -X POST http://localhost:8080/api/v1/migrations/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "full_names": ["acme-corp/my-repo"],
+    "dry_run": false
+  }'
+
+# 4. Manually migrate releases after repository migration completes
+# Use gh CLI or GitHub API to recreate releases on destination
+```
+
+### Other Migration Limits
+
+The system also validates:
+
+- **2 GiB Commit Limit**: Single commits >2 GiB are blocked
+- **255 Byte Reference Name Limit**: Git refs (branches/tags) >255 bytes blocked
+- **400 MiB File Limit**: Individual files >400 MiB blocked during migration
+- **100 MiB Post-Migration Limit**: Files 100-400 MiB allowed during migration but flagged for post-migration remediation
+
+### Viewing Limitation Details
+
+**Web UI:**
+1. Navigate to repository detail page
+2. View "Migration Limits" section
+3. Shows blocking issues (red) and warnings (yellow)
+4. Configure exclusion flags in "Migration Options" section
+
+**API:**
+```bash
+# Get repository with limit details
+curl http://localhost:8080/api/v1/repositories/acme-corp%2Fmy-repo | jq '{
+  repository: .full_name,
+  status: .status,
+  size_gb: (.total_size / 1073741824),
+  blocking_issues: {
+    oversized_repository: .has_oversized_repository,
+    oversized_commits: .has_oversized_commits,
+    long_refs: .has_long_refs,
+    blocking_files: .has_blocking_files
+  },
+  warnings: {
+    large_files: .has_large_file_warnings,
+    large_metadata: (.estimated_metadata_size > 37580963840)
+  },
+  exclusion_flags: {
+    exclude_releases: .exclude_releases,
+    exclude_attachments: .exclude_attachments,
+    exclude_metadata: .exclude_metadata
+  }
+}'
+```
+
+---
+
 ## Migration Workflows
 
 ### Starting a New Migration Wave
@@ -801,6 +962,106 @@ curl -X POST http://localhost:8080/api/v1/migrations/start \
 # Or share self-service web UI
 # http://localhost:8080/#/self-service
 ```
+
+### GitHub Migration Limits Detection
+
+The migrator automatically detects repositories that violate GitHub's migration limits and flags them for remediation before migration can proceed.
+
+#### Detected Limitations
+
+**Blocking Issues** (prevent migration):
+- **2 GiB Commit Limit**: No single commit can exceed 2 GiB
+- **255 Byte Reference Limit**: Git references (branches, tags) cannot exceed 255 bytes
+- **400 MiB File Limit**: Files cannot exceed 400 MiB during migration
+
+**Warnings** (non-blocking but require post-migration attention):
+- **100 MiB File Warning**: Files 100-400 MiB are allowed during migration but exceed GitHub's 100 MiB post-migration limit
+
+#### Status: Remediation Required
+
+When a repository has blocking issues, it will be automatically marked with status `remediation_required`:
+
+```bash
+# List repositories requiring remediation
+curl "http://localhost:8080/api/v1/repositories?status=remediation_required"
+```
+
+**Via Web UI:**
+1. Navigate to repository detail page
+2. View "Migration Limits" section showing all issues
+3. See specific commits, refs, or files that need fixing
+
+#### Remediation Workflow
+
+**1. Fix Blocking Issues in Source Repository**
+
+For oversized commits (>2 GiB):
+```bash
+# Split large commits using git filter-repo
+git filter-repo --commit-callback '
+  # Custom logic to split commits
+'
+```
+
+For long git references (>255 bytes):
+```bash
+# Rename long branches
+git branch -m "very-long-branch-name..." "shorter-name"
+
+# Rename long tags
+git tag new-name old-very-long-tag-name
+git tag -d old-very-long-tag-name
+```
+
+For large files (>400 MiB):
+```bash
+# Option 1: Use Git LFS
+git lfs track "*.zip"
+git lfs migrate import --include="*.zip"
+
+# Option 2: Remove from history
+git filter-repo --path-glob '*.large-file' --invert-paths
+```
+
+**2. Mark Repository as Remediated**
+
+After fixing issues, trigger re-validation:
+
+```bash
+# Via API
+curl -X POST http://localhost:8080/api/v1/repositories/org/repo/mark-remediated
+
+# Via Web UI
+# 1. Go to repository detail page
+# 2. Click "Mark as Remediated" button in Migration Limits section
+# 3. System will re-analyze the repository
+```
+
+**3. Verify Resolution**
+
+The system will:
+- Re-clone the repository
+- Re-run all git validation checks
+- Update status to `pending` if all issues resolved
+- Keep status as `remediation_required` if issues remain
+
+#### Large File Warnings (100-400 MiB)
+
+Files in this range don't block migration but should be addressed:
+
+**Options:**
+1. **Git LFS**: Convert files to LFS before migration
+2. **Post-Migration**: Fix after migration completes
+3. **External Storage**: Move to external storage system
+
+**Recommendation**: Fix before migration when possible to avoid post-migration work.
+
+#### Documentation References
+
+- [GitHub Migration Limitations](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/about-migrations-between-github-products#limitations-of-github)
+- [Managing Large Files with Git LFS](https://docs.github.com/en/repositories/working-with-files/managing-large-files)
+- [Removing Files from Git History](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
+- [git-filter-repo Tool](https://github.com/newren/git-filter-repo)
 
 ### Migration Best Practices
 

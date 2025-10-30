@@ -98,6 +98,11 @@ export const api = {
     return data.repository;
   },
 
+  async markRepositoryRemediated(fullName: string) {
+    const { data } = await client.post(`/repositories/${encodeURIComponent(fullName)}/mark-remediated`);
+    return data;
+  },
+
   async markRepositoryWontMigrate(fullName: string, unmark: boolean = false): Promise<Repository> {
     const { data } = await client.post(`/repositories/${encodeURIComponent(fullName)}/mark-wont-migrate`, {
       unmark,

@@ -11,6 +11,7 @@ import { ProfileCard } from '../common/ProfileCard';
 import { ProfileItem } from '../common/ProfileItem';
 import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 import { TimestampDisplay } from '../common/TimestampDisplay';
+import { MigrationReadinessSection } from './MigrationReadinessSection';
 import { formatBytes, formatDate } from '../../utils/format';
 import { useRepository, useBatches } from '../../hooks/useQueries';
 import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useRollbackRepository, useMarkRepositoryWontMigrate } from '../../hooks/useMutations';
@@ -605,6 +606,15 @@ export function RepositoryDetail() {
         </div>
       </div>
 
+      {/* Migration Readiness - Validation & Configuration */}
+      <div className="mb-6">
+        <MigrationReadinessSection 
+          repository={repository}
+          onUpdate={() => queryClient.invalidateQueries({ queryKey: ['repository', fullName] })}
+          onRevalidate={() => queryClient.invalidateQueries({ queryKey: ['repository', fullName] })}
+        />
+      </div>
+
       {/* Tabs */}
       <div className="bg-white rounded-lg shadow-sm mb-6">
         <div className="border-b border-gray-200">
@@ -630,64 +640,98 @@ export function RepositoryDetail() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <ProfileCard title="Migration Complexity Score">
                 {(() => {
-                  // Use backend-calculated score when available
-                  // Only calculate individual components for display breakdown
+                  // Use backend-calculated breakdown when available, otherwise fallback to frontend calculation
+                  const breakdown = repository.complexity_breakdown;
+                  
+                  // Determine size tier for display
                   const MB100 = 100 * 1024 * 1024;
                   const GB1 = 1024 * 1024 * 1024;
                   const GB5 = 5 * 1024 * 1024 * 1024;
                   
-                  let sizePoints = 0;
                   let sizeTier = 'Unknown';
                   if (repository.total_size !== null && repository.total_size !== undefined) {
                     if (repository.total_size >= GB5) {
-                      sizePoints = 9;
                       sizeTier = '>5GB';
                     } else if (repository.total_size >= GB1) {
-                      sizePoints = 6;
                       sizeTier = '1-5GB';
                     } else if (repository.total_size >= MB100) {
-                      sizePoints = 3;
                       sizeTier = '100MB-1GB';
                     } else {
-                      sizePoints = 0;
                       sizeTier = '<100MB';
                     }
                   }
                   
-                  // High impact features
-                  const largeFilesPoints = repository.has_large_files ? 4 : 0;
-                  const environmentsPoints = repository.environment_count > 0 ? 3 : 0;
-                  const secretsPoints = repository.secret_count > 0 ? 3 : 0;
-                  const packagesPoints = repository.has_packages ? 3 : 0;
-                  const runnersPoints = repository.has_self_hosted_runners ? 3 : 0;
+                  // If backend provides breakdown, use it; otherwise calculate
+                  let sizePoints, largeFilesPoints, environmentsPoints, secretsPoints, packagesPoints, runnersPoints;
+                  let variablesPoints, discussionsPoints, releasesPoints, lfsPoints, submodulesPoints, appsPoints;
+                  let securityPoints, webhooksPoints, tagProtectionsPoints, branchProtectionsPoints, rulesetsPoints;
+                  let publicVisibilityPoints, internalVisibilityPoints, codeownersPoints, activityPoints;
                   
-                  // Moderate impact features
-                  const variablesPoints = repository.variable_count > 0 ? 2 : 0;
-                  const discussionsPoints = repository.has_discussions ? 2 : 0;
-                  const releasesPoints = repository.release_count > 0 ? 2 : 0;
-                  const lfsPoints = repository.has_lfs ? 2 : 0;
-                  const submodulesPoints = repository.has_submodules ? 2 : 0;
-                  const appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
+                  if (breakdown) {
+                    // Use backend-calculated breakdown
+                    sizePoints = breakdown.size_points;
+                    largeFilesPoints = breakdown.large_files_points;
+                    environmentsPoints = breakdown.environments_points;
+                    secretsPoints = breakdown.secrets_points;
+                    packagesPoints = breakdown.packages_points;
+                    runnersPoints = breakdown.runners_points;
+                    variablesPoints = breakdown.variables_points;
+                    discussionsPoints = breakdown.discussions_points;
+                    releasesPoints = breakdown.releases_points;
+                    lfsPoints = breakdown.lfs_points;
+                    submodulesPoints = breakdown.submodules_points;
+                    appsPoints = breakdown.apps_points;
+                    securityPoints = breakdown.security_points;
+                    webhooksPoints = breakdown.webhooks_points;
+                    tagProtectionsPoints = breakdown.tag_protections_points;
+                    branchProtectionsPoints = breakdown.branch_protections_points;
+                    rulesetsPoints = breakdown.rulesets_points;
+                    publicVisibilityPoints = breakdown.public_visibility_points;
+                    internalVisibilityPoints = breakdown.internal_visibility_points;
+                    codeownersPoints = breakdown.codeowners_points;
+                    activityPoints = breakdown.activity_points;
+                  } else {
+                    // Fallback: Calculate using frontend logic
+                    if (repository.total_size >= GB5) {
+                      sizePoints = 9;
+                    } else if (repository.total_size >= GB1) {
+                      sizePoints = 6;
+                    } else if (repository.total_size >= MB100) {
+                      sizePoints = 3;
+                    } else {
+                      sizePoints = 0;
+                    }
+                    
+                    largeFilesPoints = repository.has_large_files ? 4 : 0;
+                    environmentsPoints = repository.environment_count > 0 ? 3 : 0;
+                    secretsPoints = repository.secret_count > 0 ? 3 : 0;
+                    packagesPoints = repository.has_packages ? 3 : 0;
+                    runnersPoints = repository.has_self_hosted_runners ? 3 : 0;
+                    variablesPoints = repository.variable_count > 0 ? 2 : 0;
+                    discussionsPoints = repository.has_discussions ? 2 : 0;
+                    releasesPoints = repository.release_count > 0 ? 2 : 0;
+                    lfsPoints = repository.has_lfs ? 2 : 0;
+                    submodulesPoints = repository.has_submodules ? 2 : 0;
+                    appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
+                    securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 1 : 0;
+                    webhooksPoints = repository.webhook_count > 0 ? 1 : 0;
+                    tagProtectionsPoints = repository.tag_protection_count > 0 ? 1 : 0;
+                    branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
+                    rulesetsPoints = repository.has_rulesets ? 1 : 0;
+                    publicVisibilityPoints = repository.visibility === 'public' ? 1 : 0;
+                    internalVisibilityPoints = repository.visibility === 'internal' ? 1 : 0;
+                    codeownersPoints = repository.has_codeowners ? 1 : 0;
+                    
+                    // Activity-based scoring (approximated with static thresholds - less accurate than backend)
+                    const activityScore = 
+                      (repository.branch_count > 50 ? 0.5 : repository.branch_count > 10 ? 0.25 : 0) +
+                      (repository.commit_count > 1000 ? 0.5 : repository.commit_count > 100 ? 0.25 : 0) +
+                      (repository.issue_count > 100 ? 0.5 : repository.issue_count > 10 ? 0.25 : 0) +
+                      (repository.pull_request_count > 50 ? 0.5 : repository.pull_request_count > 10 ? 0.25 : 0);
+                    activityPoints = activityScore >= 1.5 ? 4 : activityScore >= 0.5 ? 2 : 0;
+                  }
                   
-                  // Low impact features
-                  const securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 1 : 0;
-                  const webhooksPoints = repository.webhook_count > 0 ? 1 : 0;
-                  const tagProtectionsPoints = repository.tag_protection_count > 0 ? 1 : 0;
-                  const branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
-                  const rulesetsPoints = repository.has_rulesets ? 1 : 0;
-                  const publicVisibilityPoints = repository.visibility === 'public' ? 1 : 0;
-                  const internalVisibilityPoints = repository.visibility === 'internal' ? 1 : 0;
-                  const codeownersPoints = repository.has_codeowners ? 1 : 0;
-                  
-                  // Activity-based scoring (approximated) - high activity needs extensive coordination
-                  const activityScore = 
-                    (repository.branch_count > 50 ? 0.5 : repository.branch_count > 10 ? 0.25 : 0) +
-                    (repository.commit_count > 1000 ? 0.5 : repository.commit_count > 100 ? 0.25 : 0) +
-                    (repository.issue_count > 100 ? 0.5 : repository.issue_count > 10 ? 0.25 : 0) +
-                    (repository.pull_request_count > 50 ? 0.5 : repository.pull_request_count > 10 ? 0.25 : 0);
-                  const activityPoints = activityScore >= 1.5 ? 4 : activityScore >= 0.5 ? 2 : 0;
-                  
-                  // Use backend score when available, otherwise calculate
+                  // Use backend score when available, otherwise calculate from components
                   const totalPoints = repository.complexity_score ?? (
                     sizePoints + largeFilesPoints + environmentsPoints + secretsPoints + packagesPoints + runnersPoints +
                     variablesPoints + discussionsPoints + releasesPoints + lfsPoints + submodulesPoints + securityPoints + appsPoints +
@@ -939,6 +983,9 @@ export function RepositoryDetail() {
                               {activityPoints === 4 ? 'High (top 25% - extensive coordination needed)' : 
                                activityPoints === 2 ? 'Moderate (25-75% - some coordination needed)' : 
                                'Low (bottom 25%)'}
+                              {breakdown && (
+                                <span className="ml-1 text-blue-600">✓ Quantile-based</span>
+                              )}
                             </div>
                           </div>
                           <span className={`text-lg font-semibold ${activityPoints > 0 ? 'text-purple-600' : 'text-gray-400'}`}>
@@ -950,6 +997,9 @@ export function RepositoryDetail() {
                       <div className="mt-4 p-3 bg-blue-50 rounded text-xs text-blue-700">
                         <p className="font-medium mb-1">💡 Scoring based on GitHub migration documentation</p>
                         <p>Weights reflect remediation difficulty for features that don't migrate automatically.</p>
+                        {breakdown && (
+                          <p className="mt-1">Activity level uses percentile-based calculation across all repositories for accurate comparison.</p>
+                        )}
                       </div>
                       
                       <div className="pt-2 border-t border-gray-200">

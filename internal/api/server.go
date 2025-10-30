@@ -114,6 +114,7 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/repositories/{fullName}", s.handler.GetRepository)
 	protect("PATCH /api/v1/repositories/{fullName}", s.handler.UpdateRepository)
 	protect("POST /api/v1/repositories/{fullName}/rediscover", s.handler.RediscoverRepository)
+	protect("POST /api/v1/repositories/{fullName}/mark-remediated", s.handler.MarkRepositoryRemediated)
 	protect("POST /api/v1/repositories/{fullName}/unlock", s.handler.UnlockRepository)
 	protect("POST /api/v1/repositories/{fullName}/rollback", s.handler.RollbackRepository)
 	protect("POST /api/v1/repositories/{fullName}/mark-wont-migrate", s.handler.MarkRepositoryWontMigrate)

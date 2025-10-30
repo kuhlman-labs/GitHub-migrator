@@ -3,6 +3,7 @@ package discovery
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -88,6 +89,11 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 		p.logger.Debug("Failed to get issue/PR counts", "error", err)
 	}
 
+	// Estimate metadata size for GitHub Enterprise Importer 40 GiB limit
+	if err := p.estimateMetadataSize(ctx, org, name, repo); err != nil {
+		p.logger.Debug("Failed to estimate metadata size", "error", err)
+	}
+
 	p.logger.Info("GitHub features profiled",
 		"repo", repo.FullName,
 		"has_actions", repo.HasActions,
@@ -151,6 +157,7 @@ func (p *Profiler) profileRulesets(ctx context.Context, org, name string, repo *
 func (p *Profiler) profileTagProtections(ctx context.Context, org, name string, repo *models.Repository) {
 	// List tag protection rules for the repository
 	// This API endpoint was added in GitHub Enterprise Server 3.4+
+	// nolint:staticcheck // SA1019: Using deprecated API until Repository Rulesets API is fully available across all GitHub versions
 	tagProtections, _, err := p.client.REST().Repositories.ListTagProtection(ctx, org, name)
 	if err == nil && tagProtections != nil {
 		repo.TagProtectionCount = len(tagProtections)
@@ -768,4 +775,144 @@ func (p *Profiler) checkWikiHasContent(ctx context.Context, wikiURL string) (boo
 
 	// If we have refs, the wiki has content
 	return true, nil
+}
+
+// estimateMetadataSize estimates the size of repository metadata for GitHub Enterprise Importer's 40 GiB limit
+// This provides a rough estimate to help users determine if they need to use exclusion flags
+func (p *Profiler) estimateMetadataSize(ctx context.Context, org, name string, repo *models.Repository) error {
+	// Estimation constants (based on typical GitHub metadata sizes)
+	const (
+		avgIssueSize      = 5 * 1024         // 5 KB per issue (includes comments)
+		avgPRSize         = 10 * 1024        // 10 KB per PR (includes reviews, comments)
+		attachmentPercent = 0.1              // Estimate 10% of issue/PR data is attachments
+		metadataOverhead  = 50 * 1024 * 1024 // 50 MB for other metadata (collaborators, labels, etc.)
+	)
+
+	var totalEstimate int64 = metadataOverhead
+
+	// Estimate issue and PR data
+	issueEstimate := int64(repo.IssueCount) * avgIssueSize
+	prEstimate := int64(repo.PullRequestCount) * avgPRSize
+	totalEstimate += issueEstimate + prEstimate
+
+	// Estimate attachments (10% of issue/PR data)
+	attachmentEstimate := int64(float64(issueEstimate+prEstimate) * attachmentPercent)
+	totalEstimate += attachmentEstimate
+
+	// Get actual release sizes (most accurate component)
+	releaseSize, releaseDetails, err := p.getReleasesWithAssets(ctx, org, name, repo)
+	if err != nil {
+		p.logger.Debug("Failed to get release sizes, using estimate",
+			"repo", repo.FullName,
+			"error", err)
+		// Fallback: estimate ~1 MB per release
+		releaseSize = int64(repo.ReleaseCount) * 1024 * 1024
+	}
+	totalEstimate += releaseSize
+
+	// Store the estimate
+	repo.EstimatedMetadataSize = &totalEstimate
+
+	// Create detailed breakdown in JSON
+	details := fmt.Sprintf(`{"issues_estimate_bytes":%d,"prs_estimate_bytes":%d,"attachments_estimate_bytes":%d,"releases_bytes":%d,"overhead_bytes":%d,"total_bytes":%d,"releases":%s}`,
+		issueEstimate,
+		prEstimate,
+		attachmentEstimate,
+		releaseSize,
+		metadataOverhead,
+		totalEstimate,
+		releaseDetails)
+	repo.MetadataSizeDetails = &details
+
+	// Log if estimate is large (approaching 40 GiB limit)
+	estimateGB := float64(totalEstimate) / (1024 * 1024 * 1024)
+	if estimateGB > 35 {
+		p.logger.Warn("Repository metadata estimate approaching GitHub's 40 GiB limit",
+			"repo", repo.FullName,
+			"estimated_gb", estimateGB,
+			"consider_excluding_releases", releaseSize > 10*1024*1024*1024) // >10 GB in releases
+	} else if estimateGB > 1 {
+		p.logger.Info("Repository metadata size estimated",
+			"repo", repo.FullName,
+			"estimated_gb", estimateGB)
+	}
+
+	return nil
+}
+
+// getReleasesWithAssets fetches releases and calculates total size of release assets
+// Returns total size in bytes and JSON array of release details
+func (p *Profiler) getReleasesWithAssets(ctx context.Context, org, name string, repo *models.Repository) (int64, string, error) {
+	// List all releases
+	opts := &ghapi.ListOptions{PerPage: 100}
+	var allReleases []*ghapi.RepositoryRelease
+
+	for {
+		releases, resp, err := p.client.REST().Repositories.ListReleases(ctx, org, name, opts)
+		if err != nil {
+			return 0, "[]", fmt.Errorf("failed to list releases: %w", err)
+		}
+
+		allReleases = append(allReleases, releases...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	// Calculate total size and build details
+	var totalSize int64
+	type releaseInfo struct {
+		TagName    string `json:"tag_name"`
+		AssetCount int    `json:"asset_count"`
+		AssetSize  int64  `json:"asset_size_bytes"`
+	}
+
+	releaseInfos := make([]releaseInfo, 0, len(allReleases))
+
+	for _, release := range allReleases {
+		var releaseAssetSize int64
+		for _, asset := range release.Assets {
+			if asset.Size != nil {
+				releaseAssetSize += int64(*asset.Size)
+			}
+		}
+
+		if releaseAssetSize > 0 || len(release.Assets) > 0 {
+			releaseInfos = append(releaseInfos, releaseInfo{
+				TagName:    release.GetTagName(),
+				AssetCount: len(release.Assets),
+				AssetSize:  releaseAssetSize,
+			})
+		}
+
+		totalSize += releaseAssetSize
+
+		// Also count the release metadata itself (~10 KB per release for description, notes, etc.)
+		totalSize += 10 * 1024
+	}
+
+	// Convert to JSON
+	var detailsJSON string
+	if len(releaseInfos) > 0 {
+		// Only include releases with assets in the details
+		releaseBytes, err := json.Marshal(releaseInfos)
+		if err != nil {
+			p.logger.Warn("Failed to marshal release details", "error", err)
+			detailsJSON = "[]"
+		} else {
+			detailsJSON = string(releaseBytes)
+		}
+	} else {
+		detailsJSON = "[]"
+	}
+
+	p.logger.Debug("Release assets calculated",
+		"repo", repo.FullName,
+		"release_count", len(allReleases),
+		"releases_with_assets", len(releaseInfos),
+		"total_size_mb", totalSize/(1024*1024))
+
+	return totalSize, detailsJSON, nil
 }

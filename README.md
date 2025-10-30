@@ -47,7 +47,12 @@ The GitHub Migrator provides an automated, scalable platform for managing large-
 ### Key Capabilities
 
 - 🔍 **Automated Discovery** - Scan entire organizations or enterprises to identify and profile repositories
-- 📊 **Intelligent Profiling** - Analyze size, LFS usage, submodules, large files, Actions, branch protections, and more
+- 📊 **Intelligent Profiling** - Analyze size, LFS usage, submodules, large files, Actions, branch protections, releases, and more
+- ⚠️ **Migration Limits Detection** - Automatically detect and flag repositories violating GitHub Enterprise Importer limits:
+  - 40 GiB repository size limit (automatic blocking)
+  - 40 GiB metadata size limit (warnings with size estimates)
+  - 2 GiB commit limit, 255-byte ref limit, 400 MiB file limit
+- ⚙️ **Migration Exclusion Flags** - Configure per-repository settings to exclude releases, attachments, or metadata to reduce migration size
 - 🎯 **Flexible Workflows** - Single repository, batch, bulk, and self-service migration options
 - 📦 **Batch Management** - Organize into pilot groups and migration waves for controlled rollouts
 - 📈 **Real-time Monitoring** - Track progress with detailed status updates through all migration phases
