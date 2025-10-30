@@ -24,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.25'
           cache: true
 
       - name: Download git-sizer binaries (required for embed directives)
@@ -58,11 +58,8 @@ jobs:
         run: golangci-lint run --timeout=5m --skip-dirs=web
         continue-on-error: true
 
-      - name: Run tests with race detector
-        run: go test -v -race ./...
-
-      - name: Run tests with coverage
-        run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Generate coverage report
         run: go tool cover -html=coverage.out -o coverage.html
