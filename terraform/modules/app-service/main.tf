@@ -28,19 +28,19 @@ resource "azurerm_linux_web_app" "main" {
   https_only = true
 
   site_config {
-    always_on        = var.always_on
+    always_on         = var.always_on
     health_check_path = "/health"
-    
+
     application_stack {
-      docker_image_name   = var.docker_image
-      docker_registry_url = "https://${var.docker_registry_url}"
+      docker_image_name        = var.docker_image
+      docker_registry_url      = "https://${var.docker_registry_url}"
       docker_registry_username = var.docker_registry_username
       docker_registry_password = var.docker_registry_password
     }
 
     # CORS configuration
     cors {
-      allowed_origins = var.cors_allowed_origins
+      allowed_origins     = var.cors_allowed_origins
       support_credentials = true
     }
   }
@@ -52,7 +52,7 @@ resource "azurerm_linux_web_app" "main" {
       "DOCKER_REGISTRY_SERVER_URL"          = "https://${var.docker_registry_url}"
       "DOCKER_REGISTRY_SERVER_USERNAME"     = var.docker_registry_username
       "DOCKER_REGISTRY_SERVER_PASSWORD"     = var.docker_registry_password
-      "WEBSITES_PORT"                        = "8080"
+      "WEBSITES_PORT"                       = "8080"
     }
   )
 

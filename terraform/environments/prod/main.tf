@@ -31,17 +31,17 @@ data "azurerm_resource_group" "main" {
 module "postgresql" {
   source = "../../modules/postgresql"
 
-  resource_group_name           = data.azurerm_resource_group.main.name
-  location                      = data.azurerm_resource_group.main.location
-  server_name                   = "${var.app_name_prefix}-db-prod"
-  database_name                 = var.database_name
-  admin_username                = var.database_admin_username
-  postgres_version              = var.postgres_version
-  sku_name                      = var.database_sku
-  storage_mb                    = var.database_storage_mb
-  backup_retention_days         = var.database_backup_retention_days
-  geo_redundant_backup_enabled  = var.database_geo_redundant_backup_enabled
-  high_availability_mode        = var.database_high_availability_mode
+  resource_group_name          = data.azurerm_resource_group.main.name
+  location                     = data.azurerm_resource_group.main.location
+  server_name                  = "${var.app_name_prefix}-db-prod"
+  database_name                = var.database_name
+  admin_username               = var.database_admin_username
+  postgres_version             = var.postgres_version
+  sku_name                     = var.database_sku
+  storage_mb                   = var.database_storage_mb
+  backup_retention_days        = var.database_backup_retention_days
+  geo_redundant_backup_enabled = var.database_geo_redundant_backup_enabled
+  high_availability_mode       = var.database_high_availability_mode
 
   additional_firewall_rules = var.database_additional_firewall_rules
   server_configurations     = var.database_server_configurations
@@ -73,33 +73,33 @@ module "app_service" {
   app_settings = {
     # Server Configuration
     "GHMIG_SERVER_PORT" = "8080"
-    
+
     # Database Configuration (PostgreSQL for prod)
     "GHMIG_DATABASE_TYPE" = "postgres"
     "GHMIG_DATABASE_DSN"  = module.postgresql.dsn
-    
+
     # Source Configuration
     "GHMIG_SOURCE_TYPE"     = var.source_type
     "GHMIG_SOURCE_BASE_URL" = var.source_base_url
     "GHMIG_SOURCE_TOKEN"    = var.source_token
-    
+
     # Destination Configuration
     "GHMIG_DESTINATION_TYPE"     = var.destination_type
     "GHMIG_DESTINATION_BASE_URL" = var.destination_base_url
     "GHMIG_DESTINATION_TOKEN"    = var.destination_token
-    
+
     # Migration Configuration
-    "GHMIG_MIGRATION_WORKERS"                = tostring(var.migration_workers)
-    "GHMIG_MIGRATION_POLL_INTERVAL_SECONDS" = tostring(var.migration_poll_interval_seconds)
-    "GHMIG_MIGRATION_POST_MIGRATION_MODE"   = var.migration_post_migration_mode
-    "GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION" = var.migration_dest_repo_exists_action
+    "GHMIG_MIGRATION_WORKERS"                            = tostring(var.migration_workers)
+    "GHMIG_MIGRATION_POLL_INTERVAL_SECONDS"              = tostring(var.migration_poll_interval_seconds)
+    "GHMIG_MIGRATION_POST_MIGRATION_MODE"                = var.migration_post_migration_mode
+    "GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION"            = var.migration_dest_repo_exists_action
     "GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS"   = var.migration_visibility_public_repos
     "GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS" = var.migration_visibility_internal_repos
-    
+
     # Logging Configuration
     "GHMIG_LOGGING_LEVEL"  = var.logging_level
     "GHMIG_LOGGING_FORMAT" = var.logging_format
-    
+
     # Auth Configuration (optional)
     "GHMIG_AUTH_ENABLED"                    = tostring(var.auth_enabled)
     "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID"     = var.auth_github_oauth_client_id
@@ -108,7 +108,7 @@ module "app_service" {
     "GHMIG_AUTH_FRONTEND_URL"               = var.auth_frontend_url
     "GHMIG_AUTH_SESSION_SECRET"             = var.auth_session_secret
     "GHMIG_AUTH_SESSION_DURATION_HOURS"     = tostring(var.auth_session_duration_hours)
-    
+
     # Environment
     "ENVIRONMENT" = "prod"
   }
