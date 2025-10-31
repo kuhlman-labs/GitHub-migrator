@@ -46,9 +46,10 @@ resource "azurerm_linux_web_app" "main" {
     }
 
     # CORS configuration
+    # Note: support_credentials cannot be true when allowed_origins includes "*"
     cors {
       allowed_origins     = var.cors_allowed_origins
-      support_credentials = true
+      support_credentials = length(var.cors_allowed_origins) > 0 && !contains(var.cors_allowed_origins, "*") ? true : false
     }
   }
 
