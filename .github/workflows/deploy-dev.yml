@@ -29,16 +29,12 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set lowercase image name
-        run: |
-          echo "IMAGE_NAME_LOWER=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
       - name: Deploy to Azure App Service
         id: deploy
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ vars.APP_SERVICE_NAME }}
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:dev
+          images: ${{ env.REGISTRY }}/${{ format('{0}', github.repository) }}:dev
 
       - name: Wait for deployment to stabilize
         run: sleep 30
@@ -66,7 +62,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** Dev" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.deploy.outputs.webapp-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:dev" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.REGISTRY }}/${{ github.repository }}:dev" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Logout from Azure

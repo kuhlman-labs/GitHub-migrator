@@ -219,25 +219,25 @@ auth:
 
 	// Set environment variables
 	envVars := map[string]string{
-		"GHMIG_SERVER_PORT":                                    "9090",
-		"GHMIG_DATABASE_TYPE":                                  "postgres",
-		"GHMIG_DATABASE_DSN":                                   "postgres://user:pass@host:5432/db",
-		"GHMIG_SOURCE_TYPE":                                    "github",
-		"GHMIG_SOURCE_BASE_URL":                                "https://source.example.com",
-		"GHMIG_SOURCE_TOKEN":                                   "env-source-token",
-		"GHMIG_DESTINATION_TYPE":                               "github",
-		"GHMIG_DESTINATION_BASE_URL":                           "https://dest.example.com",
-		"GHMIG_DESTINATION_TOKEN":                              "env-dest-token",
-		"GHMIG_MIGRATION_WORKERS":                              "10",
-		"GHMIG_MIGRATION_POLL_INTERVAL_SECONDS":                "60",
-		"GHMIG_MIGRATION_POST_MIGRATION_MODE":                  "always",
-		"GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION":              "skip",
-		"GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS":     "public",
-		"GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS":   "internal",
-		"GHMIG_LOGGING_LEVEL":                                  "debug",
-		"GHMIG_LOGGING_FORMAT":                                 "text",
-		"GHMIG_AUTH_ENABLED":                                   "true",
-		"GHMIG_AUTH_SESSION_DURATION_HOURS":                    "48",
+		"GHMIG_SERVER_PORT":                                       "9090",
+		"GHMIG_DATABASE_TYPE":                                     "postgres",
+		"GHMIG_DATABASE_DSN":                                      "postgres://user:pass@host:5432/db",
+		"GHMIG_SOURCE_TYPE":                                       "github",
+		"GHMIG_SOURCE_BASE_URL":                                   "https://source.example.com",
+		"GHMIG_SOURCE_TOKEN":                                      "env-source-token",
+		"GHMIG_DESTINATION_TYPE":                                  "github",
+		"GHMIG_DESTINATION_BASE_URL":                              "https://dest.example.com",
+		"GHMIG_DESTINATION_TOKEN":                                 "env-dest-token",
+		"GHMIG_MIGRATION_WORKERS":                                 "10",
+		"GHMIG_MIGRATION_POLL_INTERVAL_SECONDS":                   "60",
+		"GHMIG_MIGRATION_POST_MIGRATION_MODE":                     "always",
+		"GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION":                 "skip",
+		"GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS":        "public",
+		"GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS":      "internal",
+		"GHMIG_LOGGING_LEVEL":                                     "debug",
+		"GHMIG_LOGGING_FORMAT":                                    "text",
+		"GHMIG_AUTH_ENABLED":                                      "true",
+		"GHMIG_AUTH_SESSION_DURATION_HOURS":                       "48",
 		"GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN": "true",
 	}
 
@@ -253,7 +253,7 @@ auth:
 	viper.Reset()
 	viper.SetConfigFile(tmpfile.Name())
 	viper.SetConfigType("yaml")
-	
+
 	// Setup environment variable handling
 	viper.SetEnvPrefix("GHMIG")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
