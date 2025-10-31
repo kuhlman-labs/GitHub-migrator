@@ -48,7 +48,7 @@ module "app_service" {
   app_service_name         = "${var.app_name_prefix}-dev"
   sku_name                 = var.app_service_sku
   always_on                = var.always_on
-  docker_image             = "${var.docker_registry_url}/${var.docker_image_repository}:${var.docker_image_tag}"
+  docker_image             = "${var.docker_registry_url}/${lower(var.docker_image_repository)}:${var.docker_image_tag}"
   docker_registry_url      = var.docker_registry_url
   docker_registry_username = var.docker_registry_username
   docker_registry_password = var.docker_registry_password
