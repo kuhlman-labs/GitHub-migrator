@@ -68,8 +68,10 @@ module "postgresql" {
 module "app_service" {
   source = "../../modules/app-service"
 
-  resource_group_name      = data.azurerm_resource_group.main.name
-  location                 = data.azurerm_resource_group.main.location
+  depends_on = [azurerm_resource_group.main, module.postgresql]
+
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
   app_service_plan_name    = "${var.app_name_prefix}-plan-prod"
   app_service_name         = "${var.app_name_prefix}-prod"
   sku_name                 = var.app_service_sku
@@ -137,7 +139,5 @@ module "app_service" {
       ManagedBy   = "Terraform"
     }
   )
-
-  depends_on = [module.postgresql]
 }
 

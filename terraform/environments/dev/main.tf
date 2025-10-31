@@ -40,6 +40,8 @@ resource "azurerm_resource_group" "main" {
 module "app_service" {
   source = "../../modules/app-service"
 
+  depends_on = [azurerm_resource_group.main]
+
   resource_group_name      = azurerm_resource_group.main.name
   location                 = azurerm_resource_group.main.location
   app_service_plan_name    = "${var.app_name_prefix}-plan-dev"
