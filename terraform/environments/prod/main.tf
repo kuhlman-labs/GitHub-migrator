@@ -108,7 +108,7 @@ module "app_service" {
     "GHMIG_AUTH_FRONTEND_URL"               = var.auth_frontend_url
     "GHMIG_AUTH_SESSION_SECRET"             = var.auth_session_secret
     "GHMIG_AUTH_SESSION_DURATION_HOURS"     = tostring(var.auth_session_duration_hours)
-    
+
     # Auth Authorization Rules
     "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP"   = jsonencode(var.auth_require_org_membership)
     "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP"  = jsonencode(var.auth_require_team_membership)
