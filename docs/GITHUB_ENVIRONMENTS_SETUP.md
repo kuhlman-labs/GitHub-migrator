@@ -89,6 +89,7 @@ Click **Add variable** for each:
 | Variable Name | Value | Description |
 |--------------|-------|-------------|
 | `ENVIRONMENT_NAME` | `dev` | Environment identifier |
+| `AZURE_LOCATION` | `eastus` | Azure region (see common regions below) |
 | `APP_NAME_PREFIX` | `github-migrator` | App name prefix |
 | `APP_SERVICE_NAME` | `github-migrator-dev` | **IMPORTANT**: Full App Service name (from Terraform output) |
 | `APP_SERVICE_SKU` | `B1` | App Service tier (Basic) |
@@ -115,6 +116,17 @@ Click **Add variable** for each:
 | `AUTH_REQUIRE_ENTERPRISE_ADMIN` | `false` | Require enterprise admin |
 | `AUTH_REQUIRE_ENTERPRISE_SLUG` | `""` | Enterprise slug (if require_enterprise_admin is true) |
 | `CORS_ALLOWED_ORIGINS` | `["*"]` | CORS origins (permissive for dev) |
+
+**Common Azure Regions:**
+- `eastus` - East US (Virginia)
+- `westus2` - West US 2 (Washington)
+- `centralus` - Central US (Iowa)
+- `westeurope` - West Europe (Netherlands)
+- `northeurope` - North Europe (Ireland)
+- `southeastasia` - Southeast Asia (Singapore)
+- `australiaeast` - Australia East (Sydney)
+
+[See all available regions](https://azure.microsoft.com/en-us/explore/global-infrastructure/geographies/)
 
 **Optional: GitHub App Variables** (for enhanced discovery/profiling)
 
@@ -155,6 +167,7 @@ Click **Add variable** for each:
 | Variable Name | Value | Description |
 |--------------|-------|-------------|
 | `ENVIRONMENT_NAME` | `production` | Environment identifier |
+| `AZURE_LOCATION` | `eastus` | Azure region (eastus, westus2, etc.) |
 | `APP_NAME_PREFIX` | `github-migrator` | App name prefix |
 | `APP_SERVICE_NAME` | `github-migrator-prod` | **IMPORTANT**: Full App Service name (from Terraform output) |
 | `APP_SERVICE_SKU` | `S1` | App Service tier (Standard) |
@@ -244,6 +257,7 @@ Here's a checklist format for faster setup:
 **Variables:**
 ```
 ☐ ENVIRONMENT_NAME = dev
+☐ AZURE_LOCATION = eastus
 ☐ APP_NAME_PREFIX = github-migrator
 ☐ APP_SERVICE_NAME = github-migrator-dev  # ⚠️ UPDATE AFTER TERRAFORM - see note below
 ☐ APP_SERVICE_SKU = B1
@@ -287,6 +301,7 @@ Here's a checklist format for faster setup:
 ```
 ☐ Same as dev but with these changes:
   - ENVIRONMENT_NAME = production
+  - AZURE_LOCATION = eastus  # Or your preferred region
   - APP_SERVICE_NAME = github-migrator-prod  # ⚠️ UPDATE AFTER TERRAFORM - see note below
   - APP_SERVICE_SKU = S1
   - ALWAYS_ON = true

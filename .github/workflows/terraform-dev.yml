@@ -148,11 +148,14 @@ jobs:
           }
           TFVARS_EOF
 
+      - name: Format terraform.tfvars
+        run: terraform fmt terraform.tfvars
+
       - name: Terraform Init
         run: terraform init
 
       - name: Terraform Format Check
-        run: terraform fmt -check
+        run: terraform fmt -check -recursive
         continue-on-error: true
 
       - name: Terraform Validate
