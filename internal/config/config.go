@@ -138,6 +138,9 @@ func Load() (*Config, error) {
 	// Migrate deprecated GitHub config if needed
 	cfg.MigrateDeprecatedConfig()
 
+	// Parse array environment variables (Viper doesn't automatically handle comma-separated values)
+	cfg.ParseArrayEnvVars()
+
 	return &cfg, nil
 }
 
@@ -180,4 +183,93 @@ func (c *Config) MigrateDeprecatedConfig() {
 		c.Destination.BaseURL = c.GitHub.Destination.BaseURL
 		c.Destination.Token = c.GitHub.Destination.Token
 	}
+}
+
+// ParseArrayEnvVars handles parsing of array fields from environment variables
+// Viper doesn't automatically parse comma-separated values or handle array syntax
+func (c *Config) ParseArrayEnvVars() {
+	// Parse require_org_membership
+	c.Auth.AuthorizationRules.RequireOrgMembership = parseStringSlice(
+		c.Auth.AuthorizationRules.RequireOrgMembership,
+	)
+
+	// Parse require_team_membership
+	c.Auth.AuthorizationRules.RequireTeamMembership = parseStringSlice(
+		c.Auth.AuthorizationRules.RequireTeamMembership,
+	)
+}
+
+// parseStringSlice handles parsing of string slice from various formats:
+// - Comma-separated: "org1,org2,org3"
+// - Single value: "org1"
+// - Already parsed array: ["org1", "org2"]
+// - JSON array string: '["org1","org2"]' (incorrectly set)
+func parseStringSlice(input []string) []string {
+	if len(input) == 0 {
+		return input
+	}
+
+	// If we have a single element, check if it needs parsing
+	if len(input) == 1 {
+		value := strings.TrimSpace(input[0])
+		
+		// Empty value
+		if value == "" {
+			return []string{}
+		}
+
+		// Check if it's a JSON array string (common mistake)
+		if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+			// Strip outer brackets first
+			value = value[1 : len(value)-1]
+			value = strings.TrimSpace(value)
+			
+			// Remove all quotes
+			value = strings.ReplaceAll(value, "\"", "")
+			value = strings.ReplaceAll(value, "'", "")
+			
+			// If now empty, return empty array
+			if value == "" {
+				return []string{}
+			}
+		}
+
+		// Split by comma and trim spaces
+		if strings.Contains(value, ",") {
+			parts := strings.Split(value, ",")
+			result := make([]string, 0, len(parts))
+			for _, part := range parts {
+				trimmed := strings.TrimSpace(part)
+				if trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+			return result
+		}
+
+		// Single value (not comma-separated)
+		return []string{value}
+	}
+
+	// Multiple elements - could be properly parsed or incorrectly split
+	// Check if first element looks like it starts with JSON bracket
+	if strings.HasPrefix(strings.TrimSpace(input[0]), "[") {
+		// This might be a JSON array that got split by comma
+		// Reconstruct and reparse
+		reconstructed := strings.Join(input, ",")
+		return parseStringSlice([]string{reconstructed})
+	}
+
+	// Already a properly parsed array, just trim spaces
+	result := make([]string, 0, len(input))
+	for _, item := range input {
+		trimmed := strings.TrimSpace(item)
+		// Clean up any remaining quotes or brackets
+		trimmed = strings.Trim(trimmed, "[]\"'")
+		trimmed = strings.TrimSpace(trimmed)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

@@ -164,6 +164,70 @@ server:
 }
 
 // TestLoadConfig_EnvironmentVariables tests that environment variables with GHMIG_ prefix override config file values
+func TestParseStringSlice(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "empty array",
+			input:    []string{},
+			expected: []string{},
+		},
+		{
+			name:     "single value",
+			input:    []string{"org1"},
+			expected: []string{"org1"},
+		},
+		{
+			name:     "comma-separated values",
+			input:    []string{"org1,org2,org3"},
+			expected: []string{"org1", "org2", "org3"},
+		},
+		{
+			name:     "JSON array string",
+			input:    []string{`["org1","org2","org3"]`},
+			expected: []string{"org1", "org2", "org3"},
+		},
+		{
+			name:     "JSON array with single quotes",
+			input:    []string{`['org1','org2']`},
+			expected: []string{"org1", "org2"},
+		},
+		{
+			name:     "comma-separated with spaces",
+			input:    []string{"org1 , org2 , org3"},
+			expected: []string{"org1", "org2", "org3"},
+		},
+		{
+			name:     "already parsed array",
+			input:    []string{"org1", "org2", "org3"},
+			expected: []string{"org1", "org2", "org3"},
+		},
+		{
+			name:     "empty string",
+			input:    []string{""},
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseStringSlice(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected length %d, got %d", len(tt.expected), len(result))
+				return
+			}
+			for i, val := range result {
+				if val != tt.expected[i] {
+					t.Errorf("Index %d: expected %s, got %s", i, tt.expected[i], val)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadConfig_EnvironmentVariables(t *testing.T) {
 	// Create a temporary config file with base values
 	tmpfile, err := os.CreateTemp("", "config-*.yaml")
@@ -302,6 +366,103 @@ auth:
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.got != tt.expected {
 				t.Errorf("Config %s = %v, want %v", tt.name, tt.got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_ArrayEnvironmentVariables(t *testing.T) {
+	// Create a temporary config file with base values
+	tmpfile, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	configContent := `
+auth:
+  enabled: true
+  authorization_rules:
+    require_org_membership: []
+    require_team_membership: []
+`
+
+	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name     string
+		envValue string
+		expected []string
+	}{
+		{
+			name:     "single org",
+			envValue: "kuhlman-labs-org",
+			expected: []string{"kuhlman-labs-org"},
+		},
+		{
+			name:     "comma-separated orgs",
+			envValue: "org1,org2,org3",
+			expected: []string{"org1", "org2", "org3"},
+		},
+		{
+			name:     "JSON array format",
+			envValue: `["org1","org2"]`,
+			expected: []string{"org1", "org2"},
+		},
+		{
+			name:     "comma-separated with spaces",
+			envValue: "org1 , org2 , org3",
+			expected: []string{"org1", "org2", "org3"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variable
+			envVar := "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP"
+			if err := os.Setenv(envVar, tt.envValue); err != nil {
+				t.Fatalf("Failed to set env var: %v", err)
+			}
+			defer os.Unsetenv(envVar)
+
+			// Reset viper and configure it
+			viper.Reset()
+			viper.SetConfigFile(tmpfile.Name())
+			viper.SetConfigType("yaml")
+			viper.SetEnvPrefix("GHMIG")
+			viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+			viper.AutomaticEnv()
+
+			// Read config
+			if err := viper.ReadInConfig(); err != nil {
+				t.Fatalf("Failed to read config: %v", err)
+			}
+
+			// Unmarshal into config struct
+			var cfg Config
+			if err := viper.Unmarshal(&cfg); err != nil {
+				t.Fatalf("Failed to unmarshal config: %v", err)
+			}
+
+			// Parse array environment variables
+			cfg.ParseArrayEnvVars()
+
+			// Verify the result
+			result := cfg.Auth.AuthorizationRules.RequireOrgMembership
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d orgs, got %d: %v", len(tt.expected), len(result), result)
+				return
+			}
+
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Errorf("Index %d: expected %s, got %s", i, expected, result[i])
+				}
 			}
 		})
 	}
