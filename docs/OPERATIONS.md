@@ -178,13 +178,17 @@ source:
 
 The GitHub Migration Server also supports optional authentication using GitHub OAuth. When enabled, users must authenticate with GitHub and meet configurable authorization requirements to access the system.
 
+**Important:** The OAuth App must be created on the **SOURCE** GitHub instance (where you're migrating FROM). Users authenticate against the source system, and authorization rules (organization membership, team membership, etc.) are validated against the source GitHub instance.
+
 ### Prerequisites
 
-- GitHub organization or GitHub Enterprise account
-- Admin access to create OAuth Apps
+- GitHub organization or GitHub Enterprise account **on the SOURCE instance**
+- Admin access to create OAuth Apps on the SOURCE instance
 - SSL/TLS certificate (recommended for production)
 
 ### Creating a GitHub OAuth App
+
+**Note:** Create this OAuth App on your SOURCE GitHub instance (GitHub.com, GHES, or GitHub with data residency).
 
 #### For GitHub.com
 
@@ -209,6 +213,19 @@ The GitHub Migration Server also supports optional authentication using GitHub O
 Add the following to your `configs/config.yaml`:
 
 ```yaml
+# Source configuration - OAuth uses THIS base URL for authentication
+source:
+  type: github
+  base_url: https://api.github.com  # OAuth app must be created on this GitHub instance
+  token: ghp_source_token_here
+
+# Destination configuration - NOT used for OAuth
+destination:
+  type: github
+  base_url: https://api.github.com
+  token: ghp_destination_token_here
+
+# Authentication configuration
 auth:
   enabled: true
   github_oauth_client_id: "Iv1.your_client_id_here"
@@ -219,11 +236,13 @@ auth:
   
   authorization_rules:
     # Require user to be member of these organizations (at least one)
+    # These organizations are checked on the SOURCE GitHub instance
     require_org_membership:
       - "my-github-org"
     
     # Require user to be member of these teams (at least one)
     # Format: "org/team-slug"
+    # These teams are checked on the SOURCE GitHub instance
     require_team_membership:
       - "my-github-org/migration-admins"
       - "my-github-org/platform-team"
@@ -234,6 +253,11 @@ auth:
     # Enterprise slug (required if require_enterprise_admin is true)
     require_enterprise_slug: "my-enterprise"
 ```
+
+**Key Points:**
+- The OAuth App Client ID and Secret come from the OAuth App created on your **SOURCE** GitHub instance
+- The `source.base_url` determines which GitHub instance users authenticate against
+- Authorization rules (org/team membership) are validated against the SOURCE instance
 
 ### Generating Session Secret
 

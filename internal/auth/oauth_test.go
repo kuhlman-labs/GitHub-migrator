@@ -234,8 +234,18 @@ func TestBuildOAuthURL(t *testing.T) {
 			expected: "https://github.com",
 		},
 		{
+			name:     "github with data residency",
+			baseURL:  "https://api.company.ghe.com",
+			expected: "https://company.ghe.com",
+		},
+		{
 			name:     "github enterprise",
 			baseURL:  "https://github.example.com/api/v3",
+			expected: "https://github.example.com",
+		},
+		{
+			name:     "github enterprise with api prefix",
+			baseURL:  "https://api.github.example.com",
 			expected: "https://github.example.com",
 		},
 		{

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/brettkuhlman/github-migrator/internal/config"
 	"golang.org/x/oauth2"
@@ -316,6 +317,10 @@ func BuildOAuthURL(baseURL string) string {
 	if parsedURL.Host == "api.github.com" {
 		return githubDotComURL
 	}
+
+	// For GitHub with data residency (e.g., api.company.ghe.com), strip the "api." prefix
+	// OAuth endpoints are at company.ghe.com, not api.company.ghe.com
+	parsedURL.Host = strings.TrimPrefix(parsedURL.Host, "api.")
 
 	// For GHES, remove "/api/v3" from path if present
 	parsedURL.Path = ""

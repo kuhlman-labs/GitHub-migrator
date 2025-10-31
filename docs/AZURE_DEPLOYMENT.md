@@ -278,8 +278,12 @@ curl https://github-migrator-prod.azurewebsites.net/health
 
 If you enabled authentication, configure OAuth:
 
-1. Create GitHub OAuth App:
-   - Go to GitHub Settings → Developer settings → OAuth Apps → New OAuth App
+**Important:** Create the OAuth App on your **SOURCE** GitHub instance (where you're migrating FROM). The `source_base_url` Terraform variable determines which GitHub instance users authenticate against.
+
+1. Create GitHub OAuth App **on your SOURCE GitHub instance**:
+   - For GitHub.com: Go to GitHub Settings → Developer settings → OAuth Apps → New OAuth App
+   - For GHES: Go to `https://your-source-ghes.com/settings/applications/new`
+   - For GitHub with data residency: Use the appropriate URL for your instance
    - Application name: `GitHub Migrator (Production)`
    - Homepage URL: `https://your-app-name-prod.azurewebsites.net`
    - Callback URL: `https://your-app-name-prod.azurewebsites.net/api/v1/auth/callback`
