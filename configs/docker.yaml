@@ -1,21 +1,23 @@
 # GitHub Migrator - Docker Configuration
 # This configuration is optimized for Docker deployments
+# All values can be overridden via environment variables with GHMIG_ prefix
+# Example: GHMIG_SOURCE_TOKEN will override source.token
 
 server:
   port: 8080
 
 database:
-  # Can be overridden with environment variables
-  type: "${GHMIG_DATABASE_TYPE:-sqlite}"
-  dsn: "${GHMIG_DATABASE_DSN:-/app/data/migrator.db}"
+  # Values will be overridden by GHMIG_DATABASE_TYPE and GHMIG_DATABASE_DSN env vars
+  type: sqlite
+  dsn: /app/data/migrator.db
 
 # Source repository system configuration
 # Only GitHub to GitHub migrations are supported
 # Source: GitHub.com or GitHub Enterprise Server
 source:
-  type: "${GHMIG_SOURCE_TYPE:-github}"
-  base_url: "${GITHUB_SOURCE_URL:-https://github.company.com/api/v3}"
-  token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED for migrations
+  type: github
+  base_url: https://api.github.com
+  token: ""  # REQUIRED - Set via GHMIG_SOURCE_TOKEN environment variable
   
   # GitHub App authentication (optional for discovery/profiling)
   # Provides better rate limits for discovery operations
@@ -34,9 +36,9 @@ source:
 # Only GitHub to GitHub migrations are supported
 # Destination: GitHub.com, GitHub with data residency, or GitHub Enterprise Server
 destination:
-  type: "${GHMIG_DESTINATION_TYPE:-github}"
-  base_url: "${GITHUB_DEST_URL:-https://api.github.com}"
-  token: "${GITHUB_DEST_TOKEN}"  # REQUIRED for migrations
+  type: github
+  base_url: https://api.github.com
+  token: ""  # REQUIRED - Set via GHMIG_DESTINATION_TOKEN environment variable
   
   # GitHub App authentication (optional for discovery/profiling)
   # Provides better rate limits for discovery operations
@@ -52,33 +54,39 @@ destination:
   # app_installation_id: "${GHMIG_DEST_APP_INSTALLATION_ID}"  # Optional
 
 # Migration worker configuration
+# Values will be overridden by GHMIG_MIGRATION_* environment variables
 migration:
-  workers: "${GHMIG_MIGRATION_WORKERS:-5}"
-  poll_interval_seconds: "${GHMIG_MIGRATION_POLL_INTERVAL_SECONDS:-30}"
-  post_migration_mode: "${GHMIG_MIGRATION_POST_MIGRATION_MODE:-production_only}"
-  dest_repo_exists_action: "${GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION:-fail}"
-  
-  # Visibility transformation rules (default: all repos become private)
+  workers: 5
+  poll_interval_seconds: 30
+  post_migration_mode: production_only
+  dest_repo_exists_action: fail
   visibility_handling:
-    public_repos: "${GHMIG_MIGRATION_VISIBILITY_PUBLIC_REPOS:-private}"
-    internal_repos: "${GHMIG_MIGRATION_VISIBILITY_INTERNAL_REPOS:-private}"
+    public_repos: private
+    internal_repos: private
 
 # Docker logging configuration
+# Values will be overridden by GHMIG_LOGGING_* environment variables
 logging:
-  level: "${GHMIG_LOGGING_LEVEL:-info}"
-  format: "${GHMIG_LOGGING_FORMAT:-json}"
-  output_file: "${GHMIG_LOGGING_OUTPUT_FILE:-/app/logs/migrator.log}"
-  max_size: "${GHMIG_LOGGING_MAX_SIZE:-200}"
-  max_backups: "${GHMIG_LOGGING_MAX_BACKUPS:-5}"
-  max_age: "${GHMIG_LOGGING_MAX_AGE:-30}"
+  level: info
+  format: json
+  output_file: /app/logs/migrator.log
+  max_size: 200
+  max_backups: 5
+  max_age: 30
 
 # Authentication (disabled by default for Docker)
 # See OPERATIONS.md for setup instructions
+# Values will be overridden by GHMIG_AUTH_* environment variables
 auth:
-  enabled: "${GHMIG_AUTH_ENABLED:-false}"
-  github_oauth_client_id: "${GITHUB_OAUTH_CLIENT_ID}"
-  github_oauth_client_secret: "${GITHUB_OAUTH_CLIENT_SECRET}"
-  callback_url: "${GITHUB_OAUTH_CALLBACK_URL}"
-  frontend_url: "${GHMIG_AUTH_FRONTEND_URL:-/}"  # URL to redirect after login (use "/" for integrated frontend)
-  session_secret: "${AUTH_SESSION_SECRET}"
-  session_duration_hours: "${GHMIG_AUTH_SESSION_DURATION_HOURS:-24}"
+  enabled: false
+  github_oauth_client_id: ""
+  github_oauth_client_secret: ""
+  callback_url: ""
+  frontend_url: /
+  session_secret: ""
+  session_duration_hours: 24
+  authorization_rules:
+    require_org_membership: []
+    require_team_membership: []
+    require_enterprise_admin: false
+    require_enterprise_slug: ""
