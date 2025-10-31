@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -117,6 +118,9 @@ func Load() (*Config, error) {
 
 	// Environment variable support
 	viper.SetEnvPrefix("GHMIG")
+	// Replace dots with underscores in config keys when looking for env vars
+	// This allows migration.visibility_handling.public_repos -> GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	// Set defaults
