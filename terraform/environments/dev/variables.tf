@@ -93,6 +93,46 @@ variable "destination_token" {
   sensitive   = true
 }
 
+# Source GitHub App Configuration (optional)
+variable "source_app_id" {
+  description = "Source GitHub App ID (0 = not using GitHub App)"
+  type        = number
+  default     = 0
+}
+
+variable "source_app_private_key" {
+  description = "Source GitHub App private key (PEM format)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "source_app_installation_id" {
+  description = "Source GitHub App installation ID (0 = auto-discover)"
+  type        = number
+  default     = 0
+}
+
+# Destination GitHub App Configuration (optional)
+variable "dest_app_id" {
+  description = "Destination GitHub App ID (0 = not using GitHub App)"
+  type        = number
+  default     = 0
+}
+
+variable "dest_app_private_key" {
+  description = "Destination GitHub App private key (PEM format)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "dest_app_installation_id" {
+  description = "Destination GitHub App installation ID (0 = auto-discover)"
+  type        = number
+  default     = 0
+}
+
 # Migration Configuration
 variable "migration_workers" {
   description = "Number of migration workers"

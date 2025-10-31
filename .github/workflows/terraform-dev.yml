@@ -136,7 +136,7 @@ jobs:
           auth_require_enterprise_slug     = "${{ vars.AUTH_REQUIRE_ENTERPRISE_SLUG }}"
 
           # CORS Configuration
-          cors_allowed_origins = ${{ vars.CORS_ALLOWED_ORIGINS }}
+          cors_allowed_origins = ${{ vars.CORS_ALLOWED_ORIGINS || '["*"]' }}
 
           # Tags
           tags = {
