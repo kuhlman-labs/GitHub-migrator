@@ -1,0 +1,35 @@
+---
+# yamllint configuration for GitHub Actions workflows
+extends: default
+
+rules:
+  # Allow lines up to 120 characters (GitHub Actions often has long strings)
+  line-length:
+    max: 120
+    level: warning
+
+  # Document start is optional (GitHub Actions doesn't require ---)
+  document-start:
+    present: false
+
+  # Allow 'on' for GitHub Actions triggers
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off']
+
+  # Allow trailing spaces in some contexts
+  trailing-spaces:
+    level: error
+
+  # More lenient on indentation
+  indentation:
+    spaces: 2
+    indent-sequences: true
+
+  # Allow empty lines at end of files
+  empty-lines:
+    max: 1
+
+  # Comments indentation
+  comments-indentation:
+    level: warning
+

@@ -16,16 +16,16 @@ source:
   type: "${GHMIG_SOURCE_TYPE:-github}"
   base_url: "${GITHUB_SOURCE_URL}"
   token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED for migrations
-  
+
   # GitHub App authentication (optional for discovery/profiling)
   # Provides better rate limits for discovery operations
   # When configured: GitHub App used for discovery, PAT used for migrations
-  # 
+  #
   # app_installation_id is OPTIONAL:
   #   - Provide installation ID: Uses that installation's token for all operations
   #   - Omit installation ID: Auto-discovers all app installations, creates per-org clients
   #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
-  # 
+  #
   # app_id: "${GHMIG_SOURCE_APP_ID}"
   # app_private_key: "${GHMIG_SOURCE_APP_PRIVATE_KEY}"
   # app_installation_id: "${GHMIG_SOURCE_APP_INSTALLATION_ID}"  # Optional
@@ -37,16 +37,16 @@ destination:
   type: "${GHMIG_DESTINATION_TYPE:-github}"
   base_url: "${GITHUB_DEST_URL}"
   token: "${GITHUB_DEST_TOKEN}"  # REQUIRED for migrations
-  
+
   # GitHub App authentication (optional for discovery/profiling)
   # Provides better rate limits for discovery operations
   # When configured: GitHub App used for discovery, PAT used for migrations
-  # 
+  #
   # app_installation_id is OPTIONAL:
   #   - Provide installation ID: Uses that installation's token for all operations
   #   - Omit installation ID: Auto-discovers all app installations, creates per-org clients
   #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
-  # 
+  #
   # app_id: "${GITHUB_DEST_APP_ID}"
   # app_private_key: "${GITHUB_DEST_APP_PRIVATE_KEY}"
   # app_installation_id: "${GITHUB_DEST_APP_INSTALLATION_ID}"  # Optional
@@ -58,7 +58,7 @@ migration:
   poll_interval_seconds: "${GHMIG_MIGRATION_POLL_INTERVAL_SECONDS:-30}"
   post_migration_mode: "${GHMIG_MIGRATION_POST_MIGRATION_MODE:-production_only}"
   dest_repo_exists_action: "${GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION:-fail}"
-  
+
   # Visibility transformation rules (default: all repos become private)
   visibility_handling:
     public_repos: "${GHMIG_MIGRATION_VISIBILITY_PUBLIC_REPOS:-private}"
@@ -84,7 +84,7 @@ auth:
   frontend_url: "${GHMIG_AUTH_FRONTEND_URL:-/}"  # URL to redirect to after login (production: usually same domain)
   session_secret: "${AUTH_SESSION_SECRET}"
   session_duration_hours: "${GHMIG_AUTH_SESSION_DURATION_HOURS:-24}"
-  
+
   authorization_rules:
     # Require org membership (comma-separated list via env var)
     require_org_membership: "${GHMIG_AUTH_REQUIRE_ORG_MEMBERSHIP}"

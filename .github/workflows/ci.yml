@@ -16,7 +16,7 @@ jobs:
   backend-ci:
     name: Backend CI (Go)
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -264,4 +264,3 @@ jobs:
           else
             echo "✅ CI pipeline passed" >> $GITHUB_STEP_SUMMARY
           fi
-

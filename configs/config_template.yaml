@@ -1,5 +1,5 @@
 # GitHub Migrator Configuration Template
-# 
+#
 # This file contains PLACEHOLDER values only.
 # Real secrets are injected via environment variables at runtime.
 #
@@ -22,7 +22,7 @@ source:
   type: github
   base_url: "https://api.github.com"
   token: "${GITHUB_SOURCE_TOKEN}"  # REQUIRED - Set via env var GHMIG_SOURCE_TOKEN
-  
+
   # GitHub App authentication (optional for discovery/profiling)
   # When configured: GitHub App used for discovery, PAT used for migrations
   # Scenarios:
@@ -42,7 +42,7 @@ destination:
   type: github
   base_url: "https://api.github.com"
   token: "${GITHUB_DEST_TOKEN}"  # REQUIRED - Set via env var GHMIG_DESTINATION_TOKEN
-  
+
   # GitHub App authentication (optional for discovery/profiling)
   # When configured: GitHub App used for discovery, PAT used for migrations
   # app_id: 0
@@ -53,20 +53,20 @@ destination:
 migration:
   workers: 5  # Number of parallel migration workers
   poll_interval_seconds: 30  # How often to check migration status
-  
+
   # Post-migration deletion mode
   # - never: Never delete source repo after migration
   # - production_only: Delete only in production migrations (not dry runs)
   # - dry_run_only: Delete only in dry runs (for testing)
   # - always: Always delete after successful migration
   post_migration_mode: "production_only"
-  
+
   # What to do if destination repo already exists
   # - fail: Fail the migration
   # - skip: Skip this repo and continue
   # - delete: Delete destination repo and proceed
   dest_repo_exists_action: "fail"
-  
+
   # Visibility handling for migrated repos
   visibility_handling:
     public_repos: "private"    # How to handle public repos: public, internal, private
@@ -84,17 +84,17 @@ logging:
 # Authentication and authorization (optional)
 auth:
   enabled: false  # Set via env var GHMIG_AUTH_ENABLED
-  
+
   # GitHub OAuth configuration (required if auth.enabled = true)
   github_oauth_client_id: ""      # Set via GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID
   github_oauth_client_secret: ""  # Set via GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET
   callback_url: ""                # e.g., https://your-app.com/api/v1/auth/callback
   frontend_url: ""                # e.g., https://your-app.com
-  
+
   # Session configuration
   session_secret: ""  # REQUIRED if auth enabled - Set via GHMIG_AUTH_SESSION_SECRET
   session_duration_hours: 24
-  
+
   # Authorization rules (optional - restrict access)
   authorization_rules:
     # require_org_membership:
@@ -103,4 +103,3 @@ auth:
     #   - "your-github-org/your-team"
     # require_enterprise_admin: false
     # require_enterprise_slug: "your-enterprise"
-

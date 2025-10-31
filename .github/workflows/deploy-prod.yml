@@ -43,10 +43,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set lowercase image name
-        run: |
-          echo "IMAGE_NAME_LOWER=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
       - name: Pre-deployment backup (optional)
         run: |
           echo "ℹ️ Consider backing up database before production deployment"
@@ -57,7 +53,7 @@ jobs:
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ vars.APP_SERVICE_NAME }}
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ steps.image-tag.outputs.tag }}
+          images: ${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.image-tag.outputs.tag }}
 
       - name: Wait for deployment to stabilize
         run: sleep 45
@@ -66,7 +62,7 @@ jobs:
         run: |
           APP_URL="${{ steps.deploy.outputs.webapp-url }}"
           echo "Checking health endpoint: ${APP_URL}/health"
-          
+
           for i in {1..15}; do
             if curl -f -s "${APP_URL}/health" > /dev/null; then
               echo "✅ Health check passed!"
@@ -75,23 +71,23 @@ jobs:
             echo "⏳ Waiting for app to be ready... (attempt $i/15)"
             sleep 10
           done
-          
+
           echo "❌ Health check failed after 15 attempts"
           exit 1
 
       - name: Post-deployment verification
         run: |
           APP_URL="${{ steps.deploy.outputs.webapp-url }}"
-          
+
           echo "Running post-deployment verification..."
-          
+
           # Check if API responds
           if curl -f -s "${APP_URL}/api/v1/analytics/summary" > /dev/null 2>&1; then
             echo "✅ API endpoints are responding"
           else
             echo "⚠️ API endpoints may require authentication"
           fi
-          
+
           echo "✅ Post-deployment verification complete"
 
       - name: Deployment summary
@@ -100,7 +96,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.deploy.outputs.webapp-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**Deployed at:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Post-Deployment Tasks" >> $GITHUB_STEP_SUMMARY
@@ -116,9 +112,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Please check the logs and consider rolling back if necessary." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Attempted Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Attempted Image:** ${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Logout from Azure
         run: az logout
         if: ${{ !cancelled() }}
-

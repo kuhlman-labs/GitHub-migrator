@@ -43,7 +43,7 @@ jobs:
         run: |
           APP_URL="${{ steps.deploy.outputs.webapp-url }}"
           echo "Checking health endpoint: ${APP_URL}/health"
-          
+
           for i in {1..10}; do
             if curl -f -s "${APP_URL}/health" > /dev/null; then
               echo "✅ Health check passed!"
@@ -52,7 +52,7 @@ jobs:
             echo "⏳ Waiting for app to be ready... (attempt $i/10)"
             sleep 10
           done
-          
+
           echo "❌ Health check failed after 10 attempts"
           exit 1
 
@@ -68,4 +68,3 @@ jobs:
       - name: Logout from Azure
         run: az logout
         if: ${{ !cancelled() }}
-

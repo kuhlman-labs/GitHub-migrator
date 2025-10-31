@@ -49,7 +49,7 @@ jobs:
           CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
           TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
           SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
-          
+
           # Set as environment variables for Terraform
           echo "ARM_CLIENT_ID=${CLIENT_ID}" >> $GITHUB_ENV
           echo "ARM_CLIENT_SECRET=${CLIENT_SECRET}" >> $GITHUB_ENV
@@ -82,25 +82,25 @@ jobs:
           source_base_url = "${{ vars.SOURCE_BASE_URL }}"
           source_token    = "${{ secrets.SOURCE_GITHUB_TOKEN }}"
           TFVARS_EOF
-          
+
           # Add GitHub App configuration if enabled (handles multi-line private key)
           if [ -n "${{ vars.SOURCE_APP_ID }}" ] && [ "${{ vars.SOURCE_APP_ID }}" != "0" ]; then
             echo "" >> terraform.tfvars
             echo "# Source GitHub App Configuration" >> terraform.tfvars
             echo "source_app_id = ${{ vars.SOURCE_APP_ID }}" >> terraform.tfvars
-            
+
             # Use heredoc for multi-line private key
             cat >> terraform.tfvars <<'PRIVATE_KEY_EOF'
           source_app_private_key = <<-EOT
           ${{ secrets.SOURCE_APP_PRIVATE_KEY }}
           EOT
           PRIVATE_KEY_EOF
-            
+
             if [ -n "${{ vars.SOURCE_APP_INSTALLATION_ID }}" ] && [ "${{ vars.SOURCE_APP_INSTALLATION_ID }}" != "0" ]; then
               echo "source_app_installation_id = ${{ vars.SOURCE_APP_INSTALLATION_ID }}" >> terraform.tfvars
             fi
           fi
-          
+
           # Continue with rest of configuration
           cat >> terraform.tfvars <<'TFVARS_EOF'
 
@@ -129,7 +129,7 @@ jobs:
           auth_frontend_url                = "${{ vars.AUTH_FRONTEND_URL }}"
           auth_session_secret              = "${{ secrets.AUTH_SESSION_SECRET }}"
           auth_session_duration_hours      = ${{ vars.AUTH_SESSION_DURATION_HOURS }}
-          
+
           # Auth Authorization Rules
           auth_require_org_membership      = ${{ vars.AUTH_REQUIRE_ORG_MEMBERSHIP || '[]' }}
           auth_require_team_membership     = ${{ vars.AUTH_REQUIRE_TEAM_MEMBERSHIP || '[]' }}
@@ -191,4 +191,3 @@ jobs:
         run: |
           rm -f terraform.tfvars
           az logout
-

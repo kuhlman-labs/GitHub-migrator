@@ -92,4 +92,3 @@ jobs:
             echo "gh attestation verify oci://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }} --owner ${{ github.repository_owner }}" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
-
