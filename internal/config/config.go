@@ -212,7 +212,7 @@ func parseStringSlice(input []string) []string {
 	// If we have a single element, check if it needs parsing
 	if len(input) == 1 {
 		value := strings.TrimSpace(input[0])
-		
+
 		// Empty value
 		if value == "" {
 			return []string{}
@@ -223,11 +223,11 @@ func parseStringSlice(input []string) []string {
 			// Strip outer brackets first
 			value = value[1 : len(value)-1]
 			value = strings.TrimSpace(value)
-			
+
 			// Remove all quotes
 			value = strings.ReplaceAll(value, "\"", "")
 			value = strings.ReplaceAll(value, "'", "")
-			
+
 			// If now empty, return empty array
 			if value == "" {
 				return []string{}
