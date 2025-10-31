@@ -182,7 +182,7 @@ jobs:
           echo "**App Service Name:** $(terraform output -raw app_service_name)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Update GitHub secret \`AZURE_APP_SERVICE_NAME_DEV\` with: \`$(terraform output -raw app_service_name)\`" >> $GITHUB_STEP_SUMMARY
+          echo "1. Update GitHub dev Environment Variable \`APP_SERVICE_NAME\` with: \`$(terraform output -raw app_service_name)\`" >> $GITHUB_STEP_SUMMARY
           echo "2. Run the Build workflow to create container image" >> $GITHUB_STEP_SUMMARY
           echo "3. Run Deploy Dev workflow to deploy the application" >> $GITHUB_STEP_SUMMARY
 
