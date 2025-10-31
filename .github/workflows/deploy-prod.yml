@@ -43,6 +43,10 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_NAME_LOWER=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Pre-deployment backup (optional)
         run: |
           echo "ℹ️ Consider backing up database before production deployment"
@@ -53,7 +57,7 @@ jobs:
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ vars.APP_SERVICE_NAME }}
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ steps.image-tag.outputs.tag }}
 
       - name: Wait for deployment to stabilize
         run: sleep 45
@@ -96,7 +100,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.deploy.outputs.webapp-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**Deployed at:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Post-Deployment Tasks" >> $GITHUB_STEP_SUMMARY
@@ -112,7 +116,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Please check the logs and consider rolling back if necessary." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Attempted Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Attempted Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Logout from Azure
         run: az logout
