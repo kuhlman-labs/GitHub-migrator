@@ -28,8 +28,9 @@ resource "azurerm_linux_web_app" "main" {
   https_only = true
 
   site_config {
-    always_on         = var.always_on
-    health_check_path = "/health"
+    always_on                           = var.always_on
+    health_check_path                   = "/health"
+    health_check_eviction_time_in_min  = 2
 
     application_stack {
       docker_image_name        = var.docker_image
@@ -49,10 +50,7 @@ resource "azurerm_linux_web_app" "main" {
     var.app_settings,
     {
       "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
-      "DOCKER_REGISTRY_SERVER_URL"          = "https://${var.docker_registry_url}"
-      "DOCKER_REGISTRY_SERVER_USERNAME"     = var.docker_registry_username
-      "DOCKER_REGISTRY_SERVER_PASSWORD"     = var.docker_registry_password
-      "WEBSITES_PORT"                       = "8080"
+      "WEBSITES_PORT"                        = "8080"
     }
   )
 
