@@ -261,8 +261,16 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 }
 
 // isOrgMember checks if a user is a member of an organization
+// For OAuth flows, use the authenticated user's membership endpoint which is more reliable
 func (a *Authorizer) isOrgMember(ctx context.Context, username string, org string, token string) (bool, error) {
-	url := fmt.Sprintf("%s/orgs/%s/members/%s", a.baseURL, org, username)
+	// Use the /user/memberships/orgs/{org} endpoint which checks the authenticated user's membership
+	// This is more reliable for OAuth tokens and works regardless of membership visibility
+	url := fmt.Sprintf("%s/user/memberships/orgs/%s", a.baseURL, org)
+
+	a.logger.Debug("Checking org membership for authenticated user",
+		"url", url,
+		"username", username,
+		"org", org)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -275,19 +283,64 @@ func (a *Authorizer) isOrgMember(ctx context.Context, username string, org strin
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		a.logger.Error("Failed to make org membership API request",
+			"url", url,
+			"error", err)
 		return false, err
 	}
 	defer resp.Body.Close()
 
-	// 204 means member, 404 means not a member, 302 means requester doesn't have permission
-	if resp.StatusCode == http.StatusNoContent {
-		return true, nil
-	}
-	if resp.StatusCode == http.StatusNotFound {
+	body, _ := io.ReadAll(resp.Body)
+
+	a.logger.Debug("Org membership API response",
+		"status", resp.StatusCode,
+		"org", org,
+		"username", username,
+		"response_body", string(body))
+
+	// 200 means member, 404 means not a member
+	if resp.StatusCode == http.StatusOK {
+		// Parse response to check state
+		var membership struct {
+			State string `json:"state"`
+			Role  string `json:"role"`
+		}
+		if err := json.Unmarshal(body, &membership); err != nil {
+			a.logger.Error("Failed to parse membership response",
+				"error", err,
+				"body", string(body))
+			return false, err
+		}
+
+		// State can be "active" or "pending"
+		// Only consider "active" as valid membership
+		if membership.State == "active" {
+			a.logger.Info("User IS an active member of organization",
+				"org", org,
+				"username", username,
+				"role", membership.Role)
+			return true, nil
+		}
+
+		a.logger.Info("User membership is not active",
+			"org", org,
+			"username", username,
+			"state", membership.State)
 		return false, nil
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusNotFound {
+		a.logger.Info("User is NOT a member of organization",
+			"org", org,
+			"username", username)
+		return false, nil
+	}
+
+	a.logger.Error("Unexpected status code from org membership API",
+		"status", resp.StatusCode,
+		"org", org,
+		"username", username,
+		"body", string(body))
 	return false, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 }
 

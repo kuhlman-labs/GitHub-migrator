@@ -84,9 +84,14 @@ func TestCheckOrganizationMembership(t *testing.T) {
 		}
 
 		// Parse the URL to determine which org is being checked
-		if r.URL.Path == "/orgs/allowed-org/members/testuser" {
-			w.WriteHeader(http.StatusNoContent) // User is a member
-		} else if r.URL.Path == "/orgs/forbidden-org/members/testuser" {
+		// New endpoint: /user/memberships/orgs/{org}
+		if r.URL.Path == "/user/memberships/orgs/allowed-org" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+				"role":  "member",
+			})
+		} else if r.URL.Path == "/user/memberships/orgs/forbidden-org" {
 			w.WriteHeader(http.StatusNotFound) // User is not a member
 		} else {
 			w.WriteHeader(http.StatusNotFound)
@@ -207,8 +212,12 @@ func TestCheckTeamMembership(t *testing.T) {
 func TestAuthorizeWithOrgMembership(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/orgs/allowed-org/members/testuser" {
-			w.WriteHeader(http.StatusNoContent)
+		if r.URL.Path == "/user/memberships/orgs/allowed-org" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+				"role":  "member",
+			})
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -274,8 +283,12 @@ func TestAuthorizeWithOrgMembershipDenied(t *testing.T) {
 func TestAuthorizeWithMultipleRules(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/orgs/test-org/members/testuser" {
-			w.WriteHeader(http.StatusNoContent)
+		if r.URL.Path == "/user/memberships/orgs/test-org" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+				"role":  "member",
+			})
 		} else if r.URL.Path == testTeamMembershipPath {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
@@ -314,8 +327,12 @@ func TestAuthorizeWithMultipleRules(t *testing.T) {
 func TestIsOrgMember(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/orgs/test-org/members/testuser" {
-			w.WriteHeader(http.StatusNoContent)
+		if r.URL.Path == "/user/memberships/orgs/test-org" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+				"role":  "member",
+			})
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
