@@ -22,17 +22,26 @@ provider "azurerm" {
   subscription_id = var.azure_subscription_id
 }
 
-# Use existing resource group
-data "azurerm_resource_group" "main" {
-  name = var.resource_group_name
+# Create resource group
+resource "azurerm_resource_group" "main" {
+  name     = var.resource_group_name
+  location = var.location
+
+  tags = merge(
+    var.tags,
+    {
+      Environment = "dev"
+      ManagedBy   = "Terraform"
+    }
+  )
 }
 
 # Deploy App Service (with SQLite - no database dependency)
 module "app_service" {
   source = "../../modules/app-service"
 
-  resource_group_name      = data.azurerm_resource_group.main.name
-  location                 = data.azurerm_resource_group.main.location
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
   app_service_plan_name    = "${var.app_name_prefix}-plan-dev"
   app_service_name         = "${var.app_name_prefix}-dev"
   sku_name                 = var.app_service_sku
