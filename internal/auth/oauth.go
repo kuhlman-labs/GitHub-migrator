@@ -28,14 +28,17 @@ type OAuthHandler struct {
 
 // NewOAuthHandler creates a new OAuth handler
 func NewOAuthHandler(cfg *config.AuthConfig, logger *slog.Logger, githubBaseURL string) *OAuthHandler {
+	// Convert API base URL to OAuth base URL
+	oauthBaseURL := BuildOAuthURL(githubBaseURL)
+
 	// Determine OAuth endpoints based on GitHub base URL
 	var endpoint oauth2.Endpoint
-	if githubBaseURL == "https://api.github.com" || githubBaseURL == "" {
+	if oauthBaseURL == githubDotComURL {
 		// GitHub.com
 		endpoint = github.Endpoint
 	} else {
 		// GitHub Enterprise Server
-		baseURL := githubBaseURL
+		baseURL := oauthBaseURL
 		if baseURL[len(baseURL)-1] == '/' {
 			baseURL = baseURL[:len(baseURL)-1]
 		}
