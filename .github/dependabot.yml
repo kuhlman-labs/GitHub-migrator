@@ -17,3 +17,9 @@ updates:
     directory: "/web"
     schedule:
       interval: "weekly"
+      
+  # Enable version updates for Terraform
+  - package-ecosystem: "terraform"
+    directory: "/terraform"
+    schedule:
+      interval: "weekly"
