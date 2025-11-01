@@ -139,24 +139,19 @@ func Load() (*Config, error) {
 
 	// Try to read config file, but don't fail if it doesn't exist
 	// This allows pure environment variable configuration
-	configFileFound := true
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			// Config file was found but another error occurred (e.g., parse error)
 			return nil, fmt.Errorf("failed to read config: %w", err)
 		}
 		// Config file not found - this is OK, we'll use env vars and defaults
-		configFileFound = false
 	}
 
-	// WORKAROUND: Viper's Unmarshal doesn't pick up environment variables when no config file exists
-	// We need to explicitly bind env vars or manually populate from viper.Get()
+	// WORKAROUND: Viper's Unmarshal doesn't pick up environment variables properly
+	// We need to explicitly bind env vars to ensure they override config file values
 	// See: https://github.com/spf13/viper/issues/188
-	if !configFileFound {
-		// Manually set values from environment variables that Viper can read
-		// but Unmarshal won't pick up without a config file
-		bindEnvVars()
-	}
+	// This ensures proper precedence: env vars > config file > defaults
+	bindEnvVars()
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
