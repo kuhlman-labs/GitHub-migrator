@@ -179,12 +179,23 @@ func TestMigrationWorker_StartStop(t *testing.T) {
 		t.Fatalf("Failed to stop worker: %v", err)
 	}
 
-	// Give it a moment to fully stop
-	time.Sleep(50 * time.Millisecond)
+	// Wait for worker to fully stop with timeout
+	timeout := time.After(500 * time.Millisecond)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 
-	// Verify worker is not active
-	if worker.IsActive() {
-		t.Error("Worker should not be active after stopping")
+	for {
+		select {
+		case <-timeout:
+			if worker.IsActive() {
+				t.Error("Worker should not be active after stopping (timeout)")
+			}
+			return
+		case <-ticker.C:
+			if !worker.IsActive() {
+				return // Test passed
+			}
+		}
 	}
 }
 
@@ -292,7 +303,8 @@ func TestMigrationWorker_WorkerSlots(t *testing.T) {
 	// Should not process because all slots are busy
 	worker.processQueuedRepositories()
 
-	time.Sleep(50 * time.Millisecond)
+	// Give processing a chance to attempt (but it should not pick up new work)
+	time.Sleep(100 * time.Millisecond)
 
 	// Should still only have 1 active (the one we manually added)
 	if count := worker.GetActiveCount(); count != 1 {
@@ -362,11 +374,22 @@ func TestMigrationWorker_IsActive(t *testing.T) {
 	// Stop worker
 	worker.Stop()
 
-	// Give it time to stop
-	time.Sleep(50 * time.Millisecond)
+	// Wait for worker to fully stop with timeout
+	timeout := time.After(500 * time.Millisecond)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 
-	// Should not be active
-	if worker.IsActive() {
-		t.Error("Worker should not be active after stopping")
+	for {
+		select {
+		case <-timeout:
+			if worker.IsActive() {
+				t.Error("Worker should not be active after stopping (timeout)")
+			}
+			return
+		case <-ticker.C:
+			if !worker.IsActive() {
+				return // Test passed
+			}
+		}
 	}
 }
