@@ -36,6 +36,33 @@ resource "azurerm_resource_group" "main" {
   )
 }
 
+# Storage account for persistent database storage
+resource "azurerm_storage_account" "dev_db" {
+  name                     = "${replace(var.app_name_prefix, "-", "")}devdb"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  tags = merge(
+    var.tags,
+    {
+      Environment = "dev"
+      ManagedBy   = "Terraform"
+      Purpose     = "database-persistence"
+    }
+  )
+}
+
+# File share for SQLite database
+resource "azurerm_storage_share" "dev_db" {
+  name                 = "database"
+  storage_account_name = azurerm_storage_account.dev_db.name
+  quota                = 1
+
+  depends_on = [azurerm_storage_account.dev_db]
+}
+
 # Deploy App Service (with SQLite - no database dependency)
 module "app_service" {
   source = "../../modules/app-service"
@@ -103,6 +130,18 @@ module "app_service" {
   }
 
   cors_allowed_origins = var.cors_allowed_origins
+
+  # Mount Azure File Share for database persistence
+  storage_mounts = [
+    {
+      name         = "database-mount"
+      type         = "AzureFiles"
+      account_name = azurerm_storage_account.dev_db.name
+      share_name   = azurerm_storage_share.dev_db.name
+      access_key   = azurerm_storage_account.dev_db.primary_access_key
+      mount_path   = "/app/data"
+    }
+  ]
 
   tags = merge(
     var.tags,

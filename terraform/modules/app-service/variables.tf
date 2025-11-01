@@ -72,3 +72,16 @@ variable "tags" {
   default     = {}
 }
 
+variable "storage_mounts" {
+  description = "List of storage mounts for the App Service"
+  type = list(object({
+    name         = string
+    type         = string
+    account_name = string
+    share_name   = string
+    access_key   = string
+    mount_path   = string
+  }))
+  default = []
+}
+
