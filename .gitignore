@@ -27,6 +27,7 @@ go.work
 # Environment variables
 .env
 .env.local
+.env.*.local
 
 # Configuration overrides
 config.local.yaml
@@ -63,8 +64,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-#configs
+# Configuration files (keep only examples in git)
 configs/config.yaml
+configs/config.local.yaml
+configs/*.local.yaml
+configs/development.yaml
+configs/production.yaml
+configs/docker.yaml
 
 # Terraform
 **/.terraform/

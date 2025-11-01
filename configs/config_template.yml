@@ -1,6 +1,17 @@
 # GitHub Migrator - Configuration Example
 # This file documents all available configuration options
-# Copy this file to config.yaml and customize for your environment
+# 
+# USAGE OPTIONS:
+#   1. YAML Config: Copy this file to config.yaml and customize
+#   2. Environment Variables: Use GHMIG_* prefixed env vars (see env.example)
+#   3. .env File: Create a .env file in project root with GHMIG_* variables
+#   4. Mixed: Combine YAML config with env var overrides
+# 
+# Notes:
+#   - config.yaml is optional - defaults and env vars work without it
+#   - .env files are automatically loaded for local development
+#   - Environment variables override YAML values
+#   - All files with credentials are gitignored
 
 # =============================================================================
 # Server Configuration
@@ -32,10 +43,11 @@ database:
 # Source Repository System Configuration
 # =============================================================================
 # This is where you're migrating FROM
-# Only GitHub to GitHub migrations are currently supported
+# Currently only GitHub is fully supported for migrations
 source:
   # Source system type
-  # Only "github" is supported
+  # Supported: "github" (full support)
+  # In development: "gitlab", "azuredevops" (not yet ready for production)
   type: github
   
   # API base URL
@@ -94,10 +106,11 @@ source:
 # Destination Repository System Configuration
 # =============================================================================
 # This is where you're migrating TO
-# Only GitHub to GitHub migrations are currently supported
+# Currently only GitHub is fully supported as a migration destination
 destination:
   # Destination system type
-  # Only "github" is supported
+  # Supported: "github" (full support)
+  # Note: Only GitHub is supported as a destination for migrations
   type: github
   
   # API base URL
@@ -118,7 +131,7 @@ destination:
   # ==========================================================================
   # Same configuration options as source above.
   # Benefits:
-  # - 5,000 requests/hour PER installation vs 5,000/hour total with PAT
+  # - 15,000 requests/hour PER installation vs 5,000/hour total with PAT
   # - Better isolation with per-organization tokens
   # - Parallel organization processing for enterprise migrations
   # - Separation of concerns: App for discovery, PAT for migrations
@@ -297,9 +310,19 @@ auth:
     # require_enterprise_admin: false
     
     # Enterprise slug for admin verification
-    # Required only if require_enterprise_admin is true
-    # This is the slug of your GitHub Enterprise
-    # require_enterprise_slug: "my-enterprise"
+  # Required only if require_enterprise_admin is true
+  # This is the slug of your GitHub Enterprise
+  # require_enterprise_slug: "my-enterprise"
+  
+  # ==========================================================================
+  # Future Provider Support (Not Yet Implemented)
+  # ==========================================================================
+  # These fields are planned for future GitLab and Azure DevOps support
+  # DO NOT USE - Not yet functional in current version
+  #
+  # For Azure DevOps migrations (when implemented):
+  # organization: "your-ado-org"  # Required for Azure DevOps
+  # username: "your-username"     # Optional for Azure DevOps (defaults to token)
 
 # Example: Enabled authentication with org membership requirement
 # auth:
@@ -386,9 +409,10 @@ auth:
 # Notes
 # =============================================================================
 # 1. SUPPORTED MIGRATIONS:
-#    - GitHub to GitHub migrations only
+#    - Currently only GitHub-to-GitHub migrations are fully supported
 #    - Source: GitHub.com or GitHub Enterprise Server
 #    - Destination: GitHub.com, GitHub with data residency, or GHEC EMU
+#    - Note: GitLab and Azure DevOps support is planned but not yet implemented
 #
 # 2. AUTHENTICATION:
 #    - PAT (Personal Access Token) is REQUIRED for migrations

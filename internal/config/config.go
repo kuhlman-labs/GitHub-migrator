@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/subosito/gotenv"
 )
 
 type Config struct {
@@ -111,6 +113,15 @@ type AuthorizationRules struct {
 }
 
 func Load() (*Config, error) {
+	// Load .env file if it exists (for local development)
+	// This loads environment variables from .env file into the environment
+	// Silently ignore if .env doesn't exist - not an error
+	if _, err := os.Stat(".env"); err == nil {
+		if err := gotenv.Load(".env"); err != nil {
+			return nil, fmt.Errorf("failed to load .env file: %w", err)
+		}
+	}
+
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath("./configs")
@@ -126,8 +137,25 @@ func Load() (*Config, error) {
 	// Set defaults
 	setDefaults()
 
+	// Try to read config file, but don't fail if it doesn't exist
+	// This allows pure environment variable configuration
+	configFileFound := true
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			// Config file was found but another error occurred (e.g., parse error)
+			return nil, fmt.Errorf("failed to read config: %w", err)
+		}
+		// Config file not found - this is OK, we'll use env vars and defaults
+		configFileFound = false
+	}
+
+	// WORKAROUND: Viper's Unmarshal doesn't pick up environment variables when no config file exists
+	// We need to explicitly bind env vars or manually populate from viper.Get()
+	// See: https://github.com/spf13/viper/issues/188
+	if !configFileFound {
+		// Manually set values from environment variables that Viper can read
+		// but Unmarshal won't pick up without a config file
+		bindEnvVars()
 	}
 
 	var cfg Config
@@ -142,6 +170,59 @@ func Load() (*Config, error) {
 	cfg.ParseArrayEnvVars()
 
 	return &cfg, nil
+}
+
+// bindEnvVars explicitly binds environment variables for Viper Unmarshal
+// This is required when no config file exists, as Viper's AutomaticEnv() only works with Get()
+func bindEnvVars() {
+	// Bind all configuration keys to environment variables
+	// Viper automatically converts dots to underscores and adds the GHMIG prefix
+	envKeys := []string{
+		"server.port",
+		"database.type",
+		"database.dsn",
+		"source.type",
+		"source.base_url",
+		"source.token",
+		"source.organization",
+		"source.username",
+		"source.app_id",
+		"source.app_private_key",
+		"source.app_installation_id",
+		"destination.type",
+		"destination.base_url",
+		"destination.token",
+		"destination.app_id",
+		"destination.app_private_key",
+		"destination.app_installation_id",
+		"migration.workers",
+		"migration.poll_interval_seconds",
+		"migration.post_migration_mode",
+		"migration.dest_repo_exists_action",
+		"migration.visibility_handling.public_repos",
+		"migration.visibility_handling.internal_repos",
+		"logging.level",
+		"logging.format",
+		"logging.output_file",
+		"logging.max_size",
+		"logging.max_backups",
+		"logging.max_age",
+		"auth.enabled",
+		"auth.github_oauth_client_id",
+		"auth.github_oauth_client_secret",
+		"auth.callback_url",
+		"auth.frontend_url",
+		"auth.session_secret",
+		"auth.session_duration_hours",
+		"auth.authorization_rules.require_org_membership",
+		"auth.authorization_rules.require_team_membership",
+		"auth.authorization_rules.require_enterprise_admin",
+		"auth.authorization_rules.require_enterprise_slug",
+	}
+
+	for _, key := range envKeys {
+		_ = viper.BindEnv(key) // Explicitly ignore error - BindEnv only fails if key is empty
+	}
 }
 
 func setDefaults() {
