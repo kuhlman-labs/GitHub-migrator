@@ -29,12 +29,12 @@ source:
   #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
   #
   # Set these via environment variables in Azure App Service:
-  # - GHMIG_SOURCE_APP_ID
-  # - GHMIG_SOURCE_APP_PRIVATE_KEY
-  # - GHMIG_SOURCE_APP_INSTALLATION_ID (optional)
-  app_id: 0
-  app_private_key: ""
-  app_installation_id: 0  # Optional: omit (set to 0) to auto-discover all app installations
+  # - GHMIG_SOURCE_APP_ID (integer, e.g., 123456)
+  # - GHMIG_SOURCE_APP_PRIVATE_KEY (full PEM content or file path)
+  # - GHMIG_SOURCE_APP_INSTALLATION_ID (optional integer, omit or set to 0 for auto-discovery)
+  #
+  # NOTE: These fields are intentionally omitted from YAML to ensure they only load from env vars
+  # Uncomment only if you want to set them directly in this file (not recommended for containers)
 
 # Destination repository system configuration
 # Only GitHub to GitHub migrations are supported
@@ -54,12 +54,12 @@ destination:
   #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
   #
   # Set these via environment variables in Azure App Service:
-  # - GHMIG_DESTINATION_APP_ID
-  # - GHMIG_DESTINATION_APP_PRIVATE_KEY
-  # - GHMIG_DESTINATION_APP_INSTALLATION_ID (optional)
-  app_id: 0
-  app_private_key: ""
-  app_installation_id: 0  # Optional: omit (set to 0) to auto-discover all app installations
+  # - GHMIG_DESTINATION_APP_ID (integer, e.g., 123456)
+  # - GHMIG_DESTINATION_APP_PRIVATE_KEY (full PEM content or file path)
+  # - GHMIG_DESTINATION_APP_INSTALLATION_ID (optional integer, omit or set to 0 for auto-discovery)
+  #
+  # NOTE: These fields are intentionally omitted from YAML to ensure they only load from env vars
+  # Uncomment only if you want to set them directly in this file (not recommended for containers)
 
 # Migration worker configuration
 # Values will be overridden by GHMIG_MIGRATION_* environment variables
