@@ -28,9 +28,13 @@ source:
   #   - Omit installation ID: Auto-discovers all app installations, creates per-org clients
   #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
   #
-  # app_id: "${GHMIG_SOURCE_APP_ID}"
-  # app_private_key: "${GHMIG_SOURCE_APP_PRIVATE_KEY}"
-  # app_installation_id: "${GHMIG_SOURCE_APP_INSTALLATION_ID}"  # Optional
+  # Set these via environment variables in Azure App Service:
+  # - GHMIG_SOURCE_APP_ID
+  # - GHMIG_SOURCE_APP_PRIVATE_KEY
+  # - GHMIG_SOURCE_APP_INSTALLATION_ID (optional)
+  app_id: 0
+  app_private_key: ""
+  app_installation_id: 0  # Optional: omit (set to 0) to auto-discover all app installations
 
 # Destination repository system configuration
 # Only GitHub to GitHub migrations are supported
@@ -49,9 +53,13 @@ destination:
   #   - Omit installation ID: Auto-discovers all app installations, creates per-org clients
   #     (best for multi-org GitHub Apps, uses JWT auth for discovery)
   #
-  # app_id: "${GHMIG_DEST_APP_ID}"
-  # app_private_key: "${GHMIG_DEST_APP_PRIVATE_KEY}"
-  # app_installation_id: "${GHMIG_DEST_APP_INSTALLATION_ID}"  # Optional
+  # Set these via environment variables in Azure App Service:
+  # - GHMIG_DESTINATION_APP_ID
+  # - GHMIG_DESTINATION_APP_PRIVATE_KEY
+  # - GHMIG_DESTINATION_APP_INSTALLATION_ID (optional)
+  app_id: 0
+  app_private_key: ""
+  app_installation_id: 0  # Optional: omit (set to 0) to auto-discover all app installations
 
 # Migration worker configuration
 # Values will be overridden by GHMIG_MIGRATION_* environment variables
