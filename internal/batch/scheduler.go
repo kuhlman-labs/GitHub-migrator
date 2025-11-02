@@ -13,7 +13,7 @@ import (
 
 // MigrationExecutor is the interface for executing repository migrations
 type MigrationExecutor interface {
-	ExecuteMigration(ctx context.Context, repo *models.Repository, dryRun bool) error
+	ExecuteMigration(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool) error
 }
 
 // Scheduler handles batch scheduling and execution

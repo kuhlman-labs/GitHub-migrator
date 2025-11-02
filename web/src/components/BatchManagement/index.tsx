@@ -4,7 +4,6 @@ import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
-import { TimestampDisplay } from '../common/TimestampDisplay';
 import { formatBytes, formatDate } from '../../utils/format';
 
 export function BatchManagement() {
@@ -334,46 +333,98 @@ export function BatchManagement() {
                   {selectedBatch.description && (
                     <p className="text-gh-text-secondary mt-1">{selectedBatch.description}</p>
                   )}
-                  <div className="flex gap-3 mt-3">
+                  <div className="flex items-center gap-3 mt-3">
                     <StatusBadge status={selectedBatch.status} />
                     <span className="text-sm text-gh-text-secondary">
                       {selectedBatch.repository_count} repositories
                     </span>
+                    {selectedBatch.created_at && (
+                      <>
+                        <span className="text-gray-300">•</span>
+                        <span className="text-xs text-gray-400">
+                          Created {formatDate(selectedBatch.created_at)}
+                        </span>
+                      </>
+                    )}
                   </div>
                   
-                  {/* Batch Timestamps */}
-                  <div className="mt-4 space-y-1.5 border-t border-gh-border-default pt-3">
-                    {selectedBatch.scheduled_at && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-blue-700">🗓️</span>
-                        <span className="text-gh-text-secondary">Scheduled:</span>
-                        <span className="font-medium text-blue-900">
-                          {formatDate(selectedBatch.scheduled_at)}
-                        </span>
-                        {new Date(selectedBatch.scheduled_at) > new Date() && (
-                          <span className="text-xs text-blue-600 italic">(auto-start when ready)</span>
+                  {/* Two-column layout for settings and timestamps */}
+                  <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-6 border-t border-gh-border-default pt-4">
+                    {/* Left Column: Migration Settings */}
+                    {(selectedBatch.destination_org || selectedBatch.exclude_releases || selectedBatch.migration_api !== 'GEI') && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          <span className="text-sm font-semibold text-gh-text-primary">Migration Settings</span>
+                        </div>
+                        <div className="space-y-2 pl-6">
+                          {selectedBatch.destination_org && (
+                            <div className="text-sm">
+                              <span className="text-gh-text-secondary">Default Destination:</span>
+                              <div className="font-medium text-blue-700 mt-0.5">{selectedBatch.destination_org}</div>
+                              <div className="text-xs text-gray-500 italic mt-0.5">For repos without specific destination</div>
+                            </div>
+                          )}
+                          {selectedBatch.migration_api && selectedBatch.migration_api !== 'GEI' && (
+                            <div className="text-sm">
+                              <span className="text-gh-text-secondary">Migration API:</span>
+                              <div className="font-medium text-gh-text-primary mt-0.5">
+                                {selectedBatch.migration_api === 'ELM' ? 'ELM (Enterprise Live Migrator)' : selectedBatch.migration_api}
+                              </div>
+                            </div>
+                          )}
+                          {selectedBatch.exclude_releases && (
+                            <div className="text-sm">
+                              <span className="text-gh-text-secondary">Exclude Releases:</span>
+                              <div className="font-medium text-orange-700 mt-0.5">Yes</div>
+                              <div className="text-xs text-gray-500 italic mt-0.5">Repo settings can override</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Right Column: Schedule & Timestamps */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-sm font-semibold text-gh-text-primary">Schedule & Timeline</span>
+                      </div>
+                      <div className="space-y-2 pl-6">
+                        {selectedBatch.scheduled_at && (
+                          <div className="text-sm">
+                            <span className="text-gh-text-secondary">Scheduled:</span>
+                            <div className="font-medium text-blue-900 mt-0.5">
+                              {formatDate(selectedBatch.scheduled_at)}
+                            </div>
+                            {new Date(selectedBatch.scheduled_at) > new Date() && (
+                              <div className="text-xs text-blue-600 italic mt-0.5">Auto-start when ready</div>
+                            )}
+                          </div>
+                        )}
+                        {selectedBatch.last_dry_run_at && (
+                          <div className="text-sm">
+                            <span className="text-gh-text-secondary">Last Dry Run:</span>
+                            <div className="font-medium text-gh-text-primary mt-0.5">
+                              {formatDate(selectedBatch.last_dry_run_at)}
+                            </div>
+                          </div>
+                        )}
+                        {selectedBatch.last_migration_attempt_at && (
+                          <div className="text-sm">
+                            <span className="text-gh-text-secondary">Last Migration:</span>
+                            <div className="font-medium text-gh-text-primary mt-0.5">
+                              {formatDate(selectedBatch.last_migration_attempt_at)}
+                            </div>
+                          </div>
                         )}
                       </div>
-                    )}
-                    {selectedBatch.last_dry_run_at && (
-                      <TimestampDisplay 
-                        timestamp={selectedBatch.last_dry_run_at} 
-                        label="Last dry run"
-                        size="sm"
-                      />
-                    )}
-                    {selectedBatch.last_migration_attempt_at && (
-                      <TimestampDisplay 
-                        timestamp={selectedBatch.last_migration_attempt_at} 
-                        label="Last migration"
-                        size="sm"
-                      />
-                    )}
-                    {selectedBatch.created_at && (
-                      <div className="text-xs text-gh-text-secondary">
-                        Created: {formatDate(selectedBatch.created_at)}
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
 
@@ -500,6 +551,7 @@ export function BatchManagement() {
                           onRetry={() => handleRetryRepository(repo)}
                           batchId={selectedBatch.id}
                           batchName={selectedBatch.name}
+                          batch={selectedBatch}
                         />
                       ))}
                     </div>
@@ -519,6 +571,7 @@ export function BatchManagement() {
                           repository={repo}
                           batchId={selectedBatch.id}
                           batchName={selectedBatch.name}
+                          batch={selectedBatch}
                         />
                       ))}
                     </div>
@@ -538,6 +591,7 @@ export function BatchManagement() {
                           repository={repo}
                           batchId={selectedBatch.id}
                           batchName={selectedBatch.name}
+                          batch={selectedBatch}
                         />
                       ))}
                     </div>
@@ -557,6 +611,7 @@ export function BatchManagement() {
                           repository={repo}
                           batchId={selectedBatch.id}
                           batchName={selectedBatch.name}
+                          batch={selectedBatch}
                         />
                       ))}
                     </div>
@@ -576,6 +631,7 @@ export function BatchManagement() {
                           repository={repo}
                           batchId={selectedBatch.id}
                           batchName={selectedBatch.name}
+                          batch={selectedBatch}
                         />
                       ))}
                     </div>
@@ -657,13 +713,26 @@ interface RepositoryItemProps {
   onRetry?: () => void;
   batchId?: number;
   batchName?: string;
+  batch?: Batch;
 }
 
-function RepositoryItem({ repository, onRetry, batchId, batchName }: RepositoryItemProps) {
+function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: RepositoryItemProps) {
   const isFailed = repository.status === 'migration_failed' || repository.status === 'dry_run_failed';
   const isDryRunFailed = repository.status === 'dry_run_failed';
-  const destination = repository.destination_full_name || repository.full_name;
-  const isCustomDestination = repository.destination_full_name && repository.destination_full_name !== repository.full_name;
+  
+  // Determine destination with batch-level fallback
+  let destination = repository.destination_full_name || repository.full_name;
+  let destinationLabel = 'Destination';
+  let isCustomDestination = repository.destination_full_name && repository.destination_full_name !== repository.full_name;
+  let isBatchDestination = false;
+  
+  // If repo doesn't have custom destination but batch has destination_org, show that
+  if (!repository.destination_full_name && batch?.destination_org) {
+    const sourceRepoName = repository.full_name.split('/')[1];
+    destination = `${batch.destination_org}/${sourceRepoName}`;
+    isBatchDestination = true;
+    destinationLabel = 'Destination (from batch)';
+  }
 
   return (
     <div className="flex justify-between items-center p-3 border border-gh-border-default rounded-lg hover:bg-gh-neutral-bg group">
@@ -680,12 +749,15 @@ function RepositoryItem({ repository, onRetry, batchId, batchName }: RepositoryI
             {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-xs">→ Destination:</span>
-            <span className={`text-xs font-medium ${isCustomDestination ? 'text-blue-600' : 'text-gray-600'}`}>
+            <span className="text-xs">→ {destinationLabel}:</span>
+            <span className={`text-xs font-medium ${isCustomDestination ? 'text-blue-600' : isBatchDestination ? 'text-purple-600' : 'text-gray-600'}`}>
               {destination}
             </span>
             {isCustomDestination && (
               <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">custom</span>
+            )}
+            {isBatchDestination && (
+              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">batch default</span>
             )}
           </div>
         </div>

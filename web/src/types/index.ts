@@ -153,6 +153,10 @@ export interface Batch {
   created_at: string;
   last_dry_run_at?: string;
   last_migration_attempt_at?: string;
+  // Migration settings (batch-level defaults, repository settings take precedence)
+  destination_org?: string;
+  migration_api?: 'GEI' | 'ELM';
+  exclude_releases?: boolean;
 }
 
 export interface Organization {

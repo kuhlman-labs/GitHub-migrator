@@ -983,6 +983,17 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate migration API if provided
+	if batch.MigrationAPI != "" && batch.MigrationAPI != models.MigrationAPIGEI && batch.MigrationAPI != models.MigrationAPIELM {
+		h.sendError(w, http.StatusBadRequest, "Invalid migration_api. Must be 'GEI' or 'ELM'")
+		return
+	}
+
+	// Set default migration API if not specified
+	if batch.MigrationAPI == "" {
+		batch.MigrationAPI = models.MigrationAPIGEI
+	}
+
 	ctx := r.Context()
 	batch.CreatedAt = time.Now()
 	batch.Status = statusPending // Start batches in pending state
@@ -1270,6 +1281,8 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateBatch handles PATCH /api/v1/batches/{id}
+//
+//nolint:gocyclo // Update operations naturally involve multiple conditional checks
 func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
@@ -1301,14 +1314,23 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Parse update request
 	var updates struct {
-		Name        *string    `json:"name,omitempty"`
-		Description *string    `json:"description,omitempty"`
-		Type        *string    `json:"type,omitempty"`
-		ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
+		Name            *string    `json:"name,omitempty"`
+		Description     *string    `json:"description,omitempty"`
+		Type            *string    `json:"type,omitempty"`
+		ScheduledAt     *time.Time `json:"scheduled_at,omitempty"`
+		DestinationOrg  *string    `json:"destination_org,omitempty"`
+		MigrationAPI    *string    `json:"migration_api,omitempty"`
+		ExcludeReleases *bool      `json:"exclude_releases,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Validate migration API if provided
+	if updates.MigrationAPI != nil && *updates.MigrationAPI != models.MigrationAPIGEI && *updates.MigrationAPI != models.MigrationAPIELM {
+		h.sendError(w, http.StatusBadRequest, "Invalid migration_api. Must be 'GEI' or 'ELM'")
 		return
 	}
 
@@ -1324,6 +1346,15 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if updates.ScheduledAt != nil {
 		batch.ScheduledAt = updates.ScheduledAt
+	}
+	if updates.DestinationOrg != nil {
+		batch.DestinationOrg = updates.DestinationOrg
+	}
+	if updates.MigrationAPI != nil {
+		batch.MigrationAPI = *updates.MigrationAPI
+	}
+	if updates.ExcludeReleases != nil {
+		batch.ExcludeReleases = *updates.ExcludeReleases
 	}
 
 	if err := h.db.UpdateBatch(ctx, batch); err != nil {

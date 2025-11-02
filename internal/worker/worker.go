@@ -206,10 +206,31 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 	w.logger.Info("Starting migration execution",
 		"repo", repo.FullName,
 		"repo_id", repo.ID,
-		"dry_run", dryRun)
+		"dry_run", dryRun,
+		"has_batch", repo.BatchID != nil)
 
 	// Create context for this migration execution
 	ctx := context.Background()
+
+	// Fetch batch details if repository is part of a batch
+	var batch *models.Batch
+	if repo.BatchID != nil {
+		fetchedBatch, err := w.storage.GetBatch(ctx, *repo.BatchID)
+		if err != nil {
+			w.logger.Warn("Failed to fetch batch for repository",
+				"repo", repo.FullName,
+				"batch_id", *repo.BatchID,
+				"error", err)
+			// Continue without batch - repo will use its own settings or defaults
+		} else {
+			batch = fetchedBatch
+			w.logger.Debug("Fetched batch settings for repository",
+				"repo", repo.FullName,
+				"batch_name", batch.Name,
+				"destination_org", batch.DestinationOrg,
+				"exclude_releases", batch.ExcludeReleases)
+		}
+	}
 
 	// Update status to in-progress
 	statusUpdate := models.StatusMigratingContent
@@ -224,8 +245,8 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 		// Continue with migration anyway
 	}
 
-	// Execute the migration
-	err := w.executor.ExecuteMigration(ctx, repo, dryRun)
+	// Execute the migration (pass batch for applying batch-level settings)
+	err := w.executor.ExecuteMigration(ctx, repo, batch, dryRun)
 
 	if err != nil {
 		w.logger.Error("Migration failed",
