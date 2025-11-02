@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -388,8 +389,16 @@ func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL decode the fullName (Go's PathValue should decode, but we ensure it here)
+	// This handles cases like "org%2Frepo" -> "org/repo"
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName // Use original if decode fails
+	}
+
 	ctx := r.Context()
-	repo, err := h.db.GetRepository(ctx, fullName)
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil {
 		h.logger.Error("Failed to get repository", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository")
@@ -425,6 +434,13 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
 	var updates map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid request body")
@@ -432,7 +448,7 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	repo, err := h.db.GetRepository(ctx, fullName)
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return
@@ -490,6 +506,13 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
 	if h.collector == nil {
 		h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
 		return
@@ -498,14 +521,14 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Check if repository exists
-	repo, err := h.db.GetRepository(ctx, fullName)
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return
 	}
 
-	// Extract org and repo name from fullName
-	parts := strings.SplitN(fullName, "/", 2)
+	// Extract org and repo name from decodedFullName
+	parts := strings.SplitN(decodedFullName, "/", 2)
 	if len(parts) != 2 {
 		h.sendError(w, http.StatusBadRequest, "Invalid repository name format")
 		return
@@ -524,7 +547,7 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	// Fetch repository from GitHub API
 	ghRepo, _, err := client.REST().Repositories.Get(ctx, org, repoName)
 	if err != nil {
-		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", fullName)
+		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", decodedFullName)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository from GitHub")
 		return
 	}
@@ -533,15 +556,15 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		bgCtx := context.Background()
 		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
-			h.logger.Error("Re-discovery failed", "error", err, "repo", fullName)
+			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
 		} else {
-			h.logger.Info("Re-discovery completed", "repo", fullName)
+			h.logger.Info("Re-discovery completed", "repo", decodedFullName)
 		}
 	}()
 
 	h.sendJSON(w, http.StatusAccepted, map[string]string{
 		"message":   "Re-discovery started",
-		"full_name": fullName,
+		"full_name": decodedFullName,
 		"status":    "in_progress",
 	})
 }
@@ -555,6 +578,13 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
 	if h.collector == nil {
 		h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
 		return
@@ -563,7 +593,7 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 
 	// Check if repository exists and has remediation_required status
-	repo, err := h.db.GetRepository(ctx, fullName)
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return
@@ -576,8 +606,8 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Extract org and repo name from fullName
-	parts := strings.SplitN(fullName, "/", 2)
+	// Extract org and repo name from decodedFullName
+	parts := strings.SplitN(decodedFullName, "/", 2)
 	if len(parts) != 2 {
 		h.sendError(w, http.StatusBadRequest, "Invalid repository name format")
 		return
@@ -595,13 +625,13 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 	// Fetch repository from GitHub API
 	ghRepo, _, err := client.REST().Repositories.Get(ctx, org, repoName)
 	if err != nil {
-		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", fullName)
+		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", decodedFullName)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository from GitHub")
 		return
 	}
 
 	h.logger.Info("Starting re-validation after remediation",
-		"repo", fullName,
+		"repo", decodedFullName,
 		"had_oversized_commits", repo.HasOversizedCommits,
 		"had_long_refs", repo.HasLongRefs,
 		"had_blocking_files", repo.HasBlockingFiles)
@@ -610,15 +640,15 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 	go func() {
 		bgCtx := context.Background()
 		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
-			h.logger.Error("Re-validation after remediation failed", "error", err, "repo", fullName)
+			h.logger.Error("Re-validation after remediation failed", "error", err, "repo", decodedFullName)
 		} else {
-			h.logger.Info("Re-validation completed", "repo", fullName)
+			h.logger.Info("Re-validation completed", "repo", decodedFullName)
 		}
 	}()
 
 	h.sendJSON(w, http.StatusAccepted, map[string]string{
 		"message":   "Re-validation started - repository will be re-analyzed for migration limits",
-		"full_name": fullName,
+		"full_name": decodedFullName,
 		"status":    "validating",
 	})
 }
@@ -631,6 +661,13 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
 	if h.sourceDualClient == nil {
 		h.sendError(w, http.StatusServiceUnavailable, "Source client not configured")
 		return
@@ -639,7 +676,7 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get repository
-	repo, err := h.db.GetRepository(ctx, fullName)
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return
@@ -700,10 +737,17 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
 	ctx := r.Context()
 
 	// Get repository
-	repo, err := h.db.GetRepository(ctx, fullName)
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return
@@ -726,8 +770,8 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Perform rollback
-	if err := h.db.RollbackRepository(ctx, fullName, req.Reason); err != nil {
-		h.logger.Error("Failed to rollback repository", "error", err, "repo", fullName)
+	if err := h.db.RollbackRepository(ctx, decodedFullName, req.Reason); err != nil {
+		h.logger.Error("Failed to rollback repository", "error", err, "repo", decodedFullName)
 		h.sendError(w, http.StatusInternalServerError, "Failed to rollback repository")
 		return
 	}
@@ -751,10 +795,17 @@ func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
 	ctx := r.Context()
 
 	// Get repository
-	repo, err := h.db.GetRepository(ctx, fullName)
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return

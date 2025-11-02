@@ -107,11 +107,12 @@ func extractGitSizer() (string, error) {
 	}
 
 	// Create a temporary directory for the binary
-	// We use a subdirectory of os.TempDir() to avoid conflicts
-	tmpDir := filepath.Join(os.TempDir(), "github-migrator-binaries")
+	// For Azure App Service, use /home/site/tmp which has proper permissions
+	// For other environments, use os.TempDir()
+	tmpDir := getBinaryStorageDir()
 	// #nosec G301 -- 0755 is appropriate for temporary directory
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
+		return "", fmt.Errorf("failed to create temp directory %s: %w", tmpDir, err)
 	}
 
 	// Write the binary to a temporary file
@@ -129,12 +130,12 @@ func extractGitSizer() (string, error) {
 
 	// #nosec G306 -- 0755 is required for binary to be executable
 	if err := os.WriteFile(binaryPath, binaryData, 0755); err != nil {
-		return "", fmt.Errorf("failed to write git-sizer binary: %w", err)
+		return "", fmt.Errorf("failed to write git-sizer binary to %s: %w", binaryPath, err)
 	}
 
 	// Verify the extracted binary
 	if err := verifyBinary(binaryPath); err != nil {
-		return "", fmt.Errorf("extracted binary verification failed: %w", err)
+		return "", fmt.Errorf("extracted binary verification failed for %s: %w", binaryPath, err)
 	}
 
 	return binaryPath, nil
@@ -164,9 +165,30 @@ func verifyBinary(path string) error {
 	return nil
 }
 
+// getBinaryStorageDir returns the appropriate directory for storing extracted binaries
+// In Azure App Service, /tmp may have restrictions, so we use /home/site/tmp
+// In other environments, we use the system temp directory
+func getBinaryStorageDir() string {
+	// Check if we're running in Azure App Service
+	// Azure sets WEBSITE_SITE_NAME environment variable
+	if os.Getenv("WEBSITE_SITE_NAME") != "" {
+		// Use /home/site/tmp in Azure App Service
+		// This directory has proper permissions and is local to the instance
+		return filepath.Join("/home", "site", "tmp", "github-migrator-binaries")
+	}
+
+	// Check if custom temp directory is set via environment variable
+	if customTmp := os.Getenv("GHMIG_TEMP_DIR"); customTmp != "" {
+		return filepath.Join(customTmp, "github-migrator-binaries")
+	}
+
+	// Default to system temp directory
+	return filepath.Join(os.TempDir(), "github-migrator-binaries")
+}
+
 // CleanupExtractedBinaries removes the temporary directory containing extracted binaries
 // This should be called during application shutdown if cleanup is desired
 func CleanupExtractedBinaries() error {
-	tmpDir := filepath.Join(os.TempDir(), "github-migrator-binaries")
+	tmpDir := getBinaryStorageDir()
 	return os.RemoveAll(tmpDir)
 }
