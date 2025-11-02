@@ -28,6 +28,13 @@ const (
 	formatJSON = "json"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const (
+	cleanFullNameKey contextKey = "cleanFullName"
+)
+
 // Handler contains all HTTP handlers
 type Handler struct {
 	db               *storage.Database
@@ -381,6 +388,63 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, response)
 }
 
+// HandleRepositoryAction routes POST requests to repository actions
+// Pattern: POST /api/v1/repositories/{fullName...}
+// Where fullName can be "org/repo/action" - we parse out the action suffix
+func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request) {
+	fullPath := r.PathValue("fullName")
+	if fullPath == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository path is required")
+		return
+	}
+
+	// Parse the action from the path
+	// Possible actions: rediscover, mark-remediated, unlock, rollback, mark-wont-migrate
+	var action string
+	var fullName string
+
+	if strings.HasSuffix(fullPath, "/rediscover") {
+		action = "rediscover"
+		fullName = strings.TrimSuffix(fullPath, "/rediscover")
+	} else if strings.HasSuffix(fullPath, "/mark-remediated") {
+		action = "mark-remediated"
+		fullName = strings.TrimSuffix(fullPath, "/mark-remediated")
+	} else if strings.HasSuffix(fullPath, "/unlock") {
+		action = "unlock"
+		fullName = strings.TrimSuffix(fullPath, "/unlock")
+	} else if strings.HasSuffix(fullPath, "/rollback") {
+		action = "rollback"
+		fullName = strings.TrimSuffix(fullPath, "/rollback")
+	} else if strings.HasSuffix(fullPath, "/mark-wont-migrate") {
+		action = "mark-wont-migrate"
+		fullName = strings.TrimSuffix(fullPath, "/mark-wont-migrate")
+	} else {
+		h.sendError(w, http.StatusNotFound, "Unknown repository action")
+		return
+	}
+
+	// Create a new request with the cleaned fullName in path value
+	// We'll pass the fullName directly to the handlers
+	ctx := context.WithValue(r.Context(), cleanFullNameKey, fullName)
+	r = r.WithContext(ctx)
+
+	// Route to the appropriate handler
+	switch action {
+	case "rediscover":
+		h.RediscoverRepository(w, r)
+	case "mark-remediated":
+		h.MarkRepositoryRemediated(w, r)
+	case "unlock":
+		h.UnlockRepository(w, r)
+	case "rollback":
+		h.RollbackRepository(w, r)
+	case "mark-wont-migrate":
+		h.MarkRepositoryWontMigrate(w, r)
+	default:
+		h.sendError(w, http.StatusNotFound, "Unknown repository action")
+	}
+}
+
 // GetRepository handles GET /api/v1/repositories/{fullName}
 func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 	fullName := r.PathValue("fullName")
@@ -500,7 +564,11 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 
 // RediscoverRepository handles POST /api/v1/repositories/{fullName}/rediscover
 func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -572,7 +640,11 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 // MarkRepositoryRemediated handles POST /api/v1/repositories/{fullName}/mark-remediated
 // This endpoint triggers a full re-discovery after the user has fixed blocking migration issues
 func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -655,7 +727,11 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 
 // UnlockRepository handles POST /api/v1/repositories/{fullName}/unlock
 func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -731,7 +807,11 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 
 // RollbackRepository handles POST /api/v1/repositories/{fullName}/rollback
 func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -789,7 +869,11 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 
 // MarkRepositoryWontMigrate handles POST /api/v1/repositories/{fullName}/mark-wont-migrate
 func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return

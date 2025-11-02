@@ -113,14 +113,12 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/discovery/status", s.handler.DiscoveryStatus)
 
 	// Repository endpoints
+	// Note: Using {fullName...} trailing wildcard to capture full repo name including slashes (e.g., "org/repo")
 	protect("GET /api/v1/repositories", s.handler.ListRepositories)
-	protect("GET /api/v1/repositories/{fullName}", s.handler.GetRepository)
-	protect("PATCH /api/v1/repositories/{fullName}", s.handler.UpdateRepository)
-	protect("POST /api/v1/repositories/{fullName}/rediscover", s.handler.RediscoverRepository)
-	protect("POST /api/v1/repositories/{fullName}/mark-remediated", s.handler.MarkRepositoryRemediated)
-	protect("POST /api/v1/repositories/{fullName}/unlock", s.handler.UnlockRepository)
-	protect("POST /api/v1/repositories/{fullName}/rollback", s.handler.RollbackRepository)
-	protect("POST /api/v1/repositories/{fullName}/mark-wont-migrate", s.handler.MarkRepositoryWontMigrate)
+	protect("GET /api/v1/repositories/{fullName...}", s.handler.GetRepository)
+	protect("PATCH /api/v1/repositories/{fullName...}", s.handler.UpdateRepository)
+	// For action routes, we need to parse the action from the fullName in the handler
+	protect("POST /api/v1/repositories/{fullName...}", s.handler.HandleRepositoryAction)
 
 	// Organization endpoints
 	protect("GET /api/v1/organizations", s.handler.ListOrganizations)
