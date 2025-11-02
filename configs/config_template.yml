@@ -21,6 +21,31 @@ server:
   port: 8080
 
 # =============================================================================
+# Temporary Directory Configuration (Optional)
+# =============================================================================
+# Custom temporary directory for binary extraction and repository clones
+# 
+# Default behavior:
+# - Standard environments: Uses system temp directory (os.TempDir())
+# - Azure App Service: Automatically detects and uses /home/site/tmp
+# - Custom override: Set GHMIG_TEMP_DIR environment variable
+#
+# Azure App Service Note:
+# The application automatically detects Azure via WEBSITE_SITE_NAME environment
+# variable and uses /home/site/tmp, which has proper permissions for binary
+# extraction and execution. No configuration needed for Azure deployments.
+#
+# Only set this via environment variable if you need to override the default:
+# GHMIG_TEMP_DIR=/custom/temp/path
+#
+# Example use cases for custom override:
+# - Storage with more space for large repository clones
+# - Specific security/compliance requirements
+# - Non-standard container environments
+#
+# Note: This setting cannot be configured in YAML, only via environment variable
+
+# =============================================================================
 # Database Configuration
 # =============================================================================
 database:
@@ -402,6 +427,7 @@ auth:
 #   GHMIG_LOGGING_MAX_SIZE=100
 #   GHMIG_LOGGING_MAX_BACKUPS=3
 #   GHMIG_LOGGING_MAX_AGE=28
+#   GHMIG_TEMP_DIR=/custom/temp/path
 #
 # See configs/env.example for a complete list of environment variables
 

@@ -83,7 +83,12 @@ The package automatically verifies extracted binaries by:
 
 ## Cleanup
 
-Extracted binaries are stored in `$TMPDIR/github-migrator-binaries/`. To clean up:
+Extracted binaries are stored in:
+- Standard environments: `$TMPDIR/github-migrator-binaries/`
+- Azure App Service: `/home/site/tmp/github-migrator-binaries/`
+- Custom: `$GHMIG_TEMP_DIR/github-migrator-binaries/`
+
+To clean up:
 
 ```go
 import "github.com/brettkuhlman/github-migrator/internal/embedded"
@@ -91,6 +96,12 @@ import "github.com/brettkuhlman/github-migrator/internal/embedded"
 // Call during application shutdown
 embedded.CleanupExtractedBinaries()
 ```
+
+## Azure App Service Deployment
+
+When deploying to Azure App Service, the application automatically detects the Azure environment (via `WEBSITE_SITE_NAME` environment variable) and uses `/home/site/tmp` for binary extraction instead of `/tmp`, which may have permission restrictions in Azure containers.
+
+No additional configuration is required for Azure deployments.
 
 ## Troubleshooting
 
@@ -111,6 +122,8 @@ Check that:
 1. The binary was properly embedded during build
 2. The application has permission to write to the temp directory
 3. The extracted binary has execute permissions
+
+**Azure App Service Specific**: If you see errors like "fork/exec /tmp/github-migrator-binaries/git-sizer: no such file or directory" in Azure App Service, the application automatically uses `/home/site/tmp` instead of `/tmp` when it detects the `WEBSITE_SITE_NAME` environment variable. This should resolve automatically, but you can also set `GHMIG_TEMP_DIR` to a custom path if needed.
 
 ## Architecture
 

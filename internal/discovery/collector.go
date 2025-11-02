@@ -663,10 +663,10 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 
 // setupTempDir creates and prepares a temporary directory for cloning
 func (c *Collector) setupTempDir(fullName string) (string, error) {
-	tempBase := filepath.Join(os.TempDir(), "gh-migrator")
+	tempBase := c.getTempBaseDir()
 	// #nosec G301 -- 0755 is appropriate for temporary directory
 	if err := os.MkdirAll(tempBase, 0755); err != nil {
-		return "", fmt.Errorf("failed to create temp base directory: %w", err)
+		return "", fmt.Errorf("failed to create temp base directory %s: %w", tempBase, err)
 	}
 
 	// Use full name with slashes replaced to avoid collisions between org1/repo and org2/repo
@@ -680,6 +680,23 @@ func (c *Collector) setupTempDir(fullName string) (string, error) {
 	}
 
 	return tempDir, nil
+}
+
+// getTempBaseDir returns the appropriate base directory for temporary repository clones
+// In Azure App Service, /tmp may have restrictions, so we use /home/site/tmp
+func (c *Collector) getTempBaseDir() string {
+	// Check if we're running in Azure App Service
+	if os.Getenv("WEBSITE_SITE_NAME") != "" {
+		return filepath.Join("/home", "site", "tmp", "gh-migrator")
+	}
+
+	// Check if custom temp directory is set
+	if customTmp := os.Getenv("GHMIG_TEMP_DIR"); customTmp != "" {
+		return filepath.Join(customTmp, "gh-migrator")
+	}
+
+	// Default to system temp directory
+	return filepath.Join(os.TempDir(), "gh-migrator")
 }
 
 // cloneRepositoryWithProvider uses the configured source provider to clone a repository
