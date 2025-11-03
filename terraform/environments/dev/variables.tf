@@ -23,7 +23,7 @@ variable "app_name_prefix" {
 variable "app_service_sku" {
   description = "SKU for the App Service Plan"
   type        = string
-  default     = "B1"
+  default     = "B3"
 }
 
 variable "always_on" {
