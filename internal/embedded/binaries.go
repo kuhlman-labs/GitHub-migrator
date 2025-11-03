@@ -61,85 +61,103 @@ func GetGitSizerPath() (string, error) {
 
 // extractGitSizer extracts the appropriate git-sizer binary for the current platform
 func extractGitSizer() (string, error) {
-	// Determine which binary to use based on OS and architecture
-	var binaryData []byte
-	var binaryName string
+	// Select the appropriate binary for the current platform
+	binaryData, binaryName, err := selectPlatformBinary()
+	if err != nil {
+		return "", err
+	}
 
+	if len(binaryData) == 0 {
+		return "", fmt.Errorf("git-sizer binary not embedded for %s/%s (run './scripts/download-git-sizer.sh' before building)", runtime.GOOS, runtime.GOARCH)
+	}
+
+	// Get the target path for the binary
+	binaryPath, err := prepareBinaryPath(binaryName)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if binary already exists and is valid
+	if _, statErr := os.Stat(binaryPath); statErr == nil {
+		if verifyBinary(binaryPath) == nil {
+			return binaryPath, nil
+		}
+		_ = os.Remove(binaryPath)
+	}
+
+	// Write and verify the binary
+	return writeBinary(binaryPath, binaryData)
+}
+
+// selectPlatformBinary selects the appropriate binary data based on OS and architecture
+func selectPlatformBinary() ([]byte, string, error) {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 
 	switch goos {
 	case "linux":
-		switch goarch {
-		case archAmd64:
-			binaryData = gitSizerLinuxAmd64
-			binaryName = binaryGitSizer
-		case "arm64":
-			binaryData = gitSizerLinuxArm64
-			binaryName = binaryGitSizer
-		default:
-			return "", fmt.Errorf("unsupported Linux architecture: %s", goarch)
-		}
+		return selectLinuxBinary(goarch)
 	case "darwin":
-		switch goarch {
-		case archAmd64:
-			binaryData = gitSizerDarwinAmd64
-			binaryName = binaryGitSizer
-		case "arm64":
-			binaryData = gitSizerDarwinArm64
-			binaryName = binaryGitSizer
-		default:
-			return "", fmt.Errorf("unsupported macOS architecture: %s", goarch)
-		}
+		return selectDarwinBinary(goarch)
 	case osWindows:
-		if goarch == archAmd64 {
-			binaryData = gitSizerWindowsAmd64
-			binaryName = "git-sizer.exe"
-		} else {
-			return "", fmt.Errorf("unsupported Windows architecture: %s", goarch)
-		}
+		return selectWindowsBinary(goarch)
 	default:
-		return "", fmt.Errorf("unsupported operating system: %s", goos)
+		return nil, "", fmt.Errorf("unsupported operating system: %s", goos)
 	}
+}
 
-	if len(binaryData) == 0 {
-		return "", fmt.Errorf("git-sizer binary not embedded for %s/%s (run './scripts/download-git-sizer.sh' before building)", goos, goarch)
+// selectLinuxBinary selects the Linux binary based on architecture
+func selectLinuxBinary(goarch string) ([]byte, string, error) {
+	switch goarch {
+	case archAmd64:
+		return gitSizerLinuxAmd64, binaryGitSizer, nil
+	case "arm64":
+		return gitSizerLinuxArm64, binaryGitSizer, nil
+	default:
+		return nil, "", fmt.Errorf("unsupported Linux architecture: %s", goarch)
 	}
+}
 
-	// Create a temporary directory for the binary
-	// For Azure App Service, use /home/site/tmp which has proper permissions
-	// For other environments, use os.TempDir()
+// selectDarwinBinary selects the macOS binary based on architecture
+func selectDarwinBinary(goarch string) ([]byte, string, error) {
+	switch goarch {
+	case archAmd64:
+		return gitSizerDarwinAmd64, binaryGitSizer, nil
+	case "arm64":
+		return gitSizerDarwinArm64, binaryGitSizer, nil
+	default:
+		return nil, "", fmt.Errorf("unsupported macOS architecture: %s", goarch)
+	}
+}
+
+// selectWindowsBinary selects the Windows binary based on architecture
+func selectWindowsBinary(goarch string) ([]byte, string, error) {
+	if goarch == archAmd64 {
+		return gitSizerWindowsAmd64, "git-sizer.exe", nil
+	}
+	return nil, "", fmt.Errorf("unsupported Windows architecture: %s", goarch)
+}
+
+// prepareBinaryPath creates the directory and returns the target path
+func prepareBinaryPath(binaryName string) (string, error) {
 	tmpDir := getBinaryStorageDir()
 	// #nosec G301 -- 0755 is appropriate for temporary directory
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create temp directory %s: %w", tmpDir, err)
 	}
+	return filepath.Join(tmpDir, binaryName), nil
+}
 
-	// Write the binary to a temporary file
-	binaryPath := filepath.Join(tmpDir, binaryName)
-
-	// Check if binary already exists and is valid
-	if _, err := os.Stat(binaryPath); err == nil {
-		// Binary exists, verify it's executable
-		if err := verifyBinary(binaryPath); err == nil {
-			return binaryPath, nil
-		}
-		// If verification fails, remove and re-extract
-		_ = os.Remove(binaryPath)
-	}
-
+// writeBinary writes the binary to disk and verifies it
+func writeBinary(binaryPath string, binaryData []byte) (string, error) {
 	// #nosec G306 -- 0755 is required for binary to be executable
 	if err := os.WriteFile(binaryPath, binaryData, 0755); err != nil {
 		return "", fmt.Errorf("failed to write git-sizer binary to %s: %w", binaryPath, err)
 	}
 
 	// Verify the extracted binary
-	// In Azure App Service or other restricted environments, verification may fail
-	// due to missing dependencies or execution restrictions, but the binary may still work
 	if err := verifyBinary(binaryPath); err != nil {
-		// Check if we should skip verification in restricted environments
 		if shouldSkipVerification() {
-			// Log warning but proceed - binary may still work when actually needed
 			fmt.Fprintf(os.Stderr, "WARNING: Binary verification failed (common in restricted environments): %v\n", err)
 			fmt.Fprintf(os.Stderr, "WARNING: Proceeding with unverified binary - this may cause git analysis to fail\n")
 			return binaryPath, nil
