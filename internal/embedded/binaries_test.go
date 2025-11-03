@@ -408,3 +408,103 @@ func TestGetBinaryStorageDir(t *testing.T) {
 		}
 	})
 }
+
+func TestShouldSkipVerification(t *testing.T) {
+	t.Run("skips verification in Azure App Service", func(t *testing.T) {
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		oldSkip := os.Getenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		os.Setenv("WEBSITE_SITE_NAME", "test-app")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			} else {
+				os.Unsetenv("WEBSITE_SITE_NAME")
+			}
+			if oldSkip != "" {
+				os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", oldSkip)
+			}
+		}()
+
+		if !shouldSkipVerification() {
+			t.Error("Expected to skip verification in Azure App Service")
+		}
+	})
+
+	t.Run("skips verification when explicitly requested", func(t *testing.T) {
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		oldSkip := os.Getenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", "true")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			}
+			if oldSkip != "" {
+				os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", oldSkip)
+			} else {
+				os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+			}
+		}()
+
+		if !shouldSkipVerification() {
+			t.Error("Expected to skip verification when GHMIG_SKIP_BINARY_VERIFICATION is true")
+		}
+	})
+
+	t.Run("skips verification in Docker container", func(t *testing.T) {
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		oldSkip := os.Getenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			}
+			if oldSkip != "" {
+				os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", oldSkip)
+			}
+		}()
+
+		// Create a temporary /.dockerenv file
+		dockerEnvExists := false
+		if _, err := os.Stat("/.dockerenv"); err == nil {
+			dockerEnvExists = true
+		}
+
+		if dockerEnvExists {
+			if !shouldSkipVerification() {
+				t.Error("Expected to skip verification in Docker container")
+			}
+		} else {
+			// Not in Docker, should not skip by default
+			if shouldSkipVerification() {
+				t.Error("Expected to NOT skip verification in non-Docker environment")
+			}
+		}
+	})
+
+	t.Run("does not skip verification by default", func(t *testing.T) {
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		oldSkip := os.Getenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			}
+			if oldSkip != "" {
+				os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", oldSkip)
+			}
+		}()
+
+		// Check if we're in Docker
+		if _, err := os.Stat("/.dockerenv"); err == nil {
+			t.Skip("Skipping test: running in Docker container")
+		}
+
+		if shouldSkipVerification() {
+			t.Error("Expected to NOT skip verification in normal environment")
+		}
+	})
+}

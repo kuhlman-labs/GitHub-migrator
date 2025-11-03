@@ -134,7 +134,16 @@ func extractGitSizer() (string, error) {
 	}
 
 	// Verify the extracted binary
+	// In Azure App Service or other restricted environments, verification may fail
+	// due to missing dependencies or execution restrictions, but the binary may still work
 	if err := verifyBinary(binaryPath); err != nil {
+		// Check if we should skip verification in restricted environments
+		if shouldSkipVerification() {
+			// Log warning but proceed - binary may still work when actually needed
+			fmt.Fprintf(os.Stderr, "WARNING: Binary verification failed (common in restricted environments): %v\n", err)
+			fmt.Fprintf(os.Stderr, "WARNING: Proceeding with unverified binary - this may cause git analysis to fail\n")
+			return binaryPath, nil
+		}
 		return "", fmt.Errorf("extracted binary verification failed for %s: %w", binaryPath, err)
 	}
 
@@ -184,6 +193,28 @@ func getBinaryStorageDir() string {
 
 	// Default to system temp directory
 	return filepath.Join(os.TempDir(), "github-migrator-binaries")
+}
+
+// shouldSkipVerification checks if we should skip binary verification
+// Returns true in restricted environments where verification may fail but binary may still work
+func shouldSkipVerification() bool {
+	// Check if we're in Azure App Service
+	if os.Getenv("WEBSITE_SITE_NAME") != "" {
+		return true
+	}
+
+	// Check if verification skip is explicitly requested
+	if os.Getenv("GHMIG_SKIP_BINARY_VERIFICATION") == "true" {
+		return true
+	}
+
+	// Check if we're in a container (common restricted environment)
+	// Docker creates /.dockerenv file, and many containers have this
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+
+	return false
 }
 
 // CleanupExtractedBinaries removes the temporary directory containing extracted binaries

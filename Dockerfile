@@ -40,7 +40,10 @@ RUN GOTOOLCHAIN=auto CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o 
 # Final stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs
+# Install runtime dependencies including glibc compatibility for git-sizer
+# git-sizer is built for glibc, but Alpine uses musl libc
+# We need gcompat to run glibc binaries on Alpine
+RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs gcompat
 
 WORKDIR /app
 
