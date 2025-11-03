@@ -452,7 +452,11 @@ func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
 	}
+	h.getRepository(w, r, fullName)
+}
 
+// getRepository is the internal implementation
+func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName string) {
 	// URL decode the fullName (Go's PathValue should decode, but we ensure it here)
 	// This handles cases like "org%2Frepo" -> "org/repo"
 	decodedFullName, err := url.QueryUnescape(fullName)
@@ -490,6 +494,27 @@ func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, response)
 }
 
+// GetRepositoryOrDependencies routes GET requests to either repository details or dependencies
+// Pattern: GET /api/v1/repositories/{fullName...}
+// Routes to dependencies if path ends with "/dependencies", otherwise to repository details
+func (h *Handler) GetRepositoryOrDependencies(w http.ResponseWriter, r *http.Request) {
+	fullPath := r.PathValue("fullName")
+	if fullPath == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository path is required")
+		return
+	}
+
+	// Check if this is a dependencies request
+	if strings.HasSuffix(fullPath, "/dependencies") {
+		// Strip /dependencies and call the dependencies handler
+		fullName := strings.TrimSuffix(fullPath, "/dependencies")
+		h.getRepositoryDependencies(w, r, fullName)
+	} else {
+		// Regular repository details request
+		h.getRepository(w, r, fullPath)
+	}
+}
+
 // GetRepositoryDependencies returns all dependencies for a repository
 func (h *Handler) GetRepositoryDependencies(w http.ResponseWriter, r *http.Request) {
 	fullName := r.PathValue("fullName")
@@ -497,6 +522,11 @@ func (h *Handler) GetRepositoryDependencies(w http.ResponseWriter, r *http.Reque
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
 	}
+	h.getRepositoryDependencies(w, r, fullName)
+}
+
+// getRepositoryDependencies is the internal implementation
+func (h *Handler) getRepositoryDependencies(w http.ResponseWriter, r *http.Request, fullName string) {
 
 	// URL decode the fullName
 	decodedFullName, err := url.QueryUnescape(fullName)

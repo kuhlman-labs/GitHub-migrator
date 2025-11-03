@@ -115,9 +115,8 @@ func (s *Server) Router() http.Handler {
 	// Repository endpoints
 	// Note: Using {fullName...} trailing wildcard to capture full repo name including slashes (e.g., "org/repo")
 	protect("GET /api/v1/repositories", s.handler.ListRepositories)
-	// Dependencies route must come before the wildcard route
-	protect("GET /api/v1/repositories/{fullName}/dependencies", s.handler.GetRepositoryDependencies)
-	protect("GET /api/v1/repositories/{fullName...}", s.handler.GetRepository)
+	// Repository GET route handles both repo details and dependencies via suffix detection
+	protect("GET /api/v1/repositories/{fullName...}", s.handler.GetRepositoryOrDependencies)
 	protect("PATCH /api/v1/repositories/{fullName...}", s.handler.UpdateRepository)
 	// For action routes, we need to parse the action from the fullName in the handler
 	protect("POST /api/v1/repositories/{fullName...}", s.handler.HandleRepositoryAction)

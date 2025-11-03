@@ -857,13 +857,15 @@ type DependencyGraphDependency struct {
 
 // GetDependencyGraph fetches the dependency graph for a repository using GraphQL API
 // This includes both manifest dependencies and dependent repositories
+// Note: Page sizes are intentionally small (10 manifests, 25 deps each) to avoid timeouts
+// on large repositories. GitHub's GraphQL API can timeout on nested queries with large result sets.
 func (c *Client) GetDependencyGraph(ctx context.Context, owner, repo string) ([]*DependencyGraphManifest, error) {
 	c.logger.Info("Fetching dependency graph", "owner", owner, "repo", repo)
 
 	var manifests []*DependencyGraphManifest
 	var endCursor *githubv4.String
 
-	// GraphQL query for dependency graph
+	// GraphQL query for dependency graph with conservative page sizes to avoid timeouts
 	var query struct {
 		Repository struct {
 			DependencyGraphManifests struct {
@@ -881,13 +883,13 @@ func (c *Client) GetDependencyGraph(ctx context.Context, owner, repo string) ([]
 								}
 							}
 						}
-					} `graphql:"dependencies(first: 100)"`
+					} `graphql:"dependencies(first: 25)"`
 				}
 				PageInfo struct {
 					HasNextPage githubv4.Boolean
 					EndCursor   githubv4.String
 				}
-			} `graphql:"dependencyGraphManifests(first: 100, after: $cursor)"`
+			} `graphql:"dependencyGraphManifests(first: 10, after: $cursor)"`
 		} `graphql:"repository(owner: $owner, name: $name)"`
 	}
 
