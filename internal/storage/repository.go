@@ -148,8 +148,18 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.ValidationStatus, repo.ValidationDetails, repo.DestinationData,
 		repo.DiscoveredAt, repo.UpdatedAt, repo.MigratedAt, repo.LastDryRunAt,
 	)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// After UPSERT, we need to retrieve the ID since it's not returned by the query
+	// This is critical for downstream operations like dependency tracking
+	err = d.db.QueryRowContext(ctx, "SELECT id FROM repositories WHERE full_name = ?", repo.FullName).Scan(&repo.ID)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve repository ID after save: %w", err)
+	}
+
+	return nil
 }
 
 // GetRepository retrieves a repository by full name

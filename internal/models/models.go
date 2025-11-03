@@ -247,3 +247,24 @@ func (r *Repository) Name() string {
 	}
 	return r.FullName
 }
+
+// RepositoryDependency represents a dependency relationship between repositories
+// Used for batch planning to understand which repositories should be migrated together
+type RepositoryDependency struct {
+	ID                 int64     `json:"id" db:"id"`
+	RepositoryID       int64     `json:"repository_id" db:"repository_id"`
+	DependencyFullName string    `json:"dependency_full_name" db:"dependency_full_name"` // org/repo format
+	DependencyType     string    `json:"dependency_type" db:"dependency_type"`           // submodule, workflow, dependency_graph, package
+	DependencyURL      string    `json:"dependency_url" db:"dependency_url"`             // Original URL/reference
+	IsLocal            bool      `json:"is_local" db:"is_local"`                         // Whether dependency is within same enterprise
+	DiscoveredAt       time.Time `json:"discovered_at" db:"discovered_at"`
+	Metadata           *string   `json:"metadata,omitempty" db:"metadata"` // JSON with type-specific details (branch, version, path, etc.)
+}
+
+// DependencyType constants for type safety
+const (
+	DependencyTypeSubmodule       = "submodule"
+	DependencyTypeWorkflow        = "workflow"
+	DependencyTypeDependencyGraph = "dependency_graph"
+	DependencyTypePackage         = "package"
+)

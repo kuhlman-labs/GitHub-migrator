@@ -490,6 +490,60 @@ func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, response)
 }
 
+// GetRepositoryDependencies returns all dependencies for a repository
+func (h *Handler) GetRepositoryDependencies(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
+	// Get dependencies from database
+	dependencies, err := h.db.GetRepositoryDependenciesByFullName(r.Context(), decodedFullName)
+	if err != nil {
+		h.logger.Error("Failed to get repository dependencies",
+			"repo", decodedFullName,
+			"error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependencies")
+		return
+	}
+
+	// Calculate summary statistics
+	summary := struct {
+		Total    int            `json:"total"`
+		Local    int            `json:"local"`
+		External int            `json:"external"`
+		ByType   map[string]int `json:"by_type"`
+	}{
+		Total:  len(dependencies),
+		ByType: make(map[string]int),
+	}
+
+	for _, dep := range dependencies {
+		if dep.IsLocal {
+			summary.Local++
+		} else {
+			summary.External++
+		}
+		summary.ByType[dep.DependencyType]++
+	}
+
+	// Return response with dependencies and summary
+	response := map[string]interface{}{
+		"dependencies": dependencies,
+		"summary":      summary,
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
+}
+
 // UpdateRepository handles PATCH /api/v1/repositories/{fullName}
 func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	fullName := r.PathValue("fullName")
@@ -627,6 +681,12 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
 		} else {
 			h.logger.Info("Re-discovery completed", "repo", decodedFullName)
+
+			// Update local dependency flags after re-discovery
+			// This ensures dependencies are correctly classified as local/external
+			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
+				h.logger.Warn("Failed to update local dependency flags after re-discovery", "error", err)
+			}
 		}
 	}()
 
@@ -715,6 +775,12 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 			h.logger.Error("Re-validation after remediation failed", "error", err, "repo", decodedFullName)
 		} else {
 			h.logger.Info("Re-validation completed", "repo", decodedFullName)
+
+			// Update local dependency flags after re-validation
+			// This ensures dependencies are correctly classified as local/external
+			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
+				h.logger.Warn("Failed to update local dependency flags after re-validation", "error", err)
+			}
 		}
 	}()
 

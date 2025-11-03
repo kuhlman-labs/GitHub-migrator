@@ -375,3 +375,28 @@ export interface RepositoryListResponse {
   total?: number;
 }
 
+export type DependencyType = 'submodule' | 'workflow' | 'dependency_graph' | 'package';
+
+export interface RepositoryDependency {
+  id: number;
+  repository_id: number;
+  dependency_full_name: string;
+  dependency_type: DependencyType;
+  dependency_url: string;
+  is_local: boolean;
+  discovered_at: string;
+  metadata?: string;
+}
+
+export interface DependencySummary {
+  total: number;
+  local: number;
+  external: number;
+  by_type: Record<string, number>;
+}
+
+export interface DependenciesResponse {
+  dependencies: RepositoryDependency[];
+  summary: DependencySummary;
+}
+
