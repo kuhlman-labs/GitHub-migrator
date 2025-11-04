@@ -193,13 +193,6 @@ func (s *Server) serveFrontend(w http.ResponseWriter, r *http.Request) {
 func (s *Server) validateFrontendPath(requestPath, frontendDir string) (absDir, absPath string, ok bool) {
 	// Clean the path to remove any path traversal sequences like ../
 	cleanPath := filepath.Clean(requestPath)
-
-	// Reject paths that still contain suspicious patterns after cleaning
-	if strings.Contains(cleanPath, "..") {
-		s.logger.Warn("Path traversal attempt detected in cleaned path", "requested_path", requestPath)
-		return "", "", false
-	}
-
 	fullPath := filepath.Join(frontendDir, cleanPath)
 
 	// Get absolute paths for security validation
