@@ -413,7 +413,7 @@ type MockExecutor struct {
 	executeMigrationError  error
 }
 
-func (m *MockExecutor) ExecuteMigration(ctx context.Context, repo *models.Repository, dryRun bool) error {
+func (m *MockExecutor) ExecuteMigration(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool) error {
 	m.executeMigrationCalled++
 	return m.executeMigrationError
 }

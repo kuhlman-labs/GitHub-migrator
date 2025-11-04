@@ -596,35 +596,36 @@ GHMIG_LOGGING_LEVEL=debug
 
 ### Production Configuration
 
-**configs/production.yaml:**
+For production deployments, copy `configs/config_template.yml` to `configs/config.yaml` and customize:
+
+**Example production config:**
 
 ```yaml
 server:
   port: 8080
-  read_timeout: 60s
-  write_timeout: 60s
 
 database:
-  type: postgresql
-  dsn: "${DATABASE_URL}"
-  max_open_conns: 50
-  max_idle_conns: 10
-  conn_max_lifetime: 10m
+  type: postgres
+  dsn: "${DATABASE_URL}"  # postgres://user:pass@host:5432/migrator?sslmode=require
 
-github:
-  source:
-    base_url: "${GITHUB_SOURCE_URL}"
-    token: "${GITHUB_SOURCE_TOKEN}"
-  destination:
-    base_url: "${GITHUB_DEST_URL}"
-    token: "${GITHUB_DEST_TOKEN}"
-  rate_limit:
-    requests_per_hour: 5000
-    wait_on_exhaustion: true
-  retry:
-    max_attempts: 5
-    initial_backoff: 2s
-    max_backoff: 60s
+source:
+  type: github
+  base_url: "${GITHUB_SOURCE_URL}"
+  token: "${GITHUB_SOURCE_TOKEN}"
+
+destination:
+  type: github
+  base_url: "${GITHUB_DEST_URL}"
+  token: "${GITHUB_DEST_TOKEN}"
+
+migration:
+  workers: 10
+  poll_interval_seconds: 30
+  post_migration_mode: "production_only"
+  dest_repo_exists_action: "fail"
+  visibility_handling:
+    public_repos: "private"
+    internal_repos: "private"
 
 logging:
   level: info
@@ -633,17 +634,17 @@ logging:
   max_size: 500
   max_backups: 10
   max_age: 90
-  compress: true
 
-migration:
-  parallel_workers: 10
-  timeout: 60m
-  dry_run_default: true
-
-discovery:
-  parallel_workers: 20
-  profile_depth: full
+auth:
+  enabled: true
+  github_oauth_client_id: "${GITHUB_OAUTH_CLIENT_ID}"
+  github_oauth_client_secret: "${GITHUB_OAUTH_CLIENT_SECRET}"
+  callback_url: "${GITHUB_OAUTH_CALLBACK_URL}"
+  session_secret: "${AUTH_SESSION_SECRET}"
+  session_duration_hours: 24
 ```
+
+**Note:** See `configs/config_template.yml` for complete documentation of all available options.
 
 ---
 

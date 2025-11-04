@@ -90,7 +90,7 @@ export function MetadataBreakdownBar(props: MetadataBreakdownBarProps) {
       {/* Total summary */}
       <div className="pt-2 border-t border-gray-200">
         <div className="flex items-center justify-between">
-          <span className="font-medium text-gray-900">Total Metadata Size:</span>
+          <span className="font-medium text-gray-900">Total Metadata Size (Estimated):</span>
           <span className="font-semibold text-gray-900">
             {formatBytes(props.total)} / {formatBytes(props.limit)} ({limitPercentage}% of limit)
           </span>

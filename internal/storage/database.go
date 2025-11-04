@@ -155,9 +155,20 @@ func (d *Database) applyMigration(filename, content string) error {
 		_ = tx.Rollback() // rollback is safe to call even after commit
 	}()
 
-	// Execute migration
-	if _, execErr := tx.Exec(content); execErr != nil {
-		return execErr
+	// Split migration content into individual statements
+	// SQLite's Exec() only handles one statement at a time
+	statements := splitSQLStatements(content)
+
+	// Execute each statement
+	for i, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+
+		if _, execErr := tx.Exec(stmt); execErr != nil {
+			return fmt.Errorf("statement %d failed: %w\nStatement: %s", i+1, execErr, stmt)
+		}
 	}
 
 	// Record migration
@@ -167,6 +178,63 @@ func (d *Database) applyMigration(filename, content string) error {
 	}
 
 	return tx.Commit()
+}
+
+// splitSQLStatements splits SQL content into individual statements
+// It handles semicolon-separated statements and filters out comments
+// Only processes the "Up" migration, stops at "Down" section
+func splitSQLStatements(content string) []string {
+	var statements []string
+	var currentStmt strings.Builder
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for goose directives
+		if strings.HasPrefix(trimmed, "-- +goose Up") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "-- +goose Down") {
+			// Stop processing - we only want the "Up" migration
+			break
+		}
+		if strings.HasPrefix(trimmed, "-- +goose") {
+			continue
+		}
+
+		// Skip standalone comment lines (but keep comments within statements)
+		if strings.HasPrefix(trimmed, "--") && !strings.Contains(line, "CREATE") && !strings.Contains(line, "DROP") {
+			// If we're building a statement, keep comment for context
+			if currentStmt.Len() > 0 {
+				currentStmt.WriteString(line)
+				currentStmt.WriteString("\n")
+			}
+			continue
+		}
+
+		currentStmt.WriteString(line)
+		currentStmt.WriteString("\n")
+
+		// Check if line ends with semicolon (end of statement)
+		if strings.HasSuffix(trimmed, ";") {
+			stmt := currentStmt.String()
+			if strings.TrimSpace(stmt) != "" {
+				statements = append(statements, stmt)
+			}
+			currentStmt.Reset()
+		}
+	}
+
+	// Add any remaining statement
+	if currentStmt.Len() > 0 {
+		stmt := currentStmt.String()
+		if strings.TrimSpace(stmt) != "" {
+			statements = append(statements, stmt)
+		}
+	}
+
+	return statements
 }
 
 // GetDistinctOrganizations retrieves a list of unique organizations from repositories

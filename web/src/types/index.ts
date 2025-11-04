@@ -153,6 +153,10 @@ export interface Batch {
   created_at: string;
   last_dry_run_at?: string;
   last_migration_attempt_at?: string;
+  // Migration settings (batch-level defaults, repository settings take precedence)
+  destination_org?: string;
+  migration_api?: 'GEI' | 'ELM';
+  exclude_releases?: boolean;
 }
 
 export interface Organization {
@@ -369,5 +373,30 @@ export interface RepositoryFilters {
 export interface RepositoryListResponse {
   repositories: Repository[];
   total?: number;
+}
+
+export type DependencyType = 'submodule' | 'workflow' | 'dependency_graph' | 'package';
+
+export interface RepositoryDependency {
+  id: number;
+  repository_id: number;
+  dependency_full_name: string;
+  dependency_type: DependencyType;
+  dependency_url: string;
+  is_local: boolean;
+  discovered_at: string;
+  metadata?: string;
+}
+
+export interface DependencySummary {
+  total: number;
+  local: number;
+  external: number;
+  by_type: Record<string, number>;
+}
+
+export interface DependenciesResponse {
+  dependencies: RepositoryDependency[];
+  summary: DependencySummary;
 }
 

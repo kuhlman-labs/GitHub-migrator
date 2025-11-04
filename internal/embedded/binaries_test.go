@@ -64,7 +64,7 @@ func TestExtractGitSizer(t *testing.T) {
 	})
 
 	t.Run("creates temp directory", func(t *testing.T) {
-		tmpDir := filepath.Join(os.TempDir(), "github-migrator-binaries")
+		tmpDir := getBinaryStorageDir()
 
 		// Try to extract (may fail without binaries, but should create directory)
 		_, _ = extractGitSizer()
@@ -134,7 +134,7 @@ func TestVerifyBinary(t *testing.T) {
 
 func TestCleanupExtractedBinaries(t *testing.T) {
 	t.Run("removes temp directory", func(t *testing.T) {
-		tmpDir := filepath.Join(os.TempDir(), "github-migrator-binaries")
+		tmpDir := getBinaryStorageDir()
 
 		// Create the directory
 		if err := os.MkdirAll(tmpDir, 0755); err != nil {
@@ -161,7 +161,7 @@ func TestCleanupExtractedBinaries(t *testing.T) {
 
 	t.Run("succeeds even if directory doesn't exist", func(t *testing.T) {
 		// Remove directory first
-		tmpDir := filepath.Join(os.TempDir(), "github-migrator-binaries")
+		tmpDir := getBinaryStorageDir()
 		os.RemoveAll(tmpDir)
 
 		// Cleanup should not fail
@@ -315,4 +315,187 @@ func BenchmarkExtractGitSizer(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = extractGitSizer()
 	}
+}
+
+func TestGetBinaryStorageDir(t *testing.T) {
+	t.Run("uses system temp by default", func(t *testing.T) {
+		// Ensure we're not in Azure or custom environment
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		oldCustom := os.Getenv("GHMIG_TEMP_DIR")
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Unsetenv("GHMIG_TEMP_DIR")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			}
+			if oldCustom != "" {
+				os.Setenv("GHMIG_TEMP_DIR", oldCustom)
+			}
+		}()
+
+		dir := getBinaryStorageDir()
+		expected := filepath.Join(os.TempDir(), "github-migrator-binaries")
+		if dir != expected {
+			t.Errorf("Expected default temp dir %s, got %s", expected, dir)
+		}
+	})
+
+	t.Run("uses Azure path when WEBSITE_SITE_NAME is set", func(t *testing.T) {
+		// Set Azure environment variable
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		os.Setenv("WEBSITE_SITE_NAME", "test-site")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			} else {
+				os.Unsetenv("WEBSITE_SITE_NAME")
+			}
+		}()
+
+		dir := getBinaryStorageDir()
+		expected := filepath.Join("/home", "site", "tmp", "github-migrator-binaries")
+		if dir != expected {
+			t.Errorf("Expected Azure temp dir %s, got %s", expected, dir)
+		}
+	})
+
+	t.Run("uses custom path when GHMIG_TEMP_DIR is set", func(t *testing.T) {
+		// Ensure Azure variable is not set
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		oldCustom := os.Getenv("GHMIG_TEMP_DIR")
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Setenv("GHMIG_TEMP_DIR", "/custom/temp")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			}
+			if oldCustom != "" {
+				os.Setenv("GHMIG_TEMP_DIR", oldCustom)
+			} else {
+				os.Unsetenv("GHMIG_TEMP_DIR")
+			}
+		}()
+
+		dir := getBinaryStorageDir()
+		expected := filepath.Join("/custom/temp", "github-migrator-binaries")
+		if dir != expected {
+			t.Errorf("Expected custom temp dir %s, got %s", expected, dir)
+		}
+	})
+
+	t.Run("Azure takes precedence over custom", func(t *testing.T) {
+		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
+		oldCustom := os.Getenv("GHMIG_TEMP_DIR")
+		os.Setenv("WEBSITE_SITE_NAME", "test-site")
+		os.Setenv("GHMIG_TEMP_DIR", "/custom/temp")
+		defer func() {
+			if oldWebsite != "" {
+				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+			} else {
+				os.Unsetenv("WEBSITE_SITE_NAME")
+			}
+			if oldCustom != "" {
+				os.Setenv("GHMIG_TEMP_DIR", oldCustom)
+			} else {
+				os.Unsetenv("GHMIG_TEMP_DIR")
+			}
+		}()
+
+		dir := getBinaryStorageDir()
+		expected := filepath.Join("/home", "site", "tmp", "github-migrator-binaries")
+		if dir != expected {
+			t.Errorf("Expected Azure temp dir to take precedence, got %s", dir)
+		}
+	})
+}
+
+// Helper to save and restore environment variables for tests
+type envBackup struct {
+	website string
+	skip    string
+}
+
+func saveEnv() envBackup {
+	return envBackup{
+		website: os.Getenv("WEBSITE_SITE_NAME"),
+		skip:    os.Getenv("GHMIG_SKIP_BINARY_VERIFICATION"),
+	}
+}
+
+func (e envBackup) restore() {
+	restoreEnvVar("WEBSITE_SITE_NAME", e.website)
+	restoreEnvVar("GHMIG_SKIP_BINARY_VERIFICATION", e.skip)
+}
+
+func restoreEnvVar(key, value string) {
+	if value != "" {
+		os.Setenv(key, value)
+	} else {
+		os.Unsetenv(key)
+	}
+}
+
+func isInDocker() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
+}
+
+func TestShouldSkipVerification(t *testing.T) {
+	t.Run("skips verification in Azure App Service", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Setenv("WEBSITE_SITE_NAME", "test-app")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+
+		if !shouldSkipVerification() {
+			t.Error("Expected to skip verification in Azure App Service")
+		}
+	})
+
+	t.Run("skips verification when explicitly requested", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", "true")
+
+		if !shouldSkipVerification() {
+			t.Error("Expected to skip verification when GHMIG_SKIP_BINARY_VERIFICATION is true")
+		}
+	})
+
+	t.Run("skips verification in Docker container", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+
+		if isInDocker() {
+			if !shouldSkipVerification() {
+				t.Error("Expected to skip verification in Docker container")
+			}
+		} else {
+			if shouldSkipVerification() {
+				t.Error("Expected to NOT skip verification in non-Docker environment")
+			}
+		}
+	})
+
+	t.Run("does not skip verification by default", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+
+		if isInDocker() {
+			t.Skip("Skipping test: running in Docker container")
+		}
+
+		if shouldSkipVerification() {
+			t.Error("Expected to NOT skip verification in normal environment")
+		}
+	})
 }
