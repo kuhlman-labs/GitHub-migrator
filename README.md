@@ -5,31 +5,21 @@ A comprehensive, production-ready solution for migrating repositories from GitHu
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org/dl/)
 [![Node Version](https://img.shields.io/badge/node-20+-green.svg)](https://nodejs.org/)
 
----
-
 ## Table of Contents
 
 - [Overview](#overview)
-  - [Supported Migrations](#supported-migrations)
-  - [Key Capabilities](#key-capabilities)
-  - [Why Use This Tool?](#why-use-this-tool)
 - [Quick Start](#quick-start)
-  - [Prerequisites](#prerequisites)
-  - [Installation & Setup](#installation--setup)
-  - [First Migration](#first-migration)
 - [Features](#features)
 - [Documentation](#documentation)
 - [Development](#development)
 - [Deployment](#deployment)
 - [Contributing](#contributing)
 - [Tech Stack](#tech-stack)
-- [License](#license)
-
----
+- [Support & Resources](#support--resources)
 
 ## Overview
 
-The GitHub Migrator provides an automated, scalable platform for managing large-scale GitHub-to-GitHub repository migrations. It features intelligent discovery, batch organization, detailed profiling, and comprehensive migration execution with a modern web dashboard for monitoring and control.
+GitHub Migrator provides an automated, scalable platform for managing large-scale GitHub-to-GitHub repository migrations. It features intelligent discovery, batch organization, detailed profiling, and comprehensive migration execution with a modern web dashboard for monitoring and control.
 
 ### Supported Migrations
 
@@ -42,140 +32,145 @@ The GitHub Migrator provides an automated, scalable platform for managing large-
 - GitHub with data residency
 - GitHub Enterprise Cloud with EMU (Managed Users)
 
-> **Note**: Only GitHub to GitHub migrations are currently supported with plans to add support for more sources.
+> **Note**: Only GitHub to GitHub migrations are currently supported. Support for additional source platforms is planned.
 
 ### Key Capabilities
 
-- 🔍 **Automated Discovery** - Scan entire organizations or enterprises to identify and profile repositories
-- 📊 **Intelligent Profiling** - Analyze size, LFS usage, submodules, large files, Actions, branch protections, releases, and more
-- ⚠️ **Migration Limits Detection** - Automatically detect and flag repositories violating GitHub Enterprise Importer limits:
-  - 40 GiB repository size limit (automatic blocking)
-  - 40 GiB metadata size limit (warnings with size estimates)
-  - 2 GiB commit limit, 255-byte ref limit, 400 MiB file limit
-- ⚙️ **Migration Exclusion Flags** - Configure per-repository settings to exclude releases, attachments, or metadata to reduce migration size
-- 🎯 **Flexible Workflows** - Single repository, batch, bulk, and self-service migration options
-- 📦 **Batch Management** - Organize into pilot groups and migration waves for controlled rollouts
-- 📈 **Real-time Monitoring** - Track progress with detailed status updates through all migration phases
-- 🎨 **Modern Dashboard** - Professional web UI for visualization, analytics, and control
-- 🔌 **Complete REST API** - Full programmatic access for automation and CI/CD integration
-- 🔐 **Dual Authentication** - PAT required for migrations; optional GitHub App for discovery with better rate limits
-- 🔒 **Optional OAuth Security** - GitHub OAuth authentication with configurable org/team/enterprise access controls
-- 📉 **Comprehensive Analytics** - Track metrics, completion rates, duration stats, and trends
+**Automated Discovery & Profiling**
+- Scan entire organizations or enterprises to identify and profile repositories
+- Analyze Git properties: size, LFS usage, submodules, large files, commits, branches
+- Identify GitHub features: Actions, Wikis, Pages, Discussions, Projects, Environments, Releases
+- Detect advanced settings: branch protections, tag protections, secrets, variables, webhooks, rulesets, packages
+- Calculate source-aware complexity scores for migration planning
+- Track contributors, issues, pull requests, tags, and repository activity levels
 
-### Why Use This Tool?
+**Migration Limits Detection**
+- Automatically detect and flag repositories violating GitHub Enterprise Importer limits
+- 40 GiB repository size limit (automatic blocking)
+- 40 GiB metadata size limit (warnings with size estimates)
+- 2 GiB commit limit, 255-byte ref limit, 400 MiB file limit
+- Configure per-repository exclusion flags (releases, attachments, metadata) to reduce migration size
 
-Migrating repositories at scale is complex. This tool provides:
+**Flexible Migration Workflows**
+- Single repository migrations for on-demand execution
+- Batch migration for organized group migrations
+- Bulk migration for simultaneous multi-repository migrations
+- Self-service capabilities for developer-initiated migrations
+- Dry-run testing without actual execution
+- Phase tracking: pending → pre-migration → migration → post-migration → complete
 
-| Challenge | Solution |
-|-----------|----------|
-| **Visibility** | Know exactly what you're migrating before you start |
-| **Control** | Organize migrations into manageable batches and waves |
-| **Safety** | Dry-run testing and detailed validation before migration |
-| **Efficiency** | Parallel processing with intelligent rate limiting |
-| **Tracking** | Complete audit trail and migration history |
-| **Self-Service** | Enable developers to migrate their own repositories |
-| **Recovery** | Built-in rollback and retry mechanisms |
+**Management & Control**
+- Batch organization with pilot groups and migration waves
+- Real-time monitoring with detailed status updates
+- Modern web dashboard for visualization, analytics, and control
+- Complete REST API for automation and CI/CD integration
+- Lock management for source repositories during migration
+- Rollback support for failed migrations
+- Visibility transformation handling (public/internal/private)
 
----
+**Authentication & Security**
+- PAT (Personal Access Token) required for migrations
+- Optional GitHub App for discovery operations (improved rate limits)
+- Optional GitHub OAuth 2.0 authentication for self-hosted deployments
+- Configurable authorization based on organization, team, or enterprise membership
+- JWT session management with secure token storage
+- Comprehensive audit logging
 
 ## Quick Start
 
 ### Prerequisites
 
-- **Go** 1.21 or higher
-- **Node.js** 20 or higher  
-- **Git** 2.30+ with Git LFS support
-- **Docker** (optional, for containerized deployment)
+- Go 1.21 or higher
+- Node.js 20 or higher
+- Git 2.30+ with Git LFS support
+- Docker (optional, for containerized deployment)
 
-### Installation & Setup
+### Installation
 
-**1. Clone and install dependencies:**
+Clone the repository and install dependencies:
 
 ```bash
 git clone https://github.com/kuhlman-labs/GitHub-migrator.git
 cd GitHub-migrator
-make install  # Installs Go dependencies, golangci-lint, gosec, git-sizer, and npm packages
+make install
 ```
 
-**2. Configure authentication:**
+The `make install` command installs Go dependencies, golangci-lint, gosec, git-sizer, and npm packages.
+
+### Authentication Configuration
+
+Configure authentication using environment variables:
 
 ```bash
-# Set environment variables
-export GITHUB_SOURCE_TOKEN="ghp_xxxxxxxxxxxx"  # Source system token
-export GITHUB_DEST_TOKEN="ghp_yyyyyyyyyyyy"    # Destination system token
+export GITHUB_SOURCE_TOKEN="ghp_xxxxxxxxxxxx"
+export GITHUB_DEST_TOKEN="ghp_yyyyyyyyyyyy"
 ```
 
-**Authentication Options:**
+**Personal Access Tokens (Required)**
 
-**PAT (Personal Access Token) - REQUIRED for migrations:**
-- **Source**: Org admin access with `repo`, `read:user`, `admin:org` scopes
-- **Destination**: Org admin access with `repo`, `admin:org`, `workflow` scopes
+- **Source**: Organization admin access with `repo`, `read:user`, `admin:org` scopes
+- **Destination**: Organization admin access with `repo`, `admin:org`, `workflow` scopes
 
-**GitHub App - OPTIONAL for discovery** (recommended for better rate limits):
-- Provides higher rate limits for discovery and profiling operations
-- PAT still used for migration operations (GitHub requirement)
-- Supports two modes:
-  - **With Installation ID**: Simplest setup, uses single installation token
-  - **Without Installation ID**: Auto-discovers all installations, creates per-org tokens (best for multi-org apps)
+**GitHub App (Optional)**
+
+Recommended for better rate limits during discovery and profiling operations. PAT is still required for migration operations.
+
+- **With Installation ID**: Simplest setup using a single installation token
+- **Without Installation ID**: Auto-discovers all installations and creates per-org tokens (best for multi-org apps)
 
 See [GitHub App Setup Guide](./docs/OPERATIONS.md#github-app-authentication) for detailed configuration.
 
-**3. Run the application:**
+### Running the Application
+
+**Development Mode** (separate terminals):
 
 ```bash
-# Option A: Development mode (separate terminals)
-make run-server  # Terminal 1 - Backend at http://localhost:8080
-make web-dev     # Terminal 2 - Frontend at http://localhost:3000
+make run-server  # Backend at http://localhost:8080
+make web-dev     # Frontend at http://localhost:3000
+```
 
-# Option B: Docker
+**Docker**:
+
+```bash
 make docker-build && make docker-run  # Access at http://localhost:8080
 ```
 
 ### First Migration
 
-1. **Open the dashboard** at http://localhost:3000 (or :8080 with Docker)
-2. **Discover repositories** - Enter your organization name and start discovery
-3. **Create a pilot batch** - Select 3-5 simple repositories for testing
-4. **Run dry run** - Test without actual migration
-5. **Execute migration** - Start the actual migration
-6. **Monitor progress** - Watch real-time status and detailed logs
+1. Open the dashboard at http://localhost:3000 (or :8080 with Docker)
+2. Discover repositories by entering your organization name
+3. Create a pilot batch with 3-5 simple repositories for testing
+4. Run a dry run to test without actual migration
+5. Execute the migration
+6. Monitor progress through real-time status and detailed logs
 
 For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workflows).
 
----
-
 ## Features
 
-<details>
-<summary><strong>🔍 Repository Discovery & Profiling</strong></summary>
+### Repository Discovery & Profiling
 
 - Discover repositories from organizations or entire enterprises
 - Profile Git properties: size, LFS usage, submodules, large files (>100MB), commits, branches
 - Identify GitHub features: Actions, Wikis, Pages, Discussions, Projects, Environments, Releases
 - Detect advanced settings: branch protections, tag protections, secrets, variables, webhooks, rulesets, packages
-- Calculate **source-aware complexity scores** for migration planning (GitHub-specific scoring based on remediation difficulty)
+- Calculate source-aware complexity scores for migration planning based on remediation difficulty
 - Track contributors, issues, pull requests, tags, and repository activity levels
-- Use **quantile-based activity scoring** adaptive to your repository dataset
+- Quantile-based activity scoring adaptive to your repository dataset
 
-</details>
+### Migration Execution
 
-<details>
-<summary><strong>🚀 Migration Execution</strong></summary>
+- **Single Repository**: On-demand individual repository migrations
+- **Batch Migration**: Group repositories and migrate entire batches together
+- **Bulk Migration**: Select multiple repositories and migrate simultaneously
+- **Self-Service**: Enable developers to migrate their own repositories via UI or API
+- **Dry Run**: Test migrations without actual execution
+- **Phase Tracking**: Monitor through all phases (pending → pre-migration → migration → post-migration → complete)
+- **Lock Management**: Automatically lock source repositories during migration
+- **Rollback Support**: Revert completed migrations if validation fails
+- **Visibility Handling**: Configurable visibility transformations (public/internal/private) with EMU and data residency support
 
-- **Single Repository** - On-demand individual repository migrations
-- **Batch Migration** - Group repositories and migrate entire batches together  
-- **Bulk Migration** - Select multiple repositories and migrate simultaneously
-- **Self-Service** - Enable developers to migrate their own repositories via UI or API
-- **Dry Run** - Test migrations without actual execution
-- **Phase Tracking** - Monitor through all phases: pending → pre-migration → migration → post-migration → complete
-- **Lock Management** - Automatically lock source repositories during migration
-- **Rollback Support** - Revert completed migrations if validation fails
-- **Visibility Handling** - Configurable visibility transformations (public/internal/private) with EMU and data residency support
-
-</details>
-
-<details>
-<summary><strong>📊 Dashboard & Analytics</strong></summary>
+### Dashboard & Analytics
 
 - Real-time migration status visualization
 - Repository grid with advanced filtering and search
@@ -186,10 +181,7 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - Migration velocity tracking and ETA calculations
 - Export capabilities for reporting (CSV, JSON)
 
-</details>
-
-<details>
-<summary><strong>📦 Batch Management</strong></summary>
+### Batch Management
 
 - Create and manage migration batches
 - Assign repositories to batches with priority ordering
@@ -198,10 +190,7 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - Track batch-level progress and statistics
 - Support for pilot, wave, and self-service batch types
 
-</details>
-
-<details>
-<summary><strong>🔌 API & Automation</strong></summary>
+### API & Automation
 
 - Complete REST API for all operations
 - Programmatic migration triggering and status monitoring
@@ -210,46 +199,41 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - Comprehensive OpenAPI 3.0 specification
 - See [API.md](./docs/API.md) for full documentation
 
-</details>
+### Security & Authentication
 
-<details>
-<summary><strong>🔒 Security & Authentication (Optional)</strong></summary>
+Optional security features for production deployments:
 
-- **GitHub OAuth 2.0** - Native GitHub authentication for self-hosted deployments
-- **Configurable Authorization** - Control access based on:
-  - Organization membership
-  - Team membership  
-  - Enterprise administrator role
-- **JWT Session Management** - Secure, encrypted token storage with configurable expiration
-- **Multi-Factor Support** - Leverages GitHub's existing SAML/SSO if configured
-- **Backward Compatible** - Authentication is disabled by default, opt-in for production
-- **Audit Logging** - All authentication events are logged for security monitoring
-- See [OPERATIONS.md](./docs/OPERATIONS.md#authentication-setup) for configuration guide
+- **GitHub OAuth 2.0**: Native GitHub authentication for self-hosted deployments
+- **Configurable Authorization**: Control access based on organization membership, team membership, or enterprise administrator role
+- **JWT Session Management**: Secure, encrypted token storage with configurable expiration
+- **Multi-Factor Support**: Leverages GitHub's existing SAML/SSO if configured
+- **Backward Compatible**: Authentication is disabled by default, opt-in for production
+- **Audit Logging**: All authentication events are logged for security monitoring
 
-</details>
-
----
+See [OPERATIONS.md](./docs/OPERATIONS.md#authentication-setup) for configuration guide.
 
 ## Documentation
 
-### 📚 Getting Started
-- **[Quick Start](#quick-start)** - Get up and running in minutes (above)
-- **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)** - Development setup, coding standards, testing, and debugging
+### Getting Started
 
-### 🚀 Operations & Deployment
-- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Production deployment for Docker, Kubernetes, and manual installation
-- **[OPERATIONS.md](./docs/OPERATIONS.md)** - Daily operations, monitoring, incident response, and troubleshooting
-- **[API.md](./docs/API.md)** - Complete REST API reference with examples
+- [Quick Start](#quick-start) - Get up and running in minutes
+- [CONTRIBUTING.md](./docs/CONTRIBUTING.md) - Development setup, coding standards, testing, and debugging
 
-### 🔧 Technical Reference
-- **[IMPLEMENTATION_GUIDE.md](./docs/IMPLEMENTATION_GUIDE.md)** - Architecture, components, and implementation details
-- **[OpenAPI Specification](./docs/openapi.json)** - Machine-readable API specification
+### Operations & Deployment
 
-### ⚙️ Configuration
-- **[config_template.yml](./configs/config_template.yml)** - Complete YAML configuration reference with examples
-- **[env.example](./configs/env.example)** - Environment variables template (alternative to YAML config)
+- [DEPLOYMENT.md](./docs/DEPLOYMENT.md) - Production deployment for Docker, Kubernetes, and manual installation
+- [OPERATIONS.md](./docs/OPERATIONS.md) - Daily operations, monitoring, incident response, and troubleshooting
+- [API.md](./docs/API.md) - Complete REST API reference with examples
 
----
+### Technical Reference
+
+- [IMPLEMENTATION_GUIDE.md](./docs/IMPLEMENTATION_GUIDE.md) - Architecture, components, and implementation details
+- [OpenAPI Specification](./docs/openapi.json) - Machine-readable API specification
+
+### Configuration
+
+- [config_template.yml](./configs/config_template.yml) - Complete YAML configuration reference with examples
+- [env.example](./configs/env.example) - Environment variables template (alternative to YAML config)
 
 ## Development
 
@@ -285,43 +269,39 @@ github-migrator/
 └── docs/                 # Documentation
 ```
 
-For comprehensive development information, see **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)**.
-
----
+For comprehensive development information, see [CONTRIBUTING.md](./docs/CONTRIBUTING.md).
 
 ## Deployment
 
 ### Docker Quick Deploy
 
 ```bash
-# 1. Set environment variables
+# Set environment variables
 export GITHUB_SOURCE_TOKEN="ghp_xxxxxxxxxxxx"
 export GITHUB_DEST_TOKEN="ghp_yyyyyyyyyyyy"
 
-# 2. Build and run
+# Build and run
 make docker-build
 make docker-run
 
-# 3. Access at http://localhost:8080
+# Access at http://localhost:8080
 ```
 
 ### Production Deployment
 
-For production deployments, see **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** which covers:
+For production deployments, see [DEPLOYMENT.md](./docs/DEPLOYMENT.md) which covers:
 
-- 🐳 Docker and Docker Compose configuration
-- ☸️ Kubernetes deployment with manifests  
-- 🗄️ PostgreSQL database setup and optimization
-- 🔒 Security hardening and best practices
-- 📊 Monitoring and alerting setup
-- 💾 Backup and recovery procedures
-- 🔧 Troubleshooting common issues
-
----
+- Docker and Docker Compose configuration
+- Kubernetes deployment with manifests
+- PostgreSQL database setup and optimization
+- Security hardening and best practices
+- Monitoring and alerting setup
+- Backup and recovery procedures
+- Troubleshooting common issues
 
 ## Contributing
 
-We welcome contributions! Please see **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)** for:
+We welcome contributions! Please see [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for:
 
 - Development environment setup
 - Coding standards and conventions
@@ -330,55 +310,54 @@ We welcome contributions! Please see **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)
 - Architecture overview
 - Debugging tips and techniques
 
-### Quick Contribution Steps
+### Contribution Steps
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
 3. Make your changes and add tests
-4. Run tests and linters (`make all`)
+4. Run tests and linters: `make all`
 5. Commit your changes with a descriptive message
 6. Push to your branch
 7. Open a Pull Request
 
----
-
 ## Tech Stack
 
 ### Backend
-- **Go 1.21+** - Core backend implementation
-- **SQLite/PostgreSQL** - Data storage (SQLite for dev, PostgreSQL for production)
-- **GitHub APIs** - `google/go-github/v75` (REST) and `shurcooL/githubv4` (GraphQL)
-- **Viper** - Configuration management
-- **Lumberjack** - Log rotation
+
+- **Go 1.21+**: Core backend implementation
+- **SQLite/PostgreSQL**: Data storage (SQLite for dev, PostgreSQL for production)
+- **GitHub APIs**: `google/go-github/v75` (REST) and `shurcooL/githubv4` (GraphQL)
+- **Viper**: Configuration management
+- **Lumberjack**: Log rotation
 
 ### Frontend
-- **React 18** - UI framework with TypeScript
-- **Vite** - Fast build tooling
-- **Tailwind CSS** - Utility-first styling
-- **TanStack Query** - Data fetching and caching
-- **Recharts** - Analytics visualizations
+
+- **React 18**: UI framework with TypeScript
+- **Vite**: Fast build tooling
+- **Tailwind CSS**: Utility-first styling
+- **TanStack Query**: Data fetching and caching
+- **Recharts**: Analytics visualizations
 
 ### DevOps
-- **Docker** - Containerized deployment
-- **golangci-lint** - Go code linting
-- **gosec** - Security scanning
 
----
+- **Docker**: Containerized deployment
+- **golangci-lint**: Go code linting
+- **gosec**: Security scanning
 
 ## Support & Resources
 
 ### Internal Documentation
+
 - [API Documentation](./docs/API.md) - Complete API reference
 - [Operations Guide](./docs/OPERATIONS.md) - Day-to-day operations
 - [Implementation Guide](./docs/IMPLEMENTATION_GUIDE.md) - Technical deep dive
 - [Deployment Guide](./docs/DEPLOYMENT.md) - Production deployment
 
 ### External Resources
+
 - [GitHub Migrations API](https://docs.github.com/en/rest/migrations) - Official API documentation
 - [GitHub App Authentication](https://docs.github.com/en/apps) - App authentication guide
 - [GitHub Rate Limiting](https://docs.github.com/en/rest/overview/resources-in-the-rest-api#rate-limiting) - Rate limit information
-
----
 
 ## Acknowledgments
 
@@ -388,11 +367,5 @@ We welcome contributions! Please see **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)
 
 ---
 
-<div align="center">
-
-**Version**: 1.0.0  
 **Last Updated**: October 2025  
-**Status**: Production Ready  
 **Maintained by**: [@kuhlman-labs](https://github.com/kuhlman-labs)
-
-</div>
