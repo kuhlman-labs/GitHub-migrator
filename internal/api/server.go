@@ -208,10 +208,17 @@ func (s *Server) validateFrontendPath(requestPath, frontendDir string) (absDir, 
 		return "", "", false
 	}
 
-	// Security check: Ensure the resolved absolute path is within the frontend directory
-	// This prevents path traversal attacks by validating the final resolved path
-	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) && absPath != absDir {
-		s.logger.Warn("Path traversal attempt detected", "requested_path", requestPath, "resolved_path", absPath)
+	// Security check: Use filepath.Rel to verify the resolved path is within frontendDir
+	// This is more robust than string prefix checking and prevents directory traversal
+	relPath, err := filepath.Rel(absDir, absPath)
+	if err != nil {
+		s.logger.Warn("Failed to compute relative path", "requested_path", requestPath, "error", err)
+		return "", "", false
+	}
+
+	// Reject if the relative path tries to go up (..) or is absolute
+	if strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
+		s.logger.Warn("Path traversal attempt detected", "requested_path", requestPath, "resolved_path", absPath, "relative_path", relPath)
 		return "", "", false
 	}
 
