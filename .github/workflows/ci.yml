@@ -11,6 +11,13 @@ on:
       - develop
   workflow_dispatch:
 
+# Set minimal permissions for the workflow
+permissions:
+  contents: read           # Read repository contents
+  actions: read            # Read actions cache
+  security-events: write   # Upload SARIF results to GitHub Security
+  id-token: write          # Create OIDC tokens for artifact attestation
+
 jobs:
   # Backend: Go tests and linting
   backend-ci:
