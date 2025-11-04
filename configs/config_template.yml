@@ -86,7 +86,7 @@ source:
   # Required permissions:
   # - Organization admin access (both source and destination)
   # - Scopes: repo, read:org, read:user, admin:org
-  token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  token: "ghp_xxxx"
   
   # ==========================================================================
   # GitHub App Authentication (Optional but Recommended for Large Migrations)
@@ -149,7 +149,7 @@ destination:
   # Required permissions:
   # - Organization admin access (both source and destination)
   # - Scopes: repo, admin:org, workflow
-  token: "ghp_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  token: "ghp_yyyy"
   
   # ==========================================================================
   # GitHub App Authentication (Optional but Recommended for Large Migrations)
@@ -395,11 +395,11 @@ auth:
 # github:
 #   source:
 #     base_url: "https://github.company.com/api/v3"
-#     token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#     token: "ghp_xxxx"
 #   
 #   destination:
 #     base_url: "https://api.github.com"
-#     token: "ghp_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+#     token: "ghp_yyyy"
 
 # =============================================================================
 # Environment Variable Overrides

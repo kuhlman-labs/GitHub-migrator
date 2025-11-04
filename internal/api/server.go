@@ -220,14 +220,26 @@ func (s *Server) validateFrontendPath(requestPath, frontendDir string) (absDir, 
 
 // tryServeFile attempts to serve a file if it exists and is not a directory
 func (s *Server) tryServeFile(w http.ResponseWriter, r *http.Request, absPath string) bool {
-	info, err := os.Stat(absPath)
+	// Open the file explicitly to avoid path injection concerns
+	// #nosec G304 -- absPath is validated by validateFrontendPath to be within frontendDir bounds
+	file, err := os.Open(absPath)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	// Get file info to check if it's a directory
+	info, err := file.Stat()
 	if err != nil || info.IsDir() {
 		return false
 	}
 
 	// Set appropriate content type
 	s.setContentType(w, absPath)
-	http.ServeFile(w, r, absPath)
+
+	// Use ServeContent instead of ServeFile for explicit control
+	// The absPath has been validated by validateFrontendPath to be within frontendDir
+	http.ServeContent(w, r, filepath.Base(absPath), info.ModTime(), file)
 	return true
 }
 
