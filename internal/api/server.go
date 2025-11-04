@@ -222,7 +222,7 @@ func (s *Server) validateFrontendPath(requestPath, frontendDir string) (absDir, 
 func (s *Server) tryServeFile(w http.ResponseWriter, r *http.Request, absPath string) bool {
 	// Open the file explicitly to avoid path injection concerns
 	// #nosec G304 -- absPath is validated by validateFrontendPath to be within frontendDir bounds
-	// lgtm[go/path-injection] -- absPath is sanitized by filepath.Clean, validated by filepath.Abs, and checked to be within frontendDir
+	// codeql[go/path-injection] -- absPath is sanitized by filepath.Clean, validated by filepath.Abs, and checked to be within frontendDir
 	file, err := os.Open(absPath)
 	if err != nil {
 		return false
