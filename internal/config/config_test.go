@@ -125,37 +125,74 @@ logging:
 }
 
 func TestLoadConfig_MissingFile(t *testing.T) {
-	viper.Reset()
-	viper.SetConfigFile("/nonexistent/config.yaml")
+	// Test that missing config file is OK - we use defaults and env vars
+	// Save current dir and change to a temp dir with no config file
+	currentDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(currentDir)
 
-	_, err := Load()
-	if err == nil {
-		t.Error("Load() expected error for missing config file, got nil")
+	tmpDir, err := os.MkdirTemp("", "config-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+
+	viper.Reset()
+
+	// Should succeed with defaults even without config file
+	cfg, err := Load()
+	if err != nil {
+		t.Errorf("Load() should succeed without config file, got error: %v", err)
+	}
+
+	// Verify defaults are loaded
+	if cfg.Server.Port != 8080 {
+		t.Errorf("Server.Port = %d, expected 8080 (default)", cfg.Server.Port)
 	}
 }
 
 func TestLoadConfig_InvalidYAML(t *testing.T) {
-	tmpfile, err := os.CreateTemp("", "config-*.yaml")
+	// Test that invalid YAML in an existing config file returns an error
+	currentDir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer os.Chdir(currentDir)
 
-	// Write invalid YAML
+	tmpDir, err := os.MkdirTemp("", "config-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create configs directory in temp dir
+	configsDir := tmpDir + "/configs"
+	if err := os.Mkdir(configsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write invalid YAML to config.yaml
 	invalidYAML := `
 server:
   port: not-a-number
   invalid yaml content [[[
 `
-	if _, err := tmpfile.Write([]byte(invalidYAML)); err != nil {
+	configFile := configsDir + "/config.yaml"
+	if err := os.WriteFile(configFile, []byte(invalidYAML), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := tmpfile.Close(); err != nil {
+
+	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatal(err)
 	}
 
 	viper.Reset()
-	viper.SetConfigFile(tmpfile.Name())
 
 	_, err = Load()
 	if err == nil {

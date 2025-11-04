@@ -94,10 +94,20 @@ module "app_service" {
     "GHMIG_SOURCE_BASE_URL" = var.source_base_url
     "GHMIG_SOURCE_TOKEN"    = var.source_token
 
+    # Source GitHub App Configuration (optional)
+    "GHMIG_SOURCE_APP_ID"              = tostring(var.source_app_id)
+    "GHMIG_SOURCE_APP_PRIVATE_KEY"     = var.source_app_private_key
+    "GHMIG_SOURCE_APP_INSTALLATION_ID" = tostring(var.source_app_installation_id)
+
     # Destination Configuration
     "GHMIG_DESTINATION_TYPE"     = var.destination_type
     "GHMIG_DESTINATION_BASE_URL" = var.destination_base_url
     "GHMIG_DESTINATION_TOKEN"    = var.destination_token
+
+    # Destination GitHub App Configuration (optional)
+    "GHMIG_DESTINATION_APP_ID"              = tostring(var.dest_app_id)
+    "GHMIG_DESTINATION_APP_PRIVATE_KEY"     = var.dest_app_private_key
+    "GHMIG_DESTINATION_APP_INSTALLATION_ID" = tostring(var.dest_app_installation_id)
 
     # Migration Configuration
     "GHMIG_MIGRATION_WORKERS"                            = tostring(var.migration_workers)
