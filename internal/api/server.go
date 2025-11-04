@@ -206,8 +206,9 @@ func (s *Server) validateFrontendPath(requestPath, frontendDir string) (absDir, 
 		return "", "", false
 	}
 
-	// Validate that the requested path is within the frontend directory
-	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) && absPath != absDir {
+	// Use filepath.Rel to validate that absPath is within absDir
+	rel, err := filepath.Rel(absDir, absPath)
+	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
 		s.logger.Warn("Path traversal attempt detected", "requested_path", requestPath, "resolved_path", absPath)
 		return "", "", false
 	}
