@@ -40,7 +40,10 @@ RUN GOTOOLCHAIN=auto CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o 
 # Final stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs
+# Install runtime dependencies including glibc compatibility for git-sizer
+# git-sizer is built for glibc, but Alpine uses musl libc
+# We need gcompat to run glibc binaries on Alpine
+RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs gcompat
 
 WORKDIR /app
 
@@ -50,9 +53,9 @@ COPY --from=backend-builder /app/server .
 # Copy configs
 COPY configs ./configs
 
-# Use docker.yaml as the default config.yaml (required by the application)
+# Use config_template.yml as the default config.yaml (required by the application)
 # Environment variables will override values from this file
-RUN cp configs/docker.yaml configs/config.yaml || true
+RUN cp configs/config_template.yml configs/config.yaml || true
 
 # Copy frontend static files from frontend builder
 COPY --from=frontend-builder /app/web/dist ./web/dist

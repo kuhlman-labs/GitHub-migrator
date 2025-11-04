@@ -148,8 +148,18 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		repo.ValidationStatus, repo.ValidationDetails, repo.DestinationData,
 		repo.DiscoveredAt, repo.UpdatedAt, repo.MigratedAt, repo.LastDryRunAt,
 	)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// After UPSERT, we need to retrieve the ID since it's not returned by the query
+	// This is critical for downstream operations like dependency tracking
+	err = d.db.QueryRowContext(ctx, "SELECT id FROM repositories WHERE full_name = ?", repo.FullName).Scan(&repo.ID)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve repository ID after save: %w", err)
+	}
+
+	return nil
 }
 
 // GetRepository retrieves a repository by full name
@@ -1424,7 +1434,8 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 	query := `
 		SELECT id, name, description, type, repository_count, status, 
 			   scheduled_at, started_at, completed_at, created_at,
-			   last_dry_run_at, last_migration_attempt_at
+			   last_dry_run_at, last_migration_attempt_at,
+			   destination_org, migration_api, exclude_releases
 		FROM batches 
 		WHERE id = ?
 	`
@@ -1435,6 +1446,7 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 		&batch.RepositoryCount, &batch.Status, &batch.ScheduledAt,
 		&batch.StartedAt, &batch.CompletedAt, &batch.CreatedAt,
 		&batch.LastDryRunAt, &batch.LastMigrationAttemptAt,
+		&batch.DestinationOrg, &batch.MigrationAPI, &batch.ExcludeReleases,
 	)
 
 	if err == sql.ErrNoRows {
@@ -1453,7 +1465,8 @@ func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
 		UPDATE batches SET
 			name = ?, description = ?, type = ?, repository_count = ?,
 			status = ?, scheduled_at = ?, started_at = ?, completed_at = ?,
-			last_dry_run_at = ?, last_migration_attempt_at = ?
+			last_dry_run_at = ?, last_migration_attempt_at = ?,
+			destination_org = ?, migration_api = ?, exclude_releases = ?
 		WHERE id = ?
 	`
 
@@ -1461,6 +1474,7 @@ func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
 		batch.Name, batch.Description, batch.Type, batch.RepositoryCount,
 		batch.Status, batch.ScheduledAt, batch.StartedAt, batch.CompletedAt,
 		batch.LastDryRunAt, batch.LastMigrationAttemptAt,
+		batch.DestinationOrg, batch.MigrationAPI, batch.ExcludeReleases,
 		batch.ID,
 	)
 
@@ -1472,7 +1486,8 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 	query := `
 		SELECT id, name, description, type, repository_count, status, 
 			   scheduled_at, started_at, completed_at, created_at,
-			   last_dry_run_at, last_migration_attempt_at
+			   last_dry_run_at, last_migration_attempt_at,
+			   destination_org, migration_api, exclude_releases
 		FROM batches 
 		ORDER BY created_at DESC
 	`
@@ -1491,6 +1506,7 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 			&batch.RepositoryCount, &batch.Status, &batch.ScheduledAt,
 			&batch.StartedAt, &batch.CompletedAt, &batch.CreatedAt,
 			&batch.LastDryRunAt, &batch.LastMigrationAttemptAt,
+			&batch.DestinationOrg, &batch.MigrationAPI, &batch.ExcludeReleases,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan batch: %w", err)
 		}
@@ -1502,14 +1518,21 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 
 // CreateBatch creates a new batch
 func (d *Database) CreateBatch(ctx context.Context, batch *models.Batch) error {
+	// Set default migration API if not specified
+	if batch.MigrationAPI == "" {
+		batch.MigrationAPI = models.MigrationAPIGEI
+	}
+
 	query := `
-		INSERT INTO batches (name, description, type, repository_count, status, scheduled_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO batches (name, description, type, repository_count, status, scheduled_at, created_at,
+							 destination_org, migration_api, exclude_releases)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	result, err := d.db.ExecContext(ctx, query,
 		batch.Name, batch.Description, batch.Type,
 		batch.RepositoryCount, batch.Status, batch.ScheduledAt, batch.CreatedAt,
+		batch.DestinationOrg, batch.MigrationAPI, batch.ExcludeReleases,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)

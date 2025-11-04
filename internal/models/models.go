@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// Migration API types
+const (
+	MigrationAPIGEI = "GEI" // GitHub Enterprise Importer
+	MigrationAPIELM = "ELM" // Enterprise Live Migrator
+)
+
 // Repository represents a Git repository to be migrated
 type Repository struct {
 	ID        int64  `json:"id" db:"id"`
@@ -217,6 +223,11 @@ type Batch struct {
 	CreatedAt              time.Time  `json:"created_at" db:"created_at"`
 	LastDryRunAt           *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at"`                     // When batch dry run was last executed
 	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at"` // When migration was last attempted
+
+	// Migration Settings (batch-level defaults, repository settings take precedence)
+	DestinationOrg  *string `json:"destination_org,omitempty" db:"destination_org"` // Default destination org for repositories in this batch
+	MigrationAPI    string  `json:"migration_api" db:"migration_api"`               // Migration API to use: "GEI" or "ELM" (default: "GEI")
+	ExcludeReleases bool    `json:"exclude_releases" db:"exclude_releases"`         // Skip releases during migration (applies if repo doesn't override)
 }
 
 // Organization extracts the organization from full_name (org/repo)
@@ -236,3 +247,24 @@ func (r *Repository) Name() string {
 	}
 	return r.FullName
 }
+
+// RepositoryDependency represents a dependency relationship between repositories
+// Used for batch planning to understand which repositories should be migrated together
+type RepositoryDependency struct {
+	ID                 int64     `json:"id" db:"id"`
+	RepositoryID       int64     `json:"repository_id" db:"repository_id"`
+	DependencyFullName string    `json:"dependency_full_name" db:"dependency_full_name"` // org/repo format
+	DependencyType     string    `json:"dependency_type" db:"dependency_type"`           // submodule, workflow, dependency_graph, package
+	DependencyURL      string    `json:"dependency_url" db:"dependency_url"`             // Original URL/reference
+	IsLocal            bool      `json:"is_local" db:"is_local"`                         // Whether dependency is within same enterprise
+	DiscoveredAt       time.Time `json:"discovered_at" db:"discovered_at"`
+	Metadata           *string   `json:"metadata,omitempty" db:"metadata"` // JSON with type-specific details (branch, version, path, etc.)
+}
+
+// DependencyType constants for type safety
+const (
+	DependencyTypeSubmodule       = "submodule"
+	DependencyTypeWorkflow        = "workflow"
+	DependencyTypeDependencyGraph = "dependency_graph"
+	DependencyTypePackage         = "package"
+)

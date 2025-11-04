@@ -9,7 +9,8 @@ import type {
   Organization,
   MigrationHistoryEntry,
   RepositoryFilters,
-  RepositoryListResponse
+  RepositoryListResponse,
+  DependenciesResponse
 } from '../types';
 
 const client = axios.create({
@@ -96,6 +97,11 @@ export const api = {
       reason: reason || '',
     });
     return data.repository;
+  },
+
+  async getRepositoryDependencies(fullName: string): Promise<DependenciesResponse> {
+    const { data } = await client.get(`/repositories/${encodeURIComponent(fullName)}/dependencies`);
+    return data;
   },
 
   async markRepositoryRemediated(fullName: string) {

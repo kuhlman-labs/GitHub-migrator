@@ -358,3 +358,103 @@ func TestAPIError_Unwrap(t *testing.T) {
 		t.Errorf("APIError.Unwrap() = %v, want %v", unwrapped, wrappedErr)
 	}
 }
+
+func TestExtractStatusCodeFromError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected int
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: 0,
+		},
+		{
+			name:     "502 Bad Gateway in error message",
+			err:      errors.New("non-200 OK status code: 502 Bad Gateway body: \"<html>...\""),
+			expected: http.StatusBadGateway,
+		},
+		{
+			name:     "503 Service Unavailable in error message",
+			err:      errors.New("non-200 OK status code: 503 Service Unavailable"),
+			expected: http.StatusServiceUnavailable,
+		},
+		{
+			name:     "500 Internal Server Error in error message",
+			err:      errors.New("non-200 OK status code: 500 Internal Server Error"),
+			expected: http.StatusInternalServerError,
+		},
+		{
+			name:     "504 Gateway Timeout in error message",
+			err:      errors.New("non-200 OK status code: 504 Gateway Timeout"),
+			expected: http.StatusGatewayTimeout,
+		},
+		{
+			name:     "429 Too Many Requests in error message",
+			err:      errors.New("non-200 OK status code: 429 Too Many Requests"),
+			expected: http.StatusTooManyRequests,
+		},
+		{
+			name:     "404 Not Found in error message",
+			err:      errors.New("non-200 OK status code: 404 Not Found"),
+			expected: http.StatusNotFound,
+		},
+		{
+			name:     "403 Forbidden in error message",
+			err:      errors.New("non-200 OK status code: 403 Forbidden"),
+			expected: http.StatusForbidden,
+		},
+		{
+			name:     "401 Unauthorized in error message",
+			err:      errors.New("non-200 OK status code: 401 Unauthorized"),
+			expected: http.StatusUnauthorized,
+		},
+		{
+			name:     "400 Bad Request in error message",
+			err:      errors.New("non-200 OK status code: 400 Bad Request"),
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "no status code in error message",
+			err:      errors.New("some random error"),
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := extractStatusCodeFromError(tt.err)
+			if actual != tt.expected {
+				t.Errorf("extractStatusCodeFromError() = %d, want %d", actual, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWrapError_HTMLErrorPage(t *testing.T) {
+	// Test that HTML error pages (like nginx 502) are properly handled
+	htmlErr := errors.New("non-200 OK status code: 502 Bad Gateway body: \"<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad Gateway</h1></center>\\r\\n<hr><center>nginx</center>\\r\\n</body>\\r\\n</html>\\r\\n\"")
+
+	wrapped := WrapError(htmlErr, "GetDependencyGraph", "https://api.github.com")
+
+	var apiErr *APIError
+	if !errors.As(wrapped, &apiErr) {
+		t.Fatal("Expected APIError type")
+	}
+
+	// Should extract 502 from the HTML error
+	if apiErr.StatusCode != http.StatusBadGateway {
+		t.Errorf("Expected status code %d, got %d", http.StatusBadGateway, apiErr.StatusCode)
+	}
+
+	// Should be retryable
+	if !IsRetryableError(wrapped) {
+		t.Error("502 Bad Gateway should be retryable")
+	}
+
+	// Should be a server error
+	if !errors.Is(wrapped, ErrServerError) {
+		t.Error("502 Bad Gateway should be classified as server error")
+	}
+}

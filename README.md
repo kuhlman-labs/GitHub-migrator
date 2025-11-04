@@ -246,12 +246,8 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - **[OpenAPI Specification](./docs/openapi.json)** - Machine-readable API specification
 
 ### ⚙️ Configuration
-- **[config_example.yml](./configs/config_example.yml)** - Complete configuration reference (start here)
-- [env.example](./configs/env.example) - Environment variables template
-- [config.yaml](./configs/config.yaml) - Default configuration
-- [production.yaml](./configs/production.yaml) - Production settings
-- [development.yaml](./configs/development.yaml) - Development settings
-- [docker.yaml](./configs/docker.yaml) - Docker-specific configuration
+- **[config_template.yml](./configs/config_template.yml)** - Complete YAML configuration reference with examples
+- **[env.example](./configs/env.example)** - Environment variables template (alternative to YAML config)
 
 ---
 

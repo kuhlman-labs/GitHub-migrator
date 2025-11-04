@@ -118,6 +118,28 @@ jobs:
           destination_type     = "${{ vars.DESTINATION_TYPE }}"
           destination_base_url = "${{ vars.DESTINATION_BASE_URL }}"
           destination_token    = "${{ secrets.DEST_GITHUB_TOKEN }}"
+          TFVARS_EOF
+
+          # Add Destination GitHub App configuration if enabled (handles multi-line private key)
+          if [ -n "${{ vars.DEST_APP_ID }}" ] && [ "${{ vars.DEST_APP_ID }}" != "0" ]; then
+            echo "" >> terraform.tfvars
+            echo "# Destination GitHub App Configuration" >> terraform.tfvars
+            echo "dest_app_id = ${{ vars.DEST_APP_ID }}" >> terraform.tfvars
+
+            # Use heredoc for multi-line private key
+            cat >> terraform.tfvars <<'DEST_PRIVATE_KEY_EOF'
+          dest_app_private_key = <<-EOT
+          ${{ secrets.DEST_APP_PRIVATE_KEY }}
+          EOT
+          DEST_PRIVATE_KEY_EOF
+
+            if [ -n "${{ vars.DEST_APP_INSTALLATION_ID }}" ] && [ "${{ vars.DEST_APP_INSTALLATION_ID }}" != "0" ]; then
+              echo "dest_app_installation_id = ${{ vars.DEST_APP_INSTALLATION_ID }}" >> terraform.tfvars
+            fi
+          fi
+
+          # Continue with rest of configuration
+          cat >> terraform.tfvars <<'TFVARS_EOF'
 
           # Migration Configuration
           migration_workers                      = ${{ vars.MIGRATION_WORKERS }}

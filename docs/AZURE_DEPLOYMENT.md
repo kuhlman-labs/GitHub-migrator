@@ -445,6 +445,35 @@ Add to App Service environment variables:
 3. Ensure container image is valid
 4. Check health endpoint path is `/health`
 
+### Git-Sizer Binary Extraction Issues
+
+**Problem**: Logs show errors like `fork/exec /tmp/github-migrator-binaries/git-sizer: no such file or directory`
+
+**Background**: 
+The application embeds the `git-sizer` binary and extracts it at runtime. In Azure App Service Linux containers, the `/tmp` directory may have permission restrictions that prevent binary extraction and execution.
+
+**Solution**:
+This issue is **automatically resolved** as of the latest version. The application now:
+- Detects Azure App Service environment (via `WEBSITE_SITE_NAME` environment variable)
+- Automatically uses `/home/site/tmp` instead of `/tmp` for binary storage
+- Falls back to system temp directory for other environments
+
+**Manual Override** (if needed):
+Set the `GHMIG_TEMP_DIR` environment variable in App Service configuration to specify a custom temporary directory:
+
+```bash
+az webapp config appsettings set \
+  --name YOUR_APP_NAME \
+  --resource-group YOUR_RG \
+  --settings GHMIG_TEMP_DIR="/home/site/tmp"
+```
+
+**Verification**:
+Check application logs for successful git-sizer extraction:
+```bash
+az webapp log tail --name YOUR_APP_NAME --resource-group YOUR_RG | grep "git-sizer"
+```
+
 ### Migrations Failing
 
 **Problem**: Database migrations fail on startup
