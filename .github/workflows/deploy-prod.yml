@@ -39,7 +39,7 @@ jobs:
           echo "Using image tag: ${TAG}"
 
       - name: Log in to Azure
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -54,7 +54,7 @@ jobs:
 
       - name: Deploy to Azure App Service
         id: deploy
-        uses: azure/webapps-deploy@v2
+        uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.APP_SERVICE_NAME }}
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ steps.image-tag.outputs.tag }}
