@@ -21,6 +21,14 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const [batchDescription, setBatchDescription] = useState(batch?.description || '');
   const [scheduledAt, setScheduledAt] = useState(formatDateForInput(batch?.scheduled_at));
 
+  // Migration settings
+  const [destinationOrg, setDestinationOrg] = useState(batch?.destination_org || '');
+  const [migrationAPI, setMigrationAPI] = useState<'GEI' | 'ELM'>(batch?.migration_api || 'GEI');
+  const [excludeReleases, setExcludeReleases] = useState(batch?.exclude_releases || false);
+  
+  // Organization list for autocomplete
+  const [organizations, setOrganizations] = useState<string[]>([]);
+
   // Repository lists
   const [availableRepos, setAvailableRepos] = useState<Repository[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<number>>(new Set());
@@ -42,6 +50,20 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
   // UI state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showMigrationSettings, setShowMigrationSettings] = useState(false);
+
+  // Load organizations for autocomplete
+  useEffect(() => {
+    const loadOrganizations = async () => {
+      try {
+        const orgList = await api.getOrganizationList();
+        setOrganizations(orgList);
+      } catch (err) {
+        console.error('Failed to load organizations:', err);
+      }
+    };
+    loadOrganizations();
+  }, []);
 
   // Update form fields when batch loads in edit mode
   useEffect(() => {
@@ -59,6 +81,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       setBatchName(batchData.name || '');
       setBatchDescription(batchData.description || '');
       setScheduledAt(formatDateForInput(batchData.scheduled_at));
+      setDestinationOrg(batchData.destination_org || '');
+      setMigrationAPI(batchData.migration_api || 'GEI');
+      setExcludeReleases(batchData.exclude_releases || false);
     }
   }, [batch]);
 
@@ -280,6 +305,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           name: batchName.trim(),
           description: batchDescription.trim() || undefined,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+          destination_org: destinationOrg.trim() || undefined,
+          migration_api: migrationAPI,
+          exclude_releases: excludeReleases,
         });
         
         // Update repositories - add new ones, remove old ones
@@ -308,6 +336,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           description: batchDescription.trim() || undefined,
           type: 'batch',
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+          destination_org: destinationOrg.trim() || undefined,
+          migration_api: migrationAPI,
+          exclude_releases: excludeReleases,
         });
         
         batchId = newBatch.id;
@@ -519,9 +550,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       </div>
 
       {/* Right Panel - Selected Repositories & Batch Info */}
-      <div className={`flex-shrink-0 grid grid-rows-[auto_1fr_auto] bg-white transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}>
-        <div className="p-4 border-b border-gray-200 bg-white row-start-1">
-          <div className="flex justify-between items-center">
+      <div className={`flex-shrink-0 flex flex-col bg-white transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}>
+        {/* Sticky Header with Batch Info */}
+        <div className="flex-shrink-0 sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
+          <div className="p-4">
+            <div className="flex justify-between items-center mb-3">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">
                 Selected Repositories
@@ -538,10 +571,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                 Clear All
               </button>
             )}
+            </div>
+            {/* Batch Size Indicator */}
+            <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-blue-900">Total Batch Size</div>
+                <div className="text-lg font-bold text-blue-900">{formatBytes(totalSize)}</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-y-auto p-4 row-start-2 min-h-0">
+        {/* Repository List - Scrollable with expanded height */}
+        <div className="flex-1 overflow-y-auto p-4 min-h-0">
           {currentBatchRepos.length === 0 ? (
             <div className="text-center py-12">
               <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -589,13 +631,10 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           )}
         </div>
 
-        {/* Bottom Batch Metadata Form */}
-        <div className="border-t border-gray-200 p-3 bg-gray-50 space-y-2.5 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-50 relative row-start-3">
-          <div className="bg-blue-50 border border-blue-200 p-2 rounded-lg">
-            <div className="text-xs font-medium text-blue-900">Total Batch Size</div>
-            <div className="text-lg font-bold text-blue-900">{formatBytes(totalSize)}</div>
-          </div>
-
+        {/* Bottom Batch Configuration Form - Compact */}
+        <div className="flex-shrink-0 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+          {/* Essential Fields - Always Visible */}
+          <div className="p-3 space-y-2.5">
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">
               Batch Name *
@@ -623,8 +662,96 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
               disabled={loading}
             />
+            </div>
           </div>
 
+          {/* Collapsible Migration Settings */}
+          <div className="border-t border-gray-200">
+            <button
+              type="button"
+              onClick={() => setShowMigrationSettings(!showMigrationSettings)}
+              className="w-full px-3 py-2.5 flex items-center justify-between text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Migration Settings</span>
+                {(destinationOrg || excludeReleases || migrationAPI !== 'GEI') && (
+                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                    {[destinationOrg ? 1 : 0, excludeReleases ? 1 : 0, migrationAPI !== 'GEI' ? 1 : 0].reduce((a, b) => a + b, 0)} configured
+                  </span>
+                )}
+              </div>
+              <svg
+                className={`w-5 h-5 text-gray-400 transform transition-transform ${showMigrationSettings ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showMigrationSettings && (
+              <div className="p-3 space-y-2.5 bg-gray-50 border-t border-gray-200">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Destination Organization
+                    <span className="ml-1 text-gray-500 font-normal text-xs">— Default for repos without specific destination</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={destinationOrg}
+                    onChange={(e) => setDestinationOrg(e.target.value)}
+                    placeholder="Leave blank to use source org"
+                    list="organizations-list"
+                    className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    disabled={loading}
+                  />
+                  <datalist id="organizations-list">
+                    {organizations.map((org) => (
+                      <option key={org} value={org} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Migration API
+                  </label>
+                  <select
+                    value={migrationAPI}
+                    onChange={(e) => setMigrationAPI(e.target.value as 'GEI' | 'ELM')}
+                    className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    disabled={loading}
+                  >
+                    <option value="GEI">GEI (GitHub Enterprise Importer)</option>
+                    <option value="ELM">ELM (Enterprise Live Migrator) - Future</option>
+                  </select>
+                </div>
+
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="exclude-releases"
+                    checked={excludeReleases}
+                    onChange={(e) => setExcludeReleases(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    disabled={loading}
+                  />
+                  <label htmlFor="exclude-releases" className="text-xs text-gray-700 cursor-pointer">
+                    <span className="font-semibold">Exclude Releases</span>
+                    <span className="block text-gray-500 mt-0.5">Skip releases during migration (repo settings override)</span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Scheduled Date Section */}
+          <div className="border-t border-gray-200 p-3">
           <div className="relative z-[60]">
             <label className="block text-xs font-semibold text-gray-700 mb-1">
               Scheduled Date (Optional)
@@ -641,15 +768,21 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             <p className="text-xs text-gray-500 mt-1">
               Batch will auto-start at the scheduled time (after dry run is complete)
             </p>
+            </div>
           </div>
 
+          {/* Error Message */}
           {error && (
+            <div className="px-3 pb-3">
             <div className="bg-red-50 border border-red-200 text-red-800 px-2.5 py-1.5 rounded-lg text-xs">
               {error}
+              </div>
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5 pt-1 min-h-[140px]">
+          {/* Action Buttons */}
+          <div className="border-t border-gray-200 p-3 bg-gray-50">
+            <div className="flex flex-col gap-1.5">
             <button
               onClick={() => handleSubmit(false)}
               disabled={loading || currentBatchRepos.length === 0}
@@ -674,6 +807,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             >
               Cancel
             </button>
+            </div>
           </div>
         </div>
       </div>

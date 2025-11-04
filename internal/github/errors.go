@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/go-github/v75/github"
 )
@@ -70,36 +71,90 @@ func WrapError(err error, method, url string) error {
 			Err:        err,
 		}
 
-		// Map to specific error types
-		switch ghErr.Response.StatusCode {
-		case http.StatusUnauthorized:
-			apiErr.Err = ErrUnauthorized
-		case http.StatusForbidden:
-			// Check if it's a rate limit error
-			if ghErr.Response.Header.Get("X-RateLimit-Remaining") == "0" {
-				apiErr.Err = ErrRateLimitExceeded
-			} else {
-				apiErr.Err = ErrForbidden
-			}
-		case http.StatusNotFound:
-			apiErr.Err = ErrNotFound
-		case http.StatusBadRequest:
-			apiErr.Err = ErrBadRequest
-		case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:
-			apiErr.Err = ErrServerError
-		}
+		// Map to specific error types based on status code
+		apiErr.Err = mapErrorType(ghErr.Response.StatusCode, ghErr.Response.Header)
 
 		return apiErr
 	}
 
-	// Wrap as generic API error
-	return &APIError{
-		StatusCode: 0,
+	// Try to extract status code from error message for non-JSON responses
+	// This handles cases like nginx HTML error pages (502, 503, etc.)
+	statusCode := extractStatusCodeFromError(err)
+
+	apiErr := &APIError{
+		StatusCode: statusCode,
 		Message:    err.Error(),
 		URL:        url,
 		Method:     method,
 		Err:        err,
 	}
+
+	// Map to specific error types if we have a valid status code
+	if statusCode > 0 {
+		apiErr.Err = mapErrorType(statusCode, nil)
+	}
+
+	return apiErr
+}
+
+// mapErrorType maps HTTP status codes to specific error types
+func mapErrorType(statusCode int, header http.Header) error {
+	switch statusCode {
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusForbidden:
+		// Check if it's a rate limit error
+		if header != nil && header.Get("X-RateLimit-Remaining") == "0" {
+			return ErrRateLimitExceeded
+		}
+		return ErrForbidden
+	case http.StatusNotFound:
+		return ErrNotFound
+	case http.StatusBadRequest:
+		return ErrBadRequest
+	case http.StatusTooManyRequests:
+		return ErrRateLimitExceeded
+	case http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return ErrServerError
+	default:
+		// Return the original status code if no specific mapping
+		return nil
+	}
+}
+
+// extractStatusCodeFromError tries to extract HTTP status code from error message
+// This handles cases where GitHub returns HTML error pages instead of JSON
+func extractStatusCodeFromError(err error) int {
+	if err == nil {
+		return 0
+	}
+
+	errMsg := err.Error()
+
+	// Map of error patterns to status codes
+	// Check in order of specificity (most specific first)
+	statusPatterns := map[string]int{
+		"500 Internal Server Error": http.StatusInternalServerError,
+		"502 Bad Gateway":           http.StatusBadGateway,
+		"503 Service Unavailable":   http.StatusServiceUnavailable,
+		"504 Gateway Timeout":       http.StatusGatewayTimeout,
+		"429 Too Many Requests":     http.StatusTooManyRequests,
+		"403 Forbidden":             http.StatusForbidden,
+		"401 Unauthorized":          http.StatusUnauthorized,
+		"404 Not Found":             http.StatusNotFound,
+		"400 Bad Request":           http.StatusBadRequest,
+	}
+
+	for pattern, code := range statusPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return code
+		}
+	}
+
+	return 0
 }
 
 // IsRateLimitError checks if an error is a rate limit error

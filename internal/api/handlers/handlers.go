@@ -28,6 +28,13 @@ const (
 	formatJSON = "json"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const (
+	cleanFullNameKey contextKey = "cleanFullName"
+)
+
 // Handler contains all HTTP handlers
 type Handler struct {
 	db               *storage.Database
@@ -381,6 +388,63 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, response)
 }
 
+// HandleRepositoryAction routes POST requests to repository actions
+// Pattern: POST /api/v1/repositories/{fullName...}
+// Where fullName can be "org/repo/action" - we parse out the action suffix
+func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request) {
+	fullPath := r.PathValue("fullName")
+	if fullPath == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository path is required")
+		return
+	}
+
+	// Parse the action from the path
+	// Possible actions: rediscover, mark-remediated, unlock, rollback, mark-wont-migrate
+	var action string
+	var fullName string
+
+	if strings.HasSuffix(fullPath, "/rediscover") {
+		action = "rediscover"
+		fullName = strings.TrimSuffix(fullPath, "/rediscover")
+	} else if strings.HasSuffix(fullPath, "/mark-remediated") {
+		action = "mark-remediated"
+		fullName = strings.TrimSuffix(fullPath, "/mark-remediated")
+	} else if strings.HasSuffix(fullPath, "/unlock") {
+		action = "unlock"
+		fullName = strings.TrimSuffix(fullPath, "/unlock")
+	} else if strings.HasSuffix(fullPath, "/rollback") {
+		action = "rollback"
+		fullName = strings.TrimSuffix(fullPath, "/rollback")
+	} else if strings.HasSuffix(fullPath, "/mark-wont-migrate") {
+		action = "mark-wont-migrate"
+		fullName = strings.TrimSuffix(fullPath, "/mark-wont-migrate")
+	} else {
+		h.sendError(w, http.StatusNotFound, "Unknown repository action")
+		return
+	}
+
+	// Create a new request with the cleaned fullName in path value
+	// We'll pass the fullName directly to the handlers
+	ctx := context.WithValue(r.Context(), cleanFullNameKey, fullName)
+	r = r.WithContext(ctx)
+
+	// Route to the appropriate handler
+	switch action {
+	case "rediscover":
+		h.RediscoverRepository(w, r)
+	case "mark-remediated":
+		h.MarkRepositoryRemediated(w, r)
+	case "unlock":
+		h.UnlockRepository(w, r)
+	case "rollback":
+		h.RollbackRepository(w, r)
+	case "mark-wont-migrate":
+		h.MarkRepositoryWontMigrate(w, r)
+	default:
+		h.sendError(w, http.StatusNotFound, "Unknown repository action")
+	}
+}
+
 // GetRepository handles GET /api/v1/repositories/{fullName}
 func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 	fullName := r.PathValue("fullName")
@@ -388,7 +452,11 @@ func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
 	}
+	h.getRepository(w, r, fullName)
+}
 
+// getRepository is the internal implementation
+func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName string) {
 	// URL decode the fullName (Go's PathValue should decode, but we ensure it here)
 	// This handles cases like "org%2Frepo" -> "org/repo"
 	decodedFullName, err := url.QueryUnescape(fullName)
@@ -421,6 +489,86 @@ func (h *Handler) GetRepository(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"repository": repo,
 		"history":    history,
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
+}
+
+// GetRepositoryOrDependencies routes GET requests to either repository details or dependencies
+// Pattern: GET /api/v1/repositories/{fullName...}
+// Routes to dependencies if path ends with "/dependencies", otherwise to repository details
+func (h *Handler) GetRepositoryOrDependencies(w http.ResponseWriter, r *http.Request) {
+	fullPath := r.PathValue("fullName")
+	if fullPath == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository path is required")
+		return
+	}
+
+	// Check if this is a dependencies request
+	if strings.HasSuffix(fullPath, "/dependencies") {
+		// Strip /dependencies and call the dependencies handler
+		fullName := strings.TrimSuffix(fullPath, "/dependencies")
+		h.getRepositoryDependencies(w, r, fullName)
+	} else {
+		// Regular repository details request
+		h.getRepository(w, r, fullPath)
+	}
+}
+
+// GetRepositoryDependencies returns all dependencies for a repository
+func (h *Handler) GetRepositoryDependencies(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+	h.getRepositoryDependencies(w, r, fullName)
+}
+
+// getRepositoryDependencies is the internal implementation
+func (h *Handler) getRepositoryDependencies(w http.ResponseWriter, r *http.Request, fullName string) {
+
+	// URL decode the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
+	// Get dependencies from database
+	dependencies, err := h.db.GetRepositoryDependenciesByFullName(r.Context(), decodedFullName)
+	if err != nil {
+		h.logger.Error("Failed to get repository dependencies",
+			"repo", decodedFullName,
+			"error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependencies")
+		return
+	}
+
+	// Calculate summary statistics
+	summary := struct {
+		Total    int            `json:"total"`
+		Local    int            `json:"local"`
+		External int            `json:"external"`
+		ByType   map[string]int `json:"by_type"`
+	}{
+		Total:  len(dependencies),
+		ByType: make(map[string]int),
+	}
+
+	for _, dep := range dependencies {
+		if dep.IsLocal {
+			summary.Local++
+		} else {
+			summary.External++
+		}
+		summary.ByType[dep.DependencyType]++
+	}
+
+	// Return response with dependencies and summary
+	response := map[string]interface{}{
+		"dependencies": dependencies,
+		"summary":      summary,
 	}
 
 	h.sendJSON(w, http.StatusOK, response)
@@ -500,7 +648,11 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 
 // RediscoverRepository handles POST /api/v1/repositories/{fullName}/rediscover
 func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -559,6 +711,12 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
 		} else {
 			h.logger.Info("Re-discovery completed", "repo", decodedFullName)
+
+			// Update local dependency flags after re-discovery
+			// This ensures dependencies are correctly classified as local/external
+			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
+				h.logger.Warn("Failed to update local dependency flags after re-discovery", "error", err)
+			}
 		}
 	}()
 
@@ -572,7 +730,11 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 // MarkRepositoryRemediated handles POST /api/v1/repositories/{fullName}/mark-remediated
 // This endpoint triggers a full re-discovery after the user has fixed blocking migration issues
 func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -643,6 +805,12 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 			h.logger.Error("Re-validation after remediation failed", "error", err, "repo", decodedFullName)
 		} else {
 			h.logger.Info("Re-validation completed", "repo", decodedFullName)
+
+			// Update local dependency flags after re-validation
+			// This ensures dependencies are correctly classified as local/external
+			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
+				h.logger.Warn("Failed to update local dependency flags after re-validation", "error", err)
+			}
 		}
 	}()
 
@@ -655,7 +823,11 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 
 // UnlockRepository handles POST /api/v1/repositories/{fullName}/unlock
 func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -731,7 +903,11 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 
 // RollbackRepository handles POST /api/v1/repositories/{fullName}/rollback
 func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -789,7 +965,11 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 
 // MarkRepositoryWontMigrate handles POST /api/v1/repositories/{fullName}/mark-wont-migrate
 func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Request) {
-	fullName := r.PathValue("fullName")
+	// Get fullName from context (if routed via HandleRepositoryAction) or path value
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
 	if fullName == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
@@ -897,6 +1077,17 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(batch.Name) == "" {
 		h.sendError(w, http.StatusBadRequest, "Batch name is required")
 		return
+	}
+
+	// Validate migration API if provided
+	if batch.MigrationAPI != "" && batch.MigrationAPI != models.MigrationAPIGEI && batch.MigrationAPI != models.MigrationAPIELM {
+		h.sendError(w, http.StatusBadRequest, "Invalid migration_api. Must be 'GEI' or 'ELM'")
+		return
+	}
+
+	// Set default migration API if not specified
+	if batch.MigrationAPI == "" {
+		batch.MigrationAPI = models.MigrationAPIGEI
 	}
 
 	ctx := r.Context()
@@ -1186,6 +1377,8 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateBatch handles PATCH /api/v1/batches/{id}
+//
+//nolint:gocyclo // Update operations naturally involve multiple conditional checks
 func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
@@ -1217,14 +1410,23 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Parse update request
 	var updates struct {
-		Name        *string    `json:"name,omitempty"`
-		Description *string    `json:"description,omitempty"`
-		Type        *string    `json:"type,omitempty"`
-		ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
+		Name            *string    `json:"name,omitempty"`
+		Description     *string    `json:"description,omitempty"`
+		Type            *string    `json:"type,omitempty"`
+		ScheduledAt     *time.Time `json:"scheduled_at,omitempty"`
+		DestinationOrg  *string    `json:"destination_org,omitempty"`
+		MigrationAPI    *string    `json:"migration_api,omitempty"`
+		ExcludeReleases *bool      `json:"exclude_releases,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Validate migration API if provided
+	if updates.MigrationAPI != nil && *updates.MigrationAPI != models.MigrationAPIGEI && *updates.MigrationAPI != models.MigrationAPIELM {
+		h.sendError(w, http.StatusBadRequest, "Invalid migration_api. Must be 'GEI' or 'ELM'")
 		return
 	}
 
@@ -1240,6 +1442,15 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if updates.ScheduledAt != nil {
 		batch.ScheduledAt = updates.ScheduledAt
+	}
+	if updates.DestinationOrg != nil {
+		batch.DestinationOrg = updates.DestinationOrg
+	}
+	if updates.MigrationAPI != nil {
+		batch.MigrationAPI = *updates.MigrationAPI
+	}
+	if updates.ExcludeReleases != nil {
+		batch.ExcludeReleases = *updates.ExcludeReleases
 	}
 
 	if err := h.db.UpdateBatch(ctx, batch); err != nil {

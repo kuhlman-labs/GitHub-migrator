@@ -408,3 +408,94 @@ func TestGetBinaryStorageDir(t *testing.T) {
 		}
 	})
 }
+
+// Helper to save and restore environment variables for tests
+type envBackup struct {
+	website string
+	skip    string
+}
+
+func saveEnv() envBackup {
+	return envBackup{
+		website: os.Getenv("WEBSITE_SITE_NAME"),
+		skip:    os.Getenv("GHMIG_SKIP_BINARY_VERIFICATION"),
+	}
+}
+
+func (e envBackup) restore() {
+	restoreEnvVar("WEBSITE_SITE_NAME", e.website)
+	restoreEnvVar("GHMIG_SKIP_BINARY_VERIFICATION", e.skip)
+}
+
+func restoreEnvVar(key, value string) {
+	if value != "" {
+		os.Setenv(key, value)
+	} else {
+		os.Unsetenv(key)
+	}
+}
+
+func isInDocker() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
+}
+
+func TestShouldSkipVerification(t *testing.T) {
+	t.Run("skips verification in Azure App Service", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Setenv("WEBSITE_SITE_NAME", "test-app")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+
+		if !shouldSkipVerification() {
+			t.Error("Expected to skip verification in Azure App Service")
+		}
+	})
+
+	t.Run("skips verification when explicitly requested", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", "true")
+
+		if !shouldSkipVerification() {
+			t.Error("Expected to skip verification when GHMIG_SKIP_BINARY_VERIFICATION is true")
+		}
+	})
+
+	t.Run("skips verification in Docker container", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+
+		if isInDocker() {
+			if !shouldSkipVerification() {
+				t.Error("Expected to skip verification in Docker container")
+			}
+		} else {
+			if shouldSkipVerification() {
+				t.Error("Expected to NOT skip verification in non-Docker environment")
+			}
+		}
+	})
+
+	t.Run("does not skip verification by default", func(t *testing.T) {
+		env := saveEnv()
+		defer env.restore()
+
+		os.Unsetenv("WEBSITE_SITE_NAME")
+		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+
+		if isInDocker() {
+			t.Skip("Skipping test: running in Docker container")
+		}
+
+		if shouldSkipVerification() {
+			t.Error("Expected to NOT skip verification in normal environment")
+		}
+	})
+}

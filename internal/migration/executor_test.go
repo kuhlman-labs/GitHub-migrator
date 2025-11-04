@@ -621,7 +621,7 @@ func TestExecutor_getDestinationOrg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := executor.getDestinationOrg(tt.repo)
+			result := executor.getDestinationOrg(tt.repo, nil)
 			if result != tt.expected {
 				t.Errorf("getDestinationOrg() = %q, want %q", result, tt.expected)
 			}
@@ -773,7 +773,7 @@ func TestExecutor_DestinationHelpers_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			org := executor.getDestinationOrg(tt.repo)
+			org := executor.getDestinationOrg(tt.repo, nil)
 			name := executor.getDestinationRepoName(tt.repo)
 
 			if org != tt.expectedOrg {

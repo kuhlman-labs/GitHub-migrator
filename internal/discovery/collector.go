@@ -106,7 +106,18 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 	}
 
 	// Process repositories in parallel
-	return c.processRepositoriesWithProfiler(ctx, repos, profiler)
+	if err := c.processRepositoriesWithProfiler(ctx, repos, profiler); err != nil {
+		return err
+	}
+
+	// After discovery completes, update local dependency flags
+	c.logger.Info("Updating local dependency flags", "organization", org)
+	if err := c.storage.UpdateLocalDependencyFlags(ctx); err != nil {
+		c.logger.Warn("Failed to update local dependency flags", "error", err)
+		// Don't fail the whole discovery if this fails
+	}
+
+	return nil
 }
 
 // DiscoverEnterpriseRepositories discovers all repositories across all organizations in an enterprise
@@ -218,7 +229,16 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 
 	// If not using per-org clients, process all repositories in parallel using the shared profiler
 	if !useAppInstallations {
-		return c.processRepositoriesWithProfiler(ctx, allRepos, profiler)
+		if err := c.processRepositoriesWithProfiler(ctx, allRepos, profiler); err != nil {
+			return err
+		}
+	}
+
+	// After discovery completes, update local dependency flags
+	c.logger.Info("Updating local dependency flags")
+	if err := c.storage.UpdateLocalDependencyFlags(ctx); err != nil {
+		c.logger.Warn("Failed to update local dependency flags", "error", err)
+		// Don't fail the whole discovery if this fails
 	}
 
 	return nil
@@ -646,6 +666,16 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 	// Save to database
 	if err := c.storage.SaveRepository(ctx, repo); err != nil {
 		return fmt.Errorf("failed to save repository: %w", err)
+	}
+
+	// Analyze and save dependencies (only if we cloned the repo)
+	if tempDir != "" {
+		if err := c.analyzeDependencies(ctx, repo, tempDir, profiler); err != nil {
+			c.logger.Warn("Failed to analyze dependencies",
+				"repo", repo.FullName,
+				"error", err)
+			// Don't fail the whole profiling if dependency analysis fails
+		}
 	}
 
 	// Log the profiled repository with dereferenced values

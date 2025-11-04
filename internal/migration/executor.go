@@ -139,9 +139,9 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 }
 
 // getDestinationOrg returns the destination org for a repository
-// Defaults to the source org if not explicitly set
-func (e *Executor) getDestinationOrg(repo *models.Repository) string {
-	// If DestinationFullName is set, extract org from it
+// Precedence: repo.DestinationFullName > batch.DestinationOrg > source org
+func (e *Executor) getDestinationOrg(repo *models.Repository, batch *models.Batch) string {
+	// Priority 1: If DestinationFullName is set, extract org from it
 	if repo.DestinationFullName != nil && *repo.DestinationFullName != "" {
 		parts := strings.Split(*repo.DestinationFullName, "/")
 		if len(parts) >= 1 {
@@ -149,7 +149,12 @@ func (e *Executor) getDestinationOrg(repo *models.Repository) string {
 		}
 	}
 
-	// Default to source org
+	// Priority 2: If batch has a destination org, use it
+	if batch != nil && batch.DestinationOrg != nil && *batch.DestinationOrg != "" {
+		return *batch.DestinationOrg
+	}
+
+	// Priority 3: Default to source org
 	parts := strings.Split(repo.FullName, "/")
 	if len(parts) >= 1 {
 		return parts[0]
@@ -175,6 +180,22 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 
 	// Default to source repo name
 	return repo.Name()
+}
+
+// shouldExcludeReleases determines whether to exclude releases during migration
+// Precedence: repo.ExcludeReleases OR batch.ExcludeReleases (either can enable it)
+func (e *Executor) shouldExcludeReleases(repo *models.Repository, batch *models.Batch) bool {
+	// If repo explicitly excludes releases, honor it
+	if repo.ExcludeReleases {
+		return true
+	}
+
+	// If batch excludes releases, apply it
+	if batch != nil && batch.ExcludeReleases {
+		return true
+	}
+
+	return false
 }
 
 // determineTargetVisibility determines the target visibility based on source visibility and config
@@ -306,12 +327,14 @@ func (e *Executor) getOrCreateMigrationSource(ctx context.Context, ownerID strin
 }
 
 // ExecuteMigration performs a full repository migration
+// batch parameter is optional - if provided, batch-level settings will be applied when repo settings are not specified
 //
 //nolint:gocyclo // Sequential state machine with multiple phases requires complexity
-func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository, dryRun bool) error {
+func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool) error {
 	e.logger.Info("Starting migration",
 		"repo", repo.FullName,
-		"dry_run", dryRun)
+		"dry_run", dryRun,
+		"has_batch", batch != nil)
 
 	// Create migration history record
 	historyID, err := e.createMigrationHistory(ctx, repo, dryRun)
@@ -344,7 +367,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 		}
 	}
 
-	if err := e.validatePreMigration(ctx, repo); err != nil {
+	if err := e.validatePreMigration(ctx, repo, batch); err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "pre_migration", "validate", "Pre-migration validation failed", &errMsg)
 		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
@@ -450,7 +473,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	e.logger.Info("Starting migration on GHEC", "repo", repo.FullName)
 	e.logOperation(ctx, repo, historyID, "INFO", "migration_start", "initiate", "Starting migration on destination", nil)
 
-	migrationID, err := e.startRepositoryMigration(ctx, repo, archiveURLs)
+	migrationID, err := e.startRepositoryMigration(ctx, repo, batch, archiveURLs)
 	if err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "migration_start", "initiate", "Failed to start migration", &errMsg)
@@ -482,7 +505,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	e.logger.Info("Polling migration status", "repo", repo.FullName, "migration_id", migrationID)
 	e.logOperation(ctx, repo, historyID, "INFO", "migration_progress", "poll", "Polling for migration completion", nil)
 
-	if err := e.pollMigrationStatus(ctx, repo, historyID, migrationID); err != nil {
+	if err := e.pollMigrationStatus(ctx, repo, batch, historyID, migrationID); err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "migration_progress", "poll", "Migration failed", &errMsg)
 		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
@@ -673,9 +696,9 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 
 // startRepositoryMigration starts migration on GHEC using GraphQL
 // nolint:gocyclo // Migration startup involves multiple steps and validations
-func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Repository, urls *ArchiveURLs) (string, error) {
+func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Repository, batch *models.Batch, urls *ArchiveURLs) (string, error) {
 	// Get destination org name for this repository
-	destOrgName := e.getDestinationOrg(repo)
+	destOrgName := e.getDestinationOrg(repo, batch)
 	if destOrgName == "" {
 		return "", fmt.Errorf("unable to determine destination organization for repository %s", repo.FullName)
 	}
@@ -757,8 +780,8 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 		GitHubPat:            &destToken,   // Destination GHEC token
 	}
 
-	// Add skipReleases flag if enabled
-	if repo.ExcludeReleases {
+	// Add skipReleases flag if enabled (check both repo and batch settings)
+	if e.shouldExcludeReleases(repo, batch) {
 		skipReleases := githubv4.Boolean(true)
 		input.SkipReleases = &skipReleases
 		e.logger.Info("Excluding releases from migration (skipReleases=true)", "repo", repo.FullName)
@@ -780,7 +803,7 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 }
 
 // pollMigrationStatus polls for migration completion on GHEC
-func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Repository, historyID *int64, migrationID string) error {
+func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Repository, batch *models.Batch, historyID *int64, migrationID string) error {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -823,7 +846,7 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 			case "SUCCEEDED":
 				repo.Status = string(models.StatusMigrationComplete)
 				// Set destination details using the correct destination org and repo name
-				destOrg := e.getDestinationOrg(repo)
+				destOrg := e.getDestinationOrg(repo, batch)
 				destRepoName := e.getDestinationRepoName(repo)
 				destFullName := fmt.Sprintf("%s/%s", destOrg, destRepoName)
 				repo.DestinationFullName = &destFullName
@@ -865,7 +888,7 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 
 // validatePreMigration performs pre-migration validation
 // nolint:gocyclo // Complex validation logic - refactoring would reduce readability
-func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Repository) error {
+func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Repository, batch *models.Batch) error {
 	// Check for GitHub Enterprise Importer blocking issues
 	if repo.HasOversizedRepository {
 		return fmt.Errorf("repository exceeds GitHub's 40 GiB size limit and requires remediation before migration (reduce repository size using Git LFS or history rewriting)")
@@ -909,7 +932,7 @@ func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Reposi
 	}
 
 	// 2. Check if destination repository already exists
-	destOrg := e.getDestinationOrg(repo)
+	destOrg := e.getDestinationOrg(repo, batch)
 	destRepoName := e.getDestinationRepoName(repo)
 	e.logger.Info("Checking destination repository",
 		"source_repo", repo.FullName,

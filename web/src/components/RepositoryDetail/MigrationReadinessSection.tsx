@@ -383,8 +383,8 @@ export function MigrationReadinessSection({
                   </span>
                 </li>
                 
-                {/* Metadata Size */}
-                {repository.estimated_metadata_size && (
+                {/* Metadata Size - Only show if we have actual calculated details */}
+                {metadataDetails && repository.estimated_metadata_size && (
                   <li className="flex items-center gap-2">
                     {hasMetadataWarning ? (
                       <svg className="w-4 h-4 text-yellow-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -396,7 +396,7 @@ export function MigrationReadinessSection({
                       </svg>
                     )}
                     <span className={hasMetadataWarning ? 'text-yellow-700' : 'text-gray-600'}>
-                      Metadata: {formatBytes(repository.estimated_metadata_size)} / 40 GB
+                      Metadata (est.): {formatBytes(repository.estimated_metadata_size)} / 40 GB
                     </span>
                   </li>
                 )}
@@ -540,11 +540,11 @@ export function MigrationReadinessSection({
         </CollapsibleValidationSection>
       )}
       
-      {/* Metadata Size Validation */}
-      {(hasMetadataWarning || repository.estimated_metadata_size) && (
+      {/* Metadata Size Validation - Only show if we have meaningful metadata (>1 GB threshold) */}
+      {metadataDetails && repository.estimated_metadata_size && repository.estimated_metadata_size > 1024 * 1024 * 1024 && (
         <CollapsibleValidationSection
           id="metadata"
-          title="Metadata Size Validation"
+          title="Metadata Size Validation (Estimated)"
           status={hasMetadataWarning ? 'warning' : 'passed'}
           expanded={expandedSections.metadata}
           onToggle={() => toggleSection('metadata')}
@@ -553,7 +553,7 @@ export function MigrationReadinessSection({
             <div className="space-y-4">
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <p className="text-yellow-800 mb-3">
-                  This repository has a large amount of metadata (issues, PRs, releases) that is approaching GitHub's 40 GB metadata limit.
+                  This repository has a large amount of metadata (issues, PRs, releases) that is approaching GitHub's 40 GB metadata limit. <em>Note: These are estimated values.</em>
                 </p>
                 
                 <MetadataBreakdownBar
@@ -582,9 +582,9 @@ export function MigrationReadinessSection({
                 )}
               </div>
             </div>
-          ) : repository.estimated_metadata_size && metadataDetails ? (
+          ) : (
             <div>
-              <p className="text-green-700 mb-3">✓ Metadata size is within acceptable limits</p>
+              <p className="text-green-700 mb-3">✓ Metadata size estimate is within acceptable limits</p>
               <MetadataBreakdownBar
                 releases={metadataDetails.releases_bytes}
                 issues={metadataDetails.issues_estimate_bytes}
@@ -593,9 +593,10 @@ export function MigrationReadinessSection({
                 total={metadataDetails.total_bytes}
                 limit={40 * 1024 * 1024 * 1024}
               />
+              <p className="text-xs text-gray-600 mt-2">
+                <em>Note: Metadata sizes shown are estimates based on repository statistics.</em>
+              </p>
             </div>
-          ) : (
-            <p className="text-gray-600">No metadata size information available</p>
           )}
         </CollapsibleValidationSection>
       )}

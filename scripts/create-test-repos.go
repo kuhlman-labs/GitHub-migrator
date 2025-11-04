@@ -239,6 +239,42 @@ func getTestRepoConfigs() []TestRepoConfig {
 			AutoInit:    true,
 			Setup:       setupRulesetsRepo,
 		},
+		// Dependency testing repositories
+		{
+			Name:        "test-dependency-target",
+			Description: "Simple repository used as a dependency target for testing local dependencies",
+			Private:     false,
+			AutoInit:    true,
+			Setup:       setupDependencyTargetRepo,
+		},
+		{
+			Name:        "test-submodule-dependencies",
+			Description: "Repository with Git submodules (both local and external)",
+			Private:     false,
+			AutoInit:    true,
+			Setup:       setupSubmoduleDependenciesRepo,
+		},
+		{
+			Name:        "test-workflow-dependencies",
+			Description: "Repository with GitHub Actions using reusable workflows from other repos",
+			Private:     false,
+			AutoInit:    true,
+			Setup:       setupWorkflowDependenciesRepo,
+		},
+		{
+			Name:        "test-package-dependencies",
+			Description: "Repository with package dependencies for dependency graph testing",
+			Private:     false,
+			AutoInit:    true,
+			Setup:       setupPackageDependenciesRepo,
+		},
+		{
+			Name:        "test-mixed-dependencies",
+			Description: "Repository with multiple types of dependencies (submodules, workflows, packages)",
+			Private:     false,
+			AutoInit:    true,
+			Setup:       setupMixedDependenciesRepo,
+		},
 	}
 }
 
@@ -1448,6 +1484,518 @@ For more information, see [GitHub Rulesets Documentation](https://docs.github.co
 
 	log.Printf("  ✅ All rulesets configured successfully")
 
+	return nil
+}
+
+// Dependency testing setup functions
+
+func setupDependencyTargetRepo(ctx context.Context, client *github.Client, org, repo string) error {
+	// Create a simple library repo that can be used as a dependency
+	readmeContent := `# Dependency Target Repository
+
+This is a simple repository used as a dependency target for testing.
+
+## Purpose
+
+This repository is referenced by other test repositories to validate:
+- Submodule detection
+- Workflow dependency detection
+- Local vs external dependency classification
+
+## Usage
+
+Other test repositories in this organization reference this repo to simulate dependencies.
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "README.md", readmeContent, "Add README"); err != nil {
+		return err
+	}
+
+	// Add a simple library file
+	libContent := `package target
+
+// Version of this library
+const Version = "1.0.0"
+
+// Helper function
+func Hello(name string) string {
+	return "Hello, " + name + "!"
+}
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "lib.go", libContent, "Add library code"); err != nil {
+		return err
+	}
+
+	// Add a reusable workflow that other repos can call
+	reusableWorkflowContent := `name: Reusable Workflow
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: 'Configuration to use'
+        required: false
+        type: string
+        default: 'default'
+
+jobs:
+  reusable-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo config
+        run: echo "Running with config: ${{ inputs.config }}"
+      
+      - name: Run checks
+        run: |
+          echo "This is a reusable workflow from test-dependency-target"
+          echo "It can be called by other repositories in the same org"
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, ".github/workflows/reusable.yml", reusableWorkflowContent, "Add reusable workflow"); err != nil {
+		return err
+	}
+
+	log.Printf("  🎯 Dependency target repository created with reusable workflow")
+	return nil
+}
+
+func setupSubmoduleDependenciesRepo(ctx context.Context, client *github.Client, org, repo string) error {
+	log.Printf("  🔗 Setting up repository with submodule dependencies")
+
+	// Create README explaining the submodules
+	readmeContent := `# Submodule Dependencies Test
+
+This repository contains Git submodules to test dependency detection.
+
+## Submodules
+
+This repository includes:
+1. **Local submodule** - References another repository in the same organization (test-dependency-target)
+2. **External submodule** - References a public repository (actions/checkout)
+
+## Purpose
+
+Used to test:
+- Submodule detection during discovery
+- Classification of local vs external dependencies
+- Parsing of .gitmodules file
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "README.md", readmeContent, "Add README"); err != nil {
+		return err
+	}
+
+	// Create .gitmodules with both local and external submodules
+	gitmodulesContent := fmt.Sprintf(`[submodule "vendor/local-lib"]
+	path = vendor/local-lib
+	url = https://github.com/%s/test-dependency-target.git
+	branch = main
+
+[submodule "vendor/actions-checkout"]
+	path = vendor/actions-checkout
+	url = https://github.com/actions/checkout.git
+	branch = v3
+
+[submodule "vendor/octocat-hello-world"]
+	path = vendor/octocat-hello-world
+	url = https://github.com/octocat/Hello-World.git
+`, org)
+
+	if err := createOrUpdateFile(ctx, client, org, repo, ".gitmodules", gitmodulesContent, "Add submodules configuration"); err != nil {
+		return err
+	}
+
+	log.Printf("  ✅ Submodule dependencies configured (1 local, 2 external)")
+	return nil
+}
+
+func setupWorkflowDependenciesRepo(ctx context.Context, client *github.Client, org, repo string) error {
+	log.Printf("  ⚙️  Setting up repository with workflow dependencies")
+
+	// Create README
+	readmeContent := `# Workflow Dependencies Test
+
+This repository uses GitHub Actions workflows that reference other repositories.
+
+## Workflow Dependencies
+
+This repository demonstrates:
+1. **Reusable workflows** - Calling workflows from other repositories
+2. **Action dependencies** - Using actions from both local and external repos
+3. **Local vs external** - Mix of same-org and public dependencies
+
+## Purpose
+
+Tests:
+- GitHub Actions workflow parsing
+- Reusable workflow detection
+- Action dependency extraction
+- Local vs external classification
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "README.md", readmeContent, "Add README"); err != nil {
+		return err
+	}
+
+	// Create workflow that uses reusable workflows and actions from other repos
+	workflowContent := fmt.Sprintf(`name: CI with Workflow Dependencies
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Use reusable workflow from same org (local dependency)
+  local-reusable-workflow:
+    uses: %s/test-dependency-target/.github/workflows/reusable.yml@main
+    with:
+      config: 'test'
+
+  # Standard job using actions from various sources
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # External dependency - actions org
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # External dependency - third party
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      # External dependency - another popular action
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+      
+      - name: Run tests
+        run: echo "Running tests..."
+
+  # Use another external reusable workflow
+  external-reusable-workflow:
+    uses: actions/reusable-workflows/.github/workflows/npm-publish.yml@v1
+    with:
+      node-version: '18'
+
+  # Composite action reference
+  composite-action-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Reference to a composite action in another repo
+      - name: Run composite action
+        uses: docker/setup-buildx-action@v3
+`, org)
+
+	if err := createOrUpdateFile(ctx, client, org, repo, ".github/workflows/ci.yml", workflowContent, "Add CI workflow with dependencies"); err != nil {
+		return err
+	}
+
+	// Create another workflow with different dependencies
+	deployWorkflow := `name: Deploy
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # More external dependencies
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/my-role
+          aws-region: us-east-1
+      
+      - name: Deploy to S3
+        uses: aws-actions/aws-deploy@v1
+        with:
+          bucket: my-bucket
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, ".github/workflows/deploy.yml", deployWorkflow, "Add deploy workflow"); err != nil {
+		return err
+	}
+
+	log.Printf("  ✅ Workflow dependencies configured (1 local, 6+ external)")
+	return nil
+}
+
+func setupPackageDependenciesRepo(ctx context.Context, client *github.Client, org, repo string) error {
+	log.Printf("  📦 Setting up repository with package dependencies")
+
+	// Create README
+	readmeContent := `# Package Dependencies Test
+
+This repository contains package dependencies for testing dependency graph.
+
+## Package Types
+
+This repository includes:
+1. **npm dependencies** - JavaScript packages
+2. **Go dependencies** - Go modules
+3. **Python dependencies** - pip packages
+
+## Purpose
+
+Tests:
+- GitHub dependency graph API
+- Package dependency detection
+- Local vs external package classification
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "README.md", readmeContent, "Add README"); err != nil {
+		return err
+	}
+
+	// Create package.json with dependencies
+	packageJSON := fmt.Sprintf(`{
+  "name": "@%s/%s",
+  "version": "1.0.0",
+  "description": "Test repository with package dependencies",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "lodash": "^4.17.21",
+    "axios": "^1.6.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.54.0",
+    "prettier": "^3.1.0",
+    "@types/node": "^20.10.0",
+    "@types/express": "^4.17.21"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/%s/%s.git"
+  }
+}
+`, org, repo, org, repo)
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "package.json", packageJSON, "Add package.json with dependencies"); err != nil {
+		return err
+	}
+
+	// Create go.mod with dependencies
+	goMod := `module github.com/` + org + `/` + repo + `
+
+go 1.21
+
+require (
+	github.com/gin-gonic/gin v1.9.1
+	github.com/google/uuid v1.5.0
+	github.com/stretchr/testify v1.8.4
+	golang.org/x/crypto v0.17.0
+	gopkg.in/yaml.v3 v3.0.1
+)
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "go.mod", goMod, "Add go.mod with dependencies"); err != nil {
+		return err
+	}
+
+	// Create requirements.txt for Python
+	requirementsTxt := `django==5.0
+requests==2.31.0
+pytest==7.4.3
+pandas==2.1.4
+numpy==1.26.2
+flask==3.0.0
+sqlalchemy==2.0.23
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "requirements.txt", requirementsTxt, "Add Python dependencies"); err != nil {
+		return err
+	}
+
+	// Create a simple index.js
+	indexJS := `const express = require('express');
+const axios = require('axios');
+const _ = require('lodash');
+
+const app = express();
+const port = 3000;
+
+app.get('/', (req, res) => {
+  res.send('Package Dependencies Test Repository');
+});
+
+app.listen(port, () => {
+  console.log('Server running on port ' + port);
+});
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "index.js", indexJS, "Add index.js"); err != nil {
+		return err
+	}
+
+	log.Printf("  ✅ Package dependencies configured (npm, Go, Python)")
+	return nil
+}
+
+func setupMixedDependenciesRepo(ctx context.Context, client *github.Client, org, repo string) error {
+	log.Printf("  🎭 Setting up repository with mixed dependency types")
+
+	// Create comprehensive README
+	readmeContent := `# Mixed Dependencies Test Repository
+
+This repository combines multiple types of dependencies for comprehensive testing.
+
+## Dependency Types
+
+### 1. Submodules
+- Local submodule: test-dependency-target (same org)
+- External submodule: actions/checkout
+
+### 2. GitHub Actions Workflows
+- Reusable workflow from same org
+- Actions from external repos (actions/checkout, etc.)
+
+### 3. Package Dependencies
+- npm packages (express, react, etc.)
+- Go modules
+- Python packages
+
+## Purpose
+
+This repository tests:
+- Multiple dependency detection methods simultaneously
+- Classification of local vs external dependencies across all types
+- Batch planning scenarios with complex dependencies
+- UI display of mixed dependency types
+
+## Discovery Testing
+
+When discovered, this repository should show:
+- Total dependencies: 15+
+- Local dependencies: 2+
+- External dependencies: 13+
+- By type: submodules, workflows, dependency_graph
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "README.md", readmeContent, "Add comprehensive README"); err != nil {
+		return err
+	}
+
+	// Add .gitmodules
+	gitmodulesContent := fmt.Sprintf(`[submodule "libs/local-target"]
+	path = libs/local-target
+	url = https://github.com/%s/test-dependency-target.git
+
+[submodule "libs/external-checkout"]
+	path = libs/external-checkout
+	url = https://github.com/actions/checkout.git
+`, org)
+
+	if err := createOrUpdateFile(ctx, client, org, repo, ".gitmodules", gitmodulesContent, "Add submodules"); err != nil {
+		return err
+	}
+
+	// Add workflow with dependencies
+	workflowContent := fmt.Sprintf(`name: Mixed Dependencies CI
+
+on: [push, pull_request]
+
+jobs:
+  # Local reusable workflow
+  local-workflow:
+    uses: %s/test-dependency-target/.github/workflows/reusable.yml@main
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          npm install
+          go mod download
+          pip install -r requirements.txt
+      
+      - name: Run tests
+        run: echo "Testing..."
+`, org)
+
+	if err := createOrUpdateFile(ctx, client, org, repo, ".github/workflows/mixed-ci.yml", workflowContent, "Add mixed CI workflow"); err != nil {
+		return err
+	}
+
+	// Add package.json
+	packageJSON := fmt.Sprintf(`{
+  "name": "@%s/%s",
+  "version": "1.0.0",
+  "description": "Repository with mixed dependencies",
+  "dependencies": {
+    "express": "^4.18.2",
+    "react": "^18.2.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.54.0"
+  }
+}
+`, org, repo)
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "package.json", packageJSON, "Add package.json"); err != nil {
+		return err
+	}
+
+	// Add go.mod
+	goMod := `module github.com/` + org + `/` + repo + `
+
+go 1.21
+
+require (
+	github.com/gin-gonic/gin v1.9.1
+	github.com/stretchr/testify v1.8.4
+)
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "go.mod", goMod, "Add go.mod"); err != nil {
+		return err
+	}
+
+	// Add requirements.txt
+	requirementsTxt := `flask==3.0.0
+requests==2.31.0
+pytest==7.4.3
+`
+
+	if err := createOrUpdateFile(ctx, client, org, repo, "requirements.txt", requirementsTxt, "Add requirements.txt"); err != nil {
+		return err
+	}
+
+	log.Printf("  ✅ Mixed dependencies configured (submodules, workflows, packages)")
 	return nil
 }
 
