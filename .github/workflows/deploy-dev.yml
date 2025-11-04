@@ -8,6 +8,11 @@ on:
       - completed
   workflow_dispatch:
 
+# Set minimal permissions for the workflow
+permissions:
+  contents: read      # Read repository contents
+  id-token: write     # Create OIDC tokens for Azure authentication
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
