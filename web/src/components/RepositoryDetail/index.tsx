@@ -12,6 +12,7 @@ import { ProfileItem } from '../common/ProfileItem';
 import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 import { TimestampDisplay } from '../common/TimestampDisplay';
 import { MigrationReadinessSection } from './MigrationReadinessSection';
+import { DependenciesTab } from './DependenciesTab';
 import { formatBytes, formatDate } from '../../utils/format';
 import { useRepository, useBatches } from '../../hooks/useQueries';
 import { useRediscoverRepository, useUpdateRepository, useUnlockRepository, useRollbackRepository, useMarkRepositoryWontMigrate } from '../../hooks/useMutations';
@@ -34,7 +35,7 @@ export function RepositoryDetail() {
   const [logs, setLogs] = useState<MigrationLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [migrating, setMigrating] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'logs' | 'dependencies'>('overview');
   
   // Rollback state
   const [showRollbackDialog, setShowRollbackDialog] = useState(false);
@@ -619,7 +620,7 @@ export function RepositoryDetail() {
       <div className="bg-white rounded-lg shadow-sm mb-6">
         <div className="border-b border-gray-200">
           <nav className="flex -mb-px">
-            {(['overview', 'history', 'logs'] as const).map((tab) => (
+            {(['overview', 'dependencies', 'history', 'logs'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -1120,6 +1121,10 @@ export function RepositoryDetail() {
                 </div>
               )}
             </div>
+          )}
+
+          {activeTab === 'dependencies' && fullName && (
+            <DependenciesTab fullName={fullName} />
           )}
 
           {activeTab === 'logs' && (

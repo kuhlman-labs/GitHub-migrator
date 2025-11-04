@@ -23,7 +23,7 @@ type MockMigrationExecutor struct {
 	delay         time.Duration
 }
 
-func (m *MockMigrationExecutor) ExecuteMigration(ctx context.Context, repo *models.Repository, dryRun bool) error {
+func (m *MockMigrationExecutor) ExecuteMigration(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool) error {
 	m.mu.Lock()
 	m.executedRepos = append(m.executedRepos, repo.FullName)
 	delay := m.delay
