@@ -22,18 +22,9 @@ provider "azurerm" {
   subscription_id = var.azure_subscription_id
 }
 
-# Create resource group
-resource "azurerm_resource_group" "main" {
-  name     = var.resource_group_name
-  location = var.location
-
-  tags = merge(
-    var.tags,
-    {
-      Environment = "production"
-      ManagedBy   = "Terraform"
-    }
-  )
+# Reference existing resource group
+data "azurerm_resource_group" "main" {
+  name = var.resource_group_name
 }
 
 # Deploy PostgreSQL Database
