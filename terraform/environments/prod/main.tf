@@ -10,8 +10,8 @@ terraform {
 
   # Configure backend for state storage
   backend "azurerm" {
-    resource_group_name  = "terraform-state-rg"
-    storage_account_name = "tfstateghmig854248"
+    resource_group_name  = "mcoe-opps"
+    storage_account_name = "tfstateghmig854247"
     container_name       = "tfstate"
     key                  = "github-migrator-prod.tfstate"
   }
