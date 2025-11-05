@@ -26,7 +26,7 @@ jobs:
   terraform-prod:
     name: Terraform ${{ github.event.inputs.action }} - Production
     runs-on: ubuntu-latest
-    environment: production
+    environment: prod
 
     defaults:
       run:
@@ -73,7 +73,7 @@ jobs:
           # Application Configuration
           app_name_prefix = "${{ vars.APP_NAME_PREFIX }}"
           app_service_sku = "${{ vars.APP_SERVICE_SKU }}"
-          always_on       = ${{ vars.ALWAYS_ON }}
+          always_on       = ${{ vars.ALWAYS_ON || 'true' }}
 
           # Docker Configuration
           docker_registry_url       = "ghcr.io"
