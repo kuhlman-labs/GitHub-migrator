@@ -31,8 +31,8 @@ data "azurerm_resource_group" "main" {
 module "postgresql" {
   source = "../../modules/postgresql"
 
-  resource_group_name          = azurerm_resource_group.main.name
-  location                     = azurerm_resource_group.main.location
+  resource_group_name          = data.azurerm_resource_group.main.name
+  location                     = data.azurerm_resource_group.main.location
   server_name                  = "${var.app_name_prefix}-db-prod"
   database_name                = var.database_name
   admin_username               = var.database_admin_username
@@ -59,10 +59,10 @@ module "postgresql" {
 module "app_service" {
   source = "../../modules/app-service"
 
-  depends_on = [azurerm_resource_group.main, module.postgresql]
+  depends_on = [module.postgresql]
 
-  resource_group_name      = azurerm_resource_group.main.name
-  location                 = azurerm_resource_group.main.location
+  resource_group_name      = data.azurerm_resource_group.main.name
+  location                 = data.azurerm_resource_group.main.location
   app_service_plan_name    = "${var.app_name_prefix}-plan-prod"
   app_service_name         = "${var.app_name_prefix}-prod"
   sku_name                 = var.app_service_sku
