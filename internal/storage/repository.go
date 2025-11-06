@@ -118,7 +118,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		-- from updates to preserve manually configured settings during re-discovery
 	`
 
-	_, err := d.db.ExecContext(ctx, query,
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
 		repo.FullName, repo.Source, repo.SourceURL, repo.TotalSize,
 		repo.LargestFile, repo.LargestFileSize, repo.LargestCommit,
 		repo.LargestCommitSize, repo.HasLFS, repo.HasSubmodules,
@@ -154,7 +154,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 
 	// After UPSERT, we need to retrieve the ID since it's not returned by the query
 	// This is critical for downstream operations like dependency tracking
-	err = d.db.QueryRowContext(ctx, "SELECT id FROM repositories WHERE full_name = ?", repo.FullName).Scan(&repo.ID)
+	err = d.db.QueryRowContext(ctx, d.rebindQuery("SELECT id FROM repositories WHERE full_name = ?"), repo.FullName).Scan(&repo.ID)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve repository ID after save: %w", err)
 	}
@@ -1052,7 +1052,7 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 		WHERE full_name = ?
 	`
 
-	_, err := d.db.ExecContext(ctx, query,
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
 		repo.Source, repo.SourceURL, repo.TotalSize,
 		repo.LargestFile, repo.LargestFileSize, repo.LargestCommit,
 		repo.LargestCommitSize, repo.HasLFS, repo.HasSubmodules,
@@ -1077,28 +1077,28 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 // UpdateRepositoryStatus updates only the status of a repository
 func (d *Database) UpdateRepositoryStatus(ctx context.Context, fullName string, status models.MigrationStatus) error {
 	query := `UPDATE repositories SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
-	_, err := d.db.ExecContext(ctx, query, string(status), fullName)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), string(status), fullName)
 	return err
 }
 
 // UpdateRepositoryDryRunTimestamp updates the last_dry_run_at timestamp for a repository
 func (d *Database) UpdateRepositoryDryRunTimestamp(ctx context.Context, fullName string) error {
 	query := `UPDATE repositories SET last_dry_run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
-	_, err := d.db.ExecContext(ctx, query, fullName)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), fullName)
 	return err
 }
 
 // UpdateBatchDryRunTimestamp updates the last_dry_run_at timestamp for a batch
 func (d *Database) UpdateBatchDryRunTimestamp(ctx context.Context, batchID int64) error {
 	query := `UPDATE batches SET last_dry_run_at = CURRENT_TIMESTAMP WHERE id = ?`
-	_, err := d.db.ExecContext(ctx, query, batchID)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), batchID)
 	return err
 }
 
 // UpdateBatchMigrationAttemptTimestamp updates the last_migration_attempt_at timestamp for a batch
 func (d *Database) UpdateBatchMigrationAttemptTimestamp(ctx context.Context, batchID int64) error {
 	query := `UPDATE batches SET last_migration_attempt_at = CURRENT_TIMESTAMP WHERE id = ?`
-	_, err := d.db.ExecContext(ctx, query, batchID)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), batchID)
 	return err
 }
 
@@ -1114,14 +1114,14 @@ func (d *Database) UpdateBatchProgress(ctx context.Context, batchID int64, statu
 		WHERE id = ?
 	`
 
-	_, err := d.db.ExecContext(ctx, query, status, startedAt, lastDryRunAt, lastMigrationAttemptAt, batchID)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), status, startedAt, lastDryRunAt, lastMigrationAttemptAt, batchID)
 	return err
 }
 
 // DeleteRepository deletes a repository by full name
 func (d *Database) DeleteRepository(ctx context.Context, fullName string) error {
 	query := `DELETE FROM repositories WHERE full_name = ?`
-	_, err := d.db.ExecContext(ctx, query, fullName)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), fullName)
 	return err
 }
 
@@ -1529,7 +1529,7 @@ func (d *Database) CreateBatch(ctx context.Context, batch *models.Batch) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := d.db.ExecContext(ctx, query,
+	result, err := d.db.ExecContext(ctx, d.rebindQuery(query),
 		batch.Name, batch.Description, batch.Type,
 		batch.RepositoryCount, batch.Status, batch.ScheduledAt, batch.CreatedAt,
 		batch.DestinationOrg, batch.MigrationAPI, batch.ExcludeReleases,
@@ -1632,7 +1632,7 @@ func (d *Database) CreateMigrationHistory(ctx context.Context, history *models.M
 		VALUES (?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := d.db.ExecContext(ctx, query,
+	result, err := d.db.ExecContext(ctx, d.rebindQuery(query),
 		history.RepositoryID,
 		history.Status,
 		history.Phase,
@@ -1658,7 +1658,7 @@ func (d *Database) UpdateMigrationHistory(ctx context.Context, id int64, status 
 
 	// Calculate duration
 	var startedAt time.Time
-	err := d.db.QueryRowContext(ctx, "SELECT started_at FROM migration_history WHERE id = ?", id).Scan(&startedAt)
+	err := d.db.QueryRowContext(ctx, d.rebindQuery("SELECT started_at FROM migration_history WHERE id = ?"), id).Scan(&startedAt)
 	if err != nil {
 		return fmt.Errorf("failed to get started_at time: %w", err)
 	}
@@ -1671,7 +1671,7 @@ func (d *Database) UpdateMigrationHistory(ctx context.Context, id int64, status 
 		WHERE id = ?
 	`
 
-	_, err = d.db.ExecContext(ctx, query, status, errorMsg, completedAt, durationSeconds, id)
+	_, err = d.db.ExecContext(ctx, d.rebindQuery(query), status, errorMsg, completedAt, durationSeconds, id)
 	if err != nil {
 		return fmt.Errorf("failed to update migration history: %w", err)
 	}
@@ -1686,7 +1686,7 @@ func (d *Database) CreateMigrationLog(ctx context.Context, log *models.Migration
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := d.db.ExecContext(ctx, query,
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
 		log.RepositoryID,
 		log.HistoryID,
 		log.Level,
@@ -1801,7 +1801,7 @@ func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64
 		WHERE id = ?
 	`
 
-	_, err := d.db.ExecContext(ctx, query, batchID, batchID)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), batchID, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to update batch repository count: %w", err)
 	}
@@ -1845,7 +1845,7 @@ func (d *Database) UpdateBatchStatus(ctx context.Context, batchID int64) error {
 	// Only update if status changed
 	if newStatus != batch.Status {
 		query := `UPDATE batches SET status = ? WHERE id = ?`
-		_, err := d.db.ExecContext(ctx, query, newStatus, batchID)
+		_, err := d.db.ExecContext(ctx, d.rebindQuery(query), newStatus, batchID)
 		if err != nil {
 			return fmt.Errorf("failed to update batch status: %w", err)
 		}
@@ -2247,7 +2247,7 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 	// Update repository status to rolled_back and clear batch assignment
 	// This allows the repository to be reassigned to a new batch
 	query := `UPDATE repositories SET status = ?, batch_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
-	_, err = d.db.ExecContext(ctx, query, string(models.StatusRolledBack), fullName)
+	_, err = d.db.ExecContext(ctx, d.rebindQuery(query), string(models.StatusRolledBack), fullName)
 	if err != nil {
 		return fmt.Errorf("failed to update repository status: %w", err)
 	}
@@ -2270,7 +2270,7 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 		INSERT INTO migration_history (repository_id, status, phase, message, started_at, completed_at)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`
-	_, err = d.db.ExecContext(ctx, historyQuery, repo.ID, "rolled_back", "rollback", message)
+	_, err = d.db.ExecContext(ctx, d.rebindQuery(historyQuery), repo.ID, "rolled_back", "rollback", message)
 	if err != nil {
 		return fmt.Errorf("failed to create rollback history: %w", err)
 	}
@@ -2723,7 +2723,7 @@ func (d *Database) UpdateRepositoryValidation(ctx context.Context, fullName stri
 		WHERE full_name = ?
 	`
 
-	_, err := d.db.ExecContext(ctx, query, validationStatus, validationDetails, destinationData, fullName)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), validationStatus, validationDetails, destinationData, fullName)
 	if err != nil {
 		return fmt.Errorf("failed to update repository validation: %w", err)
 	}
