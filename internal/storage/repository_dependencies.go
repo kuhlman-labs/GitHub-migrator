@@ -18,7 +18,7 @@ func (d *Database) SaveRepositoryDependencies(ctx context.Context, repoID int64,
 	defer tx.Rollback() // nolint:errcheck
 
 	// Clear existing dependencies for this repository
-	if _, err := tx.ExecContext(ctx, "DELETE FROM repository_dependencies WHERE repository_id = ?", repoID); err != nil {
+	if _, err := tx.ExecContext(ctx, d.rebindQuery("DELETE FROM repository_dependencies WHERE repository_id = ?"), repoID); err != nil {
 		return fmt.Errorf("failed to clear existing dependencies: %w", err)
 	}
 
@@ -31,7 +31,7 @@ func (d *Database) SaveRepositoryDependencies(ctx context.Context, repoID int64,
 			) VALUES (?, ?, ?, ?, ?, ?, ?)
 		`
 
-		stmt, err := tx.PrepareContext(ctx, query)
+		stmt, err := tx.PrepareContext(ctx, d.rebindQuery(query))
 		if err != nil {
 			return fmt.Errorf("failed to prepare statement: %w", err)
 		}
@@ -71,7 +71,7 @@ func (d *Database) GetRepositoryDependencies(ctx context.Context, repoID int64) 
 		ORDER BY dependency_type, dependency_full_name
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, repoID)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query dependencies: %w", err)
 	}
@@ -148,7 +148,7 @@ func (d *Database) GetDependentRepositories(ctx context.Context, dependencyFullN
 		ORDER BY r.full_name
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, dependencyFullName)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), dependencyFullName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query dependent repositories: %w", err)
 	}
@@ -161,7 +161,7 @@ func (d *Database) GetDependentRepositories(ctx context.Context, dependencyFullN
 // ClearRepositoryDependencies removes all dependencies for a repository
 // Useful before re-discovery
 func (d *Database) ClearRepositoryDependencies(ctx context.Context, repoID int64) error {
-	_, err := d.db.ExecContext(ctx, "DELETE FROM repository_dependencies WHERE repository_id = ?", repoID)
+	_, err := d.db.ExecContext(ctx, d.rebindQuery("DELETE FROM repository_dependencies WHERE repository_id = ?"), repoID)
 	if err != nil {
 		return fmt.Errorf("failed to clear dependencies: %w", err)
 	}

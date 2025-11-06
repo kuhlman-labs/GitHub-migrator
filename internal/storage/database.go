@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/brettkuhlman/github-migrator/internal/config"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -59,6 +60,26 @@ func (d *Database) Close() error {
 
 func (d *Database) DB() *sql.DB {
 	return d.db
+}
+
+// rebindQuery converts SQLite-style ? placeholders to the appropriate syntax for the database type
+func (d *Database) rebindQuery(query string) string {
+	if d.cfg.Type != "postgres" {
+		return query
+	}
+
+	// Convert ? placeholders to $1, $2, etc. for Postgres
+	var result strings.Builder
+	paramNum := 1
+	for i := 0; i < len(query); i++ {
+		if query[i] == '?' {
+			result.WriteString(fmt.Sprintf("$%d", paramNum))
+			paramNum++
+		} else {
+			result.WriteByte(query[i])
+		}
+	}
+	return result.String()
 }
 
 // Migrate runs all pending database migrations
@@ -116,13 +137,24 @@ func (d *Database) Migrate() error {
 }
 
 func (d *Database) createMigrationsTable() error {
-	query := `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			filename TEXT NOT NULL UNIQUE,
-			applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)
-	`
+	var query string
+	if d.cfg.Type == "postgres" {
+		query = `
+			CREATE TABLE IF NOT EXISTS schema_migrations (
+				id SERIAL PRIMARY KEY,
+				filename TEXT NOT NULL UNIQUE,
+				applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)
+		`
+	} else {
+		query = `
+			CREATE TABLE IF NOT EXISTS schema_migrations (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				filename TEXT NOT NULL UNIQUE,
+				applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)
+		`
+	}
 	_, err := d.db.Exec(query)
 	return err
 }
@@ -172,7 +204,8 @@ func (d *Database) applyMigration(filename, content string) error {
 	}
 
 	// Record migration
-	_, err = tx.Exec("INSERT INTO schema_migrations (filename) VALUES (?)", filename)
+	insertQuery := d.rebindQuery("INSERT INTO schema_migrations (filename) VALUES (?)")
+	_, err = tx.Exec(insertQuery, filename)
 	if err != nil {
 		return err
 	}
@@ -278,7 +311,7 @@ func (d *Database) CountRepositoriesWithFilters(ctx context.Context, filters map
 	query, args = applyRepositoryFilters(query, args, filters)
 
 	var count int
-	err := d.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count repositories: %w", err)
 	}

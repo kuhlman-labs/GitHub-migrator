@@ -6,6 +6,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v75 v75.0.0
 	github.com/jferrl/go-githubauth v1.5.0
+	github.com/lib/pq v1.10.9
 	github.com/lmittmann/tint v1.1.2
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-sqlite3 v1.14.32
