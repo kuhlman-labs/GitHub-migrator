@@ -5,19 +5,19 @@
 -- - 400 MiB file size limit during migration (100 MiB post-migration)
 
 -- Oversized commits (>2 GiB)
-ALTER TABLE repositories ADD COLUMN has_oversized_commits INTEGER DEFAULT 0;
+ALTER TABLE repositories ADD COLUMN has_oversized_commits BOOLEAN DEFAULT FALSE;
 ALTER TABLE repositories ADD COLUMN oversized_commit_details TEXT;
 
 -- Long git references (>255 bytes)
-ALTER TABLE repositories ADD COLUMN has_long_refs INTEGER DEFAULT 0;
+ALTER TABLE repositories ADD COLUMN has_long_refs BOOLEAN DEFAULT FALSE;
 ALTER TABLE repositories ADD COLUMN long_ref_details TEXT;
 
 -- Blocking files (>400 MiB during migration)
-ALTER TABLE repositories ADD COLUMN has_blocking_files INTEGER DEFAULT 0;
+ALTER TABLE repositories ADD COLUMN has_blocking_files BOOLEAN DEFAULT FALSE;
 ALTER TABLE repositories ADD COLUMN blocking_file_details TEXT;
 
 -- Large file warnings (100-400 MiB - allowed during migration, need post-migration remediation)
-ALTER TABLE repositories ADD COLUMN has_large_file_warnings INTEGER DEFAULT 0;
+ALTER TABLE repositories ADD COLUMN has_large_file_warnings BOOLEAN DEFAULT FALSE;
 ALTER TABLE repositories ADD COLUMN large_file_warning_details TEXT;
 
 -- Create indexes for filtering repositories with validation issues

@@ -12,7 +12,7 @@ ALTER TABLE batches ADD COLUMN migration_api TEXT DEFAULT 'GEI';
 
 -- Exclude releases during migration
 -- If true, releases will be skipped for all repos in this batch (unless repo overrides)
-ALTER TABLE batches ADD COLUMN exclude_releases INTEGER DEFAULT 0;
+ALTER TABLE batches ADD COLUMN exclude_releases BOOLEAN DEFAULT FALSE;
 
 -- Create index for filtering batches by migration API type
 CREATE INDEX idx_batches_migration_api ON batches(migration_api);

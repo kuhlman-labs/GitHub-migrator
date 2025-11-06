@@ -20,6 +20,11 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+const (
+	dbTypePostgres = "postgres"
+	dbTypeSQLite   = "sqlite"
+)
+
 type Database struct {
 	db  *sql.DB
 	cfg config.DatabaseConfig
@@ -27,7 +32,7 @@ type Database struct {
 
 func NewDatabase(cfg config.DatabaseConfig) (*Database, error) {
 	// Ensure data directory exists for SQLite
-	if cfg.Type == "sqlite" {
+	if cfg.Type == dbTypeSQLite {
 		dir := filepath.Dir(cfg.DSN)
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -36,7 +41,7 @@ func NewDatabase(cfg config.DatabaseConfig) (*Database, error) {
 
 	// Map config type to driver name
 	driverName := cfg.Type
-	if cfg.Type == "sqlite" {
+	if cfg.Type == dbTypeSQLite {
 		driverName = "sqlite3"
 	}
 
@@ -66,7 +71,7 @@ func (d *Database) DB() *sql.DB {
 // rebindQuery converts SQLite-style ? placeholders to the appropriate syntax for the database type
 // and transforms SQLite-specific functions to PostgreSQL equivalents
 func (d *Database) rebindQuery(query string) string {
-	if d.cfg.Type == "postgres" {
+	if d.cfg.Type == dbTypePostgres {
 		// Transform SQLite functions to PostgreSQL
 		query = d.transformSQLiteFunctionsToPostgres(query)
 
@@ -98,6 +103,38 @@ func (d *Database) transformSQLiteFunctionsToPostgres(query string) string {
 	// PostgreSQL supports both SUBSTRING syntaxes, so simple replacement works
 	query = strings.ReplaceAll(query, "SUBSTR(", "SUBSTRING(")
 	query = strings.ReplaceAll(query, "substr(", "SUBSTRING(")
+
+	// Transform boolean comparisons from SQLite (integer) to PostgreSQL (boolean)
+	// In SQLite, booleans are stored as 0/1, but PostgreSQL uses TRUE/FALSE
+	// Replace common boolean column comparisons
+	booleanColumns := []string{
+		"has_lfs", "has_submodules", "has_large_files", "is_archived", "is_fork",
+		"has_wiki", "has_pages", "has_discussions", "has_actions", "has_projects",
+		"has_packages", "has_rulesets", "has_code_scanning", "has_dependabot",
+		"has_secret_scanning", "has_codeowners", "has_self_hosted_runners",
+		"has_release_assets", "has_oversized_repository", "has_oversized_commits",
+		"has_long_refs", "has_blocking_files", "has_large_file_warnings", "is_local",
+		"exclude_releases", "exclude_attachments", "exclude_metadata",
+		"exclude_git_data", "exclude_owner_projects",
+	}
+
+	for _, col := range booleanColumns {
+		// column = 1 -> column = TRUE (or just column)
+		query = strings.ReplaceAll(query, col+" = 1", col+" = TRUE")
+		query = strings.ReplaceAll(query, col+"=1", col+"=TRUE")
+
+		// column = 0 -> column = FALSE (or just NOT column)
+		query = strings.ReplaceAll(query, col+" = 0", col+" = FALSE")
+		query = strings.ReplaceAll(query, col+"=0", col+"=FALSE")
+
+		// column != 1 -> column != TRUE
+		query = strings.ReplaceAll(query, col+" != 1", col+" != TRUE")
+		query = strings.ReplaceAll(query, col+"!=1", col+"!=TRUE")
+
+		// column != 0 -> column != FALSE
+		query = strings.ReplaceAll(query, col+" != 0", col+" != FALSE")
+		query = strings.ReplaceAll(query, col+"!=0", col+"!=FALSE")
+	}
 
 	return query
 }
@@ -158,7 +195,7 @@ func (d *Database) Migrate() error {
 
 func (d *Database) createMigrationsTable() error {
 	var query string
-	if d.cfg.Type == "postgres" {
+	if d.cfg.Type == dbTypePostgres {
 		query = `
 			CREATE TABLE IF NOT EXISTS schema_migrations (
 				id SERIAL PRIMARY KEY,
@@ -219,8 +256,14 @@ func (d *Database) applyMigration(filename, content string) error {
 		}
 
 		// Transform SQLite syntax to PostgreSQL if needed
-		if d.cfg.Type == "postgres" {
+		if d.cfg.Type == dbTypePostgres {
 			stmt = d.transformSQLiteToPostgres(stmt)
+		}
+
+		// Skip ALTER COLUMN TYPE statements for SQLite (not supported)
+		if d.cfg.Type == dbTypeSQLite && strings.Contains(strings.ToUpper(stmt), "ALTER COLUMN") && strings.Contains(strings.ToUpper(stmt), "TYPE") {
+			slog.Debug("Skipping ALTER COLUMN TYPE statement for SQLite", "statement", stmt)
+			continue
 		}
 
 		if _, execErr := tx.Exec(stmt); execErr != nil {
@@ -301,15 +344,15 @@ func (d *Database) transformSQLiteToPostgres(stmt string) string {
 	// Handle both "INTEGER PRIMARY KEY AUTOINCREMENT" and standalone AUTOINCREMENT
 	stmt = strings.ReplaceAll(stmt, "INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
 	stmt = strings.ReplaceAll(stmt, "AUTOINCREMENT", "")
-	
+
 	// Replace DATETIME with TIMESTAMP
 	stmt = strings.ReplaceAll(stmt, "DATETIME", "TIMESTAMP")
-	
+
 	// Replace SQLite boolean defaults (0/1) with PostgreSQL boolean literals (FALSE/TRUE)
 	// This needs to be done carefully to only replace in DEFAULT clauses
 	stmt = strings.ReplaceAll(stmt, "DEFAULT 0", "DEFAULT FALSE")
 	stmt = strings.ReplaceAll(stmt, "DEFAULT 1", "DEFAULT TRUE")
-	
+
 	return stmt
 }
 
