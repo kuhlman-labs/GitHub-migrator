@@ -260,9 +260,10 @@ func (d *Database) applyMigration(filename, content string) error {
 			stmt = d.transformSQLiteToPostgres(stmt)
 		}
 
-		// Skip ALTER COLUMN TYPE statements for SQLite (not supported)
-		if d.cfg.Type == dbTypeSQLite && strings.Contains(strings.ToUpper(stmt), "ALTER COLUMN") && strings.Contains(strings.ToUpper(stmt), "TYPE") {
-			slog.Debug("Skipping ALTER COLUMN TYPE statement for SQLite", "statement", stmt)
+		// Skip ALTER COLUMN statements for SQLite (not supported)
+		// This includes TYPE, DROP DEFAULT, and SET DEFAULT operations
+		if d.cfg.Type == dbTypeSQLite && strings.Contains(strings.ToUpper(stmt), "ALTER COLUMN") {
+			slog.Debug("Skipping ALTER COLUMN statement for SQLite", "statement", stmt)
 			continue
 		}
 
