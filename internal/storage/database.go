@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -63,23 +64,42 @@ func (d *Database) DB() *sql.DB {
 }
 
 // rebindQuery converts SQLite-style ? placeholders to the appropriate syntax for the database type
+// and transforms SQLite-specific functions to PostgreSQL equivalents
 func (d *Database) rebindQuery(query string) string {
-	if d.cfg.Type != "postgres" {
-		return query
+	if d.cfg.Type == "postgres" {
+		// Transform SQLite functions to PostgreSQL
+		query = d.transformSQLiteFunctionsToPostgres(query)
+
+		// Convert ? placeholders to $1, $2, etc. for Postgres
+		var result strings.Builder
+		paramNum := 1
+		for i := 0; i < len(query); i++ {
+			if query[i] == '?' {
+				result.WriteString(fmt.Sprintf("$%d", paramNum))
+				paramNum++
+			} else {
+				result.WriteByte(query[i])
+			}
+		}
+		return result.String()
 	}
 
-	// Convert ? placeholders to $1, $2, etc. for Postgres
-	var result strings.Builder
-	paramNum := 1
-	for i := 0; i < len(query); i++ {
-		if query[i] == '?' {
-			result.WriteString(fmt.Sprintf("$%d", paramNum))
-			paramNum++
-		} else {
-			result.WriteByte(query[i])
-		}
-	}
-	return result.String()
+	return query
+}
+
+// transformSQLiteFunctionsToPostgres converts SQLite-specific functions to PostgreSQL equivalents
+func (d *Database) transformSQLiteFunctionsToPostgres(query string) string {
+	// INSTR(haystack, needle) -> POSITION(needle IN haystack)
+	// Match INSTR with its two arguments and swap them
+	instrRegex := regexp.MustCompile(`(?i)INSTR\(([^,]+),\s*('[^']+')\)`)
+	query = instrRegex.ReplaceAllString(query, "POSITION($2 IN $1)")
+
+	// SUBSTR(str, start, length) -> SUBSTRING(str, start, length)
+	// PostgreSQL supports both SUBSTRING syntaxes, so simple replacement works
+	query = strings.ReplaceAll(query, "SUBSTR(", "SUBSTRING(")
+	query = strings.ReplaceAll(query, "substr(", "SUBSTRING(")
+
+	return query
 }
 
 // Migrate runs all pending database migrations
@@ -198,6 +218,11 @@ func (d *Database) applyMigration(filename, content string) error {
 			continue
 		}
 
+		// Transform SQLite syntax to PostgreSQL if needed
+		if d.cfg.Type == "postgres" {
+			stmt = d.transformSQLiteToPostgres(stmt)
+		}
+
 		if _, execErr := tx.Exec(stmt); execErr != nil {
 			return fmt.Errorf("statement %d failed: %w\nStatement: %s", i+1, execErr, stmt)
 		}
@@ -270,6 +295,19 @@ func splitSQLStatements(content string) []string {
 	return statements
 }
 
+// transformSQLiteToPostgres converts SQLite-specific syntax to PostgreSQL syntax
+func (d *Database) transformSQLiteToPostgres(stmt string) string {
+	// Replace AUTOINCREMENT with SERIAL for simple cases
+	// Handle both "INTEGER PRIMARY KEY AUTOINCREMENT" and standalone AUTOINCREMENT
+	stmt = strings.ReplaceAll(stmt, "INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+	stmt = strings.ReplaceAll(stmt, "AUTOINCREMENT", "")
+
+	// Replace DATETIME with TIMESTAMP
+	stmt = strings.ReplaceAll(stmt, "DATETIME", "TIMESTAMP")
+
+	return stmt
+}
+
 // GetDistinctOrganizations retrieves a list of unique organizations from repositories
 func (d *Database) GetDistinctOrganizations(ctx context.Context) ([]string, error) {
 	query := `
@@ -284,7 +322,7 @@ func (d *Database) GetDistinctOrganizations(ctx context.Context) ([]string, erro
 		ORDER BY organization ASC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get distinct organizations: %w", err)
 	}

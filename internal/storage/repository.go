@@ -957,7 +957,7 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		buildActivityPointsSQL(),
 		strings.Join(repoIDs, ","))
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
 	if err != nil {
 		return err
 	}
@@ -1910,7 +1910,7 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 		ORDER BY total DESC, org ASC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization stats: %w", err)
 	}
@@ -2206,7 +2206,7 @@ func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*Mig
 		ORDER BY total_repos DESC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration completion stats: %w", err)
 	}
