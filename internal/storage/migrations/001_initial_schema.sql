@@ -1,3 +1,20 @@
+-- Batches table (must be created first due to foreign key constraint)
+CREATE TABLE IF NOT EXISTS batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    type TEXT NOT NULL, -- 'pilot', 'wave_1', etc.
+    repository_count INTEGER DEFAULT 0,
+    status TEXT NOT NULL,
+    scheduled_at DATETIME,
+    started_at DATETIME,
+    completed_at DATETIME,
+    created_at DATETIME NOT NULL
+);
+
+CREATE INDEX idx_batches_status ON batches(status);
+CREATE INDEX idx_batches_type ON batches(type);
+
 -- Repositories table
 CREATE TABLE IF NOT EXISTS repositories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,20 +109,3 @@ CREATE INDEX idx_migration_logs_repo ON migration_logs(repository_id);
 CREATE INDEX idx_migration_logs_level ON migration_logs(level);
 CREATE INDEX idx_migration_logs_timestamp ON migration_logs(timestamp);
 CREATE INDEX idx_migration_logs_history ON migration_logs(history_id);
-
--- Batches table
-CREATE TABLE IF NOT EXISTS batches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    type TEXT NOT NULL, -- 'pilot', 'wave_1', etc.
-    repository_count INTEGER DEFAULT 0,
-    status TEXT NOT NULL,
-    scheduled_at DATETIME,
-    started_at DATETIME,
-    completed_at DATETIME,
-    created_at DATETIME NOT NULL
-);
-
-CREATE INDEX idx_batches_status ON batches(status);
-CREATE INDEX idx_batches_type ON batches(type);
