@@ -38,7 +38,7 @@ output "connection_string" {
 
 output "dsn" {
   description = "PostgreSQL DSN for the application"
-  value       = "postgres://${azurerm_postgresql_flexible_server.main.administrator_login}:${random_password.admin_password.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/${azurerm_postgresql_flexible_server_database.main.name}?sslmode=require"
+  value       = "postgres://${urlencode(azurerm_postgresql_flexible_server.main.administrator_login)}:${urlencode(random_password.admin_password.result)}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/${azurerm_postgresql_flexible_server_database.main.name}?sslmode=require"
   sensitive   = true
 }
 
