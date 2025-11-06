@@ -301,10 +301,15 @@ func (d *Database) transformSQLiteToPostgres(stmt string) string {
 	// Handle both "INTEGER PRIMARY KEY AUTOINCREMENT" and standalone AUTOINCREMENT
 	stmt = strings.ReplaceAll(stmt, "INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
 	stmt = strings.ReplaceAll(stmt, "AUTOINCREMENT", "")
-
+	
 	// Replace DATETIME with TIMESTAMP
 	stmt = strings.ReplaceAll(stmt, "DATETIME", "TIMESTAMP")
-
+	
+	// Replace SQLite boolean defaults (0/1) with PostgreSQL boolean literals (FALSE/TRUE)
+	// This needs to be done carefully to only replace in DEFAULT clauses
+	stmt = strings.ReplaceAll(stmt, "DEFAULT 0", "DEFAULT FALSE")
+	stmt = strings.ReplaceAll(stmt, "DEFAULT 1", "DEFAULT TRUE")
+	
 	return stmt
 }
 
