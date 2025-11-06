@@ -311,7 +311,7 @@ func (d *Database) CountRepositoriesWithFilters(ctx context.Context, filters map
 	query, args = applyRepositoryFilters(query, args, filters)
 
 	var count int
-	err := d.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count repositories: %w", err)
 	}
