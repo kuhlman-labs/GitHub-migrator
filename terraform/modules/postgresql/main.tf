@@ -32,8 +32,12 @@ resource "azurerm_postgresql_flexible_server" "main" {
   backup_retention_days        = var.backup_retention_days
   geo_redundant_backup_enabled = var.geo_redundant_backup_enabled
 
+  # Only set zone when explicitly provided (for non-HA or specific zone requirements)
+  zone = var.availability_zone
+
   high_availability {
-    mode = var.high_availability_mode
+    mode                      = var.high_availability_mode
+    standby_availability_zone = var.standby_availability_zone
   }
 
   tags = var.tags

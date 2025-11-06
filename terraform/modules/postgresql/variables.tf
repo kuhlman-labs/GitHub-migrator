@@ -62,6 +62,18 @@ variable "high_availability_mode" {
   default     = "Disabled"
 }
 
+variable "availability_zone" {
+  description = "Availability zone for the primary server (1, 2, or 3). Only used when high availability is disabled."
+  type        = string
+  default     = null
+}
+
+variable "standby_availability_zone" {
+  description = "Availability zone for the standby server (1, 2, or 3). Only used with ZoneRedundant high availability."
+  type        = string
+  default     = null
+}
+
 variable "additional_firewall_rules" {
   description = "Additional firewall rules to add"
   type = map(object({

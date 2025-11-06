@@ -42,6 +42,8 @@ module "postgresql" {
   backup_retention_days        = var.database_backup_retention_days
   geo_redundant_backup_enabled = var.database_geo_redundant_backup_enabled
   high_availability_mode       = var.database_high_availability_mode
+  availability_zone            = "3"
+  standby_availability_zone    = "1"
 
   additional_firewall_rules = var.database_additional_firewall_rules
   server_configurations     = var.database_server_configurations
