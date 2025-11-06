@@ -196,7 +196,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 	`
 
 	var repo models.Repository
-	err := d.db.QueryRowContext(ctx, query, fullName).Scan(
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), fullName).Scan(
 		&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
 		&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
 		&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
@@ -836,7 +836,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 		}
 	}
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
@@ -1161,7 +1161,7 @@ func (d *Database) CountRepositories(ctx context.Context, filters map[string]int
 	}
 
 	var count int
-	err := d.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&count)
 	return count, err
 }
 
@@ -1222,7 +1222,7 @@ func (d *Database) GetRepositoriesByIDs(ctx context.Context, ids []int64) ([]*mo
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repositories by IDs: %w", err)
 	}
@@ -1265,7 +1265,7 @@ func (d *Database) GetRepositoriesByNames(ctx context.Context, names []string) (
 		WHERE full_name IN (%s)
 	`, strings.Join(placeholders, ","))
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repositories by names: %w", err)
 	}
@@ -1308,7 +1308,7 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 	`
 
 	var repo models.Repository
-	err := d.db.QueryRowContext(ctx, query, id).Scan(
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), id).Scan(
 		&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
 		&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
 		&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
@@ -1363,7 +1363,7 @@ func (d *Database) GetMigrationHistory(ctx context.Context, repoID int64) ([]*mo
 		ORDER BY started_at DESC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, repoID)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration history: %w", err)
 	}
@@ -1407,7 +1407,7 @@ func (d *Database) GetMigrationLogs(ctx context.Context, repoID int64, level, ph
 	query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration logs: %w", err)
 	}
@@ -1441,7 +1441,7 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 	`
 
 	var batch models.Batch
-	err := d.db.QueryRowContext(ctx, query, id).Scan(
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), id).Scan(
 		&batch.ID, &batch.Name, &batch.Description, &batch.Type,
 		&batch.RepositoryCount, &batch.Status, &batch.ScheduledAt,
 		&batch.StartedAt, &batch.CompletedAt, &batch.CreatedAt,
@@ -1470,7 +1470,7 @@ func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
 		WHERE id = ?
 	`
 
-	_, err := d.db.ExecContext(ctx, query,
+	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
 		batch.Name, batch.Description, batch.Type, batch.RepositoryCount,
 		batch.Status, batch.ScheduledAt, batch.StartedAt, batch.CompletedAt,
 		batch.LastDryRunAt, batch.LastMigrationAttemptAt,
@@ -1564,14 +1564,14 @@ func (d *Database) DeleteBatch(ctx context.Context, batchID int64) error {
 		SET batch_id = NULL, updated_at = CURRENT_TIMESTAMP
 		WHERE batch_id = ?
 	`
-	_, err = tx.ExecContext(ctx, clearReposQuery, batchID)
+	_, err = tx.ExecContext(ctx, d.rebindQuery(clearReposQuery), batchID)
 	if err != nil {
 		return fmt.Errorf("failed to clear batch from repositories: %w", err)
 	}
 
 	// Delete the batch
 	deleteBatchQuery := `DELETE FROM batches WHERE id = ?`
-	result, err := tx.ExecContext(ctx, deleteBatchQuery, batchID)
+	result, err := tx.ExecContext(ctx, d.rebindQuery(deleteBatchQuery), batchID)
 	if err != nil {
 		return fmt.Errorf("failed to delete batch: %w", err)
 	}
@@ -1727,7 +1727,7 @@ func (d *Database) AddRepositoriesToBatch(ctx context.Context, batchID int64, re
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
 
-	result, err := d.db.ExecContext(ctx, query, args...)
+	result, err := d.db.ExecContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return fmt.Errorf("failed to add repositories to batch: %w", err)
 	}
@@ -1771,7 +1771,7 @@ func (d *Database) RemoveRepositoriesFromBatch(ctx context.Context, batchID int6
 		WHERE batch_id = ? AND id IN (%s)
 	`, strings.Join(placeholders, ","))
 
-	result, err := d.db.ExecContext(ctx, query, args...)
+	result, err := d.db.ExecContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return fmt.Errorf("failed to remove repositories from batch: %w", err)
 	}
@@ -2325,7 +2325,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get complexity distribution: %w", err)
 	}
@@ -2373,7 +2373,7 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFil
 	args = append(args, batchArgs...)
 
 	var totalCompleted int
-	err := d.db.QueryRowContext(ctx, query, args...).Scan(&totalCompleted)
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&totalCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration velocity: %w", err)
 	}
@@ -2419,7 +2419,7 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration time series: %w", err)
 	}
@@ -2459,7 +2459,7 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, batch
 	args := append(orgArgs, batchArgs...)
 
 	var avgDuration sql.NullFloat64
-	err := d.db.QueryRowContext(ctx, query, args...).Scan(&avgDuration)
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&avgDuration)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get average migration time: %w", err)
 	}
@@ -2512,7 +2512,7 @@ func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFi
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repository stats: %w", err)
 	}
@@ -2568,7 +2568,7 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get size distribution: %w", err)
 	}
@@ -2625,7 +2625,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 	args := append(orgArgs, batchArgs...)
 
 	var stats FeatureStats
-	err := d.db.QueryRowContext(ctx, query, args...).Scan(
+	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(
 		&stats.IsArchived,
 		&stats.IsFork,
 		&stats.HasLFS,
@@ -2678,7 +2678,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization stats: %w", err)
 	}
@@ -2757,7 +2757,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration completion stats: %w", err)
 	}
