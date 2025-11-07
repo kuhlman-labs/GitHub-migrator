@@ -1,0 +1,55 @@
+# Production-like setup with PostgreSQL
+# Usage: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up
+# Or use: make docker-run-postgres
+
+version: '3.8'
+
+services:
+  # PostgreSQL database service
+  postgres:
+    image: postgres:16-alpine
+    container_name: github-migrator-postgres
+    environment:
+      POSTGRES_DB: migrator
+      POSTGRES_USER: migrator
+      POSTGRES_PASSWORD: migrator_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U migrator"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Override migrator service to use PostgreSQL
+  migrator:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # PostgreSQL database settings (override SQLite from base compose file)
+      - GHMIG_DATABASE_TYPE=postgres
+      - GHMIG_DATABASE_DSN=postgres://migrator:migrator_dev_password@postgres:5432/migrator?sslmode=disable
+      # All GHMIG_* variables from your .env file will be automatically passed through
+      # Docker Compose automatically reads .env from the project root
+      # You can also pass them explicitly if needed (uncomment examples below):
+      # - GHMIG_SOURCE_TOKEN=${GHMIG_SOURCE_TOKEN}
+      # - GHMIG_DESTINATION_TOKEN=${GHMIG_DESTINATION_TOKEN}
+      # - GHMIG_SOURCE_BASE_URL=${GHMIG_SOURCE_BASE_URL}
+      # - GHMIG_DESTINATION_BASE_URL=${GHMIG_DESTINATION_BASE_URL}
+      # - GHMIG_MIGRATION_WORKERS=${GHMIG_MIGRATION_WORKERS}
+      # Or use env_file directive (see commented section below)
+    # env_file:
+    #   - .env  # Explicitly load .env file (optional, as Docker Compose reads it automatically)
+    # Remove SQLite volume mount since we're using PostgreSQL
+    volumes:
+      - ./logs:/app/logs
+      - ./configs:/app/configs
+
+volumes:
+  postgres_data:
+    driver: local
+

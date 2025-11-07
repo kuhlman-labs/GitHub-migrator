@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   migrator:
     build: .
@@ -12,9 +10,18 @@ services:
       - ./logs:/app/logs
       - ./configs:/app/configs
     environment:
+      # Default configuration for SQLite
       - GHMIG_SERVER_PORT=8080
       - GHMIG_DATABASE_TYPE=sqlite
       - GHMIG_DATABASE_DSN=/app/data/migrator.db
       - GHMIG_LOGGING_LEVEL=info
       - GHMIG_LOGGING_FORMAT=json
+      # All GHMIG_* variables from your .env file are automatically available
+      # Docker Compose reads .env from the project root automatically
+      # Add any variables you want to explicitly pass through:
+      # - GHMIG_SOURCE_TOKEN=${GHMIG_SOURCE_TOKEN}
+      # - GHMIG_DESTINATION_TOKEN=${GHMIG_DESTINATION_TOKEN}
+    # Or use env_file to explicitly load environment files:
+    # env_file:
+    #   - .env
     restart: unless-stopped

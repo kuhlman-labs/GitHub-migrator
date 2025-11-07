@@ -1,6 +1,8 @@
 run:
   timeout: 5m
   tests: true
+  skip-dirs:
+    - scripts  # Standalone scripts with independent main functions
 
 linters:
   enable:
@@ -40,6 +42,7 @@ issues:
   exclude-dirs:
     - vendor
     - web
+    - scripts  # Standalone scripts with their own main functions
   exclude-rules:
     - path: _test\.go
       linters:

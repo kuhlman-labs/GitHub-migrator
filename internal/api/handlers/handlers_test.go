@@ -479,6 +479,19 @@ func TestUpdateRepository(t *testing.T) {
 	h, db := setupTestHandler(t)
 	ctx := context.Background()
 
+	// Create a batch first for the foreign key relationship
+	desc := "Test batch for update repository"
+	batch := &models.Batch{
+		Name:        "test-batch",
+		Description: &desc,
+		Type:        "pilot",
+		Status:      "pending",
+		CreatedAt:   time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("Failed to create batch: %v", err)
+	}
+
 	repo := &models.Repository{
 		FullName: "org/test-repo",
 		Status:   string(models.StatusPending),
@@ -488,7 +501,7 @@ func TestUpdateRepository(t *testing.T) {
 
 	t.Run("update batch_id and priority", func(t *testing.T) {
 		updates := map[string]interface{}{
-			"batch_id": float64(123),
+			"batch_id": float64(batch.ID),
 			"priority": float64(1),
 		}
 		body, _ := json.Marshal(updates)
@@ -511,8 +524,8 @@ func TestUpdateRepository(t *testing.T) {
 		if updated.Priority != 1 {
 			t.Errorf("Expected priority 1, got %d", updated.Priority)
 		}
-		if updated.BatchID == nil || *updated.BatchID != 123 {
-			t.Error("Expected batch_id to be 123")
+		if updated.BatchID == nil || *updated.BatchID != batch.ID {
+			t.Errorf("Expected batch_id to be %d, got %v", batch.ID, updated.BatchID)
 		}
 	})
 
