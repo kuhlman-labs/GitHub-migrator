@@ -1,8 +1,6 @@
 run:
   timeout: 5m
   tests: true
-  skip-dirs:
-    - scripts  # Standalone scripts with independent main functions
 
 linters:
   enable:
