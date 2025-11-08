@@ -304,6 +304,9 @@ func buildComplexityScoreSQL() string {
 		GB5   = 5368709120 // 5GB
 	)
 
+	// Use TRUE/FALSE for boolean comparisons (works across all databases: SQLite, PostgreSQL, SQL Server)
+	const trueVal = "TRUE"
+
 	return fmt.Sprintf(`(
 		-- Size tier scoring (0-9 points)
 		(CASE 
@@ -315,29 +318,29 @@ func buildComplexityScoreSQL() string {
 		END) * 3 +
 		
 		-- High impact features (3-4 points each)
-		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
+		CASE WHEN has_large_files = %s THEN 4 ELSE 0 END +
 		CASE WHEN environment_count > 0 THEN 3 ELSE 0 END +
 		CASE WHEN secret_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN has_packages = 1 THEN 3 ELSE 0 END +
-		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
+		CASE WHEN has_packages = %s THEN 3 ELSE 0 END +
+		CASE WHEN has_self_hosted_runners = %s THEN 3 ELSE 0 END +
 		
 		-- Moderate impact features (2 points each)
 		CASE WHEN variable_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_discussions = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_discussions = %s THEN 2 ELSE 0 END +
 		CASE WHEN release_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
-		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_lfs = %s THEN 2 ELSE 0 END +
+		CASE WHEN has_submodules = %s THEN 2 ELSE 0 END +
 		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
 		
 		-- Low impact features (1 point each)
-		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
 		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
-		CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
-		CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_codeowners = %s THEN 1 ELSE 0 END +
 		
 		-- Activity-based scoring (0-4 points) using quantiles
 		(CASE 
@@ -355,5 +358,9 @@ func buildComplexityScoreSQL() string {
 			) >= 0.25 THEN 2
 			ELSE 0
 		END)
-	)`, MB100, GB1, GB5)
+	)`, MB100, GB1, GB5,
+		trueVal, trueVal, trueVal, // has_large_files, has_packages, has_self_hosted_runners
+		trueVal, trueVal, trueVal, // has_discussions, has_lfs, has_submodules
+		trueVal, trueVal, trueVal, // has_code_scanning, has_dependabot, has_secret_scanning
+		trueVal, trueVal) // has_rulesets, has_codeowners
 }

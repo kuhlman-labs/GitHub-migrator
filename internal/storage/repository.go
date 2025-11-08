@@ -85,7 +85,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 
 // buildGitHubComplexityScoreSQL generates the SQL expression for calculating GitHub-specific complexity scores
 // This includes activity-based scoring using quantiles from the repository dataset
-func buildGitHubComplexityScoreSQL() string {
+func (d *Database) buildGitHubComplexityScoreSQL() string {
 	// GitHub-specific complexity scoring (refined based on GEI migration documentation)
 	// Categories: simple (≤5), medium (6-10), complex (11-17), very_complex (≥18)
 	//
@@ -129,6 +129,9 @@ func buildGitHubComplexityScoreSQL() string {
 		GB5   = 5368709120 // 5GB
 	)
 
+	// Use TRUE/FALSE for boolean comparisons (works across all databases: SQLite, PostgreSQL, SQL Server)
+	const trueVal = "TRUE"
+
 	return fmt.Sprintf(`(
 		-- Size tier scoring (0-9 points)
 		(CASE 
@@ -140,29 +143,29 @@ func buildGitHubComplexityScoreSQL() string {
 		END) * 3 +
 		
 		-- High impact features (3-4 points each)
-		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
+		CASE WHEN has_large_files = %s THEN 4 ELSE 0 END +
 		CASE WHEN environment_count > 0 THEN 3 ELSE 0 END +
 		CASE WHEN secret_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN has_packages = 1 THEN 3 ELSE 0 END +
-		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
+		CASE WHEN has_packages = %s THEN 3 ELSE 0 END +
+		CASE WHEN has_self_hosted_runners = %s THEN 3 ELSE 0 END +
 		
 		-- Moderate impact features (2 points each)
 		CASE WHEN variable_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_discussions = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_discussions = %s THEN 2 ELSE 0 END +
 		CASE WHEN release_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
-		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_lfs = %s THEN 2 ELSE 0 END +
+		CASE WHEN has_submodules = %s THEN 2 ELSE 0 END +
 		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
 		
 		-- Low impact features (1 point each)
-		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
 		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
-		CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
-		CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_codeowners = %s THEN 1 ELSE 0 END +
 		
 		-- Activity-based scoring (0-4 points) using quantiles
 		-- High-activity repos need significantly more coordination and planning
@@ -183,7 +186,11 @@ func buildGitHubComplexityScoreSQL() string {
 			) >= 0.25 THEN 2
 			ELSE 0
 		END)
-	)`, MB100, GB1, GB5)
+	)`, MB100, GB1, GB5,
+		trueVal, trueVal, trueVal, // has_large_files, has_packages, has_self_hosted_runners
+		trueVal, trueVal, trueVal, // has_discussions, has_lfs, has_submodules
+		trueVal, trueVal, trueVal, // has_code_scanning, has_dependabot, has_secret_scanning
+		trueVal, trueVal) // has_rulesets, has_codeowners
 }
 
 // Individual complexity component SQL builders
@@ -205,7 +212,7 @@ func buildSizePointsSQL() string {
 }
 
 func buildLargeFilesPointsSQL() string {
-	return "CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END"
+	return "CASE WHEN has_large_files = TRUE THEN 4 ELSE 0 END"
 }
 
 func buildEnvironmentsPointsSQL() string {
@@ -217,11 +224,11 @@ func buildSecretsPointsSQL() string {
 }
 
 func buildPackagesPointsSQL() string {
-	return "CASE WHEN has_packages = 1 THEN 3 ELSE 0 END"
+	return "CASE WHEN has_packages = TRUE THEN 3 ELSE 0 END"
 }
 
 func buildRunnersPointsSQL() string {
-	return "CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END"
+	return "CASE WHEN has_self_hosted_runners = TRUE THEN 3 ELSE 0 END"
 }
 
 func buildVariablesPointsSQL() string {
@@ -229,7 +236,7 @@ func buildVariablesPointsSQL() string {
 }
 
 func buildDiscussionsPointsSQL() string {
-	return "CASE WHEN has_discussions = 1 THEN 2 ELSE 0 END"
+	return "CASE WHEN has_discussions = TRUE THEN 2 ELSE 0 END"
 }
 
 func buildReleasesPointsSQL() string {
@@ -237,11 +244,11 @@ func buildReleasesPointsSQL() string {
 }
 
 func buildLFSPointsSQL() string {
-	return "CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END"
+	return "CASE WHEN has_lfs = TRUE THEN 2 ELSE 0 END"
 }
 
 func buildSubmodulesPointsSQL() string {
-	return "CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END"
+	return "CASE WHEN has_submodules = TRUE THEN 2 ELSE 0 END"
 }
 
 func buildAppsPointsSQL() string {
@@ -249,7 +256,7 @@ func buildAppsPointsSQL() string {
 }
 
 func buildSecurityPointsSQL() string {
-	return "CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 1 ELSE 0 END"
+	return "CASE WHEN has_code_scanning = TRUE OR has_dependabot = TRUE OR has_secret_scanning = TRUE THEN 1 ELSE 0 END"
 }
 
 func buildWebhooksPointsSQL() string {
@@ -265,7 +272,7 @@ func buildBranchProtectionsPointsSQL() string {
 }
 
 func buildRulesetsPointsSQL() string {
-	return "CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END"
+	return "CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END"
 }
 
 func buildPublicVisibilityPointsSQL() string {
@@ -277,7 +284,7 @@ func buildInternalVisibilityPointsSQL() string {
 }
 
 func buildCodeownersPointsSQL() string {
-	return "CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END"
+	return "CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END"
 }
 
 func buildActivityPointsSQL() string {
@@ -455,7 +462,7 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		FROM repositories
 		WHERE id IN (%s)
 	`,
-		buildGitHubComplexityScoreSQL(),
+		d.buildGitHubComplexityScoreSQL(),
 		buildSizePointsSQL(),
 		buildLargeFilesPointsSQL(),
 		buildEnvironmentsPointsSQL(),
@@ -1083,19 +1090,49 @@ type OrganizationStats struct {
 
 // GetOrganizationStats returns repository counts grouped by organization
 func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationStats, error) {
-	// First, get unique organizations with their total counts
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
-			COUNT(*) as total,
-			status,
-			COUNT(*) as status_count
-		FROM repositories
-		WHERE INSTR(full_name, '/') > 0
-		AND status != 'wont_migrate'
-		GROUP BY org, status
-		ORDER BY total DESC, org ASC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories
+			WHERE POSITION('/' IN full_name) > 0
+			AND status != 'wont_migrate'
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories
+			WHERE CHARINDEX('/', full_name) > 0
+			AND status != 'wont_migrate'
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories
+			WHERE INSTR(full_name, '/') > 0
+			AND status != 'wont_migrate'
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	}
 
 	// Use GORM Raw() for analytics query
 	type OrgStatusResult struct {
@@ -1152,17 +1189,22 @@ type SizeDistribution struct {
 // GetSizeDistribution categorizes repositories by size
 func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution, error) {
 	// Size categories: small (<100MB), medium (100MB-1GB), large (1GB-5GB), very_large (>5GB)
+	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use a subquery
 	query := `
 		SELECT 
-			CASE 
-				WHEN total_size IS NULL THEN 'unknown'
-				WHEN total_size < 104857600 THEN 'small'
-				WHEN total_size < 1073741824 THEN 'medium'
-				WHEN total_size < 5368709120 THEN 'large'
-				ELSE 'very_large'
-			END as category,
+			category,
 			COUNT(*) as count
-		FROM repositories
+		FROM (
+			SELECT 
+				CASE 
+					WHEN total_size IS NULL THEN 'unknown'
+					WHEN total_size < 104857600 THEN 'small'
+					WHEN total_size < 1073741824 THEN 'medium'
+					WHEN total_size < 5368709120 THEN 'large'
+					ELSE 'very_large'
+				END as category
+			FROM repositories
+		) categorized
 		GROUP BY category
 		ORDER BY 
 			CASE category
@@ -1212,25 +1254,25 @@ type FeatureStats struct {
 func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	query := `
 		SELECT 
-			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
-			SUM(CASE WHEN is_fork = 1 THEN 1 ELSE 0 END) as fork_count,
-			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
-			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
-			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
-			SUM(CASE WHEN has_wiki = 1 THEN 1 ELSE 0 END) as wiki_count,
-			SUM(CASE WHEN has_pages = 1 THEN 1 ELSE 0 END) as pages_count,
-			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
-			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
-			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
-			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
+			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
+			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
+			SUM(CASE WHEN has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
-			SUM(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) as rulesets_count,
-			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
-			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
-			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = 1 THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = 1 THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
+			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 			COUNT(*) as total
 		FROM repositories
 	`
@@ -1368,20 +1410,55 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 
 // GetMigrationCompletionStatsByOrg returns migration completion stats grouped by organization
 func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*MigrationCompletionStats, error) {
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
-			COUNT(*) as total_repos,
-			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-		FROM repositories
-		WHERE full_name LIKE '%/%'
-		AND status != 'wont_migrate'
-		GROUP BY organization
-		ORDER BY total_repos DESC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			AND status != 'wont_migrate'
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			AND status != 'wont_migrate'
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			AND status != 'wont_migrate'
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	}
 
 	// Use GORM Raw() for analytics query
 	var stats []*MigrationCompletionStats
@@ -1468,23 +1545,28 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use nested subqueries
 	query := `
 		SELECT 
-			CASE 
-				WHEN complexity_score <= 5 THEN 'simple'
-				WHEN complexity_score <= 10 THEN 'medium'
-				WHEN complexity_score <= 17 THEN 'complex'
-				ELSE 'very_complex'
-			END as category,
+			category,
 			COUNT(*) as count
 		FROM (
-			SELECT ` + buildGitHubComplexityScoreSQL() + ` as complexity_score
-			FROM repositories r
-			WHERE 1=1
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + batchFilterSQL + `
-		) as scored_repos
+			SELECT 
+				CASE 
+					WHEN complexity_score <= 5 THEN 'simple'
+					WHEN complexity_score <= 10 THEN 'medium'
+					WHEN complexity_score <= 17 THEN 'complex'
+					ELSE 'very_complex'
+				END as category
+			FROM (
+				SELECT ` + d.buildGitHubComplexityScoreSQL() + ` as complexity_score
+				FROM repositories r
+				WHERE 1=1
+					AND status != 'wont_migrate'
+					` + orgFilterSQL + `
+					` + batchFilterSQL + `
+			) as scored_repos
+		) as categorized
 		GROUP BY category
 		ORDER BY 
 			CASE category
@@ -1520,22 +1602,36 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFil
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Use dialect-specific date arithmetic
+	var dateCondition string
+	var args []interface{}
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		dateCondition = fmt.Sprintf("AND mh.completed_at >= NOW() - INTERVAL '%d days'", days)
+		args = append(args, orgArgs...)
+		args = append(args, batchArgs...)
+	case DBTypeSQLServer, DBTypeMSSQL:
+		dateCondition = fmt.Sprintf("AND mh.completed_at >= DATEADD(day, -%d, GETUTCDATE())", days)
+		args = append(args, orgArgs...)
+		args = append(args, batchArgs...)
+	default: // SQLite
+		dateCondition = "AND mh.completed_at >= datetime('now', '-' || ? || ' days')"
+		args = []interface{}{days}
+		args = append(args, orgArgs...)
+		args = append(args, batchArgs...)
+	}
+
 	query := `
 		SELECT COUNT(DISTINCT r.id) as total_completed
 		FROM repositories r
 		INNER JOIN migration_history mh ON r.id = mh.repository_id
 		WHERE mh.status = 'completed' 
 			AND mh.phase = 'migration'
-			AND mh.completed_at >= datetime('now', '-' || ? || ' days')
+			` + dateCondition + `
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
 			` + batchFilterSQL + `
 	`
-
-	// Combine all arguments (days first, then filter args)
-	args := []interface{}{days}
-	args = append(args, orgArgs...)
-	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	var result struct {
@@ -1568,6 +1664,17 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Use dialect-specific date arithmetic
+	var dateCondition string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		dateCondition = "AND mh.completed_at >= NOW() - INTERVAL '30 days'"
+	case DBTypeSQLServer, DBTypeMSSQL:
+		dateCondition = "AND mh.completed_at >= DATEADD(day, -30, GETUTCDATE())"
+	default: // SQLite
+		dateCondition = "AND mh.completed_at >= datetime('now', '-30 days')"
+	}
+
 	query := `
 		SELECT 
 			DATE(mh.completed_at) as date,
@@ -1576,7 +1683,7 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 		INNER JOIN migration_history mh ON r.id = mh.repository_id
 		WHERE mh.status = 'completed'
 			AND mh.phase = 'migration'
-			AND mh.completed_at >= datetime('now', '-30 days')
+			` + dateCondition + `
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
 			` + batchFilterSQL + `
@@ -1640,7 +1747,19 @@ func (d *Database) buildOrgFilter(orgFilter string) (string, []interface{}) {
 	if orgFilter == "" {
 		return "", nil
 	}
-	return " AND SUBSTR(r.full_name, 1, INSTR(r.full_name, '/') - 1) = ?", []interface{}{orgFilter}
+
+	// Use dialect-specific string functions
+	var filterSQL string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		filterSQL = " AND SUBSTRING(r.full_name, 1, POSITION('/' IN r.full_name) - 1) = ?"
+	case DBTypeSQLServer, DBTypeMSSQL:
+		filterSQL = " AND SUBSTRING(r.full_name, 1, CHARINDEX('/', r.full_name) - 1) = ?"
+	default: // SQLite
+		filterSQL = " AND SUBSTR(r.full_name, 1, INSTR(r.full_name, '/') - 1) = ?"
+	}
+
+	return filterSQL, []interface{}{orgFilter}
 }
 
 // buildBatchFilter builds the batch filter clause using parameterized queries
@@ -1703,21 +1822,26 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use a subquery
 	query := `
 		SELECT 
-			CASE 
-				WHEN total_size IS NULL THEN 'unknown'
-				WHEN total_size < 104857600 THEN 'small'
-				WHEN total_size < 1073741824 THEN 'medium'
-				WHEN total_size < 5368709120 THEN 'large'
-				ELSE 'very_large'
-			END as category,
+			category,
 			COUNT(*) as count
-		FROM repositories r
-		WHERE 1=1
-			AND status != 'wont_migrate'
-			` + orgFilterSQL + `
-			` + batchFilterSQL + `
+		FROM (
+			SELECT 
+				CASE 
+					WHEN total_size IS NULL THEN 'unknown'
+					WHEN total_size < 104857600 THEN 'small'
+					WHEN total_size < 1073741824 THEN 'medium'
+					WHEN total_size < 5368709120 THEN 'large'
+					ELSE 'very_large'
+				END as category
+			FROM repositories r
+			WHERE 1=1
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+		) categorized
 		GROUP BY category
 		ORDER BY 
 			CASE category
@@ -1750,25 +1874,25 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 
 	query := `
 		SELECT 
-			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
-			SUM(CASE WHEN is_fork = 1 THEN 1 ELSE 0 END) as fork_count,
-			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
-			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
-			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
-			SUM(CASE WHEN has_wiki = 1 THEN 1 ELSE 0 END) as wiki_count,
-			SUM(CASE WHEN has_pages = 1 THEN 1 ELSE 0 END) as pages_count,
-			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
-			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
-			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
-			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
+			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
+			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
+			SUM(CASE WHEN has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
-			SUM(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) as rulesets_count,
-			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
-			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
-			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = 1 THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = 1 THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
+			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 			COUNT(*) as total
 		FROM repositories r
 		WHERE 1=1
@@ -1796,20 +1920,55 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
-			COUNT(*) as total,
-			status,
-			COUNT(*) as status_count
-		FROM repositories r
-		WHERE INSTR(full_name, '/') > 0
-			AND status != 'wont_migrate'
-			` + orgFilterSQL + `
-			` + batchFilterSQL + `
-		GROUP BY org, status
-		ORDER BY total DESC, org ASC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories r
+			WHERE POSITION('/' IN full_name) > 0
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories r
+			WHERE CHARINDEX('/', full_name) > 0
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories r
+			WHERE INSTR(full_name, '/') > 0
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	}
 
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
@@ -1877,22 +2036,61 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
-			COUNT(*) as total_repos,
-			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-		FROM repositories r
-		WHERE full_name LIKE '%/%'
-			AND status != 'wont_migrate'
-			` + orgFilterSQL + `
-			` + batchFilterSQL + `
-		GROUP BY organization
-		ORDER BY total_repos DESC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories r
+			WHERE full_name LIKE '%/%'
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories r
+			WHERE full_name LIKE '%/%'
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories r
+			WHERE full_name LIKE '%/%'
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	}
 
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)

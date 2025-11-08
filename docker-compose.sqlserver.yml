@@ -2,8 +2,6 @@
 # Usage: docker compose -f docker-compose.sqlserver.yml up
 # Or use: make docker-run-sqlserver
 
-version: '3.8'
-
 services:
   # SQL Server database service
   sqlserver:
@@ -34,6 +32,9 @@ services:
       # SQL Server database settings
       - GHMIG_DATABASE_TYPE=sqlserver
       - GHMIG_DATABASE_DSN=sqlserver://sa:YourStrong@Passw0rd@sqlserver:1433?database=migrator
+    # Load all variables from .env file (merges with environment above)
+    env_file:
+      - .env
     # Remove SQLite volume mount since we're using SQL Server
     volumes:
       - ./logs:/app/logs

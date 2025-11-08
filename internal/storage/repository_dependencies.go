@@ -98,15 +98,30 @@ func (d *Database) ClearRepositoryDependencies(ctx context.Context, repoID int64
 // based on whether the dependency exists in our database
 // This should be run after discovery to properly mark local dependencies
 func (d *Database) UpdateLocalDependencyFlags(ctx context.Context) error {
-	// Use GORM Exec for complex UPDATE with subquery
-	query := `
-		UPDATE repository_dependencies
-		SET is_local = CASE
-			WHEN dependency_full_name IN (SELECT full_name FROM repositories)
-			THEN 1
-			ELSE 0
-		END
-	`
+	// Use dialect-specific boolean values
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL, DBTypeSQLServer, DBTypeMSSQL:
+		// PostgreSQL and SQL Server use TRUE/FALSE for boolean columns
+		query = `
+			UPDATE repository_dependencies
+			SET is_local = CASE
+				WHEN dependency_full_name IN (SELECT full_name FROM repositories)
+				THEN TRUE
+				ELSE FALSE
+			END
+		`
+	default: // SQLite
+		// SQLite uses 1/0 for boolean columns
+		query = `
+			UPDATE repository_dependencies
+			SET is_local = CASE
+				WHEN dependency_full_name IN (SELECT full_name FROM repositories)
+				THEN 1
+				ELSE 0
+			END
+		`
+	}
 
 	err := d.db.WithContext(ctx).Exec(query).Error
 	if err != nil {

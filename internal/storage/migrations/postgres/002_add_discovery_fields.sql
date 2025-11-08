@@ -18,8 +18,8 @@ ALTER TABLE repositories ADD COLUMN open_issue_count INTEGER DEFAULT 0;
 ALTER TABLE repositories ADD COLUMN open_pr_count INTEGER DEFAULT 0;
 
 -- Create indexes for commonly queried fields
-CREATE INDEX IF NOT EXISTS IF NOT EXISTS idx_repositories_has_large_files ON repositories(has_large_files);
-CREATE INDEX IF NOT EXISTS IF NOT EXISTS idx_repositories_last_commit_date ON repositories(last_commit_date);
+CREATE INDEX IF NOT EXISTS idx_repositories_has_large_files ON repositories(has_large_files);
+CREATE INDEX IF NOT EXISTS idx_repositories_last_commit_date ON repositories(last_commit_date);
 
 
 

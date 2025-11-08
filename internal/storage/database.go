@@ -234,12 +234,9 @@ func (d *Database) applyMigration(filename, content string) error {
 				continue
 			}
 
-			// Transform SQLite-specific syntax for other databases
-			if d.cfg.Type == DBTypePostgres || d.cfg.Type == DBTypePostgreSQL {
-				stmt = d.transformSQLiteToPostgres(stmt)
-			} else if d.cfg.Type == DBTypeSQLServer || d.cfg.Type == DBTypeMSSQL {
-				stmt = d.transformSQLiteToSQLServer(stmt)
-			}
+			// NOTE: We no longer apply SQL transformations here because we now use
+			// dialect-specific migration folders (migrations/sqlite, migrations/postgres, migrations/sqlserver).
+			// Each migration is already written in the correct syntax for its target database.
 
 			// Skip ALTER COLUMN statements for SQLite (not supported)
 			if d.cfg.Type == DBTypeSQLite && strings.Contains(strings.ToUpper(stmt), "ALTER COLUMN") {
@@ -319,56 +316,6 @@ func splitSQLStatements(content string) []string {
 	}
 
 	return statements
-}
-
-// transformSQLiteToPostgres converts SQLite-specific syntax to PostgreSQL syntax
-func (d *Database) transformSQLiteToPostgres(stmt string) string {
-	// Replace AUTOINCREMENT with SERIAL for simple cases
-	// Handle both "INTEGER PRIMARY KEY AUTOINCREMENT" and standalone AUTOINCREMENT
-	stmt = strings.ReplaceAll(stmt, "INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-	stmt = strings.ReplaceAll(stmt, "AUTOINCREMENT", "")
-
-	// Replace DATETIME with TIMESTAMP
-	stmt = strings.ReplaceAll(stmt, "DATETIME", "TIMESTAMP")
-
-	// Replace SQLite boolean defaults (0/1) with PostgreSQL boolean literals (FALSE/TRUE)
-	// This needs to be done carefully to only replace in DEFAULT clauses
-	stmt = strings.ReplaceAll(stmt, "DEFAULT 0", "DEFAULT FALSE")
-	stmt = strings.ReplaceAll(stmt, "DEFAULT 1", "DEFAULT TRUE")
-
-	return stmt
-}
-
-// transformSQLiteToSQLServer converts SQLite-specific syntax to SQL Server syntax
-func (d *Database) transformSQLiteToSQLServer(stmt string) string {
-	// Replace INTEGER PRIMARY KEY AUTOINCREMENT with INT IDENTITY
-	stmt = strings.ReplaceAll(stmt, "INTEGER PRIMARY KEY AUTOINCREMENT", "INT PRIMARY KEY IDENTITY(1,1)")
-	stmt = strings.ReplaceAll(stmt, "AUTOINCREMENT", "")
-
-	// Replace DATETIME with DATETIME2 (more precise in SQL Server)
-	stmt = strings.ReplaceAll(stmt, "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "DATETIME2 NOT NULL DEFAULT GETUTCDATE()")
-	stmt = strings.ReplaceAll(stmt, "DATETIME", "DATETIME2")
-
-	// Replace TIMESTAMP with DATETIME2
-	stmt = strings.ReplaceAll(stmt, "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP", "DATETIME2 NOT NULL DEFAULT GETUTCDATE()")
-	stmt = strings.ReplaceAll(stmt, "TIMESTAMP", "DATETIME2")
-
-	// Replace CURRENT_TIMESTAMP with GETUTCDATE()
-	stmt = strings.ReplaceAll(stmt, "CURRENT_TIMESTAMP", "GETUTCDATE()")
-
-	// Replace TEXT with NVARCHAR(MAX) for SQL Server
-	stmt = strings.ReplaceAll(stmt, "TEXT", "NVARCHAR(MAX)")
-
-	// Replace BOOLEAN with BIT
-	stmt = strings.ReplaceAll(stmt, "BOOLEAN", "BIT")
-
-	// Replace SQLite boolean defaults with SQL Server bit defaults
-	stmt = strings.ReplaceAll(stmt, "DEFAULT 0", "DEFAULT 0")
-	stmt = strings.ReplaceAll(stmt, "DEFAULT 1", "DEFAULT 1")
-	stmt = strings.ReplaceAll(stmt, "DEFAULT FALSE", "DEFAULT 0")
-	stmt = strings.ReplaceAll(stmt, "DEFAULT TRUE", "DEFAULT 1")
-
-	return stmt
 }
 
 // GetDistinctOrganizations retrieves a list of unique organizations from repositories using GORM
