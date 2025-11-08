@@ -40,7 +40,7 @@ GitHub Migrator provides an automated, scalable platform for managing large-scal
 - Scan entire organizations or enterprises to identify and profile repositories
 - Analyze Git properties: size, LFS usage, submodules, large files, commits, branches
 - Identify GitHub features: Actions, Wikis, Pages, Discussions, Projects, Environments, Releases
-- Detect advanced settings: branch protections, tag protections, secrets, variables, webhooks, rulesets, packages
+- Detect advanced settings: branch protections, rulesets, secrets, variables, webhooks, packages
 - Calculate source-aware complexity scores for migration planning
 - Track contributors, issues, pull requests, tags, and repository activity levels
 
@@ -153,7 +153,7 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - Discover repositories from organizations or entire enterprises
 - Profile Git properties: size, LFS usage, submodules, large files (>100MB), commits, branches
 - Identify GitHub features: Actions, Wikis, Pages, Discussions, Projects, Environments, Releases
-- Detect advanced settings: branch protections, tag protections, secrets, variables, webhooks, rulesets, packages
+- Detect advanced settings: branch protections, rulesets, secrets, variables, webhooks, packages
 - Calculate source-aware complexity scores for migration planning based on remediation difficulty
 - Track contributors, issues, pull requests, tags, and repository activity levels
 - Quantile-based activity scoring adaptive to your repository dataset

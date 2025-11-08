@@ -665,7 +665,7 @@ export function RepositoryDetail() {
                   // If backend provides breakdown, use it; otherwise calculate
                   let sizePoints, largeFilesPoints, environmentsPoints, secretsPoints, packagesPoints, runnersPoints;
                   let variablesPoints, discussionsPoints, releasesPoints, lfsPoints, submodulesPoints, appsPoints, projectsPoints;
-                  let securityPoints, webhooksPoints, tagProtectionsPoints, branchProtectionsPoints, rulesetsPoints;
+                  let securityPoints, webhooksPoints, branchProtectionsPoints, rulesetsPoints;
                   let publicVisibilityPoints, internalVisibilityPoints, codeownersPoints, activityPoints;
                   
                   if (breakdown) {
@@ -685,7 +685,6 @@ export function RepositoryDetail() {
                     projectsPoints = breakdown.projects_points;
                     securityPoints = breakdown.security_points;
                     webhooksPoints = breakdown.webhooks_points;
-                    tagProtectionsPoints = breakdown.tag_protections_points;
                     branchProtectionsPoints = breakdown.branch_protections_points;
                     rulesetsPoints = breakdown.rulesets_points;
                     publicVisibilityPoints = breakdown.public_visibility_points;
@@ -718,7 +717,6 @@ export function RepositoryDetail() {
                     projectsPoints = repository.has_projects ? 2 : 0;
                     securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 1 : 0;
                     webhooksPoints = repository.webhook_count > 0 ? 1 : 0;
-                    tagProtectionsPoints = repository.tag_protection_count > 0 ? 1 : 0;
                     branchProtectionsPoints = repository.branch_protections > 0 ? 1 : 0;
                     rulesetsPoints = repository.has_rulesets ? 1 : 0;
                     publicVisibilityPoints = repository.visibility === 'public' ? 1 : 0;
@@ -738,7 +736,7 @@ export function RepositoryDetail() {
                   const totalPoints = repository.complexity_score ?? (
                     sizePoints + largeFilesPoints + environmentsPoints + secretsPoints + packagesPoints + runnersPoints +
                     variablesPoints + discussionsPoints + releasesPoints + lfsPoints + submodulesPoints + securityPoints + appsPoints + projectsPoints +
-                    webhooksPoints + tagProtectionsPoints + branchProtectionsPoints + rulesetsPoints + publicVisibilityPoints + internalVisibilityPoints + codeownersPoints +
+                    webhooksPoints + branchProtectionsPoints + rulesetsPoints + publicVisibilityPoints + internalVisibilityPoints + codeownersPoints +
                     activityPoints
                   );
                   
@@ -882,16 +880,6 @@ export function RepositoryDetail() {
                           </div>
                           <span className={`text-lg font-semibold ${webhooksPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
                             +{webhooksPoints}
-                          </span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">Tag Protections</div>
-                            <div className="text-xs text-gray-500">{repository.tag_protection_count > 0 ? `${repository.tag_protection_count} rules` : 'None'}</div>
-                          </div>
-                          <span className={`text-lg font-semibold ${tagProtectionsPoints > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
-                            +{tagProtectionsPoints}
                           </span>
                         </div>
                         

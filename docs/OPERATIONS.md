@@ -623,9 +623,8 @@ The complexity score combines repository size, non-migrated features, and activi
 **Low Impact Features (1 point each):**
 - GHAS (Code scanning/Dependabot/Secret scanning): **1 point** - Simple toggles to re-enable
 - Webhooks: **1 point** - Must re-enable after migration
-- Tag protections: **1 point** - Manual configuration required
 - Branch protections: **1 point** - Some rules don't migrate
-- Rulesets: **1 point** - Manual recreation required
+- Rulesets: **1 point** - Manual recreation required (replaces deprecated tag protections)
 - Public visibility: **1 point** - May need transformation
 - Internal visibility: **1 point** - May need transformation
 - CODEOWNERS: **1 point** - File detected in `.github/CODEOWNERS`, `docs/CODEOWNERS`, or `CODEOWNERS` on default branch. Verify file still exists and is valid.

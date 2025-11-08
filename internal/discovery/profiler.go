@@ -66,7 +66,6 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	p.profileWorkflowCount(ctx, org, name, repo)
 	p.profileBranchProtections(ctx, org, name, repo)
 	p.profileRulesets(ctx, org, name, repo)
-	p.profileTagProtections(ctx, org, name, repo)
 	p.profileEnvironments(ctx, org, name, repo)
 	p.profileWebhooks(ctx, org, name, repo)
 	p.profileContributors(ctx, org, name, repo)
@@ -152,24 +151,6 @@ func (p *Profiler) profileRulesets(ctx context.Context, org, name string, repo *
 		p.logger.Debug("Repository has rulesets", "repo", repo.FullName, "count", len(rulesets))
 	} else if err != nil {
 		p.logger.Debug("Failed to get rulesets", "error", err)
-	}
-}
-
-// profileTagProtections counts tag protection rules
-// Tag protection rules don't migrate with GEI and must be manually configured
-func (p *Profiler) profileTagProtections(ctx context.Context, org, name string, repo *models.Repository) {
-	// List tag protection rules for the repository
-	// This API endpoint was added in GitHub Enterprise Server 3.4+
-	// nolint:staticcheck // SA1019: Using deprecated API until Repository Rulesets API is fully available across all GitHub versions
-	tagProtections, _, err := p.client.REST().Repositories.ListTagProtection(ctx, org, name)
-	if err == nil && tagProtections != nil {
-		repo.TagProtectionCount = len(tagProtections)
-		if len(tagProtections) > 0 {
-			p.logger.Debug("Repository has tag protections", "repo", repo.FullName, "count", len(tagProtections))
-		}
-	} else {
-		p.logger.Debug("Failed to get tag protections", "error", err)
-		repo.TagProtectionCount = 0
 	}
 }
 

@@ -109,9 +109,8 @@ func (d *Database) buildGitHubComplexityScoreSQL() string {
 	// LOW IMPACT (1 point):
 	//   - GHAS features: +1 (code scanning, dependabot, secret scanning - simple toggles)
 	//   - Webhooks: +1 (must re-enable, straightforward)
-	//   - Tag protections: +1 (manual configuration)
 	//   - Branch protections: +1 (migrates but may need adjustment)
-	//   - Rulesets: +1 (manual recreation)
+	//   - Rulesets: +1 (manual recreation, replaces deprecated tag protections)
 	//   - Public visibility: +1 (transformation considerations)
 	//   - Internal visibility: +1 (transformation considerations)
 	//   - CODEOWNERS: +1 (verification required)
@@ -162,7 +161,6 @@ func (d *Database) buildGitHubComplexityScoreSQL() string {
 		-- Low impact features (1 point each)
 		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
 		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
-		CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
 		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
@@ -268,10 +266,6 @@ func buildSecurityPointsSQL() string {
 
 func buildWebhooksPointsSQL() string {
 	return "CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END"
-}
-
-func buildTagProtectionsPointsSQL() string {
-	return "CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END"
 }
 
 func buildBranchProtectionsPointsSQL() string {
@@ -460,7 +454,6 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 			%s as projects_points,
 			%s as security_points,
 			%s as webhooks_points,
-			%s as tag_protections_points,
 			%s as branch_protections_points,
 			%s as rulesets_points,
 			%s as public_visibility_points,
@@ -486,7 +479,6 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		buildProjectsPointsSQL(),
 		buildSecurityPointsSQL(),
 		buildWebhooksPointsSQL(),
-		buildTagProtectionsPointsSQL(),
 		buildBranchProtectionsPointsSQL(),
 		buildRulesetsPointsSQL(),
 		buildPublicVisibilityPointsSQL(),
@@ -514,7 +506,6 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		ProjectsPoints           int
 		SecurityPoints           int
 		WebhooksPoints           int
-		TagProtectionsPoints     int
 		BranchProtectionsPoints  int
 		RulesetsPoints           int
 		PublicVisibilityPoints   int
@@ -549,7 +540,6 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 				ProjectsPoints:           result.ProjectsPoints,
 				SecurityPoints:           result.SecurityPoints,
 				WebhooksPoints:           result.WebhooksPoints,
-				TagProtectionsPoints:     result.TagProtectionsPoints,
 				BranchProtectionsPoints:  result.BranchProtectionsPoints,
 				RulesetsPoints:           result.RulesetsPoints,
 				PublicVisibilityPoints:   result.PublicVisibilityPoints,

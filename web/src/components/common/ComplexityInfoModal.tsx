@@ -192,6 +192,16 @@ export function ComplexityInfoModal() {
                           Reconfiguration or reinstallation required on destination.
                         </p>
                       </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Projects (ProjectsV2)</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Don't migrate with GEI. Must be manually recreated on destination organization.
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -223,16 +233,6 @@ export function ComplexityInfoModal() {
 
                       <div className="border-l-4 border-yellow-500 pl-4">
                         <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Tag Protections</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate. Manual configuration required, similar to branch protections.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
                           <h5 className="font-medium text-gray-900">Branch Protections</h5>
                           <span className="text-sm font-semibold text-yellow-600">1 point</span>
                         </div>
@@ -247,7 +247,7 @@ export function ComplexityInfoModal() {
                           <span className="text-sm font-semibold text-yellow-600">1 point</span>
                         </div>
                         <p className="text-sm text-gray-600">
-                          Don't migrate. Manual recreation on destination repository required.
+                          Don't migrate. Manual recreation on destination repository required. Rulesets replace deprecated tag protections.
                         </p>
                       </div>
 

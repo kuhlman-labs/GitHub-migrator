@@ -335,7 +335,6 @@ func buildComplexityScoreSQL() string {
 		-- Low impact features (1 point each)
 		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
 		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
-		CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
 		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +

@@ -108,7 +108,6 @@ export interface ComplexityBreakdown {
   projects_points: number;
   security_points: number;
   webhooks_points: number;
-  tag_protections_points: number;
   branch_protections_points: number;
   rulesets_points: number;
   public_visibility_points: number;

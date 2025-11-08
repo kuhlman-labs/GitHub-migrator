@@ -158,7 +158,6 @@ type ComplexityBreakdown struct {
 	ProjectsPoints           int `json:"projects_points"`            // 2 points if has ProjectsV2
 	SecurityPoints           int `json:"security_points"`            // 1 point if has GHAS features
 	WebhooksPoints           int `json:"webhooks_points"`            // 1 point if has webhooks
-	TagProtectionsPoints     int `json:"tag_protections_points"`     // 1 point if has tag protections
 	BranchProtectionsPoints  int `json:"branch_protections_points"`  // 1 point if has branch protections
 	RulesetsPoints           int `json:"rulesets_points"`            // 1 point if has rulesets
 	PublicVisibilityPoints   int `json:"public_visibility_points"`   // 1 point if public

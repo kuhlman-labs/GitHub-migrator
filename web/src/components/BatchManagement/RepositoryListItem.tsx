@@ -49,7 +49,6 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
     // Low impact features (1 point each)
     if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 1;
     if (repository.webhook_count > 0) score += 1;
-    if (repository.tag_protection_count > 0) score += 1;
     if (repository.branch_protections > 0) score += 1;
     if (repository.has_rulesets) score += 1;
     if (repository.visibility === 'public') score += 1;
