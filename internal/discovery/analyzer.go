@@ -276,7 +276,7 @@ func (a *Analyzer) detectLFS(ctx context.Context, repoPath string) bool {
 	}
 
 	// Method 4: Check for LFS pointer files
-	// LFS pointer files contain "version https://git-lfs.github.com/spec/"
+	// LFS pointer files start with "version https://git-lfs.github.com/spec/"
 	if a.detectLFSPointerFiles(ctx, repoPath) {
 		a.logger.Debug("LFS detected via pointer files", "repo_path", repoPath)
 		return true
@@ -286,11 +286,12 @@ func (a *Analyzer) detectLFS(ctx context.Context, repoPath string) bool {
 }
 
 // detectLFSPointerFiles checks for Git LFS pointer files by searching for
-// files that contain the LFS pointer format
+// files that start with the LFS pointer format (not just contain it)
 func (a *Analyzer) detectLFSPointerFiles(ctx context.Context, repoPath string) bool {
-	// Use git grep to search for LFS pointer file pattern
+	// Use git grep to search for LFS pointer file pattern at the start of files
 	// LFS pointer files start with "version https://git-lfs.github.com/spec/"
-	cmd := exec.CommandContext(ctx, "git", "grep", "-q", "version https://git-lfs.github.com/spec/")
+	// Using ^version to match only at the beginning of the file
+	cmd := exec.CommandContext(ctx, "git", "grep", "-q", "^version https://git-lfs.github.com/spec/")
 	cmd.Dir = repoPath
 
 	// git grep -q returns exit code 0 if pattern is found, 1 if not found
