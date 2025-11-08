@@ -190,6 +190,7 @@ export interface FeatureStats {
   has_codeowners: number;
   has_self_hosted_runners: number;
   has_release_assets: number;
+  has_webhooks: number;
   total_repositories: number;
 }
 
@@ -361,6 +362,7 @@ export interface RepositoryFilters {
   visibility?: 'public' | 'private' | 'internal' | string;
   has_self_hosted_runners?: boolean;
   has_release_assets?: boolean;
+  has_webhooks?: boolean;
   complexity?: string | string[];
   size_category?: string | string[];
   search?: string;

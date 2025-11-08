@@ -94,6 +94,7 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
     if (filters.has_codeowners) count++;
     if (filters.has_self_hosted_runners) count++;
     if (filters.has_release_assets) count++;
+    if (filters.has_webhooks) count++;
     if (filters.is_archived !== undefined) count++;
     if (filters.is_fork !== undefined) count++;
     if (filters.sort_by && filters.sort_by !== 'name') count++;

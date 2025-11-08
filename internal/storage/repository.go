@@ -378,6 +378,7 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 		"has_pages", "has_discussions", "has_projects", "has_packages", "has_rulesets",
 		"is_archived", "is_fork", "has_code_scanning", "has_dependabot", "has_secret_scanning",
 		"has_codeowners", "has_self_hosted_runners", "has_release_assets", "has_branch_protections",
+		"has_webhooks",
 	}
 	for _, key := range featureKeys {
 		if value, ok := filters[key].(bool); ok {
@@ -1248,6 +1249,7 @@ type FeatureStats struct {
 	HasCodeowners        int `json:"has_codeowners" gorm:"column:codeowners_count"`
 	HasSelfHostedRunners int `json:"has_self_hosted_runners" gorm:"column:self_hosted_runners_count"`
 	HasReleaseAssets     int `json:"has_release_assets" gorm:"column:release_assets_count"`
+	HasWebhooks          int `json:"has_webhooks" gorm:"column:webhooks_count"`
 	TotalRepositories    int `json:"total_repositories" gorm:"column:total"`
 }
 
@@ -1271,12 +1273,13 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-			COUNT(*) as total
-		FROM repositories
-	`
+		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+		COUNT(*) as total
+	FROM repositories
+`
 
 	// Use GORM Raw() for analytics query
 	var stats FeatureStats
@@ -1891,16 +1894,17 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-			COUNT(*) as total
-		FROM repositories r
-		WHERE 1=1
-			AND status != 'wont_migrate'
-			` + orgFilterSQL + `
-			` + batchFilterSQL + `
-	`
+		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+		COUNT(*) as total
+	FROM repositories r
+	WHERE 1=1
+		AND status != 'wont_migrate'
+		` + orgFilterSQL + `
+		` + batchFilterSQL + `
+`
 
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)

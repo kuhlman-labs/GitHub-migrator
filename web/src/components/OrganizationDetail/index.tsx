@@ -35,6 +35,7 @@ const FEATURE_FILTERS: FeatureFilter[] = [
   { key: 'has_codeowners', label: 'CODEOWNERS', color: 'blue' },
   { key: 'has_self_hosted_runners', label: 'Self-Hosted Runners', color: 'purple' },
   { key: 'has_release_assets', label: 'Release Assets', color: 'pink' },
+  { key: 'webhook_count', label: 'Webhooks', color: 'indigo' },
 ];
 
 // Map simplified filter values to actual backend statuses

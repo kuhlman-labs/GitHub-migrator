@@ -44,6 +44,7 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
   if (filters.has_codeowners !== undefined) params.set('has_codeowners', filters.has_codeowners.toString());
   if (filters.has_self_hosted_runners !== undefined) params.set('has_self_hosted_runners', filters.has_self_hosted_runners.toString());
   if (filters.has_release_assets !== undefined) params.set('has_release_assets', filters.has_release_assets.toString());
+  if (filters.has_webhooks !== undefined) params.set('has_webhooks', filters.has_webhooks.toString());
   if (filters.visibility) params.set('visibility', filters.visibility);
 
   // Handle complexity and size category (arrays)
@@ -156,6 +157,9 @@ export function searchParamsToFilters(searchParams: URLSearchParams): Repository
 
   const hasReleaseAssets = searchParams.get('has_release_assets');
   if (hasReleaseAssets) filters.has_release_assets = hasReleaseAssets === 'true';
+
+  const hasWebhooks = searchParams.get('has_webhooks');
+  if (hasWebhooks) filters.has_webhooks = hasWebhooks === 'true';
 
   const availableForBatch = searchParams.get('available_for_batch');
   if (availableForBatch) filters.available_for_batch = availableForBatch === 'true';

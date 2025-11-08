@@ -208,6 +208,7 @@ export function Repositories() {
               {urlFilters.has_codeowners && <FilterBadge label="CODEOWNERS" onRemove={() => removeFilter('has_codeowners')} />}
               {urlFilters.has_self_hosted_runners && <FilterBadge label="Self-Hosted Runners" onRemove={() => removeFilter('has_self_hosted_runners')} />}
               {urlFilters.has_release_assets && <FilterBadge label="Release Assets" onRemove={() => removeFilter('has_release_assets')} />}
+              {urlFilters.has_webhooks && <FilterBadge label="Webhooks" onRemove={() => removeFilter('has_webhooks')} />}
               {urlFilters.is_fork !== undefined && (
                 <FilterBadge 
                   label={urlFilters.is_fork ? "Fork" : "Not Fork"} 

@@ -142,6 +142,15 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			}
 		}
 
+		// Special handling for webhooks (checking if count > 0)
+		if value, ok := filters["has_webhooks"]; ok {
+			if value {
+				db = db.Where("webhook_count > 0")
+			} else {
+				db = db.Where("(webhook_count = 0 OR webhook_count IS NULL)")
+			}
+		}
+
 		return db
 	}
 }

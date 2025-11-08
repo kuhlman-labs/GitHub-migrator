@@ -363,6 +363,12 @@ export function Analytics() {
                   total={analytics.feature_stats.total_repositories}
                   onClick={() => navigate(getRepositoriesUrl({ has_release_assets: true }))}
                 />
+                <FeatureStat 
+                  label="Webhooks" 
+                  count={analytics.feature_stats.has_webhooks} 
+                  total={analytics.feature_stats.total_repositories}
+                  onClick={() => navigate(getRepositoriesUrl({ has_webhooks: true }))}
+                />
               </div>
             </div>
           )}

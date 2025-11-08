@@ -314,6 +314,9 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	if hasReleaseAssets := r.URL.Query().Get("has_release_assets"); hasReleaseAssets != "" {
 		filters["has_release_assets"] = hasReleaseAssets == boolTrue
 	}
+	if hasWebhooks := r.URL.Query().Get("has_webhooks"); hasWebhooks != "" {
+		filters["has_webhooks"] = hasWebhooks == boolTrue
+	}
 
 	// Visibility filter
 	if visibility := r.URL.Query().Get("visibility"); visibility != "" {
