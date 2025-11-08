@@ -671,6 +671,31 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 		}
 
 		profiler = NewProfiler(profilerClient, c.logger)
+
+		// Load org-level package cache and projects map for single repository profiling
+		parts := strings.Split(repo.FullName, "/")
+		if len(parts) == 2 {
+			org := parts[0]
+
+			// Load package cache
+			if err := profiler.LoadPackageCache(ctx, org); err != nil {
+				c.logger.Warn("Failed to load package cache for single repository",
+					"repo", repo.FullName,
+					"org", org,
+					"error", err)
+			}
+
+			// Load ProjectsV2 map
+			if err := profiler.LoadProjectsMap(ctx, org); err != nil {
+				c.logger.Warn("Failed to load ProjectsV2 map for single repository",
+					"repo", repo.FullName,
+					"org", org,
+					"error", err)
+			}
+		} else {
+			c.logger.Warn("Invalid repository full name format, cannot load org-level caches",
+				"repo", repo.FullName)
+		}
 	}
 
 	if err := profiler.ProfileFeatures(ctx, repo); err != nil {

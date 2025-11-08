@@ -13,7 +13,6 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
 	ghapi "github.com/google/go-github/v75/github"
-	"github.com/shurcooL/githubv4"
 )
 
 // Profiler profiles GitHub-specific features via API
@@ -328,60 +327,23 @@ func (p *Profiler) LoadProjectsMap(ctx context.Context, org string) error {
 	return nil
 }
 
-// profilePackages checks for GitHub Packages using the cache
+// profilePackages checks for GitHub Packages using the REST API cache
 func (p *Profiler) profilePackages(ctx context.Context, org, name string, repo *models.Repository) {
-	// Check cache first (thread-safe read)
+	// Check cache (thread-safe read)
+	// The cache is populated by LoadPackageCache which queries all package types via REST API
 	p.packageCacheMu.RLock()
 	hasPackages, inCache := p.packageCache[name]
 	p.packageCacheMu.RUnlock()
 
-	if inCache {
-		repo.HasPackages = hasPackages
-		if hasPackages {
-			p.logger.Debug("Found packages for repository (from cache)", "repo", repo.FullName)
-		}
+	if inCache && hasPackages {
+		repo.HasPackages = true
+		p.logger.Debug("Found packages for repository (from REST API cache)", "repo", repo.FullName)
 		return
 	}
 
-	// If not in cache, try GraphQL as fallback
-	hasPackages, err := p.detectPackagesViaGraphQL(ctx, org, name)
-	if err == nil {
-		repo.HasPackages = hasPackages
-		if hasPackages {
-			p.logger.Debug("Found packages for repository via GraphQL", "repo", repo.FullName)
-		}
-		return
-	}
-
-	p.logger.Debug("GraphQL package detection failed",
-		"repo", repo.FullName,
-		"error", err)
-
-	// If we couldn't detect packages, default to false
+	// If not in cache or explicitly false, the repository has no packages
+	// The cache is built from org-level package queries across all package types
 	repo.HasPackages = false
-}
-
-// detectPackagesViaGraphQL uses GraphQL to detect if a repository has packages
-func (p *Profiler) detectPackagesViaGraphQL(ctx context.Context, org, name string) (bool, error) {
-	var query struct {
-		Repository struct {
-			Packages struct {
-				TotalCount int
-			} `graphql:"packages(first: 1)"`
-		} `graphql:"repository(owner: $owner, name: $name)"`
-	}
-
-	variables := map[string]interface{}{
-		"owner": githubv4.String(org),
-		"name":  githubv4.String(name),
-	}
-
-	err := p.client.QueryWithRetry(ctx, "DetectPackages", &query, variables)
-	if err != nil {
-		return false, err
-	}
-
-	return query.Repository.Packages.TotalCount > 0, nil
 }
 
 // countIssuesAndPRs counts issues and PRs separately for accurate verification data

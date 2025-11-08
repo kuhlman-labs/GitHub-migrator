@@ -218,7 +218,7 @@ func TestCheckWikiHasContent(t *testing.T) {
 	}
 }
 
-func TestDetectPackagesViaGraphQL(t *testing.T) {
+func TestProfilePackages(t *testing.T) {
 	// Skip if GITHUB_TOKEN is not set
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
@@ -241,19 +241,19 @@ func TestDetectPackagesViaGraphQL(t *testing.T) {
 	profiler := NewProfiler(client, logger)
 	ctx := context.Background()
 
-	// Test with a repository that likely doesn't have packages
-	hasPackages, err := profiler.detectPackagesViaGraphQL(ctx, "octocat", "Hello-World")
+	// Test with a repository - first load the package cache
+	org := "octocat"
+	err = profiler.LoadPackageCache(ctx, org)
 	if err != nil {
-		t.Logf("GraphQL package detection returned error: %v", err)
+		t.Logf("LoadPackageCache returned error (may be expected): %v", err)
 	}
-	t.Logf("octocat/Hello-World has packages: %v", hasPackages)
 
-	// Test the full profilePackages method
+	// Test the profilePackages method
 	repo := &models.Repository{
 		FullName: "octocat/Hello-World",
 	}
 	profiler.profilePackages(ctx, "octocat", "Hello-World", repo)
-	t.Logf("Repository HasPackages field: %v", repo.HasPackages)
+	t.Logf("Repository HasPackages field (from REST API cache): %v", repo.HasPackages)
 }
 
 func TestLoadPackageCache(t *testing.T) {
