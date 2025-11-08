@@ -44,6 +44,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
     if (repository.has_lfs) score += 2;
     if (repository.has_submodules) score += 2;
     if (repository.installed_apps_count > 0) score += 2;
+    if (repository.has_projects) score += 2;
     
     // Low impact features (1 point each)
     if (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) score += 1;

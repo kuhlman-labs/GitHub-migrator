@@ -855,6 +855,77 @@ type DependencyGraphDependency struct {
 	RepositoryOwner *string // For GitHub repository dependencies
 }
 
+// OrganizationProject represents a ProjectsV2 at the organization level
+type OrganizationProject struct {
+	Title        string
+	Repositories []string // Repository names (not full names, just the repo name)
+}
+
+// ListOrganizationProjects fetches all ProjectsV2 for an organization using GraphQL
+// Returns a map of repository names to a boolean indicating if they have projects
+func (c *Client) ListOrganizationProjects(ctx context.Context, org string) (map[string]bool, error) {
+	c.logger.Info("Listing organization projects (ProjectsV2)", "org", org)
+
+	repoProjectMap := make(map[string]bool)
+	var endCursor *githubv4.String
+
+	// GraphQL query for organization ProjectsV2
+	var query struct {
+		Organization struct {
+			Login      githubv4.String
+			ProjectsV2 struct {
+				TotalCount githubv4.Int
+				Nodes      []struct {
+					Title        githubv4.String
+					Repositories struct {
+						Nodes []struct {
+							Name githubv4.String
+						}
+					} `graphql:"repositories(first: 100)"`
+				}
+				PageInfo struct {
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
+				}
+			} `graphql:"projectsV2(first: 100, after: $cursor)"`
+		} `graphql:"organization(login: $owner)"`
+	}
+
+	for {
+		variables := map[string]interface{}{
+			"owner":  githubv4.String(org),
+			"cursor": endCursor,
+		}
+
+		err := c.QueryWithRetry(ctx, "ListOrganizationProjects", &query, variables)
+		if err != nil {
+			// If ProjectsV2 is not available or permission denied, return empty map
+			c.logger.Debug("ProjectsV2 not available for organization", "org", org, "error", err)
+			return repoProjectMap, nil
+		}
+
+		// Build map of repositories that have projects
+		for _, project := range query.Organization.ProjectsV2.Nodes {
+			for _, repo := range project.Repositories.Nodes {
+				repoName := string(repo.Name)
+				repoProjectMap[repoName] = true
+			}
+		}
+
+		if !query.Organization.ProjectsV2.PageInfo.HasNextPage {
+			break
+		}
+		endCursor = &query.Organization.ProjectsV2.PageInfo.EndCursor
+	}
+
+	c.logger.Info("Organization projects (ProjectsV2) fetched",
+		"org", org,
+		"total_projects", query.Organization.ProjectsV2.TotalCount,
+		"repos_with_projects", len(repoProjectMap))
+
+	return repoProjectMap, nil
+}
+
 // GetDependencyGraph fetches the dependency graph for a repository using GraphQL API
 // This includes both manifest dependencies and dependent repositories
 // Note: Page sizes are intentionally small (10 manifests, 25 deps each) to avoid timeouts

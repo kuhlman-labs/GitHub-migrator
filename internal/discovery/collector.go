@@ -105,6 +105,13 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 			"error", err)
 	}
 
+	// Load ProjectsV2 map for this organization
+	if err := profiler.LoadProjectsMap(ctx, org); err != nil {
+		c.logger.Warn("Failed to load ProjectsV2 map, will use fallback detection",
+			"org", org,
+			"error", err)
+	}
+
 	// Process repositories in parallel
 	if err := c.processRepositoriesWithProfiler(ctx, repos, profiler); err != nil {
 		return err
@@ -125,6 +132,8 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 //  1. Use JWT auth to list all app installations (discovers orgs automatically)
 //  2. Create per-org clients with org-specific installation tokens
 //  3. Use org-specific clients for all repo operations (higher rate limits, proper isolation)
+//
+//nolint:gocyclo // Complexity justified for handling multiple discovery modes and error cases
 func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpriseSlug string) error {
 	c.logger.Info("Starting enterprise-wide repository discovery", "enterprise", enterpriseSlug)
 
@@ -213,6 +222,14 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			// Load package cache for this organization using org-specific profiler
 			if err := orgProfiler.LoadPackageCache(ctx, org); err != nil {
 				c.logger.Warn("Failed to load package cache for organization",
+					"enterprise", enterpriseSlug,
+					"org", org,
+					"error", err)
+			}
+
+			// Load ProjectsV2 map for this organization
+			if err := orgProfiler.LoadProjectsMap(ctx, org); err != nil {
+				c.logger.Warn("Failed to load ProjectsV2 map for organization",
 					"enterprise", enterpriseSlug,
 					"org", org,
 					"error", err)
@@ -310,6 +327,15 @@ func (c *Collector) processOrganizationsInParallel(ctx context.Context, enterpri
 				// Load package cache for this organization
 				if err := orgProfiler.LoadPackageCache(ctx, org); err != nil {
 					c.logger.Warn("Failed to load package cache for organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"org", org,
+						"error", err)
+				}
+
+				// Load ProjectsV2 map for this organization
+				if err := orgProfiler.LoadProjectsMap(ctx, org); err != nil {
+					c.logger.Warn("Failed to load ProjectsV2 map for organization",
 						"worker_id", workerID,
 						"enterprise", enterpriseSlug,
 						"org", org,

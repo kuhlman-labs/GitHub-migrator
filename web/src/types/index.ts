@@ -105,6 +105,7 @@ export interface ComplexityBreakdown {
   lfs_points: number;
   submodules_points: number;
   apps_points: number;
+  projects_points: number;
   security_points: number;
   webhooks_points: number;
   tag_protections_points: number;

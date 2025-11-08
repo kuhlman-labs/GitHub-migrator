@@ -155,6 +155,7 @@ type ComplexityBreakdown struct {
 	LFSPoints                int `json:"lfs_points"`                 // 2 points if has LFS
 	SubmodulesPoints         int `json:"submodules_points"`          // 2 points if has submodules
 	AppsPoints               int `json:"apps_points"`                // 2 points if has installed apps
+	ProjectsPoints           int `json:"projects_points"`            // 2 points if has ProjectsV2
 	SecurityPoints           int `json:"security_points"`            // 1 point if has GHAS features
 	WebhooksPoints           int `json:"webhooks_points"`            // 1 point if has webhooks
 	TagProtectionsPoints     int `json:"tag_protections_points"`     // 1 point if has tag protections

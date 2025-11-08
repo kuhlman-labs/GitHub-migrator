@@ -664,7 +664,7 @@ export function RepositoryDetail() {
                   
                   // If backend provides breakdown, use it; otherwise calculate
                   let sizePoints, largeFilesPoints, environmentsPoints, secretsPoints, packagesPoints, runnersPoints;
-                  let variablesPoints, discussionsPoints, releasesPoints, lfsPoints, submodulesPoints, appsPoints;
+                  let variablesPoints, discussionsPoints, releasesPoints, lfsPoints, submodulesPoints, appsPoints, projectsPoints;
                   let securityPoints, webhooksPoints, tagProtectionsPoints, branchProtectionsPoints, rulesetsPoints;
                   let publicVisibilityPoints, internalVisibilityPoints, codeownersPoints, activityPoints;
                   
@@ -682,6 +682,7 @@ export function RepositoryDetail() {
                     lfsPoints = breakdown.lfs_points;
                     submodulesPoints = breakdown.submodules_points;
                     appsPoints = breakdown.apps_points;
+                    projectsPoints = breakdown.projects_points;
                     securityPoints = breakdown.security_points;
                     webhooksPoints = breakdown.webhooks_points;
                     tagProtectionsPoints = breakdown.tag_protections_points;
@@ -714,6 +715,7 @@ export function RepositoryDetail() {
                     lfsPoints = repository.has_lfs ? 2 : 0;
                     submodulesPoints = repository.has_submodules ? 2 : 0;
                     appsPoints = repository.installed_apps_count > 0 ? 2 : 0;
+                    projectsPoints = repository.has_projects ? 2 : 0;
                     securityPoints = (repository.has_code_scanning || repository.has_dependabot || repository.has_secret_scanning) ? 1 : 0;
                     webhooksPoints = repository.webhook_count > 0 ? 1 : 0;
                     tagProtectionsPoints = repository.tag_protection_count > 0 ? 1 : 0;
@@ -735,7 +737,7 @@ export function RepositoryDetail() {
                   // Use backend score when available, otherwise calculate from components
                   const totalPoints = repository.complexity_score ?? (
                     sizePoints + largeFilesPoints + environmentsPoints + secretsPoints + packagesPoints + runnersPoints +
-                    variablesPoints + discussionsPoints + releasesPoints + lfsPoints + submodulesPoints + securityPoints + appsPoints +
+                    variablesPoints + discussionsPoints + releasesPoints + lfsPoints + submodulesPoints + securityPoints + appsPoints + projectsPoints +
                     webhooksPoints + tagProtectionsPoints + branchProtectionsPoints + rulesetsPoints + publicVisibilityPoints + internalVisibilityPoints + codeownersPoints +
                     activityPoints
                   );
@@ -944,6 +946,16 @@ export function RepositoryDetail() {
                           </div>
                           <span className={`text-lg font-semibold ${appsPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
                             +{appsPoints}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">ProjectsV2</div>
+                            <div className="text-xs text-gray-500">{repository.has_projects ? 'Yes (don\'t migrate, manual recreation required)' : 'No'}</div>
+                          </div>
+                          <span className={`text-lg font-semibold ${projectsPoints > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            +{projectsPoints}
                           </span>
                         </div>
                         

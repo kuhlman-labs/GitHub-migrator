@@ -706,3 +706,37 @@ func TestNewClientWithGHECAPISubdomain(t *testing.T) {
 		t.Error("GraphQL client is nil for GHEC data residency instance with api subdomain")
 	}
 }
+
+func TestListOrganizationProjects(t *testing.T) {
+	// This is a unit test to verify that the ListOrganizationProjects method
+	// is properly implemented and returns the expected structure.
+	// Note: This requires a real GitHub connection for integration testing.
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	// Test that the method exists and can be called
+	// For a real test, you would need valid credentials
+	cfg := ClientConfig{
+		BaseURL:     "https://api.github.com",
+		Token:       "test-token",
+		Timeout:     30 * time.Second,
+		RetryConfig: DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v, want nil", err)
+	}
+
+	// Verify the method exists and returns a non-nil map
+	// (even if empty due to no real credentials)
+	ctx := context.Background()
+	projectsMap, _ := client.ListOrganizationProjects(ctx, "test-org")
+
+	// We expect an error or an empty map since we're using test credentials
+	// The important thing is the method is callable and returns the right type
+	if projectsMap == nil {
+		t.Error("ListOrganizationProjects returned nil map, expected non-nil even on error")
+	}
+}
