@@ -570,21 +570,23 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 	// Create basic repository profile from GitHub API data
 	totalSize := int64(ghRepo.GetSize()) * 1024 // Convert KB to bytes (GitHub API returns KB)
 	defaultBranch := ghRepo.GetDefaultBranch()
+	now := time.Now()
 	repo := &models.Repository{
-		FullName:      ghRepo.GetFullName(),
-		Source:        "ghes",
-		SourceURL:     ghRepo.GetHTMLURL(),
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		IsArchived:    ghRepo.GetArchived(),
-		IsFork:        ghRepo.GetFork(),
-		HasWiki:       ghRepo.GetHasWiki(),
-		HasPages:      ghRepo.GetHasPages(),
-		HasPackages:   false, // Will be detected by profiler
-		Visibility:    ghRepo.GetVisibility(),
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
+		FullName:        ghRepo.GetFullName(),
+		Source:          "ghes",
+		SourceURL:       ghRepo.GetHTMLURL(),
+		TotalSize:       &totalSize,
+		DefaultBranch:   &defaultBranch,
+		IsArchived:      ghRepo.GetArchived(),
+		IsFork:          ghRepo.GetFork(),
+		HasWiki:         ghRepo.GetHasWiki(),
+		HasPages:        ghRepo.GetHasPages(),
+		HasPackages:     false, // Will be detected by profiler
+		Visibility:      ghRepo.GetVisibility(),
+		Status:          string(models.StatusPending),
+		DiscoveredAt:    now,
+		UpdatedAt:       now,
+		LastDiscoveryAt: &now, // Track when repository data was last refreshed
 	}
 
 	// Extract last push date from repository object

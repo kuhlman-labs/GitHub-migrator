@@ -1376,11 +1376,18 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 
 		// Parse started_at string to time.Time
 		if temp.StartedAtStr != nil && *temp.StartedAtStr != "" {
-			// Try multiple datetime formats
+			// Try multiple datetime formats for cross-database compatibility
 			formats := []string{
+				"2006-01-02 15:04:05.999999-07:00",        // SQLite with microseconds and full timezone offset
+				"2006-01-02 15:04:05.999999-07",           // PostgreSQL with short timezone offset
+				"2006-01-02 15:04:05.9999999",             // SQL Server with 7 fractional digits (no timezone)
+				"2006-01-02 15:04:05.999999",              // Most databases with microseconds (no timezone)
+				"2006-01-02 15:04:05.999999999-07:00",     // Nanoseconds with full timezone
+				"2006-01-02 15:04:05.999999999-07",        // Nanoseconds with short timezone
 				"2006-01-02 15:04:05.999999999 -0700 MST", // Go's default format
-				"2006-01-02 15:04:05",                     // SQLite format
-				time.RFC3339,                              // ISO 8601
+				"2006-01-02 15:04:05",                     // Basic format without fractional seconds or timezone
+				time.RFC3339,                              // ISO 8601 (2006-01-02T15:04:05Z07:00)
+				"2006-01-02T15:04:05.999999-07:00",        // ISO 8601 with microseconds
 				"2006-01-02T15:04:05",                     // ISO 8601 without timezone
 			}
 			for _, format := range formats {
@@ -1393,11 +1400,18 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 
 		// Parse completed_at string to time.Time
 		if temp.CompletedAtStr != nil && *temp.CompletedAtStr != "" {
-			// Try multiple datetime formats
+			// Try multiple datetime formats for cross-database compatibility
 			formats := []string{
+				"2006-01-02 15:04:05.999999-07:00",        // SQLite with microseconds and full timezone offset
+				"2006-01-02 15:04:05.999999-07",           // PostgreSQL with short timezone offset
+				"2006-01-02 15:04:05.9999999",             // SQL Server with 7 fractional digits (no timezone)
+				"2006-01-02 15:04:05.999999",              // Most databases with microseconds (no timezone)
+				"2006-01-02 15:04:05.999999999-07:00",     // Nanoseconds with full timezone
+				"2006-01-02 15:04:05.999999999-07",        // Nanoseconds with short timezone
 				"2006-01-02 15:04:05.999999999 -0700 MST", // Go's default format
-				"2006-01-02 15:04:05",                     // SQLite format
-				time.RFC3339,                              // ISO 8601
+				"2006-01-02 15:04:05",                     // Basic format without fractional seconds or timezone
+				time.RFC3339,                              // ISO 8601 (2006-01-02T15:04:05Z07:00)
+				"2006-01-02T15:04:05.999999-07:00",        // ISO 8601 with microseconds
 				"2006-01-02T15:04:05",                     // ISO 8601 without timezone
 			}
 			for _, format := range formats {
