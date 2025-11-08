@@ -23,6 +23,8 @@ type Profiler struct {
 	token          string          // GitHub token for authenticated git operations
 	packageCache   map[string]bool // Cache of repo names that have packages
 	packageCacheMu sync.RWMutex    // Mutex for thread-safe cache access
+	projectsMap    map[string]bool // Cache of repo names that have ProjectsV2 (org-level)
+	projectsMapMu  sync.RWMutex    // Mutex for thread-safe projects map access
 }
 
 // NewProfiler creates a new GitHub features profiler
@@ -32,6 +34,7 @@ func NewProfiler(client *github.Client, logger *slog.Logger) *Profiler {
 		logger:       logger,
 		token:        client.Token(),
 		packageCache: make(map[string]bool),
+		projectsMap:  make(map[string]bool),
 	}
 }
 
@@ -315,6 +318,31 @@ func (p *Profiler) LoadPackageCache(ctx context.Context, org string) error {
 		"org", org,
 		"repos_with_packages", len(p.packageCache),
 		"total_packages", packagesFound)
+
+	return nil
+}
+
+// LoadProjectsMap loads all ProjectsV2 for an organization into the cache
+// This should be called once per organization before profiling repositories
+func (p *Profiler) LoadProjectsMap(ctx context.Context, org string) error {
+	p.logger.Info("Loading ProjectsV2 map for organization", "org", org)
+
+	// Fetch organization projects using GraphQL
+	projectsMap, err := p.client.ListOrganizationProjects(ctx, org)
+	if err != nil {
+		p.logger.Warn("Failed to load ProjectsV2 map", "org", org, "error", err)
+		return err
+	}
+
+	p.projectsMapMu.Lock()
+	defer p.projectsMapMu.Unlock()
+
+	// Store the projects map
+	p.projectsMap = projectsMap
+
+	p.logger.Info("ProjectsV2 map loaded",
+		"org", org,
+		"repos_with_projects", len(projectsMap))
 
 	return nil
 }
@@ -678,58 +706,28 @@ func (p *Profiler) profileWikiContent(ctx context.Context, repo *models.Reposito
 	}
 }
 
-// profileProjectContent checks if the repository has actual project boards with content
-// Similar to profileWikiContent, this verifies actual usage vs just having the feature enabled
-// Note: Projects (classic) DO migrate with GEI, but we track them for completeness
+// profileProjectContent checks if the repository has ProjectsV2 associated with it
+// Uses the organization-level ProjectsV2 map loaded during discovery
+// Note: Classic projects detection removed as those APIs are deprecated
 func (p *Profiler) profileProjectContent(ctx context.Context, org, name string, repo *models.Repository) {
-	// If projects feature is not enabled, skip the check
-	if !repo.HasProjects {
+	// Check the projects map (loaded at org level via ProjectsV2 API)
+	p.projectsMapMu.RLock()
+	hasProjectsInMap, inMap := p.projectsMap[name]
+	p.projectsMapMu.RUnlock()
+
+	if inMap {
+		// We have data from the org-level ProjectsV2 query
+		repo.HasProjects = hasProjectsInMap
+		if hasProjectsInMap {
+			p.logger.Debug("Found ProjectsV2 for repository (from org map)", "repo", repo.FullName)
+		}
 		return
 	}
 
-	// Check for actual project boards using GraphQL
-	hasProjects, err := p.detectProjectsViaGraphQL(ctx, org, name)
-	if err != nil {
-		p.logger.Debug("Failed to check for projects via GraphQL",
-			"repo", repo.FullName,
-			"error", err)
-		// If we can't check, assume no projects to avoid false positives
-		repo.HasProjects = false
-		return
-	}
-
-	// Update HasProjects to reflect actual project boards present
-	repo.HasProjects = hasProjects
-
-	if !hasProjects {
-		p.logger.Debug("Projects feature enabled but no project boards found",
-			"repo", repo.FullName)
-	} else {
-		p.logger.Debug("Found project boards (classic)", "repo", repo.FullName)
-	}
-}
-
-// detectProjectsViaGraphQL uses GraphQL to detect if a repository has project boards
-func (p *Profiler) detectProjectsViaGraphQL(ctx context.Context, org, name string) (bool, error) {
-	var query struct {
-		Repository struct {
-			Projects struct {
-				TotalCount int
-			} `graphql:"projects(first: 1)"`
-		} `graphql:"repository(owner: $owner, name: $name)"`
-	}
-
-	variables := map[string]interface{}{
-		"owner": githubv4.String(org),
-		"name":  githubv4.String(name),
-	}
-
-	err := p.client.QueryWithRetry(ctx, "DetectProjects", &query, variables)
-	if err != nil {
-		return false, err
-	}
-
-	return query.Repository.Projects.TotalCount > 0, nil
+	// If not in map, default to false (no projects detected)
+	// The map should contain all repos with ProjectsV2, so absence means no projects
+	repo.HasProjects = false
+	p.logger.Debug("No ProjectsV2 found for repository", "repo", repo.FullName)
 }
 
 // checkWikiHasContent checks if a wiki repository exists and has content

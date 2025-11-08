@@ -855,6 +855,145 @@ type DependencyGraphDependency struct {
 	RepositoryOwner *string // For GitHub repository dependencies
 }
 
+// OrganizationProject represents a ProjectsV2 at the organization level
+type OrganizationProject struct {
+	Title        string
+	Repositories []string // Repository names (not full names, just the repo name)
+}
+
+// ListOrganizationProjects fetches all ProjectsV2 for an organization using GraphQL
+// Returns a map of repository names to a boolean indicating if they have projects
+func (c *Client) ListOrganizationProjects(ctx context.Context, org string) (map[string]bool, error) {
+	c.logger.Info("Listing organization projects (ProjectsV2)", "org", org)
+
+	repoProjectMap := make(map[string]bool)
+	var endCursor *githubv4.String
+
+	// GraphQL query for organization ProjectsV2
+	var query struct {
+		Organization struct {
+			Login      githubv4.String
+			ProjectsV2 struct {
+				TotalCount githubv4.Int
+				Nodes      []struct {
+					ID           githubv4.String
+					Title        githubv4.String
+					Repositories struct {
+						TotalCount githubv4.Int
+						Nodes      []struct {
+							Name githubv4.String
+						}
+						PageInfo struct {
+							HasNextPage githubv4.Boolean
+							EndCursor   githubv4.String
+						}
+					} `graphql:"repositories(first: 100)"`
+				}
+				PageInfo struct {
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
+				}
+			} `graphql:"projectsV2(first: 100, after: $cursor)"`
+		} `graphql:"organization(login: $owner)"`
+	}
+
+	// Paginate through all projects
+	for {
+		variables := map[string]interface{}{
+			"owner":  githubv4.String(org),
+			"cursor": endCursor,
+		}
+
+		err := c.QueryWithRetry(ctx, "ListOrganizationProjects", &query, variables)
+		if err != nil {
+			// If ProjectsV2 is not available or permission denied, return empty map
+			c.logger.Debug("ProjectsV2 not available for organization", "org", org, "error", err)
+			return repoProjectMap, nil
+		}
+
+		// Build map of repositories that have projects
+		for _, project := range query.Organization.ProjectsV2.Nodes {
+			// Add repositories from first page
+			for _, repo := range project.Repositories.Nodes {
+				repoName := string(repo.Name)
+				repoProjectMap[repoName] = true
+			}
+
+			// If this project has more than 100 repositories, paginate through them
+			if project.Repositories.PageInfo.HasNextPage {
+				c.logger.Debug("Project has more than 100 repositories, paginating",
+					"project", project.Title,
+					"total_repos", project.Repositories.TotalCount)
+
+				if err := c.paginateProjectRepositories(ctx, string(project.ID), &project.Repositories.PageInfo.EndCursor, repoProjectMap); err != nil {
+					c.logger.Warn("Failed to paginate project repositories",
+						"project", project.Title,
+						"error", err)
+					// Continue with other projects even if one fails
+				}
+			}
+		}
+
+		if !query.Organization.ProjectsV2.PageInfo.HasNextPage {
+			break
+		}
+		endCursor = &query.Organization.ProjectsV2.PageInfo.EndCursor
+	}
+
+	c.logger.Info("Organization projects (ProjectsV2) fetched",
+		"org", org,
+		"total_projects", query.Organization.ProjectsV2.TotalCount,
+		"repos_with_projects", len(repoProjectMap))
+
+	return repoProjectMap, nil
+}
+
+// paginateProjectRepositories fetches additional repositories for a project beyond the first 100
+func (c *Client) paginateProjectRepositories(ctx context.Context, projectID string, startCursor *githubv4.String, repoMap map[string]bool) error {
+	var query struct {
+		Node struct {
+			ProjectV2 struct {
+				Repositories struct {
+					Nodes []struct {
+						Name githubv4.String
+					}
+					PageInfo struct {
+						HasNextPage githubv4.Boolean
+						EndCursor   githubv4.String
+					}
+				} `graphql:"repositories(first: 100, after: $cursor)"`
+			} `graphql:"... on ProjectV2"`
+		} `graphql:"node(id: $id)"`
+	}
+
+	cursor := startCursor
+	for cursor != nil {
+		variables := map[string]interface{}{
+			"id":     githubv4.ID(projectID),
+			"cursor": cursor,
+		}
+
+		err := c.QueryWithRetry(ctx, "PaginateProjectRepositories", &query, variables)
+		if err != nil {
+			return err
+		}
+
+		// Add repositories from this page
+		for _, repo := range query.Node.ProjectV2.Repositories.Nodes {
+			repoName := string(repo.Name)
+			repoMap[repoName] = true
+		}
+
+		// Check if there are more pages
+		if !query.Node.ProjectV2.Repositories.PageInfo.HasNextPage {
+			break
+		}
+		cursor = &query.Node.ProjectV2.Repositories.PageInfo.EndCursor
+	}
+
+	return nil
+}
+
 // GetDependencyGraph fetches the dependency graph for a repository using GraphQL API
 // This includes both manifest dependencies and dependent repositories
 // Note: Page sizes are intentionally small (10 manifests, 25 deps each) to avoid timeouts

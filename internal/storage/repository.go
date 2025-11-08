@@ -104,6 +104,7 @@ func (d *Database) buildGitHubComplexityScoreSQL() string {
 	//   - LFS: +2 (special handling required)
 	//   - Submodules: +2 (dependency management complexity)
 	//   - GitHub Apps: +2 (reconfiguration/reinstallation)
+	//   - ProjectsV2: +2 (don't migrate, must be manually recreated)
 	//
 	// LOW IMPACT (1 point):
 	//   - GHAS features: +1 (code scanning, dependabot, secret scanning - simple toggles)
@@ -156,6 +157,7 @@ func (d *Database) buildGitHubComplexityScoreSQL() string {
 		CASE WHEN has_lfs = %s THEN 2 ELSE 0 END +
 		CASE WHEN has_submodules = %s THEN 2 ELSE 0 END +
 		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
+		CASE WHEN has_projects = %s THEN 2 ELSE 0 END +
 		
 		-- Low impact features (1 point each)
 		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
@@ -189,6 +191,7 @@ func (d *Database) buildGitHubComplexityScoreSQL() string {
 	)`, MB100, GB1, GB5,
 		trueVal, trueVal, trueVal, // has_large_files, has_packages, has_self_hosted_runners
 		trueVal, trueVal, trueVal, // has_discussions, has_lfs, has_submodules
+		trueVal,                   // has_projects
 		trueVal, trueVal, trueVal, // has_code_scanning, has_dependabot, has_secret_scanning
 		trueVal, trueVal) // has_rulesets, has_codeowners
 }
@@ -253,6 +256,10 @@ func buildSubmodulesPointsSQL() string {
 
 func buildAppsPointsSQL() string {
 	return "CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END"
+}
+
+func buildProjectsPointsSQL() string {
+	return "CASE WHEN has_projects = TRUE THEN 2 ELSE 0 END"
 }
 
 func buildSecurityPointsSQL() string {
@@ -450,6 +457,7 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 			%s as lfs_points,
 			%s as submodules_points,
 			%s as apps_points,
+			%s as projects_points,
 			%s as security_points,
 			%s as webhooks_points,
 			%s as tag_protections_points,
@@ -475,6 +483,7 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		buildLFSPointsSQL(),
 		buildSubmodulesPointsSQL(),
 		buildAppsPointsSQL(),
+		buildProjectsPointsSQL(),
 		buildSecurityPointsSQL(),
 		buildWebhooksPointsSQL(),
 		buildTagProtectionsPointsSQL(),
@@ -502,6 +511,7 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		LFSPoints                int
 		SubmodulesPoints         int
 		AppsPoints               int
+		ProjectsPoints           int
 		SecurityPoints           int
 		WebhooksPoints           int
 		TagProtectionsPoints     int
@@ -536,6 +546,7 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 				LFSPoints:                result.LFSPoints,
 				SubmodulesPoints:         result.SubmodulesPoints,
 				AppsPoints:               result.AppsPoints,
+				ProjectsPoints:           result.ProjectsPoints,
 				SecurityPoints:           result.SecurityPoints,
 				WebhooksPoints:           result.WebhooksPoints,
 				TagProtectionsPoints:     result.TagProtectionsPoints,
