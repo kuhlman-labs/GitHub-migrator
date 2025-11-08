@@ -32,8 +32,12 @@ func TestNewDatabase(t *testing.T) {
 	}
 
 	// Verify connection works
-	if err := db.db.Ping(); err != nil {
-		t.Errorf("db.Ping() error = %v", err)
+	sqlDB, err := db.db.DB()
+	if err != nil {
+		t.Fatalf("db.DB() error = %v", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Errorf("sqlDB.Ping() error = %v", err)
 	}
 }
 
@@ -101,8 +105,8 @@ func TestDatabase_Migrate(t *testing.T) {
 	}
 
 	// Verify schema_migrations table exists
-	var count int
-	err = db.db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count)
+	var count int64
+	err = db.db.Model(&SchemaMigration{}).Count(&count).Error
 	if err != nil {
 		t.Errorf("schema_migrations table not found: %v", err)
 	}
@@ -111,17 +115,11 @@ func TestDatabase_Migrate(t *testing.T) {
 		t.Error("No migrations were recorded")
 	}
 
-	// Verify main tables exist
+	// Verify main tables exist using GORM's Migrator
 	tables := []string{"repositories", "migration_history", "migration_logs", "batches"}
 	for _, table := range tables {
-		var tableName string
-		query := "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
-		err := db.db.QueryRow(query, table).Scan(&tableName)
-		if err != nil {
-			t.Errorf("Table %s does not exist: %v", table, err)
-		}
-		if tableName != table {
-			t.Errorf("Expected table %s, got %s", table, tableName)
+		if !db.db.Migrator().HasTable(table) {
+			t.Errorf("Table %s does not exist", table)
 		}
 	}
 }
@@ -150,8 +148,8 @@ func TestDatabase_Migrate_Idempotent(t *testing.T) {
 	}
 
 	// Get count of migrations
-	var count1 int
-	err = db.db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count1)
+	var count1 int64
+	err = db.db.Model(&SchemaMigration{}).Count(&count1).Error
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,8 +160,8 @@ func TestDatabase_Migrate_Idempotent(t *testing.T) {
 	}
 
 	// Verify count hasn't changed
-	var count2 int
-	err = db.db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count2)
+	var count2 int64
+	err = db.db.Model(&SchemaMigration{}).Count(&count2).Error
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,14 +189,18 @@ func TestDatabase_DB(t *testing.T) {
 	}
 	defer db.Close()
 
-	sqlDB := db.DB()
-	if sqlDB == nil {
+	gormDB := db.DB()
+	if gormDB == nil {
 		t.Error("DB() returned nil")
 	}
 
 	// Verify it's the same db
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("gormDB.DB() error = %v", err)
+	}
 	if err := sqlDB.Ping(); err != nil {
-		t.Errorf("DB().Ping() error = %v", err)
+		t.Errorf("sqlDB.Ping() error = %v", err)
 	}
 }
 
@@ -224,7 +226,11 @@ func TestDatabase_Close(t *testing.T) {
 	}
 
 	// Verify connection is closed
-	if err := db.db.Ping(); err == nil {
+	sqlDB, err := db.db.DB()
+	if err != nil {
+		t.Fatalf("db.db.DB() error = %v", err)
+	}
+	if err := sqlDB.Ping(); err == nil {
 		t.Error("Expected error after Close(), got nil")
 	}
 }

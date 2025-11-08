@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sort"
 	"strconv"
@@ -10,6 +9,8 @@ import (
 	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/models"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -19,216 +20,57 @@ const (
 	batchStatusInProgress = "in_progress"
 )
 
-// SaveRepository inserts or updates a repository in the database
-// nolint:dupl // SaveRepository and UpdateRepository have different SQL operations
+// SaveRepository inserts or updates a repository in the database using GORM
 func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) error {
-	query := `
-		INSERT INTO repositories (
-			full_name, source, source_url, total_size, largest_file, 
-			largest_file_size, largest_commit, largest_commit_size,
-			has_lfs, has_submodules, has_large_files, large_file_count,
-			default_branch, branch_count, commit_count, last_commit_sha,
-			last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
-			has_discussions, has_actions, has_projects, has_packages, 
-			branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
-			webhook_count, contributor_count, top_contributors,
-			issue_count, pull_request_count, tag_count, 
-			open_issue_count, open_pr_count,
-			has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
-			visibility, workflow_count, has_self_hosted_runners, collaborator_count,
-			installed_apps_count, release_count, has_release_assets,
-			has_oversized_commits, oversized_commit_details,
-			has_long_refs, long_ref_details,
-			has_blocking_files, blocking_file_details,
-			has_large_file_warnings, large_file_warning_details,
-			has_oversized_repository, oversized_repository_details,
-			estimated_metadata_size, metadata_size_details,
-			exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
-			status, batch_id, priority, destination_url, 
-			destination_full_name, source_migration_id, is_source_locked,
-			validation_status, validation_details, destination_data,
-			discovered_at, updated_at, migrated_at, last_dry_run_at, last_discovery_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	ON CONFLICT(full_name) DO UPDATE SET
-		source = excluded.source,
-		source_url = excluded.source_url,
-		total_size = excluded.total_size,
-		largest_file = excluded.largest_file,
-		largest_file_size = excluded.largest_file_size,
-		largest_commit = excluded.largest_commit,
-		largest_commit_size = excluded.largest_commit_size,
-		has_lfs = excluded.has_lfs,
-		has_submodules = excluded.has_submodules,
-		has_large_files = excluded.has_large_files,
-		large_file_count = excluded.large_file_count,
-		default_branch = excluded.default_branch,
-		branch_count = excluded.branch_count,
-		commit_count = excluded.commit_count,
-		last_commit_sha = excluded.last_commit_sha,
-		last_commit_date = excluded.last_commit_date,
-		is_archived = excluded.is_archived,
-		is_fork = excluded.is_fork,
-		has_wiki = excluded.has_wiki,
-		has_pages = excluded.has_pages,
-		has_discussions = excluded.has_discussions,
-		has_actions = excluded.has_actions,
-		has_projects = excluded.has_projects,
-		has_packages = excluded.has_packages,
-		branch_protections = excluded.branch_protections,
-		has_rulesets = excluded.has_rulesets,
-		environment_count = excluded.environment_count,
-		secret_count = excluded.secret_count,
-		variable_count = excluded.variable_count,
-		webhook_count = excluded.webhook_count,
-		contributor_count = excluded.contributor_count,
-		top_contributors = excluded.top_contributors,
-		issue_count = excluded.issue_count,
-		pull_request_count = excluded.pull_request_count,
-		tag_count = excluded.tag_count,
-		open_issue_count = excluded.open_issue_count,
-		open_pr_count = excluded.open_pr_count,
-		has_code_scanning = excluded.has_code_scanning,
-		has_dependabot = excluded.has_dependabot,
-		has_secret_scanning = excluded.has_secret_scanning,
-		has_codeowners = excluded.has_codeowners,
-		visibility = excluded.visibility,
-		workflow_count = excluded.workflow_count,
-		has_self_hosted_runners = excluded.has_self_hosted_runners,
-		collaborator_count = excluded.collaborator_count,
-		installed_apps_count = excluded.installed_apps_count,
-		release_count = excluded.release_count,
-		has_release_assets = excluded.has_release_assets,
-		has_oversized_commits = excluded.has_oversized_commits,
-		oversized_commit_details = excluded.oversized_commit_details,
-		has_long_refs = excluded.has_long_refs,
-		long_ref_details = excluded.long_ref_details,
-		has_blocking_files = excluded.has_blocking_files,
-		blocking_file_details = excluded.blocking_file_details,
-		has_large_file_warnings = excluded.has_large_file_warnings,
-		large_file_warning_details = excluded.large_file_warning_details,
-		has_oversized_repository = excluded.has_oversized_repository,
-		oversized_repository_details = excluded.oversized_repository_details,
-		estimated_metadata_size = excluded.estimated_metadata_size,
-		metadata_size_details = excluded.metadata_size_details,
-		source_migration_id = excluded.source_migration_id,
-		is_source_locked = excluded.is_source_locked,
-		updated_at = excluded.updated_at,
-		last_discovery_at = CURRENT_TIMESTAMP
-		-- Note: destination_url, destination_full_name, and exclusion flags are intentionally excluded
-		-- from updates to preserve manually configured settings during re-discovery
-	`
+	// Use GORM's Clauses for upsert (works across SQLite, PostgreSQL, SQL Server)
+	// OnConflict will update all columns except those intentionally preserved
+	result := d.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "full_name"}}, // Conflict on unique index
+		DoUpdates: clause.AssignmentColumns([]string{
+			// Update discovery fields
+			"source", "source_url", "total_size", "largest_file", "largest_file_size",
+			"largest_commit", "largest_commit_size", "has_lfs", "has_submodules",
+			"has_large_files", "large_file_count", "default_branch", "branch_count",
+			"commit_count", "last_commit_sha", "last_commit_date", "is_archived",
+			"is_fork", "has_wiki", "has_pages", "has_discussions", "has_actions",
+			"has_projects", "has_packages", "branch_protections", "has_rulesets",
+			"tag_protection_count", "environment_count", "secret_count", "variable_count",
+			"webhook_count", "contributor_count", "top_contributors", "issue_count",
+			"pull_request_count", "tag_count", "open_issue_count", "open_pr_count",
+			"has_code_scanning", "has_dependabot", "has_secret_scanning", "has_codeowners",
+			"visibility", "workflow_count", "has_self_hosted_runners", "collaborator_count",
+			"installed_apps_count", "release_count", "has_release_assets",
+			"has_oversized_commits", "oversized_commit_details", "has_long_refs",
+			"long_ref_details", "has_blocking_files", "blocking_file_details",
+			"has_large_file_warnings", "large_file_warning_details", "has_oversized_repository",
+			"oversized_repository_details", "estimated_metadata_size", "metadata_size_details",
+			"source_migration_id", "is_source_locked", "updated_at", "last_discovery_at",
+			// Note: destination_url, destination_full_name, and exclusion flags are intentionally excluded
+			// from updates to preserve manually configured settings during re-discovery
+		}),
+	}).Create(repo)
 
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
-		repo.FullName, repo.Source, repo.SourceURL, repo.TotalSize,
-		repo.LargestFile, repo.LargestFileSize, repo.LargestCommit,
-		repo.LargestCommitSize, repo.HasLFS, repo.HasSubmodules,
-		repo.HasLargeFiles, repo.LargeFileCount,
-		repo.DefaultBranch, repo.BranchCount, repo.CommitCount,
-		repo.LastCommitSHA, repo.LastCommitDate,
-		repo.IsArchived, repo.IsFork, repo.HasWiki, repo.HasPages, repo.HasDiscussions,
-		repo.HasActions, repo.HasProjects, repo.HasPackages, repo.BranchProtections,
-		repo.HasRulesets, repo.TagProtectionCount,
-		repo.EnvironmentCount, repo.SecretCount, repo.VariableCount,
-		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
-		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
-		repo.OpenIssueCount, repo.OpenPRCount,
-		repo.HasCodeScanning, repo.HasDependabot, repo.HasSecretScanning, repo.HasCodeowners,
-		repo.Visibility, repo.WorkflowCount, repo.HasSelfHostedRunners, repo.CollaboratorCount,
-		repo.InstalledAppsCount, repo.ReleaseCount, repo.HasReleaseAssets,
-		repo.HasOversizedCommits, repo.OversizedCommitDetails,
-		repo.HasLongRefs, repo.LongRefDetails,
-		repo.HasBlockingFiles, repo.BlockingFileDetails,
-		repo.HasLargeFileWarnings, repo.LargeFileWarningDetails,
-		repo.HasOversizedRepository, repo.OversizedRepositoryDetails,
-		repo.EstimatedMetadataSize, repo.MetadataSizeDetails,
-		repo.ExcludeReleases, repo.ExcludeAttachments, repo.ExcludeMetadata, repo.ExcludeGitData, repo.ExcludeOwnerProjects,
-		repo.Status, repo.BatchID, repo.Priority,
-		repo.DestinationURL, repo.DestinationFullName,
-		repo.SourceMigrationID, repo.IsSourceLocked,
-		repo.ValidationStatus, repo.ValidationDetails, repo.DestinationData,
-		repo.DiscoveredAt, repo.UpdatedAt, repo.MigratedAt, repo.LastDryRunAt,
-	)
-	if err != nil {
-		return err
+	if result.Error != nil {
+		return fmt.Errorf("failed to save repository: %w", result.Error)
 	}
 
-	// After UPSERT, we need to retrieve the ID since it's not returned by the query
-	// This is critical for downstream operations like dependency tracking
-	err = d.db.QueryRowContext(ctx, d.rebindQuery("SELECT id FROM repositories WHERE full_name = ?"), repo.FullName).Scan(&repo.ID)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve repository ID after save: %w", err)
+	// If this was an update (not insert), fetch the ID
+	if repo.ID == 0 {
+		if err := d.db.WithContext(ctx).Where("full_name = ?", repo.FullName).
+			Select("id").First(repo).Error; err != nil {
+			return fmt.Errorf("failed to retrieve repository ID after save: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// GetRepository retrieves a repository by full name
-// nolint:dupl // Similar to GetRepositoryByID but queries by full_name
+// GetRepository retrieves a repository by full name using GORM
 func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.Repository, error) {
-	query := `
-		SELECT id, full_name, source, source_url, total_size, largest_file, 
-			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, has_large_files, large_file_count,
-			   default_branch, branch_count, commit_count, last_commit_sha,
-			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
-			   has_discussions, has_actions, has_projects, has_packages, 
-			   branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
-			   webhook_count, contributor_count, top_contributors,
-			   issue_count, pull_request_count, tag_count,
-			   open_issue_count, open_pr_count,
-			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
-			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
-			   installed_apps_count, release_count, has_release_assets,
-			   has_oversized_commits, oversized_commit_details,
-			   has_long_refs, long_ref_details,
-			   has_blocking_files, blocking_file_details,
-			   has_large_file_warnings, large_file_warning_details,
-			   has_oversized_repository, oversized_repository_details,
-			   estimated_metadata_size, metadata_size_details,
-			   exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
-			   status, batch_id, priority, destination_url, 
-			   destination_full_name, source_migration_id, is_source_locked,
-			   validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at,
-			   last_discovery_at, last_dry_run_at
-		FROM repositories 
-		WHERE full_name = ?
-	`
-
 	var repo models.Repository
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), fullName).Scan(
-		&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
-		&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
-		&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-		&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
-		&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
-		&repo.LastCommitSHA, &repo.LastCommitDate,
-		&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
-		&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
-		&repo.HasRulesets, &repo.TagProtectionCount,
-		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
-		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
-		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
-		&repo.OpenIssueCount, &repo.OpenPRCount,
-		&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
-		&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
-		&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
-		&repo.HasOversizedCommits, &repo.OversizedCommitDetails,
-		&repo.HasLongRefs, &repo.LongRefDetails,
-		&repo.HasBlockingFiles, &repo.BlockingFileDetails,
-		&repo.HasLargeFileWarnings, &repo.LargeFileWarningDetails,
-		&repo.HasOversizedRepository, &repo.OversizedRepositoryDetails,
-		&repo.EstimatedMetadataSize, &repo.MetadataSizeDetails,
-		&repo.ExcludeReleases, &repo.ExcludeAttachments, &repo.ExcludeMetadata, &repo.ExcludeGitData, &repo.ExcludeOwnerProjects,
-		&repo.Status, &repo.BatchID, &repo.Priority,
-		&repo.DestinationURL, &repo.DestinationFullName,
-		&repo.SourceMigrationID, &repo.IsSourceLocked,
-		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
-		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
-		&repo.LastDiscoveryAt, &repo.LastDryRunAt,
-	)
+	err := d.db.WithContext(ctx).Where("full_name = ?", fullName).First(&repo).Error
 
-	if err == sql.ErrNoRows {
+	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
 	if err != nil {
@@ -241,209 +83,9 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 	return &repo, nil
 }
 
-const (
-	orderByFullNameASC = " ORDER BY full_name ASC"
-)
-
-// applyRepositoryFilters applies filters to the SQL query and returns the updated query and args
-func applyRepositoryFilters(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	// Apply status filter
-	query, args = applyStatusFilter(query, args, filters)
-
-	// Apply simple filters
-	query, args = applySimpleFilters(query, args, filters)
-
-	// Apply organization filter
-	query, args = applyOrganizationFilter(query, args, filters)
-
-	// Apply feature filters
-	query, args = applyFeatureFilters(query, args, filters)
-
-	// Apply visibility filter
-	query, args = applyVisibilityFilter(query, args, filters)
-
-	// Apply size category filter
-	query, args = applySizeCategoryFilter(query, args, filters)
-
-	// Apply complexity filter
-	query, args = applyComplexityFilter(query, args, filters)
-
-	// Apply available for batch filter
-	query, args = applyAvailableForBatchFilter(query, args, filters)
-
-	// Apply sort order
-	query, args = applySortOrder(query, args, filters)
-
-	return query, args
-}
-
-// applySimpleFilters applies basic filters like batch_id, source, size, and search
-func applySimpleFilters(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	// Apply batch_id filter
-	if batchID, ok := filters["batch_id"].(int64); ok && batchID > 0 {
-		query += " AND batch_id = ?"
-		args = append(args, batchID)
-	}
-
-	// Apply source filter
-	if source, ok := filters["source"].(string); ok && source != "" {
-		query += " AND source = ?"
-		args = append(args, source)
-	}
-
-	// Apply size range filters
-	if minSize, ok := filters["min_size"].(int64); ok && minSize > 0 {
-		query += " AND total_size >= ?"
-		args = append(args, minSize)
-	}
-	if maxSize, ok := filters["max_size"].(int64); ok && maxSize > 0 {
-		query += " AND total_size <= ?"
-		args = append(args, maxSize)
-	}
-
-	// Apply search filter (case-insensitive)
-	if search, ok := filters["search"].(string); ok && search != "" {
-		query += " AND LOWER(full_name) LIKE LOWER(?)"
-		args = append(args, "%"+search+"%")
-	}
-
-	return query, args
-}
-
-// applyOrganizationFilter applies organization filter (single or multiple)
-func applyOrganizationFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	orgValue, ok := filters["organization"]
-	if !ok {
-		return query, args
-	}
-
-	switch org := orgValue.(type) {
-	case string:
-		if org != "" {
-			query += " AND LOWER(full_name) LIKE LOWER(?)"
-			args = append(args, org+"/%")
-		}
-	case []string:
-		if len(org) > 0 {
-			placeholders := make([]string, len(org))
-			for i, o := range org {
-				placeholders[i] = "LOWER(full_name) LIKE LOWER(?)"
-				args = append(args, o+"/%")
-			}
-			query += fmt.Sprintf(" AND (%s)", strings.Join(placeholders, " OR "))
-		}
-	}
-
-	return query, args
-}
-
-// applyFeatureFilters applies feature-based filters
-func applyFeatureFilters(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	featureFilters := []struct {
-		key    string
-		column string
-	}{
-		{"has_lfs", "has_lfs"},
-		{"has_submodules", "has_submodules"},
-		{"has_large_files", "has_large_files"},
-		{"has_actions", "has_actions"},
-		{"has_wiki", "has_wiki"},
-		{"has_pages", "has_pages"},
-		{"has_discussions", "has_discussions"},
-		{"has_projects", "has_projects"},
-		{"has_packages", "has_packages"},
-		{"has_rulesets", "has_rulesets"},
-		{"is_archived", "is_archived"},
-		{"is_fork", "is_fork"},
-		{"has_code_scanning", "has_code_scanning"},
-		{"has_dependabot", "has_dependabot"},
-		{"has_secret_scanning", "has_secret_scanning"},
-		{"has_codeowners", "has_codeowners"},
-		{"has_self_hosted_runners", "has_self_hosted_runners"},
-		{"has_release_assets", "has_release_assets"},
-	}
-
-	for _, f := range featureFilters {
-		if value, ok := filters[f.key].(bool); ok {
-			query += fmt.Sprintf(" AND %s = ?", f.column)
-			args = append(args, value)
-		}
-	}
-
-	// Special handling for branch_protections (checking if count > 0)
-	if hasBranchProtections, ok := filters["has_branch_protections"].(bool); ok {
-		if hasBranchProtections {
-			query += " AND branch_protections > 0"
-		} else {
-			query += " AND (branch_protections = 0 OR branch_protections IS NULL)"
-		}
-	}
-
-	return query, args
-}
-
-// applyVisibilityFilter applies visibility filter (public, private, internal)
-func applyVisibilityFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	if visibility, ok := filters["visibility"].(string); ok && visibility != "" {
-		query += " AND visibility = ?"
-		args = append(args, visibility)
-	}
-	return query, args
-}
-
-// applySizeCategoryFilter filters repositories by size category
-func applySizeCategoryFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	sizeCategoryValue, ok := filters["size_category"]
-	if !ok {
-		return query, args
-	}
-
-	// Size thresholds in bytes
-	const (
-		MB100 = 100 * 1024 * 1024      // 100MB
-		GB1   = 1024 * 1024 * 1024     // 1GB
-		GB5   = 5 * 1024 * 1024 * 1024 // 5GB
-	)
-
-	var conditions []string
-
-	categories := []string{}
-	switch v := sizeCategoryValue.(type) {
-	case string:
-		categories = []string{v}
-	case []string:
-		categories = v
-	}
-
-	for _, category := range categories {
-		switch category {
-		case "small":
-			conditions = append(conditions, "(total_size > 0 AND total_size < ?)")
-			args = append(args, MB100)
-		case "medium":
-			conditions = append(conditions, "(total_size >= ? AND total_size < ?)")
-			args = append(args, MB100, GB1)
-		case "large":
-			conditions = append(conditions, "(total_size >= ? AND total_size < ?)")
-			args = append(args, GB1, GB5)
-		case "very_large":
-			conditions = append(conditions, "(total_size >= ?)")
-			args = append(args, GB5)
-		case "unknown":
-			conditions = append(conditions, "(total_size IS NULL OR total_size = 0)")
-		}
-	}
-
-	if len(conditions) > 0 {
-		query += fmt.Sprintf(" AND (%s)", strings.Join(conditions, " OR "))
-	}
-
-	return query, args
-}
-
 // buildGitHubComplexityScoreSQL generates the SQL expression for calculating GitHub-specific complexity scores
 // This includes activity-based scoring using quantiles from the repository dataset
-func buildGitHubComplexityScoreSQL() string {
+func (d *Database) buildGitHubComplexityScoreSQL() string {
 	// GitHub-specific complexity scoring (refined based on GEI migration documentation)
 	// Categories: simple (≤5), medium (6-10), complex (11-17), very_complex (≥18)
 	//
@@ -487,6 +129,9 @@ func buildGitHubComplexityScoreSQL() string {
 		GB5   = 5368709120 // 5GB
 	)
 
+	// Use TRUE/FALSE for boolean comparisons (works across all databases: SQLite, PostgreSQL, SQL Server)
+	const trueVal = "TRUE"
+
 	return fmt.Sprintf(`(
 		-- Size tier scoring (0-9 points)
 		(CASE 
@@ -498,29 +143,29 @@ func buildGitHubComplexityScoreSQL() string {
 		END) * 3 +
 		
 		-- High impact features (3-4 points each)
-		CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END +
+		CASE WHEN has_large_files = %s THEN 4 ELSE 0 END +
 		CASE WHEN environment_count > 0 THEN 3 ELSE 0 END +
 		CASE WHEN secret_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN has_packages = 1 THEN 3 ELSE 0 END +
-		CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END +
+		CASE WHEN has_packages = %s THEN 3 ELSE 0 END +
+		CASE WHEN has_self_hosted_runners = %s THEN 3 ELSE 0 END +
 		
 		-- Moderate impact features (2 points each)
 		CASE WHEN variable_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_discussions = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_discussions = %s THEN 2 ELSE 0 END +
 		CASE WHEN release_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END +
-		CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END +
+		CASE WHEN has_lfs = %s THEN 2 ELSE 0 END +
+		CASE WHEN has_submodules = %s THEN 2 ELSE 0 END +
 		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
 		
 		-- Low impact features (1 point each)
-		CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
 		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN tag_protection_count > 0 THEN 1 ELSE 0 END +
 		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
-		CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
 		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
-		CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END +
+		CASE WHEN has_codeowners = %s THEN 1 ELSE 0 END +
 		
 		-- Activity-based scoring (0-4 points) using quantiles
 		-- High-activity repos need significantly more coordination and planning
@@ -541,7 +186,11 @@ func buildGitHubComplexityScoreSQL() string {
 			) >= 0.25 THEN 2
 			ELSE 0
 		END)
-	)`, MB100, GB1, GB5)
+	)`, MB100, GB1, GB5,
+		trueVal, trueVal, trueVal, // has_large_files, has_packages, has_self_hosted_runners
+		trueVal, trueVal, trueVal, // has_discussions, has_lfs, has_submodules
+		trueVal, trueVal, trueVal, // has_code_scanning, has_dependabot, has_secret_scanning
+		trueVal, trueVal) // has_rulesets, has_codeowners
 }
 
 // Individual complexity component SQL builders
@@ -563,7 +212,7 @@ func buildSizePointsSQL() string {
 }
 
 func buildLargeFilesPointsSQL() string {
-	return "CASE WHEN has_large_files = 1 THEN 4 ELSE 0 END"
+	return "CASE WHEN has_large_files = TRUE THEN 4 ELSE 0 END"
 }
 
 func buildEnvironmentsPointsSQL() string {
@@ -575,11 +224,11 @@ func buildSecretsPointsSQL() string {
 }
 
 func buildPackagesPointsSQL() string {
-	return "CASE WHEN has_packages = 1 THEN 3 ELSE 0 END"
+	return "CASE WHEN has_packages = TRUE THEN 3 ELSE 0 END"
 }
 
 func buildRunnersPointsSQL() string {
-	return "CASE WHEN has_self_hosted_runners = 1 THEN 3 ELSE 0 END"
+	return "CASE WHEN has_self_hosted_runners = TRUE THEN 3 ELSE 0 END"
 }
 
 func buildVariablesPointsSQL() string {
@@ -587,7 +236,7 @@ func buildVariablesPointsSQL() string {
 }
 
 func buildDiscussionsPointsSQL() string {
-	return "CASE WHEN has_discussions = 1 THEN 2 ELSE 0 END"
+	return "CASE WHEN has_discussions = TRUE THEN 2 ELSE 0 END"
 }
 
 func buildReleasesPointsSQL() string {
@@ -595,11 +244,11 @@ func buildReleasesPointsSQL() string {
 }
 
 func buildLFSPointsSQL() string {
-	return "CASE WHEN has_lfs = 1 THEN 2 ELSE 0 END"
+	return "CASE WHEN has_lfs = TRUE THEN 2 ELSE 0 END"
 }
 
 func buildSubmodulesPointsSQL() string {
-	return "CASE WHEN has_submodules = 1 THEN 2 ELSE 0 END"
+	return "CASE WHEN has_submodules = TRUE THEN 2 ELSE 0 END"
 }
 
 func buildAppsPointsSQL() string {
@@ -607,7 +256,7 @@ func buildAppsPointsSQL() string {
 }
 
 func buildSecurityPointsSQL() string {
-	return "CASE WHEN has_code_scanning = 1 OR has_dependabot = 1 OR has_secret_scanning = 1 THEN 1 ELSE 0 END"
+	return "CASE WHEN has_code_scanning = TRUE OR has_dependabot = TRUE OR has_secret_scanning = TRUE THEN 1 ELSE 0 END"
 }
 
 func buildWebhooksPointsSQL() string {
@@ -623,7 +272,7 @@ func buildBranchProtectionsPointsSQL() string {
 }
 
 func buildRulesetsPointsSQL() string {
-	return "CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END"
+	return "CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END"
 }
 
 func buildPublicVisibilityPointsSQL() string {
@@ -635,7 +284,7 @@ func buildInternalVisibilityPointsSQL() string {
 }
 
 func buildCodeownersPointsSQL() string {
-	return "CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END"
+	return "CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END"
 }
 
 func buildActivityPointsSQL() string {
@@ -657,237 +306,117 @@ func buildActivityPointsSQL() string {
 	END)`
 }
 
-// applyComplexityFilter filters repositories by complexity level
-// IMPORTANT: This calculation MUST match GetComplexityDistribution() in analytics
-func applyComplexityFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	complexityValue, ok := filters["complexity"]
-	if !ok {
-		return query, args
-	}
-
-	var conditions []string
-
-	categories := []string{}
-	switch v := complexityValue.(type) {
-	case string:
-		categories = []string{v}
-	case []string:
-		categories = v
-	}
-
-	// Build source-aware complexity score calculation
-	// For GitHub sources (ghes), use the refined GitHub-specific formula
-	// For other sources, maintain backward compatibility with existing formula
-	scoreCalc := buildGitHubComplexityScoreSQL()
-
-	for _, category := range categories {
-		switch category {
-		case "simple":
-			conditions = append(conditions, fmt.Sprintf("(%s <= 5)", scoreCalc))
-		case "medium":
-			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 6 AND 10)", scoreCalc))
-		case "complex":
-			conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 11 AND 17)", scoreCalc))
-		case "very_complex":
-			conditions = append(conditions, fmt.Sprintf("(%s >= 18)", scoreCalc))
-		}
-	}
-
-	if len(conditions) > 0 {
-		query += fmt.Sprintf(" AND (%s)", strings.Join(conditions, " OR "))
-	}
-
-	return query, args
-}
-
-// applyAvailableForBatchFilter excludes repos that are not eligible for batch assignment
-func applyAvailableForBatchFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	availableForBatch, ok := filters["available_for_batch"].(bool)
-	if !ok || !availableForBatch {
-		return query, args
-	}
-
-	// Exclude repos that are already assigned to a batch
-	query += " AND batch_id IS NULL"
-
-	// Exclude repos that are completed or in active migration
-	excludedStatuses := []string{
-		"complete",
-		"queued_for_migration",
-		"dry_run_in_progress",
-		"dry_run_queued",
-		"migrating_content",
-		"archive_generating",
-		"post_migration",
-		"migration_complete",
-	}
-	placeholders := make([]string, len(excludedStatuses))
-	for i, status := range excludedStatuses {
-		placeholders[i] = "?"
-		args = append(args, status)
-	}
-	query += fmt.Sprintf(" AND status NOT IN (%s)", strings.Join(placeholders, ","))
-
-	return query, args
-}
-
-// applySortOrder applies the sort order to the query
-func applySortOrder(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	sortBy, ok := filters["sort_by"].(string)
-	if !ok || sortBy == "" {
-		return query, args
-	}
-
-	switch sortBy {
-	case "name":
-		query += orderByFullNameASC
-	case "size":
-		query += " ORDER BY total_size DESC"
-	case "org":
-		query += orderByFullNameASC // Already sorts by org/repo
-	case "updated":
-		query += " ORDER BY updated_at DESC"
-	default:
-		query += orderByFullNameASC
-	}
-
-	// Mark as sorted to prevent double ORDER BY
-	filters["_sorted"] = true
-
-	return query, args
-}
-
-// applyStatusFilter handles the status filter which can be a string or slice of strings
-func applyStatusFilter(query string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
-	statusValue, ok := filters["status"]
-	if !ok {
-		return query, args
-	}
-
-	switch status := statusValue.(type) {
-	case string:
-		if status != "" {
-			query += " AND status = ?"
-			args = append(args, status)
-		}
-	case []string:
-		if len(status) > 0 {
-			placeholders := make([]string, len(status))
-			for i, s := range status {
-				placeholders[i] = "?"
-				args = append(args, s)
-			}
-			query += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
-		}
-	}
-
-	return query, args
-}
-
 // ListRepositories retrieves repositories with optional filters
+// ListRepositories retrieves repositories with GORM scopes for filtering
 func (d *Database) ListRepositories(ctx context.Context, filters map[string]interface{}) ([]*models.Repository, error) {
-	query := `
-		SELECT id, full_name, source, source_url, total_size, largest_file, 
-			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, has_large_files, large_file_count,
-			   default_branch, branch_count, commit_count, last_commit_sha,
-			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
-			   has_discussions, has_actions, has_projects, has_packages, 
-			   branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
-			   webhook_count, contributor_count, top_contributors,
-			   issue_count, pull_request_count, tag_count,
-			   open_issue_count, open_pr_count,
-			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
-			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
-			   installed_apps_count, release_count, has_release_assets,
-			   has_oversized_commits, oversized_commit_details,
-			   has_long_refs, long_ref_details,
-			   has_blocking_files, blocking_file_details,
-			   has_large_file_warnings, large_file_warning_details,
-			   has_oversized_repository, oversized_repository_details,
-			   estimated_metadata_size, metadata_size_details,
-			   exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
-			   status, batch_id, priority, destination_url, 
-			   destination_full_name, source_migration_id, is_source_locked,
-			   validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at,
-			   last_discovery_at, last_dry_run_at
-		FROM repositories 
-		WHERE 1=1
-	`
-	args := []interface{}{}
+	var repos []*models.Repository
 
-	// Apply filters dynamically
-	query, args = applyRepositoryFilters(query, args, filters)
+	// Start with base query
+	query := d.db.WithContext(ctx).Model(&models.Repository{})
 
-	// Add ordering if not already added by filters
-	if _, sorted := filters["_sorted"]; !sorted {
-		query += orderByFullNameASC
-	}
+	// Apply scopes based on filters
+	query = d.applyListScopes(query, filters)
 
-	// Add limit and offset if specified
-	if limit, ok := filters["limit"].(int); ok && limit > 0 {
-		query += " LIMIT ?"
-		args = append(args, limit)
-
-		if offset, ok := filters["offset"].(int); ok && offset > 0 {
-			query += " OFFSET ?"
-			args = append(args, offset)
-		}
-	}
-
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
-	if err != nil {
+	// Execute query
+	if err := query.Find(&repos).Error; err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
-	}
-	defer rows.Close()
-
-	repos := []*models.Repository{}
-	for rows.Next() {
-		var repo models.Repository
-		// nolint:dupl // Standard repository scanning, duplication expected
-		err := rows.Scan(
-			&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
-			&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
-			&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-			&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
-			&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
-			&repo.LastCommitSHA, &repo.LastCommitDate,
-			&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
-			&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
-			&repo.HasRulesets, &repo.TagProtectionCount,
-			&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
-			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
-			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
-			&repo.OpenIssueCount, &repo.OpenPRCount,
-			&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
-			&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
-			&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
-			&repo.HasOversizedCommits, &repo.OversizedCommitDetails,
-			&repo.HasLongRefs, &repo.LongRefDetails,
-			&repo.HasBlockingFiles, &repo.BlockingFileDetails,
-			&repo.HasLargeFileWarnings, &repo.LargeFileWarningDetails,
-			&repo.HasOversizedRepository, &repo.OversizedRepositoryDetails,
-			&repo.EstimatedMetadataSize, &repo.MetadataSizeDetails,
-			&repo.ExcludeReleases, &repo.ExcludeAttachments, &repo.ExcludeMetadata, &repo.ExcludeGitData, &repo.ExcludeOwnerProjects,
-			&repo.Status, &repo.BatchID, &repo.Priority,
-			&repo.DestinationURL, &repo.DestinationFullName,
-			&repo.SourceMigrationID, &repo.IsSourceLocked,
-			&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
-			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
-			&repo.LastDiscoveryAt, &repo.LastDryRunAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan repository: %w", err)
-		}
-		repos = append(repos, &repo)
 	}
 
 	// Calculate and populate complexity scores
 	// Complexity scores are nice-to-have, not critical, so we don't fail the request on error
 	_ = d.populateComplexityScores(ctx, repos)
 
-	return repos, rows.Err()
+	return repos, nil
+}
+
+// applyListScopes applies GORM scopes based on the provided filters
+//
+//nolint:gocyclo // Complexity is justified for handling multiple filter types
+func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+	// Apply status filter
+	if status, ok := filters["status"]; ok {
+		query = query.Scopes(WithStatus(status))
+	}
+
+	// Apply batch_id filter
+	if batchID, ok := filters["batch_id"].(int64); ok {
+		query = query.Scopes(WithBatchID(batchID))
+	}
+
+	// Apply source filter
+	if source, ok := filters["source"].(string); ok {
+		query = query.Scopes(WithSource(source))
+	}
+
+	// Apply size range filters
+	minSize, hasMin := filters["min_size"].(int64)
+	maxSize, hasMax := filters["max_size"].(int64)
+	if hasMin || hasMax {
+		query = query.Scopes(WithSizeRange(minSize, maxSize))
+	}
+
+	// Apply search filter
+	if search, ok := filters["search"].(string); ok {
+		query = query.Scopes(WithSearch(search))
+	}
+
+	// Apply organization filter
+	if org, ok := filters["organization"]; ok {
+		query = query.Scopes(WithOrganization(org))
+	}
+
+	// Apply visibility filter
+	if visibility, ok := filters["visibility"].(string); ok {
+		query = query.Scopes(WithVisibility(visibility))
+	}
+
+	// Apply feature flags
+	featureFlags := make(map[string]bool)
+	featureKeys := []string{
+		"has_lfs", "has_submodules", "has_large_files", "has_actions", "has_wiki",
+		"has_pages", "has_discussions", "has_projects", "has_packages", "has_rulesets",
+		"is_archived", "is_fork", "has_code_scanning", "has_dependabot", "has_secret_scanning",
+		"has_codeowners", "has_self_hosted_runners", "has_release_assets", "has_branch_protections",
+	}
+	for _, key := range featureKeys {
+		if value, ok := filters[key].(bool); ok {
+			featureFlags[key] = value
+		}
+	}
+	if len(featureFlags) > 0 {
+		query = query.Scopes(WithFeatureFlags(featureFlags))
+	}
+
+	// Apply size category filter
+	if sizeCategory, ok := filters["size_category"]; ok {
+		query = query.Scopes(WithSizeCategory(sizeCategory))
+	}
+
+	// Apply complexity filter
+	if complexity, ok := filters["complexity"]; ok {
+		query = query.Scopes(WithComplexity(complexity))
+	}
+
+	// Apply available for batch filter
+	if availableForBatch, ok := filters["available_for_batch"].(bool); ok && availableForBatch {
+		query = query.Scopes(WithAvailableForBatch())
+	}
+
+	// Apply ordering
+	sortBy := "name" // default
+	if sort, ok := filters["sort_by"].(string); ok {
+		sortBy = sort
+	}
+	query = query.Scopes(WithOrdering(sortBy))
+
+	// Apply pagination
+	limit, _ := filters["limit"].(int)
+	offset, _ := filters["offset"].(int)
+	if limit > 0 || offset > 0 {
+		query = query.Scopes(WithPagination(limit, offset))
+	}
+
+	return query
 }
 
 // populateComplexityScores calculates and sets the complexity_score and complexity_breakdown fields for repositories
@@ -933,7 +462,7 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		FROM repositories
 		WHERE id IN (%s)
 	`,
-		buildGitHubComplexityScoreSQL(),
+		d.buildGitHubComplexityScoreSQL(),
 		buildSizePointsSQL(),
 		buildLargeFilesPointsSQL(),
 		buildEnvironmentsPointsSQL(),
@@ -957,390 +486,250 @@ func (d *Database) populateComplexityScores(ctx context.Context, repos []*models
 		buildActivityPointsSQL(),
 		strings.Join(repoIDs, ","))
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
+	// Use GORM Raw() for complex analytics query
+	type ComplexityResult struct {
+		ID                       int64
+		ComplexityScore          int
+		SizePoints               int
+		LargeFilesPoints         int
+		EnvironmentsPoints       int
+		SecretsPoints            int
+		PackagesPoints           int
+		RunnersPoints            int
+		VariablesPoints          int
+		DiscussionsPoints        int
+		ReleasesPoints           int
+		LFSPoints                int
+		SubmodulesPoints         int
+		AppsPoints               int
+		SecurityPoints           int
+		WebhooksPoints           int
+		TagProtectionsPoints     int
+		BranchProtectionsPoints  int
+		RulesetsPoints           int
+		PublicVisibilityPoints   int
+		InternalVisibilityPoints int
+		CodeownersPoints         int
+		ActivityPoints           int
+	}
+
+	var results []ComplexityResult
+	err := d.db.WithContext(ctx).Raw(query).Scan(&results).Error
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var id int64
-		var score int
-		breakdown := &models.ComplexityBreakdown{}
-
-		if err := rows.Scan(
-			&id, &score,
-			&breakdown.SizePoints,
-			&breakdown.LargeFilesPoints,
-			&breakdown.EnvironmentsPoints,
-			&breakdown.SecretsPoints,
-			&breakdown.PackagesPoints,
-			&breakdown.RunnersPoints,
-			&breakdown.VariablesPoints,
-			&breakdown.DiscussionsPoints,
-			&breakdown.ReleasesPoints,
-			&breakdown.LFSPoints,
-			&breakdown.SubmodulesPoints,
-			&breakdown.AppsPoints,
-			&breakdown.SecurityPoints,
-			&breakdown.WebhooksPoints,
-			&breakdown.TagProtectionsPoints,
-			&breakdown.BranchProtectionsPoints,
-			&breakdown.RulesetsPoints,
-			&breakdown.PublicVisibilityPoints,
-			&breakdown.InternalVisibilityPoints,
-			&breakdown.CodeownersPoints,
-			&breakdown.ActivityPoints,
-		); err != nil {
-			return err
-		}
-
-		if repo, ok := repoMap[id]; ok {
+	for _, result := range results {
+		if repo, ok := repoMap[result.ID]; ok {
+			score := result.ComplexityScore
 			repo.ComplexityScore = &score
-			repo.ComplexityBreakdown = breakdown
+			repo.ComplexityBreakdown = &models.ComplexityBreakdown{
+				SizePoints:               result.SizePoints,
+				LargeFilesPoints:         result.LargeFilesPoints,
+				EnvironmentsPoints:       result.EnvironmentsPoints,
+				SecretsPoints:            result.SecretsPoints,
+				PackagesPoints:           result.PackagesPoints,
+				RunnersPoints:            result.RunnersPoints,
+				VariablesPoints:          result.VariablesPoints,
+				DiscussionsPoints:        result.DiscussionsPoints,
+				ReleasesPoints:           result.ReleasesPoints,
+				LFSPoints:                result.LFSPoints,
+				SubmodulesPoints:         result.SubmodulesPoints,
+				AppsPoints:               result.AppsPoints,
+				SecurityPoints:           result.SecurityPoints,
+				WebhooksPoints:           result.WebhooksPoints,
+				TagProtectionsPoints:     result.TagProtectionsPoints,
+				BranchProtectionsPoints:  result.BranchProtectionsPoints,
+				RulesetsPoints:           result.RulesetsPoints,
+				PublicVisibilityPoints:   result.PublicVisibilityPoints,
+				InternalVisibilityPoints: result.InternalVisibilityPoints,
+				CodeownersPoints:         result.CodeownersPoints,
+				ActivityPoints:           result.ActivityPoints,
+			}
 		}
 	}
 
-	return rows.Err()
+	return nil
 }
 
 // UpdateRepository updates a repository's fields
 // nolint:dupl // SaveRepository and UpdateRepository have different SQL operations
 func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository) error {
-	query := `
-		UPDATE repositories SET
-			source = ?,
-			source_url = ?,
-			total_size = ?,
-			largest_file = ?,
-			largest_file_size = ?,
-			largest_commit = ?,
-			largest_commit_size = ?,
-			has_lfs = ?,
-			has_submodules = ?,
-			has_large_files = ?,
-			large_file_count = ?,
-			default_branch = ?,
-			branch_count = ?,
-			commit_count = ?,
-			last_commit_sha = ?,
-			last_commit_date = ?,
-			has_wiki = ?,
-			has_pages = ?,
-			has_discussions = ?,
-			has_actions = ?,
-			has_projects = ?,
-			branch_protections = ?,
-			environment_count = ?,
-			secret_count = ?,
-			variable_count = ?,
-			webhook_count = ?,
-			contributor_count = ?,
-			top_contributors = ?,
-			issue_count = ?,
-			pull_request_count = ?,
-			tag_count = ?,
-			open_issue_count = ?,
-			open_pr_count = ?,
-			status = ?,
-			batch_id = ?,
-			priority = ?,
-			destination_url = ?,
-			destination_full_name = ?,
-			updated_at = ?,
-			migrated_at = ?
-		WHERE full_name = ?
-	`
+	// Use GORM Updates with Select to update all fields, including zero values
+	// Using Save() can cause foreign key issues when batch_id is updated but the batch doesn't exist yet
+	result := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("full_name = ?", repo.FullName).
+		Select("*").
+		Omit("id", "full_name", "created_at").
+		Updates(repo)
 
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
-		repo.Source, repo.SourceURL, repo.TotalSize,
-		repo.LargestFile, repo.LargestFileSize, repo.LargestCommit,
-		repo.LargestCommitSize, repo.HasLFS, repo.HasSubmodules,
-		repo.HasLargeFiles, repo.LargeFileCount,
-		repo.DefaultBranch, repo.BranchCount, repo.CommitCount,
-		repo.LastCommitSHA, repo.LastCommitDate,
-		repo.HasWiki, repo.HasPages, repo.HasDiscussions,
-		repo.HasActions, repo.HasProjects, repo.BranchProtections,
-		repo.EnvironmentCount, repo.SecretCount, repo.VariableCount,
-		repo.WebhookCount, repo.ContributorCount, repo.TopContributors,
-		repo.IssueCount, repo.PullRequestCount, repo.TagCount,
-		repo.OpenIssueCount, repo.OpenPRCount,
-		repo.Status, repo.BatchID, repo.Priority,
-		repo.DestinationURL, repo.DestinationFullName,
-		repo.UpdatedAt, repo.MigratedAt,
-		repo.FullName,
-	)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update repository: %w", result.Error)
+	}
 
-	return err
+	return nil
 }
 
-// UpdateRepositoryStatus updates only the status of a repository
+// UpdateRepositoryStatus updates only the status of a repository using GORM
 func (d *Database) UpdateRepositoryStatus(ctx context.Context, fullName string, status models.MigrationStatus) error {
-	query := `UPDATE repositories SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), string(status), fullName)
-	return err
+	result := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("full_name = ?", fullName).
+		Updates(map[string]interface{}{
+			"status":     string(status),
+			"updated_at": time.Now().UTC(),
+		})
+
+	return result.Error
 }
 
-// UpdateRepositoryDryRunTimestamp updates the last_dry_run_at timestamp for a repository
+// UpdateRepositoryDryRunTimestamp updates the last_dry_run_at timestamp for a repository using GORM
 func (d *Database) UpdateRepositoryDryRunTimestamp(ctx context.Context, fullName string) error {
-	query := `UPDATE repositories SET last_dry_run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), fullName)
-	return err
+	now := time.Now().UTC()
+	result := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("full_name = ?", fullName).
+		Updates(map[string]interface{}{
+			"last_dry_run_at": now,
+			"updated_at":      now,
+		})
+
+	return result.Error
 }
 
-// UpdateBatchDryRunTimestamp updates the last_dry_run_at timestamp for a batch
+// UpdateBatchDryRunTimestamp updates the last_dry_run_at timestamp for a batch using GORM
 func (d *Database) UpdateBatchDryRunTimestamp(ctx context.Context, batchID int64) error {
-	query := `UPDATE batches SET last_dry_run_at = CURRENT_TIMESTAMP WHERE id = ?`
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), batchID)
-	return err
+	result := d.db.WithContext(ctx).Model(&models.Batch{}).
+		Where("id = ?", batchID).
+		Update("last_dry_run_at", time.Now().UTC())
+
+	return result.Error
 }
 
-// UpdateBatchMigrationAttemptTimestamp updates the last_migration_attempt_at timestamp for a batch
+// UpdateBatchMigrationAttemptTimestamp updates the last_migration_attempt_at timestamp for a batch using GORM
 func (d *Database) UpdateBatchMigrationAttemptTimestamp(ctx context.Context, batchID int64) error {
-	query := `UPDATE batches SET last_migration_attempt_at = CURRENT_TIMESTAMP WHERE id = ?`
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), batchID)
-	return err
+	result := d.db.WithContext(ctx).Model(&models.Batch{}).
+		Where("id = ?", batchID).
+		Update("last_migration_attempt_at", time.Now().UTC())
+
+	return result.Error
 }
 
-// UpdateBatchProgress updates batch status and operational timestamps without affecting user-configured fields
+// UpdateBatchProgress updates batch status and operational timestamps without affecting user-configured fields using GORM
 // This preserves scheduled_at and other user-set fields while updating execution state
 func (d *Database) UpdateBatchProgress(ctx context.Context, batchID int64, status string, startedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error {
-	query := `
-		UPDATE batches SET
-			status = ?,
-			started_at = COALESCE(?, started_at),
-			last_dry_run_at = COALESCE(?, last_dry_run_at),
-			last_migration_attempt_at = COALESCE(?, last_migration_attempt_at)
-		WHERE id = ?
-	`
+	updates := map[string]interface{}{
+		"status": status,
+	}
 
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), status, startedAt, lastDryRunAt, lastMigrationAttemptAt, batchID)
-	return err
+	// Only update timestamps if provided (COALESCE behavior)
+	if startedAt != nil {
+		updates["started_at"] = startedAt
+	}
+	if lastDryRunAt != nil {
+		updates["last_dry_run_at"] = lastDryRunAt
+	}
+	if lastMigrationAttemptAt != nil {
+		updates["last_migration_attempt_at"] = lastMigrationAttemptAt
+	}
+
+	result := d.db.WithContext(ctx).Model(&models.Batch{}).
+		Where("id = ?", batchID).
+		Updates(updates)
+
+	return result.Error
 }
 
-// DeleteRepository deletes a repository by full name
+// DeleteRepository deletes a repository by full name using GORM
 func (d *Database) DeleteRepository(ctx context.Context, fullName string) error {
-	query := `DELETE FROM repositories WHERE full_name = ?`
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), fullName)
-	return err
+	result := d.db.WithContext(ctx).Where("full_name = ?", fullName).Delete(&models.Repository{})
+	return result.Error
 }
 
-// CountRepositories returns the total count of repositories with optional filters
+// CountRepositories returns the total count of repositories with optional filters using GORM
 func (d *Database) CountRepositories(ctx context.Context, filters map[string]interface{}) (int, error) {
-	query := "SELECT COUNT(*) FROM repositories WHERE 1=1"
-	args := []interface{}{}
+	var count int64
+	query := d.db.WithContext(ctx).Model(&models.Repository{})
 
-	// Handle status as either string or slice of strings
+	// Apply status filter
 	if statusValue, ok := filters["status"]; ok {
-		switch status := statusValue.(type) {
-		case string:
-			if status != "" {
-				query += " AND status = ?"
-				args = append(args, status)
-			}
-		case []string:
-			if len(status) > 0 {
-				placeholders := make([]string, len(status))
-				for i, s := range status {
-					placeholders[i] = "?"
-					args = append(args, s)
-				}
-				query += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
-			}
-		}
+		query = query.Scopes(WithStatus(statusValue))
 	}
 
-	if batchID, ok := filters["batch_id"].(int64); ok && batchID > 0 {
-		query += " AND batch_id = ?"
-		args = append(args, batchID)
+	// Apply batch_id filter
+	if batchID, ok := filters["batch_id"].(int64); ok {
+		query = query.Scopes(WithBatchID(batchID))
 	}
 
-	if source, ok := filters["source"].(string); ok && source != "" {
-		query += " AND source = ?"
-		args = append(args, source)
+	// Apply source filter
+	if source, ok := filters["source"].(string); ok {
+		query = query.Scopes(WithSource(source))
 	}
 
-	var count int
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&count)
-	return count, err
+	err := query.Count(&count).Error
+	return int(count), err
 }
 
-// GetRepositoryStatsByStatus returns counts grouped by status
+// GetRepositoryStatsByStatus returns counts grouped by status using GORM
 func (d *Database) GetRepositoryStatsByStatus(ctx context.Context) (map[string]int, error) {
-	query := `SELECT status, COUNT(*) as count FROM repositories GROUP BY status`
-	rows, err := d.db.QueryContext(ctx, query)
+	type StatusCount struct {
+		Status string
+		Count  int
+	}
+
+	var results []StatusCount
+	err := d.db.WithContext(ctx).
+		Model(&models.Repository{}).
+		Select("status, COUNT(*) as count").
+		Group("status").
+		Scan(&results).Error
+
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	stats := make(map[string]int)
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return nil, err
-		}
-		stats[status] = count
+	for _, result := range results {
+		stats[result.Status] = result.Count
 	}
 
-	return stats, rows.Err()
+	return stats, nil
 }
 
-// GetRepositoriesByIDs retrieves multiple repositories by their IDs
-// nolint:dupl // Similar to GetRepositoriesByNames but operates on IDs
+// GetRepositoriesByIDs retrieves multiple repositories by their IDs using GORM
 func (d *Database) GetRepositoriesByIDs(ctx context.Context, ids []int64) ([]*models.Repository, error) {
 	if len(ids) == 0 {
 		return []*models.Repository{}, nil
 	}
 
-	// Build IN clause
-	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-
-	//nolint:gosec // G201: Safe use of fmt.Sprintf with placeholders for IN clause
-	query := fmt.Sprintf(`
-		SELECT id, full_name, source, source_url, total_size, largest_file, 
-			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, has_large_files, large_file_count,
-			   default_branch, branch_count, commit_count, last_commit_sha,
-			   last_commit_date, has_wiki, has_pages, has_discussions, 
-			   has_actions, has_projects, branch_protections, 
-			   environment_count, secret_count, variable_count, 
-			   webhook_count, contributor_count, top_contributors,
-			   issue_count, pull_request_count, tag_count,
-			   open_issue_count, open_pr_count,
-			   status, batch_id, priority, destination_url, 
-			   destination_full_name, validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at,
-			   last_discovery_at, last_dry_run_at
-		FROM repositories 
-		WHERE id IN (%s)
-	`, strings.Join(placeholders, ","))
-
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	var repos []*models.Repository
+	err := d.db.WithContext(ctx).Where("id IN ?", ids).Find(&repos).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repositories by IDs: %w", err)
 	}
-	defer rows.Close()
 
-	return d.scanRepositories(rows)
+	return repos, nil
 }
 
-// GetRepositoriesByNames retrieves multiple repositories by their full names
-// nolint:dupl // Similar to GetRepositoriesByIDs but operates on names
+// GetRepositoriesByNames retrieves multiple repositories by their full names using GORM
 func (d *Database) GetRepositoriesByNames(ctx context.Context, names []string) ([]*models.Repository, error) {
 	if len(names) == 0 {
 		return []*models.Repository{}, nil
 	}
 
-	placeholders := make([]string, len(names))
-	args := make([]interface{}, len(names))
-	for i, name := range names {
-		placeholders[i] = "?"
-		args[i] = name
-	}
-
-	//nolint:gosec // G201: Safe use of fmt.Sprintf with placeholders for IN clause
-	query := fmt.Sprintf(`
-		SELECT id, full_name, source, source_url, total_size, largest_file, 
-			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, has_large_files, large_file_count,
-			   default_branch, branch_count, commit_count, last_commit_sha,
-			   last_commit_date, has_wiki, has_pages, has_discussions, 
-			   has_actions, has_projects, branch_protections, 
-			   environment_count, secret_count, variable_count, 
-			   webhook_count, contributor_count, top_contributors,
-			   issue_count, pull_request_count, tag_count,
-			   open_issue_count, open_pr_count,
-			   status, batch_id, priority, destination_url, 
-			   destination_full_name, validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at,
-			   last_discovery_at, last_dry_run_at
-		FROM repositories 
-		WHERE full_name IN (%s)
-	`, strings.Join(placeholders, ","))
-
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	var repos []*models.Repository
+	err := d.db.WithContext(ctx).Where("full_name IN ?", names).Find(&repos).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repositories by names: %w", err)
 	}
-	defer rows.Close()
 
-	return d.scanRepositories(rows)
+	return repos, nil
 }
 
-// GetRepositoryByID retrieves a repository by ID
-// nolint:dupl // Similar to GetRepository but operates on ID instead of fullName
+// GetRepositoryByID retrieves a repository by ID using GORM
 func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Repository, error) {
-	query := `
-		SELECT id, full_name, source, source_url, total_size, largest_file, 
-			   largest_file_size, largest_commit, largest_commit_size,
-			   has_lfs, has_submodules, has_large_files, large_file_count,
-			   default_branch, branch_count, commit_count, last_commit_sha,
-			   last_commit_date, is_archived, is_fork, has_wiki, has_pages, 
-			   has_discussions, has_actions, has_projects, has_packages, 
-			   branch_protections, has_rulesets, tag_protection_count, environment_count, secret_count, variable_count, 
-			   webhook_count, contributor_count, top_contributors,
-			   issue_count, pull_request_count, tag_count,
-			   open_issue_count, open_pr_count,
-			   has_code_scanning, has_dependabot, has_secret_scanning, has_codeowners,
-			   visibility, workflow_count, has_self_hosted_runners, collaborator_count,
-			   installed_apps_count, release_count, has_release_assets,
-			   has_oversized_commits, oversized_commit_details,
-			   has_long_refs, long_ref_details,
-			   has_blocking_files, blocking_file_details,
-			   has_large_file_warnings, large_file_warning_details,
-			   has_oversized_repository, oversized_repository_details,
-			   estimated_metadata_size, metadata_size_details,
-			   exclude_releases, exclude_attachments, exclude_metadata, exclude_git_data, exclude_owner_projects,
-			   status, batch_id, priority, destination_url, 
-			   destination_full_name, source_migration_id, is_source_locked,
-			   validation_status, validation_details, 
-			   destination_data, discovered_at, updated_at, migrated_at,
-			   last_discovery_at, last_dry_run_at
-		FROM repositories 
-		WHERE id = ?
-	`
-
 	var repo models.Repository
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), id).Scan(
-		&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
-		&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
-		&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-		&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
-		&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
-		&repo.LastCommitSHA, &repo.LastCommitDate,
-		&repo.IsArchived, &repo.IsFork, &repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
-		&repo.HasActions, &repo.HasProjects, &repo.HasPackages, &repo.BranchProtections,
-		&repo.HasRulesets, &repo.TagProtectionCount,
-		&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
-		&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
-		&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
-		&repo.OpenIssueCount, &repo.OpenPRCount,
-		&repo.HasCodeScanning, &repo.HasDependabot, &repo.HasSecretScanning, &repo.HasCodeowners,
-		&repo.Visibility, &repo.WorkflowCount, &repo.HasSelfHostedRunners, &repo.CollaboratorCount,
-		&repo.InstalledAppsCount, &repo.ReleaseCount, &repo.HasReleaseAssets,
-		&repo.HasOversizedCommits, &repo.OversizedCommitDetails,
-		&repo.HasLongRefs, &repo.LongRefDetails,
-		&repo.HasBlockingFiles, &repo.BlockingFileDetails,
-		&repo.HasLargeFileWarnings, &repo.LargeFileWarningDetails,
-		&repo.HasOversizedRepository, &repo.OversizedRepositoryDetails,
-		&repo.EstimatedMetadataSize, &repo.MetadataSizeDetails,
-		&repo.ExcludeReleases, &repo.ExcludeAttachments, &repo.ExcludeMetadata, &repo.ExcludeGitData, &repo.ExcludeOwnerProjects,
-		&repo.Status, &repo.BatchID, &repo.Priority,
-		&repo.DestinationURL, &repo.DestinationFullName,
-		&repo.SourceMigrationID, &repo.IsSourceLocked,
-		&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
-		&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
-		&repo.LastDiscoveryAt, &repo.LastDryRunAt,
-	)
+	err := d.db.WithContext(ctx).Where("id = ?", id).First(&repo).Error
 
-	if err == sql.ErrNoRows {
+	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
 	if err != nil {
@@ -1353,103 +742,48 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 	return &repo, nil
 }
 
-// GetMigrationHistory retrieves migration history for a repository
+// GetMigrationHistory retrieves migration history for a repository using GORM
 func (d *Database) GetMigrationHistory(ctx context.Context, repoID int64) ([]*models.MigrationHistory, error) {
-	query := `
-		SELECT id, repository_id, status, phase, message, error_message, 
-			   started_at, completed_at, duration_seconds
-		FROM migration_history 
-		WHERE repository_id = ? 
-		ORDER BY started_at DESC
-	`
+	var history []*models.MigrationHistory
+	err := d.db.WithContext(ctx).
+		Where("repository_id = ?", repoID).
+		Order("started_at DESC").
+		Find(&history).Error
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration history: %w", err)
 	}
-	defer rows.Close()
 
-	var history []*models.MigrationHistory
-	for rows.Next() {
-		var h models.MigrationHistory
-		if err := rows.Scan(
-			&h.ID, &h.RepositoryID, &h.Status, &h.Phase,
-			&h.Message, &h.ErrorMessage, &h.StartedAt,
-			&h.CompletedAt, &h.DurationSeconds,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan migration history: %w", err)
-		}
-		history = append(history, &h)
-	}
-
-	return history, rows.Err()
+	return history, nil
 }
 
 // GetMigrationLogs retrieves detailed logs for a repository's migration operations
 func (d *Database) GetMigrationLogs(ctx context.Context, repoID int64, level, phase string, limit, offset int) ([]*models.MigrationLog, error) {
-	query := `
-		SELECT id, repository_id, history_id, level, phase, operation, message, details, timestamp
-		FROM migration_logs 
-		WHERE repository_id = ?
-	`
-	args := []interface{}{repoID}
+	var logs []*models.MigrationLog
+	query := d.db.WithContext(ctx).Where("repository_id = ?", repoID)
 
 	// Add optional filters
 	if level != "" {
-		query += " AND level = ?"
-		args = append(args, level)
+		query = query.Where("level = ?", level)
 	}
 	if phase != "" {
-		query += " AND phase = ?"
-		args = append(args, phase)
+		query = query.Where("phase = ?", phase)
 	}
 
-	query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, offset)
-
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	err := query.Order("timestamp DESC").Limit(limit).Offset(offset).Find(&logs).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration logs: %w", err)
 	}
-	defer rows.Close()
 
-	var logs []*models.MigrationLog
-	for rows.Next() {
-		var log models.MigrationLog
-		if err := rows.Scan(
-			&log.ID, &log.RepositoryID, &log.HistoryID, &log.Level,
-			&log.Phase, &log.Operation, &log.Message, &log.Details,
-			&log.Timestamp,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan migration log: %w", err)
-		}
-		logs = append(logs, &log)
-	}
-
-	return logs, rows.Err()
+	return logs, nil
 }
 
-// GetBatch retrieves a batch by ID
+// GetBatch retrieves a batch by ID using GORM
 func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error) {
-	query := `
-		SELECT id, name, description, type, repository_count, status, 
-			   scheduled_at, started_at, completed_at, created_at,
-			   last_dry_run_at, last_migration_attempt_at,
-			   destination_org, migration_api, exclude_releases
-		FROM batches 
-		WHERE id = ?
-	`
-
 	var batch models.Batch
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), id).Scan(
-		&batch.ID, &batch.Name, &batch.Description, &batch.Type,
-		&batch.RepositoryCount, &batch.Status, &batch.ScheduledAt,
-		&batch.StartedAt, &batch.CompletedAt, &batch.CreatedAt,
-		&batch.LastDryRunAt, &batch.LastMigrationAttemptAt,
-		&batch.DestinationOrg, &batch.MigrationAPI, &batch.ExcludeReleases,
-	)
+	err := d.db.WithContext(ctx).Where("id = ?", id).First(&batch).Error
 
-	if err == sql.ErrNoRows {
+	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
 	if err != nil {
@@ -1459,245 +793,115 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 	return &batch, nil
 }
 
-// UpdateBatch updates a batch
+// UpdateBatch updates a batch using GORM
 func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
-	query := `
-		UPDATE batches SET
-			name = ?, description = ?, type = ?, repository_count = ?,
-			status = ?, scheduled_at = ?, started_at = ?, completed_at = ?,
-			last_dry_run_at = ?, last_migration_attempt_at = ?,
-			destination_org = ?, migration_api = ?, exclude_releases = ?
-		WHERE id = ?
-	`
-
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
-		batch.Name, batch.Description, batch.Type, batch.RepositoryCount,
-		batch.Status, batch.ScheduledAt, batch.StartedAt, batch.CompletedAt,
-		batch.LastDryRunAt, batch.LastMigrationAttemptAt,
-		batch.DestinationOrg, batch.MigrationAPI, batch.ExcludeReleases,
-		batch.ID,
-	)
-
-	return err
+	result := d.db.WithContext(ctx).Save(batch)
+	return result.Error
 }
 
-// ListBatches retrieves all batches
+// ListBatches retrieves all batches using GORM
 func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
-	query := `
-		SELECT id, name, description, type, repository_count, status, 
-			   scheduled_at, started_at, completed_at, created_at,
-			   last_dry_run_at, last_migration_attempt_at,
-			   destination_org, migration_api, exclude_releases
-		FROM batches 
-		ORDER BY created_at DESC
-	`
-
-	rows, err := d.db.QueryContext(ctx, query)
+	var batches []*models.Batch
+	err := d.db.WithContext(ctx).Order("created_at DESC").Find(&batches).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list batches: %w", err)
 	}
-	defer rows.Close()
 
-	batches := []*models.Batch{}
-	for rows.Next() {
-		var batch models.Batch
-		if err := rows.Scan(
-			&batch.ID, &batch.Name, &batch.Description, &batch.Type,
-			&batch.RepositoryCount, &batch.Status, &batch.ScheduledAt,
-			&batch.StartedAt, &batch.CompletedAt, &batch.CreatedAt,
-			&batch.LastDryRunAt, &batch.LastMigrationAttemptAt,
-			&batch.DestinationOrg, &batch.MigrationAPI, &batch.ExcludeReleases,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan batch: %w", err)
-		}
-		batches = append(batches, &batch)
-	}
-
-	return batches, rows.Err()
+	return batches, nil
 }
 
-// CreateBatch creates a new batch
+// CreateBatch creates a new batch using GORM
 func (d *Database) CreateBatch(ctx context.Context, batch *models.Batch) error {
 	// Set default migration API if not specified
 	if batch.MigrationAPI == "" {
 		batch.MigrationAPI = models.MigrationAPIGEI
 	}
 
-	query := `
-		INSERT INTO batches (name, description, type, repository_count, status, scheduled_at, created_at,
-							 destination_org, migration_api, exclude_releases)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-
-	result, err := d.db.ExecContext(ctx, d.rebindQuery(query),
-		batch.Name, batch.Description, batch.Type,
-		batch.RepositoryCount, batch.Status, batch.ScheduledAt, batch.CreatedAt,
-		batch.DestinationOrg, batch.MigrationAPI, batch.ExcludeReleases,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create batch: %w", err)
+	result := d.db.WithContext(ctx).Create(batch)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create batch: %w", result.Error)
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("failed to get batch ID: %w", err)
-	}
-
-	batch.ID = id
 	return nil
 }
 
-// DeleteBatch deletes a batch and clears batch_id from all associated repositories
+// DeleteBatch deletes a batch and clears batch_id from all associated repositories using GORM
 func (d *Database) DeleteBatch(ctx context.Context, batchID int64) error {
-	// Start a transaction to ensure atomicity
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback() // Rollback is a no-op if commit succeeds
-	}()
-
-	// Clear batch_id from all repositories in this batch
-	clearReposQuery := `
-		UPDATE repositories 
-		SET batch_id = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE batch_id = ?
-	`
-	_, err = tx.ExecContext(ctx, d.rebindQuery(clearReposQuery), batchID)
-	if err != nil {
-		return fmt.Errorf("failed to clear batch from repositories: %w", err)
-	}
-
-	// Delete the batch
-	deleteBatchQuery := `DELETE FROM batches WHERE id = ?`
-	result, err := tx.ExecContext(ctx, d.rebindQuery(deleteBatchQuery), batchID)
-	if err != nil {
-		return fmt.Errorf("failed to delete batch: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("batch not found")
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
-}
-
-// scanRepositories is a helper to scan multiple repositories from rows
-// nolint:dupl // Expected duplication in scanning logic for consistency
-func (d *Database) scanRepositories(rows *sql.Rows) ([]*models.Repository, error) {
-	var repos []*models.Repository
-	for rows.Next() {
-		var repo models.Repository
-		if err := rows.Scan(
-			&repo.ID, &repo.FullName, &repo.Source, &repo.SourceURL,
-			&repo.TotalSize, &repo.LargestFile, &repo.LargestFileSize,
-			&repo.LargestCommit, &repo.LargestCommitSize, &repo.HasLFS,
-			&repo.HasSubmodules, &repo.HasLargeFiles, &repo.LargeFileCount,
-			&repo.DefaultBranch, &repo.BranchCount, &repo.CommitCount,
-			&repo.LastCommitSHA, &repo.LastCommitDate,
-			&repo.HasWiki, &repo.HasPages, &repo.HasDiscussions,
-			&repo.HasActions, &repo.HasProjects, &repo.BranchProtections,
-			&repo.EnvironmentCount, &repo.SecretCount, &repo.VariableCount,
-			&repo.WebhookCount, &repo.ContributorCount, &repo.TopContributors,
-			&repo.IssueCount, &repo.PullRequestCount, &repo.TagCount,
-			&repo.OpenIssueCount, &repo.OpenPRCount,
-			&repo.Status, &repo.BatchID, &repo.Priority,
-			&repo.DestinationURL, &repo.DestinationFullName,
-			&repo.ValidationStatus, &repo.ValidationDetails, &repo.DestinationData,
-			&repo.DiscoveredAt, &repo.UpdatedAt, &repo.MigratedAt,
-			&repo.LastDiscoveryAt, &repo.LastDryRunAt,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan repository: %w", err)
+	// Use GORM transaction
+	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Clear batch_id from all repositories in this batch
+		now := time.Now().UTC()
+		result := tx.Model(&models.Repository{}).
+			Where("batch_id = ?", batchID).
+			Updates(map[string]interface{}{
+				"batch_id":   nil,
+				"updated_at": now,
+			})
+		if result.Error != nil {
+			return fmt.Errorf("failed to clear batch from repositories: %w", result.Error)
 		}
-		repos = append(repos, &repo)
-	}
-	return repos, rows.Err()
+
+		// Delete the batch
+		result = tx.Delete(&models.Batch{}, batchID)
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete batch: %w", result.Error)
+		}
+
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("batch not found")
+		}
+
+		return nil
+	})
 }
 
-// CreateMigrationHistory creates a new migration history record
+// scanRepositories is a legacy helper that is no longer used with GORM
+// All repository queries now use GORM's automatic scanning
+// This function is kept for reference but should not be called
+
+// CreateMigrationHistory creates a new migration history record using GORM
 func (d *Database) CreateMigrationHistory(ctx context.Context, history *models.MigrationHistory) (int64, error) {
-	query := `
-		INSERT INTO migration_history (repository_id, status, phase, message, error_message, started_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`
-
-	result, err := d.db.ExecContext(ctx, d.rebindQuery(query),
-		history.RepositoryID,
-		history.Status,
-		history.Phase,
-		history.Message,
-		history.ErrorMessage,
-		history.StartedAt,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create migration history: %w", err)
+	result := d.db.WithContext(ctx).Create(history)
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to create migration history: %w", result.Error)
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get migration history ID: %w", err)
-	}
-
-	return id, nil
+	return history.ID, nil
 }
 
-// UpdateMigrationHistory updates a migration history record
+// UpdateMigrationHistory updates a migration history record using GORM
 func (d *Database) UpdateMigrationHistory(ctx context.Context, id int64, status string, errorMsg *string) error {
 	completedAt := time.Now()
 
-	// Calculate duration
-	var startedAt time.Time
-	err := d.db.QueryRowContext(ctx, d.rebindQuery("SELECT started_at FROM migration_history WHERE id = ?"), id).Scan(&startedAt)
+	// Get the started_at time to calculate duration
+	var history models.MigrationHistory
+	err := d.db.WithContext(ctx).Select("started_at").Where("id = ?", id).First(&history).Error
 	if err != nil {
 		return fmt.Errorf("failed to get started_at time: %w", err)
 	}
 
-	durationSeconds := int(completedAt.Sub(startedAt).Seconds())
+	durationSeconds := int(completedAt.Sub(history.StartedAt).Seconds())
 
-	query := `
-		UPDATE migration_history 
-		SET status = ?, error_message = ?, completed_at = ?, duration_seconds = ?
-		WHERE id = ?
-	`
+	// Update the record
+	result := d.db.WithContext(ctx).Model(&models.MigrationHistory{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"status":           status,
+		"error_message":    errorMsg,
+		"completed_at":     completedAt,
+		"duration_seconds": durationSeconds,
+	})
 
-	_, err = d.db.ExecContext(ctx, d.rebindQuery(query), status, errorMsg, completedAt, durationSeconds, id)
-	if err != nil {
-		return fmt.Errorf("failed to update migration history: %w", err)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update migration history: %w", result.Error)
 	}
 
 	return nil
 }
 
-// CreateMigrationLog creates a new migration log entry
+// CreateMigrationLog creates a new migration log entry using GORM
 func (d *Database) CreateMigrationLog(ctx context.Context, log *models.MigrationLog) error {
-	query := `
-		INSERT INTO migration_logs (repository_id, history_id, level, phase, operation, message, details, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`
-
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query),
-		log.RepositoryID,
-		log.HistoryID,
-		log.Level,
-		log.Phase,
-		log.Operation,
-		log.Message,
-		log.Details,
-		log.Timestamp,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create migration log: %w", err)
+	result := d.db.WithContext(ctx).Create(log)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create migration log: %w", result.Error)
 	}
 
 	return nil
@@ -1720,21 +924,21 @@ func (d *Database) AddRepositoriesToBatch(ctx context.Context, batchID int64, re
 		args[i+1] = id
 	}
 
-	//nolint:gosec // G201: Safe use of fmt.Sprintf with placeholders for IN clause
-	query := fmt.Sprintf(`
-		UPDATE repositories 
-		SET batch_id = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id IN (%s)
-	`, strings.Join(placeholders, ","))
+	// Use GORM to update batch_id for specified repositories
+	now := time.Now().UTC()
+	result := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("id IN ?", repoIDs).
+		Updates(map[string]interface{}{
+			"batch_id":   batchID,
+			"updated_at": now,
+		})
 
-	result, err := d.db.ExecContext(ctx, d.rebindQuery(query), args...)
-	if err != nil {
-		return fmt.Errorf("failed to add repositories to batch: %w", err)
+	if result.Error != nil {
+		return fmt.Errorf("failed to add repositories to batch: %w", result.Error)
 	}
 
 	// Update batch repository count and status
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected > 0 {
+	if result.RowsAffected > 0 {
 		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
 			return err
 		}
@@ -1747,37 +951,27 @@ func (d *Database) AddRepositoriesToBatch(ctx context.Context, batchID int64, re
 	return nil
 }
 
-// RemoveRepositoriesFromBatch removes repositories from a batch
-//
-//nolint:dupl // Similar to AddRepositoriesToBatch but performs different operations
+// RemoveRepositoriesFromBatch removes repositories from a batch using GORM
 func (d *Database) RemoveRepositoriesFromBatch(ctx context.Context, batchID int64, repoIDs []int64) error {
 	if len(repoIDs) == 0 {
 		return nil
 	}
 
-	// Build placeholders for IN clause
-	placeholders := make([]string, len(repoIDs))
-	args := make([]interface{}, len(repoIDs)+1)
-	args[0] = batchID
-	for i, id := range repoIDs {
-		placeholders[i] = "?"
-		args[i+1] = id
-	}
+	// Use GORM to clear batch_id for specified repositories
+	now := time.Now().UTC()
+	result := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("batch_id = ? AND id IN ?", batchID, repoIDs).
+		Updates(map[string]interface{}{
+			"batch_id":   nil,
+			"updated_at": now,
+		})
 
-	//nolint:gosec // G201: Safe use of fmt.Sprintf with placeholders for IN clause
-	query := fmt.Sprintf(`
-		UPDATE repositories 
-		SET batch_id = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE batch_id = ? AND id IN (%s)
-	`, strings.Join(placeholders, ","))
-
-	result, err := d.db.ExecContext(ctx, d.rebindQuery(query), args...)
-	if err != nil {
-		return fmt.Errorf("failed to remove repositories from batch: %w", err)
+	if result.Error != nil {
+		return fmt.Errorf("failed to remove repositories from batch: %w", result.Error)
 	}
 
 	// Update batch repository count and status
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected := result.RowsAffected
 	if rowsAffected > 0 {
 		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
 			return err
@@ -1801,7 +995,8 @@ func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64
 		WHERE id = ?
 	`
 
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), batchID, batchID)
+	// Use GORM Raw() for complex query with subquery
+	err := d.db.WithContext(ctx).Exec(query, batchID, batchID).Error
 	if err != nil {
 		return fmt.Errorf("failed to update batch repository count: %w", err)
 	}
@@ -1844,10 +1039,9 @@ func (d *Database) UpdateBatchStatus(ctx context.Context, batchID int64) error {
 
 	// Only update if status changed
 	if newStatus != batch.Status {
-		query := `UPDATE batches SET status = ? WHERE id = ?`
-		_, err := d.db.ExecContext(ctx, d.rebindQuery(query), newStatus, batchID)
-		if err != nil {
-			return fmt.Errorf("failed to update batch status: %w", err)
+		result := d.db.WithContext(ctx).Model(&models.Batch{}).Where("id = ?", batchID).Update("status", newStatus)
+		if result.Error != nil {
+			return fmt.Errorf("failed to update batch status: %w", result.Error)
 		}
 	}
 
@@ -1896,45 +1090,77 @@ type OrganizationStats struct {
 
 // GetOrganizationStats returns repository counts grouped by organization
 func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationStats, error) {
-	// First, get unique organizations with their total counts
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
-			COUNT(*) as total,
-			status,
-			COUNT(*) as status_count
-		FROM repositories
-		WHERE INSTR(full_name, '/') > 0
-		AND status != 'wont_migrate'
-		GROUP BY org, status
-		ORDER BY total DESC, org ASC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories
+			WHERE POSITION('/' IN full_name) > 0
+			AND status != 'wont_migrate'
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories
+			WHERE CHARINDEX('/', full_name) > 0
+			AND status != 'wont_migrate'
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories
+			WHERE INSTR(full_name, '/') > 0
+			AND status != 'wont_migrate'
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	}
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
+	// Use GORM Raw() for analytics query
+	type OrgStatusResult struct {
+		Org         string
+		Total       int
+		Status      string
+		StatusCount int
+	}
+
+	var results []OrgStatusResult
+	err := d.db.WithContext(ctx).Raw(query).Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization stats: %w", err)
 	}
-	defer rows.Close()
 
 	// Build organization stats map
 	orgMap := make(map[string]*OrganizationStats)
-	for rows.Next() {
-		var org, status string
-		var total, statusCount int
-		if err := rows.Scan(&org, &total, &status, &statusCount); err != nil {
-			return nil, fmt.Errorf("failed to scan organization stats: %w", err)
-		}
-
-		if _, exists := orgMap[org]; !exists {
-			orgMap[org] = &OrganizationStats{
-				Organization: org,
+	for _, result := range results {
+		if _, exists := orgMap[result.Org]; !exists {
+			orgMap[result.Org] = &OrganizationStats{
+				Organization: result.Org,
 				TotalRepos:   0,
 				StatusCounts: make(map[string]int),
 			}
 		}
 
-		orgMap[org].StatusCounts[status] = statusCount
-		orgMap[org].TotalRepos += statusCount
+		orgMap[result.Org].StatusCounts[result.Status] = result.StatusCount
+		orgMap[result.Org].TotalRepos += result.StatusCount
 	}
 
 	// Convert map to slice
@@ -1951,7 +1177,7 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 		return stats[i].TotalRepos > stats[j].TotalRepos
 	})
 
-	return stats, rows.Err()
+	return stats, nil
 }
 
 // SizeDistribution represents repository size distribution
@@ -1963,17 +1189,22 @@ type SizeDistribution struct {
 // GetSizeDistribution categorizes repositories by size
 func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution, error) {
 	// Size categories: small (<100MB), medium (100MB-1GB), large (1GB-5GB), very_large (>5GB)
+	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use a subquery
 	query := `
 		SELECT 
-			CASE 
-				WHEN total_size IS NULL THEN 'unknown'
-				WHEN total_size < 104857600 THEN 'small'
-				WHEN total_size < 1073741824 THEN 'medium'
-				WHEN total_size < 5368709120 THEN 'large'
-				ELSE 'very_large'
-			END as category,
+			category,
 			COUNT(*) as count
-		FROM repositories
+		FROM (
+			SELECT 
+				CASE 
+					WHEN total_size IS NULL THEN 'unknown'
+					WHEN total_size < 104857600 THEN 'small'
+					WHEN total_size < 1073741824 THEN 'medium'
+					WHEN total_size < 5368709120 THEN 'large'
+					ELSE 'very_large'
+				END as category
+			FROM repositories
+		) categorized
 		GROUP BY category
 		ORDER BY 
 			CASE category
@@ -1985,98 +1216,70 @@ func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution
 			END
 	`
 
-	rows, err := d.db.QueryContext(ctx, query)
+	// Use GORM Raw() for analytics query
+	var distribution []*SizeDistribution
+	err := d.db.WithContext(ctx).Raw(query).Scan(&distribution).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get size distribution: %w", err)
 	}
-	defer rows.Close()
 
-	var distribution []*SizeDistribution
-	for rows.Next() {
-		var dist SizeDistribution
-		if err := rows.Scan(&dist.Category, &dist.Count); err != nil {
-			return nil, fmt.Errorf("failed to scan size distribution: %w", err)
-		}
-		distribution = append(distribution, &dist)
-	}
-
-	return distribution, rows.Err()
+	return distribution, nil
 }
 
 // FeatureStats represents aggregated feature usage statistics
 type FeatureStats struct {
-	IsArchived           int `json:"is_archived"`
-	IsFork               int `json:"is_fork"`
-	HasLFS               int `json:"has_lfs"`
-	HasSubmodules        int `json:"has_submodules"`
-	HasLargeFiles        int `json:"has_large_files"`
-	HasWiki              int `json:"has_wiki"`
-	HasPages             int `json:"has_pages"`
-	HasDiscussions       int `json:"has_discussions"`
-	HasActions           int `json:"has_actions"`
-	HasProjects          int `json:"has_projects"`
-	HasPackages          int `json:"has_packages"`
-	HasBranchProtections int `json:"has_branch_protections"`
-	HasRulesets          int `json:"has_rulesets"`
-	HasCodeScanning      int `json:"has_code_scanning"`
-	HasDependabot        int `json:"has_dependabot"`
-	HasSecretScanning    int `json:"has_secret_scanning"`
-	HasCodeowners        int `json:"has_codeowners"`
-	HasSelfHostedRunners int `json:"has_self_hosted_runners"`
-	HasReleaseAssets     int `json:"has_release_assets"`
-	TotalRepositories    int `json:"total_repositories"`
+	IsArchived           int `json:"is_archived" gorm:"column:archived_count"`
+	IsFork               int `json:"is_fork" gorm:"column:fork_count"`
+	HasLFS               int `json:"has_lfs" gorm:"column:lfs_count"`
+	HasSubmodules        int `json:"has_submodules" gorm:"column:submodules_count"`
+	HasLargeFiles        int `json:"has_large_files" gorm:"column:large_files_count"`
+	HasWiki              int `json:"has_wiki" gorm:"column:wiki_count"`
+	HasPages             int `json:"has_pages" gorm:"column:pages_count"`
+	HasDiscussions       int `json:"has_discussions" gorm:"column:discussions_count"`
+	HasActions           int `json:"has_actions" gorm:"column:actions_count"`
+	HasProjects          int `json:"has_projects" gorm:"column:projects_count"`
+	HasPackages          int `json:"has_packages" gorm:"column:packages_count"`
+	HasBranchProtections int `json:"has_branch_protections" gorm:"column:branch_protections_count"`
+	HasRulesets          int `json:"has_rulesets" gorm:"column:rulesets_count"`
+	HasCodeScanning      int `json:"has_code_scanning" gorm:"column:code_scanning_count"`
+	HasDependabot        int `json:"has_dependabot" gorm:"column:dependabot_count"`
+	HasSecretScanning    int `json:"has_secret_scanning" gorm:"column:secret_scanning_count"`
+	HasCodeowners        int `json:"has_codeowners" gorm:"column:codeowners_count"`
+	HasSelfHostedRunners int `json:"has_self_hosted_runners" gorm:"column:self_hosted_runners_count"`
+	HasReleaseAssets     int `json:"has_release_assets" gorm:"column:release_assets_count"`
+	TotalRepositories    int `json:"total_repositories" gorm:"column:total"`
 }
 
 // GetFeatureStats returns aggregated statistics on feature usage
 func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	query := `
 		SELECT 
-			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
-			SUM(CASE WHEN is_fork = 1 THEN 1 ELSE 0 END) as fork_count,
-			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
-			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
-			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
-			SUM(CASE WHEN has_wiki = 1 THEN 1 ELSE 0 END) as wiki_count,
-			SUM(CASE WHEN has_pages = 1 THEN 1 ELSE 0 END) as pages_count,
-			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
-			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
-			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
-			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
+			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
+			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
+			SUM(CASE WHEN has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
-			SUM(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) as rulesets_count,
-			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
-			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
-			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = 1 THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = 1 THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
+			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 			COUNT(*) as total
 		FROM repositories
 	`
 
+	// Use GORM Raw() for analytics query
 	var stats FeatureStats
-	err := d.db.QueryRowContext(ctx, query).Scan(
-		&stats.IsArchived,
-		&stats.IsFork,
-		&stats.HasLFS,
-		&stats.HasSubmodules,
-		&stats.HasLargeFiles,
-		&stats.HasWiki,
-		&stats.HasPages,
-		&stats.HasDiscussions,
-		&stats.HasActions,
-		&stats.HasProjects,
-		&stats.HasPackages,
-		&stats.HasBranchProtections,
-		&stats.HasRulesets,
-		&stats.HasCodeScanning,
-		&stats.HasDependabot,
-		&stats.HasSecretScanning,
-		&stats.HasCodeowners,
-		&stats.HasSelfHostedRunners,
-		&stats.HasReleaseAssets,
-		&stats.TotalRepositories,
-	)
+	err := d.db.WithContext(ctx).Raw(query).Scan(&stats).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get feature stats: %w", err)
 	}
@@ -2101,6 +1304,7 @@ type CompletedMigration struct {
 	SourceURL       string     `json:"source_url"`
 	DestinationURL  *string    `json:"destination_url"`
 	Status          string     `json:"status"`
+	MigratedAt      *time.Time `json:"migrated_at"`
 	StartedAt       *time.Time `json:"started_at"`
 	CompletedAt     *time.Time `json:"completed_at"`
 	DurationSeconds *int       `json:"duration_seconds"`
@@ -2116,8 +1320,8 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 			r.destination_url,
 			r.status,
 			r.migrated_at,
-			h.started_at,
-			h.completed_at,
+			h.started_at as started_at_str,
+			h.completed_at as completed_at_str,
 			h.duration_seconds
 		FROM repositories r
 		LEFT JOIN (
@@ -2134,104 +1338,139 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 		ORDER BY r.migrated_at DESC, r.updated_at DESC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query)
+	// Use a temporary struct to handle SQLite string datetime values
+	type tempMigration struct {
+		ID              int64      `gorm:"column:id"`
+		FullName        string     `gorm:"column:full_name"`
+		SourceURL       string     `gorm:"column:source_url"`
+		DestinationURL  *string    `gorm:"column:destination_url"`
+		Status          string     `gorm:"column:status"`
+		MigratedAt      *time.Time `gorm:"column:migrated_at"`
+		StartedAtStr    *string    `gorm:"column:started_at_str"`
+		CompletedAtStr  *string    `gorm:"column:completed_at_str"`
+		DurationSeconds *int       `gorm:"column:duration_seconds"`
+	}
+
+	var tempMigrations []tempMigration
+	err := d.db.WithContext(ctx).Raw(query).Scan(&tempMigrations).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get completed migrations: %w", err)
 	}
-	defer rows.Close()
 
-	var migrations []*CompletedMigration
-	for rows.Next() {
-		var m CompletedMigration
-		var migratedAt *time.Time
-		var startedAtStr, completedAtStr sql.NullString
-
-		if err := rows.Scan(
-			&m.ID,
-			&m.FullName,
-			&m.SourceURL,
-			&m.DestinationURL,
-			&m.Status,
-			&migratedAt,
-			&startedAtStr,
-			&completedAtStr,
-			&m.DurationSeconds,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan completed migration: %w", err)
+	// Convert to CompletedMigration with proper time parsing
+	migrations := make([]*CompletedMigration, len(tempMigrations))
+	for i, temp := range tempMigrations {
+		migrations[i] = &CompletedMigration{
+			ID:              temp.ID,
+			FullName:        temp.FullName,
+			SourceURL:       temp.SourceURL,
+			DestinationURL:  temp.DestinationURL,
+			Status:          temp.Status,
+			MigratedAt:      temp.MigratedAt,
+			DurationSeconds: temp.DurationSeconds,
 		}
 
-		// Parse timestamp strings to time.Time
-		if startedAtStr.Valid {
-			t, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", startedAtStr.String)
-			if err != nil {
-				// Try alternative format
-				t, err = time.Parse("2006-01-02 15:04:05", startedAtStr.String)
+		// Parse started_at string to time.Time
+		if temp.StartedAtStr != nil && *temp.StartedAtStr != "" {
+			// Try multiple datetime formats
+			formats := []string{
+				"2006-01-02 15:04:05.999999999 -0700 MST", // Go's default format
+				"2006-01-02 15:04:05",                     // SQLite format
+				time.RFC3339,                              // ISO 8601
+				"2006-01-02T15:04:05",                     // ISO 8601 without timezone
 			}
-			if err == nil {
-				m.StartedAt = &t
+			for _, format := range formats {
+				if t, err := time.Parse(format, *temp.StartedAtStr); err == nil {
+					migrations[i].StartedAt = &t
+					break
+				}
 			}
 		}
 
-		if completedAtStr.Valid {
-			t, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", completedAtStr.String)
-			if err != nil {
-				// Try alternative format
-				t, err = time.Parse("2006-01-02 15:04:05", completedAtStr.String)
+		// Parse completed_at string to time.Time
+		if temp.CompletedAtStr != nil && *temp.CompletedAtStr != "" {
+			// Try multiple datetime formats
+			formats := []string{
+				"2006-01-02 15:04:05.999999999 -0700 MST", // Go's default format
+				"2006-01-02 15:04:05",                     // SQLite format
+				time.RFC3339,                              // ISO 8601
+				"2006-01-02T15:04:05",                     // ISO 8601 without timezone
 			}
-			if err == nil {
-				m.CompletedAt = &t
+			for _, format := range formats {
+				if t, err := time.Parse(format, *temp.CompletedAtStr); err == nil {
+					migrations[i].CompletedAt = &t
+					break
+				}
 			}
 		}
-
-		migrations = append(migrations, &m)
 	}
 
-	return migrations, rows.Err()
+	return migrations, nil
 }
 
 // GetMigrationCompletionStatsByOrg returns migration completion stats grouped by organization
 func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*MigrationCompletionStats, error) {
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
-			COUNT(*) as total_repos,
-			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-		FROM repositories
-		WHERE full_name LIKE '%/%'
-		AND status != 'wont_migrate'
-		GROUP BY organization
-		ORDER BY total_repos DESC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			AND status != 'wont_migrate'
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			AND status != 'wont_migrate'
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			AND status != 'wont_migrate'
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	}
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
+	// Use GORM Raw() for analytics query
+	var stats []*MigrationCompletionStats
+	err := d.db.WithContext(ctx).Raw(query).Scan(&stats).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration completion stats: %w", err)
 	}
-	defer rows.Close()
 
-	var stats []*MigrationCompletionStats
-	for rows.Next() {
-		var s MigrationCompletionStats
-		if err := rows.Scan(
-			&s.Organization,
-			&s.TotalRepos,
-			&s.CompletedCount,
-			&s.InProgressCount,
-			&s.PendingCount,
-			&s.FailedCount,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan migration completion stats: %w", err)
-		}
-		stats = append(stats, &s)
-	}
-
-	return stats, rows.Err()
+	return stats, nil
 }
 
-// RollbackRepository marks a repository as rolled back and creates a migration history entry
+// RollbackRepository marks a repository as rolled back and creates a migration history entry using GORM
 func (d *Database) RollbackRepository(ctx context.Context, fullName string, reason string) error {
 	// Get the repository
 	repo, err := d.GetRepository(ctx, fullName)
@@ -2244,12 +1483,18 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 
 	oldBatchID := repo.BatchID
 
-	// Update repository status to rolled_back and clear batch assignment
-	// This allows the repository to be reassigned to a new batch
-	query := `UPDATE repositories SET status = ?, batch_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE full_name = ?`
-	_, err = d.db.ExecContext(ctx, d.rebindQuery(query), string(models.StatusRolledBack), fullName)
-	if err != nil {
-		return fmt.Errorf("failed to update repository status: %w", err)
+	// Update repository status to rolled_back and clear batch assignment using GORM
+	now := time.Now().UTC()
+	result := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("full_name = ?", fullName).
+		Updates(map[string]interface{}{
+			"status":     string(models.StatusRolledBack),
+			"batch_id":   nil,
+			"updated_at": now,
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update repository status: %w", result.Error)
 	}
 
 	// Update the old batch's repository count if it was in a batch
@@ -2260,19 +1505,24 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 		}
 	}
 
-	// Create migration history entry for rollback
+	// Create migration history entry for rollback using GORM
 	message := "Repository rolled back"
 	if reason != "" {
 		message = reason
 	}
 
-	historyQuery := `
-		INSERT INTO migration_history (repository_id, status, phase, message, started_at, completed_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`
-	_, err = d.db.ExecContext(ctx, d.rebindQuery(historyQuery), repo.ID, "rolled_back", "rollback", message)
-	if err != nil {
-		return fmt.Errorf("failed to create rollback history: %w", err)
+	history := &models.MigrationHistory{
+		RepositoryID: repo.ID,
+		Status:       "rolled_back",
+		Phase:        "rollback",
+		Message:      &message,
+		StartedAt:    now,
+		CompletedAt:  &now,
+	}
+
+	result = d.db.WithContext(ctx).Create(history)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create rollback history: %w", result.Error)
 	}
 
 	return nil
@@ -2295,23 +1545,28 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use nested subqueries
 	query := `
 		SELECT 
-			CASE 
-				WHEN complexity_score <= 5 THEN 'simple'
-				WHEN complexity_score <= 10 THEN 'medium'
-				WHEN complexity_score <= 17 THEN 'complex'
-				ELSE 'very_complex'
-			END as category,
+			category,
 			COUNT(*) as count
 		FROM (
-			SELECT ` + buildGitHubComplexityScoreSQL() + ` as complexity_score
-			FROM repositories r
-			WHERE 1=1
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + batchFilterSQL + `
-		) as scored_repos
+			SELECT 
+				CASE 
+					WHEN complexity_score <= 5 THEN 'simple'
+					WHEN complexity_score <= 10 THEN 'medium'
+					WHEN complexity_score <= 17 THEN 'complex'
+					ELSE 'very_complex'
+				END as category
+			FROM (
+				SELECT ` + d.buildGitHubComplexityScoreSQL() + ` as complexity_score
+				FROM repositories r
+				WHERE 1=1
+					AND status != 'wont_migrate'
+					` + orgFilterSQL + `
+					` + batchFilterSQL + `
+			) as scored_repos
+		) as categorized
 		GROUP BY category
 		ORDER BY 
 			CASE category
@@ -2325,22 +1580,14 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	// Use GORM Raw() for analytics query
+	var distribution []*ComplexityDistribution
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&distribution).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get complexity distribution: %w", err)
 	}
-	defer rows.Close()
 
-	var distribution []*ComplexityDistribution
-	for rows.Next() {
-		var dist ComplexityDistribution
-		if err := rows.Scan(&dist.Category, &dist.Count); err != nil {
-			return nil, fmt.Errorf("failed to scan complexity distribution: %w", err)
-		}
-		distribution = append(distribution, &dist)
-	}
-
-	return distribution, rows.Err()
+	return distribution, nil
 }
 
 // MigrationVelocity represents migration velocity metrics
@@ -2355,32 +1602,49 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFil
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Use dialect-specific date arithmetic
+	var dateCondition string
+	var args []interface{}
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		dateCondition = fmt.Sprintf("AND mh.completed_at >= NOW() - INTERVAL '%d days'", days)
+		args = append(args, orgArgs...)
+		args = append(args, batchArgs...)
+	case DBTypeSQLServer, DBTypeMSSQL:
+		dateCondition = fmt.Sprintf("AND mh.completed_at >= DATEADD(day, -%d, GETUTCDATE())", days)
+		args = append(args, orgArgs...)
+		args = append(args, batchArgs...)
+	default: // SQLite
+		dateCondition = "AND mh.completed_at >= datetime('now', '-' || ? || ' days')"
+		args = []interface{}{days}
+		args = append(args, orgArgs...)
+		args = append(args, batchArgs...)
+	}
+
 	query := `
 		SELECT COUNT(DISTINCT r.id) as total_completed
 		FROM repositories r
 		INNER JOIN migration_history mh ON r.id = mh.repository_id
 		WHERE mh.status = 'completed' 
 			AND mh.phase = 'migration'
-			AND mh.completed_at >= datetime('now', '-' || ? || ' days')
+			` + dateCondition + `
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
 			` + batchFilterSQL + `
 	`
 
-	// Combine all arguments (days first, then filter args)
-	args := []interface{}{days}
-	args = append(args, orgArgs...)
-	args = append(args, batchArgs...)
-
-	var totalCompleted int
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&totalCompleted)
+	// Use GORM Raw() for analytics query
+	var result struct {
+		TotalCompleted int
+	}
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&result).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration velocity: %w", err)
 	}
 
 	velocity := &MigrationVelocity{
-		ReposPerDay:  float64(totalCompleted) / float64(days),
-		ReposPerWeek: (float64(totalCompleted) / float64(days)) * 7,
+		ReposPerDay:  float64(result.TotalCompleted) / float64(days),
+		ReposPerWeek: (float64(result.TotalCompleted) / float64(days)) * 7,
 	}
 
 	return velocity, nil
@@ -2400,6 +1664,17 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Use dialect-specific date arithmetic
+	var dateCondition string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		dateCondition = "AND mh.completed_at >= NOW() - INTERVAL '30 days'"
+	case DBTypeSQLServer, DBTypeMSSQL:
+		dateCondition = "AND mh.completed_at >= DATEADD(day, -30, GETUTCDATE())"
+	default: // SQLite
+		dateCondition = "AND mh.completed_at >= datetime('now', '-30 days')"
+	}
+
 	query := `
 		SELECT 
 			DATE(mh.completed_at) as date,
@@ -2408,7 +1683,7 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 		INNER JOIN migration_history mh ON r.id = mh.repository_id
 		WHERE mh.status = 'completed'
 			AND mh.phase = 'migration'
-			AND mh.completed_at >= datetime('now', '-30 days')
+			` + dateCondition + `
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
 			` + batchFilterSQL + `
@@ -2419,22 +1694,14 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	// Use GORM Raw() for analytics query
+	var series []*MigrationTimeSeriesPoint
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&series).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration time series: %w", err)
 	}
-	defer rows.Close()
 
-	var series []*MigrationTimeSeriesPoint
-	for rows.Next() {
-		var point MigrationTimeSeriesPoint
-		if err := rows.Scan(&point.Date, &point.Count); err != nil {
-			return nil, fmt.Errorf("failed to scan time series point: %w", err)
-		}
-		series = append(series, &point)
-	}
-
-	return series, rows.Err()
+	return series, nil
 }
 
 // GetAverageMigrationTime calculates the average migration duration
@@ -2458,17 +1725,20 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, batch
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	var avgDuration sql.NullFloat64
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&avgDuration)
+	// Use GORM Raw() for analytics query
+	var result struct {
+		AvgDuration *float64
+	}
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&result).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get average migration time: %w", err)
 	}
 
-	if !avgDuration.Valid {
+	if result.AvgDuration == nil {
 		return 0, nil
 	}
 
-	return avgDuration.Float64, nil
+	return *result.AvgDuration, nil
 }
 
 // buildOrgFilter builds the organization filter clause using parameterized queries
@@ -2477,7 +1747,19 @@ func (d *Database) buildOrgFilter(orgFilter string) (string, []interface{}) {
 	if orgFilter == "" {
 		return "", nil
 	}
-	return " AND SUBSTR(r.full_name, 1, INSTR(r.full_name, '/') - 1) = ?", []interface{}{orgFilter}
+
+	// Use dialect-specific string functions
+	var filterSQL string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		filterSQL = " AND SUBSTRING(r.full_name, 1, POSITION('/' IN r.full_name) - 1) = ?"
+	case DBTypeSQLServer, DBTypeMSSQL:
+		filterSQL = " AND SUBSTRING(r.full_name, 1, CHARINDEX('/', r.full_name) - 1) = ?"
+	default: // SQLite
+		filterSQL = " AND SUBSTR(r.full_name, 1, INSTR(r.full_name, '/') - 1) = ?"
+	}
+
+	return filterSQL, []interface{}{orgFilter}
 }
 
 // buildBatchFilter builds the batch filter clause using parameterized queries
@@ -2512,23 +1794,24 @@ func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFi
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	// Use GORM Raw() for analytics query
+	type StatusCount struct {
+		Status string
+		Count  int
+	}
+
+	var results []StatusCount
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repository stats: %w", err)
 	}
-	defer rows.Close()
 
 	stats := make(map[string]int)
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return nil, fmt.Errorf("failed to scan stats: %w", err)
-		}
-		stats[status] = count
+	for _, result := range results {
+		stats[result.Status] = result.Count
 	}
 
-	return stats, rows.Err()
+	return stats, nil
 }
 
 // GetSizeDistributionFiltered returns size distribution with filters
@@ -2539,21 +1822,26 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
+	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use a subquery
 	query := `
 		SELECT 
-			CASE 
-				WHEN total_size IS NULL THEN 'unknown'
-				WHEN total_size < 104857600 THEN 'small'
-				WHEN total_size < 1073741824 THEN 'medium'
-				WHEN total_size < 5368709120 THEN 'large'
-				ELSE 'very_large'
-			END as category,
+			category,
 			COUNT(*) as count
-		FROM repositories r
-		WHERE 1=1
-			AND status != 'wont_migrate'
-			` + orgFilterSQL + `
-			` + batchFilterSQL + `
+		FROM (
+			SELECT 
+				CASE 
+					WHEN total_size IS NULL THEN 'unknown'
+					WHEN total_size < 104857600 THEN 'small'
+					WHEN total_size < 1073741824 THEN 'medium'
+					WHEN total_size < 5368709120 THEN 'large'
+					ELSE 'very_large'
+				END as category
+			FROM repositories r
+			WHERE 1=1
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+		) categorized
 		GROUP BY category
 		ORDER BY 
 			CASE category
@@ -2568,22 +1856,14 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	// Use GORM Raw() for analytics query
+	var distribution []*SizeDistribution
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&distribution).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get size distribution: %w", err)
 	}
-	defer rows.Close()
 
-	var distribution []*SizeDistribution
-	for rows.Next() {
-		var dist SizeDistribution
-		if err := rows.Scan(&dist.Category, &dist.Count); err != nil {
-			return nil, fmt.Errorf("failed to scan size distribution: %w", err)
-		}
-		distribution = append(distribution, &dist)
-	}
-
-	return distribution, rows.Err()
+	return distribution, nil
 }
 
 // GetFeatureStatsFiltered returns feature stats with filters
@@ -2594,25 +1874,25 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 
 	query := `
 		SELECT 
-			SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived_count,
-			SUM(CASE WHEN is_fork = 1 THEN 1 ELSE 0 END) as fork_count,
-			SUM(CASE WHEN has_lfs = 1 THEN 1 ELSE 0 END) as lfs_count,
-			SUM(CASE WHEN has_submodules = 1 THEN 1 ELSE 0 END) as submodules_count,
-			SUM(CASE WHEN has_large_files = 1 THEN 1 ELSE 0 END) as large_files_count,
-			SUM(CASE WHEN has_wiki = 1 THEN 1 ELSE 0 END) as wiki_count,
-			SUM(CASE WHEN has_pages = 1 THEN 1 ELSE 0 END) as pages_count,
-			SUM(CASE WHEN has_discussions = 1 THEN 1 ELSE 0 END) as discussions_count,
-			SUM(CASE WHEN has_actions = 1 THEN 1 ELSE 0 END) as actions_count,
-			SUM(CASE WHEN has_projects = 1 THEN 1 ELSE 0 END) as projects_count,
-			SUM(CASE WHEN has_packages = 1 THEN 1 ELSE 0 END) as packages_count,
+			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
+			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
+			SUM(CASE WHEN has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
 			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
-			SUM(CASE WHEN has_rulesets = 1 THEN 1 ELSE 0 END) as rulesets_count,
-			SUM(CASE WHEN has_code_scanning = 1 THEN 1 ELSE 0 END) as code_scanning_count,
-			SUM(CASE WHEN has_dependabot = 1 THEN 1 ELSE 0 END) as dependabot_count,
-			SUM(CASE WHEN has_secret_scanning = 1 THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = 1 THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = 1 THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = 1 THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
+			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 			COUNT(*) as total
 		FROM repositories r
 		WHERE 1=1
@@ -2624,29 +1904,9 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
+	// Use GORM Raw() for analytics query
 	var stats FeatureStats
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(
-		&stats.IsArchived,
-		&stats.IsFork,
-		&stats.HasLFS,
-		&stats.HasSubmodules,
-		&stats.HasLargeFiles,
-		&stats.HasWiki,
-		&stats.HasPages,
-		&stats.HasDiscussions,
-		&stats.HasActions,
-		&stats.HasProjects,
-		&stats.HasPackages,
-		&stats.HasBranchProtections,
-		&stats.HasRulesets,
-		&stats.HasCodeScanning,
-		&stats.HasDependabot,
-		&stats.HasSecretScanning,
-		&stats.HasCodeowners,
-		&stats.HasSelfHostedRunners,
-		&stats.HasReleaseAssets,
-		&stats.TotalRepositories,
-	)
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&stats).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get feature stats: %w", err)
 	}
@@ -2660,48 +1920,85 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
-			COUNT(*) as total,
-			status,
-			COUNT(*) as status_count
-		FROM repositories r
-		WHERE INSTR(full_name, '/') > 0
-			AND status != 'wont_migrate'
-			` + orgFilterSQL + `
-			` + batchFilterSQL + `
-		GROUP BY org, status
-		ORDER BY total DESC, org ASC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories r
+			WHERE POSITION('/' IN full_name) > 0
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories r
+			WHERE CHARINDEX('/', full_name) > 0
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
+				COUNT(*) as total,
+				status,
+				COUNT(*) as status_count
+			FROM repositories r
+			WHERE INSTR(full_name, '/') > 0
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY org, status
+			ORDER BY total DESC, org ASC
+		`
+	}
 
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	// Use GORM Raw() for analytics query
+	type OrgStatusResult struct {
+		Org         string
+		Total       int
+		Status      string
+		StatusCount int
+	}
+
+	var results []OrgStatusResult
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization stats: %w", err)
 	}
-	defer rows.Close()
 
 	orgMap := make(map[string]*OrganizationStats)
-	for rows.Next() {
-		var org, status string
-		var total, statusCount int
-		if err := rows.Scan(&org, &total, &status, &statusCount); err != nil {
-			return nil, fmt.Errorf("failed to scan organization stats: %w", err)
-		}
-
-		if _, exists := orgMap[org]; !exists {
-			orgMap[org] = &OrganizationStats{
-				Organization: org,
+	for _, result := range results {
+		if _, exists := orgMap[result.Org]; !exists {
+			orgMap[result.Org] = &OrganizationStats{
+				Organization: result.Org,
 				TotalRepos:   0,
 				StatusCounts: make(map[string]int),
 			}
 		}
 
-		orgMap[org].StatusCounts[status] = statusCount
-		orgMap[org].TotalRepos += statusCount
+		orgMap[result.Org].StatusCounts[result.Status] = result.StatusCount
+		orgMap[result.Org].TotalRepos += result.StatusCount
 	}
 
 	stats := make([]*OrganizationStats, 0, len(orgMap))
@@ -2709,75 +2006,101 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 		stats = append(stats, stat)
 	}
 
-	return stats, rows.Err()
+	return stats, nil
 }
 
-// UpdateRepositoryValidation updates the validation fields for a repository
+// UpdateRepositoryValidation updates the validation fields for a repository using GORM
 func (d *Database) UpdateRepositoryValidation(ctx context.Context, fullName string, validationStatus string, validationDetails, destinationData *string) error {
-	query := `
-		UPDATE repositories 
-		SET validation_status = ?, 
-		    validation_details = ?, 
-		    destination_data = ?,
-		    updated_at = CURRENT_TIMESTAMP
-		WHERE full_name = ?
-	`
+	now := time.Now().UTC()
+	result := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("full_name = ?", fullName).
+		Updates(map[string]interface{}{
+			"validation_status":  validationStatus,
+			"validation_details": validationDetails,
+			"destination_data":   destinationData,
+			"updated_at":         now,
+		})
 
-	_, err := d.db.ExecContext(ctx, d.rebindQuery(query), validationStatus, validationDetails, destinationData, fullName)
-	if err != nil {
-		return fmt.Errorf("failed to update repository validation: %w", err)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update repository validation: %w", result.Error)
 	}
 
 	return nil
 }
 
 // GetMigrationCompletionStatsByOrgFiltered returns migration completion stats with org and batch filters
+//
+//nolint:dupl // Similar to GetMigrationCompletionStatsByOrg but with filters
 func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, orgFilter, batchFilter string) ([]*MigrationCompletionStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	query := `
-		SELECT 
-			SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
-			COUNT(*) as total_repos,
-			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-		FROM repositories r
-		WHERE full_name LIKE '%/%'
-			AND status != 'wont_migrate'
-			` + orgFilterSQL + `
-			` + batchFilterSQL + `
-		GROUP BY organization
-		ORDER BY total_repos DESC
-	`
+	// Use dialect-specific string functions
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories r
+			WHERE full_name LIKE '%/%'
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT 
+				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories r
+			WHERE full_name LIKE '%/%'
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	default: // SQLite
+		query = `
+			SELECT 
+				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
+				COUNT(*) as total_repos,
+				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			FROM repositories r
+			WHERE full_name LIKE '%/%'
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + batchFilterSQL + `
+			GROUP BY organization
+			ORDER BY total_repos DESC
+		`
+	}
 
 	// Combine all arguments
 	args := append(orgArgs, batchArgs...)
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query), args...)
+	// Use GORM Raw() for analytics query
+	var stats []*MigrationCompletionStats
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&stats).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration completion stats: %w", err)
 	}
-	defer rows.Close()
 
-	var stats []*MigrationCompletionStats
-	for rows.Next() {
-		var s MigrationCompletionStats
-		if err := rows.Scan(
-			&s.Organization,
-			&s.TotalRepos,
-			&s.CompletedCount,
-			&s.InProgressCount,
-			&s.PendingCount,
-			&s.FailedCount,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan migration completion stats: %w", err)
-		}
-		stats = append(stats, &s)
-	}
-
-	return stats, rows.Err()
+	return stats, nil
 }

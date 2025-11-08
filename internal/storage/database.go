@@ -2,141 +2,114 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"embed"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/brettkuhlman/github-migrator/internal/config"
-	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/brettkuhlman/github-migrator/internal/models"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/*/*.sql
 var migrationsFS embed.FS
 
+// Database type constants
 const (
-	dbTypePostgres = "postgres"
-	dbTypeSQLite   = "sqlite"
+	DBTypeSQLite     = "sqlite"
+	DBTypePostgres   = "postgres"
+	DBTypePostgreSQL = "postgresql"
+	DBTypeSQLServer  = "sqlserver"
+	DBTypeMSSQL      = "mssql"
 )
 
 type Database struct {
-	db  *sql.DB
-	cfg config.DatabaseConfig
+	db      *gorm.DB
+	cfg     config.DatabaseConfig
+	dialect DialectDialer
 }
 
 func NewDatabase(cfg config.DatabaseConfig) (*Database, error) {
 	// Ensure data directory exists for SQLite
-	if cfg.Type == dbTypeSQLite {
+	if cfg.Type == DBTypeSQLite {
 		dir := filepath.Dir(cfg.DSN)
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			return nil, fmt.Errorf("failed to create data directory: %w", err)
 		}
 	}
 
-	// Map config type to driver name
-	driverName := cfg.Type
-	if cfg.Type == dbTypeSQLite {
-		driverName = "sqlite3"
+	// Create dialect dialer
+	dialect, err := NewDialectDialer(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dialect: %w", err)
 	}
 
-	db, err := sql.Open(driverName, cfg.DSN)
+	// Configure GORM logger to use slog
+	gormLogger := logger.New(
+		&slogWriter{},
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond, // Log slow queries (>200ms)
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		},
+	)
+
+	// Open database with GORM
+	db, err := gorm.Open(dialect.Dialect(), &gorm.Config{
+		Logger: gormLogger,
+		NowFunc: func() time.Time {
+			return time.Now().UTC()
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
+	// Configure connection pooling
+	if err := dialect.ConfigureConnection(db); err != nil {
+		return nil, fmt.Errorf("failed to configure connection: %w", err)
+	}
+
+	// Test connection
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	return &Database{
-		db:  db,
-		cfg: cfg,
+		db:      db,
+		cfg:     cfg,
+		dialect: dialect,
 	}, nil
 }
 
 func (d *Database) Close() error {
-	return d.db.Close()
+	sqlDB, err := d.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }
 
-func (d *Database) DB() *sql.DB {
+func (d *Database) DB() *gorm.DB {
 	return d.db
 }
 
-// rebindQuery converts SQLite-style ? placeholders to the appropriate syntax for the database type
-// and transforms SQLite-specific functions to PostgreSQL equivalents
-func (d *Database) rebindQuery(query string) string {
-	if d.cfg.Type == dbTypePostgres {
-		// Transform SQLite functions to PostgreSQL
-		query = d.transformSQLiteFunctionsToPostgres(query)
+// slogWriter adapts slog for GORM's logger interface
+type slogWriter struct{}
 
-		// Convert ? placeholders to $1, $2, etc. for Postgres
-		var result strings.Builder
-		paramNum := 1
-		for i := 0; i < len(query); i++ {
-			if query[i] == '?' {
-				result.WriteString(fmt.Sprintf("$%d", paramNum))
-				paramNum++
-			} else {
-				result.WriteByte(query[i])
-			}
-		}
-		return result.String()
-	}
-
-	return query
-}
-
-// transformSQLiteFunctionsToPostgres converts SQLite-specific functions to PostgreSQL equivalents
-func (d *Database) transformSQLiteFunctionsToPostgres(query string) string {
-	// INSTR(haystack, needle) -> POSITION(needle IN haystack)
-	// Match INSTR with its two arguments and swap them
-	instrRegex := regexp.MustCompile(`(?i)INSTR\(([^,]+),\s*('[^']+')\)`)
-	query = instrRegex.ReplaceAllString(query, "POSITION($2 IN $1)")
-
-	// SUBSTR(str, start, length) -> SUBSTRING(str, start, length)
-	// PostgreSQL supports both SUBSTRING syntaxes, so simple replacement works
-	query = strings.ReplaceAll(query, "SUBSTR(", "SUBSTRING(")
-	query = strings.ReplaceAll(query, "substr(", "SUBSTRING(")
-
-	// Transform boolean comparisons from SQLite (integer) to PostgreSQL (boolean)
-	// In SQLite, booleans are stored as 0/1, but PostgreSQL uses TRUE/FALSE
-	// Replace common boolean column comparisons
-	booleanColumns := []string{
-		"has_lfs", "has_submodules", "has_large_files", "is_archived", "is_fork",
-		"has_wiki", "has_pages", "has_discussions", "has_actions", "has_projects",
-		"has_packages", "has_rulesets", "has_code_scanning", "has_dependabot",
-		"has_secret_scanning", "has_codeowners", "has_self_hosted_runners",
-		"has_release_assets", "has_oversized_repository", "has_oversized_commits",
-		"has_long_refs", "has_blocking_files", "has_large_file_warnings", "is_local",
-		"exclude_releases", "exclude_attachments", "exclude_metadata",
-		"exclude_git_data", "exclude_owner_projects",
-	}
-
-	for _, col := range booleanColumns {
-		// column = 1 -> column = TRUE (or just column)
-		query = strings.ReplaceAll(query, col+" = 1", col+" = TRUE")
-		query = strings.ReplaceAll(query, col+"=1", col+"=TRUE")
-
-		// column = 0 -> column = FALSE (or just NOT column)
-		query = strings.ReplaceAll(query, col+" = 0", col+" = FALSE")
-		query = strings.ReplaceAll(query, col+"=0", col+"=FALSE")
-
-		// column != 1 -> column != TRUE
-		query = strings.ReplaceAll(query, col+" != 1", col+" != TRUE")
-		query = strings.ReplaceAll(query, col+"!=1", col+"!=TRUE")
-
-		// column != 0 -> column != FALSE
-		query = strings.ReplaceAll(query, col+" != 0", col+" != FALSE")
-		query = strings.ReplaceAll(query, col+"!=0", col+"!=FALSE")
-	}
-
-	return query
+func (w *slogWriter) Printf(format string, args ...interface{}) {
+	slog.Info(fmt.Sprintf(format, args...))
 }
 
 // Migrate runs all pending database migrations
@@ -154,10 +127,16 @@ func (d *Database) Migrate() error {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
 
-	// Read migration files from embedded filesystem
-	entries, err := migrationsFS.ReadDir("migrations")
+	// Determine which dialect folder to use
+	dialectFolder := d.getDialectFolder()
+	migrationPath := filepath.Join("migrations", dialectFolder)
+
+	slog.Info("Loading migrations from dialect folder", "path", migrationPath, "database_type", d.cfg.Type)
+
+	// Read migration files from embedded filesystem for the specific dialect
+	entries, err := migrationsFS.ReadDir(migrationPath)
 	if err != nil {
-		return fmt.Errorf("failed to read migrations directory: %w", err)
+		return fmt.Errorf("failed to read migrations directory %s: %w", migrationPath, err)
 	}
 
 	// Sort migration files
@@ -169,6 +148,8 @@ func (d *Database) Migrate() error {
 	}
 	sort.Strings(migrationFiles)
 
+	slog.Info("Found migrations", "count", len(migrationFiles), "folder", dialectFolder)
+
 	// Apply pending migrations
 	for _, filename := range migrationFiles {
 		if applied[filename] {
@@ -177,7 +158,7 @@ func (d *Database) Migrate() error {
 		}
 
 		slog.Info("Applying migration", "file", filename)
-		content, err := migrationsFS.ReadFile(filepath.Join("migrations", filename))
+		content, err := migrationsFS.ReadFile(filepath.Join(migrationPath, filename))
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", filename, err)
 		}
@@ -193,93 +174,91 @@ func (d *Database) Migrate() error {
 	return nil
 }
 
-func (d *Database) createMigrationsTable() error {
-	var query string
-	if d.cfg.Type == dbTypePostgres {
-		query = `
-			CREATE TABLE IF NOT EXISTS schema_migrations (
-				id SERIAL PRIMARY KEY,
-				filename TEXT NOT NULL UNIQUE,
-				applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-			)
-		`
-	} else {
-		query = `
-			CREATE TABLE IF NOT EXISTS schema_migrations (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				filename TEXT NOT NULL UNIQUE,
-				applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-			)
-		`
+// getDialectFolder returns the migration folder name based on the database type
+func (d *Database) getDialectFolder() string {
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		return "postgres"
+	case DBTypeSQLServer, DBTypeMSSQL:
+		return "sqlserver"
+	case DBTypeSQLite, "sqlite3":
+		return DBTypeSQLite
+	default:
+		// Default to sqlite for backward compatibility
+		return DBTypeSQLite
 	}
-	_, err := d.db.Exec(query)
+}
+
+// SchemaMigration tracks applied migrations
+type SchemaMigration struct {
+	ID        int64     `gorm:"primaryKey;autoIncrement"`
+	Filename  string    `gorm:"uniqueIndex;not null"`
+	AppliedAt time.Time `gorm:"not null;autoCreateTime"`
+}
+
+// TableName specifies the table name for SchemaMigration
+func (SchemaMigration) TableName() string {
+	return "schema_migrations"
+}
+
+func (d *Database) createMigrationsTable() error {
+	// Use GORM AutoMigrate for schema_migrations table
+	err := d.db.AutoMigrate(&SchemaMigration{})
 	return err
 }
 
 func (d *Database) getAppliedMigrations() (map[string]bool, error) {
-	rows, err := d.db.Query("SELECT filename FROM schema_migrations")
-	if err != nil {
+	var migrations []SchemaMigration
+	if err := d.db.Find(&migrations).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	applied := make(map[string]bool)
-	for rows.Next() {
-		var filename string
-		if err := rows.Scan(&filename); err != nil {
-			return nil, err
-		}
-		applied[filename] = true
+	for _, m := range migrations {
+		applied[m.Filename] = true
 	}
 
-	return applied, rows.Err()
+	return applied, nil
 }
 
 func (d *Database) applyMigration(filename, content string) error {
-	tx, err := d.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = tx.Rollback() // rollback is safe to call even after commit
-	}()
+	// Start transaction using GORM
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		// Split migration content into individual statements
+		statements := splitSQLStatements(content)
 
-	// Split migration content into individual statements
-	// SQLite's Exec() only handles one statement at a time
-	statements := splitSQLStatements(content)
+		// Execute each statement using GORM Exec
+		for i, stmt := range statements {
+			stmt = strings.TrimSpace(stmt)
+			if stmt == "" {
+				continue
+			}
 
-	// Execute each statement
-	for i, stmt := range statements {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
+			// NOTE: We no longer apply SQL transformations here because we now use
+			// dialect-specific migration folders (migrations/sqlite, migrations/postgres, migrations/sqlserver).
+			// Each migration is already written in the correct syntax for its target database.
+
+			// Skip ALTER COLUMN statements for SQLite (not supported)
+			if d.cfg.Type == DBTypeSQLite && strings.Contains(strings.ToUpper(stmt), "ALTER COLUMN") {
+				slog.Debug("Skipping ALTER COLUMN statement for SQLite", "statement", stmt)
+				continue
+			}
+
+			if err := tx.Exec(stmt).Error; err != nil {
+				return fmt.Errorf("statement %d failed: %w\nStatement: %s", i+1, err, stmt)
+			}
 		}
 
-		// Transform SQLite syntax to PostgreSQL if needed
-		if d.cfg.Type == dbTypePostgres {
-			stmt = d.transformSQLiteToPostgres(stmt)
+		// Record migration using GORM
+		migration := SchemaMigration{
+			Filename: filename,
+		}
+		if err := tx.Create(&migration).Error; err != nil {
+			return err
 		}
 
-		// Skip ALTER COLUMN statements for SQLite (not supported)
-		// This includes TYPE, DROP DEFAULT, and SET DEFAULT operations
-		if d.cfg.Type == dbTypeSQLite && strings.Contains(strings.ToUpper(stmt), "ALTER COLUMN") {
-			slog.Debug("Skipping ALTER COLUMN statement for SQLite", "statement", stmt)
-			continue
-		}
-
-		if _, execErr := tx.Exec(stmt); execErr != nil {
-			return fmt.Errorf("statement %d failed: %w\nStatement: %s", i+1, execErr, stmt)
-		}
-	}
-
-	// Record migration
-	insertQuery := d.rebindQuery("INSERT INTO schema_migrations (filename) VALUES (?)")
-	_, err = tx.Exec(insertQuery, filename)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit()
+		return nil
+	})
 }
 
 // splitSQLStatements splits SQL content into individual statements
@@ -339,69 +318,75 @@ func splitSQLStatements(content string) []string {
 	return statements
 }
 
-// transformSQLiteToPostgres converts SQLite-specific syntax to PostgreSQL syntax
-func (d *Database) transformSQLiteToPostgres(stmt string) string {
-	// Replace AUTOINCREMENT with SERIAL for simple cases
-	// Handle both "INTEGER PRIMARY KEY AUTOINCREMENT" and standalone AUTOINCREMENT
-	stmt = strings.ReplaceAll(stmt, "INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-	stmt = strings.ReplaceAll(stmt, "AUTOINCREMENT", "")
-
-	// Replace DATETIME with TIMESTAMP
-	stmt = strings.ReplaceAll(stmt, "DATETIME", "TIMESTAMP")
-
-	// Replace SQLite boolean defaults (0/1) with PostgreSQL boolean literals (FALSE/TRUE)
-	// This needs to be done carefully to only replace in DEFAULT clauses
-	stmt = strings.ReplaceAll(stmt, "DEFAULT 0", "DEFAULT FALSE")
-	stmt = strings.ReplaceAll(stmt, "DEFAULT 1", "DEFAULT TRUE")
-
-	return stmt
-}
-
-// GetDistinctOrganizations retrieves a list of unique organizations from repositories
+// GetDistinctOrganizations retrieves a list of unique organizations from repositories using GORM
 func (d *Database) GetDistinctOrganizations(ctx context.Context) ([]string, error) {
-	query := `
-		SELECT DISTINCT 
-			CASE 
-				WHEN instr(full_name, '/') > 0 
-				THEN substr(full_name, 1, instr(full_name, '/') - 1)
-				ELSE full_name
-			END as organization
-		FROM repositories
-		WHERE full_name LIKE '%/%'
-		ORDER BY organization ASC
-	`
+	// Use GORM's raw SQL capability for complex string manipulation
+	// Use dialect-specific string functions
+	var orgs []string
+	var query string
 
-	rows, err := d.db.QueryContext(ctx, d.rebindQuery(query))
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		query = `
+			SELECT DISTINCT 
+				CASE 
+					WHEN full_name LIKE '%/%'
+					THEN SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1)
+					ELSE full_name
+				END as organization
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			ORDER BY organization ASC
+		`
+	case DBTypeSQLServer, DBTypeMSSQL:
+		query = `
+			SELECT DISTINCT 
+				CASE 
+					WHEN full_name LIKE '%/%'
+					THEN SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1)
+					ELSE full_name
+				END as organization
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			ORDER BY organization ASC
+		`
+	default: // SQLite
+		query = `
+			SELECT DISTINCT 
+				CASE 
+					WHEN full_name LIKE '%/%'
+					THEN SUBSTR(full_name, 1, INSTR(full_name, '/') - 1)
+					ELSE full_name
+				END as organization
+			FROM repositories
+			WHERE full_name LIKE '%/%'
+			ORDER BY organization ASC
+		`
+	}
+
+	err := d.db.WithContext(ctx).Raw(query).Scan(&orgs).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get distinct organizations: %w", err)
 	}
-	defer rows.Close()
 
-	var orgs []string
-	for rows.Next() {
-		var org string
-		if err := rows.Scan(&org); err != nil {
-			return nil, fmt.Errorf("failed to scan organization: %w", err)
-		}
-		orgs = append(orgs, org)
-	}
-
-	return orgs, rows.Err()
+	return orgs, nil
 }
 
-// CountRepositoriesWithFilters counts repositories matching the given filters
+// CountRepositoriesWithFilters counts repositories matching the given filters using GORM
 func (d *Database) CountRepositoriesWithFilters(ctx context.Context, filters map[string]interface{}) (int, error) {
-	query := "SELECT COUNT(*) FROM repositories WHERE 1=1"
-	args := []interface{}{}
+	var count int64
 
-	// Apply the same filters as ListRepositories
-	query, args = applyRepositoryFilters(query, args, filters)
+	// Start with base query
+	query := d.db.WithContext(ctx).Model(&models.Repository{})
 
-	var count int
-	err := d.db.QueryRowContext(ctx, d.rebindQuery(query), args...).Scan(&count)
+	// Apply the same scopes as ListRepositories
+	query = d.applyListScopes(query, filters)
+
+	// Execute count
+	err := query.Count(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to count repositories: %w", err)
 	}
 
-	return count, nil
+	return int(count), nil
 }

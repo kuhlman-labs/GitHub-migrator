@@ -45,6 +45,16 @@ FROM alpine:latest
 # We need gcompat to run glibc binaries on Alpine
 RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs gcompat
 
+# For linux/arm64, install Go and build git-sizer from source since no pre-built binary exists
+# This is only needed on Apple Silicon Macs running Docker
+RUN if [ "$(uname -m)" = "aarch64" ]; then \
+        apk add --no-cache go && \
+        go install github.com/github/git-sizer@v1.5.0 && \
+        mv /root/go/bin/git-sizer /usr/local/bin/ && \
+        apk del go && \
+        rm -rf /root/go; \
+    fi
+
 WORKDIR /app
 
 # Copy server binary from backend builder (git-sizer is now embedded)

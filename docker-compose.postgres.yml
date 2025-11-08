@@ -1,0 +1,45 @@
+# Production-like setup with PostgreSQL
+# Usage: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up
+# Or use: make docker-run-postgres
+
+services:
+  # PostgreSQL database service
+  postgres:
+    image: postgres:16-alpine
+    container_name: github-migrator-postgres
+    environment:
+      POSTGRES_DB: migrator
+      POSTGRES_USER: migrator
+      POSTGRES_PASSWORD: migrator_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U migrator"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Override migrator service to use PostgreSQL
+  migrator:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # PostgreSQL database settings (override SQLite from base compose file)
+      - GHMIG_DATABASE_TYPE=postgres
+      - GHMIG_DATABASE_DSN=postgres://migrator:migrator_dev_password@postgres:5432/migrator?sslmode=disable
+    # Load all variables from .env file (merges with environment above)
+    env_file:
+      - .env
+    # Remove SQLite volume mount since we're using PostgreSQL
+    volumes:
+      - ./logs:/app/logs
+      - ./configs:/app/configs
+
+volumes:
+  postgres_data:
+    driver: local
+

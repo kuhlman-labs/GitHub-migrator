@@ -26,8 +26,16 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Type string `mapstructure:"type"` // "sqlite" or "postgres"
-	DSN  string `mapstructure:"dsn"`
+	Type                   string `mapstructure:"type"` // "sqlite", "postgres", or "sqlserver"
+	DSN                    string `mapstructure:"dsn"`
+	MaxOpenConns           int    `mapstructure:"max_open_conns"`            // Maximum number of open connections
+	MaxIdleConns           int    `mapstructure:"max_idle_conns"`            // Maximum number of idle connections
+	ConnMaxLifetimeSeconds int    `mapstructure:"conn_max_lifetime_seconds"` // Maximum lifetime of a connection in seconds
+	AutoMigrate            bool   `mapstructure:"auto_migrate"`              // Use GORM AutoMigrate vs SQL migrations
+	// SQL Server specific
+	TrustServerCertificate bool `mapstructure:"trust_server_certificate"` // For SQL Server TLS
+	// PostgreSQL specific
+	SSLMode string `mapstructure:"ssl_mode"` // PostgreSQL SSL mode: disable, require, verify-ca, verify-full
 }
 
 // SourceConfig defines the source repository system configuration
@@ -176,6 +184,12 @@ func bindEnvVars() {
 		"server.port",
 		"database.type",
 		"database.dsn",
+		"database.max_open_conns",
+		"database.max_idle_conns",
+		"database.conn_max_lifetime_seconds",
+		"database.auto_migrate",
+		"database.trust_server_certificate",
+		"database.ssl_mode",
 		"source.type",
 		"source.base_url",
 		"source.token",
@@ -224,6 +238,12 @@ func setDefaults() {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("database.type", "sqlite")
 	viper.SetDefault("database.dsn", "./data/migrator.db")
+	viper.SetDefault("database.max_open_conns", 25)
+	viper.SetDefault("database.max_idle_conns", 5)
+	viper.SetDefault("database.conn_max_lifetime_seconds", 300)
+	viper.SetDefault("database.auto_migrate", false)
+	viper.SetDefault("database.trust_server_certificate", false)
+	viper.SetDefault("database.ssl_mode", "disable")
 	viper.SetDefault("source.type", "github")
 	viper.SetDefault("source.base_url", "https://api.github.com")
 	viper.SetDefault("destination.type", "github")

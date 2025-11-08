@@ -40,6 +40,7 @@ issues:
   exclude-dirs:
     - vendor
     - web
+    - scripts  # Standalone scripts with their own main functions
   exclude-rules:
     - path: _test\.go
       linters:

@@ -52,18 +52,49 @@ build-all: build web-build ## Build both backend and frontend
 
 test: ## Run tests
 	@echo "Running backend tests..."
-	go test -v -race -coverprofile=coverage.out ./...
+	go test -v -race -coverprofile=coverage.out ./cmd/... ./internal/...
 
 test-coverage: ## Run tests with coverage report
-	go test -v -race -coverprofile=coverage.out ./...
+	go test -v -race -coverprofile=coverage.out ./cmd/... ./internal/...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
+test-integration: ## Run all integration tests (SQLite, PostgreSQL, SQL Server)
+	@./scripts/run-integration-tests.sh
+
+test-integration-sqlite: ## Run SQLite integration tests only
+	@echo "Running SQLite integration tests..."
+	@go test -tags=integration -v ./internal/storage -run TestIntegrationSQLite -timeout 30s
+
+test-integration-postgres: ## Run PostgreSQL integration tests (requires Docker)
+	@echo "Starting PostgreSQL..."
+	@docker compose -f docker-compose.postgres.yml up -d postgres
+	@echo "Waiting for PostgreSQL to be ready..."
+	@timeout 30 bash -c 'until docker compose -f docker-compose.postgres.yml exec -T postgres pg_isready -U migrator > /dev/null 2>&1; do sleep 1; done' || true
+	@docker compose -f docker-compose.postgres.yml exec -T postgres psql -U migrator -d migrator -c "CREATE DATABASE migrator_test;" 2>/dev/null || true
+	@echo "Running PostgreSQL integration tests..."
+	@POSTGRES_TEST_DSN="postgres://migrator:migrator_dev_password@localhost:5432/migrator_test?sslmode=disable" \
+		go test -tags=integration -v ./internal/storage -run TestIntegrationPostgreSQL -timeout 30s
+	@echo "Cleaning up PostgreSQL..."
+	@docker compose -f docker-compose.postgres.yml down
+
+test-integration-sqlserver: ## Run SQL Server integration tests (requires Docker)
+	@echo "Starting SQL Server..."
+	@docker compose -f docker-compose.sqlserver.yml up -d sqlserver
+	@echo "Waiting for SQL Server to be ready (this may take a minute)..."
+	@timeout 60 bash -c 'until docker compose -f docker-compose.sqlserver.yml exec -T sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Passw0rd" -Q "SELECT 1" > /dev/null 2>&1; do sleep 1; done' || true
+	@docker compose -f docker-compose.sqlserver.yml exec -T sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Passw0rd" -Q "CREATE DATABASE migrator_test;" 2>/dev/null || true
+	@echo "Running SQL Server integration tests..."
+	@SQLSERVER_TEST_DSN="sqlserver://sa:YourStrong@Passw0rd@localhost:1433?database=migrator_test" \
+		go test -tags=integration -v ./internal/storage -run TestIntegrationSQLServer -timeout 30s
+	@echo "Cleaning up SQL Server..."
+	@docker compose -f docker-compose.sqlserver.yml down
+
 lint: ## Run linters
 	@echo "Linting backend..."
-	$(GOBIN)/golangci-lint run --config .golangci.yml
+	$(GOBIN)/golangci-lint run --config .golangci.yml ./cmd/... ./internal/...
 	@echo "Running security scan..."
-	$(GOBIN)/gosec -exclude=G201,G202 ./...
+	$(GOBIN)/gosec -exclude=G201,G202 -exclude-dir=scripts ./...
 
 web-lint: ## Run frontend linter
 	@echo "Linting frontend..."
@@ -88,11 +119,26 @@ run-dev: ## Run both backend and frontend in dev mode (requires tmux or run in s
 docker-build: ## Build Docker image
 	docker build -t $(DOCKER_IMAGE) .
 
-docker-run: ## Run Docker container
+docker-run: ## Run Docker container with SQLite
 	docker-compose up
+
+docker-run-postgres: ## Run Docker containers with PostgreSQL (production-like setup)
+	docker compose -f docker-compose.yml -f docker-compose.postgres.yml up
+
+docker-run-postgres-detached: ## Run Docker containers with PostgreSQL in background
+	docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 
 docker-down: ## Stop Docker containers
 	docker-compose down
+
+docker-down-postgres: ## Stop Docker containers with PostgreSQL (removes volumes)
+	docker compose -f docker-compose.yml -f docker-compose.postgres.yml down -v
+
+docker-logs: ## View Docker container logs
+	docker-compose logs -f
+
+docker-logs-postgres: ## View Docker container logs (PostgreSQL setup)
+	docker compose -f docker-compose.yml -f docker-compose.postgres.yml logs -f
 
 clean: ## Clean build artifacts
 	rm -rf bin/

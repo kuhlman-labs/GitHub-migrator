@@ -195,6 +195,9 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 	// Count total repositories discovered
 	count, err := h.db.CountRepositories(ctx, nil)
 	if err != nil {
+		if h.handleContextError(ctx, err, "count repositories", r) {
+			return
+		}
 		h.logger.Error("Failed to count repositories", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to get discovery status")
 		return
@@ -365,6 +368,9 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 
 	repos, err := h.db.ListRepositories(ctx, filters)
 	if err != nil {
+		if h.handleContextError(ctx, err, "list repositories", r) {
+			return
+		}
 		h.logger.Error("Failed to list repositories", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
 		return
@@ -468,6 +474,9 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName
 	ctx := r.Context()
 	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get repository", r) {
+			return
+		}
 		h.logger.Error("Failed to get repository", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repository")
 		return
@@ -481,6 +490,9 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName
 	// Get migration history
 	history, err := h.db.GetMigrationHistory(ctx, repo.ID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get migration history", r) {
+			return
+		}
 		h.logger.Error("Failed to get migration history", "error", err)
 		// Continue without history
 		history = []*models.MigrationHistory{}
@@ -1058,6 +1070,9 @@ func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	batches, err := h.db.ListBatches(ctx)
 	if err != nil {
+		if h.handleContextError(ctx, err, "list batches", r) {
+			return
+		}
 		h.logger.Error("Failed to list batches", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batches")
 		return
@@ -1123,6 +1138,9 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1172,6 +1190,9 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	// Get batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1280,6 +1301,8 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // StartBatch handles POST /api/v1/batches/{id}/start
+//
+//nolint:gocyclo // Complexity justified for batch startup validation and orchestration
 func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
@@ -1299,6 +1322,9 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	// Get batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1392,6 +1418,9 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	// Get existing batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1476,6 +1505,9 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 	// Get existing batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1523,6 +1555,9 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	// Get batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1613,6 +1648,9 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 	// Get batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1677,6 +1715,9 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 	// Get batch
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get batch", r) {
+			return
+		}
 		h.logger.Error("Failed to get batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
 		return
@@ -1864,6 +1905,9 @@ func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	repo, err := h.db.GetRepositoryByID(ctx, id)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get repository by ID", r) {
+			return
+		}
 		h.logger.Error("Failed to get repository", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch migration status")
 		return
@@ -1911,6 +1955,9 @@ func (h *Handler) GetMigrationHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	history, err := h.db.GetMigrationHistory(ctx, id)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get migration history", r) {
+			return
+		}
 		h.logger.Error("Failed to get migration history", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch history")
 		return
@@ -1952,6 +1999,9 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logs, err := h.db.GetMigrationLogs(ctx, id, level, phase, limit, offset)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get migration logs", r) {
+			return
+		}
 		h.logger.Error("Failed to get migration logs", "error", err, "repo_id", id)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch logs")
 		return
@@ -2108,6 +2158,9 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.db.GetRepositoryStatsByStatus(ctx)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get repository stats", r) {
+			return
+		}
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch progress")
 		return
@@ -2653,6 +2706,27 @@ func (h *Handler) sendError(w http.ResponseWriter, status int, message string) {
 	h.sendJSON(w, status, map[string]string{"error": message})
 }
 
+// handleContextError checks if an error is due to request cancellation and logs appropriately
+// Returns true if the error is a context cancellation (caller should return early)
+func (h *Handler) handleContextError(ctx context.Context, err error, operation string, r *http.Request) bool {
+	if ctx.Err() == context.Canceled {
+		h.logger.Debug("Request canceled by client",
+			"operation", operation,
+			"path", r.URL.Path,
+			"method", r.Method)
+		return true
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		h.logger.Warn("Request timeout",
+			"operation", operation,
+			"path", r.URL.Path,
+			"method", r.Method,
+			"error", err)
+		return true
+	}
+	return false
+}
+
 func canMigrate(status string) bool {
 	// Cannot migrate repositories marked as wont_migrate
 	if status == string(models.StatusWontMigrate) {
@@ -2718,6 +2792,10 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 
 	orgStats, err := h.db.GetOrganizationStats(ctx)
 	if err != nil {
+		// Check if request was canceled by client (e.g., navigating away)
+		if h.handleContextError(ctx, err, "get organization stats", r) {
+			return
+		}
 		h.logger.Error("Failed to get organization stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch organizations")
 		return
@@ -2733,6 +2811,9 @@ func (h *Handler) GetOrganizationList(w http.ResponseWriter, r *http.Request) {
 
 	orgs, err := h.db.GetDistinctOrganizations(ctx)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get organization list", r) {
+			return
+		}
 		h.logger.Error("Failed to get organization list", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch organization list")
 		return
@@ -2747,6 +2828,9 @@ func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request
 
 	migrations, err := h.db.GetCompletedMigrations(ctx)
 	if err != nil {
+		if h.handleContextError(ctx, err, "get migration history", r) {
+			return
+		}
 		h.logger.Error("Failed to get migration history", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch migration history")
 		return
