@@ -876,10 +876,16 @@ func (c *Client) ListOrganizationProjects(ctx context.Context, org string) (map[
 			ProjectsV2 struct {
 				TotalCount githubv4.Int
 				Nodes      []struct {
+					ID           githubv4.String
 					Title        githubv4.String
 					Repositories struct {
-						Nodes []struct {
+						TotalCount githubv4.Int
+						Nodes      []struct {
 							Name githubv4.String
+						}
+						PageInfo struct {
+							HasNextPage githubv4.Boolean
+							EndCursor   githubv4.String
 						}
 					} `graphql:"repositories(first: 100)"`
 				}
@@ -891,6 +897,7 @@ func (c *Client) ListOrganizationProjects(ctx context.Context, org string) (map[
 		} `graphql:"organization(login: $owner)"`
 	}
 
+	// Paginate through all projects
 	for {
 		variables := map[string]interface{}{
 			"owner":  githubv4.String(org),
@@ -906,9 +913,24 @@ func (c *Client) ListOrganizationProjects(ctx context.Context, org string) (map[
 
 		// Build map of repositories that have projects
 		for _, project := range query.Organization.ProjectsV2.Nodes {
+			// Add repositories from first page
 			for _, repo := range project.Repositories.Nodes {
 				repoName := string(repo.Name)
 				repoProjectMap[repoName] = true
+			}
+
+			// If this project has more than 100 repositories, paginate through them
+			if project.Repositories.PageInfo.HasNextPage {
+				c.logger.Debug("Project has more than 100 repositories, paginating",
+					"project", project.Title,
+					"total_repos", project.Repositories.TotalCount)
+
+				if err := c.paginateProjectRepositories(ctx, string(project.ID), &project.Repositories.PageInfo.EndCursor, repoProjectMap); err != nil {
+					c.logger.Warn("Failed to paginate project repositories",
+						"project", project.Title,
+						"error", err)
+					// Continue with other projects even if one fails
+				}
 			}
 		}
 
@@ -924,6 +946,52 @@ func (c *Client) ListOrganizationProjects(ctx context.Context, org string) (map[
 		"repos_with_projects", len(repoProjectMap))
 
 	return repoProjectMap, nil
+}
+
+// paginateProjectRepositories fetches additional repositories for a project beyond the first 100
+func (c *Client) paginateProjectRepositories(ctx context.Context, projectID string, startCursor *githubv4.String, repoMap map[string]bool) error {
+	var query struct {
+		Node struct {
+			ProjectV2 struct {
+				Repositories struct {
+					Nodes []struct {
+						Name githubv4.String
+					}
+					PageInfo struct {
+						HasNextPage githubv4.Boolean
+						EndCursor   githubv4.String
+					}
+				} `graphql:"repositories(first: 100, after: $cursor)"`
+			} `graphql:"... on ProjectV2"`
+		} `graphql:"node(id: $id)"`
+	}
+
+	cursor := startCursor
+	for cursor != nil {
+		variables := map[string]interface{}{
+			"id":     githubv4.ID(projectID),
+			"cursor": cursor,
+		}
+
+		err := c.QueryWithRetry(ctx, "PaginateProjectRepositories", &query, variables)
+		if err != nil {
+			return err
+		}
+
+		// Add repositories from this page
+		for _, repo := range query.Node.ProjectV2.Repositories.Nodes {
+			repoName := string(repo.Name)
+			repoMap[repoName] = true
+		}
+
+		// Check if there are more pages
+		if !query.Node.ProjectV2.Repositories.PageInfo.HasNextPage {
+			break
+		}
+		cursor = &query.Node.ProjectV2.Repositories.PageInfo.EndCursor
+	}
+
+	return nil
 }
 
 // GetDependencyGraph fetches the dependency graph for a repository using GraphQL API
