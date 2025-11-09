@@ -154,7 +154,7 @@ export function Analytics() {
           />
           <StatCard
             title="Features Detected"
-            value={analytics.feature_stats ? Object.values(analytics.feature_stats).filter(v => typeof v === 'number' && v > 0).length : 0}
+            value={analytics.feature_stats ? Object.entries(analytics.feature_stats).filter(([key, value]) => key !== 'total_repositories' && typeof value === 'number' && value > 0).length : 0}
             color="blue"
           />
         </div>
