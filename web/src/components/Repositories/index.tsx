@@ -111,10 +111,10 @@ export function Repositories() {
   const endIndex = startIndex + pageSize;
   const paginatedRepos = repositories.slice(startIndex, endIndex);
 
-  // Reset page when filters change
+  // Reset page when filters change (watch searchParams which is the source of all filters)
   useEffect(() => {
     setCurrentPage(1);
-  }, [urlFilters.search, urlFilters.status, urlFilters.organization, urlFilters.complexity, urlFilters.size_category]);
+  }, [searchParams]);
 
   return (
     <div className="max-w-7xl mx-auto relative">
