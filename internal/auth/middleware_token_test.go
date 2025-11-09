@@ -46,7 +46,7 @@ func TestMiddleware_TokenInjection(t *testing.T) {
 	// Create request with JWT cookie
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.AddCookie(&http.Cookie{
-		Name:  "gh_migrator_session",
+		Name:  "auth_token",
 		Value: jwtToken,
 	})
 	rec := httptest.NewRecorder()
@@ -92,7 +92,7 @@ func TestMiddleware_TokenInjection_InvalidToken(t *testing.T) {
 	// Create request with invalid JWT cookie
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.AddCookie(&http.Cookie{
-		Name:  "gh_migrator_session",
+		Name:  "auth_token",
 		Value: "invalid-jwt-token",
 	})
 	rec := httptest.NewRecorder()

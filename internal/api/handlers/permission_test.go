@@ -14,22 +14,15 @@ import (
 
 	"github.com/brettkuhlman/github-migrator/internal/auth"
 	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
 )
 
 func TestHandler_ListRepositories_Filtering(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	// Create a test database
-	dbConfig := config.DatabaseConfig{
-		Type: "sqlite",
-		DSN:  ":memory:",
-	}
-	db, err := storage.NewDatabase(dbConfig)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
+	// Create test database with migrations
+	db := setupTestDB(t)
 	defer db.Close()
 
 	// Add test repositories
@@ -92,11 +85,19 @@ func TestHandler_ListRepositories_Filtering(t *testing.T) {
 
 			// Create handler
 			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
+
+			// Create dual client if auth is enabled (needed for permission filtering)
+			var sourceDual *github.DualClient
+			if tt.authEnabled {
+				sourceDual = createTestDualClient(t, logger)
+			}
+
 			handler := &Handler{
-				db:            db,
-				logger:        logger,
-				authConfig:    cfg,
-				sourceBaseURL: server.URL,
+				db:               db,
+				logger:           logger,
+				authConfig:       cfg,
+				sourceBaseURL:    server.URL,
+				sourceDualClient: sourceDual,
 			}
 
 			// Create request with context
@@ -137,23 +138,18 @@ func TestHandler_ListRepositories_Filtering(t *testing.T) {
 func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	// Create a test database
-	dbConfig := config.DatabaseConfig{
-		Type: "sqlite",
-		DSN:  ":memory:",
-	}
-	db, err := storage.NewDatabase(dbConfig)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
+	// Create test database with migrations
+	db := setupTestDB(t)
 	defer db.Close()
 
 	// Add test repository
+	migrationID := int64(123456)
 	repo := &models.Repository{
-		FullName:  "test-org/test-repo",
-		Source:    "github",
-		SourceURL: "https://github.com",
-		Status:    "pending",
+		FullName:          "test-org/test-repo",
+		Source:            "github",
+		SourceURL:         "https://github.com",
+		Status:            "migration_in_progress",
+		SourceMigrationID: &migrationID,
 	}
 	if err := db.SaveRepository(context.Background(), repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
@@ -174,7 +170,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			contextUser:    nil,
 			contextToken:   "",
 			mockGitHub:     func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) },
-			requestBody:    `{"action": "start", "repo_id": 1}`,
+			requestBody:    `{}`,
 			expectedStatus: http.StatusOK,
 		},
 		{
@@ -190,7 +186,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 				}
 				http.NotFound(w, r)
 			},
-			requestBody:    `{"action": "start", "repo_id": 1}`,
+			requestBody:    `{}`,
 			expectedStatus: http.StatusOK,
 		},
 		{
@@ -210,7 +206,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 				}
 				http.NotFound(w, r)
 			},
-			requestBody:    `{"action": "start", "repo_id": 1}`,
+			requestBody:    `{}`,
 			expectedStatus: http.StatusForbidden,
 		},
 	}
@@ -230,8 +226,11 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 				sourceBaseURL: server.URL,
 			}
 
+			// Initialize sourceDualClient for unlock handler requirement
+			handler.sourceDualClient = createTestDualClient(t, logger)
+
 			// Create request with context
-			req := httptest.NewRequest("POST", "/api/repositories/action", strings.NewReader(tt.requestBody))
+			req := httptest.NewRequest("POST", "/api/repositories/test-org/test-repo/unlock", strings.NewReader(tt.requestBody))
 			ctx := req.Context()
 			if tt.contextUser != nil {
 				ctx = context.WithValue(ctx, auth.ContextKeyUser, tt.contextUser)
@@ -240,6 +239,9 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 				ctx = context.WithValue(ctx, auth.ContextKeyGitHubToken, tt.contextToken)
 			}
 			req = req.WithContext(ctx)
+
+			// Set path value for fullName (includes action)
+			req.SetPathValue("fullName", "test-org/test-repo/unlock")
 
 			rec := httptest.NewRecorder()
 
@@ -257,22 +259,17 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	// Create a test database
-	dbConfig := config.DatabaseConfig{
-		Type: "sqlite",
-		DSN:  ":memory:",
-	}
-	db, err := storage.NewDatabase(dbConfig)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
+	// Create test database with migrations
+	db := setupTestDB(t)
 	defer db.Close()
 
-	// Add test repositories
-	repo1 := &models.Repository{FullName: "org1/repo1", Source: "github", SourceURL: "https://github.com"}
-	repo2 := &models.Repository{FullName: "org2/repo2", Source: "github", SourceURL: "https://github.com"}
+	// Add test repositories with valid status for batch assignment
+	repo1 := &models.Repository{FullName: "test-org/repo1", Source: "github", SourceURL: "https://github.com", Status: "pending"}
+	repo2 := &models.Repository{FullName: "test-org/repo2", Source: "github", SourceURL: "https://github.com", Status: "pending"}
+	repo3 := &models.Repository{FullName: "other-org/repo3", Source: "github", SourceURL: "https://github.com", Status: "pending"}
 	db.SaveRepository(context.Background(), repo1)
 	db.SaveRepository(context.Background(), repo2)
+	db.SaveRepository(context.Background(), repo3)
 
 	// Create a test batch
 	batch := &models.Batch{Name: "Test Batch", Status: "pending"}
@@ -295,7 +292,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			contextUser:    nil,
 			contextToken:   "",
 			mockGitHub:     func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) },
-			requestBody:    `{"batch_id": 1, "repository_names": ["org1/repo1"]}`,
+			requestBody:    `{"repository_ids": [1]}`,
 			expectedStatus: http.StatusOK,
 		},
 		{
@@ -306,19 +303,19 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
 					resp := []map[string]interface{}{
-						{"organization": map[string]string{"login": "org1"}, "state": "active"},
+						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
 					}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
-				if r.URL.Path == "/user/memberships/orgs/org1" {
+				if r.URL.Path == "/user/memberships/orgs/test-org" {
 					resp := map[string]interface{}{"state": "active", "role": "admin"}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
 			},
-			requestBody:    `{"batch_id": 1, "repository_names": ["org1/repo1"]}`,
+			requestBody:    `{"repository_ids": [2]}`,
 			expectedStatus: http.StatusOK,
 		},
 		{
@@ -334,7 +331,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 				}
 				http.NotFound(w, r)
 			},
-			requestBody:    `{"batch_id": 1, "repository_names": ["org2/repo2"]}`,
+			requestBody:    `{"repository_ids": [3]}`,
 			expectedStatus: http.StatusForbidden,
 		},
 	}
@@ -354,8 +351,13 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 				sourceBaseURL: server.URL,
 			}
 
+			// Initialize sourceDualClient when auth is enabled
+			if tt.authEnabled {
+				handler.sourceDualClient = createTestDualClient(t, logger)
+			}
+
 			// Create request with context
-			req := httptest.NewRequest("POST", "/api/batch/repositories", strings.NewReader(tt.requestBody))
+			req := httptest.NewRequest("POST", "/api/batch/1/repositories", strings.NewReader(tt.requestBody))
 			ctx := req.Context()
 			if tt.contextUser != nil {
 				ctx = context.WithValue(ctx, auth.ContextKeyUser, tt.contextUser)
@@ -364,6 +366,9 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 				ctx = context.WithValue(ctx, auth.ContextKeyGitHubToken, tt.contextToken)
 			}
 			req = req.WithContext(ctx)
+
+			// Set path value for the batch ID
+			req.SetPathValue("id", "1")
 
 			rec := httptest.NewRecorder()
 

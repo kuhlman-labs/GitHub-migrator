@@ -60,7 +60,8 @@ func TestPermissionChecker_HasFullAccess_EnterpriseAdmin(t *testing.T) {
 func TestPermissionChecker_HasFullAccess_PrivilegedTeam(t *testing.T) {
 	// Mock GitHub API for team membership check
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs/test-org/teams/admin-team" {
+		// Correct path: /orgs/{org}/teams/{team-slug}/memberships/{username}
+		if r.URL.Path == "/orgs/test-org/teams/admin-team/memberships/testuser" {
 			resp := map[string]interface{}{
 				"state": "active",
 				"role":  "member",
