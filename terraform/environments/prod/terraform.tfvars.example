@@ -55,13 +55,31 @@ logging_level  = "info"
 logging_format = "json"
 
 # Auth Configuration
-auth_enabled                     = true
-auth_github_oauth_client_id      = "YOUR_OAUTH_CLIENT_ID"
-auth_github_oauth_client_secret  = "YOUR_OAUTH_CLIENT_SECRET"
-auth_callback_url                = "https://github-migrator-prod.azurewebsites.net/api/v1/auth/callback"
-auth_frontend_url                = "https://github-migrator-prod.azurewebsites.net"
-auth_session_secret              = "YOUR_SESSION_SECRET_MIN_32_CHARS"
-auth_session_duration_hours      = 24
+auth_enabled                    = true
+auth_github_oauth_client_id     = "YOUR_OAUTH_CLIENT_ID"
+auth_github_oauth_client_secret = "YOUR_OAUTH_CLIENT_SECRET"
+auth_callback_url               = "https://github-migrator-prod.azurewebsites.net/api/v1/auth/callback"
+auth_frontend_url               = "https://github-migrator-prod.azurewebsites.net"
+auth_session_secret             = "YOUR_SESSION_SECRET_MIN_32_CHARS"
+auth_session_duration_hours     = 24
+
+# Auth OAuth Configuration (optional)
+# auth_github_oauth_base_url = "https://api.github.com"  # Defaults to source URL if not specified
+
+# Auth Authorization Rules
+# Example 1: Enterprise Admin Only
+# auth_require_enterprise_admin = true
+# auth_require_enterprise_slug  = "my-enterprise"
+
+# Example 2: Enterprise Members + Repository-Level Permissions
+# auth_require_enterprise_membership = true
+# auth_require_enterprise_slug       = "my-enterprise"
+# auth_privileged_teams              = ["my-org/migration-admins", "my-org/platform-team"]
+
+# Example 3: Organization/Team Membership
+# auth_require_org_membership  = ["my-org"]
+# auth_require_team_membership = ["my-org/platform-team"]
+# auth_privileged_teams        = ["my-org/migration-admins"]
 
 # CORS Configuration (restrict to your domain in production)
 cors_allowed_origins = ["https://github-migrator-prod.azurewebsites.net"]

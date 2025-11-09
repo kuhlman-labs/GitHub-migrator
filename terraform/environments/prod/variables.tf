@@ -322,6 +322,24 @@ variable "auth_require_enterprise_slug" {
   default     = ""
 }
 
+variable "auth_require_enterprise_membership" {
+  description = "Require user to be a member of the enterprise (any role, not just admin)"
+  type        = bool
+  default     = false
+}
+
+variable "auth_github_oauth_base_url" {
+  description = "GitHub OAuth base URL (defaults to source URL if not specified)"
+  type        = string
+  default     = ""
+}
+
+variable "auth_privileged_teams" {
+  description = "List of privileged teams with full migration access in format 'org/team-slug' (empty = no privileged teams)"
+  type        = list(string)
+  default     = []
+}
+
 # CORS Configuration
 variable "cors_allowed_origins" {
   description = "Allowed origins for CORS"
