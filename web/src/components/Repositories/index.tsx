@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import type { Repository, RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -6,6 +6,7 @@ import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
 import { TimestampDisplay } from '../common/TimestampDisplay';
+import { Pagination } from '../common/Pagination';
 import { formatBytes } from '../../utils/format';
 import { useRepositories } from '../../hooks/useQueries';
 import { searchParamsToFilters, filtersToSearchParams } from '../../utils/filters';
@@ -35,6 +36,8 @@ export function Repositories() {
   
   // Initialize local search from URL (directly in state initialization)
   const [localSearch, setLocalSearch] = useState(urlFilters.search || '');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 12;
   
   // Fetch repositories with filters - backend now supports all filters
   const { data, isLoading, isFetching} = useRepositories(urlFilters);
@@ -102,6 +105,17 @@ export function Repositories() {
 
   const activeFilterCount = getActiveFilterCount();
 
+  // Paginate
+  const totalItems = repositories.length;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedRepos = repositories.slice(startIndex, endIndex);
+
+  // Reset page when filters change (watch searchParams which is the source of all filters)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchParams]);
+
   return (
     <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
@@ -112,8 +126,14 @@ export function Repositories() {
           <div>
             <h1 className="text-2xl font-semibold text-gh-text-primary">Repositories</h1>
             <p className="text-sm text-gh-text-secondary mt-1">
-              {repositories.length} repositories found
-              {activeFilterCount > 0 && ` with ${activeFilterCount} active filter${activeFilterCount > 1 ? 's' : ''}`}
+              {totalItems > 0 ? (
+                <>
+                  Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} repositories
+                  {activeFilterCount > 0 && ` with ${activeFilterCount} active filter${activeFilterCount > 1 ? 's' : ''}`}
+                </>
+              ) : (
+                'No repositories found'
+              )}
             </p>
           </div>
           <Link
@@ -285,11 +305,21 @@ export function Repositories() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {repositories.map((repo) => (
-            <RepositoryCard key={repo.id} repository={repo} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+            {paginatedRepos.map((repo) => (
+              <RepositoryCard key={repo.id} repository={repo} />
+            ))}
+          </div>
+          {totalItems > pageSize && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
+          )}
+        </>
       )}
     </div>
   );

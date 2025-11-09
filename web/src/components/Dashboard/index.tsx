@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
+import { Pagination } from '../common/Pagination';
 import { useOrganizations } from '../../hooks/useQueries';
 import { useStartDiscovery } from '../../hooks/useMutations';
 
@@ -11,6 +12,8 @@ export function Dashboard() {
   const startDiscoveryMutation = useStartDiscovery();
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 12;
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [discoveryType, setDiscoveryType] = useState<'organization' | 'enterprise'>('organization');
   const [organization, setOrganization] = useState('');
@@ -61,6 +64,17 @@ export function Dashboard() {
 
   const totalRepos = organizations.reduce((sum, org) => sum + org.total_repos, 0);
 
+  // Paginate
+  const totalItems = filteredOrgs.length;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedOrgs = filteredOrgs.slice(startIndex, endIndex);
+
+  // Reset page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
   return (
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
@@ -91,7 +105,13 @@ export function Dashboard() {
       )}
 
       <div className="mb-4 text-sm text-gh-text-secondary">
-        Showing {filteredOrgs.length} organizations with {totalRepos} total repositories
+        {totalItems > 0 ? (
+          <>
+            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} organizations with {totalRepos} total repositories
+          </>
+        ) : (
+          'No organizations found'
+        )}
       </div>
 
       {isLoading ? (
@@ -101,11 +121,21 @@ export function Dashboard() {
           No organizations found
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredOrgs.map((org) => (
-            <OrganizationCard key={org.organization} organization={org} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+            {paginatedOrgs.map((org) => (
+              <OrganizationCard key={org.organization} organization={org} />
+            ))}
+          </div>
+          {totalItems > pageSize && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
+          )}
+        </>
       )}
 
       {showDiscoveryModal && (
