@@ -97,11 +97,12 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 		{
 			name: "user has admin permission",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
+				if r.URL.Path == "/graphql" {
 					resp := map[string]interface{}{
-						"permission": "admin",
-						"user": map[string]interface{}{
-							"login": "testuser",
+						"data": map[string]interface{}{
+							"repository": map[string]interface{}{
+								"viewerPermission": "ADMIN",
+							},
 						},
 					}
 					json.NewEncoder(w).Encode(resp)
@@ -115,11 +116,12 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 		{
 			name: "user has write permission but not admin",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
+				if r.URL.Path == "/graphql" {
 					resp := map[string]interface{}{
-						"permission": "write",
-						"user": map[string]interface{}{
-							"login": "testuser",
+						"data": map[string]interface{}{
+							"repository": map[string]interface{}{
+								"viewerPermission": "WRITE",
+							},
 						},
 					}
 					json.NewEncoder(w).Encode(resp)
@@ -133,6 +135,15 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 		{
 			name: "user has no access to repo",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/graphql" {
+					resp := map[string]interface{}{
+						"errors": []map[string]interface{}{
+							{"message": "Could not resolve to a Repository with the name 'test-repo'."},
+						},
+					}
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
 				http.NotFound(w, r)
 			},
 			expectedAdmin: false,

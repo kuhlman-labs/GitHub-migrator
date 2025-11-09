@@ -177,9 +177,10 @@ export function BatchManagement() {
       }
       alert(`Queued ${failedRepos.length} repositories for retry`);
       await loadBatchRepositories(selectedBatch.id);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to retry batch failures:', error);
-      alert('Failed to retry failed repositories');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to retry failed repositories';
+      alert(errorMessage);
     }
   };
 
@@ -193,9 +194,10 @@ export function BatchManagement() {
       if (selectedBatch) {
         await loadBatchRepositories(selectedBatch.id);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to retry repository:', error);
-      alert('Failed to retry repository');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to retry repository';
+      alert(errorMessage);
     }
   };
 

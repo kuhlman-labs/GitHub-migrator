@@ -568,23 +568,48 @@ func (a *Authorizer) IsOrgAdmin(ctx context.Context, username string, org string
 }
 
 // HasRepoAdminPermission checks if a user has admin permission on a specific repository
+// Uses GraphQL to check the viewer's (authenticated user's) permission directly
 func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string, org string, repo string, token string) (bool, error) {
-	// Use the /repos/{owner}/{repo}/collaborators/{username}/permission endpoint
-	url := fmt.Sprintf("%s/repos/%s/%s/collaborators/%s/permission", a.baseURL, org, repo, username)
+	// Use GraphQL API to check viewer's permission (more reliable than REST API)
+	graphqlURL := "https://api.github.com/graphql"
+	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
+		// For GHES, GraphQL endpoint is at /api/graphql
+		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
+	}
 
-	a.logger.Debug("Checking repository admin permission",
-		"url", url,
+	query := `query($owner: String!, $name: String!) {
+		repository(owner: $owner, name: $name) {
+			viewerPermission
+		}
+	}`
+
+	payload := map[string]interface{}{
+		"query": query,
+		"variables": map[string]string{
+			"owner": org,
+			"name":  repo,
+		},
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal GraphQL query: %w", err)
+	}
+
+	a.logger.Debug("Checking repository admin permission via GraphQL",
+		"url", graphqlURL,
 		"username", username,
 		"org", org,
 		"repo", repo)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", graphqlURL, strings.NewReader(string(jsonPayload)))
 	if err != nil {
 		return false, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -593,33 +618,53 @@ func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		// User doesn't have access to the repository
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("github GraphQL API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data struct {
+			Repository struct {
+				ViewerPermission string `json:"viewerPermission"` // "ADMIN", "WRITE", "READ", "NONE"
+			} `json:"repository"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return false, fmt.Errorf("failed to parse GraphQL response: %w", err)
+	}
+
+	// Check for GraphQL errors
+	if len(result.Errors) > 0 {
+		errorMsg := result.Errors[0].Message
+		a.logger.Debug("GraphQL query returned errors",
+			"error", errorMsg,
+			"repo", fmt.Sprintf("%s/%s", org, repo))
+		
+		// Provide more context for common errors
+		if strings.Contains(errorMsg, "Could not resolve to a Repository") {
+			a.logger.Info("Repository not found or no access",
+				"repo", fmt.Sprintf("%s/%s", org, repo),
+				"username", username,
+				"hint", "Repository may not exist, user may lack access, or name may have incorrect case (GitHub is case-sensitive)")
+		}
+		
+		// If repo not found or user doesn't have access, treat as no permission
 		return false, nil
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return false, fmt.Errorf("github API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var permissionResponse struct {
-		Permission string `json:"permission"` // "admin", "write", "read", "none"
-		User       struct {
-			Login string `json:"login"`
-		} `json:"user"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&permissionResponse); err != nil {
-		return false, err
-	}
-
-	hasAdmin := permissionResponse.Permission == "admin"
+	// Check if user has ADMIN permission
+	hasAdmin := result.Data.Repository.ViewerPermission == "ADMIN"
 
 	a.logger.Debug("Repository permission check result",
 		"username", username,
-		"org", org,
-		"repo", repo,
-		"permission", permissionResponse.Permission,
+		"repo", fmt.Sprintf("%s/%s", org, repo),
+		"permission", result.Data.Repository.ViewerPermission,
 		"has_admin", hasAdmin)
 
 	return hasAdmin, nil

@@ -400,30 +400,10 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Filter repositories by user permissions if auth is enabled
-	if h.authConfig.Enabled {
-		user, hasUser := auth.GetUserFromContext(ctx)
-		token, hasToken := auth.GetTokenFromContext(ctx)
-
-		if hasUser && hasToken && h.sourceDualClient != nil {
-			// Create permission checker
-			apiClient := h.sourceDualClient.APIClient()
-			checker := auth.NewPermissionChecker(apiClient, h.authConfig, h.logger, h.sourceBaseURL)
-
-			// Filter repositories based on user permissions
-			filteredRepos, err := checker.FilterRepositoriesByAccess(ctx, user, token, repos)
-			if err != nil {
-				h.logger.Error("Failed to filter repositories by permissions", "error", err)
-				// Continue with unfiltered list rather than failing
-			} else {
-				repos = filteredRepos
-				h.logger.Debug("Filtered repositories by user permissions",
-					"user", user.Login,
-					"original_count", len(repos),
-					"filtered_count", len(filteredRepos))
-			}
-		}
-	}
+	// Note: We don't filter repositories by permissions here for performance reasons.
+	// Instead, permission checks are enforced at the action level (when users try to
+	// migrate, add to batch, etc.). This provides better UX - users see all repos
+	// immediately and get clear error messages only when they attempt unauthorized actions.
 
 	// Get total count if pagination is used
 	response := map[string]interface{}{
@@ -1890,6 +1870,17 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check user has permission to access all repositories
+	repoFullNames := make([]string, len(reposToRetry))
+	for i, repo := range reposToRetry {
+		repoFullNames[i] = repo.FullName
+	}
+	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+		h.logger.Warn("Retry batch access denied", "batch_id", batchID, "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
 	// Queue repositories for retry
 	retriedIDs := make([]int64, 0, len(reposToRetry))
 	initiatingUser := getInitiatingUser(ctx)
@@ -1968,6 +1959,17 @@ func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 
 	if len(repos) == 0 {
 		h.sendError(w, http.StatusNotFound, "No repositories found")
+		return
+	}
+
+	// Check user has permission to access all repositories
+	repoFullNames := make([]string, len(repos))
+	for i, repo := range repos {
+		repoFullNames[i] = repo.FullName
+	}
+	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+		h.logger.Warn("Start migration access denied", "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
 		return
 	}
 

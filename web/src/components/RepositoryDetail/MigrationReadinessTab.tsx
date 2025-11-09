@@ -81,9 +81,10 @@ export function MigrationReadinessTab({
       });
       
       setEditingDestination(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save destination:', error);
-      alert('Failed to save destination. Please try again.');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to save destination. Please try again.';
+      alert(errorMessage);
     }
   };
 

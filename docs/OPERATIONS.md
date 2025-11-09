@@ -340,8 +340,9 @@ Once a user passes the application-level authorization checks above, their repos
 #### Permission Levels
 
 1. **Enterprise Admins** → Can migrate **all repositories**
-   - Determined by `require_enterprise_admin` setting
+   - Automatically granted when `require_enterprise_slug` is configured
    - Have unrestricted access to all migration operations
+   - **Note:** This is independent of `require_enterprise_admin` (which controls application access)
 
 2. **Privileged Team Members** → Can migrate **all repositories**
    - Configured via `privileged_teams` setting

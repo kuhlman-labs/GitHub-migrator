@@ -14,7 +14,6 @@ import (
 
 	"github.com/brettkuhlman/github-migrator/internal/auth"
 	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
 )
 
@@ -54,26 +53,14 @@ func TestHandler_ListRepositories_Filtering(t *testing.T) {
 			expectedCount: 3,
 		},
 		{
-			name:         "org admin sees only their org repos",
+			name:         "auth enabled - returns all repos (filtering happens at action level)",
 			authEnabled:  true,
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{
-						{"organization": map[string]string{"login": "org1"}, "state": "active"},
-					}
-					json.NewEncoder(w).Encode(resp)
-					return
-				}
-				if r.URL.Path == "/user/memberships/orgs/org1" {
-					resp := map[string]interface{}{"state": "active", "role": "admin"}
-					json.NewEncoder(w).Encode(resp)
-					return
-				}
-				http.NotFound(w, r)
+				http.NotFound(w, r) // No API calls should be made for listing
 			},
-			expectedCount: 2, // Only org1 repos
+			expectedCount: 3, // All repos visible, permission checks happen on actions
 		},
 	}
 
@@ -86,18 +73,12 @@ func TestHandler_ListRepositories_Filtering(t *testing.T) {
 			// Create handler
 			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
 
-			// Create dual client if auth is enabled (needed for permission filtering)
-			var sourceDual *github.DualClient
-			if tt.authEnabled {
-				sourceDual = createTestDualClient(t, logger)
-			}
-
 			handler := &Handler{
-				db:               db,
-				logger:           logger,
-				authConfig:       cfg,
-				sourceBaseURL:    server.URL,
-				sourceDualClient: sourceDual,
+				db:            db,
+				logger:        logger,
+				authConfig:    cfg,
+				sourceBaseURL: server.URL,
+				// No sourceDualClient needed - ListRepositories doesn't filter anymore
 			}
 
 			// Create request with context
@@ -130,6 +111,132 @@ func TestHandler_ListRepositories_Filtering(t *testing.T) {
 
 			if len(response.Repositories) != tt.expectedCount {
 				t.Errorf("expected %d repos, got %d", tt.expectedCount, len(response.Repositories))
+			}
+		})
+	}
+}
+
+func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create test database with migrations
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Add test repository
+	repo := &models.Repository{
+		FullName:  "test-org/test-repo",
+		Source:    "github",
+		SourceURL: "https://github.com",
+		Status:    "pending",
+	}
+	if err := db.SaveRepository(context.Background(), repo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		authEnabled    bool
+		contextUser    *auth.GitHubUser
+		contextToken   string
+		mockGitHub     func(w http.ResponseWriter, r *http.Request)
+		requestBody    string
+		expectedStatus int
+	}{
+		{
+			name:           "auth disabled - allows migration",
+			authEnabled:    false,
+			contextUser:    nil,
+			contextToken:   "",
+			mockGitHub:     func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) },
+			requestBody:    `{"full_names": ["test-org/test-repo"], "dry_run": true}`,
+			expectedStatus: http.StatusAccepted,
+		},
+		{
+			name:         "auth enabled - repo admin can start migration",
+			authEnabled:  true,
+			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
+			contextToken: "test-token",
+			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/user/memberships/orgs" {
+					resp := []map[string]interface{}{
+						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
+					}
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
+				if r.URL.Path == "/user/memberships/orgs/test-org" {
+					resp := map[string]interface{}{"state": "active", "role": "admin"}
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
+				http.NotFound(w, r)
+			},
+			requestBody:    `{"full_names": ["test-org/test-repo"], "dry_run": true}`,
+			expectedStatus: http.StatusAccepted,
+		},
+		{
+			name:         "auth enabled - non-admin cannot start migration",
+			authEnabled:  true,
+			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
+			contextToken: "test-token",
+			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/user/memberships/orgs" {
+					resp := []map[string]interface{}{}
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
+				if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
+					resp := map[string]interface{}{"permission": "write"}
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
+				http.NotFound(w, r)
+			},
+			requestBody:    `{"full_names": ["test-org/test-repo"], "dry_run": true}`,
+			expectedStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock GitHub server
+			server := httptest.NewServer(http.HandlerFunc(tt.mockGitHub))
+			defer server.Close()
+
+			// Create handler
+			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
+			handler := &Handler{
+				db:            db,
+				logger:        logger,
+				authConfig:    cfg,
+				sourceBaseURL: server.URL,
+			}
+
+			// Initialize sourceDualClient when auth is enabled
+			if tt.authEnabled {
+				handler.sourceDualClient = createTestDualClient(t, logger)
+			}
+
+			// Create request with context
+			req := httptest.NewRequest("POST", "/api/migrations/start", strings.NewReader(tt.requestBody))
+			ctx := req.Context()
+			if tt.contextUser != nil {
+				ctx = context.WithValue(ctx, auth.ContextKeyUser, tt.contextUser)
+			}
+			if tt.contextToken != "" {
+				ctx = context.WithValue(ctx, auth.ContextKeyGitHubToken, tt.contextToken)
+			}
+			req = req.WithContext(ctx)
+
+			rec := httptest.NewRecorder()
+
+			// Execute request
+			handler.StartMigration(rec, req)
+
+			// Verify response
+			if rec.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d: %s", tt.expectedStatus, rec.Code, rec.Body.String())
 			}
 		})
 	}

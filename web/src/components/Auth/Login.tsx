@@ -7,6 +7,7 @@ export function Login() {
   const requiresOrg = hasRules?.requires_org_membership;
   const requiresTeam = hasRules?.requires_team_membership;
   const requiresEnterpriseAdmin = hasRules?.requires_enterprise_admin;
+  const requiresEnterpriseMembership = hasRules?.requires_enterprise_membership;
 
   return (
     <div className="min-h-screen bg-gh-canvas-inset flex items-center justify-center px-4">
@@ -52,6 +53,11 @@ export function Login() {
                 {requiresEnterpriseAdmin && (
                   <li>
                     • Enterprise admin: {hasRules.enterprise}
+                  </li>
+                )}
+                {requiresEnterpriseMembership && !requiresEnterpriseAdmin && (
+                  <li>
+                    • Enterprise member: {hasRules.enterprise}
                   </li>
                 )}
               </ul>

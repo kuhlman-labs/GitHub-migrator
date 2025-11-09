@@ -19,6 +19,7 @@ interface AuthConfig {
     requires_team_membership?: boolean;
     required_teams?: string[];
     requires_enterprise_admin?: boolean;
+    requires_enterprise_membership?: boolean;
     enterprise?: string;
   };
 }

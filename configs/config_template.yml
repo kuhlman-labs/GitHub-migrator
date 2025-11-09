@@ -353,6 +353,8 @@ auth:
     # Enterprise slug for admin/membership verification
     # Required if require_enterprise_admin or require_enterprise_membership is true
     # This is the slug of your GitHub Enterprise
+    # NOTE: If configured, enterprise admins automatically get FULL MIGRATION ACCESS
+    #       (can migrate any repository), regardless of require_enterprise_admin setting
     # require_enterprise_slug: "my-enterprise"
     
     # Privileged teams (Full Migration Access)

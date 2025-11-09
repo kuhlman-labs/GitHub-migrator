@@ -134,11 +134,12 @@ func TestPermissionChecker_HasRepoAccess_RepoAdmin(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
+		if r.URL.Path == "/graphql" {
 			resp := map[string]interface{}{
-				"permission": "admin",
-				"user": map[string]interface{}{
-					"login": "testuser",
+				"data": map[string]interface{}{
+					"repository": map[string]interface{}{
+						"viewerPermission": "ADMIN",
+					},
 				},
 			}
 			json.NewEncoder(w).Encode(resp)
@@ -173,11 +174,12 @@ func TestPermissionChecker_HasRepoAccess_NoPermission(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
+		if r.URL.Path == "/graphql" {
 			resp := map[string]interface{}{
-				"permission": "write",
-				"user": map[string]interface{}{
-					"login": "testuser",
+				"data": map[string]interface{}{
+					"repository": map[string]interface{}{
+						"viewerPermission": "WRITE",
+					},
 				},
 			}
 			json.NewEncoder(w).Encode(resp)
@@ -265,11 +267,12 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 					http.NotFound(w, r)
 					return
 				}
-				if r.URL.Path == "/repos/other-org/repo1/collaborators/testuser/permission" {
+				if r.URL.Path == "/graphql" {
 					resp := map[string]interface{}{
-						"permission": "read",
-						"user": map[string]interface{}{
-							"login": "testuser",
+						"data": map[string]interface{}{
+							"repository": map[string]interface{}{
+								"viewerPermission": "READ",
+							},
 						},
 					}
 					json.NewEncoder(w).Encode(resp)
@@ -344,9 +347,13 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 					return
 				}
 				// No repo-level admin for org2/repo3
-				if r.URL.Path == "/repos/org2/repo3/collaborators/testuser/permission" {
+				if r.URL.Path == "/graphql" {
 					resp := map[string]interface{}{
-						"permission": "read",
+						"data": map[string]interface{}{
+							"repository": map[string]interface{}{
+								"viewerPermission": "READ",
+							},
+						},
 					}
 					json.NewEncoder(w).Encode(resp)
 					return

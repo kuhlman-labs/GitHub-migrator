@@ -31,16 +31,18 @@ func NewPermissionChecker(client *github.Client, cfg *config.AuthConfig, logger 
 
 // HasFullAccess checks if a user has full access to all repositories
 // Returns true if user is:
-// - Enterprise admin (when RequireEnterpriseAdmin is true)
+// - Enterprise admin (when an enterprise slug is configured)
 // - Member of a privileged team
 func (p *PermissionChecker) HasFullAccess(ctx context.Context, user *GitHubUser, token string) (bool, error) {
-	// Check if user is enterprise admin (if enterprise admin requirement is configured)
-	if p.config.AuthorizationRules.RequireEnterpriseAdmin && p.config.AuthorizationRules.RequireEnterpriseSlug != "" {
+	// Check if user is enterprise admin (whenever an enterprise is configured)
+	// Note: This is separate from RequireEnterpriseAdmin which controls application access
+	// Enterprise admins always get full migration privileges when an enterprise is configured
+	if p.config.AuthorizationRules.RequireEnterpriseSlug != "" {
 		isAdmin, err := p.authorizer.CheckEnterpriseAdmin(ctx, user.Login, p.config.AuthorizationRules.RequireEnterpriseSlug, token)
 		if err != nil {
 			p.logger.Warn("Failed to check enterprise admin status", "user", user.Login, "error", err)
 		} else if isAdmin {
-			p.logger.Debug("User has full access as enterprise admin", "user", user.Login)
+			p.logger.Info("User has full migration access as enterprise admin", "user", user.Login)
 			return true, nil
 		}
 	}
@@ -195,12 +197,36 @@ func (p *PermissionChecker) ValidateRepositoryAccess(ctx context.Context, user *
 		return nil // User has full access
 	}
 
-	// Get user's admin organizations for efficient checking
-	adminOrgs, err := p.GetUserOrganizationsWithAdminRole(ctx, user, token)
-	if err != nil {
-		p.logger.Warn("Failed to get user's admin organizations", "user", user.Login, "error", err)
-		adminOrgs = make(map[string]bool)
+	// Extract unique organizations from the repositories
+	// Only check admin status for these specific orgs (optimization)
+	uniqueOrgs := make(map[string]bool)
+	for _, fullName := range repoFullNames {
+		parts := strings.SplitN(fullName, "/", 2)
+		if len(parts) == 2 {
+			uniqueOrgs[parts[0]] = true
+		}
 	}
+
+	// Check admin status only for the specific organizations of these repositories
+	adminOrgs := make(map[string]bool)
+	for org := range uniqueOrgs {
+		isAdmin, err := p.authorizer.IsOrgAdmin(ctx, user.Login, org, token)
+		if err != nil {
+			p.logger.Debug("Failed to check org admin status (continuing with repo check)",
+				"user", user.Login,
+				"org", org,
+				"error", err)
+			continue
+		}
+		if isAdmin {
+			adminOrgs[org] = true
+		}
+	}
+
+	p.logger.Debug("Checked admin status for relevant organizations",
+		"user", user.Login,
+		"total_orgs_checked", len(uniqueOrgs),
+		"admin_org_count", len(adminOrgs))
 
 	var inaccessibleRepos []string
 
@@ -210,21 +236,25 @@ func (p *PermissionChecker) ValidateRepositoryAccess(ctx context.Context, user *
 			inaccessibleRepos = append(inaccessibleRepos, fullName)
 			continue
 		}
-		org := parts[0]
+		org, repo := parts[0], parts[1]
 
 		// If user is org admin, they have access
 		if adminOrgs[org] {
 			continue
 		}
 
-		// Check individual repository access
-		hasAccess, err := p.HasRepoAccess(ctx, user, token, fullName)
+		// We already checked org admin above, so skip straight to repo-level check
+		// (avoids redundant IsOrgAdmin API call in HasRepoAccess)
+		hasRepoAdmin, err := p.authorizer.HasRepoAdminPermission(ctx, user.Login, org, repo, token)
 		if err != nil {
-			p.logger.Warn("Failed to check repository access", "user", user.Login, "repo", fullName, "error", err)
+			p.logger.Warn("Failed to check repository admin permission",
+				"user", user.Login,
+				"repo", fullName,
+				"error", err)
 			inaccessibleRepos = append(inaccessibleRepos, fullName)
 			continue
 		}
-		if !hasAccess {
+		if !hasRepoAdmin {
 			inaccessibleRepos = append(inaccessibleRepos, fullName)
 		}
 	}
