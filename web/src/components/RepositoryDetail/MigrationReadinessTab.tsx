@@ -5,6 +5,7 @@ import { api } from '../../services/api';
 import { Badge } from '../common/Badge';
 import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 import { useUpdateRepository } from '../../hooks/useMutations';
+import { formatBytes } from '../../utils/format';
 
 interface MigrationReadinessTabProps {
   repository: Repository;
@@ -33,6 +34,17 @@ export function MigrationReadinessTab({
   const [excludeReleases, setExcludeReleases] = useState(repository.exclude_releases);
   const [savingOptions, setSavingOptions] = useState(false);
   const hasOptionsChanges = excludeReleases !== repository.exclude_releases;
+
+  // Validation state
+  const [expandedValidation, setExpandedValidation] = useState(false);
+  
+  // Determine validation status
+  const hasBlockingIssues = repository.has_oversized_repository || 
+    repository.has_oversized_commits || 
+    repository.has_long_refs || 
+    repository.has_blocking_files;
+  const hasWarnings = (repository.estimated_metadata_size && repository.estimated_metadata_size > 35 * 1024 * 1024 * 1024) || 
+    repository.has_large_file_warnings;
 
   const canMigrate = ['pending', 'dry_run_complete', 'dry_run_failed', 'pre_migration_complete', 'migration_failed', 'rolled_back'].includes(
     repository.status
@@ -248,6 +260,104 @@ export function MigrationReadinessTab({
           <ComplexityInfoModal />
         </div>
       </div>
+
+      {/* Validation Issues - Only show if there are issues */}
+      {(hasBlockingIssues || hasWarnings) && (
+        <div className="bg-white rounded-lg shadow-sm border-2 border-red-200">
+          <button
+            onClick={() => setExpandedValidation(!expandedValidation)}
+            className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              {hasBlockingIssues ? (
+                <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 text-yellow-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+              )}
+              <div className="text-left">
+                <h3 className="font-semibold text-gray-900">
+                  {hasBlockingIssues ? '⚠️ Validation Issues (Blocking)' : '⚠ Validation Warnings'}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {hasBlockingIssues 
+                    ? 'These issues must be resolved before migration' 
+                    : 'Repository can migrate but has warnings to review'}
+                </p>
+              </div>
+            </div>
+            <svg 
+              className={`w-5 h-5 text-gray-400 transition-transform ${expandedValidation ? 'rotate-180' : ''}`}
+              fill="none" 
+              viewBox="0 0 24 24" 
+              strokeWidth={2} 
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {expandedValidation && (
+            <div className="px-6 pb-4 border-t border-gray-200 pt-4">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Issues Found:</h4>
+                  <ul className="space-y-2 text-sm">
+                    {repository.has_oversized_repository && (
+                      <li className="flex items-start gap-2 text-red-700">
+                        <span className="text-red-600 font-bold">✗</span>
+                        <span>Repository size exceeds 40 GB limit ({formatBytes(repository.total_size)})</span>
+                      </li>
+                    )}
+                    {repository.has_blocking_files && (
+                      <li className="flex items-start gap-2 text-red-700">
+                        <span className="text-red-600 font-bold">✗</span>
+                        <span>Files larger than 400 MB detected</span>
+                      </li>
+                    )}
+                    {repository.has_oversized_commits && (
+                      <li className="flex items-start gap-2 text-red-700">
+                        <span className="text-red-600 font-bold">✗</span>
+                        <span>Commits larger than 2 GB detected</span>
+                      </li>
+                    )}
+                    {repository.has_long_refs && (
+                      <li className="flex items-start gap-2 text-red-700">
+                        <span className="text-red-600 font-bold">✗</span>
+                        <span>Git references longer than 255 bytes detected</span>
+                      </li>
+                    )}
+                    {repository.estimated_metadata_size && repository.estimated_metadata_size > 35 * 1024 * 1024 * 1024 && (
+                      <li className="flex items-start gap-2 text-yellow-700">
+                        <span className="text-yellow-600 font-bold">⚠</span>
+                        <span>Metadata size approaching 40 GB limit (est. {formatBytes(repository.estimated_metadata_size)})</span>
+                      </li>
+                    )}
+                    {repository.has_large_file_warnings && (
+                      <li className="flex items-start gap-2 text-yellow-700">
+                        <span className="text-yellow-600 font-bold">⚠</span>
+                        <span>Large files (100-400 MB) detected - consider Git LFS</span>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800">
+                    <span className="font-semibold">💡 Remediation: </span>
+                    {hasBlockingIssues 
+                      ? 'These issues must be fixed before the repository can be migrated. Consider using BFG Repo Cleaner or git-filter-repo to address large files and commits.' 
+                      : 'While these warnings won\'t block migration, addressing them can improve migration success rates and reduce migration time.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Migration Configuration - Hide if migration is complete */}
       {repository.status !== 'complete' && (
