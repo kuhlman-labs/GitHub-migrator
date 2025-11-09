@@ -4,7 +4,10 @@ import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
+import { Pagination } from '../common/Pagination';
 import { formatBytes, formatDate } from '../../utils/format';
+
+type BatchTab = 'active' | 'completed';
 
 export function BatchManagement() {
   const navigate = useNavigate();
@@ -14,6 +17,10 @@ export function BatchManagement() {
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [batchRepositories, setBatchRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<BatchTab>('active');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
 
   useEffect(() => {
     loadBatches();
@@ -286,6 +293,36 @@ export function BatchManagement() {
   const progress = selectedBatch ? getBatchProgress(selectedBatch, batchRepositories) : null;
   const groupedRepos = groupReposByStatus(batchRepositories);
 
+  // Filter batches by tab (active vs completed)
+  const activeStatuses = ['pending', 'ready', 'in_progress'];
+  const completedStatuses = ['completed', 'completed_with_errors', 'failed', 'cancelled'];
+  
+  const filteredByTab = batches.filter((batch) =>
+    activeTab === 'active'
+      ? activeStatuses.includes(batch.status)
+      : completedStatuses.includes(batch.status)
+  );
+
+  // Filter by search term
+  const filteredBatches = filteredByTab.filter((batch) =>
+    batch.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Get counts for tabs
+  const activeBatchCount = batches.filter((b) => activeStatuses.includes(b.status)).length;
+  const completedBatchCount = batches.filter((b) => completedStatuses.includes(b.status)).length;
+
+  // Paginate
+  const totalItems = filteredBatches.length;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedBatches = filteredBatches.slice(startIndex, endIndex);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm]);
+
   return (
     <div className="max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
@@ -301,25 +338,89 @@ export function BatchManagement() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Batch List */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-4">
-            <h2 className="text-base font-semibold text-gh-text-primary mb-4">Batches</h2>
-            {loading ? (
-              <LoadingSpinner />
-            ) : batches.length === 0 ? (
-              <div className="text-center py-8 text-gh-text-secondary">No batches found</div>
-            ) : (
-              <div className="space-y-2">
-                {batches.map((batch) => (
-                  <BatchCard
-                    key={batch.id}
-                    batch={batch}
-                    isSelected={selectedBatch?.id === batch.id}
-                    onClick={() => setSelectedBatch(batch)}
-                    onStart={() => handleStartBatch(batch.id)}
-                  />
-                ))}
+          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card">
+            {/* Header with Search */}
+            <div className="p-4 border-b border-gh-border-default">
+              <h2 className="text-base font-semibold text-gh-text-primary mb-3">Batches</h2>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search batches..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 pr-8 text-sm border border-gh-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-gh-blue"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gh-text-secondary hover:text-gh-text-primary"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
               </div>
-            )}
+            </div>
+
+            {/* Tabs */}
+            <div className="border-b border-gh-border-default">
+              <div className="flex">
+                <button
+                  onClick={() => setActiveTab('active')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'active'
+                      ? 'border-gh-blue text-gh-blue'
+                      : 'border-transparent text-gh-text-secondary hover:text-gh-text-primary hover:border-gh-border-default'
+                  }`}
+                >
+                  Active ({activeBatchCount})
+                </button>
+                <button
+                  onClick={() => setActiveTab('completed')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'completed'
+                      ? 'border-gh-blue text-gh-blue'
+                      : 'border-transparent text-gh-text-secondary hover:text-gh-text-primary hover:border-gh-border-default'
+                  }`}
+                >
+                  Completed ({completedBatchCount})
+                </button>
+              </div>
+            </div>
+
+            {/* Batch List */}
+            <div className="p-4">
+              {loading ? (
+                <LoadingSpinner />
+              ) : paginatedBatches.length === 0 ? (
+                <div className="text-center py-8 text-gh-text-secondary">
+                  {searchTerm ? 'No batches match your search' : 'No batches found'}
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2 mb-4">
+                    {paginatedBatches.map((batch) => (
+                      <BatchCard
+                        key={batch.id}
+                        batch={batch}
+                        isSelected={selectedBatch?.id === batch.id}
+                        onClick={() => setSelectedBatch(batch)}
+                        onStart={() => handleStartBatch(batch.id)}
+                      />
+                    ))}
+                  </div>
+                  {totalItems > pageSize && (
+                    <Pagination
+                      currentPage={currentPage}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={setCurrentPage}
+                    />
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
 

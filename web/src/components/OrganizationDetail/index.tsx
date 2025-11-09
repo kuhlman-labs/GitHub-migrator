@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import type { Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -6,6 +6,7 @@ import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
 import { TimestampDisplay } from '../common/TimestampDisplay';
+import { Pagination } from '../common/Pagination';
 import { formatBytes } from '../../utils/format';
 import { useRepositories } from '../../hooks/useQueries';
 
@@ -62,6 +63,8 @@ export function OrganizationDetail() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFeatures, setSelectedFeatures] = useState<Set<keyof Repository>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 12;
 
   const { data, isLoading, isFetching } = useRepositories({});
 
@@ -117,6 +120,17 @@ export function OrganizationDetail() {
 
   const statuses = ['all', 'pending', 'in_progress', 'complete', 'failed', 'rolled_back'];
   const hasActiveFilters = selectedFeatures.size > 0 || filter !== 'all' || searchTerm !== '';
+
+  // Paginate
+  const totalItems = filteredRepos.length;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedRepos = filteredRepos.slice(startIndex, endIndex);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, searchTerm, selectedFeatures.size]);
 
   return (
     <div className="max-w-7xl mx-auto relative">
@@ -217,7 +231,14 @@ export function OrganizationDetail() {
 
       <div className="mb-4 flex items-center justify-between">
         <div className="text-sm text-gh-text-secondary">
-          Showing {filteredRepos.length} of {repositories.length} repositories
+          {totalItems > 0 ? (
+            <>
+              Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {repositories.length} repositories
+              {hasActiveFilters && ` (${totalItems} match filters)`}
+            </>
+          ) : (
+            'No repositories found'
+          )}
         </div>
         {selectedFeatures.size > 0 && (
           <div className="flex gap-2 flex-wrap">
@@ -251,11 +272,21 @@ export function OrganizationDetail() {
           No repositories found
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRepos.map((repo) => (
-            <RepositoryCard key={repo.id} repository={repo} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+            {paginatedRepos.map((repo) => (
+              <RepositoryCard key={repo.id} repository={repo} />
+            ))}
+          </div>
+          {totalItems > pageSize && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
+          )}
+        </>
       )}
     </div>
   );
