@@ -20,7 +20,8 @@ func WithStatus(status interface{}) func(db *gorm.DB) *gorm.DB {
 			}
 		case []string:
 			if len(v) > 0 {
-				return db.Where("status IN ?", v)
+				// Use explicit IN clause with array
+				return db.Where("status IN (?)", v)
 			}
 		}
 		return db

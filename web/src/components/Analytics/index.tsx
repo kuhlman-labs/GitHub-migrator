@@ -21,10 +21,13 @@ const STATUS_COLORS: Record<string, string> = {
   wont_migrate: '#6B7280',
 };
 
+type AnalyticsTab = 'discovery' | 'migration';
+
 export function Analytics() {
   const navigate = useNavigate();
   const [selectedOrganization, setSelectedOrganization] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('');
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
 
   const { data: analytics, isLoading, isFetching } = useAnalytics({
     organization: selectedOrganization || undefined,
@@ -94,7 +97,34 @@ export function Analytics() {
         onBatchChange={setSelectedBatch}
       />
 
+      {/* Tabs Navigation */}
+      <div className="mb-8">
+        <nav className="flex space-x-1 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('discovery')}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'discovery'
+                ? 'border-gh-blue text-gh-blue'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Discovery Analytics
+          </button>
+          <button
+            onClick={() => setActiveTab('migration')}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'migration'
+                ? 'border-green-500 text-green-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Migration Analytics
+          </button>
+        </nav>
+      </div>
+
       {/* SECTION 1: DISCOVERY ANALYTICS */}
+      {activeTab === 'discovery' && (
       <section className="mb-12">
         <div className="border-l-4 border-gh-blue pl-4 mb-6">
           <h2 className="text-xl font-semibold text-gh-text-primary">Discovery Analytics</h2>
@@ -137,7 +167,7 @@ export function Analytics() {
           {analytics.size_distribution && analytics.size_distribution.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Repository Size Distribution</h3>
-              <p className="text-sm text-gray-600 mb-4">Click on the chart to view repositories by size category</p>
+              <p className="text-sm text-gray-600 mb-4">Distribution of repositories by disk size, helping identify storage requirements and migration capacity planning needs.</p>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie
@@ -154,8 +184,8 @@ export function Analytics() {
                     outerRadius={80}
                     dataKey="value"
                     onClick={(data: any) => {
-                      if (data && data.category) {
-                        navigate(getRepositoriesUrl({ size_category: [data.category] }));
+                      if (data && data.payload && data.payload.category) {
+                        navigate(getRepositoriesUrl({ size_category: [data.payload.category] }));
                       }
                     }}
                     cursor="pointer"
@@ -201,6 +231,7 @@ export function Analytics() {
           {analytics.organization_stats && analytics.organization_stats.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Organization Breakdown</h3>
+              <p className="text-sm text-gray-600 mb-4">Total repository count and distribution across source organizations, useful for workload allocation and team coordination.</p>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -244,138 +275,55 @@ export function Analytics() {
           )}
 
           {/* Feature Stats */}
-          {analytics.feature_stats && (
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
-              <p className="text-sm text-gray-600 mb-4">Click on any feature to view repositories with that feature</p>
-              <div className="space-y-1">
-                <FeatureStat 
-                  label="Archived" 
-                  count={analytics.feature_stats.is_archived} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ is_archived: true }))}
-                />
-                <FeatureStat 
-                  label="Forked Repositories" 
-                  count={analytics.feature_stats.is_fork} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ is_fork: true }))}
-                />
-                <FeatureStat 
-                  label="LFS" 
-                  count={analytics.feature_stats.has_lfs} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_lfs: true }))}
-                />
-                <FeatureStat 
-                  label="Submodules" 
-                  count={analytics.feature_stats.has_submodules} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_submodules: true }))}
-                />
-                <FeatureStat 
-                  label="Large Files (>100MB)" 
-                  count={analytics.feature_stats.has_large_files} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_large_files: true }))}
-                />
-                <FeatureStat 
-                  label="GitHub Actions" 
-                  count={analytics.feature_stats.has_actions} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_actions: true }))}
-                />
-                <FeatureStat 
-                  label="Wikis" 
-                  count={analytics.feature_stats.has_wiki} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_wiki: true }))}
-                />
-                <FeatureStat 
-                  label="Pages" 
-                  count={analytics.feature_stats.has_pages} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_pages: true }))}
-                />
-                <FeatureStat 
-                  label="Discussions" 
-                  count={analytics.feature_stats.has_discussions} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_discussions: true }))}
-                />
-                <FeatureStat 
-                  label="Projects" 
-                  count={analytics.feature_stats.has_projects} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_projects: true }))}
-                />
-                <FeatureStat 
-                  label="Packages" 
-                  count={analytics.feature_stats.has_packages} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_packages: true }))}
-                />
-                <FeatureStat 
-                  label="Branch Protections" 
-                  count={analytics.feature_stats.has_branch_protections} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_branch_protections: true }))}
-                />
-                <FeatureStat 
-                  label="Rulesets" 
-                  count={analytics.feature_stats.has_rulesets} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_rulesets: true }))}
-                />
-                <FeatureStat 
-                  label="Code Scanning" 
-                  count={analytics.feature_stats.has_code_scanning} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_code_scanning: true }))}
-                />
-                <FeatureStat 
-                  label="Dependabot" 
-                  count={analytics.feature_stats.has_dependabot} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_dependabot: true }))}
-                />
-                <FeatureStat 
-                  label="Secret Scanning" 
-                  count={analytics.feature_stats.has_secret_scanning} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_secret_scanning: true }))}
-                />
-                <FeatureStat 
-                  label="CODEOWNERS" 
-                  count={analytics.feature_stats.has_codeowners} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_codeowners: true }))}
-                />
-                <FeatureStat 
-                  label="Self-Hosted Runners" 
-                  count={analytics.feature_stats.has_self_hosted_runners} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_self_hosted_runners: true }))}
-                />
-                <FeatureStat 
-                  label="Release Assets" 
-                  count={analytics.feature_stats.has_release_assets} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_release_assets: true }))}
-                />
-                <FeatureStat 
-                  label="Webhooks" 
-                  count={analytics.feature_stats.has_webhooks} 
-                  total={analytics.feature_stats.total_repositories}
-                  onClick={() => navigate(getRepositoriesUrl({ has_webhooks: true }))}
-                />
+          {analytics.feature_stats && (() => {
+            const featureStats = analytics.feature_stats;
+            const features = [
+              { label: "Archived", count: featureStats.is_archived, filter: { is_archived: true } },
+              { label: "Forked Repositories", count: featureStats.is_fork, filter: { is_fork: true } },
+              { label: "LFS", count: featureStats.has_lfs, filter: { has_lfs: true } },
+              { label: "Submodules", count: featureStats.has_submodules, filter: { has_submodules: true } },
+              { label: "Large Files (>100MB)", count: featureStats.has_large_files, filter: { has_large_files: true } },
+              { label: "GitHub Actions", count: featureStats.has_actions, filter: { has_actions: true } },
+              { label: "Wikis", count: featureStats.has_wiki, filter: { has_wiki: true } },
+              { label: "Pages", count: featureStats.has_pages, filter: { has_pages: true } },
+              { label: "Discussions", count: featureStats.has_discussions, filter: { has_discussions: true } },
+              { label: "Projects", count: featureStats.has_projects, filter: { has_projects: true } },
+              { label: "Packages", count: featureStats.has_packages, filter: { has_packages: true } },
+              { label: "Branch Protections", count: featureStats.has_branch_protections, filter: { has_branch_protections: true } },
+              { label: "Rulesets", count: featureStats.has_rulesets, filter: { has_rulesets: true } },
+              { label: "Code Scanning", count: featureStats.has_code_scanning, filter: { has_code_scanning: true } },
+              { label: "Dependabot", count: featureStats.has_dependabot, filter: { has_dependabot: true } },
+              { label: "Secret Scanning", count: featureStats.has_secret_scanning, filter: { has_secret_scanning: true } },
+              { label: "CODEOWNERS", count: featureStats.has_codeowners, filter: { has_codeowners: true } },
+              { label: "Self-Hosted Runners", count: featureStats.has_self_hosted_runners, filter: { has_self_hosted_runners: true } },
+              { label: "Release Assets", count: featureStats.has_release_assets, filter: { has_release_assets: true } },
+              { label: "Webhooks", count: featureStats.has_webhooks, filter: { has_webhooks: true } },
+            ].filter(feature => feature.count > 0);
+
+            return features.length > 0 ? (
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
+                <p className="text-sm text-gray-600 mb-4">GitHub features detected across repositories, including Actions, security tools, LFS, and advanced configurations requiring special migration handling.</p>
+                <div className="space-y-1">
+                  {features.map(feature => (
+                    <FeatureStat 
+                      key={feature.label}
+                      label={feature.label} 
+                      count={feature.count} 
+                      total={featureStats.total_repositories}
+                      onClick={() => navigate(getRepositoriesUrl(feature.filter))}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            ) : null;
+          })()}
         </div>
       </section>
+      )}
 
       {/* SECTION 2: MIGRATION ANALYTICS */}
+      {activeTab === 'migration' && (
       <section>
         <div className="border-l-4 border-green-500 pl-4 mb-6">
           <h2 className="text-2xl font-light text-gray-900">Migration Analytics</h2>
@@ -423,6 +371,7 @@ export function Analytics() {
           {/* Status Breakdown Pie Chart */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h2 className="text-lg font-medium text-gray-900 mb-4">Current Status Distribution</h2>
+            <p className="text-sm text-gray-600 mb-4">Real-time snapshot of repository migration states, showing pending, in-progress, completed, and failed migrations.</p>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
@@ -434,16 +383,16 @@ export function Analytics() {
                   outerRadius={80}
                   dataKey="value"
                   onClick={(data: any) => {
-                    if (data && data.name) {
-                      const statusMap: Record<string, string> = {
-                        'Migrated': 'migration_complete',
-                        'In Progress': 'in_progress',
-                        'Failed': 'failed',
-                        'Pending': 'pending',
+                    if (data && data.payload && data.payload.name) {
+                      const statusMap: Record<string, string[]> = {
+                        'Migrated': ['complete', 'migration_complete'],
+                        'In Progress': ['pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration'],
+                        'Failed': ['dry_run_failed', 'migration_failed', 'rolled_back'],
+                        'Pending': ['pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete'],
                       };
-                      const status = statusMap[data.name];
-                      if (status) {
-                        navigate(getRepositoriesUrl({ status: status }));
+                      const statuses = statusMap[data.payload.name];
+                      if (statuses) {
+                        navigate(getRepositoriesUrl({ status: statuses }));
                       }
                     }
                   }}
@@ -465,13 +414,13 @@ export function Analytics() {
             {/* Legend */}
             <div className="mt-4 grid grid-cols-2 gap-2">
               {progressData.map((item) => {
-                const statusMap: Record<string, string> = {
-                  'Migrated': 'migration_complete',
-                  'In Progress': 'in_progress',
-                  'Failed': 'failed',
-                  'Pending': 'pending',
+                const statusMap: Record<string, string[]> = {
+                  'Migrated': ['complete', 'migration_complete'],
+                  'In Progress': ['pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration'],
+                  'Failed': ['dry_run_failed', 'migration_failed', 'rolled_back'],
+                  'Pending': ['pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete'],
                 };
-                const status = statusMap[item.name];
+                const statuses = statusMap[item.name];
                 const percentage = analytics.total_repositories > 0 
                   ? ((item.value / analytics.total_repositories) * 100).toFixed(0)
                   : '0';
@@ -479,7 +428,7 @@ export function Analytics() {
                 return (
                   <button
                     key={item.name}
-                    onClick={() => status && navigate(getRepositoriesUrl({ status: status }))}
+                    onClick={() => statuses && navigate(getRepositoriesUrl({ status: statuses }))}
                     className="flex items-center gap-2 p-2 rounded hover:bg-gh-info-bg transition-colors cursor-pointer text-left"
                   >
                     <div 
@@ -500,6 +449,7 @@ export function Analytics() {
         {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Migration Progress by Organization</h3>
+            <p className="text-sm text-gray-600 mb-4">Detailed migration status breakdown by organization, showing completion rates and identifying areas requiring attention.</p>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -579,6 +529,7 @@ export function Analytics() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Performance Metrics</h3>
+            <p className="text-sm text-gray-600 mb-4">Key migration performance indicators including average time per repository and daily throughput over the last 30 days.</p>
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-700">Average Migration Time</span>
@@ -612,6 +563,7 @@ export function Analytics() {
           {/* Status Breakdown Bar Chart */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h2 className="text-lg font-medium text-gray-900 mb-4">Status Breakdown</h2>
+            <p className="text-sm text-gray-600 mb-4">Visual comparison of repository counts across all migration statuses, including dry-run and excluded repositories.</p>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={statusChartData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -631,6 +583,7 @@ export function Analytics() {
         {/* Detailed Status Table */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Detailed Status Breakdown</h2>
+          <p className="text-sm text-gray-600 mb-4">Comprehensive status listing with exact counts and percentages for reporting and tracking purposes.</p>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -683,6 +636,7 @@ export function Analytics() {
           </div>
         </div>
       </section>
+      )}
     </div>
   );
 }
@@ -692,10 +646,10 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
   
   const content = (
     <>
-      <span className="text-sm text-gray-700 flex-1">{label}</span>
-      <div className="flex items-center gap-2 ml-auto">
-        <span className="text-sm font-medium text-gray-900 min-w-[60px] text-right">{count}</span>
-        <span className="text-xs text-gray-500 min-w-[60px]">({percentage}%)</span>
+      <span className="text-sm text-gray-700 flex-1 text-left">{label}</span>
+      <div className="flex items-center gap-3 ml-auto">
+        <span className="text-sm font-medium text-gray-900 min-w-[40px] text-right">{count}</span>
+        <span className="text-sm text-gray-500 min-w-[55px] text-left">({percentage}%)</span>
       </div>
     </>
   );
@@ -704,7 +658,7 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
     return (
       <button
         onClick={onClick}
-        className="flex items-center justify-between w-full px-3 py-2 -mx-3 rounded hover:bg-gh-info-bg transition-colors cursor-pointer group"
+        className="flex items-center justify-between w-full px-3 py-2 -mx-3 rounded hover:bg-gh-info-bg transition-colors cursor-pointer group text-left"
       >
         {content}
         <svg 
@@ -720,7 +674,7 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
   }
 
   return (
-    <div className="flex items-center justify-between py-2 px-3 -mx-3">
+    <div className="flex items-center justify-between py-2 px-3 -mx-3 text-left">
       {content}
     </div>
   );

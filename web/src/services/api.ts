@@ -51,6 +51,10 @@ export const api = {
     // Convert array filters to comma-separated strings for API
     const params: Record<string, any> = { ...filters };
     
+    if (filters?.status && Array.isArray(filters.status)) {
+      params.status = filters.status.join(',');
+    }
+    
     if (filters?.organization && Array.isArray(filters.organization)) {
       params.organization = filters.organization.join(',');
     }

@@ -336,7 +336,7 @@ export type BatchStatus =
   | 'cancelled';
 
 export interface RepositoryFilters {
-  status?: string;
+  status?: string | string[];
   batch_id?: number;
   source?: string;
   organization?: string | string[];

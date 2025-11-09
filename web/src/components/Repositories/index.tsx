@@ -233,7 +233,7 @@ export function Repositories() {
               {/* Status filter */}
               {urlFilters.status && (
                 <FilterBadge
-                  label={`Status: ${urlFilters.status}`}
+                  label={`Status: ${Array.isArray(urlFilters.status) ? urlFilters.status.join(', ') : urlFilters.status}`}
                   onRemove={() => removeFilter('status')}
                 />
               )}

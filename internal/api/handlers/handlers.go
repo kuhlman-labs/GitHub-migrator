@@ -220,7 +220,20 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	filters := make(map[string]interface{})
 
 	if status := r.URL.Query().Get("status"); status != "" {
-		filters["status"] = status
+		// Support comma-separated status values
+		if strings.Contains(status, ",") {
+			statusParts := strings.Split(status, ",")
+			// Trim spaces from each status
+			statusArray := make([]string, len(statusParts))
+			for i, s := range statusParts {
+				statusArray[i] = strings.TrimSpace(s)
+			}
+			h.logger.Info("Status filter (array)", "status", statusArray)
+			filters["status"] = statusArray
+		} else {
+			h.logger.Info("Status filter (single)", "status", status)
+			filters["status"] = status
+		}
 	}
 
 	if batchIDStr := r.URL.Query().Get("batch_id"); batchIDStr != "" {

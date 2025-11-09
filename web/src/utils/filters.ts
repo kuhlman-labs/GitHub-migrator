@@ -6,8 +6,14 @@ import type { RepositoryFilters } from '../types';
 export function filtersToSearchParams(filters: RepositoryFilters): URLSearchParams {
   const params = new URLSearchParams();
 
-  // Handle each filter type
-  if (filters.status) params.set('status', filters.status);
+  // Handle status (can be string or array)
+  if (filters.status) {
+    if (Array.isArray(filters.status)) {
+      params.set('status', filters.status.join(','));
+    } else {
+      params.set('status', filters.status);
+    }
+  }
   if (filters.batch_id) params.set('batch_id', filters.batch_id.toString());
   if (filters.source) params.set('source', filters.source);
   
@@ -77,9 +83,11 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
 export function searchParamsToFilters(searchParams: URLSearchParams): RepositoryFilters {
   const filters: RepositoryFilters = {};
 
-  // Simple string filters
+  // Status filter (can be string or comma-separated array)
   const status = searchParams.get('status');
-  if (status) filters.status = status;
+  if (status) {
+    filters.status = status.includes(',') ? status.split(',') : status;
+  }
 
   const source = searchParams.get('source');
   if (source) filters.source = source;
