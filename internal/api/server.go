@@ -62,11 +62,14 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		}
 	}
 
+	// Determine source base URL for permission checks
+	sourceBaseURL := cfg.Auth.GetOAuthBaseURL(cfg)
+
 	return &Server{
 		config:      cfg,
 		db:          db,
 		logger:      logger,
-		handler:     handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig),
+		handler:     handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig, &cfg.Auth, sourceBaseURL),
 		authHandler: authHandler,
 	}
 }

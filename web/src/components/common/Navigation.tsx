@@ -41,9 +41,6 @@ export function Navigation() {
               <Link to="/history" className={linkClass('/history')}>
                 History
               </Link>
-              <Link to="/self-service" className={linkClass('/self-service')}>
-                Self-Service
-              </Link>
             </div>
           </div>
           

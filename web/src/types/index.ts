@@ -137,6 +137,7 @@ export interface MigrationLog {
   operation: string;
   message: string;
   details?: string;
+  initiated_by?: string; // GitHub username of user who initiated the action
   timestamp: string;
 }
 

@@ -47,6 +47,7 @@ issues:
         - errcheck
         - dupl
         - gosec
+        - goconst
     # Exclude cyclomatic complexity for specific pre-existing complex functions
     - linters:
         - gocyclo

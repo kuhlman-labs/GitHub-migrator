@@ -296,10 +296,18 @@ func GetGitHubUserFromContext(ctx context.Context) (*GitHubUser, bool) {
 	return user, ok
 }
 
-// GetTokenFromContext retrieves the GitHub token from OAuth callback context
+// GetTokenFromContext retrieves the GitHub token from context
+// Checks both OAuth callback context and authenticated request context
 func GetTokenFromContext(ctx context.Context) (string, bool) {
-	token, ok := ctx.Value(contextKeyGitHubToken).(string)
-	return token, ok
+	// Try OAuth callback context first
+	if token, ok := ctx.Value(contextKeyGitHubToken).(string); ok {
+		return token, true
+	}
+	// Fall back to authenticated request context (from middleware)
+	if token, ok := ctx.Value(authContextKey("auth_github_token")).(string); ok {
+		return token, true
+	}
+	return "", false
 }
 
 // BuildOAuthURL builds the GitHub OAuth URL for a given base URL
