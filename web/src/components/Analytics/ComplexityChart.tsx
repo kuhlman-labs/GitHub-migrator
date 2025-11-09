@@ -49,7 +49,7 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
         <div>
           <h2 className="text-lg font-medium text-gray-900 mb-1">Repository Complexity Distribution</h2>
           <p className="text-sm text-gray-600">
-            Based on size, LFS, submodules, large files, and branch protections. Click bars to view repositories.
+            Repositories categorized by migration complexity based on size, LFS usage, submodules, large files, and branch protections.
           </p>
         </div>
         <ComplexityInfoModal />

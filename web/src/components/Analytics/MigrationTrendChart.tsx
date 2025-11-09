@@ -10,6 +10,7 @@ export function MigrationTrendChart({ data }: MigrationTrendChartProps) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6">
         <h2 className="text-lg font-medium text-gray-900 mb-4">Migration Trend (Last 30 Days)</h2>
+        <p className="text-sm text-gray-600 mb-4">Daily migration activity showing velocity trends and patterns to forecast completion timelines.</p>
         <div className="h-[300px] flex items-center justify-center text-gray-500">
           No migration data available for the selected period
         </div>
@@ -26,6 +27,7 @@ export function MigrationTrendChart({ data }: MigrationTrendChartProps) {
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <h2 className="text-lg font-medium text-gray-900 mb-4">Migration Trend (Last 30 Days)</h2>
+      <p className="text-sm text-gray-600 mb-4">Daily migration activity showing velocity trends and patterns to forecast completion timelines.</p>
       <ResponsiveContainer width="100%" height={300}>
         <AreaChart data={chartData}>
           <defs>
