@@ -8,10 +8,65 @@ interface DependenciesTabProps {
   fullName: string;
 }
 
+interface MergedDependency extends RepositoryDependency {
+  detection_methods: string[];
+  all_metadata: any[];
+}
+
 export function DependenciesTab({ fullName }: DependenciesTabProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DependenciesResponse | null>(null);
+  const [deduplicatedDeps, setDeduplicatedDeps] = useState<MergedDependency[]>([]);
+
+  // Deduplicate dependencies by dependency_full_name
+  const deduplicateDependencies = (dependencies: RepositoryDependency[]): MergedDependency[] => {
+    const depMap = new Map<string, MergedDependency>();
+
+    dependencies.forEach(dep => {
+      const key = dep.dependency_full_name;
+      
+      if (depMap.has(key)) {
+        const existing = depMap.get(key)!;
+        // Add this detection method
+        if (!existing.detection_methods.includes(dep.dependency_type)) {
+          existing.detection_methods.push(dep.dependency_type);
+        }
+        // Collect all metadata
+        if (dep.metadata) {
+          try {
+            const parsed = JSON.parse(dep.metadata);
+            existing.all_metadata.push({ type: dep.dependency_type, ...parsed });
+          } catch (e) {
+            // Skip invalid metadata
+          }
+        }
+        // If any instance is local, mark as local
+        if (dep.is_local) {
+          existing.is_local = true;
+        }
+      } else {
+        // First occurrence of this dependency
+        const metadata = [];
+        if (dep.metadata) {
+          try {
+            const parsed = JSON.parse(dep.metadata);
+            metadata.push({ type: dep.dependency_type, ...parsed });
+          } catch (e) {
+            // Skip invalid metadata
+          }
+        }
+        
+        depMap.set(key, {
+          ...dep,
+          detection_methods: [dep.dependency_type],
+          all_metadata: metadata
+        });
+      }
+    });
+
+    return Array.from(depMap.values());
+  };
 
   useEffect(() => {
     const fetchDependencies = async () => {
@@ -19,6 +74,10 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
         setLoading(true);
         setError(null);
         const response = await api.getRepositoryDependencies(fullName);
+        
+        // Deduplicate dependencies
+        const deduplicated = deduplicateDependencies(response.dependencies);
+        setDeduplicatedDeps(deduplicated);
         setData(response);
       } catch (err: any) {
         console.error('Failed to fetch dependencies:', err);
@@ -59,18 +118,36 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
     );
   }
 
+  // Calculate deduplicated summary
+  const deduplicatedSummary = {
+    total: deduplicatedDeps.length,
+    local: deduplicatedDeps.filter(d => d.is_local).length,
+    external: deduplicatedDeps.filter(d => !d.is_local).length,
+    by_type: deduplicatedDeps.reduce((acc, dep) => {
+      dep.detection_methods.forEach(method => {
+        acc[method] = (acc[method] || 0) + 1;
+      });
+      return acc;
+    }, {} as Record<string, number>)
+  };
+
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-sm p-4">
           <div className="text-sm text-gray-500">Total Dependencies</div>
-          <div className="text-2xl font-bold mt-1">{data.summary.total}</div>
+          <div className="text-2xl font-bold mt-1">{deduplicatedSummary.total}</div>
+          {data.summary.total > deduplicatedSummary.total && (
+            <div className="text-xs text-gray-500 mt-1">
+              ({data.summary.total} raw detections)
+            </div>
+          )}
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4">
           <div className="text-sm text-gray-500">Local Dependencies</div>
           <div className="text-2xl font-bold mt-1 text-green-600">
-            {data.summary.local}
+            {deduplicatedSummary.local}
           </div>
           <div className="text-xs text-gray-500 mt-1">
             Within enterprise
@@ -79,16 +156,16 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
         <div className="bg-white rounded-lg shadow-sm p-4">
           <div className="text-sm text-gray-500">External Dependencies</div>
           <div className="text-2xl font-bold mt-1 text-amber-600">
-            {data.summary.external}
+            {deduplicatedSummary.external}
           </div>
           <div className="text-xs text-gray-500 mt-1">
             Outside enterprise
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4">
-          <div className="text-sm text-gray-500">By Type</div>
+          <div className="text-sm text-gray-500">Detection Methods</div>
           <div className="mt-2 space-y-1">
-            {Object.entries(data.summary.by_type).map(([type, count]) => (
+            {Object.entries(deduplicatedSummary.by_type).map(([type, count]) => (
               <div key={type} className="text-sm flex justify-between">
                 <span className="capitalize">{type.replace('_', ' ')}</span>
                 <span className="font-semibold">{count}</span>
@@ -99,11 +176,11 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
       </div>
 
       {/* Warning for local dependencies */}
-      {data.summary.local > 0 && (
+      {deduplicatedSummary.local > 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <h4 className="font-medium text-yellow-800 mb-2">Local Dependencies Detected</h4>
           <p className="text-sm text-yellow-700">
-            This repository depends on {data.summary.local} other repository/repositories in your enterprise. 
+            This repository depends on {deduplicatedSummary.local} other repository/repositories in your enterprise. 
             Consider migrating these dependencies in the same batch to maintain functionality.
           </p>
         </div>
@@ -112,7 +189,7 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
       {/* Dependencies List */}
       <div className="bg-white rounded-lg shadow-sm">
         <div className="p-6">
-          <h3 className="text-lg font-semibold mb-4">All Dependencies</h3>
+          <h3 className="text-lg font-semibold mb-4">All Dependencies ({deduplicatedSummary.total})</h3>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead>
@@ -121,7 +198,7 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
                     Repository
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Type
+                    Detection Methods
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Scope
@@ -132,8 +209,8 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {data.dependencies.map((dep) => (
-                  <DependencyRow key={dep.id} dependency={dep} />
+                {deduplicatedDeps.map((dep) => (
+                  <MergedDependencyRow key={dep.id} dependency={dep} />
                 ))}
               </tbody>
             </table>
@@ -144,23 +221,11 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
   );
 }
 
-interface DependencyRowProps {
-  dependency: RepositoryDependency;
+interface MergedDependencyRowProps {
+  dependency: MergedDependency;
 }
 
-function DependencyRow({ dependency }: DependencyRowProps) {
-  const [metadata, setMetadata] = useState<any>(null);
-
-  useEffect(() => {
-    if (dependency.metadata) {
-      try {
-        setMetadata(JSON.parse(dependency.metadata));
-      } catch (e) {
-        console.error('Failed to parse metadata:', e);
-      }
-    }
-  }, [dependency.metadata]);
-
+function MergedDependencyRow({ dependency }: MergedDependencyRowProps) {
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'submodule':
@@ -199,10 +264,14 @@ function DependencyRow({ dependency }: DependencyRowProps) {
           </div>
         )}
       </td>
-      <td className="px-4 py-4 whitespace-nowrap">
-        <Badge color={getTypeColor(dependency.dependency_type)}>
-          {getTypeLabel(dependency.dependency_type)}
-        </Badge>
+      <td className="px-4 py-4">
+        <div className="flex flex-wrap gap-1">
+          {dependency.detection_methods.map((method) => (
+            <Badge key={method} color={getTypeColor(method)}>
+              {getTypeLabel(method)}
+            </Badge>
+          ))}
+        </div>
       </td>
       <td className="px-4 py-4 whitespace-nowrap">
         {dependency.is_local ? (
@@ -213,41 +282,51 @@ function DependencyRow({ dependency }: DependencyRowProps) {
       </td>
       <td className="px-4 py-4">
         <div className="text-sm text-gray-500">
-          {metadata && (
-            <div className="space-y-1">
-              {metadata.path && (
-                <div>
-                  <span className="font-medium">Path:</span> {metadata.path}
+          {dependency.all_metadata.length > 0 ? (
+            <div className="space-y-2">
+              {dependency.all_metadata.map((meta, idx) => (
+                <div key={idx} className="space-y-1">
+                  {meta.type && dependency.all_metadata.length > 1 && (
+                    <div className="text-xs font-semibold text-gray-600 capitalize">
+                      {meta.type.replace('_', ' ')}:
+                    </div>
+                  )}
+                  {meta.path && (
+                    <div>
+                      <span className="font-medium">Path:</span> {meta.path}
+                    </div>
+                  )}
+                  {meta.branch && (
+                    <div>
+                      <span className="font-medium">Branch:</span> {meta.branch}
+                    </div>
+                  )}
+                  {meta.workflow_file && (
+                    <div>
+                      <span className="font-medium">Workflow:</span> {meta.workflow_file}
+                    </div>
+                  )}
+                  {meta.ref && (
+                    <div>
+                      <span className="font-medium">Ref:</span> {meta.ref}
+                    </div>
+                  )}
+                  {meta.manifest && (
+                    <div>
+                      <span className="font-medium">Manifest:</span> {meta.manifest}
+                    </div>
+                  )}
+                  {meta.package_manager && (
+                    <div>
+                      <span className="font-medium">Manager:</span> {meta.package_manager}
+                    </div>
+                  )}
                 </div>
-              )}
-              {metadata.branch && (
-                <div>
-                  <span className="font-medium">Branch:</span> {metadata.branch}
-                </div>
-              )}
-              {metadata.workflow_file && (
-                <div>
-                  <span className="font-medium">Workflow:</span> {metadata.workflow_file}
-                </div>
-              )}
-              {metadata.ref && (
-                <div>
-                  <span className="font-medium">Ref:</span> {metadata.ref}
-                </div>
-              )}
-              {metadata.manifest && (
-                <div>
-                  <span className="font-medium">Manifest:</span> {metadata.manifest}
-                </div>
-              )}
-              {metadata.package_manager && (
-                <div>
-                  <span className="font-medium">Manager:</span> {metadata.package_manager}
-                </div>
-              )}
+              ))}
             </div>
+          ) : (
+            <span className="text-gray-400">—</span>
           )}
-          {!metadata && <span className="text-gray-400">—</span>}
         </div>
       </td>
     </tr>
