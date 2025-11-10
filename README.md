@@ -55,7 +55,8 @@ GitHub Migrator provides an automated, scalable platform for managing large-scal
 - Single repository migrations for on-demand execution
 - Batch migration for organized group migrations
 - Bulk migration for simultaneous multi-repository migrations
-- Self-service capabilities for developer-initiated migrations
+- Self-service capabilities for developer-initiated migrations with proper access controls
+- Repository-level permission enforcement for all migration operations
 - Dry-run testing without actual execution
 - Phase tracking: pending → pre-migration → migration → post-migration → complete
 
@@ -72,9 +73,12 @@ GitHub Migrator provides an automated, scalable platform for managing large-scal
 - PAT (Personal Access Token) required for migrations
 - Optional GitHub App for discovery operations (improved rate limits)
 - Optional GitHub OAuth 2.0 authentication for self-hosted deployments
-- Configurable authorization based on organization, team, or enterprise membership
+- Two-layer authorization model: application access + repository-level permissions
+- Granular access control: Enterprise Admins, Org Admins, Privileged Teams, and Repo Admins
+- Repository-level permissions enforced for all migration operations
 - JWT session management with secure token storage
-- Comprehensive audit logging
+- User activity logging with audit trail for all migration actions
+- Comprehensive security logging and monitoring
 
 ## Quick Start
 
@@ -120,6 +124,36 @@ Recommended for better rate limits during discovery and profiling operations. PA
 
 See [GitHub App Setup Guide](./docs/OPERATIONS.md#github-app-authentication) for detailed configuration.
 
+**OAuth Authentication (Optional)**
+
+For production deployments with user authentication and access control:
+
+```bash
+# Enable authentication
+export GHMIG_AUTH_ENABLED=true
+export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID="your_oauth_client_id"
+export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET="your_oauth_client_secret"
+export GHMIG_AUTH_CALLBACK_URL="https://your-domain.com/api/v1/auth/callback"
+export GHMIG_AUTH_FRONTEND_URL="https://your-domain.com"
+export GHMIG_AUTH_SESSION_SECRET="generate_a_random_32_char_secret"
+
+# Configure access control (examples)
+# Option 1: Enterprise members with privileged migration teams
+export GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_MEMBERSHIP=true
+export GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG="my-enterprise"
+export GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS="platform-org/migration-admins,platform-org/devops"
+
+# Option 2: Specific organization members only
+export GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP="my-org,migration-team-org"
+export GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS="my-org/migration-coordinators"
+
+# Option 3: Enterprise admins only (most restrictive)
+export GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN=true
+export GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG="my-enterprise"
+```
+
+See [OPERATIONS.md](./docs/OPERATIONS.md#authentication-setup) for complete configuration options and examples.
+
 ### Running the Application
 
 **Development Mode** (separate terminals):
@@ -163,7 +197,9 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 - **Single Repository**: On-demand individual repository migrations
 - **Batch Migration**: Group repositories and migrate entire batches together
 - **Bulk Migration**: Select multiple repositories and migrate simultaneously
-- **Self-Service**: Enable developers to migrate their own repositories via UI or API
+- **Self-Service**: Enable developers to migrate their own repositories via UI or API with granular access controls
+- **Permission Enforcement**: Validate user permissions before any migration action (add to batch, dry run, migrate, retry)
+- **User Activity Logging**: Track who initiated each migration with complete audit trail
 - **Dry Run**: Test migrations without actual execution
 - **Phase Tracking**: Monitor through all phases (pending → pre-migration → migration → post-migration → complete)
 - **Lock Management**: Automatically lock source repositories during migration
@@ -201,16 +237,39 @@ For detailed workflows, see [OPERATIONS.md](./docs/OPERATIONS.md#migration-workf
 
 ### Security & Authentication
 
-Optional security features for production deployments:
+Comprehensive security features for production deployments:
+
+#### Authentication Options
 
 - **GitHub OAuth 2.0**: Native GitHub authentication for self-hosted deployments
-- **Configurable Authorization**: Control access based on organization membership, team membership, or enterprise administrator role
-- **JWT Session Management**: Secure, encrypted token storage with configurable expiration
 - **Multi-Factor Support**: Leverages GitHub's existing SAML/SSO if configured
-- **Backward Compatible**: Authentication is disabled by default, opt-in for production
-- **Audit Logging**: All authentication events are logged for security monitoring
 
-See [OPERATIONS.md](./docs/OPERATIONS.md#authentication-setup) for configuration guide.
+#### Two-Layer Authorization Model
+
+**Layer 1: Application Access**
+- **Enterprise Membership**: Require users to be members of a specific enterprise
+- **Enterprise Admin**: Restrict access to enterprise administrators only
+- **Organization Membership**: Allow users from specific organizations
+- **Team Membership**: Limit access to specific team members
+
+**Layer 2: Repository-Level Permissions**
+- **Enterprise Admins**: Full access to migrate any repository (when enterprise slug is configured)
+- **Privileged Teams**: Designated teams with full migration access across all repositories
+- **Organization Admins**: Can migrate all repositories within their organizations
+- **Repository Admins**: Can only migrate repositories they have admin access to (default for all users)
+
+#### Self-Service Developer Migrations
+
+Enable developers to migrate their own repositories with proper access controls:
+- Users see all repositories but can only migrate those they have admin access to
+- No admin intervention needed for developers to migrate their own repos
+
+#### Security Features
+
+- **Permission Validation**: All migration operations validate user permissions before execution
+- **Audit Logging**: Complete audit trail showing who initiated each migration action
+
+See [OPERATIONS.md](./docs/OPERATIONS.md#authentication-setup) for detailed configuration guide.
 
 ## Documentation
 
@@ -301,49 +360,7 @@ For production deployments, see [DEPLOYMENT.md](./docs/DEPLOYMENT.md) which cove
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for:
-
-- Development environment setup
-- Coding standards and conventions
-- Testing requirements and coverage
-- Pull request process
-- Architecture overview
-- Debugging tips and techniques
-
-### Contribution Steps
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes and add tests
-4. Run tests and linters: `make all`
-5. Commit your changes with a descriptive message
-6. Push to your branch
-7. Open a Pull Request
-
-## Tech Stack
-
-### Backend
-
-- **Go 1.21+**: Core backend implementation
-- **SQLite/PostgreSQL**: Data storage (SQLite for dev, PostgreSQL for production)
-- **GitHub APIs**: `google/go-github/v75` (REST) and `shurcooL/githubv4` (GraphQL)
-- **Viper**: Configuration management
-- **Lumberjack**: Log rotation
-
-### Frontend
-
-- **React 18**: UI framework with TypeScript
-- **Vite**: Fast build tooling
-- **Tailwind CSS**: Utility-first styling
-- **TanStack Query**: Data fetching and caching
-- **Recharts**: Analytics visualizations
-
-### DevOps
-
-- **Docker**: Containerized deployment
-- **golangci-lint**: Go code linting
-- **gosec**: Security scanning
-
+We welcome contributions! Please see [CONTRIBUTING.md](./docs/CONTRIBUTING.md)
 ## Support & Resources
 
 ### Internal Documentation
@@ -367,5 +384,5 @@ We welcome contributions! Please see [CONTRIBUTING.md](./docs/CONTRIBUTING.md) f
 
 ---
 
-**Last Updated**: October 2025  
+**Last Updated**: November 2025  
 **Maintained by**: [@kuhlman-labs](https://github.com/kuhlman-labs)

@@ -9,6 +9,11 @@ import (
 	"github.com/subosito/gotenv"
 )
 
+const (
+	// ProviderTypeGitHub is the GitHub provider type
+	ProviderTypeGitHub = "github"
+)
+
 type Config struct {
 	Server      ServerConfig      `mapstructure:"server"`
 	Database    DatabaseConfig    `mapstructure:"database"`
@@ -105,6 +110,7 @@ type AuthConfig struct {
 	Enabled                 bool               `mapstructure:"enabled"`
 	GitHubOAuthClientID     string             `mapstructure:"github_oauth_client_id"`
 	GitHubOAuthClientSecret string             `mapstructure:"github_oauth_client_secret"`
+	GitHubOAuthBaseURL      string             `mapstructure:"github_oauth_base_url"` // Optional: defaults to source URL if source is GitHub, otherwise destination
 	CallbackURL             string             `mapstructure:"callback_url"`
 	FrontendURL             string             `mapstructure:"frontend_url"`
 	SessionSecret           string             `mapstructure:"session_secret"`
@@ -114,10 +120,12 @@ type AuthConfig struct {
 
 // AuthorizationRules defines rules for authorizing users
 type AuthorizationRules struct {
-	RequireOrgMembership   []string `mapstructure:"require_org_membership"`
-	RequireTeamMembership  []string `mapstructure:"require_team_membership"`
-	RequireEnterpriseAdmin bool     `mapstructure:"require_enterprise_admin"`
-	RequireEnterpriseSlug  string   `mapstructure:"require_enterprise_slug"`
+	RequireOrgMembership        []string `mapstructure:"require_org_membership"`
+	RequireTeamMembership       []string `mapstructure:"require_team_membership"`
+	RequireEnterpriseAdmin      bool     `mapstructure:"require_enterprise_admin"`
+	RequireEnterpriseMembership bool     `mapstructure:"require_enterprise_membership"` // Require user to be member of enterprise (any role)
+	RequireEnterpriseSlug       string   `mapstructure:"require_enterprise_slug"`
+	PrivilegedTeams             []string `mapstructure:"privileged_teams"` // Teams (format: "org/team-slug") that grant full migration access
 }
 
 func Load() (*Config, error) {
@@ -219,6 +227,7 @@ func bindEnvVars() {
 		"auth.enabled",
 		"auth.github_oauth_client_id",
 		"auth.github_oauth_client_secret",
+		"auth.github_oauth_base_url",
 		"auth.callback_url",
 		"auth.frontend_url",
 		"auth.session_secret",
@@ -226,7 +235,9 @@ func bindEnvVars() {
 		"auth.authorization_rules.require_org_membership",
 		"auth.authorization_rules.require_team_membership",
 		"auth.authorization_rules.require_enterprise_admin",
+		"auth.authorization_rules.require_enterprise_membership",
 		"auth.authorization_rules.require_enterprise_slug",
+		"auth.authorization_rules.privileged_teams",
 	}
 
 	for _, key := range envKeys {
@@ -244,9 +255,9 @@ func setDefaults() {
 	viper.SetDefault("database.auto_migrate", false)
 	viper.SetDefault("database.trust_server_certificate", false)
 	viper.SetDefault("database.ssl_mode", "disable")
-	viper.SetDefault("source.type", "github")
+	viper.SetDefault("source.type", ProviderTypeGitHub)
 	viper.SetDefault("source.base_url", "https://api.github.com")
-	viper.SetDefault("destination.type", "github")
+	viper.SetDefault("destination.type", ProviderTypeGitHub)
 	viper.SetDefault("destination.base_url", "https://api.github.com")
 	viper.SetDefault("migration.workers", 5)
 	viper.SetDefault("migration.poll_interval_seconds", 30)
@@ -270,15 +281,37 @@ func setDefaults() {
 func (c *Config) MigrateDeprecatedConfig() {
 	// If new config is not set but old GitHub config exists, migrate it
 	if c.Source.Type == "" && c.GitHub.Source.Token != "" {
-		c.Source.Type = "github"
+		c.Source.Type = ProviderTypeGitHub
 		c.Source.BaseURL = c.GitHub.Source.BaseURL
 		c.Source.Token = c.GitHub.Source.Token
 	}
 	if c.Destination.Type == "" && c.GitHub.Destination.Token != "" {
-		c.Destination.Type = "github"
+		c.Destination.Type = ProviderTypeGitHub
 		c.Destination.BaseURL = c.GitHub.Destination.BaseURL
 		c.Destination.Token = c.GitHub.Destination.Token
 	}
+}
+
+// GetOAuthBaseURL returns the GitHub OAuth base URL, with intelligent defaulting
+// Priority: explicit GitHubOAuthBaseURL > source URL (if GitHub) > destination URL
+func (c *AuthConfig) GetOAuthBaseURL(cfg *Config) string {
+	// If explicitly configured, use that
+	if c.GitHubOAuthBaseURL != "" {
+		return c.GitHubOAuthBaseURL
+	}
+
+	// Default to source URL if source is GitHub
+	if cfg.Source.Type == ProviderTypeGitHub && cfg.Source.BaseURL != "" {
+		return cfg.Source.BaseURL
+	}
+
+	// Fall back to destination URL if destination is GitHub
+	if cfg.Destination.Type == ProviderTypeGitHub && cfg.Destination.BaseURL != "" {
+		return cfg.Destination.BaseURL
+	}
+
+	// Final fallback to github.com
+	return "https://api.github.com"
 }
 
 // ParseArrayEnvVars handles parsing of array fields from environment variables
@@ -292,6 +325,11 @@ func (c *Config) ParseArrayEnvVars() {
 	// Parse require_team_membership
 	c.Auth.AuthorizationRules.RequireTeamMembership = parseStringSlice(
 		c.Auth.AuthorizationRules.RequireTeamMembership,
+	)
+
+	// Parse privileged_teams
+	c.Auth.AuthorizationRules.PrivilegedTeams = parseStringSlice(
+		c.Auth.AuthorizationRules.PrivilegedTeams,
 	)
 }
 

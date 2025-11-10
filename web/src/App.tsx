@@ -6,7 +6,6 @@ import { Repositories } from './components/Repositories';
 import { Analytics } from './components/Analytics';
 import { BatchManagement } from './components/BatchManagement';
 import { BatchBuilderPage } from './components/BatchManagement/BatchBuilderPage';
-import { SelfServiceMigration } from './components/SelfService';
 import { MigrationHistory } from './components/MigrationHistory';
 import { Navigation } from './components/common/Navigation';
 import { Login } from './components/Auth/Login';
@@ -72,11 +71,6 @@ function ProtectedRoutes() {
           <Route path="/batches" element={
             <main className="container mx-auto px-4 py-8">
               <BatchManagement />
-            </main>
-          } />
-          <Route path="/self-service" element={
-            <main className="container mx-auto px-4 py-8">
-              <SelfServiceMigration />
             </main>
           } />
           <Route path="/history" element={

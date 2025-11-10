@@ -142,6 +142,11 @@ func (m *JWTManager) encryptToken(plaintext string) (string, error) {
 }
 
 // decryptToken decrypts a token using AES-GCM
+// DecryptToken decrypts an encrypted token (public method for use in middleware)
+func (m *JWTManager) DecryptToken(ciphertext string) (string, error) {
+	return m.decryptToken(ciphertext)
+}
+
 func (m *JWTManager) decryptToken(ciphertext string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {

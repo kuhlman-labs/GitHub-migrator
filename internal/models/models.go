@@ -215,7 +215,8 @@ type MigrationLog struct {
 	Phase        string    `json:"phase" db:"phase" gorm:"column:phase;not null"`
 	Operation    string    `json:"operation" db:"operation" gorm:"column:operation;not null"`
 	Message      string    `json:"message" db:"message" gorm:"column:message;not null"`
-	Details      *string   `json:"details,omitempty" db:"details" gorm:"column:details;type:text"` // Additional context, JSON or text
+	Details      *string   `json:"details,omitempty" db:"details" gorm:"column:details;type:text"`      // Additional context, JSON or text
+	InitiatedBy  *string   `json:"initiated_by,omitempty" db:"initiated_by" gorm:"column:initiated_by"` // GitHub username of user who initiated action (when auth enabled)
 	Timestamp    time.Time `json:"timestamp" db:"timestamp" gorm:"column:timestamp;not null;index;autoCreateTime"`
 }
 

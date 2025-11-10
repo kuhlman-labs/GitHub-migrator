@@ -310,7 +310,114 @@ authorization_rules:
 
 Users must be an enterprise administrator.
 
+#### 4. Enterprise Membership
+
+```yaml
+authorization_rules:
+  require_enterprise_membership: true
+  require_enterprise_slug: "my-enterprise"
+```
+
+Users must be a member of the enterprise (any role, not just admin). This is more permissive than `require_enterprise_admin` and is useful for allowing all enterprise members to access the system. Repository-level permissions will still control what they can migrate.
+
 **Note**: You can combine multiple rules. All configured rules must pass for a user to be authorized.
+
+#### 5. Privileged Teams (Full Access)
+
+```yaml
+authorization_rules:
+  privileged_teams:
+    - "my-org/migration-admins"
+    - "my-org/platform-team"
+```
+
+Members of privileged teams have **full access** to migrate any repository, bypassing per-repository permission checks. This is useful for dedicated migration admin teams.
+
+### Repository-Level Permissions
+
+Once a user passes the application-level authorization checks above, their repository access is determined by their GitHub permissions on the source instance:
+
+#### Permission Levels
+
+1. **Enterprise Admins** → Can migrate **all repositories**
+   - Automatically granted when `require_enterprise_slug` is configured
+   - Have unrestricted access to all migration operations
+   - **Note:** This is independent of `require_enterprise_admin` (which controls application access)
+
+2. **Privileged Team Members** → Can migrate **all repositories**
+   - Configured via `privileged_teams` setting
+   - Bypass all per-repository permission checks
+   - Useful for dedicated migration admin teams
+
+3. **Organization Admins** → Can migrate **all repositories in their organizations**
+   - Automatically detected via GitHub API
+   - Admin role checked for each organization
+   - Can migrate any repo in orgs they admin
+
+4. **Repository Admins** → Can migrate **only repositories they have admin access to**
+   - Default permission level for all other users
+   - Each repository checked individually
+   - Enables self-service migrations for developers
+
+#### How It Works
+
+1. **Repository List Filtering**: When users view the repository list, they only see repositories they have permission to migrate
+2. **Migration Actions Protected**: All migration operations (batch creation, self-service migration, repository actions) validate permissions
+3. **Real-Time Checks**: Permissions are checked at request time using the user's OAuth token
+4. **Graceful Degradation**: If permission checks fail, users see appropriate error messages
+
+#### Configuration Example
+
+```yaml
+auth:
+  enabled: true
+  # ... OAuth settings ...
+  
+  authorization_rules:
+    # Application-level access (who can use the system)
+    require_org_membership:
+      - "my-company"
+    
+    # Privileged teams with full access
+    privileged_teams:
+      - "my-company/migration-admins"
+      - "my-company/platform-team"
+    
+    # Optional: Require enterprise admin
+    require_enterprise_admin: false
+    require_enterprise_slug: "my-enterprise"
+```
+
+#### Use Cases
+
+**Self-Service Developer Migrations:**
+- Developers authenticate with their GitHub account
+- They see only repos they admin
+- Can migrate their own repositories
+- No admin intervention needed
+
+**Platform Team Full Access:**
+- Add platform team to `privileged_teams`
+- Team members see and can migrate all repositories
+- Useful for handling complex migrations
+
+**Org-Level Migration Coordinators:**
+- Org admins automatically get access to all org repos
+- Can coordinate migrations within their organization
+- Don't need to be in privileged teams
+
+### OAuth Base URL Configuration
+
+By default, OAuth uses the **source** GitHub instance for authentication. This can be overridden:
+
+```yaml
+auth:
+  github_oauth_base_url: "https://github.company.com/api/v3"
+```
+
+**Default behavior:**
+- If source is GitHub → uses source base URL
+- Otherwise → uses destination base URL
 
 ### Environment Variables
 
@@ -320,6 +427,7 @@ For sensitive configuration, use environment variables:
 export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID="Iv1.your_client_id"
 export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET="your_secret"
 export GHMIG_AUTH_SESSION_SECRET="your_session_secret"
+export GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS="my-org/migration-admins,my-org/platform-team"
 ```
 
 ### Testing Authentication

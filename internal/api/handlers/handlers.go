@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettkuhlman/github-migrator/internal/auth"
+	"github.com/brettkuhlman/github-migrator/internal/config"
 	"github.com/brettkuhlman/github-migrator/internal/discovery"
 	"github.com/brettkuhlman/github-migrator/internal/github"
 	"github.com/brettkuhlman/github-migrator/internal/models"
@@ -43,12 +45,16 @@ type Handler struct {
 	destDualClient   *github.DualClient
 	collector        *discovery.Collector
 	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
+	authConfig       *config.AuthConfig   // Auth configuration for permission checks
+	sourceBaseURL    string               // Source GitHub base URL for permission checks
 }
 
 // NewHandler creates a new Handler instance
 // sourceProvider can be nil if discovery is not needed
 // sourceBaseConfig is used for per-org client creation in enterprise discovery (can be nil for PAT-only mode)
-func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig) *Handler {
+// authConfig is used for permission checks (can be nil if auth is disabled)
+// sourceBaseURL is the source GitHub base URL for permission checks
+func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig, authConfig *config.AuthConfig, sourceBaseURL string) *Handler {
 	var collector *discovery.Collector
 	// Use API client for discovery operations (will use App client if available, otherwise PAT)
 	if sourceDualClient != nil && sourceProvider != nil {
@@ -68,6 +74,8 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 		destDualClient:   destDualClient,
 		collector:        collector,
 		sourceBaseConfig: sourceBaseConfig,
+		authConfig:       authConfig,
+		sourceBaseURL:    sourceBaseURL,
 	}
 }
 
@@ -392,6 +400,11 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Note: We don't filter repositories by permissions here for performance reasons.
+	// Instead, permission checks are enforced at the action level (when users try to
+	// migrate, add to batch, etc.). This provides better UX - users see all repos
+	// immediately and get clear error messages only when they attempt unauthorized actions.
+
 	// Get total count if pagination is used
 	response := map[string]interface{}{
 		"repositories": repos,
@@ -442,6 +455,13 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 		fullName = strings.TrimSuffix(fullPath, "/mark-wont-migrate")
 	} else {
 		h.sendError(w, http.StatusNotFound, "Unknown repository action")
+		return
+	}
+
+	// Check if user has permission to access this repository
+	if err := h.checkRepositoryAccess(r.Context(), fullName); err != nil {
+		h.logger.Warn("Repository access denied", "repo", fullName, "action", action, "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -1283,6 +1303,20 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Log the dry run initiation with user info
+		initiatingUser := getInitiatingUser(ctx)
+		logEntry := &models.MigrationLog{
+			RepositoryID: repo.ID,
+			Level:        "INFO",
+			Phase:        "dry_run",
+			Operation:    "queue",
+			Message:      "Dry run queued",
+			InitiatedBy:  initiatingUser,
+		}
+		if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+			h.logger.Warn("Failed to create migration log", "error", err)
+		}
+
 		dryRunIDs = append(dryRunIDs, repo.ID)
 	}
 
@@ -1377,6 +1411,17 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check user has permission to access all repositories in the batch
+	repoFullNames := make([]string, len(repos))
+	for i, repo := range repos {
+		repoFullNames[i] = repo.FullName
+	}
+	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+		h.logger.Warn("Start batch access denied", "batch_id", batchID, "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
 	// Queue repositories for migration
 	priority := 0
 	if batch.Type == "pilot" {
@@ -1395,6 +1440,20 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 		if err := h.db.UpdateRepository(ctx, repo); err != nil {
 			h.logger.Error("Failed to update repository", "error", err)
 			continue
+		}
+
+		// Log the migration initiation with user info
+		initiatingUser := getInitiatingUser(ctx)
+		logEntry := &models.MigrationLog{
+			RepositoryID: repo.ID,
+			Level:        "INFO",
+			Phase:        "migration",
+			Operation:    "queue",
+			Message:      "Migration queued",
+			InitiatedBy:  initiatingUser,
+		}
+		if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+			h.logger.Warn("Failed to create migration log", "error", err)
 		}
 
 		migrationIDs = append(migrationIDs, repo.ID)
@@ -1558,7 +1617,7 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // AddRepositoriesToBatch handles POST /api/v1/batches/{id}/repositories
-func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request) { //nolint:gocyclo // TODO: refactor to reduce complexity
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -1610,6 +1669,17 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		h.logger.Error("Failed to get repositories", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to validate repositories")
+		return
+	}
+
+	// Check user has permission to access all repositories
+	repoFullNames := make([]string, len(repos))
+	for i, repo := range repos {
+		repoFullNames[i] = repo.FullName
+	}
+	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+		h.logger.Warn("Add repositories to batch access denied", "batch_id", batchID, "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -1800,14 +1870,40 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check user has permission to access all repositories
+	repoFullNames := make([]string, len(reposToRetry))
+	for i, repo := range reposToRetry {
+		repoFullNames[i] = repo.FullName
+	}
+	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+		h.logger.Warn("Retry batch access denied", "batch_id", batchID, "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
 	// Queue repositories for retry
 	retriedIDs := make([]int64, 0, len(reposToRetry))
+	initiatingUser := getInitiatingUser(ctx)
 	for _, repo := range reposToRetry {
 		repo.Status = string(models.StatusQueuedForMigration)
 		if err := h.db.UpdateRepository(ctx, repo); err != nil {
 			h.logger.Error("Failed to update repository", "error", err, "repo", repo.FullName)
 			continue
 		}
+
+		// Log the retry initiation with user info
+		logEntry := &models.MigrationLog{
+			RepositoryID: repo.ID,
+			Level:        "INFO",
+			Phase:        "migration",
+			Operation:    "retry",
+			Message:      "Migration retry queued",
+			InitiatedBy:  initiatingUser,
+		}
+		if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+			h.logger.Warn("Failed to create migration log", "error", err)
+		}
+
 		retriedIDs = append(retriedIDs, repo.ID)
 	}
 
@@ -1866,6 +1962,17 @@ func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check user has permission to access all repositories
+	repoFullNames := make([]string, len(repos))
+	for i, repo := range repos {
+		repoFullNames[i] = repo.FullName
+	}
+	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+		h.logger.Warn("Start migration access denied", "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
 	// Start migrations asynchronously
 	migrationIDs := make([]int64, 0, len(repos))
 	for _, repo := range repos {
@@ -1891,6 +1998,26 @@ func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 				"repo", repo.FullName,
 				"error", err)
 			continue
+		}
+
+		// Log the migration initiation with user info
+		initiatingUser := getInitiatingUser(ctx)
+		phase := "migration"
+		message := "Migration queued"
+		if req.DryRun {
+			phase = "dry_run"
+			message = "Dry run queued"
+		}
+		logEntry := &models.MigrationLog{
+			RepositoryID: repo.ID,
+			Level:        "INFO",
+			Phase:        phase,
+			Operation:    "queue",
+			Message:      message,
+			InitiatedBy:  initiatingUser,
+		}
+		if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+			h.logger.Warn("Failed to create migration log", "error", err)
 		}
 
 		migrationIDs = append(migrationIDs, repo.ID)
@@ -2783,6 +2910,17 @@ func isEligibleForBatch(status string) bool {
 	return false
 }
 
+// getInitiatingUser extracts the authenticated username from the context
+// Returns nil if auth is disabled or user not found
+func getInitiatingUser(ctx context.Context) *string {
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok || user == nil {
+		return nil
+	}
+	username := user.Login
+	return &username
+}
+
 func isRepositoryEligibleForBatch(repo *models.Repository) (bool, string) {
 	// Check if already in a batch
 	if repo.BatchID != nil {
@@ -2800,6 +2938,71 @@ func isRepositoryEligibleForBatch(repo *models.Repository) (bool, string) {
 	}
 
 	return true, ""
+}
+
+// checkRepositoryAccess validates that the user has access to a specific repository
+// Returns an error if auth is enabled and user doesn't have access
+func (h *Handler) checkRepositoryAccess(ctx context.Context, repoFullName string) error {
+	// If auth is not enabled, allow access
+	if !h.authConfig.Enabled {
+		return nil
+	}
+
+	user, hasUser := auth.GetUserFromContext(ctx)
+	token, hasToken := auth.GetTokenFromContext(ctx)
+
+	if !hasUser || !hasToken {
+		return fmt.Errorf("authentication required")
+	}
+
+	if h.sourceDualClient == nil {
+		h.logger.Warn("Cannot check repository access: source client not available")
+		return nil // Allow access if we can't check
+	}
+
+	// Create permission checker
+	apiClient := h.sourceDualClient.APIClient()
+	checker := auth.NewPermissionChecker(apiClient, h.authConfig, h.logger, h.sourceBaseURL)
+
+	// Check if user has access to this repository
+	hasAccess, err := checker.HasRepoAccess(ctx, user, token, repoFullName)
+	if err != nil {
+		return fmt.Errorf("failed to check repository access: %w", err)
+	}
+
+	if !hasAccess {
+		return fmt.Errorf("you don't have admin access to repository: %s", repoFullName)
+	}
+
+	return nil
+}
+
+// checkRepositoriesAccess validates that the user has access to all specified repositories
+// Returns an error if auth is enabled and user doesn't have access to any repository
+func (h *Handler) checkRepositoriesAccess(ctx context.Context, repoFullNames []string) error {
+	// If auth is not enabled, allow access
+	if !h.authConfig.Enabled {
+		return nil
+	}
+
+	user, hasUser := auth.GetUserFromContext(ctx)
+	token, hasToken := auth.GetTokenFromContext(ctx)
+
+	if !hasUser || !hasToken {
+		return fmt.Errorf("authentication required")
+	}
+
+	if h.sourceDualClient == nil {
+		h.logger.Warn("Cannot check repositories access: source client not available")
+		return nil // Allow access if we can't check
+	}
+
+	// Create permission checker
+	apiClient := h.sourceDualClient.APIClient()
+	checker := auth.NewPermissionChecker(apiClient, h.authConfig, h.logger, h.sourceBaseURL)
+
+	// Validate access to all repositories
+	return checker.ValidateRepositoryAccess(ctx, user, token, repoFullNames)
 }
 
 // ListOrganizations handles GET /api/v1/organizations
@@ -2990,6 +3193,13 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 	ctx := r.Context()
 
+	// Check if user has permission to access all requested repositories
+	if err := h.checkRepositoriesAccess(ctx, req.Repositories); err != nil {
+		h.logger.Warn("Self-service migration access denied", "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
 	h.logger.Info("Processing self-service migration request",
 		"repo_count", len(req.Repositories),
 		"dry_run", req.DryRun,
@@ -3147,11 +3357,25 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 		// Queue repositories for dry run
 		priority := 0
+		initiatingUser := getInitiatingUser(ctx)
 		for _, repo := range existingRepos {
 			repo.Status = string(models.StatusDryRunQueued)
 			repo.Priority = priority
 			if err := h.db.UpdateRepository(ctx, repo); err != nil {
 				h.logger.Error("Failed to queue repository for dry run", "repo", repo.FullName, "error", err)
+			}
+
+			// Log the dry run initiation with user info
+			logEntry := &models.MigrationLog{
+				RepositoryID: repo.ID,
+				Level:        "INFO",
+				Phase:        "dry_run",
+				Operation:    "batch_start",
+				Message:      fmt.Sprintf("Dry run started via batch %s", batch.Name),
+				InitiatedBy:  initiatingUser,
+			}
+			if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+				h.logger.Warn("Failed to create migration log", "error", err)
 			}
 		}
 		executionStarted = true
@@ -3167,12 +3391,26 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 		// Queue repositories for migration
 		priority := 0
+		initiatingUser := getInitiatingUser(ctx)
 		for _, repo := range existingRepos {
 			repo.Status = string(models.StatusQueuedForMigration)
 			repo.Priority = priority
 			if err := h.db.UpdateRepository(ctx, repo); err != nil {
 				h.logger.Error("Failed to queue repository for migration", "repo", repo.FullName, "error", err)
 				executionError = err
+			}
+
+			// Log the migration initiation with user info
+			logEntry := &models.MigrationLog{
+				RepositoryID: repo.ID,
+				Level:        "INFO",
+				Phase:        "migration",
+				Operation:    "batch_start",
+				Message:      fmt.Sprintf("Migration started via batch %s", batch.Name),
+				InitiatedBy:  initiatingUser,
+			}
+			if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+				h.logger.Warn("Failed to create migration log", "error", err)
 			}
 		}
 		executionStarted = executionError == nil

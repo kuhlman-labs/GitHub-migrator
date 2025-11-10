@@ -277,6 +277,13 @@ func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 			rules["requires_enterprise_admin"] = true
 			rules["enterprise"] = h.config.AuthorizationRules.RequireEnterpriseSlug
 		}
+		if h.config.AuthorizationRules.RequireEnterpriseMembership && h.config.AuthorizationRules.RequireEnterpriseSlug != "" {
+			rules["requires_enterprise_membership"] = true
+			if !h.config.AuthorizationRules.RequireEnterpriseAdmin {
+				// Only include enterprise slug if not already included by RequireEnterpriseAdmin
+				rules["enterprise"] = h.config.AuthorizationRules.RequireEnterpriseSlug
+			}
+		}
 		response["authorization_rules"] = rules
 	}
 

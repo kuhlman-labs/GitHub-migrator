@@ -37,13 +37,24 @@ logging_level  = "info"
 logging_format = "json"
 
 # Auth Configuration (optional)
-auth_enabled                     = false
-auth_github_oauth_client_id      = ""
-auth_github_oauth_client_secret  = ""
-auth_callback_url                = ""
-auth_frontend_url                = ""
-auth_session_secret              = ""
-auth_session_duration_hours      = 24
+auth_enabled                    = false
+auth_github_oauth_client_id     = ""
+auth_github_oauth_client_secret = ""
+auth_callback_url               = ""
+auth_frontend_url               = ""
+auth_session_secret             = ""
+auth_session_duration_hours     = 24
+
+# Auth OAuth Configuration (optional)
+# auth_github_oauth_base_url = "https://api.github.com"  # Defaults to source URL if not specified
+
+# Auth Authorization Rules (optional)
+# auth_require_org_membership         = ["my-org"]
+# auth_require_team_membership        = ["my-org/platform-team"]
+# auth_require_enterprise_admin       = false
+# auth_require_enterprise_membership  = false
+# auth_require_enterprise_slug        = "my-enterprise"
+# auth_privileged_teams               = ["my-org/migration-admins"]
 
 # CORS Configuration
 cors_allowed_origins = ["*"]

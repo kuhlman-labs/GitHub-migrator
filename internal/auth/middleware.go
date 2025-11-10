@@ -30,8 +30,9 @@ func NewMiddleware(jwtManager *JWTManager, authorizer *Authorizer, logger *slog.
 type authContextKey string
 
 const (
-	ContextKeyUser   authContextKey = "auth_user"
-	ContextKeyClaims authContextKey = "auth_claims"
+	ContextKeyUser        authContextKey = "auth_user"
+	ContextKeyClaims      authContextKey = "auth_claims"
+	ContextKeyGitHubToken authContextKey = "auth_github_token" // #nosec G101 -- This is a context key, not credentials
 )
 
 // RequireAuth is middleware that requires authentication
@@ -68,9 +69,18 @@ func (m *Middleware) RequireAuth(next http.Handler) http.Handler {
 			AvatarURL: claims.AvatarURL,
 		}
 
-		// Store user and claims in context
+		// Decrypt GitHub token from claims
+		githubToken, err := m.jwtManager.DecryptToken(claims.GitHubToken)
+		if err != nil {
+			m.logger.Warn("Failed to decrypt GitHub token", "error", err, "path", r.URL.Path)
+			m.respondUnauthorized(w, "Invalid token")
+			return
+		}
+
+		// Store user, claims, and GitHub token in context
 		ctx := context.WithValue(r.Context(), ContextKeyUser, user)
 		ctx = context.WithValue(ctx, ContextKeyClaims, claims)
+		ctx = context.WithValue(ctx, ContextKeyGitHubToken, githubToken)
 
 		m.logger.Debug("User authenticated", "login", user.Login, "path", r.URL.Path)
 

@@ -45,9 +45,10 @@ export function RepositoryDetail() {
       
       // Show success message
       alert(`${dryRun ? 'Dry run' : 'Migration'} started successfully!`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to start migration:', error);
-      alert('Failed to start migration. Please try again.');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to start migration. Please try again.';
+      alert(errorMessage);
     } finally {
       setMigrating(false);
     }
@@ -63,9 +64,10 @@ export function RepositoryDetail() {
     try {
       await rediscoverMutation.mutateAsync(decodeURIComponent(fullName));
       alert('Re-discovery started! Repository data will be updated shortly.');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to start re-discovery:', error);
-      alert('Failed to start re-discovery. Please try again.');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to start re-discovery. Please try again.';
+      alert(errorMessage);
     }
   };
 
@@ -79,9 +81,10 @@ export function RepositoryDetail() {
     try {
       await unlockMutation.mutateAsync(decodeURIComponent(fullName));
       alert('Repository unlocked successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to unlock repository:', error);
-      alert('Failed to unlock repository. Please try again.');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to unlock repository. Please try again.';
+      alert(errorMessage);
     }
   };
 
@@ -96,9 +99,10 @@ export function RepositoryDetail() {
       setShowRollbackDialog(false);
       setRollbackReason('');
       alert('Repository rolled back successfully! It can now be migrated again.');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to rollback repository:', error);
-      alert('Failed to rollback repository. Please try again.');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to rollback repository. Please try again.';
+      alert(errorMessage);
     }
   };
 

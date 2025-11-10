@@ -286,6 +286,14 @@ auth:
   # github_oauth_client_id: "Iv1.abcd1234efgh5678"
   # github_oauth_client_secret: "your-oauth-client-secret-here"
   
+  # GitHub OAuth Base URL (Optional)
+  # Defaults to the source URL if source is GitHub, otherwise destination URL
+  # Override this if OAuth should authenticate against a different GitHub instance
+  # Examples:
+  # - GitHub.com: "https://api.github.com"
+  # - GHES: "https://github.company.com/api/v3"
+  # github_oauth_base_url: "https://api.github.com"
+  
   # OAuth callback URL
   # Must match the callback URL configured in your OAuth App
   # Format: https://your-migrator-domain.com/api/v1/auth/callback
@@ -334,10 +342,31 @@ auth:
     # Default: false
     # require_enterprise_admin: false
     
-    # Enterprise slug for admin verification
-  # Required only if require_enterprise_admin is true
-  # This is the slug of your GitHub Enterprise
-  # require_enterprise_slug: "my-enterprise"
+    # Require user to be a member of the Enterprise (any role)
+    # If true, any member of the enterprise can access the system
+    # More permissive than require_enterprise_admin - allows all enterprise members
+    # Repository-level permissions still apply to limit what they can migrate
+    # Requires require_enterprise_slug to be set
+    # Default: false
+    # require_enterprise_membership: false
+    
+    # Enterprise slug for admin/membership verification
+    # Required if require_enterprise_admin or require_enterprise_membership is true
+    # This is the slug of your GitHub Enterprise
+    # NOTE: If configured, enterprise admins automatically get FULL MIGRATION ACCESS
+    #       (can migrate any repository), regardless of require_enterprise_admin setting
+    # require_enterprise_slug: "my-enterprise"
+    
+    # Privileged teams (Full Migration Access)
+    # Members of these teams have FULL ACCESS to migrate any repository
+    # This bypasses per-repository permission checks
+    # Use for migration admin teams that should have unrestricted access
+    # Format: "organization/team-slug"
+    # Team slugs are lowercase with hyphens
+    # Leave empty to not grant any teams full access
+    # privileged_teams:
+    #   - "my-company-org/migration-admins"
+    #   - "my-company-org/platform-engineering"
   
   # ==========================================================================
   # Future Provider Support (Not Yet Implemented)
@@ -385,6 +414,22 @@ auth:
 #   authorization_rules:
 #     require_enterprise_admin: true
 #     require_enterprise_slug: "acme-enterprise"
+
+# Example: Enterprise membership with repository-level permissions
+# auth:
+#   enabled: true
+#   github_oauth_client_id: "Iv1.abcd1234efgh5678"
+#   github_oauth_client_secret: "${GITHUB_OAUTH_CLIENT_SECRET}"
+#   callback_url: "https://migrator.company.com/api/v1/auth/callback"
+#   session_secret: "${AUTH_SESSION_SECRET}"
+#   session_duration_hours: 24
+#   authorization_rules:
+#     require_enterprise_membership: true
+#     require_enterprise_slug: "acme-enterprise"
+#     # Users can only migrate repos they have admin access to
+#     # Unless they're in a privileged team:
+#     privileged_teams:
+#       - "acme-corp/migration-admins"
 
 # =============================================================================
 # Legacy GitHub Configuration (Deprecated)

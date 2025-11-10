@@ -124,10 +124,13 @@ module "app_service" {
     "GHMIG_AUTH_SESSION_DURATION_HOURS"     = tostring(var.auth_session_duration_hours)
 
     # Auth Authorization Rules
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP"   = jsonencode(var.auth_require_org_membership)
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP"  = jsonencode(var.auth_require_team_membership)
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN" = tostring(var.auth_require_enterprise_admin)
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG"  = var.auth_require_enterprise_slug
+    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP"        = jsonencode(var.auth_require_org_membership)
+    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP"       = jsonencode(var.auth_require_team_membership)
+    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN"      = tostring(var.auth_require_enterprise_admin)
+    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_MEMBERSHIP" = tostring(var.auth_require_enterprise_membership)
+    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG"       = var.auth_require_enterprise_slug
+    "GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS"              = jsonencode(var.auth_privileged_teams)
+    "GHMIG_AUTH_GITHUB_OAUTH_BASE_URL"                             = var.auth_github_oauth_base_url
 
     # Environment
     "ENVIRONMENT" = "prod"

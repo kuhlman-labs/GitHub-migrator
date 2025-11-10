@@ -258,6 +258,16 @@ function LogEntry({ log }: { log: MigrationLog }) {
           [{log.phase}:{log.operation}]
         </span>
         
+        {/* Initiated By */}
+        {log.initiated_by && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 whitespace-nowrap">
+            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+            </svg>
+            {log.initiated_by}
+          </span>
+        )}
+        
         {/* Message */}
         <span className={`flex-1 text-xs ${log.level === 'ERROR' ? 'text-red-700 font-medium' : 'text-gray-800'}`}>
           {log.message}
