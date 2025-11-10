@@ -172,6 +172,9 @@ jobs:
           auth_require_team_membership     = ${{ vars.AUTH_REQUIRE_TEAM_MEMBERSHIP || '[]' }}
           auth_require_enterprise_admin    = ${{ vars.AUTH_REQUIRE_ENTERPRISE_ADMIN || 'false' }}
           auth_require_enterprise_slug     = "${{ vars.AUTH_REQUIRE_ENTERPRISE_SLUG || '' }}"
+          auth_require_enterprise_membership = ${{ vars.AUTH_REQUIRE_ENTERPRISE_MEMBERSHIP || 'false' }}
+          auth_privileged_teams              = ${{ vars.AUTH_PRIVILEGED_TEAMS || '[]' }}
+          auth_github_oauth_base_url         = "${{ vars.AUTH_GITHUB_OAUTH_BASE_URL || '' }}"
 
           # CORS Configuration
           cors_allowed_origins = ${{ vars.CORS_ALLOWED_ORIGINS || '[]' }}
