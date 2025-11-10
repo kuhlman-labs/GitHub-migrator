@@ -1,37 +1,44 @@
-name: Terraform Manual Operations - Dev
+name: Dev Pipeline
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Terraform action to perform'
-        required: true
-        default: 'plan'
-        type: choice
-        options:
-          - plan
-          - apply
-          - destroy
-      reason:
-        description: 'Reason for manual terraform operation'
-        required: false
-        type: string
 
 # Set minimal permissions for the workflow
 permissions:
-  contents: read      # Read repository contents
-  id-token: write     # Create OIDC tokens for Azure authentication
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
 
 env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
   TF_VERSION: '1.6'
   WORKING_DIR: terraform/environments/dev
 
 jobs:
-  terraform-dev:
-    name: Terraform ${{ github.event.inputs.action }} - Dev
+  # Job 1: Run CI tests in parallel
+  ci-tests:
+    name: CI Tests
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+
+  # Job 2: Check for terraform changes and auto-apply
+  terraform:
+    name: Terraform Auto-Apply
     runs-on: ubuntu-latest
     environment: dev
-
+    outputs:
+      changed: ${{ steps.terraform-changes.outputs.changed }}
+      applied: ${{ steps.apply.outcome == 'success' }}
+    
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
@@ -39,41 +46,49 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
-      - name: Log manual operation
+      - name: Check for terraform changes
+        id: terraform-changes
         run: |
-          echo "## ⚠️ Manual Terraform Operation" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Action:** ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ github.event.inputs.reason }}" ]; then
-            echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual trigger - checking for terraform changes"
+            if [ -d "terraform/" ]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "Terraform directory exists, will check"
+            fi
+          else
+            # Check if terraform files changed in this push
+            if git diff --name-only HEAD^ HEAD | grep -q '^terraform/'; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "Terraform files changed"
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "No terraform changes detected"
+            fi
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note:** Normal terraform changes are automatically applied via the dev-pipeline workflow." >> $GITHUB_STEP_SUMMARY
-          echo "This workflow is for manual operations only (troubleshooting, destroy, etc.)." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
 
       - name: Setup Terraform
+        if: steps.terraform-changes.outputs.changed == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Azure Login
+        if: steps.terraform-changes.outputs.changed == 'true'
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Extract Azure credentials for Terraform
-        id: azure-creds
+        if: steps.terraform-changes.outputs.changed == 'true'
         run: |
-          # Extract credentials from AZURE_CREDENTIALS JSON
           CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
           CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
           TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
           SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
 
-          # Set as environment variables for Terraform
           echo "ARM_CLIENT_ID=${CLIENT_ID}" >> $GITHUB_ENV
           echo "ARM_CLIENT_SECRET=${CLIENT_SECRET}" >> $GITHUB_ENV
           echo "ARM_TENANT_ID=${TENANT_ID}" >> $GITHUB_ENV
@@ -81,6 +96,7 @@ jobs:
           echo "ARM_USE_CLI=false" >> $GITHUB_ENV
 
       - name: Create terraform.tfvars from environment secrets
+        if: steps.terraform-changes.outputs.changed == 'true'
         run: |
           cat > terraform.tfvars <<'TFVARS_EOF'
           # Azure Configuration
@@ -106,13 +122,12 @@ jobs:
           source_token    = "${{ secrets.SOURCE_GITHUB_TOKEN }}"
           TFVARS_EOF
 
-          # Add GitHub App configuration if enabled (handles multi-line private key)
+          # Add GitHub App configuration if enabled
           if [ -n "${{ vars.SOURCE_APP_ID }}" ] && [ "${{ vars.SOURCE_APP_ID }}" != "0" ]; then
             echo "" >> terraform.tfvars
             echo "# Source GitHub App Configuration" >> terraform.tfvars
             echo "source_app_id = ${{ vars.SOURCE_APP_ID }}" >> terraform.tfvars
 
-            # Use heredoc for multi-line private key
             cat >> terraform.tfvars <<'PRIVATE_KEY_EOF'
           source_app_private_key = <<-EOT
           ${{ secrets.SOURCE_APP_PRIVATE_KEY }}
@@ -133,13 +148,12 @@ jobs:
           destination_token    = "${{ secrets.DEST_GITHUB_TOKEN }}"
           TFVARS_EOF
 
-          # Add Destination GitHub App configuration if enabled (handles multi-line private key)
+          # Add Destination GitHub App configuration if enabled
           if [ -n "${{ vars.DEST_APP_ID }}" ] && [ "${{ vars.DEST_APP_ID }}" != "0" ]; then
             echo "" >> terraform.tfvars
             echo "# Destination GitHub App Configuration" >> terraform.tfvars
             echo "dest_app_id = ${{ vars.DEST_APP_ID }}" >> terraform.tfvars
 
-            # Use heredoc for multi-line private key
             cat >> terraform.tfvars <<'DEST_PRIVATE_KEY_EOF'
           dest_app_private_key = <<-EOT
           ${{ secrets.DEST_APP_PRIVATE_KEY }}
@@ -194,45 +208,172 @@ jobs:
           TFVARS_EOF
 
       - name: Format terraform.tfvars
+        if: steps.terraform-changes.outputs.changed == 'true'
         run: terraform fmt terraform.tfvars
 
       - name: Terraform Init
+        if: steps.terraform-changes.outputs.changed == 'true'
         run: terraform init
 
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
-        continue-on-error: true
-
       - name: Terraform Validate
+        if: steps.terraform-changes.outputs.changed == 'true'
         run: terraform validate
 
       - name: Terraform Plan
-        if: github.event.inputs.action == 'plan'
+        if: steps.terraform-changes.outputs.changed == 'true'
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
-        if: github.event.inputs.action == 'apply'
-        run: terraform apply -auto-approve
-
-      - name: Terraform Destroy
-        if: github.event.inputs.action == 'destroy'
-        run: terraform destroy -auto-approve
+        id: apply
+        if: steps.terraform-changes.outputs.changed == 'true'
+        run: terraform apply -auto-approve tfplan
 
       - name: Get Outputs
-        if: github.event.inputs.action == 'apply'
+        if: steps.terraform-changes.outputs.changed == 'true' && steps.apply.outcome == 'success'
         run: |
-          echo "## Terraform Outputs" >> $GITHUB_STEP_SUMMARY
+          echo "## Terraform Auto-Applied (Dev)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**App Service URL:** $(terraform output -raw app_service_url)" >> $GITHUB_STEP_SUMMARY
           echo "**App Service Name:** $(terraform output -raw app_service_name)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Update GitHub dev Environment Variable \`APP_SERVICE_NAME\` with: \`$(terraform output -raw app_service_name)\`" >> $GITHUB_STEP_SUMMARY
-          echo "2. Run the Build workflow to create container image" >> $GITHUB_STEP_SUMMARY
-          echo "3. Run Deploy Dev workflow to deploy the application" >> $GITHUB_STEP_SUMMARY
+          echo "Infrastructure updated automatically based on terraform changes." >> $GITHUB_STEP_SUMMARY
 
       - name: Cleanup
-        if: always()
+        if: always() && steps.terraform-changes.outputs.changed == 'true'
         run: |
           rm -f terraform.tfvars
-          az logout
+          az logout || true
+
+  # Job 3: Build and push Docker image
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=raw,value=dev
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Output image tags
+        run: |
+          echo "## Docker Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Built and pushed the following tags:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image digest:** \`${{ steps.push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # Job 4: Deploy to dev environment
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: [ci-tests, terraform, build]
+    if: success()
+    environment:
+      name: dev
+      url: ${{ steps.deploy.outputs.webapp-url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Deploy to Azure App Service
+        id: deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.APP_SERVICE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:dev
+
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Health check
+        run: |
+          APP_URL="${{ steps.deploy.outputs.webapp-url }}"
+          echo "Checking health endpoint: ${APP_URL}/health"
+
+          for i in {1..10}; do
+            if curl -f -s "${APP_URL}/health" > /dev/null; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            echo "⏳ Waiting for app to be ready... (attempt $i/10)"
+            sleep 10
+          done
+
+          echo "❌ Health check failed after 10 attempts"
+          exit 1
+
+      - name: Deployment summary
+        run: |
+          echo "## Dev Deployment Successful! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Dev" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deploy.outputs.webapp-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:dev" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.terraform.outputs.changed }}" == "true" ]; then
+            echo "**Infrastructure:** ✅ Terraform changes applied automatically" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Infrastructure:** No changes" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Logout from Azure
+        run: az logout
+        if: ${{ !cancelled() }}
+

@@ -4,12 +4,11 @@ on:
   push:
     branches:
       - main
-      - develop
   pull_request:
     branches:
       - main
-      - develop
   workflow_dispatch:
+  workflow_call:
 
 # Set minimal permissions for the workflow
 permissions:
