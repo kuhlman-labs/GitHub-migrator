@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	defaultGitHubAPIURL   = "https://api.github.com"
-	membershipStateActive = "active"
-	membershipRoleAdmin   = "admin"
+	defaultGitHubAPIURL     = "https://api.github.com"
+	defaultGitHubGraphQLURL = "https://api.github.com/graphql"
+	membershipStateActive   = "active"
+	membershipRoleAdmin     = "admin"
 )
 
 // Authorizer handles user authorization checks
@@ -188,7 +189,7 @@ func (a *Authorizer) CheckTeamMembership(ctx context.Context, username string, r
 func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, enterpriseSlug string, token string) (bool, error) {
 	// Use GraphQL API to check enterprise admin status
 	// This works with OAuth tokens, unlike the REST API endpoint
-	graphqlURL := "https://api.github.com/graphql"
+	graphqlURL := defaultGitHubGraphQLURL
 	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
 		// For GHES, GraphQL endpoint is at /api/graphql
 		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
@@ -288,7 +289,7 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 func (a *Authorizer) CheckEnterpriseMembership(ctx context.Context, username string, enterpriseSlug string, token string) (bool, error) {
 	// Use GraphQL API to check enterprise membership
 	// This checks if the user has any access to the enterprise (member or admin)
-	graphqlURL := "https://api.github.com/graphql"
+	graphqlURL := defaultGitHubGraphQLURL
 	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
 		// For GHES, GraphQL endpoint is at /api/graphql
 		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
@@ -571,7 +572,7 @@ func (a *Authorizer) IsOrgAdmin(ctx context.Context, username string, org string
 // Uses GraphQL to check the viewer's (authenticated user's) permission directly
 func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string, org string, repo string, token string) (bool, error) {
 	// Use GraphQL API to check viewer's permission (more reliable than REST API)
-	graphqlURL := "https://api.github.com/graphql"
+	graphqlURL := defaultGitHubGraphQLURL
 	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
 		// For GHES, GraphQL endpoint is at /api/graphql
 		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
@@ -645,7 +646,7 @@ func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string
 		a.logger.Debug("GraphQL query returned errors",
 			"error", errorMsg,
 			"repo", fmt.Sprintf("%s/%s", org, repo))
-		
+
 		// Provide more context for common errors
 		if strings.Contains(errorMsg, "Could not resolve to a Repository") {
 			a.logger.Info("Repository not found or no access",
@@ -653,7 +654,7 @@ func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string
 				"username", username,
 				"hint", "Repository may not exist, user may lack access, or name may have incorrect case (GitHub is case-sensitive)")
 		}
-		
+
 		// If repo not found or user doesn't have access, treat as no permission
 		return false, nil
 	}
