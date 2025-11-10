@@ -8,10 +8,13 @@ This document lists all GitHub Secrets required for CI/CD pipelines and Terrafor
 - Separate secrets per environment (dev/prod)
 - Protection rules for production
 - Environment-specific variables for non-sensitive config
+- **New**: Granular authorization controls (enterprise membership, privileged teams, repository-level permissions)
+- **New**: OAuth base URL configuration for GitHub Enterprise Server
+- **New**: Two-layer authorization model for self-service developer migrations
 
 👉 **Follow the new guide:** [GITHUB_ENVIRONMENTS_SETUP.md](./GITHUB_ENVIRONMENTS_SETUP.md)
 
-> This guide (GITHUB_SECRETS_SETUP.md) shows the traditional repository-level secrets approach, which still works but is less organized.
+> This guide (GITHUB_SECRETS_SETUP.md) shows the traditional repository-level secrets approach, which still works but is less organized and doesn't support the full range of new authorization options.
 
 ## 📍 Where to Add Secrets (Repository-Level)
 
