@@ -68,8 +68,8 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
         )}
       </ProfileCard>
 
-      {/* GitHub Properties */}
-      <ProfileCard title="GitHub Properties">
+      {/* GitHub/ADO Properties */}
+      <ProfileCard title={repository.ado_project ? "ADO Properties" : "GitHub Properties"}>
         {/* Always show */}
         <ProfileItem label="Visibility" value={repository.visibility} />
         {repository.is_archived && (
