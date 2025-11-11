@@ -119,12 +119,15 @@ export function Dashboard() {
     setCurrentPage(1);
   }, [searchTerm]);
 
+  // Dynamic labels based on source type
+  const entityLabelPlural = sourceType === 'azuredevops' ? 'Projects' : 'Organizations';
+
   return (
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold text-gh-text-primary">Organizations</h1>
+        <h1 className="text-2xl font-semibold text-gh-text-primary">{entityLabelPlural}</h1>
         <div className="flex gap-3">
           <button
             onClick={() => setShowDiscoveryModal(true)}
@@ -134,7 +137,7 @@ export function Dashboard() {
           </button>
           <input
             type="text"
-            placeholder="Search organizations..."
+            placeholder={`Search ${entityLabelPlural.toLowerCase()}...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
@@ -151,10 +154,10 @@ export function Dashboard() {
       <div className="mb-4 text-sm text-gh-text-secondary">
         {totalItems > 0 ? (
           <>
-            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} organizations with {totalRepos} total repositories
+            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {entityLabelPlural.toLowerCase()} with {totalRepos} total repositories
           </>
         ) : (
-          'No organizations found'
+          `No ${entityLabelPlural.toLowerCase()} found`
         )}
       </div>
 
@@ -162,7 +165,7 @@ export function Dashboard() {
         <LoadingSpinner />
       ) : filteredOrgs.length === 0 ? (
         <div className="text-center py-12 text-gh-text-secondary">
-          No organizations found
+          No {entityLabelPlural.toLowerCase()} found
         </div>
       ) : (
         <>
@@ -251,9 +254,26 @@ function OrganizationCard({ organization }: { organization: Organization }) {
       to={`/org/${encodeURIComponent(organization.organization)}`}
       className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
     >
-      <h3 className="text-lg font-semibold text-gh-text-primary mb-4">
-        {organization.organization}
-      </h3>
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-gh-text-primary mb-2">
+          {organization.organization}
+        </h3>
+        {/* Show hierarchy badge */}
+        {organization.ado_organization && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md font-medium">
+              ADO Org: {organization.ado_organization}
+            </span>
+          </div>
+        )}
+        {organization.enterprise && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-md font-medium">
+              GitHub Enterprise: {organization.enterprise}
+            </span>
+          </div>
+        )}
+      </div>
       
       <div className="mb-4">
         <div className="text-3xl font-semibold text-gh-blue mb-1">{totalRepos}</div>

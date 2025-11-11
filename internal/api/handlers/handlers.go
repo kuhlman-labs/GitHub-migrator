@@ -38,15 +38,22 @@ const (
 )
 
 // Handler contains all HTTP handlers
-type Handler struct {
-	db               *storage.Database
-	logger           *slog.Logger
-	sourceDualClient *github.DualClient
-	destDualClient   *github.DualClient
-	collector        *discovery.Collector
-	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
-	authConfig       *config.AuthConfig   // Auth configuration for permission checks
-	sourceBaseURL    string               // Source GitHub base URL for permission checks
+type 	Handler struct {
+		db               *storage.Database
+		logger           *slog.Logger
+		sourceDualClient *github.DualClient
+		destDualClient   *github.DualClient
+		collector        *discovery.Collector
+		sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
+		authConfig       *config.AuthConfig   // Auth configuration for permission checks
+		sourceBaseURL    string               // Source GitHub base URL for permission checks
+		sourceType       string               // Source type: "github" or "azuredevops"
+		adoHandler       *ADOHandler          // ADO-specific handler (set by server if ADO is configured)
+	}
+
+// SetADOHandler sets the ADO handler reference for delegating ADO operations
+func (h *Handler) SetADOHandler(adoHandler *ADOHandler) {
+	h.adoHandler = adoHandler
 }
 
 // NewHandler creates a new Handler instance
@@ -54,7 +61,7 @@ type Handler struct {
 // sourceBaseConfig is used for per-org client creation in enterprise discovery (can be nil for PAT-only mode)
 // authConfig is used for permission checks (can be nil if auth is disabled)
 // sourceBaseURL is the source GitHub base URL for permission checks
-func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig, authConfig *config.AuthConfig, sourceBaseURL string) *Handler {
+func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig, authConfig *config.AuthConfig, sourceBaseURL string, sourceType string) *Handler {
 	var collector *discovery.Collector
 	// Use API client for discovery operations (will use App client if available, otherwise PAT)
 	if sourceDualClient != nil && sourceProvider != nil {
@@ -76,6 +83,7 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 		sourceBaseConfig: sourceBaseConfig,
 		authConfig:       authConfig,
 		sourceBaseURL:    sourceBaseURL,
+		sourceType:       sourceType,
 	}
 }
 
@@ -85,6 +93,28 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		"status": "healthy",
 		"time":   time.Now().Format(time.RFC3339),
 	})
+}
+
+// GetConfig handles GET /api/v1/config
+// Returns application-level configuration for the frontend
+func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	// Default to github if not set
+	sourceType := h.sourceType
+	if sourceType == "" {
+		sourceType = "github"
+	}
+
+	response := map[string]interface{}{
+		"source_type":  sourceType,
+		"auth_enabled": h.authConfig != nil && h.authConfig.Enabled,
+	}
+
+	// Add Entra ID enabled flag if auth is enabled
+	if h.authConfig != nil && h.authConfig.Enabled {
+		response["entraid_enabled"] = h.authConfig.EntraIDEnabled
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // getClientForOrg returns the appropriate GitHub client for an organization
@@ -713,17 +743,49 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 		decodedFullName = fullName
 	}
 
-	if h.collector == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
-		return
-	}
-
 	ctx := r.Context()
 
 	// Check if repository exists
 	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Check if this is an ADO repository
+	if repo.ADOProject != nil && *repo.ADOProject != "" {
+		// This is an ADO repository - delegate to ADO handler
+		if h.adoHandler == nil {
+			h.sendError(w, http.StatusServiceUnavailable, "ADO discovery service not configured")
+			return
+		}
+
+		h.logger.Info("Delegating rediscovery to ADO handler", "repo", decodedFullName)
+		
+		if err := h.adoHandler.RediscoverADORepository(ctx, repo); err != nil {
+			h.logger.Error("Failed to rediscover ADO repository", "error", err, "repo", decodedFullName)
+			h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to rediscover repository: %v", err))
+			return
+		}
+
+		// Fetch updated repository from database
+		updatedRepo, err := h.db.GetRepository(ctx, decodedFullName)
+		if err != nil {
+			h.logger.Error("Failed to fetch updated repository", "error", err, "repo", decodedFullName)
+			h.sendError(w, http.StatusInternalServerError, "Failed to fetch updated repository")
+			return
+		}
+
+		h.sendJSON(w, http.StatusOK, map[string]interface{}{
+			"message":    "Repository rediscovered successfully",
+			"repository": updatedRepo,
+		})
+		return
+	}
+
+	// This is a GitHub repository - continue with standard flow
+	if h.collector == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "GitHub discovery service not configured")
 		return
 	}
 
@@ -3006,9 +3068,54 @@ func (h *Handler) checkRepositoriesAccess(ctx context.Context, repoFullNames []s
 }
 
 // ListOrganizations handles GET /api/v1/organizations
+// Returns GitHub organizations or ADO projects depending on source type
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// For Azure DevOps sources, return ADO projects as "organizations"
+	if h.sourceType == "azuredevops" {
+		// Get all ADO projects - pass empty string to get all projects
+		projects, err := h.db.GetADOProjects(ctx, "")
+		if err != nil {
+			if h.handleContextError(ctx, err, "get ADO projects", r) {
+				return
+			}
+			h.logger.Error("Failed to get ADO projects", "error", err)
+			h.sendError(w, http.StatusInternalServerError, "Failed to fetch projects")
+			return
+		}
+
+		// Transform ADO projects into organization-like structure
+		orgStats := make([]interface{}, len(projects))
+		for i, project := range projects {
+			// Count repositories for this project
+			repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
+			if err != nil {
+				h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
+				repoCount = project.RepositoryCount // Fallback to stored count
+			}
+
+			// Get status counts for this project's repositories
+			statusCounts := make(map[string]int)
+			// For now, all ADO repos are in pending status after discovery
+			// We'll query actual status distribution once we have more data
+			if repoCount > 0 {
+				statusCounts["pending"] = repoCount
+			}
+
+			orgStats[i] = map[string]interface{}{
+				"organization":     project.Name, // Use project name as "organization"
+				"total_repos":      repoCount,
+				"status_counts":    statusCounts,
+				"ado_organization": project.Organization, // ADO organization name for hierarchy display
+			}
+		}
+
+		h.sendJSON(w, http.StatusOK, orgStats)
+		return
+	}
+
+	// For GitHub sources, use standard organization stats
 	orgStats, err := h.db.GetOrganizationStats(ctx)
 	if err != nil {
 		// Check if request was canceled by client (e.g., navigating away)

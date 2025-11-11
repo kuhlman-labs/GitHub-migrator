@@ -77,8 +77,13 @@ export function OrganizationDetail() {
 
   const { data, isLoading, isFetching } = useRepositories({});
 
-  // Filter repositories for this organization (client-side)
+  // Filter repositories for this organization/project (client-side)
   const repositories = (data?.repositories || []).filter((repo: Repository) => {
+    // For ADO repos, check the ado_project field
+    if (repo.ado_project) {
+      return repo.ado_project === orgName;
+    }
+    // For GitHub repos, extract org from full_name
     const org = repo.full_name.split('/')[0];
     return org === orgName;
   });
@@ -302,13 +307,18 @@ export function OrganizationDetail() {
 }
 
 function RepositoryCard({ repository }: { repository: Repository }) {
+  // Format display name: for ADO repos, show "project/repo" instead of "org/project/repo"
+  const displayName = repository.ado_project 
+    ? repository.full_name.split('/').slice(1).join('/') // Remove org prefix for ADO repos
+    : repository.full_name; // Keep full name for GitHub repos
+
   return (
     <Link
       to={`/repository/${encodeURIComponent(repository.full_name)}`}
       className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
     >
       <h3 className="text-base font-semibold text-gh-text-primary mb-3 truncate">
-        {repository.full_name}
+        {displayName}
       </h3>
       <div className="mb-3 flex items-center justify-between">
         <StatusBadge status={repository.status} size="sm" />

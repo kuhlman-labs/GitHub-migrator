@@ -1,0 +1,282 @@
+# =============================================================================
+# Azure DevOps to GitHub Migration - YAML Configuration
+# =============================================================================
+# This configuration is specifically for:
+#   SOURCE: Azure DevOps (Cloud or Server)
+#   DESTINATION: GitHub (Cloud or Enterprise Server)
+#
+# For GitHub sources, use: config.github.yml
+#
+# Note: You can also use environment variables (see env.azuredevops.example)
+# Environment variables override settings in this file
+# =============================================================================
+
+# Server configuration
+server:
+  port: 8080
+
+# Database configuration
+database:
+  # Database type: "sqlite", "postgres", or "sqlserver"
+  type: sqlite
+  dsn: ./data/migrator.db
+  
+  # Connection pool settings (PostgreSQL/SQL Server only)
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime_seconds: 300
+  
+  # Use GORM AutoMigrate (not recommended for production)
+  auto_migrate: false
+  
+  # SQL Server specific
+  trust_server_certificate: false
+  
+  # PostgreSQL specific
+  ssl_mode: disable
+
+# =============================================================================
+# SOURCE: Azure DevOps Configuration
+# =============================================================================
+source:
+  # Source type - MUST be "azuredevops"
+  type: azuredevops
+  
+  # Azure DevOps Organization URL
+  # Format: https://dev.azure.com/YOUR_ORGANIZATION
+  # Example: https://dev.azure.com/contoso
+  base_url: https://dev.azure.com/YOUR_ORGANIZATION
+  
+  # Azure DevOps Personal Access Token (PAT)
+  # Create at: Azure DevOps → User Settings → Personal Access Tokens
+  # Required scopes:
+  #   - Code (Read): Access repository data
+  #   - Build (Read): Access pipeline information
+  #   - Work Items (Read): Access work item data
+  #   - Project and Team (Read): Access project information
+  #   - Graph (Read): Access organizational structure
+  token: your-ado-pat-token-here
+  
+  # Azure DevOps Organization Name
+  # Example: If URL is https://dev.azure.com/contoso, use "contoso"
+  organization: YOUR_ORGANIZATION
+
+# =============================================================================
+# DESTINATION: GitHub Configuration
+# =============================================================================
+destination:
+  # Destination type - MUST be "github" (GEI requirement)
+  type: github
+  
+  # GitHub Base URL
+  # - For GitHub Cloud: https://api.github.com
+  # - For GitHub Enterprise Server: https://github.example.com/api/v3
+  base_url: https://api.github.com
+  
+  # GitHub Personal Access Token (PAT)
+  # Required scopes: repo, admin:org, workflow
+  token: ghp_YourDestinationGitHubPATHere
+  
+  # GitHub App authentication (Optional)
+  # Uncomment if using GitHub App
+  # app_id: 234567
+  # app_private_key: |
+  #   -----BEGIN RSA PRIVATE KEY-----
+  #   Your private key here
+  #   -----END RSA PRIVATE KEY-----
+  # app_installation_id: 890123
+
+# =============================================================================
+# Migration Configuration
+# =============================================================================
+migration:
+  # Number of concurrent migration workers
+  workers: 5
+  
+  # Polling interval for checking migration status (seconds)
+  poll_interval_seconds: 30
+  
+  # When to apply post-migration settings
+  # Options: "production_only", "always", "never"
+  post_migration_mode: production_only
+  
+  # Action when destination repository already exists
+  # Options: "fail", "skip", "overwrite"
+  dest_repo_exists_action: fail
+  
+  # Repository visibility handling
+  # ADO repos typically migrate as private
+  visibility_handling:
+    # How to handle public repositories: "public", "private", "internal"
+    public_repos: private
+    
+    # How to handle internal repositories: "internal", "private", "public"
+    internal_repos: private
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  # Log level: "debug", "info", "warn", "error"
+  level: info
+  
+  # Log format: "json" or "text"
+  format: json
+  
+  # Log output file
+  output_file: ./logs/migrator.log
+  
+  # Log rotation settings
+  max_size: 100      # MB
+  max_backups: 3     # Number of old log files to retain
+  max_age: 28        # Days
+
+# =============================================================================
+# Authentication & Authorization (Optional - for web UI)
+# =============================================================================
+auth:
+  # Enable authentication for the web interface
+  enabled: false
+  
+  # Entra ID OAuth for Azure DevOps (Optional)
+  # Use this for user authentication when source is Azure DevOps
+  # Create app in: Azure Portal → App Registrations
+  entraid_enabled: false
+  # entraid_tenant_id: your-tenant-id
+  # entraid_client_id: your-client-id
+  # entraid_client_secret: your-client-secret
+  # entraid_callback_url: http://localhost:8080/api/v1/auth/entraid/callback
+  # ado_organization_url: https://dev.azure.com/YOUR_ORGANIZATION
+  
+  # Session configuration
+  # session_secret: your-random-secret-key-here
+  # session_duration_hours: 24
+  # frontend_url: http://localhost:3000
+
+# =============================================================================
+# Azure DevOps Migration Notes
+# =============================================================================
+# 
+# What Migrates from Azure DevOps to GitHub:
+#   ✅ Git repository history (commits, branches, tags)
+#   ✅ Pull requests (PRs) with comments and user history
+#   ✅ Pull request attachments
+#   ✅ Work item links on PRs
+#   ✅ Branch policies (migrate as GitHub branch protection rules)
+#   ✅ Git LFS objects
+#   ✅ Submodules
+#
+# What Does NOT Migrate:
+#   ❌ Azure Pipelines (YAML files migrate, but pipeline runs/history do not)
+#   ❌ Azure Boards work items (only PR links migrate)
+#   ❌ Wiki content
+#   ❌ Azure Artifacts/packages
+#   ❌ Service connections
+#   ❌ Variable groups
+#
+# TFVC Repositories:
+#   ⚠️  TFVC (Team Foundation Version Control) repositories CANNOT be migrated
+#       directly. They must be converted to Git first using git-tfs or similar tools.
+#       The application will detect TFVC repos and mark them for remediation.
+#
+# Repository Profiling:
+#   The application automatically detects:
+#   - TFVC vs Git repositories
+#   - Azure Boards integration
+#   - Azure Pipelines configuration
+#   - GitHub Advanced Security for Azure DevOps
+#   - Pull request counts
+#   - Branch policy counts
+#   - Work item counts
+#
+# Complexity Scoring:
+#   ADO-specific complexity factors:
+#   - TFVC: +50 points (blocking - requires conversion)
+#   - Azure Boards: +3 points (work items don't migrate)
+#   - Azure Pipelines: +3 points (history doesn't migrate)
+#   - High PR count (>50): +2 points
+#   - Branch policies: +1 point per policy
+#   - Work item links: +1 point
+#   - GHAS: +1 point
+#   Plus standard Git complexity factors (size, LFS, submodules, etc.)
+
+# =============================================================================
+# Example Configurations
+# =============================================================================
+
+# Example 1: Azure DevOps Cloud to GitHub Cloud
+# source:
+#   type: azuredevops
+#   base_url: https://dev.azure.com/contoso
+#   token: your-ado-pat
+#   organization: contoso
+# destination:
+#   type: github
+#   base_url: https://api.github.com
+#   token: ghp_githubtoken
+
+# Example 2: Azure DevOps Server to GitHub Enterprise Server
+# source:
+#   type: azuredevops
+#   base_url: https://devops.company.com/DefaultCollection
+#   token: your-ado-pat
+#   organization: DefaultCollection
+# destination:
+#   type: github
+#   base_url: https://github.company.com/api/v3
+#   token: ghp_githubtoken
+
+# Example 3: With Entra ID authentication for web UI
+# source:
+#   type: azuredevops
+#   base_url: https://dev.azure.com/contoso
+#   token: your-ado-pat
+#   organization: contoso
+# destination:
+#   type: github
+#   base_url: https://api.github.com
+#   token: ghp_githubtoken
+# auth:
+#   enabled: true
+#   entraid_enabled: true
+#   entraid_tenant_id: your-tenant-id
+#   entraid_client_id: your-client-id
+#   entraid_client_secret: your-client-secret
+#   entraid_callback_url: http://localhost:8080/api/v1/auth/entraid/callback
+#   ado_organization_url: https://dev.azure.com/contoso
+#   session_secret: your-random-secret
+#   session_duration_hours: 24
+#   frontend_url: http://localhost:3000
+
+# Example 4: Production setup with PostgreSQL
+# server:
+#   port: 8080
+# database:
+#   type: postgres
+#   dsn: "host=db.company.com port=5432 user=migrator password=secret dbname=github_migrator sslmode=require"
+#   max_open_conns: 25
+#   max_idle_conns: 5
+#   ssl_mode: require
+# source:
+#   type: azuredevops
+#   base_url: https://dev.azure.com/contoso
+#   token: your-ado-pat
+#   organization: contoso
+# destination:
+#   type: github
+#   base_url: https://api.github.com
+#   token: ghp_githubtoken
+# migration:
+#   workers: 10
+#   poll_interval_seconds: 30
+# logging:
+#   level: info
+#   format: json
+
+# =============================================================================
+# Additional Resources
+# =============================================================================
+# - Setup Guide: docs/ADO_SETUP_GUIDE.md
+# - GitHub Environments: docs/GITHUB_ENVIRONMENTS_SETUP.md
+# - ADO PAT Scopes: https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate
+

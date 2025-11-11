@@ -4,22 +4,29 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/brettkuhlman/github-migrator/internal/azuredevops"
 	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/brettkuhlman/github-migrator/internal/source"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )
 
 // ADOProfiler profiles Azure DevOps repositories
 type ADOProfiler struct {
-	client *azuredevops.Client
-	logger *slog.Logger
+	client         *azuredevops.Client
+	logger         *slog.Logger
+	sourceProvider interface{} // Will be source.Provider
 }
 
 // NewADOProfiler creates a new ADO profiler
-func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger) *ADOProfiler {
+func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger, sourceProvider interface{}) *ADOProfiler {
 	return &ADOProfiler{
-		client: client,
-		logger: logger,
+		client:         client,
+		logger:         logger,
+		sourceProvider: sourceProvider,
 	}
 }
 
@@ -31,13 +38,26 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 	}
 
 	projectName := *repo.ADOProject
-	// Extract repo ID from adoRepo if available
-	// Type assertion would be needed based on the actual ADO SDK type
+	
+	// Extract repo ID from adoRepo - type assert to git.GitRepository
 	repoID := ""
-	// TODO: Extract repoID from adoRepo when integrated with actual ADO SDK types
+	if gitRepo, ok := adoRepo.(git.GitRepository); ok {
+		if gitRepo.Id != nil {
+			repoID = gitRepo.Id.String()
+		}
+	} else {
+		p.logger.Warn("Failed to type assert adoRepo to git.GitRepository",
+			"repo", repo.FullName)
+	}
+
+	if repoID == "" {
+		p.logger.Warn("Repository ID not available, profiling may be incomplete",
+			"repo", repo.FullName)
+	}
 
 	p.logger.Debug("Profiling ADO repository",
 		"repo", repo.FullName,
+		"repo_id", repoID,
 		"project", projectName,
 		"is_git", repo.ADOIsGit)
 
@@ -73,6 +93,15 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 	// - Branch policies (repo-level only)
 	p.profileMigratableFeatures(ctx, repo, projectName, repoID)
 
+	// 5. Clone and analyze Git properties (LFS, submodules, large files)
+	// This performs deep Git analysis similar to GitHub repos
+	if err := p.cloneAndAnalyzeGit(ctx, repo); err != nil {
+		p.logger.Warn("Failed to clone and analyze Git properties",
+			"repo", repo.FullName,
+			"error", err)
+		// Continue even if Git analysis fails - we have API-based data
+	}
+
 	p.logger.Info("ADO repository profiled",
 		"repo", repo.FullName,
 		"prs", repo.ADOPullRequestCount,
@@ -81,6 +110,89 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 		"branch_policies", repo.ADOBranchPolicyCount)
 
 	return nil
+}
+
+// cloneAndAnalyzeGit clones the repository and analyzes Git properties
+func (p *ADOProfiler) cloneAndAnalyzeGit(ctx context.Context, repo *models.Repository) error {
+	// Type assert the provider to source.Provider
+	provider, ok := p.sourceProvider.(source.Provider)
+	if !ok || provider == nil {
+		return fmt.Errorf("source provider not available")
+	}
+
+	// Setup temp directory for cloning
+	tempDir, err := p.setupTempDir(repo.FullName)
+	if err != nil {
+		return fmt.Errorf("failed to setup temp directory: %w", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			p.logger.Warn("Failed to clean up temp directory",
+				"path", tempDir,
+				"error", err)
+		}
+	}()
+
+	p.logger.Info("Cloning repository for Git analysis",
+		"repo", repo.FullName,
+		"path", tempDir)
+
+	// Clone the repository
+	repoInfo := source.RepositoryInfo{
+		FullName: repo.FullName,
+		CloneURL: repo.SourceURL,
+	}
+
+	cloneOpts := source.CloneOptions{
+		Shallow:           false, // Full clone required for git-sizer analysis
+		Bare:              false,
+		IncludeLFS:        true, // Fetch LFS to detect LFS usage
+		IncludeSubmodules: false,
+	}
+
+	if err := provider.CloneRepository(ctx, repoInfo, tempDir, cloneOpts); err != nil {
+		return fmt.Errorf("failed to clone repository: %w", err)
+	}
+
+	p.logger.Info("Repository cloned, analyzing Git properties",
+		"repo", repo.FullName)
+
+	// Analyze Git properties using git-sizer
+	analyzer := NewAnalyzer(p.logger)
+	if err := analyzer.AnalyzeGitProperties(ctx, repo, tempDir); err != nil {
+		return fmt.Errorf("failed to analyze Git properties: %w", err)
+	}
+
+	p.logger.Info("Git analysis complete",
+		"repo", repo.FullName,
+		"has_lfs", repo.HasLFS,
+		"has_submodules", repo.HasSubmodules,
+		"has_large_files", repo.HasLargeFiles)
+
+	return nil
+}
+
+// setupTempDir creates a temporary directory for cloning
+func (p *ADOProfiler) setupTempDir(fullName string) (string, error) {
+	tempBase := os.TempDir()
+	tempBase = filepath.Join(tempBase, "github-migrator-ado")
+	
+	// #nosec G301 -- 0755 is appropriate for temporary directory
+	if err := os.MkdirAll(tempBase, 0755); err != nil {
+		return "", fmt.Errorf("failed to create temp base directory: %w", err)
+	}
+
+	// Use full name with slashes replaced to avoid collisions
+	// For example: "org/project/repo" becomes "org_project_repo"
+	safeName := strings.ReplaceAll(fullName, "/", "_")
+	tempDir := filepath.Join(tempBase, safeName)
+
+	// Remove if it already exists
+	if err := os.RemoveAll(tempDir); err != nil {
+		return "", fmt.Errorf("failed to remove existing temp directory: %w", err)
+	}
+
+	return tempDir, nil
 }
 
 // profileGitProperties profiles standard Git properties
@@ -252,4 +364,49 @@ func (p *ADOProfiler) EstimateComplexity(repo *models.Repository) int {
 	// These would be added by the standard git analyzer
 
 	return complexity
+}
+
+// splitADOFullName splits an ADO full name into parts
+// Format: "org/project/repo" -> ["org", "project", "repo"]
+func splitADOFullName(fullName string) []string {
+	// For ADO repos, we expect "org/project/repo" format
+	// We need to handle cases where project or repo names might contain slashes
+	// For now, we'll use a simple split and take first 3 parts
+	parts := make([]string, 0, 3)
+	remainder := fullName
+	
+	// Split org (first part before /)
+	if idx := findNthSlash(remainder, 0); idx >= 0 {
+		parts = append(parts, remainder[:idx])
+		remainder = remainder[idx+1:]
+	} else {
+		return []string{fullName}
+	}
+	
+	// Split project (second part before /)
+	if idx := findNthSlash(remainder, 0); idx >= 0 {
+		parts = append(parts, remainder[:idx])
+		remainder = remainder[idx+1:]
+	} else {
+		parts = append(parts, remainder)
+		return parts
+	}
+	
+	// Repo is everything else
+	parts = append(parts, remainder)
+	return parts
+}
+
+// findNthSlash finds the nth occurrence of '/' in a string
+func findNthSlash(s string, n int) int {
+	count := 0
+	for i, c := range s {
+		if c == '/' {
+			if count == n {
+				return i
+			}
+			count++
+		}
+	}
+	return -1
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -232,4 +233,87 @@ func (h *ADOHandler) ADODiscoveryStatus(w http.ResponseWriter, r *http.Request) 
 		"status_breakdown":   statusCounts,
 		"organization":       organization,
 	})
+}
+
+// RediscoverADORepository handles rediscovery of a single ADO repository
+// This is called when a user clicks "Rediscover" on an ADO repo
+func (h *ADOHandler) RediscoverADORepository(ctx context.Context, repo *models.Repository) error {
+	if repo.ADOProject == nil || *repo.ADOProject == "" {
+		return fmt.Errorf("repository is not an ADO repository")
+	}
+
+	// Extract organization from full_name (format: org/project/repo)
+	// For ADO repos, full_name should be in format "org/project/repo"
+	parts := splitADOFullName(repo.FullName)
+	if len(parts) < 3 {
+		return fmt.Errorf("invalid ADO repository full_name format: %s", repo.FullName)
+	}
+
+	organization := parts[0]
+	project := *repo.ADOProject
+	repoName := parts[2]
+
+	h.logger.Info("Rediscovering ADO repository",
+		"organization", organization,
+		"project", project,
+		"repo", repoName,
+		"full_name", repo.FullName)
+
+	// Use the ADO collector to rediscover only this specific repository
+	err := h.adoCollector.DiscoverADORepository(ctx, organization, project, repoName)
+	if err != nil {
+		return fmt.Errorf("failed to rediscover ADO repository: %w", err)
+	}
+
+	h.logger.Info("ADO repository rediscovered successfully",
+		"organization", organization,
+		"project", project,
+		"repo", repoName)
+
+	return nil
+}
+
+// splitADOFullName splits an ADO full name into parts
+// Format: "org/project/repo" -> ["org", "project", "repo"]
+func splitADOFullName(fullName string) []string {
+	// For ADO repos, we expect "org/project/repo" format
+	// We need to handle cases where project or repo names might contain slashes
+	// For now, we'll use a simple split and take first 3 parts
+	parts := make([]string, 0, 3)
+	remainder := fullName
+	
+	// Split org (first part before /)
+	if idx := findNthSlash(remainder, 0); idx >= 0 {
+		parts = append(parts, remainder[:idx])
+		remainder = remainder[idx+1:]
+	} else {
+		return []string{fullName}
+	}
+	
+	// Split project (second part before /)
+	if idx := findNthSlash(remainder, 0); idx >= 0 {
+		parts = append(parts, remainder[:idx])
+		remainder = remainder[idx+1:]
+	} else {
+		parts = append(parts, remainder)
+		return parts
+	}
+	
+	// Repo is everything else
+	parts = append(parts, remainder)
+	return parts
+}
+
+// findNthSlash finds the nth occurrence of '/' in a string
+func findNthSlash(s string, n int) int {
+	count := 0
+	for i, c := range s {
+		if c == '/' {
+			if count == n {
+				return i
+			}
+			count++
+		}
+	}
+	return -1
 }

@@ -116,9 +116,10 @@ func (p *AzureDevOpsProvider) GetAuthenticatedCloneURL(cloneURL string) (string,
 		return "", fmt.Errorf("invalid clone URL: %w", err)
 	}
 
-	// Azure DevOps format: https://USERNAME:TOKEN@dev.azure.com/org/project/_git/repo
-	// For PATs, username can be anything or the token itself
-	parsedURL.User = url.UserPassword(p.username, p.token)
+	// Azure DevOps PAT authentication format: https://PAT@dev.azure.com/org/project/_git/repo
+	// The PAT goes in the username field with no password (most reliable method)
+	// Alternative format is username:PAT@ but PAT alone works universally
+	parsedURL.User = url.User(p.token)
 
 	return parsedURL.String(), nil
 }

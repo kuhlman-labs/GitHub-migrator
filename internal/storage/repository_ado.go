@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/brettkuhlman/github-migrator/internal/models"
+	"gorm.io/gorm/clause"
 )
 
 // GetADOProjects retrieves all ADO projects, optionally filtered by organization
@@ -71,9 +72,11 @@ func (db *Database) CountRepositoriesByADOProject(ctx context.Context, organizat
 // CountRepositoriesByADOOrganization counts all repositories for an ADO organization
 func (db *Database) CountRepositoriesByADOOrganization(ctx context.Context, organization string) (int, error) {
 	var count int64
+	// For ADO repos, the organization is the first part of full_name (e.g., "org/project/repo")
+	// We filter by ado_project being NOT NULL to identify ADO repos
 	err := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("owner = ? AND ado_project IS NOT NULL", organization).
+		Where("full_name LIKE ? AND ado_project IS NOT NULL", organization+"/%").
 		Count(&count).Error
 
 	if err != nil {
@@ -86,9 +89,10 @@ func (db *Database) CountRepositoriesByADOOrganization(ctx context.Context, orga
 // CountRepositoriesByADOProjects counts repositories across multiple ADO projects
 func (db *Database) CountRepositoriesByADOProjects(ctx context.Context, organization string, projects []string) (int, error) {
 	var count int64
+	// For ADO repos, filter by full_name prefix and project names
 	err := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("owner = ? AND ado_project IN ?", organization, projects).
+		Where("full_name LIKE ? AND ado_project IN ?", organization+"/%", projects).
 		Count(&count).Error
 
 	if err != nil {
@@ -107,7 +111,8 @@ func (db *Database) CountTFVCRepositories(ctx context.Context, organization stri
 		Where("ado_is_git = ? AND ado_project IS NOT NULL", false)
 
 	if organization != "" {
-		query = query.Where("owner = ?", organization)
+		// Filter by full_name prefix for ADO organization
+		query = query.Where("full_name LIKE ?", organization+"/%")
 	}
 
 	err := query.Count(&count).Error
@@ -120,8 +125,15 @@ func (db *Database) CountTFVCRepositories(ctx context.Context, organization stri
 
 // SaveADOProject saves or updates an ADO project
 func (db *Database) SaveADOProject(ctx context.Context, project *models.ADOProject) error {
-	// Use GORM's Save which does an upsert based on primary key
-	err := db.db.WithContext(ctx).Save(project).Error
+	// Use Clauses(clause.OnConflict) to handle upsert based on unique constraint
+	// This will update all fields if a conflict occurs on (organization, name)
+	err := db.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "organization"}, {Name: "name"}},
+			DoUpdates: clause.AssignmentColumns([]string{"description", "repository_count", "state", "visibility", "updated_at"}),
+		}).
+		Create(project).Error
+	
 	if err != nil {
 		return fmt.Errorf("failed to save ADO project: %w", err)
 	}

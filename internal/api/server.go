@@ -69,22 +69,33 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	sourceBaseURL := cfg.Auth.GetOAuthBaseURL(cfg)
 
 	// Create main handler
-	mainHandler := handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig, &cfg.Auth, sourceBaseURL)
+	mainHandler := handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig, &cfg.Auth, sourceBaseURL, cfg.Source.Type)
 
 	// Create ADO handler if source is Azure DevOps
 	var adoHandler *handlers.ADOHandler
 	var entraIDOAuthHandler *auth.EntraIDOAuthHandler
 	if cfg.Source.Type == "azuredevops" && cfg.Source.Token != "" {
-		// Create ADO client
-		adoClient, err := azuredevops.NewClient(azuredevops.ClientConfig{
-			OrganizationURL:     cfg.Source.BaseURL,
-			PersonalAccessToken: cfg.Source.Token,
-		})
-		if err != nil {
-			logger.Warn("Failed to create ADO client", "error", err)
+		// Validate ADO configuration before attempting connection
+		if cfg.Source.BaseURL == "" {
+			logger.Warn("Azure DevOps integration disabled: SOURCE_BASE_URL not configured")
 		} else {
-			adoHandler = handlers.NewADOHandler(mainHandler, adoClient, sourceProvider)
-			logger.Info("Azure DevOps integration enabled")
+			// Create ADO client
+			adoClient, err := azuredevops.NewClient(azuredevops.ClientConfig{
+				OrganizationURL:     cfg.Source.BaseURL,
+				PersonalAccessToken: cfg.Source.Token,
+				Logger:              logger,
+			})
+			if err != nil {
+				logger.Warn("Failed to create ADO client - check your ADO organization URL and PAT permissions",
+					"error", err,
+					"org_url", cfg.Source.BaseURL,
+					"hint", "Ensure SOURCE_BASE_URL is a valid Azure DevOps organization URL (e.g., https://dev.azure.com/your-org)")
+			} else {
+				adoHandler = handlers.NewADOHandler(mainHandler, adoClient, sourceProvider)
+				// Link the ADO handler to the main handler so it can delegate ADO repo operations
+				mainHandler.SetADOHandler(adoHandler)
+				logger.Info("Azure DevOps integration enabled", "org_url", cfg.Source.BaseURL)
+			}
 		}
 
 		// Create Entra ID OAuth handler if enabled
@@ -143,6 +154,9 @@ func (s *Server) Router() http.Handler {
 
 	// Health check (always public)
 	mux.HandleFunc("/health", s.handler.Health)
+
+	// Application config endpoint (always public)
+	mux.HandleFunc("GET /api/v1/config", s.handler.GetConfig)
 
 	// Helper to conditionally wrap with auth
 	protect := func(pattern string, handler http.HandlerFunc) {

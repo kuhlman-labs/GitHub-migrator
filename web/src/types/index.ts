@@ -180,6 +180,8 @@ export interface Organization {
   organization: string;
   total_repos: number;
   status_counts: Record<string, number>;
+  ado_organization?: string; // For ADO projects, the parent organization name
+  enterprise?: string; // For GitHub orgs, the parent enterprise name (future enhancement)
 }
 
 // Azure DevOps Project type
