@@ -53,6 +53,11 @@ function ProtectedRoutes() {
               <OrganizationDetail />
             </main>
           } />
+          <Route path="/org/:orgName/project/:projectName" element={
+            <main className="container mx-auto px-4 py-8">
+              <OrganizationDetail />
+            </main>
+          } />
           <Route path="/repository/:fullName" element={
             <main className="container mx-auto px-4 py-8">
               <RepositoryDetail />

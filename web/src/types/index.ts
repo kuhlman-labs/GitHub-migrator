@@ -179,6 +179,7 @@ export interface Batch {
 export interface Organization {
   organization: string;
   total_repos: number;
+  total_projects?: number; // For ADO orgs, total number of projects
   status_counts: Record<string, number>;
   ado_organization?: string; // For ADO projects, the parent organization name
   enterprise?: string; // For GitHub orgs, the parent enterprise name (future enhancement)

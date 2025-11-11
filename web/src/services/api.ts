@@ -59,7 +59,8 @@ export const api = {
 
   async listADOProjects(organization?: string) {
     const { data } = await client.get('/ado/projects', { params: { organization } });
-    return data;
+    // Backend returns { projects: [...], total: n }, extract the projects array
+    return data.projects || [];
   },
 
   async getADOProject(organization: string, project: string) {

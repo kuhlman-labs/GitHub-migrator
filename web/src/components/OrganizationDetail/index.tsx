@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import type { Repository } from '../../types';
+import type { Repository, ADOProject, Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
@@ -8,7 +8,8 @@ import { Badge } from '../common/Badge';
 import { TimestampDisplay } from '../common/TimestampDisplay';
 import { Pagination } from '../common/Pagination';
 import { formatBytes } from '../../utils/format';
-import { useRepositories } from '../../hooks/useQueries';
+import { useRepositories, useOrganizations } from '../../hooks/useQueries';
+import { api } from '../../services/api';
 
 type FeatureFilter = {
   key: keyof Repository;
@@ -67,22 +68,74 @@ const STATUS_MAP: Record<string, string[]> = {
 };
 
 export function OrganizationDetail() {
-  const { orgName } = useParams<{ orgName: string }>();
+  const { orgName, projectName } = useParams<{ orgName: string; projectName?: string }>();
   const [filter, setFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFeatures, setSelectedFeatures] = useState<Set<keyof Repository>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
+  const [isADOOrg, setIsADOOrg] = useState(false);
+  const [adoProjects, setAdoProjects] = useState<ADOProject[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
 
   const { data, isLoading, isFetching } = useRepositories({});
+  const { data: orgsData } = useOrganizations();
+
+  // Determine what we're viewing based on route params
+  // If projectName exists, we're viewing an ADO project (show repos)
+  // If only orgName exists, check if it's an ADO org (show projects) or GitHub org (show repos)
+  useEffect(() => {
+    const checkViewType = async () => {
+      // If projectName is in the URL, we're viewing a project (show repos)
+      if (projectName) {
+        setIsADOOrg(false);
+        setAdoProjects([]);
+        return;
+      }
+
+      // Otherwise, check if orgName is an ADO organization
+      const organizations = orgsData || [];
+      const org = organizations.find((o: Organization) => o.organization === orgName);
+      
+      // It's an ADO org if it has total_projects defined
+      if (org && org.total_projects !== undefined) {
+        setIsADOOrg(true);
+        // Fetch projects for this organization
+        setProjectsLoading(true);
+        try {
+          const response = await api.listADOProjects(orgName);
+          // Ensure we have an array
+          setAdoProjects(Array.isArray(response) ? response : []);
+        } catch (error) {
+          console.error('Failed to load ADO projects:', error);
+          setAdoProjects([]); // Set empty array on error
+        } finally {
+          setProjectsLoading(false);
+        }
+      } else {
+        setIsADOOrg(false);
+        setAdoProjects([]); // Reset projects when not an ADO org
+      }
+    };
+
+    if (orgName) {
+      checkViewType();
+    }
+  }, [orgName, projectName, orgsData]);
 
   // Filter repositories for this organization/project (client-side)
   const repositories = (data?.repositories || []).filter((repo: Repository) => {
-    // For ADO repos, check the ado_project field
+    // If viewing an ADO project, filter by project name
+    if (projectName) {
+      return repo.ado_project === projectName;
+    }
+    
+    // For ADO repos without a specific project, check the ado_project field
     if (repo.ado_project) {
       return repo.ado_project === orgName;
     }
+    
     // For GitHub repos, extract org from full_name
     const org = repo.full_name.split('/')[0];
     return org === orgName;
@@ -150,65 +203,74 @@ export function OrganizationDetail() {
     <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       <div className="mb-6">
-        <Link to="/" className="text-gh-blue hover:underline text-sm font-medium">
-          ← Back to Organizations
-        </Link>
+        {projectName ? (
+          <Link to={`/org/${encodeURIComponent(orgName || '')}`} className="text-gh-blue hover:underline text-sm font-medium">
+            ← Back to {orgName}
+          </Link>
+        ) : (
+          <Link to="/" className="text-gh-blue hover:underline text-sm font-medium">
+            ← Back to Organizations
+          </Link>
+        )}
       </div>
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gh-text-primary">{orgName}</h1>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            placeholder="Search repositories..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
-          />
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
-          >
-            {statuses.map((status) => (
-              <option key={status} value={status}>
-                {status === 'all' ? 'All Status' : status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors font-medium ${
-              selectedFeatures.size > 0
-                ? 'bg-gh-blue text-white hover:bg-gh-blue-hover'
-                : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              Features
-              {selectedFeatures.size > 0 && (
-                <span className="bg-white text-gh-blue rounded-full px-2 py-0.5 text-xs font-medium">
-                  {selectedFeatures.size}
-                </span>
-              )}
-            </span>
-          </button>
-          {hasActiveFilters && (
-            <button
-              onClick={clearAllFilters}
-              className="px-3 py-1.5 text-sm text-gh-text-secondary hover:text-gh-text-primary transition-colors font-medium"
+        <h1 className="text-2xl font-semibold text-gh-text-primary">{projectName || orgName || ''}</h1>
+        {/* Only show search and filters when NOT viewing an ADO org (i.e., viewing repos) */}
+        {!isADOOrg && (
+          <div className="flex gap-3">
+            <input
+              type="text"
+              placeholder="Search repositories..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+            />
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
             >
-              Clear All
+              {statuses.map((status) => (
+                <option key={status} value={status}>
+                  {status === 'all' ? 'All Status' : status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors font-medium ${
+                selectedFeatures.size > 0
+                  ? 'bg-gh-blue text-white hover:bg-gh-blue-hover'
+                  : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                Features
+                {selectedFeatures.size > 0 && (
+                  <span className="bg-white text-gh-blue rounded-full px-2 py-0.5 text-xs font-medium">
+                    {selectedFeatures.size}
+                  </span>
+                )}
+              </span>
             </button>
-          )}
-        </div>
+            {hasActiveFilters && (
+              <button
+                onClick={clearAllFilters}
+                className="px-3 py-1.5 text-sm text-gh-text-secondary hover:text-gh-text-primary transition-colors font-medium"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Feature Filters Panel */}
-      {showFilters && (
+      {/* Feature Filters Panel - only for repository view */}
+      {!isADOOrg && showFilters && (
         <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 mb-6">
           <h3 className="text-base font-semibold text-gh-text-primary mb-4">Filter by Features</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -243,66 +305,123 @@ export function OrganizationDetail() {
         </div>
       )}
 
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-sm text-gh-text-secondary">
-          {totalItems > 0 ? (
-            <>
-              Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {repositories.length} repositories
-              {hasActiveFilters && ` (${totalItems} match filters)`}
-            </>
-          ) : (
-            'No repositories found'
+      {/* Repository count - only for repository view */}
+      {!isADOOrg && (
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-sm text-gh-text-secondary">
+            {totalItems > 0 ? (
+              <>
+                Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {repositories.length} repositories
+                {hasActiveFilters && ` (${totalItems} match filters)`}
+              </>
+            ) : (
+              'No repositories found'
+            )}
+          </div>
+          {selectedFeatures.size > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {Array.from(selectedFeatures).map((feature) => {
+                const featureConfig = FEATURE_FILTERS.find(f => f.key === feature);
+                return (
+                  <span
+                    key={feature}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-gh-info-bg text-gh-blue rounded-full text-xs font-medium border border-gh-blue/20"
+                  >
+                    {featureConfig?.label}
+                    <button
+                      onClick={() => toggleFeature(feature)}
+                      className="hover:bg-gh-blue/10 rounded-full p-0.5"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
           )}
         </div>
-        {selectedFeatures.size > 0 && (
-          <div className="flex gap-2 flex-wrap">
-            {Array.from(selectedFeatures).map((feature) => {
-              const featureConfig = FEATURE_FILTERS.find(f => f.key === feature);
-              return (
-                <span
-                  key={feature}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-gh-info-bg text-gh-blue rounded-full text-xs font-medium border border-gh-blue/20"
-                >
-                  {featureConfig?.label}
-                  <button
-                    onClick={() => toggleFeature(feature)}
-                    className="hover:bg-gh-blue/10 rounded-full p-0.5"
-                  >
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      )}
 
-      {isLoading ? (
-        <LoadingSpinner />
-      ) : filteredRepos.length === 0 ? (
-        <div className="text-center py-12 text-gh-text-secondary">
-          No repositories found
-        </div>
-      ) : (
-        <>
+      {/* Show projects for ADO organizations, repositories for everything else */}
+      {isADOOrg ? (
+        // ADO Organization view - show projects
+        projectsLoading ? (
+          <LoadingSpinner />
+        ) : adoProjects.length === 0 ? (
+          <div className="text-center py-12 text-gh-text-secondary">
+            No projects found in this organization
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-            {paginatedRepos.map((repo) => (
-              <RepositoryCard key={repo.id} repository={repo} />
+            {adoProjects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
             ))}
           </div>
-          {totalItems > pageSize && (
-            <Pagination
-              currentPage={currentPage}
-              totalItems={totalItems}
-              pageSize={pageSize}
-              onPageChange={setCurrentPage}
-            />
-          )}
-        </>
+        )
+      ) : (
+        // GitHub Organization or ADO Project view - show repositories
+        isLoading ? (
+          <LoadingSpinner />
+        ) : filteredRepos.length === 0 ? (
+          <div className="text-center py-12 text-gh-text-secondary">
+            No repositories found
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              {paginatedRepos.map((repo) => (
+                <RepositoryCard key={repo.id} repository={repo} />
+              ))}
+            </div>
+            {totalItems > pageSize && (
+              <Pagination
+                currentPage={currentPage}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+              />
+            )}
+          </>
+        )
       )}
     </div>
+  );
+}
+
+function ProjectCard({ project }: { project: ADOProject }) {
+  return (
+    <Link
+      to={`/org/${encodeURIComponent(project.organization)}/project/${encodeURIComponent(project.name)}`}
+      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
+    >
+      <h3 className="text-base font-semibold text-gh-text-primary mb-3">
+        {project.name}
+      </h3>
+      
+      {project.description && (
+        <p className="text-sm text-gh-text-secondary mb-4 line-clamp-2">
+          {project.description}
+        </p>
+      )}
+      
+      <div className="mb-4">
+        <div className="text-2xl font-semibold text-gh-blue mb-1">{project.repository_count}</div>
+        <div className="text-sm text-gh-text-secondary">Repositories</div>
+      </div>
+      
+      <div className="flex gap-2 text-xs text-gh-text-secondary">
+        {project.visibility && (
+          <Badge color={project.visibility === 'public' ? 'green' : 'gray'}>
+            {project.visibility}
+          </Badge>
+        )}
+        {project.state && (
+          <Badge color="blue">{project.state}</Badge>
+        )}
+      </div>
+    </Link>
   );
 }
 

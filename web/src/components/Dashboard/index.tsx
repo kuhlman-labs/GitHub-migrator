@@ -119,15 +119,12 @@ export function Dashboard() {
     setCurrentPage(1);
   }, [searchTerm]);
 
-  // Dynamic labels based on source type
-  const entityLabelPlural = sourceType === 'azuredevops' ? 'Projects' : 'Organizations';
-
   return (
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold text-gh-text-primary">{entityLabelPlural}</h1>
+        <h1 className="text-2xl font-semibold text-gh-text-primary">Organizations</h1>
         <div className="flex gap-3">
           <button
             onClick={() => setShowDiscoveryModal(true)}
@@ -137,7 +134,7 @@ export function Dashboard() {
           </button>
           <input
             type="text"
-            placeholder={`Search ${entityLabelPlural.toLowerCase()}...`}
+            placeholder="Search organizations..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
@@ -154,10 +151,10 @@ export function Dashboard() {
       <div className="mb-4 text-sm text-gh-text-secondary">
         {totalItems > 0 ? (
           <>
-            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {entityLabelPlural.toLowerCase()} with {totalRepos} total repositories
+            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {totalItems === 1 ? 'organization' : 'organizations'} with {totalRepos} total repositories
           </>
         ) : (
-          `No ${entityLabelPlural.toLowerCase()} found`
+          'No organizations found'
         )}
       </div>
 
@@ -165,7 +162,7 @@ export function Dashboard() {
         <LoadingSpinner />
       ) : filteredOrgs.length === 0 ? (
         <div className="text-center py-12 text-gh-text-secondary">
-          No {entityLabelPlural.toLowerCase()} found
+          No organizations found
         </div>
       ) : (
         <>
@@ -247,6 +244,7 @@ function OrganizationCard({ organization }: { organization: Organization }) {
   };
 
   const totalRepos = organization.total_repos;
+  const totalProjects = organization.total_projects;
   const statusCounts = organization.status_counts;
 
   return (
@@ -275,9 +273,18 @@ function OrganizationCard({ organization }: { organization: Organization }) {
         )}
       </div>
       
-      <div className="mb-4">
-        <div className="text-3xl font-semibold text-gh-blue mb-1">{totalRepos}</div>
-        <div className="text-sm text-gh-text-secondary">Total Repositories</div>
+      <div className="mb-4 space-y-3">
+        <div>
+          <div className="text-3xl font-semibold text-gh-blue mb-1">{totalRepos}</div>
+          <div className="text-sm text-gh-text-secondary">Total Repositories</div>
+        </div>
+        
+        {totalProjects !== undefined && (
+          <div>
+            <div className="text-2xl font-semibold text-gh-text-primary mb-1">{totalProjects}</div>
+            <div className="text-sm text-gh-text-secondary">Total Projects</div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">

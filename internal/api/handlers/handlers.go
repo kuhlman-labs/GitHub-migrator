@@ -3072,9 +3072,9 @@ func (h *Handler) checkRepositoriesAccess(ctx context.Context, repoFullNames []s
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// For Azure DevOps sources, return ADO projects as "organizations"
+	// For Azure DevOps sources, return aggregated organizations (not individual projects)
 	if h.sourceType == "azuredevops" {
-		// Get all ADO projects - pass empty string to get all projects
+		// Get all ADO projects to aggregate by organization
 		projects, err := h.db.GetADOProjects(ctx, "")
 		if err != nil {
 			if h.handleContextError(ctx, err, "get ADO projects", r) {
@@ -3085,30 +3085,45 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Transform ADO projects into organization-like structure
-		orgStats := make([]interface{}, len(projects))
-		for i, project := range projects {
+		// Aggregate projects by organization
+		orgMap := make(map[string]struct {
+			projectCount int
+			repoCount    int
+			projects     []string
+		})
+
+		for _, project := range projects {
+			orgData := orgMap[project.Organization]
+			orgData.projectCount++
+			orgData.projects = append(orgData.projects, project.Name)
+			
 			// Count repositories for this project
 			repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
 			if err != nil {
 				h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
-				repoCount = project.RepositoryCount // Fallback to stored count
 			}
+			orgData.repoCount += repoCount
+			
+			orgMap[project.Organization] = orgData
+		}
 
-			// Get status counts for this project's repositories
+		// Transform into organization stats
+		orgStats := make([]interface{}, 0, len(orgMap))
+		for orgName, orgData := range orgMap {
+			// Get status distribution for all repos in this organization
 			statusCounts := make(map[string]int)
-			// For now, all ADO repos are in pending status after discovery
-			// We'll query actual status distribution once we have more data
-			if repoCount > 0 {
-				statusCounts["pending"] = repoCount
+			if orgData.repoCount > 0 {
+				// For now, assume all repos are pending after discovery
+				// TODO: Query actual status distribution from repositories table
+				statusCounts["pending"] = orgData.repoCount
 			}
 
-			orgStats[i] = map[string]interface{}{
-				"organization":     project.Name, // Use project name as "organization"
-				"total_repos":      repoCount,
-				"status_counts":    statusCounts,
-				"ado_organization": project.Organization, // ADO organization name for hierarchy display
-			}
+			orgStats = append(orgStats, map[string]interface{}{
+				"organization":   orgName,
+				"total_repos":    orgData.repoCount,
+				"total_projects": orgData.projectCount,
+				"status_counts":  statusCounts,
+			})
 		}
 
 		h.sendJSON(w, http.StatusOK, orgStats)
