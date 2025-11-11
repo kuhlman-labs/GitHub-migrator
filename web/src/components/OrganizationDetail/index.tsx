@@ -78,6 +78,9 @@ export function OrganizationDetail() {
   const [isADOOrg, setIsADOOrg] = useState(false);
   const [adoProjects, setAdoProjects] = useState<ADOProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectSearchTerm, setProjectSearchTerm] = useState('');
+  const [projectCurrentPage, setProjectCurrentPage] = useState(1);
+  const projectPageSize = 12;
 
   const { data, isLoading, isFetching } = useRepositories({});
   const { data: orgsData } = useOrganizations();
@@ -199,6 +202,24 @@ export function OrganizationDetail() {
     setCurrentPage(1);
   }, [filter, searchTerm, selectedFeatures.size]);
 
+  // Reset project page when search changes
+  useEffect(() => {
+    setProjectCurrentPage(1);
+  }, [projectSearchTerm]);
+
+  // Filter and paginate projects
+  const filteredProjects = adoProjects.filter((project) => {
+    if (projectSearchTerm && !project.name.toLowerCase().includes(projectSearchTerm.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
+
+  const projectStartIndex = (projectCurrentPage - 1) * projectPageSize;
+  const projectEndIndex = projectStartIndex + projectPageSize;
+  const paginatedProjects = filteredProjects.slice(projectStartIndex, projectEndIndex);
+  const totalProjects = filteredProjects.length;
+
   return (
     <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
@@ -216,6 +237,18 @@ export function OrganizationDetail() {
 
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-gh-text-primary">{projectName || orgName || ''}</h1>
+        
+        {/* Search for projects when viewing ADO org */}
+        {isADOOrg && (
+          <input
+            type="text"
+            placeholder="Search projects..."
+            value={projectSearchTerm}
+            onChange={(e) => setProjectSearchTerm(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+          />
+        )}
+        
         {/* Only show search and filters when NOT viewing an ADO org (i.e., viewing repos) */}
         {!isADOOrg && (
           <div className="flex gap-3">
@@ -347,19 +380,42 @@ export function OrganizationDetail() {
       {/* Show projects for ADO organizations, repositories for everything else */}
       {isADOOrg ? (
         // ADO Organization view - show projects
-        projectsLoading ? (
-          <LoadingSpinner />
-        ) : adoProjects.length === 0 ? (
-          <div className="text-center py-12 text-gh-text-secondary">
-            No projects found in this organization
+        <>
+          {/* Project count */}
+          <div className="mb-4 text-sm text-gh-text-secondary">
+            {totalProjects > 0 ? (
+              <>
+                Showing {projectStartIndex + 1}-{Math.min(projectEndIndex, totalProjects)} of {totalProjects} {totalProjects === 1 ? 'project' : 'projects'}
+              </>
+            ) : (
+              'No projects found'
+            )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-            {adoProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-          </div>
-        )
+
+          {projectsLoading ? (
+            <LoadingSpinner />
+          ) : filteredProjects.length === 0 ? (
+            <div className="text-center py-12 text-gh-text-secondary">
+              No projects found in this organization
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                {paginatedProjects.map((project) => (
+                  <ProjectCard key={project.id} project={project} />
+                ))}
+              </div>
+              {totalProjects > projectPageSize && (
+                <Pagination
+                  currentPage={projectCurrentPage}
+                  totalItems={totalProjects}
+                  pageSize={projectPageSize}
+                  onPageChange={setProjectCurrentPage}
+                />
+              )}
+            </>
+          )}
+        </>
       ) : (
         // GitHub Organization or ADO Project view - show repositories
         isLoading ? (
