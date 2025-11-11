@@ -87,6 +87,15 @@ export interface Repository {
   exclude_metadata: boolean;
   exclude_git_data: boolean;
   exclude_owner_projects: boolean;
+  // Azure DevOps specific fields
+  ado_project?: string;
+  ado_is_git: boolean;
+  ado_has_boards: boolean;
+  ado_has_pipelines: boolean;
+  ado_has_ghas: boolean;
+  ado_pull_request_count: number;
+  ado_work_item_count: number;
+  ado_branch_policy_count: number;
   // Computed fields
   complexity_score?: number;
   complexity_breakdown?: ComplexityBreakdown;
@@ -114,6 +123,13 @@ export interface ComplexityBreakdown {
   internal_visibility_points: number;
   codeowners_points: number;
   activity_points: number;
+  // Azure DevOps specific breakdown
+  tfvc_points?: number;
+  ado_boards_points?: number;
+  ado_pipelines_points?: number;
+  ado_prs_points?: number;
+  ado_work_items_points?: number;
+  ado_branch_policies_points?: number;
 }
 
 export interface MigrationHistory {
@@ -164,6 +180,37 @@ export interface Organization {
   organization: string;
   total_repos: number;
   status_counts: Record<string, number>;
+}
+
+// Azure DevOps Project type
+export interface ADOProject {
+  id: string;
+  name: string;
+  organization: string;
+  description?: string;
+  url: string;
+  state: string;
+  visibility: string;
+  last_update: string;
+  discovered_at: string;
+  updated_at: string;
+  repository_count?: number; // Populated when listing projects
+}
+
+export interface ADODiscoveryRequest {
+  organization: string;
+  projects?: string[];
+  workers?: number;
+  full_profile?: boolean;
+}
+
+export interface ADODiscoveryStatus {
+  total_repositories: number;
+  total_projects: number;
+  tfvc_repositories: number;
+  git_repositories: number;
+  status_breakdown: Record<string, number>;
+  organization?: string;
 }
 
 export interface SizeDistribution {

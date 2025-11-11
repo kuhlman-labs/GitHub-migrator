@@ -17,6 +17,15 @@ type FeatureFilter = {
 };
 
 const FEATURE_FILTERS: FeatureFilter[] = [
+  // Azure DevOps specific
+  { key: 'ado_has_boards', label: 'Azure Boards', color: 'purple' },
+  { key: 'ado_has_pipelines', label: 'Azure Pipelines', color: 'green' },
+  { key: 'ado_has_ghas', label: 'GHAS (ADO)', color: 'green' },
+  { key: 'ado_pull_request_count', label: 'Has Pull Requests', color: 'indigo' },
+  { key: 'ado_work_item_count', label: 'Has Work Items', color: 'purple' },
+  { key: 'ado_branch_policy_count', label: 'Has Branch Policies', color: 'red' },
+  
+  // GitHub specific
   { key: 'is_archived', label: 'Archived', color: 'gray' },
   { key: 'is_fork', label: 'Fork', color: 'purple' },
   { key: 'has_lfs', label: 'LFS', color: 'blue' },
@@ -328,6 +337,17 @@ function RepositoryCard({ repository }: { repository: Repository }) {
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
+        {/* Azure DevOps specific badges */}
+        {repository.ado_project && <Badge color="blue">ADO: {repository.ado_project}</Badge>}
+        {repository.ado_is_git === false && <Badge color="red">TFVC</Badge>}
+        {repository.ado_has_boards && <Badge color="purple">Azure Boards</Badge>}
+        {repository.ado_has_pipelines && <Badge color="green">Pipelines</Badge>}
+        {repository.ado_has_ghas && <Badge color="green">GHAS</Badge>}
+        {repository.ado_pull_request_count > 0 && <Badge color="indigo">PRs: {repository.ado_pull_request_count}</Badge>}
+        {repository.ado_work_item_count > 0 && <Badge color="purple">Work Items: {repository.ado_work_item_count}</Badge>}
+        {repository.ado_branch_policy_count > 0 && <Badge color="red">Policies: {repository.ado_branch_policy_count}</Badge>}
+        
+        {/* GitHub specific badges */}
         {repository.is_archived && <Badge color="gray">Archived</Badge>}
         {repository.is_fork && <Badge color="purple">Fork</Badge>}
         {repository.has_lfs && <Badge color="blue">LFS</Badge>}

@@ -20,6 +20,17 @@ const (
 	batchStatusInProgress = "in_progress"
 )
 
+// RepositoryFilter contains optional filters for repository queries
+type RepositoryFilter struct {
+	Status          *string // Filter by status
+	BatchID         *int64  // Filter by batch ID
+	Owner           *string // Filter by owner (organization)
+	HasADOProject   *bool   // Filter repositories that have ADO project set
+	ADOOrganization *string // Filter by ADO organization
+	ADOProject      *string // Filter by ADO project name
+	IsADOGit        *bool   // Filter by ADO Git vs TFVC
+}
+
 // SaveRepository inserts or updates a repository in the database using GORM
 func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) error {
 	// Use GORM's Clauses for upsert (works across SQLite, PostgreSQL, SQL Server)
@@ -81,6 +92,98 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 	_ = d.populateComplexityScores(ctx, []*models.Repository{&repo})
 
 	return &repo, nil
+}
+
+// buildADOComplexityScoreSQL generates the SQL expression for calculating Azure DevOps-specific complexity scores
+// Based on what GitHub Enterprise Importer supports for ADO migrations
+//
+//nolint:unused // Reserved for future ADO-specific complexity queries
+func (d *Database) buildADOComplexityScoreSQL() string {
+	// ADO-specific complexity scoring based on GEI migration support
+	// Categories: simple (≤5), medium (6-10), complex (11-17), very_complex (≥18)
+	//
+	// Scoring factors:
+	// BLOCKING (50 points):
+	//   - TFVC repository: +50 (requires git conversion before migration)
+	//
+	// HIGH IMPACT (3 points):
+	//   - Azure Boards: +3 (work items don't migrate, only PR links)
+	//   - Azure Pipelines: +3 (YAML files migrate, but history doesn't)
+	//
+	// MODERATE IMPACT (2 points):
+	//   - Many PRs: +2 (PRs migrate with GEI, but many means more complexity)
+	//   - LFS: +2 (special handling)
+	//   - Submodules: +2 (dependency management)
+	//
+	// LOW IMPACT (1 point):
+	//   - Branch policies: +1 (migrate with GEI)
+	//   - Work item links: +1 (PR links migrate)
+	//   - GHAS: +1 (GitHub Advanced Security for ADO)
+	//
+	// STANDARD GIT FACTORS:
+	//   - Size-based: 0-9 points
+	//   - Large files: +4 points
+	//   - Activity-based: 0-4 points
+
+	return `(
+		-- TFVC repos are blocking (50 points)
+		(CASE WHEN ado_is_git = FALSE THEN 50 ELSE 0 END) +
+		
+		-- Azure Boards (work items don't migrate)
+		(CASE WHEN ado_has_boards = TRUE THEN 3 ELSE 0 END) +
+		
+		-- Azure Pipelines (history doesn't migrate)
+		(CASE WHEN ado_has_pipelines = TRUE THEN 3 ELSE 0 END) +
+		
+		-- Pull requests (these migrate, but many PRs adds complexity)
+		(CASE WHEN ado_pull_request_count > 50 THEN 2 
+		      WHEN ado_pull_request_count > 10 THEN 1 
+		      ELSE 0 END) +
+		
+		-- Branch policies (these migrate with GEI)
+		(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) +
+		
+		-- Work items (PR links migrate, not the items themselves)
+		(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) +
+		
+		-- GHAS for ADO
+		(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) +
+		
+		-- Standard git factors (size, large files, LFS, submodules, activity)
+		-- These are shared with GitHub scoring
+		` + d.buildStandardGitComplexityFactors() + `
+	)`
+}
+
+// buildStandardGitComplexityFactors returns SQL for complexity factors common to both GitHub and ADO
+//
+//nolint:unused // Reserved for future shared complexity calculations
+func (d *Database) buildStandardGitComplexityFactors() string {
+	const (
+		MB100 = 104857600  // 100MB
+		GB1   = 1073741824 // 1GB
+		GB5   = 5368709120 // 5GB
+	)
+
+	return fmt.Sprintf(`(
+		-- Size tier scoring (0-9 points)
+		(CASE 
+			WHEN total_size IS NULL THEN 0
+			WHEN total_size < %d THEN 0
+			WHEN total_size < %d THEN 1
+			WHEN total_size < %d THEN 2
+			ELSE 3
+		END) * 3 +
+		
+		-- Large files (blocking for GitHub migrations)
+		(CASE WHEN has_large_files = TRUE THEN 4 ELSE 0 END) +
+		
+		-- LFS
+		(CASE WHEN has_lfs = TRUE THEN 2 ELSE 0 END) +
+		
+		-- Submodules
+		(CASE WHEN has_submodules = TRUE THEN 2 ELSE 0 END)
+	)`, MB100, GB1, GB5)
 }
 
 // buildGitHubComplexityScoreSQL generates the SQL expression for calculating GitHub-specific complexity scores

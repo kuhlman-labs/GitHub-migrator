@@ -42,7 +42,28 @@ export const api = {
   },
 
   async getDiscoveryStatus() {
-    const { data } = await client.get('/discovery/status');
+    const { data} = await client.get('/discovery/status');
+    return data;
+  },
+
+  // Azure DevOps Discovery
+  async startADODiscovery(params: { organization?: string; project?: string; workers?: number }) {
+    const { data } = await client.post('/ado/discover', params);
+    return data;
+  },
+
+  async getADODiscoveryStatus(organization?: string) {
+    const { data } = await client.get('/ado/discovery/status', { params: { organization } });
+    return data;
+  },
+
+  async listADOProjects(organization?: string) {
+    const { data } = await client.get('/ado/projects', { params: { organization } });
+    return data;
+  },
+
+  async getADOProject(organization: string, project: string) {
+    const { data } = await client.get(`/ado/projects/${encodeURIComponent(organization)}/${encodeURIComponent(project)}`);
     return data;
   },
 
@@ -291,10 +312,21 @@ export const api = {
     return data;
   },
 
+  // Configuration
+  async getConfig(): Promise<{
+    source_type: 'github' | 'azuredevops';
+    auth_enabled: boolean;
+    entraid_enabled?: boolean;
+  }> {
+    const { data } = await client.get('/config');
+    return data;
+  },
+
   // Authentication
   async getAuthConfig(): Promise<{
     enabled: boolean;
     login_url?: string;
+    entraid_login_url?: string;
     authorization_rules?: {
       requires_org_membership?: boolean;
       required_orgs?: string[];

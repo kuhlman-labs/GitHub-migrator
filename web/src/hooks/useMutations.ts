@@ -16,6 +16,21 @@ export function useStartDiscovery() {
   });
 }
 
+// Azure DevOps Discovery mutations
+export function useStartADODiscovery() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (params: { organization?: string; project?: string; workers?: number }) => api.startADODiscovery(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['adoDiscoveryStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['adoProjects'] });
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+    },
+  });
+}
+
 export function useRediscoverRepository() {
   const queryClient = useQueryClient();
   

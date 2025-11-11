@@ -2,6 +2,12 @@
 
 This guide shows how to set up GitHub Environments for organizing secrets and variables per environment (dev/production).
 
+**Supported Migration Sources:**
+- GitHub to GitHub (GitHub.com, GHES to GitHub.com/GHEC)
+- Azure DevOps to GitHub (Git repos only, using GEI)
+
+For Azure DevOps migrations, see [ADO Setup Guide](./ADO_SETUP_GUIDE.md) for detailed configuration.
+
 ## 📋 Why Use GitHub Environments?
 
 **Benefits:**
@@ -140,9 +146,28 @@ Click **Add variable** for each:
 | `DEST_APP_ID` | `0` or your App ID | GitHub App ID for destination (optional) |
 | `DEST_APP_INSTALLATION_ID` | `0` or installation ID | Installation ID (optional) |
 
+**Azure DevOps Source Configuration** (when migrating from Azure DevOps)
+
+To migrate from Azure DevOps, set these additional variables:
+
+| Variable Name | Value | Description |
+|--------------|-------|-------------|
+| `SOURCE_TYPE` | `azuredevops` | Set source type to Azure DevOps |
+| `SOURCE_BASE_URL` | `https://dev.azure.com/your-org` | Your ADO organization URL |
+| `SOURCE_ORGANIZATION` | `your-org` | ADO organization name |
+| `AUTH_ENTRAID_ENABLED` | `true` | Enable Entra ID OAuth for user authentication |
+| `AUTH_ENTRAID_TENANT_ID` | Your tenant ID | Microsoft Entra ID tenant ID |
+| `AUTH_ENTRAID_CLIENT_ID` | Your client ID | Entra ID application client ID |
+| `AUTH_ENTRAID_CALLBACK_URL` | `https://github-migrator-dev.azurewebsites.net/api/v1/auth/entraid/callback` | Entra ID OAuth callback URL |
+| `AUTH_ADO_ORGANIZATION_URL` | `https://dev.azure.com/your-org` | ADO organization URL for validation |
+
+See [ADO Setup Guide](./ADO_SETUP_GUIDE.md) for detailed Azure DevOps configuration instructions.
+
 #### Dev Environment Secrets
 
 Click **Add secret** for each:
+
+**For GitHub Source:**
 
 | Secret Name | Value | How to Get |
 |------------|-------|------------|
@@ -152,7 +177,16 @@ Click **Add secret** for each:
 | `AUTH_GITHUB_OAUTH_CLIENT_SECRET` | OAuth Client Secret | GitHub OAuth App (dev) |
 | `AUTH_SESSION_SECRET` | Random 32-char string | `openssl rand -base64 32` |
 
-**Optional: GitHub App Secrets** (for enhanced discovery/profiling)
+**For Azure DevOps Source:** (use these instead of GitHub source secrets)
+
+| Secret Name | Value | How to Get |
+|------------|-------|------------|
+| `SOURCE_GITHUB_TOKEN` | ADO PAT | Azure DevOps → User Settings → Personal Access Tokens |
+| `DEST_GITHUB_TOKEN` | GitHub PAT | GitHub Settings → Developer settings → PAT |
+| `AUTH_ENTRAID_CLIENT_SECRET` | Entra ID Client Secret | Azure Portal → App registrations → Your App → Certificates & secrets |
+| `AUTH_SESSION_SECRET` | Random 32-char string | `openssl rand -base64 32` |
+
+**Optional: GitHub App Secrets** (for enhanced discovery/profiling with GitHub sources)
 
 | Secret Name | Value | How to Get |
 |------------|-------|------------|

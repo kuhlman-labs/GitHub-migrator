@@ -246,7 +246,19 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 	}
 
 	// Execute the migration (pass batch for applying batch-level settings)
-	err := w.executor.ExecuteMigration(ctx, repo, batch, dryRun)
+	// Route to ADO-specific migration handler if this is an ADO source repository
+	var err error
+	if repo.ADOProject != nil && *repo.ADOProject != "" {
+		// This is an Azure DevOps source repository
+		w.logger.Info("Executing ADO migration",
+			"repo", repo.FullName,
+			"ado_project", *repo.ADOProject,
+			"dry_run", dryRun)
+		err = w.executor.ExecuteADOMigration(ctx, repo, batch, dryRun)
+	} else {
+		// This is a GitHub source repository (default)
+		err = w.executor.ExecuteMigration(ctx, repo, batch, dryRun)
+	}
 
 	if err != nil {
 		w.logger.Error("Migration failed",

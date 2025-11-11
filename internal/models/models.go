@@ -124,6 +124,16 @@ type Repository struct {
 	ExcludeGitData       bool `json:"exclude_git_data" db:"exclude_git_data" gorm:"column:exclude_git_data;default:false"`                   // Exclude git data (commits, refs)
 	ExcludeOwnerProjects bool `json:"exclude_owner_projects" db:"exclude_owner_projects" gorm:"column:exclude_owner_projects;default:false"` // Exclude organization/user projects
 
+	// Azure DevOps specific fields
+	ADOProject           *string `json:"ado_project,omitempty" db:"ado_project" gorm:"column:ado_project"`                                     // ADO project name
+	ADOIsGit             bool    `json:"ado_is_git" db:"ado_is_git" gorm:"column:ado_is_git;default:true"`                                     // false = TFVC
+	ADOHasBoards         bool    `json:"ado_has_boards" db:"ado_has_boards" gorm:"column:ado_has_boards;default:false"`                        // Azure Boards integration
+	ADOHasPipelines      bool    `json:"ado_has_pipelines" db:"ado_has_pipelines" gorm:"column:ado_has_pipelines;default:false"`               // Azure Pipelines configured
+	ADOHasGHAS           bool    `json:"ado_has_ghas" db:"ado_has_ghas" gorm:"column:ado_has_ghas;default:false"`                              // GitHub Advanced Security
+	ADOPullRequestCount  int     `json:"ado_pull_request_count" db:"ado_pull_request_count" gorm:"column:ado_pull_request_count;default:0"`    // Total PR count
+	ADOWorkItemCount     int     `json:"ado_work_item_count" db:"ado_work_item_count" gorm:"column:ado_work_item_count;default:0"`             // Linked work items
+	ADOBranchPolicyCount int     `json:"ado_branch_policy_count" db:"ado_branch_policy_count" gorm:"column:ado_branch_policy_count;default:0"` // Branch policies
+
 	// Timestamps
 	DiscoveredAt    time.Time  `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
