@@ -134,6 +134,46 @@ type Repository struct {
 	ADOWorkItemCount     int     `json:"ado_work_item_count" db:"ado_work_item_count" gorm:"column:ado_work_item_count;default:0"`             // Linked work items
 	ADOBranchPolicyCount int     `json:"ado_branch_policy_count" db:"ado_branch_policy_count" gorm:"column:ado_branch_policy_count;default:0"` // Branch policies
 
+	// Enhanced Pipeline Data
+	ADOPipelineCount          int     `json:"ado_pipeline_count" db:"ado_pipeline_count" gorm:"column:ado_pipeline_count;default:0"`                               // Total number of pipelines
+	ADOYAMLPipelineCount      int     `json:"ado_yaml_pipeline_count" db:"ado_yaml_pipeline_count" gorm:"column:ado_yaml_pipeline_count;default:0"`                // YAML pipelines (easier to migrate)
+	ADOClassicPipelineCount   int     `json:"ado_classic_pipeline_count" db:"ado_classic_pipeline_count" gorm:"column:ado_classic_pipeline_count;default:0"`       // Classic pipelines (require manual recreation)
+	ADOPipelineRunCount       int     `json:"ado_pipeline_run_count" db:"ado_pipeline_run_count" gorm:"column:ado_pipeline_run_count;default:0"`                   // Recent pipeline runs (indicates active CI/CD)
+	ADOHasServiceConnections  bool    `json:"ado_has_service_connections" db:"ado_has_service_connections" gorm:"column:ado_has_service_connections;default:false"` // External service integrations
+	ADOHasVariableGroups      bool    `json:"ado_has_variable_groups" db:"ado_has_variable_groups" gorm:"column:ado_has_variable_groups;default:false"`            // Variable groups used
+	ADOHasSelfHostedAgents    bool    `json:"ado_has_self_hosted_agents" db:"ado_has_self_hosted_agents" gorm:"column:ado_has_self_hosted_agents;default:false"`   // Uses self-hosted agents
+
+	// Enhanced Work Item Data
+	ADOWorkItemLinkedCount  int     `json:"ado_work_item_linked_count" db:"ado_work_item_linked_count" gorm:"column:ado_work_item_linked_count;default:0"`    // Work items with commit/PR links
+	ADOActiveWorkItemCount  int     `json:"ado_active_work_item_count" db:"ado_active_work_item_count" gorm:"column:ado_active_work_item_count;default:0"`    // Active (non-closed) work items
+	ADOWorkItemTypes        *string `json:"ado_work_item_types,omitempty" db:"ado_work_item_types" gorm:"column:ado_work_item_types;type:text"`                // JSON array of work item types used
+
+	// Pull Request Details
+	ADOOpenPRCount              int `json:"ado_open_pr_count" db:"ado_open_pr_count" gorm:"column:ado_open_pr_count;default:0"`                               // Open pull requests
+	ADOPRWithLinkedWorkItems    int `json:"ado_pr_with_linked_work_items" db:"ado_pr_with_linked_work_items" gorm:"column:ado_pr_with_linked_work_items;default:0"` // PRs with work item links (these migrate)
+	ADOPRWithAttachments        int `json:"ado_pr_with_attachments" db:"ado_pr_with_attachments" gorm:"column:ado_pr_with_attachments;default:0"`             // PRs with attachments
+
+	// Enhanced Branch Policy Data
+	ADOBranchPolicyTypes        *string `json:"ado_branch_policy_types,omitempty" db:"ado_branch_policy_types" gorm:"column:ado_branch_policy_types;type:text"`          // JSON array of policy types
+	ADORequiredReviewerCount    int     `json:"ado_required_reviewer_count" db:"ado_required_reviewer_count" gorm:"column:ado_required_reviewer_count;default:0"`        // Required reviewer policies
+	ADOBuildValidationPolicies  int     `json:"ado_build_validation_policies" db:"ado_build_validation_policies" gorm:"column:ado_build_validation_policies;default:0"`  // Build validation requirements
+
+	// Wiki & Documentation
+	ADOHasWiki       bool `json:"ado_has_wiki" db:"ado_has_wiki" gorm:"column:ado_has_wiki;default:false"`                // Repository has wiki (doesn't migrate)
+	ADOWikiPageCount int  `json:"ado_wiki_page_count" db:"ado_wiki_page_count" gorm:"column:ado_wiki_page_count;default:0"` // Number of wiki pages
+
+	// Test Plans
+	ADOTestPlanCount int `json:"ado_test_plan_count" db:"ado_test_plan_count" gorm:"column:ado_test_plan_count;default:0"` // Test plans linked to repo
+	ADOTestCaseCount int `json:"ado_test_case_count" db:"ado_test_case_count" gorm:"column:ado_test_case_count;default:0"` // Test cases in plans
+
+	// Artifacts & Packages
+	ADOPackageFeedCount int  `json:"ado_package_feed_count" db:"ado_package_feed_count" gorm:"column:ado_package_feed_count;default:0"` // Package feeds associated
+	ADOHasArtifacts     bool `json:"ado_has_artifacts" db:"ado_has_artifacts" gorm:"column:ado_has_artifacts;default:false"`             // Build artifacts configured
+
+	// Service Hooks & Extensions
+	ADOServiceHookCount     int     `json:"ado_service_hook_count" db:"ado_service_hook_count" gorm:"column:ado_service_hook_count;default:0"`          // Service hooks/webhooks configured
+	ADOInstalledExtensions  *string `json:"ado_installed_extensions,omitempty" db:"ado_installed_extensions" gorm:"column:ado_installed_extensions;type:text"` // JSON array of repo-specific extensions
+
 	// Timestamps
 	DiscoveredAt    time.Time  `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
@@ -174,6 +214,20 @@ type ComplexityBreakdown struct {
 	InternalVisibilityPoints int `json:"internal_visibility_points"` // 1 point if internal
 	CodeownersPoints         int `json:"codeowners_points"`          // 1 point if has CODEOWNERS
 	ActivityPoints           int `json:"activity_points"`            // 0, 2, or 4 points based on quantile
+
+	// Azure DevOps specific complexity factors
+	ADOTFVCPoints              int `json:"ado_tfvc_points"`                // 50 points - blocking, requires Git conversion
+	ADOClassicPipelinePoints   int `json:"ado_classic_pipeline_points"`    // 5 points per pipeline - manual recreation required
+	ADOPackageFeedPoints       int `json:"ado_package_feed_points"`        // 3 points - separate migration process
+	ADOServiceConnectionPoints int `json:"ado_service_connection_points"`  // 3 points - must recreate in GitHub
+	ADOActivePipelinePoints    int `json:"ado_active_pipeline_points"`     // 3 points - CI/CD reconfiguration needed
+	ADOActiveBoardsPoints      int `json:"ado_active_boards_points"`       // 3 points - work items don't migrate
+	ADOWikiPoints              int `json:"ado_wiki_points"`                // 2 points per 10 pages - manual migration needed
+	ADOTestPlanPoints          int `json:"ado_test_plan_points"`           // 2 points - no GitHub equivalent
+	ADOVariableGroupPoints     int `json:"ado_variable_group_points"`      // 1 point - convert to GitHub secrets
+	ADOServiceHookPoints       int `json:"ado_service_hook_points"`        // 1 point - recreate webhooks
+	ADOManyPRsPoints           int `json:"ado_many_prs_points"`            // 2 points - metadata migration time
+	ADOBranchPolicyPoints      int `json:"ado_branch_policy_points"`       // 1 point - need validation/recreation
 }
 
 // MigrationStatus represents the status of a repository migration

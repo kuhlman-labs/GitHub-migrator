@@ -230,12 +230,60 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOHasBoards = hasBoards
 	}
 
-	// 2. Check Azure Pipelines
+	// 2. Check Azure Pipelines and get detailed pipeline info
 	hasPipelines, err := p.client.HasAzurePipelines(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to check Azure Pipelines", "error", err)
 	} else {
 		repo.ADOHasPipelines = hasPipelines
+	}
+
+	// 2a. Get pipeline definitions and categorize them
+	pipelineDefs, err := p.client.GetPipelineDefinitions(ctx, projectName, repoID)
+	if err != nil {
+		p.logger.Debug("Failed to get pipeline definitions", "error", err)
+	} else {
+		repo.ADOPipelineCount = len(pipelineDefs)
+		yamlCount := 0
+		classicCount := 0
+		for _, def := range pipelineDefs {
+			// Check if YAML or classic based on path (YAML pipelines typically have a .yml or .yaml file)
+			// BuildDefinitionReference doesn't expose enough info to distinguish reliably
+			// For now, we'll count all as unknown type and let users investigate manually
+			// This is a limitation of the BuildDefinitionReference type
+			if def.Path != nil && (strings.HasSuffix(*def.Path, ".yml") || strings.HasSuffix(*def.Path, ".yaml")) {
+				yamlCount++
+			} else {
+				// Assume classic if no YAML file path detected
+				classicCount++
+			}
+		}
+		repo.ADOYAMLPipelineCount = yamlCount
+		repo.ADOClassicPipelineCount = classicCount
+	}
+
+	// 2b. Get recent pipeline runs
+	pipelineRunCount, err := p.client.GetPipelineRuns(ctx, projectName, repoID)
+	if err != nil {
+		p.logger.Debug("Failed to get pipeline runs", "error", err)
+	} else {
+		repo.ADOPipelineRunCount = pipelineRunCount
+	}
+
+	// 2c. Check for service connections (project-level)
+	serviceConnCount, err := p.client.GetServiceConnections(ctx, projectName)
+	if err != nil {
+		p.logger.Debug("Failed to get service connections", "error", err)
+	} else {
+		repo.ADOHasServiceConnections = serviceConnCount > 0
+	}
+
+	// 2d. Check for variable groups (project-level)
+	varGroupCount, err := p.client.GetVariableGroups(ctx, projectName)
+	if err != nil {
+		p.logger.Debug("Failed to get variable groups", "error", err)
+	} else {
+		repo.ADOHasVariableGroups = varGroupCount > 0
 	}
 
 	// 3. Check GitHub Advanced Security for Azure DevOps
@@ -246,37 +294,105 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOHasGHAS = hasGHAS
 	}
 
-	// 4. Get Pull Request count
+	// 4. Get Pull Request details
+	openCount, withWorkItems, withAttachments, err := p.client.GetPRDetails(ctx, projectName, repoID)
+	if err != nil {
+		p.logger.Debug("Failed to get PR details", "error", err)
+	} else {
+		repo.ADOOpenPRCount = openCount
+		repo.ADOPRWithLinkedWorkItems = withWorkItems
+		repo.ADOPRWithAttachments = withAttachments
+	}
+
+	// Get total PR count for legacy field
 	prs, err := p.client.GetPullRequests(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get pull requests", "error", err)
 	} else {
 		repo.ADOPullRequestCount = len(prs)
-		// Also set the standard PullRequestCount for consistency
 		repo.PullRequestCount = len(prs)
 	}
 
-	// 5. Get Branch Policies
-	policies, err := p.client.GetBranchPolicies(ctx, projectName, repoID)
+	// 5. Get Branch Policy Details
+	policyTypes, requiredReviewers, buildValidations, err := p.client.GetBranchPolicyDetails(ctx, projectName, repoID)
 	if err != nil {
-		p.logger.Debug("Failed to get branch policies", "error", err)
+		p.logger.Debug("Failed to get branch policy details", "error", err)
 	} else {
-		repo.ADOBranchPolicyCount = len(policies)
-		// Also set the standard BranchProtections for consistency
-		repo.BranchProtections = len(policies)
+		repo.ADOBranchPolicyCount = len(policyTypes)
+		repo.BranchProtections = len(policyTypes)
+		repo.ADORequiredReviewerCount = requiredReviewers
+		repo.ADOBuildValidationPolicies = buildValidations
+
+		// Store policy types as JSON
+		if len(policyTypes) > 0 {
+			policyTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(policyTypes, `","`))
+			repo.ADOBranchPolicyTypes = &policyTypesJSON
+		}
 	}
 
-	// 6. Get Work Items linked to repository
-	// Note: This is complex and may require querying work items
-	// For now, use the placeholder method
-	workItemCount, err := p.client.GetWorkItemsLinkedToRepo(ctx, projectName, repoID)
+	// 6. Get Work Item details
+	linkedCount, activeCount, workItemTypes, err := p.client.GetWorkItemDetails(ctx, projectName, repoID)
 	if err != nil {
-		p.logger.Debug("Failed to get work items", "error", err)
+		p.logger.Debug("Failed to get work item details", "error", err)
 	} else {
-		repo.ADOWorkItemCount = workItemCount
+		repo.ADOWorkItemLinkedCount = linkedCount
+		repo.ADOActiveWorkItemCount = activeCount
+		repo.ADOWorkItemCount = linkedCount // Legacy field
+
+		// Store work item types as JSON
+		if len(workItemTypes) > 0 {
+			workItemTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(workItemTypes, `","`))
+			repo.ADOWorkItemTypes = &workItemTypesJSON
+		}
+	}
+
+	// 7. Get Wiki details
+	hasWiki, wikiPageCount, err := p.client.GetWikiDetails(ctx, projectName, repoID)
+	if err != nil {
+		p.logger.Debug("Failed to get wiki details", "error", err)
+	} else {
+		repo.ADOHasWiki = hasWiki
+		repo.ADOWikiPageCount = wikiPageCount
+	}
+
+	// 8. Get Test Plan details
+	testPlanCount, err := p.client.GetTestPlans(ctx, projectName)
+	if err != nil {
+		p.logger.Debug("Failed to get test plans", "error", err)
+	} else {
+		repo.ADOTestPlanCount = testPlanCount
+		// Note: Test case count would require additional API calls per test plan
+	}
+
+	// 9. Get Package Feed details
+	packageFeedCount, err := p.client.GetPackageFeeds(ctx, projectName)
+	if err != nil {
+		p.logger.Debug("Failed to get package feeds", "error", err)
+	} else {
+		repo.ADOPackageFeedCount = packageFeedCount
+	}
+
+	// 10. Get Service Hook details
+	serviceHookCount, err := p.client.GetServiceHooks(ctx, projectName)
+	if err != nil {
+		p.logger.Debug("Failed to get service hooks", "error", err)
+	} else {
+		repo.ADOServiceHookCount = serviceHookCount
 	}
 
 	return nil
+}
+
+// joinStrings joins strings with a separator
+func joinStrings(strings []string, sep string) string {
+	if len(strings) == 0 {
+		return ""
+	}
+	result := strings[0]
+	for i := 1; i < len(strings); i++ {
+		result += sep + strings[i]
+	}
+	return result
 }
 
 // profileMigratableFeatures determines what will and won't migrate with GEI
@@ -290,25 +406,95 @@ func (p *ADOProfiler) profileMigratableFeatures(ctx context.Context, repo *model
 
 	// What doesn't migrate (requires manual work):
 	// ❌ Azure Boards work items (only PR links migrate)
-	// ❌ Azure Pipelines history/runs (YAML files migrate, but history doesn't)
+	// ❌ Azure Pipelines history/runs (YAML files migrate as source code)
 	// ❌ Azure Repos wikis (separate from GitHub wikis)
+	// ❌ Test Plans (no GitHub equivalent)
 	// ❌ User-scoped branch policies
 	// ❌ Cross-repo branch policies
+	// ❌ Package feeds (require separate migration)
+	// ❌ Service connections (must be recreated in GitHub)
+	// ❌ Variable groups (must be recreated as GitHub secrets)
 
 	// Log warnings for features that won't migrate
-	if repo.ADOHasBoards {
-		p.logger.Info("Repository uses Azure Boards - work items won't migrate, only PR links",
-			"repo", repo.FullName)
+	if repo.ADOHasBoards && repo.ADOActiveWorkItemCount > 0 {
+		p.logger.Warn("Repository has active Azure Boards work items - these won't migrate",
+			"repo", repo.FullName,
+			"active_work_items", repo.ADOActiveWorkItemCount,
+			"note", "Only work item links on PRs will migrate")
+	}
+
+	if repo.ADOClassicPipelineCount > 0 {
+		p.logger.Warn("Repository has Classic pipelines - these require manual recreation",
+			"repo", repo.FullName,
+			"classic_pipelines", repo.ADOClassicPipelineCount,
+			"note", "Classic pipelines cannot be automatically converted to GitHub Actions")
 	}
 
 	if repo.ADOHasPipelines {
-		p.logger.Info("Repository uses Azure Pipelines - YAML files will migrate, but pipeline history won't",
-			"repo", repo.FullName)
+		p.logger.Info("Repository uses Azure Pipelines - pipeline history won't migrate",
+			"repo", repo.FullName,
+			"yaml_pipelines", repo.ADOYAMLPipelineCount,
+			"classic_pipelines", repo.ADOClassicPipelineCount,
+			"note", "YAML files migrate as source code, but execution history doesn't")
+	}
+
+	if repo.ADOHasWiki && repo.ADOWikiPageCount > 0 {
+		p.logger.Warn("Repository has wiki pages - these require manual migration",
+			"repo", repo.FullName,
+			"wiki_pages", repo.ADOWikiPageCount,
+			"note", "Azure Repos wikis are separate from GitHub wikis")
+	}
+
+	if repo.ADOTestPlanCount > 0 {
+		p.logger.Warn("Repository has test plans - no GitHub equivalent exists",
+			"repo", repo.FullName,
+			"test_plans", repo.ADOTestPlanCount,
+			"note", "Consider using third-party test management tools")
+	}
+
+	if repo.ADOPackageFeedCount > 0 {
+		p.logger.Warn("Repository uses package feeds - require separate migration",
+			"repo", repo.FullName,
+			"package_feeds", repo.ADOPackageFeedCount,
+			"note", "Migrate to GitHub Packages separately")
+	}
+
+	if repo.ADOHasServiceConnections {
+		p.logger.Info("Project uses service connections - must be recreated in GitHub",
+			"repo", repo.FullName,
+			"note", "Recreate as GitHub Actions secrets and variables")
+	}
+
+	if repo.ADOHasVariableGroups {
+		p.logger.Info("Project uses variable groups - must be recreated in GitHub",
+			"repo", repo.FullName,
+			"note", "Convert to GitHub repository or organization secrets")
+	}
+
+	if repo.ADOServiceHookCount > 0 {
+		p.logger.Info("Repository has service hooks - must be recreated as webhooks",
+			"repo", repo.FullName,
+			"service_hooks", repo.ADOServiceHookCount)
 	}
 
 	if repo.ADOHasGHAS {
 		p.logger.Info("Repository uses GitHub Advanced Security for Azure DevOps",
-			"repo", repo.FullName)
+			"repo", repo.FullName,
+			"note", "Enable GitHub Advanced Security in GitHub after migration")
+	}
+
+	// Log what WILL migrate successfully
+	if repo.ADOPRWithLinkedWorkItems > 0 {
+		p.logger.Info("Pull requests with work item links will migrate",
+			"repo", repo.FullName,
+			"prs_with_links", repo.ADOPRWithLinkedWorkItems)
+	}
+
+	if repo.ADOBranchPolicyCount > 0 {
+		p.logger.Info("Branch policies will migrate (repository-level only)",
+			"repo", repo.FullName,
+			"policies", repo.ADOBranchPolicyCount,
+			"note", "Verify and adjust policies after migration")
 	}
 }
 
@@ -330,40 +516,146 @@ func (p *ADOProfiler) EstimateComplexity(repo *models.Repository) int {
 
 	// TFVC repos are blocking - very high complexity
 	if !repo.ADOIsGit {
-		complexity += 50 // Requires conversion
+		complexity += 50 // Requires Git conversion - BLOCKING
 	}
 
-	// Azure Boards (work items don't migrate, only PR links)
-	if repo.ADOHasBoards {
-		complexity += 3 // Manual migration needed for work items
+	// Classic Pipelines (require manual recreation)
+	complexity += repo.ADOClassicPipelineCount * 5 // 5 points per classic pipeline
+
+	// Package Feeds (require separate migration)
+	if repo.ADOPackageFeedCount > 0 {
+		complexity += 3
 	}
 
-	// Azure Pipelines (history doesn't migrate)
-	if repo.ADOHasPipelines {
-		complexity += 3 // YAML files migrate, but not history
+	// Service Connections (must recreate in GitHub)
+	if repo.ADOHasServiceConnections {
+		complexity += 3
 	}
 
-	// Pull requests (these migrate with GEI)
-	if repo.ADOPullRequestCount > 50 {
+	// Active Pipelines with runs (CI/CD reconfiguration needed)
+	if repo.ADOPipelineRunCount > 0 {
+		complexity += 3
+	}
+
+	// Azure Boards with active work items (don't migrate)
+	if repo.ADOActiveWorkItemCount > 0 {
+		complexity += 3
+	}
+
+	// Wiki Pages (manual migration needed)
+	if repo.ADOWikiPageCount > 0 {
+		// 2 points per 10 pages
+		complexity += ((repo.ADOWikiPageCount + 9) / 10) * 2
+	}
+
+	// Test Plans (no GitHub equivalent)
+	if repo.ADOTestPlanCount > 0 {
 		complexity += 2
-	} else if repo.ADOPullRequestCount > 10 {
+	}
+
+	// Variable Groups (convert to GitHub secrets)
+	if repo.ADOHasVariableGroups {
 		complexity += 1
 	}
 
-	// Branch policies (these migrate with GEI)
+	// Service Hooks (recreate webhooks)
+	if repo.ADOServiceHookCount > 0 {
+		complexity += 1
+	}
+
+	// Many PRs (metadata migration time)
+	if repo.ADOPullRequestCount > 50 {
+		complexity += 2
+	}
+
+	// Branch Policies (need validation/recreation)
 	if repo.ADOBranchPolicyCount > 0 {
 		complexity += 1
 	}
 
-	// Work items (PR links migrate, but not the work items themselves)
-	if repo.ADOWorkItemCount > 0 {
-		complexity += 1
-	}
-
 	// Standard git complexity factors (size, LFS, submodules, etc.)
-	// These would be added by the standard git analyzer
+	// These are added by the standard git analyzer via AnalyzeGitProperties
 
 	return complexity
+}
+
+// EstimateComplexityWithBreakdown estimates complexity and provides a breakdown
+func (p *ADOProfiler) EstimateComplexityWithBreakdown(repo *models.Repository) (int, *models.ComplexityBreakdown) {
+	breakdown := &models.ComplexityBreakdown{}
+	
+	// TFVC - blocking
+	if !repo.ADOIsGit {
+		breakdown.ADOTFVCPoints = 50
+	}
+
+	// Classic Pipelines
+	breakdown.ADOClassicPipelinePoints = repo.ADOClassicPipelineCount * 5
+
+	// Package Feeds
+	if repo.ADOPackageFeedCount > 0 {
+		breakdown.ADOPackageFeedPoints = 3
+	}
+
+	// Service Connections
+	if repo.ADOHasServiceConnections {
+		breakdown.ADOServiceConnectionPoints = 3
+	}
+
+	// Active Pipelines
+	if repo.ADOPipelineRunCount > 0 {
+		breakdown.ADOActivePipelinePoints = 3
+	}
+
+	// Active Boards
+	if repo.ADOActiveWorkItemCount > 0 {
+		breakdown.ADOActiveBoardsPoints = 3
+	}
+
+	// Wiki Pages
+	if repo.ADOWikiPageCount > 0 {
+		breakdown.ADOWikiPoints = ((repo.ADOWikiPageCount + 9) / 10) * 2
+	}
+
+	// Test Plans
+	if repo.ADOTestPlanCount > 0 {
+		breakdown.ADOTestPlanPoints = 2
+	}
+
+	// Variable Groups
+	if repo.ADOHasVariableGroups {
+		breakdown.ADOVariableGroupPoints = 1
+	}
+
+	// Service Hooks
+	if repo.ADOServiceHookCount > 0 {
+		breakdown.ADOServiceHookPoints = 1
+	}
+
+	// Many PRs
+	if repo.ADOPullRequestCount > 50 {
+		breakdown.ADOManyPRsPoints = 2
+	}
+
+	// Branch Policies
+	if repo.ADOBranchPolicyCount > 0 {
+		breakdown.ADOBranchPolicyPoints = 1
+	}
+
+	// Calculate total
+	total := breakdown.ADOTFVCPoints +
+		breakdown.ADOClassicPipelinePoints +
+		breakdown.ADOPackageFeedPoints +
+		breakdown.ADOServiceConnectionPoints +
+		breakdown.ADOActivePipelinePoints +
+		breakdown.ADOActiveBoardsPoints +
+		breakdown.ADOWikiPoints +
+		breakdown.ADOTestPlanPoints +
+		breakdown.ADOVariableGroupPoints +
+		breakdown.ADOServiceHookPoints +
+		breakdown.ADOManyPRsPoints +
+		breakdown.ADOBranchPolicyPoints
+
+	return total, breakdown
 }
 
 // splitADOFullName splits an ADO full name into parts

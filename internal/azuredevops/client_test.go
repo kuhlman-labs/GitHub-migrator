@@ -185,3 +185,79 @@ func TestClientConfig_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestClient_GetPipelineDefinitions(t *testing.T) {
+	t.Skip("Skipping integration test - requires Azure DevOps access")
+
+	config := ClientConfig{
+		OrganizationURL:     "https://dev.azure.com/testorg",
+		PersonalAccessToken: "test-token",
+	}
+
+	client, err := NewClient(config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+	defs, err := client.GetPipelineDefinitions(ctx, "TestProject", "test-repo-id")
+	if err != nil {
+		t.Fatalf("GetPipelineDefinitions() error: %v", err)
+	}
+
+	if defs == nil {
+		t.Error("GetPipelineDefinitions() returned nil")
+	}
+}
+
+func TestClient_GetPRDetails(t *testing.T) {
+	t.Skip("Skipping integration test - requires Azure DevOps access")
+
+	config := ClientConfig{
+		OrganizationURL:     "https://dev.azure.com/testorg",
+		PersonalAccessToken: "test-token",
+	}
+
+	client, err := NewClient(config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+	openCount, withWorkItems, withAttachments, err := client.GetPRDetails(ctx, "TestProject", "test-repo-id")
+	if err != nil {
+		t.Fatalf("GetPRDetails() error: %v", err)
+	}
+
+	if openCount < 0 || withWorkItems < 0 || withAttachments < 0 {
+		t.Error("GetPRDetails() returned negative counts")
+	}
+}
+
+func TestClient_GetBranchPolicyDetails(t *testing.T) {
+	t.Skip("Skipping integration test - requires Azure DevOps access")
+
+	config := ClientConfig{
+		OrganizationURL:     "https://dev.azure.com/testorg",
+		PersonalAccessToken: "test-token",
+	}
+
+	client, err := NewClient(config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+	policyTypes, requiredReviewers, buildValidations, err := client.GetBranchPolicyDetails(ctx, "TestProject", "test-repo-id")
+	if err != nil {
+		t.Fatalf("GetBranchPolicyDetails() error: %v", err)
+	}
+
+	if policyTypes == nil {
+		t.Error("GetBranchPolicyDetails() returned nil policy types")
+	}
+
+	if requiredReviewers < 0 || buildValidations < 0 {
+		t.Error("GetBranchPolicyDetails() returned negative counts")
+	}
+}

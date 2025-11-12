@@ -88,8 +88,13 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 		}
 		c.logger.Debug("Project saved", "project", projectName)
 
-		// Discover repositories in this project
-		if err := c.DiscoverADOProject(ctx, organization, projectName); err != nil {
+		// Discover repositories in this project, passing the project visibility
+		projectVisibility := "private" // Default to private
+		if project.Visibility != nil {
+			projectVisibility = string(*project.Visibility)
+		}
+		
+		if err := c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, projectVisibility); err != nil {
 			c.logger.Error("Failed to discover project",
 				"project", projectName,
 				"error", err)
@@ -107,9 +112,29 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 
 // DiscoverADOProject discovers all repositories in a specific Azure DevOps project
 func (c *ADOCollector) DiscoverADOProject(ctx context.Context, organization, projectName string) error {
+	// Get project details to fetch visibility
+	project, err := c.client.GetProject(ctx, projectName)
+	if err != nil {
+		c.logger.Warn("Failed to get project details, using default visibility",
+			"project", projectName,
+			"error", err)
+		return c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, "private")
+	}
+	
+	projectVisibility := "private" // Default to private
+	if project.Visibility != nil {
+		projectVisibility = string(*project.Visibility)
+	}
+	
+	return c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, projectVisibility)
+}
+
+// DiscoverADOProjectWithVisibility discovers all repositories in a specific Azure DevOps project with known visibility
+func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, organization, projectName, projectVisibility string) error {
 	c.logger.Info("Starting Azure DevOps project discovery",
 		"organization", organization,
-		"project", projectName)
+		"project", projectName,
+		"visibility", projectVisibility)
 
 	// Get all repositories in the project
 	repos, err := c.client.GetRepositories(ctx, projectName)
@@ -142,6 +167,7 @@ func (c *ADOCollector) DiscoverADOProject(ctx context.Context, organization, pro
 			Source:          "azuredevops",
 			SourceURL:       getRemoteURL(adoRepo),
 			Status:          string(models.StatusPending),
+			Visibility:      projectVisibility, // Use project-level visibility from ADO
 			DiscoveredAt:    now,
 			UpdatedAt:       now,
 			LastDiscoveryAt: &now,
@@ -316,19 +342,19 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 	return nil
 }
 
-// getRemoteURL extracts the remote URL from an ADO repository
+// getRemoteURL extracts the web URL from an ADO repository (for viewing in browser)
 func getRemoteURL(repo interface{}) string {
 	// Type assert to git.GitRepository from ADO SDK
 	if gitRepo, ok := repo.(git.GitRepository); ok {
-		// Try RemoteUrl first (HTTPS clone URL)
-		if gitRepo.RemoteUrl != nil && *gitRepo.RemoteUrl != "" {
-			return *gitRepo.RemoteUrl
-		}
-		// Fallback to WebUrl if RemoteUrl is not available
+		// Use WebUrl first - this is the HTTPS URL for viewing the repo in a browser
 		if gitRepo.WebUrl != nil && *gitRepo.WebUrl != "" {
 			return *gitRepo.WebUrl
 		}
-		// Fallback to Url
+		// Fallback to RemoteUrl (HTTPS clone URL) if WebUrl is not available
+		if gitRepo.RemoteUrl != nil && *gitRepo.RemoteUrl != "" {
+			return *gitRepo.RemoteUrl
+		}
+		// Last resort: use API URL
 		if gitRepo.Url != nil && *gitRepo.Url != "" {
 			return *gitRepo.Url
 		}

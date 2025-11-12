@@ -96,6 +96,38 @@ export interface Repository {
   ado_pull_request_count: number;
   ado_work_item_count: number;
   ado_branch_policy_count: number;
+  // Enhanced Pipeline Data
+  ado_pipeline_count: number;
+  ado_yaml_pipeline_count: number;
+  ado_classic_pipeline_count: number;
+  ado_pipeline_run_count: number;
+  ado_has_service_connections: boolean;
+  ado_has_variable_groups: boolean;
+  ado_has_self_hosted_agents: boolean;
+  // Enhanced Work Item Data
+  ado_work_item_linked_count: number;
+  ado_active_work_item_count: number;
+  ado_work_item_types?: string;
+  // Pull Request Details
+  ado_open_pr_count: number;
+  ado_pr_with_linked_work_items: number;
+  ado_pr_with_attachments: number;
+  // Enhanced Branch Policy Data
+  ado_branch_policy_types?: string;
+  ado_required_reviewer_count: number;
+  ado_build_validation_policies: number;
+  // Wiki & Documentation
+  ado_has_wiki: boolean;
+  ado_wiki_page_count: number;
+  // Test Plans
+  ado_test_plan_count: number;
+  ado_test_case_count: number;
+  // Artifacts & Packages
+  ado_package_feed_count: number;
+  ado_has_artifacts: boolean;
+  // Service Hooks & Extensions
+  ado_service_hook_count: number;
+  ado_installed_extensions?: string;
   // Computed fields
   complexity_score?: number;
   complexity_breakdown?: ComplexityBreakdown;
@@ -124,12 +156,18 @@ export interface ComplexityBreakdown {
   codeowners_points: number;
   activity_points: number;
   // Azure DevOps specific breakdown
-  tfvc_points?: number;
-  ado_boards_points?: number;
-  ado_pipelines_points?: number;
-  ado_prs_points?: number;
-  ado_work_items_points?: number;
-  ado_branch_policies_points?: number;
+  ado_tfvc_points?: number;
+  ado_classic_pipeline_points?: number;
+  ado_package_feed_points?: number;
+  ado_service_connection_points?: number;
+  ado_active_pipeline_points?: number;
+  ado_active_boards_points?: number;
+  ado_wiki_points?: number;
+  ado_test_plan_points?: number;
+  ado_variable_group_points?: number;
+  ado_service_hook_points?: number;
+  ado_many_prs_points?: number;
+  ado_branch_policy_points?: number;
 }
 
 export interface MigrationHistory {
@@ -204,7 +242,6 @@ export interface ADODiscoveryRequest {
   organization: string;
   projects?: string[];
   workers?: number;
-  full_profile?: boolean;
 }
 
 export interface ADODiscoveryStatus {
@@ -243,6 +280,19 @@ export interface FeatureStats {
   has_release_assets: number;
   has_webhooks: number;
   total_repositories: number;
+  // Azure DevOps specific feature stats
+  ado_tfvc_repos?: number;
+  ado_git_repos?: number;
+  ado_has_boards?: number;
+  ado_has_pipelines?: number;
+  ado_has_classic_pipelines?: number;
+  ado_has_yaml_pipelines?: number;
+  ado_has_active_pipelines?: number;
+  ado_has_wikis?: number;
+  ado_has_test_plans?: number;
+  ado_has_package_feeds?: number;
+  ado_has_service_connections?: number;
+  ado_has_variable_groups?: number;
 }
 
 export interface MigrationCompletionStats {

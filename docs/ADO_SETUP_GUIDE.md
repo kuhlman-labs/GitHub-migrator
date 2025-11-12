@@ -130,8 +130,7 @@ curl -X POST http://localhost:8080/api/v1/ado/discover \
   -H "Content-Type: application/json" \
   -d '{
     "organization": "your-org",
-    "workers": 5,
-    "full_profile": true
+    "workers": 5
   }'
 ```
 
@@ -141,11 +140,54 @@ This will:
 3. Profile each repository for:
    - Git vs. TFVC detection
    - Repository size and structure
-   - Azure Boards usage
-   - Azure Pipelines configuration
+   - Azure Boards usage and active work items
+   - Azure Pipelines configuration (YAML vs Classic)
+   - Recent pipeline runs (activity indicator)
    - GitHub Advanced Security features
-   - Branch policies
-   - Pull request and work item counts
+   - Branch policies with detailed breakdowns
+   - Pull request details (open count, work item links, attachments)
+   - Wiki pages and documentation
+   - Test plans and test cases
+   - Package feeds and artifacts
+   - Service connections and variable groups
+   - Service hooks and webhooks
+   - And more...
+
+### Enhanced Profiling Capabilities
+
+The profiler now captures comprehensive feature usage data for accurate migration planning:
+
+#### Pipeline Analysis
+- **Total pipeline count**: All pipelines associated with repository
+- **YAML vs Classic**: Distinguishes between YAML (easier to migrate) and Classic pipelines (require manual recreation)
+- **Recent runs**: Indicates active CI/CD usage (last 100 runs)
+- **Service connections**: External integrations that must be recreated
+- **Variable groups**: Shared variables that must be converted to GitHub secrets
+
+#### Work Item Tracking
+- **Linked work items**: Work items referenced in commits/PRs
+- **Active work items**: Non-closed work items (don't migrate)
+- **Work item types**: Types of work items in use (User Story, Bug, Task, etc.)
+
+#### Pull Request Details
+- **Open PRs**: Currently open pull requests
+- **PRs with work item links**: These links will migrate
+- **PRs with attachments**: Attachments will migrate
+
+#### Branch Policy Details
+- **Policy types**: Categorized by type (required reviewers, build validation, etc.)
+- **Required reviewers**: Number of required reviewer policies
+- **Build validation policies**: Policies requiring build success
+
+#### Documentation & Testing
+- **Wiki status**: Whether wiki is enabled
+- **Wiki page count**: Number of wiki pages (requires manual migration)
+- **Test plans**: Number of test plans (no GitHub equivalent)
+- **Test cases**: Number of test cases in plans
+
+#### Packages & Integrations
+- **Package feeds**: Associated package feeds (require separate migration)
+- **Service hooks**: Configured webhooks (must recreate in GitHub)
 
 ### Discover Specific Projects
 
@@ -240,18 +282,45 @@ curl -X POST http://localhost:8080/api/v1/batches/{batch_id}/migrate
 
 ## 📊 Complexity Scoring
 
-ADO repositories are scored based on migration complexity:
+ADO repositories are scored based on migration complexity. The migrator automatically calculates complexity scores to help you prioritize and plan migrations:
 
-| Factor | Points | Description |
+| Feature | Points | Description |
 |--------|--------|-------------|
-| **TFVC** | +50 | Blocking - requires conversion |
-| **Azure Boards** | +3 | Work items don't migrate |
-| **Azure Pipelines** | +3 | Pipeline history doesn't migrate |
-| **Large PRs** | +2 | Many PRs increase complexity |
-| **Branch Policies** | +1 | Need manual recreation |
-| **Standard Git Factors** | Variable | Size, LFS, submodules, etc. |
+| **TFVC Repository** | +50 | **BLOCKING** - Must convert to Git first |
+| **Classic Pipelines** | +5 per pipeline | Manual recreation required in GitHub Actions |
+| **Package Feeds** | +3 | Requires separate migration to GitHub Packages |
+| **Service Connections** | +3 | Must recreate in GitHub as secrets/variables |
+| **Active Pipelines** | +3 | CI/CD reconfiguration needed (has recent runs) |
+| **Active Work Items** | +3 | Work items don't migrate (only PR links do) |
+| **Wiki Pages** | +2 per 10 pages | Manual migration needed |
+| **Test Plans** | +2 | No GitHub equivalent |
+| **Variable Groups** | +1 | Convert to GitHub secrets |
+| **Service Hooks** | +1 | Recreate as GitHub webhooks |
+| **Many PRs (>50)** | +2 | Metadata migration time |
+| **Branch Policies** | +1 | Need validation/recreation |
+| **Standard Git Factors** | Variable | Size, LFS, submodules, large files |
 
-**Remediation Required**: Repositories with TFVC (50+ points) need conversion before migration.
+### Complexity Thresholds
+
+- **0-5 points**: Low complexity - straightforward migration
+- **6-15 points**: Medium complexity - some manual work required
+- **16-30 points**: High complexity - significant manual effort needed
+- **31-49 points**: Very high complexity - extensive preparation required
+- **50+ points**: **Blocking** - requires remediation before migration (typically TFVC)
+
+**Remediation Required**: Repositories with complexity score ≥50 typically have TFVC and need Git conversion before migration.
+
+### View Complexity Scores
+
+```bash
+# Get all repositories with complexity scores
+curl http://localhost:8080/api/v1/repositories?source=azuredevops
+
+# Filter by complexity
+curl "http://localhost:8080/api/v1/repositories?source=azuredevops&min_complexity=16"
+```
+
+See [ADO_FEATURE_MIGRATION.md](./ADO_FEATURE_MIGRATION.md) for a comprehensive feature migration matrix.
 
 ## 🔐 Authorization Model
 

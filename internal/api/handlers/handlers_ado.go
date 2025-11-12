@@ -35,10 +35,9 @@ func NewADOHandler(baseHandler *Handler, adoClient *azuredevops.Client, adoProvi
 // Discovers ADO organizations or specific projects
 func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Organization string   `json:"organization"`           // Required: ADO organization name
-		Projects     []string `json:"projects,omitempty"`     // Optional: specific projects to discover
-		Workers      int      `json:"workers,omitempty"`      // Optional: number of parallel workers
-		FullProfile  bool     `json:"full_profile,omitempty"` // Optional: perform full profiling
+		Organization string   `json:"organization"`       // Required: ADO organization name
+		Projects     []string `json:"projects,omitempty"` // Optional: specific projects to discover
+		Workers      int      `json:"workers,omitempty"`  // Optional: number of parallel workers
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -65,8 +64,7 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 		// Discover entire organization
 		h.logger.Info("Starting ADO organization discovery",
 			"organization", req.Organization,
-			"workers", req.Workers,
-			"full_profile", req.FullProfile)
+			"workers", req.Workers)
 
 		err = h.adoCollector.DiscoverADOOrganization(ctx, req.Organization)
 	} else {
@@ -74,8 +72,7 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 		h.logger.Info("Starting ADO project discovery",
 			"organization", req.Organization,
 			"projects", req.Projects,
-			"workers", req.Workers,
-			"full_profile", req.FullProfile)
+			"workers", req.Workers)
 
 		for _, project := range req.Projects {
 			projectErr := h.adoCollector.DiscoverADOProject(ctx, req.Organization, project)
@@ -107,7 +104,6 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 		"organization": req.Organization,
 		"projects":     req.Projects,
 		"repositories": discoveredCount,
-		"full_profile": req.FullProfile,
 	})
 }
 

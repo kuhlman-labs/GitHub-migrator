@@ -273,6 +273,74 @@ export function ComplexityInfoModal() {
                     </div>
                   </div>
 
+                  {/* Azure DevOps Specific Factors */}
+                  <div className="mb-3">
+                    <h4 className="font-semibold text-gray-900 mb-2">Azure DevOps Specific Factors</h4>
+                    <p className="text-sm text-gray-600 mb-3">Additional complexity factors for ADO → GitHub migrations</p>
+                    
+                    <div className="space-y-3">
+                      <div className="border-l-4 border-red-700 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">TFVC Repository</h5>
+                          <span className="text-sm font-semibold text-red-700">50 points (BLOCKING)</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Must be converted to Git before migration. Use git-tfs or convert in ADO first.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Classic Pipelines</h5>
+                          <span className="text-sm font-semibold text-red-600">5 points per pipeline</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Cannot be automatically converted. Must manually recreate as GitHub Actions workflows.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Package Feeds / Service Connections / Active Pipelines</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points each</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Require separate migration to GitHub Packages or recreation in GitHub.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Active Work Items (Azure Boards)</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Work items don't migrate with GEI. Only PR links migrate. Consider third-party tools.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Wiki Pages / Test Plans</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Manual migration required for wikis. Test plans have no GitHub equivalent.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Variable Groups / Service Hooks / Branch Policies / Many PRs</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1-2 points each</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Must recreate as GitHub secrets/webhooks or verify after migration.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Activity-Based Scoring */}
                   <div className="border-l-4 border-purple-500 pl-4">
                     <div className="flex justify-between items-start mb-1">

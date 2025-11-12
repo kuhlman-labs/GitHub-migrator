@@ -49,7 +49,8 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
         <div>
           <h2 className="text-lg font-medium text-gray-900 mb-1">Repository Complexity Distribution</h2>
           <p className="text-sm text-gray-600">
-            Repositories categorized by migration complexity based on size, LFS usage, submodules, large files, and branch protections.
+            Repositories categorized by migration complexity based on features like size, LFS, submodules, environments, secrets, and more. 
+            For Azure DevOps, includes TFVC detection, pipeline types, Azure Boards, wikis, and test plans.
           </p>
         </div>
         <ComplexityInfoModal />
