@@ -72,7 +72,7 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database) {
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	authConfig := &config.AuthConfig{Enabled: false}
-	handler := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com")
+	handler := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
 	return handler, db
 }
 
@@ -104,7 +104,7 @@ func TestNewHandler(t *testing.T) {
 
 	t.Run("without GitHub clients", func(t *testing.T) {
 		authConfig := &config.AuthConfig{Enabled: false}
-		h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com")
+		h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
@@ -117,7 +117,7 @@ func TestNewHandler(t *testing.T) {
 		sourceDualClient := createTestDualClient(t, logger)
 		destDualClient := createTestDualClient(t, logger)
 		authConfig := &config.AuthConfig{Enabled: false}
-		h := NewHandler(db, logger, sourceDualClient, destDualClient, nil, nil, authConfig, "https://api.github.com")
+		h := NewHandler(db, logger, sourceDualClient, destDualClient, nil, nil, authConfig, "https://api.github.com", "github")
 		if h == nil {
 			t.Fatal("Expected handler to be created")
 		}
@@ -165,7 +165,7 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	authConfig := &config.AuthConfig{Enabled: false}
 
-	h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com")
+	h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -187,7 +187,7 @@ func testStartDiscoveryValidation(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	sourceDualClient := createTestDualClient(t, logger)
 	authConfig := &config.AuthConfig{Enabled: false}
-	h := NewHandler(db, logger, sourceDualClient, nil, nil, nil, authConfig, "https://api.github.com")
+	h := NewHandler(db, logger, sourceDualClient, nil, nil, nil, authConfig, "https://api.github.com", "github")
 
 	tests := []struct {
 		name     string
@@ -243,7 +243,7 @@ func testStartDiscoveryOrganization(t *testing.T) {
 	sourceDualClient := createTestDualClient(t, logger)
 	mockProvider := &mockSourceProvider{}
 	authConfig := &config.AuthConfig{Enabled: false}
-	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil, authConfig, "https://api.github.com")
+	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil, authConfig, "https://api.github.com", "github")
 
 	reqBody := map[string]interface{}{
 		"organization": "test-org",
@@ -278,7 +278,7 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 	sourceDualClient := createTestDualClient(t, logger)
 	mockProvider := &mockSourceProvider{}
 	authConfig := &config.AuthConfig{Enabled: false}
-	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil, authConfig, "https://api.github.com")
+	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil, authConfig, "https://api.github.com", "github")
 
 	reqBody := map[string]interface{}{
 		"enterprise_slug": "test-enterprise",
@@ -1848,7 +1848,7 @@ func TestListOrganizations(t *testing.T) {
 	}
 
 	authConfig := &config.AuthConfig{Enabled: false}
-	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil, authConfig, "https://api.github.com")
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil, authConfig, "https://api.github.com", "github")
 
 	req := httptest.NewRequest("GET", "/api/v1/organizations", nil)
 	w := httptest.NewRecorder()
@@ -1902,7 +1902,7 @@ func TestGetMigrationHistoryList(t *testing.T) {
 	}
 
 	authConfig := &config.AuthConfig{Enabled: false}
-	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil, authConfig, "https://api.github.com")
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil, authConfig, "https://api.github.com", "github")
 
 	req := httptest.NewRequest("GET", "/api/v1/migrations/history", nil)
 	w := httptest.NewRecorder()
@@ -1949,7 +1949,7 @@ func TestExportMigrationHistory(t *testing.T) {
 	}
 
 	authConfig := &config.AuthConfig{Enabled: false}
-	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil, authConfig, "https://api.github.com")
+	h := NewHandler(db, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil, &mockSourceProvider{}, nil, authConfig, "https://api.github.com", "github")
 
 	t.Run("CSV export", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/v1/migrations/history/export?format=csv", nil)
