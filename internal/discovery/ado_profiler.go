@@ -11,6 +11,7 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/azuredevops"
 	"github.com/brettkuhlman/github-migrator/internal/models"
 	"github.com/brettkuhlman/github-migrator/internal/source"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )
 
@@ -38,7 +39,7 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 	}
 
 	projectName := *repo.ADOProject
-	
+
 	// Extract repo ID from adoRepo - type assert to git.GitRepository
 	repoID := ""
 	if gitRepo, ok := adoRepo.(git.GitRepository); ok {
@@ -176,7 +177,7 @@ func (p *ADOProfiler) cloneAndAnalyzeGit(ctx context.Context, repo *models.Repos
 func (p *ADOProfiler) setupTempDir(fullName string) (string, error) {
 	tempBase := os.TempDir()
 	tempBase = filepath.Join(tempBase, "github-migrator-ado")
-	
+
 	// #nosec G301 -- 0755 is appropriate for temporary directory
 	if err := os.MkdirAll(tempBase, 0755); err != nil {
 		return "", fmt.Errorf("failed to create temp base directory: %w", err)
@@ -222,15 +223,28 @@ func (p *ADOProfiler) profileGitProperties(ctx context.Context, repo *models.Rep
 
 // profileADOFeatures profiles Azure DevOps-specific features
 func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repository, projectName, repoID string) error {
-	// 1. Check Azure Boards integration
+	p.profileAzureBoards(ctx, repo, projectName)
+	p.profileAzurePipelines(ctx, repo, projectName, repoID)
+	p.profilePullRequests(ctx, repo, projectName, repoID)
+	p.profileBranchPolicies(ctx, repo, projectName, repoID)
+	p.profileWorkItems(ctx, repo, projectName, repoID)
+	p.profileAdditionalFeatures(ctx, repo, projectName, repoID)
+	return nil
+}
+
+// profileAzureBoards profiles Azure Boards integration
+func (p *ADOProfiler) profileAzureBoards(ctx context.Context, repo *models.Repository, projectName string) {
 	hasBoards, err := p.client.HasAzureBoards(ctx, projectName)
 	if err != nil {
 		p.logger.Debug("Failed to check Azure Boards", "error", err)
 	} else {
 		repo.ADOHasBoards = hasBoards
 	}
+}
 
-	// 2. Check Azure Pipelines and get detailed pipeline info
+// profileAzurePipelines profiles Azure Pipelines and related features
+func (p *ADOProfiler) profileAzurePipelines(ctx context.Context, repo *models.Repository, projectName, repoID string) {
+	// Check if pipelines exist
 	hasPipelines, err := p.client.HasAzurePipelines(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to check Azure Pipelines", "error", err)
@@ -238,31 +252,15 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOHasPipelines = hasPipelines
 	}
 
-	// 2a. Get pipeline definitions and categorize them
+	// Get pipeline definitions and categorize them
 	pipelineDefs, err := p.client.GetPipelineDefinitions(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get pipeline definitions", "error", err)
 	} else {
-		repo.ADOPipelineCount = len(pipelineDefs)
-		yamlCount := 0
-		classicCount := 0
-		for _, def := range pipelineDefs {
-			// Check if YAML or classic based on path (YAML pipelines typically have a .yml or .yaml file)
-			// BuildDefinitionReference doesn't expose enough info to distinguish reliably
-			// For now, we'll count all as unknown type and let users investigate manually
-			// This is a limitation of the BuildDefinitionReference type
-			if def.Path != nil && (strings.HasSuffix(*def.Path, ".yml") || strings.HasSuffix(*def.Path, ".yaml")) {
-				yamlCount++
-			} else {
-				// Assume classic if no YAML file path detected
-				classicCount++
-			}
-		}
-		repo.ADOYAMLPipelineCount = yamlCount
-		repo.ADOClassicPipelineCount = classicCount
+		p.categorizePipelines(repo, pipelineDefs)
 	}
 
-	// 2b. Get recent pipeline runs
+	// Get recent pipeline runs
 	pipelineRunCount, err := p.client.GetPipelineRuns(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get pipeline runs", "error", err)
@@ -270,7 +268,36 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOPipelineRunCount = pipelineRunCount
 	}
 
-	// 2c. Check for service connections (project-level)
+	// Check for service connections and variable groups
+	p.profilePipelineResources(ctx, repo, projectName)
+
+	// Check GitHub Advanced Security
+	hasGHAS, err := p.client.HasGHAS(ctx, projectName, repoID)
+	if err != nil {
+		p.logger.Debug("Failed to check GHAS", "error", err)
+	} else {
+		repo.ADOHasGHAS = hasGHAS
+	}
+}
+
+// categorizePipelines categorizes pipelines into YAML and Classic
+func (p *ADOProfiler) categorizePipelines(repo *models.Repository, pipelineDefs []build.BuildDefinitionReference) {
+	repo.ADOPipelineCount = len(pipelineDefs)
+	yamlCount := 0
+	classicCount := 0
+	for _, def := range pipelineDefs {
+		if def.Path != nil && (strings.HasSuffix(*def.Path, ".yml") || strings.HasSuffix(*def.Path, ".yaml")) {
+			yamlCount++
+		} else {
+			classicCount++
+		}
+	}
+	repo.ADOYAMLPipelineCount = yamlCount
+	repo.ADOClassicPipelineCount = classicCount
+}
+
+// profilePipelineResources profiles pipeline-related resources
+func (p *ADOProfiler) profilePipelineResources(ctx context.Context, repo *models.Repository, projectName string) {
 	serviceConnCount, err := p.client.GetServiceConnections(ctx, projectName)
 	if err != nil {
 		p.logger.Debug("Failed to get service connections", "error", err)
@@ -278,23 +305,16 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOHasServiceConnections = serviceConnCount > 0
 	}
 
-	// 2d. Check for variable groups (project-level)
 	varGroupCount, err := p.client.GetVariableGroups(ctx, projectName)
 	if err != nil {
 		p.logger.Debug("Failed to get variable groups", "error", err)
 	} else {
 		repo.ADOHasVariableGroups = varGroupCount > 0
 	}
+}
 
-	// 3. Check GitHub Advanced Security for Azure DevOps
-	hasGHAS, err := p.client.HasGHAS(ctx, projectName, repoID)
-	if err != nil {
-		p.logger.Debug("Failed to check GHAS", "error", err)
-	} else {
-		repo.ADOHasGHAS = hasGHAS
-	}
-
-	// 4. Get Pull Request details
+// profilePullRequests profiles pull request details
+func (p *ADOProfiler) profilePullRequests(ctx context.Context, repo *models.Repository, projectName, repoID string) {
 	openCount, withWorkItems, withAttachments, err := p.client.GetPRDetails(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get PR details", "error", err)
@@ -304,7 +324,6 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOPRWithAttachments = withAttachments
 	}
 
-	// Get total PR count for legacy field
 	prs, err := p.client.GetPullRequests(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get pull requests", "error", err)
@@ -312,41 +331,48 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOPullRequestCount = len(prs)
 		repo.PullRequestCount = len(prs)
 	}
+}
 
-	// 5. Get Branch Policy Details
+// profileBranchPolicies profiles branch protection policies
+func (p *ADOProfiler) profileBranchPolicies(ctx context.Context, repo *models.Repository, projectName, repoID string) {
 	policyTypes, requiredReviewers, buildValidations, err := p.client.GetBranchPolicyDetails(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get branch policy details", "error", err)
-	} else {
-		repo.ADOBranchPolicyCount = len(policyTypes)
-		repo.BranchProtections = len(policyTypes)
-		repo.ADORequiredReviewerCount = requiredReviewers
-		repo.ADOBuildValidationPolicies = buildValidations
-
-		// Store policy types as JSON
-		if len(policyTypes) > 0 {
-			policyTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(policyTypes, `","`))
-			repo.ADOBranchPolicyTypes = &policyTypesJSON
-		}
+		return
 	}
 
-	// 6. Get Work Item details
+	repo.ADOBranchPolicyCount = len(policyTypes)
+	repo.BranchProtections = len(policyTypes)
+	repo.ADORequiredReviewerCount = requiredReviewers
+	repo.ADOBuildValidationPolicies = buildValidations
+
+	if len(policyTypes) > 0 {
+		policyTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(policyTypes, `","`))
+		repo.ADOBranchPolicyTypes = &policyTypesJSON
+	}
+}
+
+// profileWorkItems profiles Azure Boards work items
+func (p *ADOProfiler) profileWorkItems(ctx context.Context, repo *models.Repository, projectName, repoID string) {
 	linkedCount, activeCount, workItemTypes, err := p.client.GetWorkItemDetails(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get work item details", "error", err)
-	} else {
-		repo.ADOWorkItemLinkedCount = linkedCount
-		repo.ADOActiveWorkItemCount = activeCount
-		repo.ADOWorkItemCount = linkedCount // Legacy field
-
-		// Store work item types as JSON
-		if len(workItemTypes) > 0 {
-			workItemTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(workItemTypes, `","`))
-			repo.ADOWorkItemTypes = &workItemTypesJSON
-		}
+		return
 	}
 
-	// 7. Get Wiki details
+	repo.ADOWorkItemLinkedCount = linkedCount
+	repo.ADOActiveWorkItemCount = activeCount
+	repo.ADOWorkItemCount = linkedCount
+
+	if len(workItemTypes) > 0 {
+		workItemTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(workItemTypes, `","`))
+		repo.ADOWorkItemTypes = &workItemTypesJSON
+	}
+}
+
+// profileAdditionalFeatures profiles wiki, test plans, package feeds, and service hooks
+func (p *ADOProfiler) profileAdditionalFeatures(ctx context.Context, repo *models.Repository, projectName, repoID string) {
+	// Wiki
 	hasWiki, wikiPageCount, err := p.client.GetWikiDetails(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get wiki details", "error", err)
@@ -355,16 +381,15 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOWikiPageCount = wikiPageCount
 	}
 
-	// 8. Get Test Plan details
+	// Test Plans
 	testPlanCount, err := p.client.GetTestPlans(ctx, projectName)
 	if err != nil {
 		p.logger.Debug("Failed to get test plans", "error", err)
 	} else {
 		repo.ADOTestPlanCount = testPlanCount
-		// Note: Test case count would require additional API calls per test plan
 	}
 
-	// 9. Get Package Feed details
+	// Package Feeds
 	packageFeedCount, err := p.client.GetPackageFeeds(ctx, projectName)
 	if err != nil {
 		p.logger.Debug("Failed to get package feeds", "error", err)
@@ -372,15 +397,13 @@ func (p *ADOProfiler) profileADOFeatures(ctx context.Context, repo *models.Repos
 		repo.ADOPackageFeedCount = packageFeedCount
 	}
 
-	// 10. Get Service Hook details
+	// Service Hooks
 	serviceHookCount, err := p.client.GetServiceHooks(ctx, projectName)
 	if err != nil {
 		p.logger.Debug("Failed to get service hooks", "error", err)
 	} else {
 		repo.ADOServiceHookCount = serviceHookCount
 	}
-
-	return nil
 }
 
 // joinStrings joins strings with a separator
@@ -582,7 +605,7 @@ func (p *ADOProfiler) EstimateComplexity(repo *models.Repository) int {
 // EstimateComplexityWithBreakdown estimates complexity and provides a breakdown
 func (p *ADOProfiler) EstimateComplexityWithBreakdown(repo *models.Repository) (int, *models.ComplexityBreakdown) {
 	breakdown := &models.ComplexityBreakdown{}
-	
+
 	// TFVC - blocking
 	if !repo.ADOIsGit {
 		breakdown.ADOTFVCPoints = 50
@@ -656,49 +679,4 @@ func (p *ADOProfiler) EstimateComplexityWithBreakdown(repo *models.Repository) (
 		breakdown.ADOBranchPolicyPoints
 
 	return total, breakdown
-}
-
-// splitADOFullName splits an ADO full name into parts
-// Format: "org/project/repo" -> ["org", "project", "repo"]
-func splitADOFullName(fullName string) []string {
-	// For ADO repos, we expect "org/project/repo" format
-	// We need to handle cases where project or repo names might contain slashes
-	// For now, we'll use a simple split and take first 3 parts
-	parts := make([]string, 0, 3)
-	remainder := fullName
-	
-	// Split org (first part before /)
-	if idx := findNthSlash(remainder, 0); idx >= 0 {
-		parts = append(parts, remainder[:idx])
-		remainder = remainder[idx+1:]
-	} else {
-		return []string{fullName}
-	}
-	
-	// Split project (second part before /)
-	if idx := findNthSlash(remainder, 0); idx >= 0 {
-		parts = append(parts, remainder[:idx])
-		remainder = remainder[idx+1:]
-	} else {
-		parts = append(parts, remainder)
-		return parts
-	}
-	
-	// Repo is everything else
-	parts = append(parts, remainder)
-	return parts
-}
-
-// findNthSlash finds the nth occurrence of '/' in a string
-func findNthSlash(s string, n int) int {
-	count := 0
-	for i, c := range s {
-		if c == '/' {
-			if count == n {
-				return i
-			}
-			count++
-		}
-	}
-	return -1
 }

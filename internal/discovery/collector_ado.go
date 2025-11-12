@@ -93,7 +93,7 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 		if project.Visibility != nil {
 			projectVisibility = string(*project.Visibility)
 		}
-		
+
 		if err := c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, projectVisibility); err != nil {
 			c.logger.Error("Failed to discover project",
 				"project", projectName,
@@ -120,12 +120,12 @@ func (c *ADOCollector) DiscoverADOProject(ctx context.Context, organization, pro
 			"error", err)
 		return c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, "private")
 	}
-	
+
 	projectVisibility := "private" // Default to private
 	if project.Visibility != nil {
 		projectVisibility = string(*project.Visibility)
 	}
-	
+
 	return c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, projectVisibility)
 }
 
@@ -211,7 +211,7 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 		c.logger.Debug("Profiling repository",
 			"project", projectName,
 			"repo", repoName)
-		
+
 		if err := c.profiler.ProfileRepository(ctx, repo, adoRepo); err != nil {
 			c.logger.Warn("Failed to profile repository",
 				"project", projectName,
@@ -319,7 +319,7 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 	c.logger.Debug("Profiling repository",
 		"project", projectName,
 		"repo", repoName)
-	
+
 	if err := c.profiler.ProfileRepository(ctx, repoModel, repo); err != nil {
 		c.logger.Warn("Failed to profile repository",
 			"project", projectName,
@@ -334,7 +334,7 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 			return fmt.Errorf("failed to save repository: %w", err)
 		}
 	}
-	
+
 	c.logger.Info("Azure DevOps repository discovery complete",
 		"project", projectName,
 		"repo", repoName)
@@ -359,7 +359,7 @@ func getRemoteURL(repo interface{}) string {
 			return *gitRepo.Url
 		}
 	}
-	
+
 	// If we can't extract the URL, return empty string
 	// The caller should handle this case
 	return ""

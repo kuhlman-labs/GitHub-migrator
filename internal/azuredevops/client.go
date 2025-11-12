@@ -21,21 +21,21 @@ import (
 
 // Client wraps the Azure DevOps API client
 type Client struct {
-	connection         *azuredevops.Connection
-	coreClient         core.Client
-	gitClient          git.Client
-	workClient         workitemtracking.Client
-	buildClient        build.Client
-	policyClient       policy.Client
+	connection            *azuredevops.Connection
+	coreClient            core.Client
+	gitClient             git.Client
+	workClient            workitemtracking.Client
+	buildClient           build.Client
+	policyClient          policy.Client
 	serviceEndpointClient serviceendpoint.Client
-	serviceHooksClient servicehooks.Client
-	taskAgentClient    taskagent.Client
-	wikiClient         wiki.Client
-	testPlanClient     testplan.Client
-	feedClient         feed.Client
-	orgURL             string
-	token              string
-	logger             *slog.Logger
+	serviceHooksClient    servicehooks.Client
+	taskAgentClient       taskagent.Client
+	wikiClient            wiki.Client
+	testPlanClient        testplan.Client
+	feedClient            feed.Client
+	orgURL                string
+	token                 string
+	logger                *slog.Logger
 }
 
 // ClientConfig contains configuration for creating an ADO client
@@ -55,6 +55,11 @@ func (c ClientConfig) Validate() error {
 	}
 	return nil
 }
+
+const (
+	// TfsGitRepositoryType is the repository type for Git repositories in Azure DevOps
+	TfsGitRepositoryType = "TfsGit"
+)
 
 // NewClient creates a new Azure DevOps client
 func NewClient(cfg ClientConfig) (*Client, error) {
@@ -297,7 +302,7 @@ func (c *Client) HasAzureBoards(ctx context.Context, projectName string) (bool, 
 func (c *Client) HasAzurePipelines(ctx context.Context, projectName, repoID string) (bool, error) {
 	// Get build definitions for this repository
 	top := 1
-	repoType := "TfsGit" // Git repositories in Azure DevOps
+	repoType := TfsGitRepositoryType
 	definitions, err := c.buildClient.GetDefinitions(ctx, build.GetDefinitionsArgs{
 		Project:        &projectName,
 		RepositoryId:   &repoID,
@@ -346,7 +351,7 @@ func (c *Client) GetWorkItemsLinkedToRepo(ctx context.Context, projectName, repo
 func (c *Client) HasGHAS(ctx context.Context, projectName, repoID string) (bool, error) {
 	// GitHub Advanced Security for Azure DevOps is a premium feature
 	// that provides code scanning, secret scanning, and dependency scanning.
-	// 
+	//
 	// As of now, there's no public API in the Azure DevOps Go SDK to detect
 	// if GHAS is enabled for a specific repository.
 	//
@@ -369,7 +374,7 @@ func (c *Client) ValidateCredentials(ctx context.Context) error {
 
 // GetPipelineDefinitions gets pipeline definitions for a repository
 func (c *Client) GetPipelineDefinitions(ctx context.Context, projectName, repoID string) ([]build.BuildDefinitionReference, error) {
-	repoType := "TfsGit" // Git repositories in Azure DevOps
+	repoType := TfsGitRepositoryType
 	definitions, err := c.buildClient.GetDefinitions(ctx, build.GetDefinitionsArgs{
 		Project:        &projectName,
 		RepositoryId:   &repoID,
@@ -390,7 +395,7 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projectName, repoID
 func (c *Client) GetPipelineRuns(ctx context.Context, projectName, repoID string) (int, error) {
 	// Get builds from the last 30 days with top 100
 	top := 100
-	repoType := "TfsGit" // Git repositories in Azure DevOps
+	repoType := TfsGitRepositoryType
 	builds, err := c.buildClient.GetBuilds(ctx, build.GetBuildsArgs{
 		Project:        &projectName,
 		RepositoryId:   &repoID,
@@ -573,33 +578,33 @@ func (c *Client) GetWorkItemDetails(ctx context.Context, projectName, repoName s
 	// Query for work items in the project using WIQL
 	// We'll get a count of active work items as a proxy for repository activity
 	wiql := "Select [System.Id] From WorkItems Where [System.TeamProject] = @project AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'"
-	
+
 	query := workitemtracking.Wiql{
 		Query: &wiql,
 	}
-	
+
 	result, queryErr := c.workClient.QueryByWiql(ctx, workitemtracking.QueryByWiqlArgs{
 		Project: &projectName,
 		Wiql:    &query,
 	})
-	
+
 	if queryErr != nil {
 		c.logger.Debug("Failed to query work items", "project", projectName, "error", queryErr)
 		return 0, 0, []string{}, nil // Return empty on error to avoid breaking discovery
 	}
-	
+
 	if result == nil || result.WorkItems == nil {
 		return 0, 0, []string{}, nil
 	}
-	
+
 	// Count active work items (this is project-wide, not repo-specific)
 	activeCount = len(*result.WorkItems)
-	
+
 	// Note: Getting repo-specific work items would require:
 	// 1. Fetching all commits for the repo
 	// 2. For each commit, checking work item links
 	// This is too expensive for discovery, so we return project-level stats
-	
+
 	return 0, activeCount, []string{}, nil
 }
 

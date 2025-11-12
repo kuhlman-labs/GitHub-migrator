@@ -277,7 +277,7 @@ func splitADOFullName(fullName string) []string {
 	// For now, we'll use a simple split and take first 3 parts
 	parts := make([]string, 0, 3)
 	remainder := fullName
-	
+
 	// Split org (first part before /)
 	if idx := findNthSlash(remainder, 0); idx >= 0 {
 		parts = append(parts, remainder[:idx])
@@ -285,7 +285,7 @@ func splitADOFullName(fullName string) []string {
 	} else {
 		return []string{fullName}
 	}
-	
+
 	// Split project (second part before /)
 	if idx := findNthSlash(remainder, 0); idx >= 0 {
 		parts = append(parts, remainder[:idx])
@@ -294,7 +294,7 @@ func splitADOFullName(fullName string) []string {
 		parts = append(parts, remainder)
 		return parts
 	}
-	
+
 	// Repo is everything else
 	parts = append(parts, remainder)
 	return parts

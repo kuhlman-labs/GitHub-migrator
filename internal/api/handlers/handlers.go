@@ -18,6 +18,7 @@ import (
 	"github.com/brettkuhlman/github-migrator/internal/models"
 	"github.com/brettkuhlman/github-migrator/internal/source"
 	"github.com/brettkuhlman/github-migrator/internal/storage"
+	ghapi "github.com/google/go-github/v75/github"
 )
 
 const (
@@ -38,18 +39,18 @@ const (
 )
 
 // Handler contains all HTTP handlers
-type 	Handler struct {
-		db               *storage.Database
-		logger           *slog.Logger
-		sourceDualClient *github.DualClient
-		destDualClient   *github.DualClient
-		collector        *discovery.Collector
-		sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
-		authConfig       *config.AuthConfig   // Auth configuration for permission checks
-		sourceBaseURL    string               // Source GitHub base URL for permission checks
-		sourceType       string               // Source type: "github" or "azuredevops"
-		adoHandler       *ADOHandler          // ADO-specific handler (set by server if ADO is configured)
-	}
+type Handler struct {
+	db               *storage.Database
+	logger           *slog.Logger
+	sourceDualClient *github.DualClient
+	destDualClient   *github.DualClient
+	collector        *discovery.Collector
+	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
+	authConfig       *config.AuthConfig   // Auth configuration for permission checks
+	sourceBaseURL    string               // Source GitHub base URL for permission checks
+	sourceType       string               // Source type: "github" or "azuredevops"
+	adoHandler       *ADOHandler          // ADO-specific handler (set by server if ADO is configured)
+}
 
 // SetADOHandler sets the ADO handler reference for delegating ADO operations
 func (h *Handler) SetADOHandler(adoHandler *ADOHandler) {
@@ -726,70 +727,87 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 
 // RediscoverRepository handles POST /api/v1/repositories/{fullName}/rediscover
 func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
-	// Get fullName from context (if routed via HandleRepositoryAction) or path value
-	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
-	if !ok || fullName == "" {
-		fullName = r.PathValue("fullName")
-	}
-	if fullName == "" {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
 	}
 
-	// URL decode the fullName
-	decodedFullName, err := url.QueryUnescape(fullName)
-	if err != nil {
-		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
-		decodedFullName = fullName
-	}
-
 	ctx := r.Context()
-
-	// Check if repository exists
 	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return
 	}
 
-	// Check if this is an ADO repository
-	if repo.ADOProject != nil && *repo.ADOProject != "" {
-		// This is an ADO repository - delegate to ADO handler
-		if h.adoHandler == nil {
-			h.sendError(w, http.StatusServiceUnavailable, "ADO discovery service not configured")
-			return
-		}
-
-		h.logger.Info("Delegating rediscovery to ADO handler", "repo", decodedFullName)
-		
-		if err := h.adoHandler.RediscoverADORepository(ctx, repo); err != nil {
-			h.logger.Error("Failed to rediscover ADO repository", "error", err, "repo", decodedFullName)
-			h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to rediscover repository: %v", err))
-			return
-		}
-
-		// Fetch updated repository from database
-		updatedRepo, err := h.db.GetRepository(ctx, decodedFullName)
-		if err != nil {
-			h.logger.Error("Failed to fetch updated repository", "error", err, "repo", decodedFullName)
-			h.sendError(w, http.StatusInternalServerError, "Failed to fetch updated repository")
-			return
-		}
-
-		h.sendJSON(w, http.StatusOK, map[string]interface{}{
-			"message":    "Repository rediscovered successfully",
-			"repository": updatedRepo,
-		})
+	// Delegate to appropriate handler based on repository type
+	if h.isADORepository(repo) {
+		h.rediscoverADORepository(w, ctx, repo, decodedFullName)
 		return
 	}
 
-	// This is a GitHub repository - continue with standard flow
+	h.rediscoverGitHubRepository(w, ctx, decodedFullName)
+}
+
+// getDecodedRepoName extracts and decodes the repository name from the request
+func (h *Handler) getDecodedRepoName(r *http.Request) (string, error) {
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
+	if fullName == "" {
+		return "", fmt.Errorf("repository name is required")
+	}
+
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		return fullName, nil
+	}
+
+	return decodedFullName, nil
+}
+
+// isADORepository checks if a repository is from Azure DevOps
+func (h *Handler) isADORepository(repo *models.Repository) bool {
+	return repo.ADOProject != nil && *repo.ADOProject != ""
+}
+
+// rediscoverADORepository handles rediscovery of Azure DevOps repositories
+func (h *Handler) rediscoverADORepository(w http.ResponseWriter, ctx context.Context, repo *models.Repository, decodedFullName string) {
+	if h.adoHandler == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "ADO discovery service not configured")
+		return
+	}
+
+	h.logger.Info("Delegating rediscovery to ADO handler", "repo", decodedFullName)
+
+	if err := h.adoHandler.RediscoverADORepository(ctx, repo); err != nil {
+		h.logger.Error("Failed to rediscover ADO repository", "error", err, "repo", decodedFullName)
+		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to rediscover repository: %v", err))
+		return
+	}
+
+	updatedRepo, err := h.db.GetRepository(ctx, decodedFullName)
+	if err != nil {
+		h.logger.Error("Failed to fetch updated repository", "error", err, "repo", decodedFullName)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch updated repository")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    "Repository rediscovered successfully",
+		"repository": updatedRepo,
+	})
+}
+
+// rediscoverGitHubRepository handles rediscovery of GitHub repositories
+func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.Context, decodedFullName string) {
 	if h.collector == nil {
 		h.sendError(w, http.StatusServiceUnavailable, "GitHub discovery service not configured")
 		return
 	}
 
-	// Extract org and repo name from decodedFullName
 	parts := strings.SplitN(decodedFullName, "/", 2)
 	if len(parts) != 2 {
 		h.sendError(w, http.StatusBadRequest, "Invalid repository name format")
@@ -797,8 +815,6 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	org, repoName := parts[0], parts[1]
 
-	// Get the appropriate client for this organization
-	// In JWT-only mode, this creates an org-specific client with installation token
 	client, err := h.getClientForOrg(ctx, org)
 	if err != nil {
 		h.logger.Error("Failed to get client for organization", "error", err, "org", org)
@@ -806,7 +822,6 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch repository from GitHub API
 	ghRepo, _, err := client.REST().Repositories.Get(ctx, org, repoName)
 	if err != nil {
 		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", decodedFullName)
@@ -814,27 +829,28 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run discovery asynchronously
-	go func() {
-		bgCtx := context.Background()
-		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
-			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
-		} else {
-			h.logger.Info("Re-discovery completed", "repo", decodedFullName)
-
-			// Update local dependency flags after re-discovery
-			// This ensures dependencies are correctly classified as local/external
-			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
-				h.logger.Warn("Failed to update local dependency flags after re-discovery", "error", err)
-			}
-		}
-	}()
+	h.startAsyncRediscovery(ghRepo, decodedFullName)
 
 	h.sendJSON(w, http.StatusAccepted, map[string]string{
 		"message":   "Re-discovery started",
 		"full_name": decodedFullName,
 		"status":    "in_progress",
 	})
+}
+
+// startAsyncRediscovery runs repository discovery asynchronously
+func (h *Handler) startAsyncRediscovery(ghRepo *ghapi.Repository, decodedFullName string) {
+	go func() {
+		bgCtx := context.Background()
+		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
+			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
+		} else {
+			h.logger.Info("Re-discovery completed", "repo", decodedFullName)
+			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
+				h.logger.Warn("Failed to update local dependency flags after re-discovery", "error", err)
+			}
+		}
+	}()
 }
 
 // MarkRepositoryRemediated handles POST /api/v1/repositories/{fullName}/mark-remediated
@@ -3096,14 +3112,14 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 			orgData := orgMap[project.Organization]
 			orgData.projectCount++
 			orgData.projects = append(orgData.projects, project.Name)
-			
+
 			// Count repositories for this project
 			repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
 			if err != nil {
 				h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
 			}
 			orgData.repoCount += repoCount
-			
+
 			orgMap[project.Organization] = orgData
 		}
 

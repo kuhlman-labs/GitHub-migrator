@@ -133,7 +133,7 @@ func (db *Database) SaveADOProject(ctx context.Context, project *models.ADOProje
 			DoUpdates: clause.AssignmentColumns([]string{"description", "repository_count", "state", "visibility", "updated_at"}),
 		}).
 		Create(project).Error
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to save ADO project: %w", err)
 	}
