@@ -54,19 +54,30 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 		req.Workers = 5 // default
 	}
 
-	ctx := r.Context()
-
-	// Start discovery based on scope
-	var err error
-	var discoveredCount int
-
+	// Start discovery asynchronously based on scope
 	if len(req.Projects) == 0 {
 		// Discover entire organization
 		h.logger.Info("Starting ADO organization discovery",
 			"organization", req.Organization,
 			"workers", req.Workers)
 
-		err = h.adoCollector.DiscoverADOOrganization(ctx, req.Organization)
+		// Only start discovery if collector is configured (allows for testing)
+		if h.adoCollector != nil && h.adoClient != nil {
+			go func() {
+				ctx := context.Background()
+				if err := h.adoCollector.DiscoverADOOrganization(ctx, req.Organization); err != nil {
+					h.logger.Error("ADO organization discovery failed",
+						"organization", req.Organization,
+						"error", err)
+				}
+			}()
+		}
+
+		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+			"message":      "ADO organization discovery started",
+			"organization": req.Organization,
+			"type":         "organization",
+		})
 	} else {
 		// Discover specific projects
 		h.logger.Info("Starting ADO project discovery",
@@ -74,37 +85,29 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 			"projects", req.Projects,
 			"workers", req.Workers)
 
-		for _, project := range req.Projects {
-			projectErr := h.adoCollector.DiscoverADOProject(ctx, req.Organization, project)
-			if projectErr != nil {
-				h.logger.Error("Failed to discover ADO project",
-					"organization", req.Organization,
-					"project", project,
-					"error", projectErr)
-				// Continue with other projects
-				continue
-			}
+		// Only start discovery if collector is configured (allows for testing)
+		if h.adoCollector != nil && h.adoClient != nil {
+			go func() {
+				ctx := context.Background()
+				for _, project := range req.Projects {
+					if err := h.adoCollector.DiscoverADOProject(ctx, req.Organization, project); err != nil {
+						h.logger.Error("Failed to discover ADO project",
+							"organization", req.Organization,
+							"project", project,
+							"error", err)
+						// Continue with other projects
+					}
+				}
+			}()
 		}
-		// Count discovered repositories after project discovery
-		discoveredCount, _ = h.db.CountRepositoriesByADOProjects(ctx, req.Organization, req.Projects)
-	}
 
-	if err != nil {
-		h.sendError(w, http.StatusInternalServerError, "Discovery failed")
-		return
+		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+			"message":      "ADO project discovery started",
+			"organization": req.Organization,
+			"projects":     req.Projects,
+			"type":         "project",
+		})
 	}
-
-	// Count total discovered repositories for the organization
-	if discoveredCount == 0 {
-		discoveredCount, _ = h.db.CountRepositoriesByADOOrganization(ctx, req.Organization)
-	}
-
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"message":      "ADO discovery completed",
-		"organization": req.Organization,
-		"projects":     req.Projects,
-		"repositories": discoveredCount,
-	})
 }
 
 // ListADOProjects handles GET /api/v1/ado/projects

@@ -473,9 +473,6 @@ function ProjectCard({ project }: { project: ADOProject }) {
             {project.visibility}
           </Badge>
         )}
-        {project.state && (
-          <Badge color="blue">{project.state}</Badge>
-        )}
       </div>
     </Link>
   );

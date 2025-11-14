@@ -10,7 +10,6 @@ import (
 
 	"github.com/brettkuhlman/github-migrator/internal/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -33,44 +32,167 @@ type RepositoryFilter struct {
 
 // SaveRepository inserts or updates a repository in the database using GORM
 func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) error {
-	// Use GORM's Clauses for upsert (works across SQLite, PostgreSQL, SQL Server)
-	// OnConflict will update all columns except those intentionally preserved
-	result := d.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "full_name"}}, // Conflict on unique index
-		DoUpdates: clause.AssignmentColumns([]string{
-			// Update discovery fields
-			"source", "source_url", "total_size", "largest_file", "largest_file_size",
-			"largest_commit", "largest_commit_size", "has_lfs", "has_submodules",
-			"has_large_files", "large_file_count", "default_branch", "branch_count",
-			"commit_count", "last_commit_sha", "last_commit_date", "is_archived",
-			"is_fork", "has_wiki", "has_pages", "has_discussions", "has_actions",
-			"has_projects", "has_packages", "branch_protections", "has_rulesets",
-			"tag_protection_count", "environment_count", "secret_count", "variable_count",
-			"webhook_count", "contributor_count", "top_contributors", "issue_count",
-			"pull_request_count", "tag_count", "open_issue_count", "open_pr_count",
-			"has_code_scanning", "has_dependabot", "has_secret_scanning", "has_codeowners",
-			"visibility", "workflow_count", "has_self_hosted_runners", "collaborator_count",
-			"installed_apps_count", "release_count", "has_release_assets",
-			"has_oversized_commits", "oversized_commit_details", "has_long_refs",
-			"long_ref_details", "has_blocking_files", "blocking_file_details",
-			"has_large_file_warnings", "large_file_warning_details", "has_oversized_repository",
-			"oversized_repository_details", "estimated_metadata_size", "metadata_size_details",
-			"source_migration_id", "is_source_locked", "updated_at", "last_discovery_at",
-			// Note: destination_url, destination_full_name, and exclusion flags are intentionally excluded
-			// from updates to preserve manually configured settings during re-discovery
-		}),
-	}).Create(repo)
+	// Check if repository already exists
+	var existing models.Repository
+	err := d.db.WithContext(ctx).Where("full_name = ?", repo.FullName).First(&existing).Error
 
-	if result.Error != nil {
-		return fmt.Errorf("failed to save repository: %w", result.Error)
+	if err == gorm.ErrRecordNotFound {
+		// Insert new repository
+		// Set timestamps if not already set
+		if repo.DiscoveredAt.IsZero() {
+			repo.DiscoveredAt = time.Now()
+		}
+		if repo.UpdatedAt.IsZero() {
+			repo.UpdatedAt = time.Now()
+		}
+
+		// CRITICAL FIX: GORM by default omits zero values from INSERT statements
+		// This means ADOIsGit=false won't be inserted, and DB uses DEFAULT TRUE
+		// Solution: Explicitly set all fields that can have meaningful zero values
+		// We use a map for the critical boolean field to force its inclusion
+
+		// First, create a base insert to get the ID
+		// We'll use a temporary approach: set ADOIsGit to the opposite, then update it
+		tempIsGit := repo.ADOIsGit
+		if !tempIsGit {
+			// For TFVC repos (false), we need special handling
+			repo.ADOIsGit = true // Temporarily set to true for insert
+		}
+
+		result := d.db.WithContext(ctx).Create(repo)
+		if result.Error != nil {
+			return fmt.Errorf("failed to create repository: %w", result.Error)
+		}
+
+		// Now immediately update the ADOIsGit field to the correct value
+		if !tempIsGit {
+			updateResult := d.db.WithContext(ctx).Model(&models.Repository{}).
+				Where("id = ?", repo.ID).
+				Update("ado_is_git", false)
+			if updateResult.Error != nil {
+				return fmt.Errorf("failed to set ado_is_git to false: %w", updateResult.Error)
+			}
+		}
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to check existing repository: %w", err)
 	}
 
-	// If this was an update (not insert), fetch the ID
-	if repo.ID == 0 {
-		if err := d.db.WithContext(ctx).Where("full_name = ?", repo.FullName).
-			Select("id").First(repo).Error; err != nil {
-			return fmt.Errorf("failed to retrieve repository ID after save: %w", err)
-		}
+	// Repository exists - update it
+	// Preserve the ID
+	repo.ID = existing.ID
+
+	// GORM's Updates() with structs skips zero values (false, 0, "", nil) by default
+	// We need to convert to a map to include these values in the update
+	// This is especially important for ADOIsGit which can be false (TFVC repos)
+	updateMap := map[string]interface{}{
+		"source":            repo.Source,
+		"source_url":        repo.SourceURL,
+		"total_size":        repo.TotalSize,
+		"default_branch":    repo.DefaultBranch,
+		"branch_count":      repo.BranchCount,
+		"commit_count":      repo.CommitCount,
+		"visibility":        repo.Visibility,
+		"status":            repo.Status,
+		"updated_at":        time.Now(),
+		"last_discovery_at": repo.LastDiscoveryAt,
+		// Boolean fields - include explicitly to handle false values
+		"is_archived":              repo.IsArchived,
+		"is_fork":                  repo.IsFork,
+		"has_lfs":                  repo.HasLFS,
+		"has_submodules":           repo.HasSubmodules,
+		"has_large_files":          repo.HasLargeFiles,
+		"has_wiki":                 repo.HasWiki,
+		"has_pages":                repo.HasPages,
+		"has_discussions":          repo.HasDiscussions,
+		"has_actions":              repo.HasActions,
+		"has_projects":             repo.HasProjects,
+		"has_packages":             repo.HasPackages,
+		"has_rulesets":             repo.HasRulesets,
+		"has_code_scanning":        repo.HasCodeScanning,
+		"has_dependabot":           repo.HasDependabot,
+		"has_secret_scanning":      repo.HasSecretScanning,
+		"has_codeowners":           repo.HasCodeowners,
+		"has_self_hosted_runners":  repo.HasSelfHostedRunners,
+		"has_release_assets":       repo.HasReleaseAssets,
+		"has_oversized_commits":    repo.HasOversizedCommits,
+		"has_long_refs":            repo.HasLongRefs,
+		"has_blocking_files":       repo.HasBlockingFiles,
+		"has_large_file_warnings":  repo.HasLargeFileWarnings,
+		"has_oversized_repository": repo.HasOversizedRepository,
+		"is_source_locked":         repo.IsSourceLocked,
+		// ADO-specific fields - CRITICAL: Include ADOIsGit which can be false
+		"ado_project":                   repo.ADOProject,
+		"ado_is_git":                    repo.ADOIsGit, // This is the key field that needs false support
+		"ado_has_boards":                repo.ADOHasBoards,
+		"ado_has_pipelines":             repo.ADOHasPipelines,
+		"ado_has_ghas":                  repo.ADOHasGHAS,
+		"ado_pull_request_count":        repo.ADOPullRequestCount,
+		"ado_work_item_count":           repo.ADOWorkItemCount,
+		"ado_branch_policy_count":       repo.ADOBranchPolicyCount,
+		"ado_pipeline_count":            repo.ADOPipelineCount,
+		"ado_yaml_pipeline_count":       repo.ADOYAMLPipelineCount,
+		"ado_classic_pipeline_count":    repo.ADOClassicPipelineCount,
+		"ado_pipeline_run_count":        repo.ADOPipelineRunCount,
+		"ado_has_service_connections":   repo.ADOHasServiceConnections,
+		"ado_has_variable_groups":       repo.ADOHasVariableGroups,
+		"ado_has_self_hosted_agents":    repo.ADOHasSelfHostedAgents,
+		"ado_work_item_linked_count":    repo.ADOWorkItemLinkedCount,
+		"ado_active_work_item_count":    repo.ADOActiveWorkItemCount,
+		"ado_work_item_types":           repo.ADOWorkItemTypes,
+		"ado_open_pr_count":             repo.ADOOpenPRCount,
+		"ado_pr_with_linked_work_items": repo.ADOPRWithLinkedWorkItems,
+		"ado_pr_with_attachments":       repo.ADOPRWithAttachments,
+		"ado_branch_policy_types":       repo.ADOBranchPolicyTypes,
+		"ado_required_reviewer_count":   repo.ADORequiredReviewerCount,
+		"ado_build_validation_policies": repo.ADOBuildValidationPolicies,
+		"ado_has_wiki":                  repo.ADOHasWiki,
+		"ado_wiki_page_count":           repo.ADOWikiPageCount,
+		"ado_test_plan_count":           repo.ADOTestPlanCount,
+		"ado_test_case_count":           repo.ADOTestCaseCount,
+		"ado_package_feed_count":        repo.ADOPackageFeedCount,
+		"ado_has_artifacts":             repo.ADOHasArtifacts,
+		"ado_service_hook_count":        repo.ADOServiceHookCount,
+		"ado_installed_extensions":      repo.ADOInstalledExtensions,
+		// Integer and string fields
+		"large_file_count":             repo.LargeFileCount,
+		"largest_file":                 repo.LargestFile,
+		"largest_file_size":            repo.LargestFileSize,
+		"largest_commit":               repo.LargestCommit,
+		"largest_commit_size":          repo.LargestCommitSize,
+		"last_commit_sha":              repo.LastCommitSHA,
+		"last_commit_date":             repo.LastCommitDate,
+		"branch_protections":           repo.BranchProtections,
+		"tag_protection_count":         repo.TagProtectionCount,
+		"environment_count":            repo.EnvironmentCount,
+		"secret_count":                 repo.SecretCount,
+		"variable_count":               repo.VariableCount,
+		"webhook_count":                repo.WebhookCount,
+		"contributor_count":            repo.ContributorCount,
+		"top_contributors":             repo.TopContributors,
+		"issue_count":                  repo.IssueCount,
+		"pull_request_count":           repo.PullRequestCount,
+		"tag_count":                    repo.TagCount,
+		"open_issue_count":             repo.OpenIssueCount,
+		"open_pr_count":                repo.OpenPRCount,
+		"workflow_count":               repo.WorkflowCount,
+		"collaborator_count":           repo.CollaboratorCount,
+		"installed_apps_count":         repo.InstalledAppsCount,
+		"release_count":                repo.ReleaseCount,
+		"oversized_commit_details":     repo.OversizedCommitDetails,
+		"long_ref_details":             repo.LongRefDetails,
+		"blocking_file_details":        repo.BlockingFileDetails,
+		"large_file_warning_details":   repo.LargeFileWarningDetails,
+		"oversized_repository_details": repo.OversizedRepositoryDetails,
+		"estimated_metadata_size":      repo.EstimatedMetadataSize,
+		"metadata_size_details":        repo.MetadataSizeDetails,
+		"source_migration_id":          repo.SourceMigrationID,
+	}
+
+	result := d.db.WithContext(ctx).Model(&existing).Updates(updateMap)
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update repository: %w", result.Error)
 	}
 
 	return nil

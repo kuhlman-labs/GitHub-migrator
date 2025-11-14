@@ -233,7 +233,7 @@ func getTestRepoConfigs() []TestRepoConfig {
 func createTestRepo(ctx context.Context, clients *ADOClients, proj *core.TeamProject, config TestRepoConfig) error {
 	projectID := proj.Id.String()
 	projectName := *proj.Name
-	
+
 	// Check if repository already exists
 	existingRepo, err := clients.Git.GetRepository(ctx, git.GetRepositoryArgs{
 		RepositoryId: &config.Name,
@@ -278,9 +278,9 @@ func createTestRepo(ctx context.Context, clients *ADOClients, proj *core.TeamPro
 		// If branch isn't available, skip setup but don't fail the repo creation
 		return nil
 	}
-	
+
 	log.Printf("  ✅ Branch 'main' is ready")
-	
+
 	// Give Azure DevOps a moment to fully commit the branch state across all APIs
 	// The branch may appear in refs API but not be ready for push operations yet
 	// Empirically, 2 seconds is not enough - increasing to 5 seconds
@@ -473,14 +473,14 @@ func setupClassicPipelineRepo(ctx context.Context, clients *ADOClients, project,
 func setupWorkItemsRepo(ctx context.Context, clients *ADOClients, project, repoID string) error {
 	// Create several work items linked to this repository
 	// Only use "Task" type which exists in all process templates (Basic, Agile, Scrum, CMMI)
-	
+
 	workItemTypes := []string{"Task", "Task", "Task"}
 	workItemLabels := []string{"Feature Request", "Technical Debt", "Testing"}
-	
+
 	for i, wiType := range workItemTypes {
 		title := fmt.Sprintf("Test %s %d - %s", wiType, i+1, workItemLabels[i])
 		description := fmt.Sprintf("This is a test %s for migration testing", wiType)
-		
+
 		addOp := webapi.Operation("add")
 		doc := []webapi.JsonPatchOperation{
 			{
@@ -500,13 +500,13 @@ func setupWorkItemsRepo(ctx context.Context, clients *ADOClients, project, repoI
 			Project:  &project,
 			Type:     &wiType,
 		})
-		
+
 		if err != nil {
 			log.Printf("  ⚠️  Failed to create work item: %v", err)
 		} else {
 			log.Printf("  ✅ Created work item: %s", title)
 		}
-		
+
 		time.Sleep(500 * time.Millisecond)
 	}
 
@@ -704,7 +704,7 @@ stages:
 	workItemLabels := []string{"Backend", "Frontend", "Database", "DevOps"}
 	for i, label := range workItemLabels {
 		title := fmt.Sprintf("Complex Repo Task %d - %s", i+1, label)
-		
+
 		addOp := webapi.Operation("add")
 		doc := []webapi.JsonPatchOperation{
 			{
@@ -724,11 +724,11 @@ stages:
 			Project:  &project,
 			Type:     ptr("Task"),
 		})
-		
+
 		if err != nil {
 			log.Printf("  ⚠️  Failed to create work item: %v", err)
 		}
-		
+
 		time.Sleep(300 * time.Millisecond)
 	}
 
@@ -798,7 +798,7 @@ module.exports = {
 		"/pom.xml":                            pomXML,
 		"/SharedLibrary.nuspec":               nuspec,
 		"/index.js":                           indexJS,
-		"/src/main/java/Utils.java":          "public class Utils { /* shared code */ }",
+		"/src/main/java/Utils.java":           "public class Utils { /* shared code */ }",
 		"/src/SharedLibrary/SharedLibrary.cs": "namespace SharedLibrary { public class Utils { } }",
 		"/README.md":                          "# Shared Library\n\nThis library is used by other test repositories.",
 	}
@@ -1017,8 +1017,8 @@ func setupMonorepoRepo(ctx context.Context, clients *ADOClients, project, repoID
 }`
 
 	files := map[string]string{
-		"/package.json":                 rootPackageJSON,
-		"/lerna.json":                   lernaJSON,
+		"/package.json":                    rootPackageJSON,
+		"/lerna.json":                      lernaJSON,
 		"/packages/package-a/package.json": packageAJSON,
 		"/packages/package-a/index.js":     "module.exports = { utilA: () => {} };",
 		"/packages/package-b/package.json": packageBJSON,
@@ -1042,7 +1042,7 @@ func waitForBranch(ctx context.Context, clients *ADOClients, project, repoID, br
 
 	for time.Now().Before(deadline) {
 		attempt++
-		
+
 		// Try to get all refs first to see what's available
 		allRefs, err := clients.Git.GetRefs(ctx, git.GetRefsArgs{
 			RepositoryId: &repoID,
@@ -1075,7 +1075,7 @@ func createBranch(ctx context.Context, clients *ADOClients, project, repoID, bra
 	// Get the latest commit from source branch
 	// Use same approach as addFilesToRepo - get all refs and search
 	sourceRef := "refs/heads/" + sourceBranch
-	
+
 	allRefs, err := clients.Git.GetRefs(ctx, git.GetRefsArgs{
 		RepositoryId: &repoID,
 		Project:      &project,
@@ -1084,7 +1084,7 @@ func createBranch(ctx context.Context, clients *ADOClients, project, repoID, bra
 	if err != nil {
 		return fmt.Errorf("failed to get refs: %w", err)
 	}
-	
+
 	// Search for source branch
 	var sourceObjectID string
 	found := false
@@ -1097,7 +1097,7 @@ func createBranch(ctx context.Context, clients *ADOClients, project, repoID, bra
 			}
 		}
 	}
-	
+
 	if !found {
 		// List available refs for debugging
 		availableRefs := []string{}
@@ -1136,19 +1136,19 @@ func createBranch(ctx context.Context, clients *ADOClients, project, repoID, bra
 func addFilesToRepo(ctx context.Context, clients *ADOClients, project, repoID, branch string, files map[string]string, commitMessage string) error {
 	// Get current commit SHA for the branch
 	refName := "refs/heads/" + branch
-	
+
 	// Azure DevOps API quirk: Filter parameter doesn't work immediately after branch creation
 	// So we get ALL refs and search for the one we need
 	var targetRef *git.GitRef
 	var err error
 	maxRetries := 3
-	
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		allRefs, err := clients.Git.GetRefs(ctx, git.GetRefsArgs{
 			RepositoryId: &repoID,
 			Project:      &project,
 		})
-		
+
 		if err == nil && allRefs != nil {
 			// Search for our specific branch
 			for _, ref := range allRefs.Value {
@@ -1157,22 +1157,22 @@ func addFilesToRepo(ctx context.Context, clients *ADOClients, project, repoID, b
 					break
 				}
 			}
-			
+
 			if targetRef != nil {
 				break // Success!
 			}
 		}
-		
+
 		if attempt < maxRetries {
 			log.Printf("      ⏱️  Attempt %d: Branch %s not found in refs, waiting 2 seconds...", attempt, branch)
 			time.Sleep(2 * time.Second)
 		}
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to get refs after %d attempts: %w", maxRetries, err)
 	}
-	
+
 	if targetRef == nil {
 		// Get ALL refs to see what's actually available
 		allRefs, _ := clients.Git.GetRefs(ctx, git.GetRefsArgs{
@@ -1203,7 +1203,7 @@ func addFilesToRepo(ctx context.Context, clients *ADOClients, project, repoID, b
 		},
 		RecursionLevel: &git.VersionControlRecursionTypeValues.Full,
 	})
-	
+
 	if err == nil && items != nil {
 		for _, item := range *items {
 			if item.Path != nil {
@@ -1218,13 +1218,13 @@ func addFilesToRepo(ctx context.Context, clients *ADOClients, project, repoID, b
 	for path, content := range files {
 		contentCopy := content // Create a copy for the pointer
 		pathCopy := path       // Create a copy for the pointer
-		
+
 		// Determine change type based on whether file exists
 		changeType := &git.VersionControlChangeTypeValues.Add
 		if existingFiles[path] {
 			changeType = &git.VersionControlChangeTypeValues.Edit
 		}
-		
+
 		changes = append(changes, git.GitChange{
 			ChangeType: changeType,
 			Item: &git.GitItem{
