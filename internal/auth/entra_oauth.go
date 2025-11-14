@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
 )

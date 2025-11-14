@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 	"gopkg.in/natefinch/lumberjack.v2"

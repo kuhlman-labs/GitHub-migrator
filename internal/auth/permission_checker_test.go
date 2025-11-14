@@ -10,9 +10,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 func TestPermissionChecker_HasFullAccess_EnterpriseAdmin(t *testing.T) {

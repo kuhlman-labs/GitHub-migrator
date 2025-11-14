@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/brettkuhlman/github-migrator/internal/embedded"
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/embedded"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 const (

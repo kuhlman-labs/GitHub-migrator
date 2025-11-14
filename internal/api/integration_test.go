@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // TestIntegration_RepositoryLifecycle tests the full lifecycle of a repository

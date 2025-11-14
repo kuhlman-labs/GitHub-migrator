@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/brettkuhlman/github-migrator/internal/azuredevops"
-	"github.com/brettkuhlman/github-migrator/internal/discovery"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
+	"github.com/kuhlman-labs/github-migrator/internal/discovery"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
 )
 
 // ADOHandler contains Azure DevOps-specific HTTP handlers

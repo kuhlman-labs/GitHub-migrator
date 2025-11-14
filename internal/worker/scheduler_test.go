@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/batch"
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/batch"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // MockOrchestratorInterface implements the orchestrator interface for testing

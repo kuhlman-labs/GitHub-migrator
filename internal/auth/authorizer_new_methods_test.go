@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
 )
 
 func TestAuthorizer_IsOrgAdmin(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 // analyzeDependencies analyzes repository dependencies and saves them to the database

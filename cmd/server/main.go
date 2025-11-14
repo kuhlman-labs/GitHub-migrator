@@ -10,14 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/api"
-	"github.com/brettkuhlman/github-migrator/internal/batch"
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/logging"
-	"github.com/brettkuhlman/github-migrator/internal/migration"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
-	"github.com/brettkuhlman/github-migrator/internal/worker"
+	"github.com/kuhlman-labs/github-migrator/internal/api"
+	"github.com/kuhlman-labs/github-migrator/internal/batch"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/logging"
+	"github.com/kuhlman-labs/github-migrator/internal/migration"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/worker"
 )
 
 func main() {

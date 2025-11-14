@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/shurcooL/githubv4"
 )
 

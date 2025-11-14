@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/azuredevops"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )
 

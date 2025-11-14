@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 func TestADOProfiler_DetectTFVC(t *testing.T) {

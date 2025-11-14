@@ -3,7 +3,7 @@ package migration
 import (
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 func TestExecutor_ADOMigrationFlow(t *testing.T) {

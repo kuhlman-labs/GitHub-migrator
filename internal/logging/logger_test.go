@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
 )
 
 func TestParseLevel(t *testing.T) {

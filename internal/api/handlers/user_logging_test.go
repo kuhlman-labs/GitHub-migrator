@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/auth"
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 func TestGetInitiatingUser(t *testing.T) {

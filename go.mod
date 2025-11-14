@@ -1,4 +1,4 @@
-module github.com/brettkuhlman/github-migrator
+module github.com/kuhlman-labs/github-migrator
 
 go 1.25
 

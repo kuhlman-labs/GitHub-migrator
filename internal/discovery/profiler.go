@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/models"
 	ghapi "github.com/google/go-github/v75/github"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 // Profiler profiles GitHub-specific features via API

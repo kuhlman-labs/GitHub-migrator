@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/brettkuhlman/github-migrator/internal/azuredevops"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )

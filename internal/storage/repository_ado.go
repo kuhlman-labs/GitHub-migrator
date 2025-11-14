@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"gorm.io/gorm/clause"
 )
 

@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/api/handlers"
-	"github.com/brettkuhlman/github-migrator/internal/api/middleware"
-	"github.com/brettkuhlman/github-migrator/internal/auth"
-	"github.com/brettkuhlman/github-migrator/internal/azuredevops"
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/source"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/api/handlers"
+	"github.com/kuhlman-labs/github-migrator/internal/api/middleware"
+	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 type Server struct {

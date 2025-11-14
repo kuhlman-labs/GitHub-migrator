@@ -10,9 +10,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
 )
 
 // mockADOCollector wraps the real ADOCollector and  overrides methods for testing

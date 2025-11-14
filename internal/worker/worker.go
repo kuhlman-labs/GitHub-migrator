@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/migration"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/migration"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // MigrationWorker polls for queued repositories and executes migrations

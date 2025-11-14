@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
 )
 
 // EntraIDAuthorizer handles ADO-specific authorization checks
