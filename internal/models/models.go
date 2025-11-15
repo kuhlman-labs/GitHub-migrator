@@ -1,6 +1,8 @@
 package models
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -181,14 +183,76 @@ type Repository struct {
 	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty" db:"last_discovery_at" gorm:"column:last_discovery_at"` // Latest discovery refresh
 	LastDryRunAt    *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at" gorm:"column:last_dry_run_at"`       // Latest dry run execution
 
-	// Computed fields (not stored in DB)
-	ComplexityScore     *int                 `json:"complexity_score,omitempty" db:"-" gorm:"-"`     // Calculated server-side
-	ComplexityBreakdown *ComplexityBreakdown `json:"complexity_breakdown,omitempty" db:"-" gorm:"-"` // Individual component scores
+	// Complexity scoring (calculated during profiling and stored for performance)
+	ComplexityScore     *int    `json:"complexity_score,omitempty" db:"complexity_score" gorm:"column:complexity_score"` // Calculated during profiling
+	ComplexityBreakdown *string `json:"-" db:"complexity_breakdown" gorm:"column:complexity_breakdown;type:text"`         // JSON breakdown stored as string, marshaled as object via MarshalJSON
 }
 
 // TableName specifies the table name for Repository model
 func (Repository) TableName() string {
 	return "repositories"
+}
+
+// SetComplexityBreakdown serializes a ComplexityBreakdown struct to JSON and stores it
+func (r *Repository) SetComplexityBreakdown(breakdown *ComplexityBreakdown) error {
+	if breakdown == nil {
+		r.ComplexityBreakdown = nil
+		return nil
+	}
+
+	data, err := json.Marshal(breakdown)
+	if err != nil {
+		return fmt.Errorf("failed to marshal complexity breakdown: %w", err)
+	}
+
+	jsonStr := string(data)
+	r.ComplexityBreakdown = &jsonStr
+	return nil
+}
+
+// GetComplexityBreakdown deserializes the JSON complexity breakdown
+func (r *Repository) GetComplexityBreakdown() (*ComplexityBreakdown, error) {
+	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
+		return nil, nil
+	}
+	
+	var breakdown ComplexityBreakdown
+	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal complexity breakdown: %w", err)
+	}
+	
+	return &breakdown, nil
+}
+
+// MarshalJSON implements custom JSON marshaling to convert complexity_breakdown from string to object
+func (r *Repository) MarshalJSON() ([]byte, error) {
+	// Create an alias without MarshalJSON to avoid recursion
+	type Alias Repository
+	
+	// Marshal the main struct (complexity_breakdown is excluded via json:"-")
+	data, err := json.Marshal((*Alias)(r))
+	if err != nil {
+		return nil, err
+	}
+	
+	// If no complexity breakdown, return as-is
+	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
+		return data, nil
+	}
+	
+	// Parse the marshaled JSON
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	
+	// Deserialize the complexity breakdown string and add it as an object
+	var breakdown ComplexityBreakdown
+	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err == nil {
+		result["complexity_breakdown"] = breakdown
+	}
+	
+	return json.Marshal(result)
 }
 
 // ComplexityBreakdown provides individual component scores for transparency

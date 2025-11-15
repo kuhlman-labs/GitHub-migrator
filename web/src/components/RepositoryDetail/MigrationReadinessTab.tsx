@@ -168,8 +168,12 @@ export function MigrationReadinessTab({
     };
 
     if (breakdown) {
+      // Common factors
       addIfNonZero(breakdown.size_points, 'Repository Size', 'text-blue-600');
       addIfNonZero(breakdown.large_files_points, 'Large Files', 'text-red-600');
+      addIfNonZero(breakdown.activity_points, 'Activity Level', 'text-purple-600');
+      
+      // GitHub-specific factors
       addIfNonZero(breakdown.lfs_points, 'Git LFS', 'text-orange-600');
       addIfNonZero(breakdown.submodules_points, 'Submodules', 'text-orange-600');
       addIfNonZero(breakdown.packages_points, 'Packages', 'text-red-600');
@@ -188,7 +192,20 @@ export function MigrationReadinessTab({
       addIfNonZero(breakdown.public_visibility_points, 'Public Visibility', 'text-blue-600');
       addIfNonZero(breakdown.internal_visibility_points, 'Internal Visibility', 'text-yellow-600');
       addIfNonZero(breakdown.codeowners_points, 'CODEOWNERS', 'text-yellow-600');
-      addIfNonZero(breakdown.activity_points, 'Activity Level', 'text-purple-600');
+      
+      // Azure DevOps-specific factors
+      addIfNonZero(breakdown.ado_tfvc_points, 'TFVC Repository (BLOCKING)', 'text-red-700');
+      addIfNonZero(breakdown.ado_classic_pipeline_points, 'Classic Pipelines', 'text-red-600');
+      addIfNonZero(breakdown.ado_package_feed_points, 'Package Feeds', 'text-red-600');
+      addIfNonZero(breakdown.ado_service_connection_points, 'Service Connections', 'text-red-600');
+      addIfNonZero(breakdown.ado_active_pipeline_points, 'Active Pipelines', 'text-red-600');
+      addIfNonZero(breakdown.ado_active_boards_points, 'Active Azure Boards', 'text-red-600');
+      addIfNonZero(breakdown.ado_wiki_points, 'Wiki Pages', 'text-orange-600');
+      addIfNonZero(breakdown.ado_test_plan_points, 'Test Plans', 'text-orange-600');
+      addIfNonZero(breakdown.ado_variable_group_points, 'Variable Groups', 'text-yellow-600');
+      addIfNonZero(breakdown.ado_service_hook_points, 'Service Hooks', 'text-yellow-600');
+      addIfNonZero(breakdown.ado_many_prs_points, 'Many Pull Requests', 'text-yellow-600');
+      addIfNonZero(breakdown.ado_branch_policy_points, 'Branch Policies', 'text-yellow-600');
     }
 
     // Sort by points descending
@@ -256,9 +273,11 @@ export function MigrationReadinessTab({
 
         <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
           <p className="text-xs text-blue-700">
-            💡 Scoring based on GitHub migration documentation
+            💡 {repository.source === 'azuredevops' ? 
+              'Scoring based on ADO → GitHub migration complexity factors' :
+              'Scoring based on GitHub migration documentation'}
           </p>
-          <ComplexityInfoModal />
+          <ComplexityInfoModal source={repository.source as 'github' | 'azuredevops'} />
         </div>
       </div>
 

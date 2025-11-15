@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -187,6 +186,9 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		"estimated_metadata_size":      repo.EstimatedMetadataSize,
 		"metadata_size_details":        repo.MetadataSizeDetails,
 		"source_migration_id":          repo.SourceMigrationID,
+		// Complexity scoring fields
+		"complexity_score":     repo.ComplexityScore,
+		"complexity_breakdown": repo.ComplexityBreakdown,
 	}
 
 	result := d.db.WithContext(ctx).Model(&existing).Updates(updateMap)
@@ -210,8 +212,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
 
-	// Calculate complexity score
-	_ = d.populateComplexityScores(ctx, []*models.Repository{&repo})
+	// Complexity scores are now stored in the database, no need to calculate on retrieval
 
 	return &repo, nil
 }
@@ -646,136 +647,11 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	return query
 }
 
-// populateComplexityScores calculates and sets the complexity_score and complexity_breakdown fields for repositories
+// populateComplexityScores is DEPRECATED - complexity scores are now calculated during profiling and stored in the database
+// This function is kept for backward compatibility but does nothing
 func (d *Database) populateComplexityScores(ctx context.Context, repos []*models.Repository) error {
-	if len(repos) == 0 {
-		return nil
-	}
-
-	// Build a map of repo IDs for quick lookup
-	repoIDs := make([]string, len(repos))
-	repoMap := make(map[int64]*models.Repository)
-	for i, repo := range repos {
-		repoIDs[i] = fmt.Sprintf("%d", repo.ID)
-		repoMap[repo.ID] = repo
-	}
-
-	// Calculate complexity scores AND individual components in one query
-	query := fmt.Sprintf(`
-		SELECT 
-			id,
-			%s as complexity_score,
-			%s as size_points,
-			%s as large_files_points,
-			%s as environments_points,
-			%s as secrets_points,
-			%s as packages_points,
-			%s as runners_points,
-			%s as variables_points,
-			%s as discussions_points,
-			%s as releases_points,
-			%s as lfs_points,
-			%s as submodules_points,
-			%s as apps_points,
-			%s as projects_points,
-			%s as security_points,
-			%s as webhooks_points,
-			%s as branch_protections_points,
-			%s as rulesets_points,
-			%s as public_visibility_points,
-			%s as internal_visibility_points,
-			%s as codeowners_points,
-			%s as activity_points
-		FROM repositories
-		WHERE id IN (%s)
-	`,
-		d.buildGitHubComplexityScoreSQL(),
-		buildSizePointsSQL(),
-		buildLargeFilesPointsSQL(),
-		buildEnvironmentsPointsSQL(),
-		buildSecretsPointsSQL(),
-		buildPackagesPointsSQL(),
-		buildRunnersPointsSQL(),
-		buildVariablesPointsSQL(),
-		buildDiscussionsPointsSQL(),
-		buildReleasesPointsSQL(),
-		buildLFSPointsSQL(),
-		buildSubmodulesPointsSQL(),
-		buildAppsPointsSQL(),
-		buildProjectsPointsSQL(),
-		buildSecurityPointsSQL(),
-		buildWebhooksPointsSQL(),
-		buildBranchProtectionsPointsSQL(),
-		buildRulesetsPointsSQL(),
-		buildPublicVisibilityPointsSQL(),
-		buildInternalVisibilityPointsSQL(),
-		buildCodeownersPointsSQL(),
-		buildActivityPointsSQL(),
-		strings.Join(repoIDs, ","))
-
-	// Use GORM Raw() for complex analytics query
-	type ComplexityResult struct {
-		ID                       int64
-		ComplexityScore          int
-		SizePoints               int
-		LargeFilesPoints         int
-		EnvironmentsPoints       int
-		SecretsPoints            int
-		PackagesPoints           int
-		RunnersPoints            int
-		VariablesPoints          int
-		DiscussionsPoints        int
-		ReleasesPoints           int
-		LFSPoints                int
-		SubmodulesPoints         int
-		AppsPoints               int
-		ProjectsPoints           int
-		SecurityPoints           int
-		WebhooksPoints           int
-		BranchProtectionsPoints  int
-		RulesetsPoints           int
-		PublicVisibilityPoints   int
-		InternalVisibilityPoints int
-		CodeownersPoints         int
-		ActivityPoints           int
-	}
-
-	var results []ComplexityResult
-	err := d.db.WithContext(ctx).Raw(query).Scan(&results).Error
-	if err != nil {
-		return err
-	}
-
-	for _, result := range results {
-		if repo, ok := repoMap[result.ID]; ok {
-			score := result.ComplexityScore
-			repo.ComplexityScore = &score
-			repo.ComplexityBreakdown = &models.ComplexityBreakdown{
-				SizePoints:               result.SizePoints,
-				LargeFilesPoints:         result.LargeFilesPoints,
-				EnvironmentsPoints:       result.EnvironmentsPoints,
-				SecretsPoints:            result.SecretsPoints,
-				PackagesPoints:           result.PackagesPoints,
-				RunnersPoints:            result.RunnersPoints,
-				VariablesPoints:          result.VariablesPoints,
-				DiscussionsPoints:        result.DiscussionsPoints,
-				ReleasesPoints:           result.ReleasesPoints,
-				LFSPoints:                result.LFSPoints,
-				SubmodulesPoints:         result.SubmodulesPoints,
-				AppsPoints:               result.AppsPoints,
-				ProjectsPoints:           result.ProjectsPoints,
-				SecurityPoints:           result.SecurityPoints,
-				WebhooksPoints:           result.WebhooksPoints,
-				BranchProtectionsPoints:  result.BranchProtectionsPoints,
-				RulesetsPoints:           result.RulesetsPoints,
-				PublicVisibilityPoints:   result.PublicVisibilityPoints,
-				InternalVisibilityPoints: result.InternalVisibilityPoints,
-				CodeownersPoints:         result.CodeownersPoints,
-				ActivityPoints:           result.ActivityPoints,
-			}
-		}
-	}
-
+	// Complexity scores are now pre-calculated during repository profiling and stored in the database
+	// No need to calculate them on every retrieval
 	return nil
 }
 
@@ -963,8 +839,7 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 		return nil, fmt.Errorf("failed to get repository by ID: %w", err)
 	}
 
-	// Calculate complexity score
-	_ = d.populateComplexityScores(ctx, []*models.Repository{&repo})
+	// Complexity scores are now stored in the database, no need to calculate on retrieval
 
 	return &repo, nil
 }

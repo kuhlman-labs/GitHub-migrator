@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
@@ -19,6 +20,7 @@ type ADOCollector struct {
 	logger   *slog.Logger
 	provider interface{} // Will be source.Provider
 	profiler *ADOProfiler
+	workers  int // Number of parallel workers
 }
 
 // NewADOCollector creates a new Azure DevOps collector
@@ -29,6 +31,14 @@ func NewADOCollector(client *azuredevops.Client, storage interface{}, logger *sl
 		logger:   logger,
 		provider: provider,
 		profiler: NewADOProfiler(client, logger, provider),
+		workers:  5, // Default to 5 parallel workers (matches GitHub collector)
+	}
+}
+
+// SetWorkers sets the number of parallel workers for processing
+func (c *ADOCollector) SetWorkers(workers int) {
+	if workers > 0 {
+		c.workers = workers
 	}
 }
 
@@ -144,17 +154,77 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 
 	c.logger.Info("Found repositories in project",
 		"project", projectName,
-		"count", len(repos))
+		"count", len(repos),
+		"workers", c.workers)
 
-	// Process each repository
-	for _, adoRepo := range repos {
+	// Process repositories in parallel using worker pool
+	if err := c.processADORepositoriesInParallel(ctx, organization, projectName, projectVisibility, repos); err != nil {
+		return fmt.Errorf("failed to process repositories: %w", err)
+	}
+
+	c.logger.Info("Azure DevOps project discovery complete",
+		"project", projectName,
+		"repositories", len(repos))
+
+	return nil
+}
+
+// processADORepositoriesInParallel processes ADO repositories in parallel using worker pool
+func (c *ADOCollector) processADORepositoriesInParallel(ctx context.Context, organization, projectName, projectVisibility string, repos []git.GitRepository) error {
+	jobs := make(chan *git.GitRepository, len(repos))
+	errors := make(chan error, len(repos))
+	var wg sync.WaitGroup
+
+	// Start workers
+	for i := 0; i < c.workers; i++ {
+		wg.Add(1)
+		go c.adoWorker(ctx, &wg, i, organization, projectName, projectVisibility, jobs, errors)
+	}
+
+	// Send jobs (send pointers to avoid copies)
+	for i := range repos {
+		jobs <- &repos[i]
+	}
+	close(jobs)
+
+	// Wait for completion
+	wg.Wait()
+	close(errors)
+
+	// Collect errors
+	var errs []error
+	for err := range errors {
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		c.logger.Warn("Repository processing completed with errors",
+			"project", projectName,
+			"total_repos", len(repos),
+			"error_count", len(errs))
+		return fmt.Errorf("encountered %d errors during repository processing (see logs for details)", len(errs))
+	}
+
+	return nil
+}
+
+// adoWorker processes ADO repositories from the jobs channel
+func (c *ADOCollector) adoWorker(ctx context.Context, wg *sync.WaitGroup, workerID int, organization, projectName, projectVisibility string, jobs <-chan *git.GitRepository, errors chan<- error) {
+	defer wg.Done()
+
+	for adoRepo := range jobs {
 		if adoRepo.Name == nil {
-			c.logger.Warn("Skipping repository with nil name")
+			c.logger.Warn("Skipping repository with nil name",
+				"worker_id", workerID,
+				"project", projectName)
 			continue
 		}
 
 		repoName := *adoRepo.Name
-		c.logger.Debug("Processing repository",
+		c.logger.Debug("Worker processing repository",
+			"worker_id", workerID,
 			"project", projectName,
 			"repo", repoName)
 
@@ -185,6 +255,7 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 			// Mark TFVC repos for remediation
 			repo.Status = string(models.StatusRemediationRequired)
 			c.logger.Warn("TFVC repository detected - requires conversion",
+				"worker_id", workerID,
 				"repo", fullName)
 		}
 
@@ -203,17 +274,14 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 		}
 
 		// Profile repository with ADO profiler
-		// This will fill in additional details like:
-		// - Branch count, commit count
-		// - Pull request count, work item count
-		// - Azure Boards/Pipelines detection
-		// - Branch policies, GHAS detection
 		c.logger.Debug("Profiling repository",
+			"worker_id", workerID,
 			"project", projectName,
 			"repo", repoName)
 
 		if err := c.profiler.ProfileRepository(ctx, repo, adoRepo); err != nil {
 			c.logger.Warn("Failed to profile repository",
+				"worker_id", workerID,
 				"project", projectName,
 				"repo", repoName,
 				"error", err)
@@ -224,24 +292,21 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 		if db, ok := c.storage.(*storage.Database); ok {
 			if err := db.SaveRepository(ctx, repo); err != nil {
 				c.logger.Error("Failed to save repository",
+					"worker_id", workerID,
 					"project", projectName,
 					"repo", repoName,
 					"error", err)
-				// Continue with next repository
+				errors <- err
 				continue
 			}
 		}
+
 		c.logger.Debug("Repository saved",
+			"worker_id", workerID,
 			"project", projectName,
 			"repo", repoName,
 			"is_git", repo.ADOIsGit)
 	}
-
-	c.logger.Info("Azure DevOps project discovery complete",
-		"project", projectName,
-		"repositories", len(repos))
-
-	return nil
 }
 
 // DiscoverADORepository discovers a single Azure DevOps repository
@@ -344,8 +409,8 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 
 // getRemoteURL extracts the web URL from an ADO repository (for viewing in browser)
 func getRemoteURL(repo interface{}) string {
-	// Type assert to git.GitRepository from ADO SDK
-	if gitRepo, ok := repo.(git.GitRepository); ok {
+	// Type assert to *git.GitRepository from ADO SDK
+	if gitRepo, ok := repo.(*git.GitRepository); ok {
 		// Use WebUrl first - this is the HTTPS URL for viewing the repo in a browser
 		if gitRepo.WebUrl != nil && *gitRepo.WebUrl != "" {
 			return *gitRepo.WebUrl

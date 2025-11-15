@@ -40,14 +40,14 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 
 	projectName := *repo.ADOProject
 
-	// Extract repo ID from adoRepo - type assert to git.GitRepository
+	// Extract repo ID from adoRepo - type assert to *git.GitRepository
 	repoID := ""
-	if gitRepo, ok := adoRepo.(git.GitRepository); ok {
+	if gitRepo, ok := adoRepo.(*git.GitRepository); ok {
 		if gitRepo.Id != nil {
 			repoID = gitRepo.Id.String()
 		}
 	} else {
-		p.logger.Warn("Failed to type assert adoRepo to git.GitRepository",
+		p.logger.Warn("Failed to type assert adoRepo to *git.GitRepository",
 			"repo", repo.FullName)
 	}
 
@@ -103,12 +103,24 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 		// Continue even if Git analysis fails - we have API-based data
 	}
 
+	// 6. Calculate complexity score based on all profiled features
+	complexity, breakdown := p.EstimateComplexityWithBreakdown(repo)
+	repo.ComplexityScore = &complexity
+
+	// Serialize complexity breakdown to JSON for storage
+	if err := repo.SetComplexityBreakdown(breakdown); err != nil {
+		p.logger.Warn("Failed to serialize complexity breakdown",
+			"repo", repo.FullName,
+			"error", err)
+	}
+
 	p.logger.Info("ADO repository profiled",
 		"repo", repo.FullName,
 		"prs", repo.ADOPullRequestCount,
 		"has_boards", repo.ADOHasBoards,
 		"has_pipelines", repo.ADOHasPipelines,
-		"branch_policies", repo.ADOBranchPolicyCount)
+		"branch_policies", repo.ADOBranchPolicyCount,
+		"complexity", complexity)
 
 	return nil
 }
