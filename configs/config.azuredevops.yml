@@ -45,20 +45,34 @@ source:
   # Azure DevOps Organization URL
   # Format: https://dev.azure.com/YOUR_ORGANIZATION
   # Example: https://dev.azure.com/contoso
+  # 
+  # MULTI-ORGANIZATION SUPPORT:
+  # - This URL is used for initial discovery/configuration
+  # - The system automatically supports migrating from MULTIPLE ADO organizations
+  # - During migration, each repository's source URL determines its specific ADO org/project/repo
+  # - A single migration source (https://dev.azure.com) is created per GitHub's requirements
+  # - Your PAT must have access to ALL organizations you want to migrate from
   base_url: https://dev.azure.com/YOUR_ORGANIZATION
   
   # Azure DevOps Personal Access Token (PAT)
   # Create at: Azure DevOps → User Settings → Personal Access Tokens
+  # 
   # Required scopes:
   #   - Code (Read): Access repository data
   #   - Build (Read): Access pipeline information
   #   - Work Items (Read): Access work item data
   #   - Project and Team (Read): Access project information
   #   - Graph (Read): Access organizational structure
+  #
+  # IMPORTANT FOR MULTI-ORG:
+  # - This PAT must have access to ALL Azure DevOps organizations you want to migrate from
+  # - If migrating from org1, org2, and org3, the PAT needs permissions in all three
+  # - A single migration source is used for all ADO repos (per GitHub's API requirements)
   token: your-ado-pat-token-here
   
   # Azure DevOps Organization Name
   # Example: If URL is https://dev.azure.com/contoso, use "contoso"
+  # Note: Used for initial discovery; multi-org migrations are handled automatically
   organization: YOUR_ORGANIZATION
 
 # =============================================================================
@@ -248,7 +262,25 @@ auth:
 #   session_duration_hours: 24
 #   frontend_url: http://localhost:3000
 
-# Example 4: Production setup with PostgreSQL
+# Example 4: Multi-Organization Migration
+# Migrate repositories from multiple Azure DevOps organizations
+# source:
+#   type: azuredevops
+#   base_url: https://dev.azure.com/primary-org  # Primary org for discovery
+#   token: your-ado-pat  # PAT with access to ALL organizations
+#   organization: primary-org
+# 
+# How it works:
+# 1. Configure one primary organization in base_url
+# 2. During discovery, you can discover repos from org1, org2, org3, etc.
+# 3. Each repository stores its own SourceURL (e.g., https://dev.azure.com/org2/...)
+# 4. During migration, the system automatically:
+#    - Extracts the ADO organization from each repository's SourceURL
+#    - Creates separate GitHub migration sources per ADO organization
+#    - Uses the correct source for each repository
+# 5. Your PAT must have access to ALL organizations
+
+# Example 5: Production setup with PostgreSQL
 # server:
 #   port: 8080
 # database:

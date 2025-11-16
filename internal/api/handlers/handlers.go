@@ -465,7 +465,7 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Parse the action from the path
-	// Possible actions: rediscover, mark-remediated, unlock, rollback, mark-wont-migrate
+	// Possible actions: rediscover, mark-remediated, unlock, rollback, mark-wont-migrate, reset
 	var action string
 	var fullName string
 
@@ -484,6 +484,9 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 	} else if strings.HasSuffix(fullPath, "/mark-wont-migrate") {
 		action = "mark-wont-migrate"
 		fullName = strings.TrimSuffix(fullPath, "/mark-wont-migrate")
+	} else if strings.HasSuffix(fullPath, "/reset") {
+		action = "reset"
+		fullName = strings.TrimSuffix(fullPath, "/reset")
 	} else {
 		h.sendError(w, http.StatusNotFound, "Unknown repository action")
 		return
@@ -513,6 +516,8 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 		h.RollbackRepository(w, r)
 	case "mark-wont-migrate":
 		h.MarkRepositoryWontMigrate(w, r)
+	case "reset":
+		h.ResetRepositoryStatus(w, r)
 	default:
 		h.sendError(w, http.StatusNotFound, "Unknown repository action")
 	}
@@ -723,6 +728,62 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, repo)
+}
+
+// ResetRepositoryStatus handles POST /api/v1/repositories/{fullName}/reset
+// Resets a stuck repository back to pending status
+func (h *Handler) ResetRepositoryStatus(w http.ResponseWriter, r *http.Request) {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	ctx := r.Context()
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Only allow resetting repositories in "stuck" states
+	allowedStates := []string{
+		string(models.StatusDryRunInProgress),
+		string(models.StatusMigratingContent),
+		string(models.StatusPreMigration),
+		string(models.StatusArchiveGenerating),
+		string(models.StatusPostMigration),
+	}
+
+	allowed := false
+	for _, state := range allowedStates {
+		if repo.Status == state {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		h.sendError(w, http.StatusBadRequest, fmt.Sprintf("Cannot reset repository in status '%s'. Only in-progress states can be reset.", repo.Status))
+		return
+	}
+
+	h.logger.Info("Resetting repository status",
+		"repo", repo.FullName,
+		"old_status", repo.Status)
+
+	// Reset to pending
+	repo.Status = string(models.StatusPending)
+	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+		h.logger.Error("Failed to reset repository status", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to reset repository status")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Repository status reset to pending",
+		"repository": repo,
+	})
 }
 
 // RediscoverRepository handles POST /api/v1/repositories/{fullName}/rediscover
@@ -2244,10 +2305,11 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	// Get filter parameters
 	orgFilter := r.URL.Query().Get("organization")
+	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	// Get repository stats with filters
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
@@ -2289,28 +2351,28 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get complexity distribution
-	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get complexity distribution", "error", err)
 		complexityDistribution = []*storage.ComplexityDistribution{}
 	}
 
 	// Get migration velocity (last 30 days)
-	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
 	if err != nil {
 		h.logger.Error("Failed to get migration velocity", "error", err)
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
 
 	// Get migration time series
-	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, batchFilter)
+	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get migration time series", "error", err)
 		migrationTimeSeries = []*storage.MigrationTimeSeriesPoint{}
 	}
 
 	// Get average migration time
-	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get average migration time", "error", err)
 		avgMigrationTime = 0
@@ -2327,25 +2389,41 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get discovery statistics with filters
-	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, batchFilter)
+	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get organization stats", "error", err)
 		orgStats = []*storage.OrganizationStats{}
 	}
 
-	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	// For Azure DevOps sources, also get project-level stats
+	var projectStats []*storage.OrganizationStats
+	if h.sourceType == "azuredevops" {
+		projectStats, err = h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		if err != nil {
+			h.logger.Error("Failed to get project stats", "error", err)
+			projectStats = []*storage.OrganizationStats{}
+		}
+	}
+
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get size distribution", "error", err)
 		sizeDistribution = []*storage.SizeDistribution{}
 	}
 
-	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get feature stats", "error", err)
 		featureStats = &storage.FeatureStats{}
 	}
 
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	// Get migration completion stats - use project-level for ADO, org-level for GitHub
+	var migrationCompletionStats []*storage.MigrationCompletionStats
+	if h.sourceType == "azuredevops" {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	} else {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	}
 	if err != nil {
 		h.logger.Error("Failed to get migration completion stats", "error", err)
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
@@ -2365,6 +2443,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		"average_migration_time":     avgMigrationTime,
 		"estimated_completion_date":  estimatedCompletionDate,
 		"organization_stats":         orgStats,
+		"project_stats":              projectStats,
 		"size_distribution":          sizeDistribution,
 		"feature_stats":              featureStats,
 		"migration_completion_stats": migrationCompletionStats,
@@ -2407,10 +2486,11 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	// Get filter parameters
 	orgFilter := r.URL.Query().Get("organization")
+	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	// Get basic analytics
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
@@ -2452,21 +2532,21 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get migration velocity (last 30 days)
-	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
 	if err != nil {
 		h.logger.Error("Failed to get migration velocity", "error", err)
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
 
 	// Get migration time series for trend analysis
-	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, batchFilter)
+	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get migration time series", "error", err)
 		migrationTimeSeries = []*storage.MigrationTimeSeriesPoint{}
 	}
 
 	// Get average migration time
-	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get average migration time", "error", err)
 		avgMigrationTime = 0
@@ -2484,29 +2564,34 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		estimatedCompletionDate = &dateStr
 	}
 
-	// Get organization breakdowns
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	// Get organization/project breakdowns
+	var migrationCompletionStats []*storage.MigrationCompletionStats
+	if h.sourceType == "azuredevops" {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	} else {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	}
 	if err != nil {
 		h.logger.Error("Failed to get migration completion stats", "error", err)
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
 	}
 
 	// Get complexity distribution
-	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get complexity distribution", "error", err)
 		complexityDistribution = []*storage.ComplexityDistribution{}
 	}
 
 	// Get size distribution
-	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get size distribution", "error", err)
 		sizeDistribution = []*storage.SizeDistribution{}
 	}
 
 	// Get feature stats
-	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get feature stats", "error", err)
 		featureStats = &storage.FeatureStats{}
@@ -2619,6 +2704,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	format := r.URL.Query().Get("format")
 	orgFilter := r.URL.Query().Get("organization")
+	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	if format != formatCSV && format != formatJSON {
@@ -2627,7 +2713,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Get all the same data as GetExecutiveReport
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
@@ -2667,12 +2753,12 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		successRate = float64(migrated) / float64(migrated+failed) * 100
 	}
 
-	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
 	if err != nil {
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
 
-	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		avgMigrationTime = 0
 	}
@@ -2687,22 +2773,28 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		estimatedCompletionDate = completionDate.Format("2006-01-02")
 	}
 
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	// Get organization/project breakdowns
+	var migrationCompletionStats []*storage.MigrationCompletionStats
+	if h.sourceType == "azuredevops" {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	} else {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	}
 	if err != nil {
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
 	}
 
-	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		complexityDistribution = []*storage.ComplexityDistribution{}
 	}
 
-	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		sizeDistribution = []*storage.SizeDistribution{}
 	}
 
-	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		featureStats = &storage.FeatureStats{}
 	}
@@ -3159,6 +3251,66 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, orgStats)
+}
+
+// ListProjects handles GET /api/v1/projects
+// Returns ADO projects with repository counts and status breakdown
+func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Only applicable for Azure DevOps sources
+	if h.sourceType != "azuredevops" {
+		h.sendJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	// Get all ADO projects
+	projects, err := h.db.GetADOProjects(ctx, "")
+	if err != nil {
+		if h.handleContextError(ctx, err, "get ADO projects", r) {
+			return
+		}
+		h.logger.Error("Failed to get ADO projects", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch projects")
+		return
+	}
+
+	// Build project stats with repository counts and status distribution
+	projectStats := make([]interface{}, 0, len(projects))
+	for _, project := range projects {
+		// Count repositories for this project
+		repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
+		if err != nil {
+			h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
+			repoCount = 0
+		}
+
+		// Get status distribution for repos in this project
+		statusCounts := make(map[string]int)
+		if repoCount > 0 {
+			// Query actual status distribution from repositories table
+			repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
+				"ado_project": project.Name,
+			})
+			if err == nil {
+				for _, repo := range repos {
+					statusCounts[repo.Status]++
+				}
+			} else {
+				h.logger.Warn("Failed to get status distribution for project", "project", project.Name, "error", err)
+				// Fallback: assume all pending
+				statusCounts["pending"] = repoCount
+			}
+		}
+
+		projectStats = append(projectStats, map[string]interface{}{
+			"project":       project.Name,
+			"total_repos":   repoCount,
+			"status_counts": statusCounts,
+		})
+	}
+
+	h.sendJSON(w, http.StatusOK, projectStats)
 }
 
 // GetOrganizationList handles GET /api/v1/organizations/list

@@ -192,7 +192,19 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 
 // initializeMigrationWorker creates and starts the migration worker if configured
 func initializeMigrationWorker(cfg *config.Config, sourceDualClient, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
-	if sourceDualClient == nil || destDualClient == nil {
+	// Destination client is always required for migrations
+	// Source client is only required for GitHub-to-GitHub migrations (ADO migrations don't need it)
+	if destDualClient == nil {
+		logger.Info("Migration worker not started - destination GitHub client not configured")
+		return nil
+	}
+	
+	// For ADO sources, sourceDualClient will be nil - this is expected and supported
+	if sourceDualClient == nil && cfg.Source.Type == "azuredevops" {
+		logger.Info("Initializing migration worker for Azure DevOps source",
+			"source_type", cfg.Source.Type)
+	} else if sourceDualClient == nil {
+		logger.Warn("Migration worker not started - source client not configured and source is not Azure DevOps")
 		return nil
 	}
 
@@ -231,11 +243,23 @@ func initializeMigrationWorker(cfg *config.Config, sourceDualClient, destDualCli
 	}
 
 	// Create migration executor with PAT clients (required for migrations per GitHub API)
-	logger.Info("Creating migration executor with PAT clients (per GitHub migration API requirements)",
+	// For ADO sources, sourceDualClient will be nil - pass nil SourceClient to executor
+	var sourceClient *github.Client
+	if sourceDualClient != nil {
+		sourceClient = sourceDualClient.MigrationClient()
+	}
+	
+	logger.Info("Creating migration executor",
+		"source_type", cfg.Source.Type,
+		"has_source_client", sourceClient != nil,
+		"has_source_token", cfg.Source.Token != "",
+		"source_url", cfg.Source.BaseURL,
 		"visibility_public_to", visibilityHandling.PublicRepos,
 		"visibility_internal_to", visibilityHandling.InternalRepos)
 	executor, err := migration.NewExecutor(migration.ExecutorConfig{
-		SourceClient:         sourceDualClient.MigrationClient(),
+		SourceClient:         sourceClient,
+		SourceToken:          cfg.Source.Token, // ADO PAT for ADO sources, GitHub PAT for GitHub sources
+		SourceURL:            cfg.Source.BaseURL, // GitHub base URL or ADO org URL (e.g., https://dev.azure.com/org)
 		DestClient:           destDualClient.MigrationClient(),
 		Storage:              db,
 		Logger:               logger,
@@ -296,8 +320,19 @@ func initializeBatchStatusUpdater(db *storage.Database, logger *slog.Logger) *ba
 
 // initializeSchedulerWorker creates the scheduler worker for scheduled batches
 func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.SchedulerWorker {
-	if sourceDualClient == nil || destDualClient == nil {
-		logger.Info("Scheduler worker not started - GitHub clients not configured")
+	// Destination client is always required
+	// Source client is only required for GitHub-to-GitHub migrations (ADO migrations don't need it)
+	if destDualClient == nil {
+		logger.Info("Scheduler worker not started - destination GitHub client not configured")
+		return nil
+	}
+	
+	// For ADO sources, sourceDualClient will be nil - this is expected and supported
+	if sourceDualClient == nil && cfg.Source.Type == "azuredevops" {
+		logger.Info("Initializing scheduler worker for Azure DevOps source",
+			"source_type", cfg.Source.Type)
+	} else if sourceDualClient == nil {
+		logger.Warn("Scheduler worker not started - source client not configured and source is not Azure DevOps")
 		return nil
 	}
 
@@ -333,8 +368,16 @@ func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualCli
 		InternalRepos: cfg.Migration.VisibilityHandling.InternalRepos,
 	}
 
+	// Handle nil source client for ADO sources
+	var sourceClientForScheduler *github.Client
+	if sourceDualClient != nil {
+		sourceClientForScheduler = sourceDualClient.MigrationClient()
+	}
+
 	executor, err := migration.NewExecutor(migration.ExecutorConfig{
-		SourceClient:         sourceDualClient.MigrationClient(),
+		SourceClient:         sourceClientForScheduler,
+		SourceToken:          cfg.Source.Token, // ADO PAT for ADO sources
+		SourceURL:            cfg.Source.BaseURL, // GitHub base URL or ADO org URL
 		DestClient:           destDualClient.MigrationClient(),
 		Storage:              db,
 		Logger:               logger,

@@ -136,6 +136,22 @@ destination:
   token: ghp_YourGitHubPAT
 ```
 
+#### Multi-Organization Support
+
+The system automatically supports migrating from **multiple Azure DevOps organizations**:
+
+1. **Configure one primary organization** in `base_url`
+2. **Ensure your PAT has access to ALL organizations** you want to migrate from
+3. **During discovery**, discover repos from any ADO organization
+4. **During migration**, the system automatically:
+   - Extracts the ADO org/project/repo from each repository's SourceURL
+   - Creates a single GitHub migration source (`https://dev.azure.com`) per GitHub's API requirements
+   - Uses each repository's full URL to specify the exact source location
+
+**Example**: Your PAT can access `org1`, `org2`, and `org3`. Configure `base_url` as `org1`, then discover and migrate repos from all three organizations seamlessly.
+
+**Technical Note**: Per GitHub's Enterprise Importer API documentation, the migration source URL must be the base Azure DevOps URL (`https://dev.azure.com`). The specific organization, project, and repository are specified in the `sourceRepositoryUrl` parameter during migration.
+
 ## 🔑 Environment Variable Naming
 
 All environment variables use the `GHMIG_` prefix and follow this pattern:

@@ -27,12 +27,14 @@ type AnalyticsTab = 'discovery' | 'migration';
 export function Analytics() {
   const navigate = useNavigate();
   const [selectedOrganization, setSelectedOrganization] = useState('');
+  const [selectedProject, setSelectedProject] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('');
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
   const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
 
   const { data: analytics, isLoading, isFetching } = useAnalytics({
     organization: selectedOrganization || undefined,
+    project: selectedProject || undefined,
     batch_id: selectedBatch || undefined,
   });
 
@@ -107,8 +109,10 @@ export function Analytics() {
       {/* Filter Bar */}
       <FilterBar
         selectedOrganization={selectedOrganization}
+        selectedProject={selectedProject}
         selectedBatch={selectedBatch}
         onOrganizationChange={setSelectedOrganization}
+        onProjectChange={setSelectedProject}
         onBatchChange={setSelectedBatch}
       />
 
@@ -176,7 +180,7 @@ export function Analytics() {
 
         {/* Complexity and Size Distribution Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <ComplexityChart data={analytics.complexity_distribution || []} />
+          <ComplexityChart data={analytics.complexity_distribution || []} source={sourceType} />
           
           {/* Size Distribution */}
           {analytics.size_distribution && analytics.size_distribution.length > 0 && (
@@ -244,56 +248,65 @@ export function Analytics() {
 
         {/* Organization Breakdown and Feature Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Organization Breakdown */}
-          {analytics.organization_stats && analytics.organization_stats.length > 0 && (
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
-                {sourceType === 'azuredevops' ? 'Project Breakdown' : 'Organization Breakdown'}
-              </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Total repository count and distribution across {sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'source organizations'}, useful for workload allocation and team coordination.
-              </p>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Repositories
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Percentage
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {analytics.organization_stats
-                      .sort((a, b) => b.total_repos - a.total_repos)
-                      .map((org) => {
-                        const percentage = analytics.total_repositories > 0
-                          ? ((org.total_repos / analytics.total_repositories) * 100).toFixed(1)
-                          : '0.0';
-                        return (
-                          <tr key={org.organization} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {org.organization}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {org.total_repos}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {percentage}%
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
+          {/* Organization/Project Breakdown */}
+          {(() => {
+            // Use project_stats for ADO, organization_stats for GitHub
+            const stats = sourceType === 'azuredevops' && analytics.project_stats 
+              ? analytics.project_stats 
+              : analytics.organization_stats;
+            
+            if (!stats || stats.length === 0) return null;
+            
+            return (
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  {sourceType === 'azuredevops' ? 'Project Breakdown' : 'Organization Breakdown'}
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Total repository count and distribution across {sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'source organizations'}, useful for workload allocation and team coordination.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Repositories
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Percentage
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {stats
+                        .sort((a, b) => b.total_repos - a.total_repos)
+                        .map((org) => {
+                          const percentage = analytics.total_repositories > 0
+                            ? ((org.total_repos / analytics.total_repositories) * 100).toFixed(1)
+                            : '0.0';
+                          return (
+                            <tr key={org.organization} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {org.organization}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {org.total_repos}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {percentage}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Feature Stats */}
           {analytics.feature_stats && (() => {

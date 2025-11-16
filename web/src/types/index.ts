@@ -223,6 +223,12 @@ export interface Organization {
   enterprise?: string; // For GitHub orgs, the parent enterprise name (future enhancement)
 }
 
+export interface Project {
+  project: string;
+  total_repos: number;
+  status_counts: Record<string, number>;
+}
+
 // Azure DevOps Project type
 export interface ADOProject {
   id: string;
@@ -333,6 +339,7 @@ export interface Analytics {
   migration_time_series?: MigrationTimeSeriesPoint[];
   estimated_completion_date?: string;
   organization_stats?: Organization[];
+  project_stats?: Organization[];
   size_distribution?: SizeDistribution[];
   feature_stats?: FeatureStats;
   migration_completion_stats?: MigrationCompletionStats[];

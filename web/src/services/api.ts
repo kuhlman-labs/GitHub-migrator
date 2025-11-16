@@ -7,6 +7,7 @@ import type {
   RepositoryDetailResponse, 
   MigrationLogsResponse,
   Organization,
+  Project,
   MigrationHistoryEntry,
   RepositoryFilters,
   RepositoryListResponse,
@@ -145,6 +146,11 @@ export const api = {
   // Organizations
   async listOrganizations(): Promise<Organization[]> {
     const { data } = await client.get('/organizations');
+    return data;
+  },
+
+  async listProjects(): Promise<Project[]> {
+    const { data } = await client.get('/projects');
     return data;
   },
 

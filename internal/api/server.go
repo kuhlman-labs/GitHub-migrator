@@ -183,6 +183,7 @@ func (s *Server) Router() http.Handler {
 	// Organization endpoints
 	protect("GET /api/v1/organizations", s.handler.ListOrganizations)
 	protect("GET /api/v1/organizations/list", s.handler.GetOrganizationList)
+	protect("GET /api/v1/projects", s.handler.ListProjects)
 
 	// Batch endpoints
 	protect("GET /api/v1/batches", s.handler.ListBatches)

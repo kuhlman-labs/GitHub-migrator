@@ -225,20 +225,18 @@ func WithComplexity(categories interface{}) func(db *gorm.DB) *gorm.DB {
 			return db
 		}
 
-		// Build complexity score SQL (same as in database.go)
-		scoreCalc := buildComplexityScoreSQL()
-
+		// Use the stored complexity_score field (supports both GitHub and ADO)
 		var conditions []string
 		for _, category := range categoryList {
 			switch category {
 			case "simple":
-				conditions = append(conditions, fmt.Sprintf("(%s <= 5)", scoreCalc))
+				conditions = append(conditions, "(COALESCE(complexity_score, 0) <= 5)")
 			case "medium":
-				conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 6 AND 10)", scoreCalc))
+				conditions = append(conditions, "(complexity_score BETWEEN 6 AND 10)")
 			case "complex":
-				conditions = append(conditions, fmt.Sprintf("(%s BETWEEN 11 AND 17)", scoreCalc))
+				conditions = append(conditions, "(complexity_score BETWEEN 11 AND 17)")
 			case "very_complex":
-				conditions = append(conditions, fmt.Sprintf("(%s >= 18)", scoreCalc))
+				conditions = append(conditions, "(complexity_score >= 18)")
 			}
 		}
 

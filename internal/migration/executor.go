@@ -62,11 +62,14 @@ type VisibilityHandling struct {
 
 // Executor handles repository migrations from GHES to GHEC
 type Executor struct {
-	sourceClient         *github.Client // GHES client
+	sourceClient         *github.Client // GHES client (nil for ADO sources)
+	sourceToken          string         // Source PAT (for ADO sources where sourceClient is nil)
+	sourceURL            string         // Source system URL (GitHub base URL or primary ADO org URL for config validation)
 	destClient           *github.Client // GHEC client
 	storage              *storage.Database
 	orgIDCache           map[string]string // Cache of org name -> org ID
-	migSourceID          string            // Cached migration source ID (created on first use)
+	migSourceID          string            // Cached migration source ID for GitHub (created on first use)
+	adoMigSourceCache    map[string]string // Cache of ADO org URL -> migration source ID (supports multiple ADO orgs)
 	logger               *slog.Logger
 	postMigrationMode    PostMigrationMode           // When to run post-migration tasks
 	destRepoExistsAction DestinationRepoExistsAction // What to do if destination repo exists
@@ -76,6 +79,8 @@ type Executor struct {
 // ExecutorConfig configures the migration executor
 type ExecutorConfig struct {
 	SourceClient         *github.Client
+	SourceToken          string         // Source PAT (required for ADO sources, optional for GitHub if SourceClient provided)
+	SourceURL            string         // Source system URL (GitHub base URL or ADO org URL, e.g., https://dev.azure.com/org)
 	DestClient           *github.Client
 	Storage              *storage.Database
 	Logger               *slog.Logger
@@ -92,9 +97,8 @@ type ArchiveURLs struct {
 
 // NewExecutor creates a new migration executor
 func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
-	if cfg.SourceClient == nil {
-		return nil, fmt.Errorf("source client is required")
-	}
+	// Note: SourceClient can be nil for Azure DevOps sources (ADO migrations don't need it)
+	// GitHub Enterprise Importer pulls directly from ADO using ADO PAT
 	if cfg.DestClient == nil {
 		return nil, fmt.Errorf("destination client is required")
 	}
@@ -128,9 +132,12 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 
 	return &Executor{
 		sourceClient:         cfg.SourceClient,
+		sourceToken:          cfg.SourceToken,
+		sourceURL:            cfg.SourceURL,
 		destClient:           cfg.DestClient,
 		storage:              cfg.Storage,
 		orgIDCache:           make(map[string]string),
+		adoMigSourceCache:    make(map[string]string), // Initialize cache for multiple ADO orgs
 		logger:               cfg.Logger,
 		postMigrationMode:    postMigMode,
 		destRepoExistsAction: destRepoAction,
@@ -331,6 +338,11 @@ func (e *Executor) getOrCreateMigrationSource(ctx context.Context, ownerID strin
 //
 //nolint:gocyclo // Sequential state machine with multiple phases requires complexity
 func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool) error {
+	// GitHub-to-GitHub migrations require source client
+	if e.sourceClient == nil {
+		return fmt.Errorf("source client is required for GitHub-to-GitHub migrations")
+	}
+	
 	e.logger.Info("Starting migration",
 		"repo", repo.FullName,
 		"dry_run", dryRun,
@@ -909,26 +921,32 @@ func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Reposi
 			*repo.TotalSize/(1024*1024*1024)))
 	}
 
-	// 1. Verify source repository exists and is accessible
-	e.logger.Info("Checking source repository", "repo", repo.FullName)
-	var sourceRepoData *ghapi.Repository
+	// 1. Verify source repository exists and is accessible (GitHub sources only)
+	// For ADO sources, sourceClient is nil and we skip this check
+	// GEI will validate ADO source accessibility during migration
 	var err error
+	if e.sourceClient != nil {
+		e.logger.Info("Checking source repository", "repo", repo.FullName)
+		var sourceRepoData *ghapi.Repository
 
-	_, err = e.sourceClient.DoWithRetry(ctx, "GetRepository", func(ctx context.Context) (*ghapi.Response, error) {
-		var resp *ghapi.Response
-		sourceRepoData, resp, err = e.sourceClient.REST().Repositories.Get(ctx, repo.Organization(), repo.Name())
-		return resp, err
-	})
+		_, err = e.sourceClient.DoWithRetry(ctx, "GetRepository", func(ctx context.Context) (*ghapi.Response, error) {
+			var resp *ghapi.Response
+			sourceRepoData, resp, err = e.sourceClient.REST().Repositories.Get(ctx, repo.Organization(), repo.Name())
+			return resp, err
+		})
 
-	if err != nil {
-		return fmt.Errorf("source repository not found or inaccessible: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("source repository not found or inaccessible: %w", err)
+		}
 
-	e.logger.Info("Source repository verified", "repo", repo.FullName)
+		e.logger.Info("Source repository verified", "repo", repo.FullName)
 
-	// Verify repository is not archived
-	if sourceRepoData.GetArchived() {
-		issues = append(issues, "Repository is archived")
+		// Verify repository is not archived
+		if sourceRepoData.GetArchived() {
+			issues = append(issues, "Repository is archived")
+		}
+	} else {
+		e.logger.Info("Skipping source repository check (non-GitHub source)", "repo", repo.FullName)
 	}
 
 	// 2. Check if destination repository already exists
