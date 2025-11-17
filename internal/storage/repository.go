@@ -614,6 +614,11 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 		query = query.Scopes(WithOrganization(org))
 	}
 
+	// Apply ADO project filter
+	if project, ok := filters["ado_project"]; ok {
+		query = query.Scopes(WithADOProject(project))
+	}
+
 	// Apply visibility filter
 	if visibility, ok := filters["visibility"].(string); ok {
 		query = query.Scopes(WithVisibility(visibility))

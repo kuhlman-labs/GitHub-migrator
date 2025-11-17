@@ -93,6 +93,23 @@ func WithOrganization(org interface{}) func(db *gorm.DB) *gorm.DB {
 	}
 }
 
+// WithADOProject filters by Azure DevOps project (single or multiple)
+func WithADOProject(project interface{}) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		switch v := project.(type) {
+		case string:
+			if v != "" {
+				return db.Where("ado_project = ?", v)
+			}
+		case []string:
+			if len(v) > 0 {
+				return db.Where("ado_project IN ?", v)
+			}
+		}
+		return db
+	}
+}
+
 // WithVisibility filters by visibility
 func WithVisibility(visibility string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
