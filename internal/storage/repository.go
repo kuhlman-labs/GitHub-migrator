@@ -78,8 +78,22 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 	}
 
 	// Repository exists - update it
-	// Preserve the ID
+	// Preserve the ID and migration-related fields
 	repo.ID = existing.ID
+	
+	// IMPORTANT: Preserve existing migration state during re-discovery
+	// Re-discovery should only update repository metadata (size, features, etc.), 
+	// not reset migration progress (status, batch_id, priority, etc.)
+	// Only update status if the incoming status is not "pending" (indicating it's an intentional status change)
+	preserveMigrationState := repo.Status == string(models.StatusPending) && existing.Status != string(models.StatusPending)
+	
+	// If we're preserving migration state, restore the fields from existing repository
+	if preserveMigrationState {
+		repo.BatchID = existing.BatchID
+		repo.Priority = existing.Priority
+		repo.DestinationURL = existing.DestinationURL
+		repo.DestinationFullName = existing.DestinationFullName
+	}
 
 	// GORM's Updates() with structs skips zero values (false, 0, "", nil) by default
 	// We need to convert to a map to include these values in the update
@@ -92,7 +106,6 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		"branch_count":      repo.BranchCount,
 		"commit_count":      repo.CommitCount,
 		"visibility":        repo.Visibility,
-		"status":            repo.Status,
 		"updated_at":        time.Now(),
 		"last_discovery_at": repo.LastDiscoveryAt,
 		// Boolean fields - include explicitly to handle false values
@@ -189,6 +202,15 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		// Complexity scoring fields
 		"complexity_score":     repo.ComplexityScore,
 		"complexity_breakdown": repo.ComplexityBreakdown,
+	}
+	
+	// Only include migration-related updates if we're not preserving migration state
+	if !preserveMigrationState {
+		updateMap["status"] = repo.Status
+		updateMap["batch_id"] = repo.BatchID
+		updateMap["priority"] = repo.Priority
+		updateMap["destination_url"] = repo.DestinationURL
+		updateMap["destination_full_name"] = repo.DestinationFullName
 	}
 
 	result := d.db.WithContext(ctx).Model(&existing).Updates(updateMap)
@@ -600,11 +622,14 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	// Apply feature flags
 	featureFlags := make(map[string]bool)
 	featureKeys := []string{
+		// GitHub features
 		"has_lfs", "has_submodules", "has_large_files", "has_actions", "has_wiki",
 		"has_pages", "has_discussions", "has_projects", "has_packages", "has_rulesets",
 		"is_archived", "is_fork", "has_code_scanning", "has_dependabot", "has_secret_scanning",
 		"has_codeowners", "has_self_hosted_runners", "has_release_assets", "has_branch_protections",
 		"has_webhooks",
+		// Azure DevOps features
+		"ado_is_git", "ado_has_boards", "ado_has_pipelines", "ado_has_ghas", "ado_has_wiki",
 	}
 	for _, key := range featureKeys {
 		if value, ok := filters[key].(bool); ok {
@@ -613,6 +638,22 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	}
 	if len(featureFlags) > 0 {
 		query = query.Scopes(WithFeatureFlags(featureFlags))
+	}
+
+	// Apply ADO count-based filters
+	adoCountFilters := make(map[string]string)
+	adoCountKeys := []string{
+		"ado_pull_request_count", "ado_work_item_count", "ado_branch_policy_count",
+		"ado_yaml_pipeline_count", "ado_classic_pipeline_count", "ado_test_plan_count",
+		"ado_package_feed_count", "ado_service_hook_count",
+	}
+	for _, key := range adoCountKeys {
+		if value, ok := filters[key].(string); ok {
+			adoCountFilters[key] = value
+		}
+	}
+	if len(adoCountFilters) > 0 {
+		query = query.Scopes(WithADOCountFilters(adoCountFilters))
 	}
 
 	// Apply size category filter
@@ -1330,6 +1371,7 @@ func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution
 
 // FeatureStats represents aggregated feature usage statistics
 type FeatureStats struct {
+	// GitHub features
 	IsArchived           int `json:"is_archived" gorm:"column:archived_count"`
 	IsFork               int `json:"is_fork" gorm:"column:fork_count"`
 	HasLFS               int `json:"has_lfs" gorm:"column:lfs_count"`
@@ -1350,13 +1392,30 @@ type FeatureStats struct {
 	HasSelfHostedRunners int `json:"has_self_hosted_runners" gorm:"column:self_hosted_runners_count"`
 	HasReleaseAssets     int `json:"has_release_assets" gorm:"column:release_assets_count"`
 	HasWebhooks          int `json:"has_webhooks" gorm:"column:webhooks_count"`
-	TotalRepositories    int `json:"total_repositories" gorm:"column:total"`
+
+	// Azure DevOps features
+	ADOTFVCCount           int `json:"ado_tfvc_count" gorm:"column:ado_tfvc_count"`
+	ADOHasBoards           int `json:"ado_has_boards" gorm:"column:ado_has_boards_count"`
+	ADOHasPipelines        int `json:"ado_has_pipelines" gorm:"column:ado_has_pipelines_count"`
+	ADOHasGHAS             int `json:"ado_has_ghas" gorm:"column:ado_has_ghas_count"`
+	ADOHasPullRequests     int `json:"ado_has_pull_requests" gorm:"column:ado_has_pull_requests_count"`
+	ADOHasWorkItems        int `json:"ado_has_work_items" gorm:"column:ado_has_work_items_count"`
+	ADOHasBranchPolicies   int `json:"ado_has_branch_policies" gorm:"column:ado_has_branch_policies_count"`
+	ADOHasYAMLPipelines    int `json:"ado_has_yaml_pipelines" gorm:"column:ado_has_yaml_pipelines_count"`
+	ADOHasClassicPipelines int `json:"ado_has_classic_pipelines" gorm:"column:ado_has_classic_pipelines_count"`
+	ADOHasWiki             int `json:"ado_has_wiki" gorm:"column:ado_has_wiki_count"`
+	ADOHasTestPlans        int `json:"ado_has_test_plans" gorm:"column:ado_has_test_plans_count"`
+	ADOHasPackageFeeds     int `json:"ado_has_package_feeds" gorm:"column:ado_has_package_feeds_count"`
+	ADOHasServiceHooks     int `json:"ado_has_service_hooks" gorm:"column:ado_has_service_hooks_count"`
+
+	TotalRepositories int `json:"total_repositories" gorm:"column:total"`
 }
 
 // GetFeatureStats returns aggregated statistics on feature usage
 func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	query := `
 		SELECT 
+			-- GitHub features
 			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
 			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
 			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
@@ -1373,11 +1432,27 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
-		COUNT(*) as total
+			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+			
+			-- Azure DevOps features
+			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+			SUM(CASE WHEN ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+			SUM(CASE WHEN ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+			SUM(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+			SUM(CASE WHEN ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+			SUM(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+			SUM(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+			SUM(CASE WHEN ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+			SUM(CASE WHEN ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+			SUM(CASE WHEN ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+			SUM(CASE WHEN ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+			
+			COUNT(*) as total
 	FROM repositories
 `
 
@@ -2017,6 +2092,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 
 	query := `
 		SELECT 
+			-- GitHub features
 			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
 			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
 			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
@@ -2033,11 +2109,27 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
-		COUNT(*) as total
+			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+			
+			-- Azure DevOps features
+			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+			SUM(CASE WHEN ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+			SUM(CASE WHEN ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+			SUM(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+			SUM(CASE WHEN ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+			SUM(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+			SUM(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+			SUM(CASE WHEN ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+			SUM(CASE WHEN ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+			SUM(CASE WHEN ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+			SUM(CASE WHEN ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+			
+			COUNT(*) as total
 	FROM repositories r
 	WHERE 1=1
 		AND status != 'wont_migrate'

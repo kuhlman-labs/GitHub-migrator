@@ -125,10 +125,11 @@ func (h *ADOHandler) ListADOProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enrich projects with repository counts
+	// Enrich projects with repository counts and status breakdowns
 	type ProjectWithCount struct {
 		*models.ADOProject
-		RepositoryCount int `json:"repository_count"`
+		RepositoryCount int                `json:"repository_count"`
+		StatusCounts    map[string]int     `json:"status_counts"`
 	}
 
 	enrichedProjects := make([]ProjectWithCount, 0, len(projects))
@@ -143,9 +144,39 @@ func (h *ADOHandler) ListADOProjects(w http.ResponseWriter, r *http.Request) {
 			count = 0 // Continue with 0 count
 		}
 
+		// Get status distribution for repos in this project
+		statusCounts := make(map[string]int)
+		if count > 0 {
+			// Query actual status distribution using SQL for efficiency
+			var results []struct {
+				Status string
+				Count  int
+			}
+			err := h.db.DB().WithContext(ctx).
+				Raw(`
+					SELECT status, COUNT(*) as count
+					FROM repositories
+					WHERE ado_project = ?
+					AND status != 'wont_migrate'
+					GROUP BY status
+				`, project.Name).
+				Scan(&results).Error
+			
+			if err != nil {
+				h.logger.Warn("Failed to get status counts for project", "project", project.Name, "error", err)
+				// Fallback: assume all pending
+				statusCounts["pending"] = count
+			} else {
+				for _, result := range results {
+					statusCounts[result.Status] = result.Count
+				}
+			}
+		}
+
 		enrichedProjects = append(enrichedProjects, ProjectWithCount{
 			ADOProject:      &project,
 			RepositoryCount: count,
+			StatusCounts:    statusCounts,
 		})
 	}
 

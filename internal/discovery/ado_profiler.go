@@ -293,16 +293,31 @@ func (p *ADOProfiler) profileAzurePipelines(ctx context.Context, repo *models.Re
 }
 
 // categorizePipelines categorizes pipelines into YAML and Classic
-func (p *ADOProfiler) categorizePipelines(repo *models.Repository, pipelineDefs []build.BuildDefinitionReference) {
+func (p *ADOProfiler) categorizePipelines(repo *models.Repository, pipelineDefs []build.BuildDefinition) {
 	repo.ADOPipelineCount = len(pipelineDefs)
 	yamlCount := 0
 	classicCount := 0
 	for _, def := range pipelineDefs {
-		if def.Path != nil && (strings.HasSuffix(*def.Path, ".yml") || strings.HasSuffix(*def.Path, ".yaml")) {
-			yamlCount++
-		} else {
-			classicCount++
+		// Check the Process field to determine pipeline type
+		// Process.Type: 1 = Designer (Classic), 2 = YAML
+		if def.Process != nil {
+			// Type assert to check the process type
+			// The Process field is an interface{} that can be different types
+			if processMap, ok := def.Process.(map[string]interface{}); ok {
+				if processType, ok := processMap["type"].(float64); ok {
+					if processType == 2 {
+						// YAML pipeline
+						yamlCount++
+					} else {
+						// Classic/Designer pipeline
+						classicCount++
+					}
+					continue
+				}
+			}
 		}
+		// Fallback: if we can't determine, assume classic
+		classicCount++
 	}
 	repo.ADOYAMLPipelineCount = yamlCount
 	repo.ADOClassicPipelineCount = classicCount

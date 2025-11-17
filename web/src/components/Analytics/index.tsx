@@ -313,13 +313,19 @@ export function Analytics() {
             const featureStats = analytics.feature_stats;
             const features = [
               // Azure DevOps specific features
-              { label: "Azure Boards", count: (featureStats as any).ado_has_boards, filter: { ado_has_boards: true } },
-              { label: "Azure Pipelines", count: (featureStats as any).ado_has_pipelines, filter: { ado_has_pipelines: true } },
-              { label: "GHAS (Azure DevOps)", count: (featureStats as any).ado_has_ghas, filter: { ado_has_ghas: true } },
-              { label: "TFVC Repositories", count: (featureStats as any).ado_tfvc_count, filter: { ado_is_git: false } },
-              { label: "ADO Pull Requests", count: (featureStats as any).ado_has_pull_requests, filter: { ado_pull_request_count: true } },
-              { label: "ADO Work Items", count: (featureStats as any).ado_has_work_items, filter: { ado_work_item_count: true } },
-              { label: "ADO Branch Policies", count: (featureStats as any).ado_has_branch_policies, filter: { ado_branch_policy_count: true } },
+              { label: "Azure Boards", count: featureStats.ado_has_boards, filter: { ado_has_boards: true } },
+              { label: "Azure Pipelines", count: featureStats.ado_has_pipelines, filter: { ado_has_pipelines: true } },
+              { label: "YAML Pipelines", count: featureStats.ado_has_yaml_pipelines, filter: { ado_yaml_pipeline_count: '> 0' } },
+              { label: "Classic Pipelines", count: featureStats.ado_has_classic_pipelines, filter: { ado_classic_pipeline_count: '> 0' } },
+              { label: "GHAS (Azure DevOps)", count: featureStats.ado_has_ghas, filter: { ado_has_ghas: true } },
+              { label: "TFVC Repositories", count: featureStats.ado_tfvc_count, filter: { ado_is_git: false } },
+              { label: "Pull Requests", count: featureStats.ado_has_pull_requests, filter: { ado_pull_request_count: '> 0' } },
+              { label: "Work Items", count: featureStats.ado_has_work_items, filter: { ado_work_item_count: '> 0' } },
+              { label: "Branch Policies", count: featureStats.ado_has_branch_policies, filter: { ado_branch_policy_count: '> 0' } },
+              { label: "Wikis", count: featureStats.ado_has_wiki, filter: { ado_has_wiki: true } },
+              { label: "Test Plans", count: featureStats.ado_has_test_plans, filter: { ado_test_plan_count: '> 0' } },
+              { label: "Package Feeds", count: featureStats.ado_has_package_feeds, filter: { ado_package_feed_count: '> 0' } },
+              { label: "Service Hooks", count: featureStats.ado_has_service_hooks, filter: { ado_service_hook_count: '> 0' } },
               
               // GitHub specific features
               { label: "Archived", count: featureStats.is_archived, filter: { is_archived: true } },

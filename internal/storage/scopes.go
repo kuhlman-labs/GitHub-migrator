@@ -107,6 +107,7 @@ func WithVisibility(visibility string) func(db *gorm.DB) *gorm.DB {
 func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		featureColumns := map[string]string{
+			// GitHub features
 			"has_lfs":                 "has_lfs",
 			"has_submodules":          "has_submodules",
 			"has_large_files":         "has_large_files",
@@ -125,6 +126,12 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			"has_codeowners":          "has_codeowners",
 			"has_self_hosted_runners": "has_self_hosted_runners",
 			"has_release_assets":      "has_release_assets",
+			// Azure DevOps features
+			"ado_is_git":       "ado_is_git",
+			"ado_has_boards":   "ado_has_boards",
+			"ado_has_pipelines": "ado_has_pipelines",
+			"ado_has_ghas":     "ado_has_ghas",
+			"ado_has_wiki":     "ado_has_wiki",
 		}
 
 		for key, column := range featureColumns {
@@ -151,6 +158,24 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			}
 		}
 
+		return db
+	}
+}
+
+// WithADOCountFilters filters by Azure DevOps count-based fields
+func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		for key, value := range filters {
+			// Support "> 0" syntax for "has any"
+			if value == "> 0" || value == ">0" {
+				db = db.Where(key+" > 0")
+			} else if value == "= 0" || value == "=0" || value == "0" {
+				db = db.Where("("+key+" = 0 OR "+key+" IS NULL)")
+			} else {
+				// Support other operators like ">= 5", etc.
+				db = db.Where(key + " " + value)
+			}
+		}
 		return db
 	}
 }

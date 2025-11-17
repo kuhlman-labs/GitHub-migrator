@@ -302,6 +302,15 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Project filter (for Azure DevOps - can be comma-separated list)
+	if project := r.URL.Query().Get("project"); project != "" {
+		if strings.Contains(project, ",") {
+			filters["ado_project"] = strings.Split(project, ",")
+		} else {
+			filters["ado_project"] = project
+		}
+	}
+
 	// Size range filters (in bytes)
 	if minSizeStr := r.URL.Query().Get("min_size"); minSizeStr != "" {
 		if minSize, err := strconv.ParseInt(minSizeStr, 10, 64); err == nil {
@@ -368,6 +377,47 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 	if hasWebhooks := r.URL.Query().Get("has_webhooks"); hasWebhooks != "" {
 		filters["has_webhooks"] = hasWebhooks == boolTrue
+	}
+
+	// Azure DevOps feature filters
+	if adoIsGit := r.URL.Query().Get("ado_is_git"); adoIsGit != "" {
+		filters["ado_is_git"] = adoIsGit == boolTrue
+	}
+	if adoHasBoards := r.URL.Query().Get("ado_has_boards"); adoHasBoards != "" {
+		filters["ado_has_boards"] = adoHasBoards == boolTrue
+	}
+	if adoHasPipelines := r.URL.Query().Get("ado_has_pipelines"); adoHasPipelines != "" {
+		filters["ado_has_pipelines"] = adoHasPipelines == boolTrue
+	}
+	if adoHasGHAS := r.URL.Query().Get("ado_has_ghas"); adoHasGHAS != "" {
+		filters["ado_has_ghas"] = adoHasGHAS == boolTrue
+	}
+	if adoPullRequestCount := r.URL.Query().Get("ado_pull_request_count"); adoPullRequestCount != "" {
+		filters["ado_pull_request_count"] = adoPullRequestCount
+	}
+	if adoWorkItemCount := r.URL.Query().Get("ado_work_item_count"); adoWorkItemCount != "" {
+		filters["ado_work_item_count"] = adoWorkItemCount
+	}
+	if adoBranchPolicyCount := r.URL.Query().Get("ado_branch_policy_count"); adoBranchPolicyCount != "" {
+		filters["ado_branch_policy_count"] = adoBranchPolicyCount
+	}
+	if adoYAMLPipelineCount := r.URL.Query().Get("ado_yaml_pipeline_count"); adoYAMLPipelineCount != "" {
+		filters["ado_yaml_pipeline_count"] = adoYAMLPipelineCount
+	}
+	if adoClassicPipelineCount := r.URL.Query().Get("ado_classic_pipeline_count"); adoClassicPipelineCount != "" {
+		filters["ado_classic_pipeline_count"] = adoClassicPipelineCount
+	}
+	if adoHasWiki := r.URL.Query().Get("ado_has_wiki"); adoHasWiki != "" {
+		filters["ado_has_wiki"] = adoHasWiki == boolTrue
+	}
+	if adoTestPlanCount := r.URL.Query().Get("ado_test_plan_count"); adoTestPlanCount != "" {
+		filters["ado_test_plan_count"] = adoTestPlanCount
+	}
+	if adoPackageFeedCount := r.URL.Query().Get("ado_package_feed_count"); adoPackageFeedCount != "" {
+		filters["ado_package_feed_count"] = adoPackageFeedCount
+	}
+	if adoServiceHookCount := r.URL.Query().Get("ado_service_hook_count"); adoServiceHookCount != "" {
+		filters["ado_service_hook_count"] = adoServiceHookCount
 	}
 
 	// Visibility filter
@@ -2646,6 +2696,9 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	// Build executive report
 	report := map[string]interface{}{
+		// Source type identifier
+		"source_type": h.sourceType,
+
 		// Executive Summary
 		"executive_summary": map[string]interface{}{
 			"total_repositories":        total,
@@ -2669,7 +2722,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 			"migration_trend":      migrationTimeSeries,
 		},
 
-		// Organization Progress
+		// Organization Progress (or Project Progress for ADO)
 		"organization_progress": migrationCompletionStats,
 
 		// Risk & Complexity Analysis
@@ -2694,6 +2747,22 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 		// Detailed Status Breakdown
 		"status_breakdown": stats,
+	}
+
+	// Add ADO-specific data if source is Azure DevOps
+	if h.sourceType == "azuredevops" {
+		// Add project progress separately for clarity
+		report["project_progress"] = migrationCompletionStats
+
+		// Add ADO-specific risk analysis
+		report["ado_risk_analysis"] = map[string]interface{}{
+			"tfvc_repos":                   featureStats.ADOTFVCCount,
+			"classic_pipelines":            featureStats.ADOHasClassicPipelines,
+			"repos_with_active_work_items": featureStats.ADOHasWorkItems,
+			"repos_with_wikis":             featureStats.ADOHasWiki,
+			"repos_with_test_plans":        featureStats.ADOHasTestPlans,
+			"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+		}
 	}
 
 	h.sendJSON(w, http.StatusOK, report)
@@ -2824,19 +2893,19 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if format == formatCSV {
-		h.exportExecutiveReportCSV(w, total, migrated, inProgress, pending, failed, completionRate, successRate,
+		h.exportExecutiveReportCSV(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
 			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	} else {
-		h.exportExecutiveReportJSON(w, total, migrated, inProgress, pending, failed, completionRate, successRate,
+		h.exportExecutiveReportJSON(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
 			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	}
 }
 
-func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrated, inProgress, pending, failed int,
+func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
 	velocity *storage.MigrationVelocity, avgMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
@@ -2850,6 +2919,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 
 	// Section 1: Executive Summary
 	output.WriteString("EXECUTIVE MIGRATION PROGRESS REPORT\n")
+	output.WriteString(fmt.Sprintf("Source: %s\n", strings.ToUpper(sourceType)))
 	output.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
 	output.WriteString("\n")
 
@@ -2879,9 +2949,17 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 	}
 	output.WriteString("\n")
 
-	// Section 3: Organization Progress
-	output.WriteString("=== ORGANIZATION PROGRESS ===\n")
-	output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	// Section 3: Organization/Project Progress
+	if sourceType == "azuredevops" {
+		output.WriteString("=== PROJECT PROGRESS ===\n")
+	} else {
+		output.WriteString("=== ORGANIZATION PROGRESS ===\n")
+	}
+	if sourceType == "azuredevops" {
+		output.WriteString("Project,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	} else {
+		output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	}
 	for _, org := range orgStats {
 		completionPct := 0.0
 		if org.TotalRepos > 0 {
@@ -2919,18 +2997,55 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 	output.WriteString("Feature,Repository Count,Percentage\n")
 	totalRepos := featureStats.TotalRepositories
 	if totalRepos > 0 {
-		output.WriteString(fmt.Sprintf("Archived,%d,%.1f%%\n", featureStats.IsArchived, float64(featureStats.IsArchived)/float64(totalRepos)*100))
+		if sourceType == "azuredevops" {
+			// ADO-specific features
+			output.WriteString(fmt.Sprintf("TFVC Repositories,%d,%.1f%%\n", featureStats.ADOTFVCCount, float64(featureStats.ADOTFVCCount)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Azure Boards,%d,%.1f%%\n", featureStats.ADOHasBoards, float64(featureStats.ADOHasBoards)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Azure Pipelines,%d,%.1f%%\n", featureStats.ADOHasPipelines, float64(featureStats.ADOHasPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("YAML Pipelines,%d,%.1f%%\n", featureStats.ADOHasYAMLPipelines, float64(featureStats.ADOHasYAMLPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Classic Pipelines,%d,%.1f%%\n", featureStats.ADOHasClassicPipelines, float64(featureStats.ADOHasClassicPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Pull Requests,%d,%.1f%%\n", featureStats.ADOHasPullRequests, float64(featureStats.ADOHasPullRequests)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Work Items,%d,%.1f%%\n", featureStats.ADOHasWorkItems, float64(featureStats.ADOHasWorkItems)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Branch Policies,%d,%.1f%%\n", featureStats.ADOHasBranchPolicies, float64(featureStats.ADOHasBranchPolicies)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.ADOHasWiki, float64(featureStats.ADOHasWiki)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Test Plans,%d,%.1f%%\n", featureStats.ADOHasTestPlans, float64(featureStats.ADOHasTestPlans)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Package Feeds,%d,%.1f%%\n", featureStats.ADOHasPackageFeeds, float64(featureStats.ADOHasPackageFeeds)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Service Hooks,%d,%.1f%%\n", featureStats.ADOHasServiceHooks, float64(featureStats.ADOHasServiceHooks)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("GHAS (Azure DevOps),%d,%.1f%%\n", featureStats.ADOHasGHAS, float64(featureStats.ADOHasGHAS)/float64(totalRepos)*100))
+		} else {
+			// GitHub features
+			output.WriteString(fmt.Sprintf("Archived,%d,%.1f%%\n", featureStats.IsArchived, float64(featureStats.IsArchived)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, float64(featureStats.HasLargeFiles)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, float64(featureStats.HasActions)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, float64(featureStats.HasWiki)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, float64(featureStats.HasPages)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Discussions,%d,%.1f%%\n", featureStats.HasDiscussions, float64(featureStats.HasDiscussions)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Projects,%d,%.1f%%\n", featureStats.HasProjects, float64(featureStats.HasProjects)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Branch Protections,%d,%.1f%%\n", featureStats.HasBranchProtections, float64(featureStats.HasBranchProtections)/float64(totalRepos)*100))
+		}
+		// Common features
 		output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
 		output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
 		output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, float64(featureStats.HasLargeFiles)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, float64(featureStats.HasActions)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, float64(featureStats.HasWiki)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, float64(featureStats.HasPages)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Discussions,%d,%.1f%%\n", featureStats.HasDiscussions, float64(featureStats.HasDiscussions)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Projects,%d,%.1f%%\n", featureStats.HasProjects, float64(featureStats.HasProjects)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Branch Protections,%d,%.1f%%\n", featureStats.HasBranchProtections, float64(featureStats.HasBranchProtections)/float64(totalRepos)*100))
 	}
 	output.WriteString("\n")
+
+	// ADO Risk Analysis
+	if sourceType == "azuredevops" {
+		output.WriteString("=== AZURE DEVOPS MIGRATION RISKS ===\n")
+		output.WriteString("Risk Factor,Repository Count,Percentage\n")
+		if totalRepos > 0 {
+			output.WriteString(fmt.Sprintf("TFVC Repositories (Requires Conversion),%d,%.1f%%\n", featureStats.ADOTFVCCount, float64(featureStats.ADOTFVCCount)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Classic Pipelines (Manual Recreation),%d,%.1f%%\n", featureStats.ADOHasClassicPipelines, float64(featureStats.ADOHasClassicPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Active Work Items (Won't Migrate),%d,%.1f%%\n", featureStats.ADOHasWorkItems, float64(featureStats.ADOHasWorkItems)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Wikis (Manual Migration),%d,%.1f%%\n", featureStats.ADOHasWiki, float64(featureStats.ADOHasWiki)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Test Plans (No GitHub Equivalent),%d,%.1f%%\n", featureStats.ADOHasTestPlans, float64(featureStats.ADOHasTestPlans)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Package Feeds (Separate Migration),%d,%.1f%%\n", featureStats.ADOHasPackageFeeds, float64(featureStats.ADOHasPackageFeeds)/float64(totalRepos)*100))
+		}
+		output.WriteString("\n")
+	}
 
 	// Section 7: Batch Performance
 	output.WriteString("=== BATCH PERFORMANCE ===\n")
@@ -2956,7 +3071,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 	}
 }
 
-func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrated, inProgress, pending, failed int,
+func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
 	velocity *storage.MigrationVelocity, avgMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
@@ -2967,6 +3082,7 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrat
 	w.Header().Set("Content-Disposition", "attachment; filename=executive_migration_report.json")
 
 	report := map[string]interface{}{
+		"source_type": sourceType,
 		"report_metadata": map[string]interface{}{
 			"generated_at": time.Now().Format(time.RFC3339),
 			"report_type":  "Executive Migration Progress Report",
@@ -2998,6 +3114,19 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrat
 			"pending_batches":     pendingBatches,
 		},
 		"status_breakdown": statusBreakdown,
+	}
+
+	// Add ADO-specific data if source is Azure DevOps
+	if sourceType == "azuredevops" {
+		report["project_progress"] = orgStats
+		report["ado_risk_analysis"] = map[string]interface{}{
+			"tfvc_repos":                   featureStats.ADOTFVCCount,
+			"classic_pipelines":            featureStats.ADOHasClassicPipelines,
+			"repos_with_active_work_items": featureStats.ADOHasWorkItems,
+			"repos_with_wikis":             featureStats.ADOHasWiki,
+			"repos_with_test_plans":        featureStats.ADOHasTestPlans,
+			"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+		}
 	}
 
 	if err := json.NewEncoder(w).Encode(report); err != nil {
@@ -3218,12 +3347,35 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		// Transform into organization stats
 		orgStats := make([]interface{}, 0, len(orgMap))
 		for orgName, orgData := range orgMap {
-			// Get status distribution for all repos in this organization
+			// Get actual status distribution for all repos in this organization
 			statusCounts := make(map[string]int)
 			if orgData.repoCount > 0 {
-				// For now, assume all repos are pending after discovery
-				// TODO: Query actual status distribution from repositories table
-				statusCounts["pending"] = orgData.repoCount
+				// Query actual repository statuses grouped by organization
+				var results []struct {
+					Status string
+					Count  int
+				}
+				err := h.db.DB().WithContext(ctx).
+					Raw(`
+						SELECT status, COUNT(*) as count
+						FROM repositories
+						WHERE ado_project IN (
+							SELECT name FROM ado_projects WHERE organization = ?
+						)
+						AND status != 'wont_migrate'
+						GROUP BY status
+					`, orgName).
+					Scan(&results).Error
+				
+				if err != nil {
+					h.logger.Warn("Failed to get status counts for organization", "org", orgName, "error", err)
+					// Fall back to assuming pending if query fails
+					statusCounts["pending"] = orgData.repoCount
+				} else {
+					for _, result := range results {
+						statusCounts[result.Status] = result.Count
+					}
+				}
 			}
 
 			orgStats = append(orgStats, map[string]interface{}{
@@ -3288,18 +3440,29 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		// Get status distribution for repos in this project
 		statusCounts := make(map[string]int)
 		if repoCount > 0 {
-			// Query actual status distribution from repositories table
-			repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
-				"ado_project": project.Name,
-			})
-			if err == nil {
-				for _, repo := range repos {
-					statusCounts[repo.Status]++
-				}
-			} else {
-				h.logger.Warn("Failed to get status distribution for project", "project", project.Name, "error", err)
+			// Query actual status distribution using SQL for efficiency
+			var results []struct {
+				Status string
+				Count  int
+			}
+			err := h.db.DB().WithContext(ctx).
+				Raw(`
+					SELECT status, COUNT(*) as count
+					FROM repositories
+					WHERE ado_project = ?
+					AND status != 'wont_migrate'
+					GROUP BY status
+				`, project.Name).
+				Scan(&results).Error
+			
+			if err != nil {
+				h.logger.Warn("Failed to get status counts for project", "project", project.Name, "error", err)
 				// Fallback: assume all pending
 				statusCounts["pending"] = repoCount
+			} else {
+				for _, result := range results {
+					statusCounts[result.Status] = result.Count
+				}
 			}
 		}
 

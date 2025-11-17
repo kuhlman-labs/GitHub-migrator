@@ -85,6 +85,22 @@ export function OrganizationDetail() {
   const { data, isLoading, isFetching } = useRepositories({});
   const { data: orgsData } = useOrganizations();
 
+  // Reset pagination when organization or project changes
+  useEffect(() => {
+    setCurrentPage(1);
+    setProjectCurrentPage(1);
+  }, [orgName, projectName]);
+
+  // Reset repository pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, searchTerm, selectedFeatures]);
+
+  // Reset project pagination when project search changes
+  useEffect(() => {
+    setProjectCurrentPage(1);
+  }, [projectSearchTerm]);
+
   // Determine what we're viewing based on route params
   // If projectName exists, we're viewing an ADO project (show repos)
   // If only orgName exists, check if it's an ADO org (show projects) or GitHub org (show repos)
@@ -447,6 +463,36 @@ export function OrganizationDetail() {
 }
 
 function ProjectCard({ project }: { project: ADOProject }) {
+  const getStatusColor = (status: string) => {
+    // Map all backend statuses to GitHub color scheme
+    const colors: Record<string, string> = {
+      // Pending
+      pending: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
+      
+      // In Progress (blue)
+      dry_run_queued: 'bg-gh-blue text-white',
+      dry_run_in_progress: 'bg-gh-blue text-white',
+      pre_migration: 'bg-gh-blue text-white',
+      archive_generating: 'bg-gh-blue text-white',
+      queued_for_migration: 'bg-gh-blue text-white',
+      migrating_content: 'bg-gh-blue text-white',
+      post_migration: 'bg-gh-blue text-white',
+      
+      // Complete (green)
+      dry_run_complete: 'bg-gh-success text-white',
+      migration_complete: 'bg-gh-success text-white',
+      complete: 'bg-gh-success text-white',
+      
+      // Failed (red)
+      dry_run_failed: 'bg-gh-danger text-white',
+      migration_failed: 'bg-gh-danger text-white',
+      
+      // Rolled Back (yellow/orange)
+      rolled_back: 'bg-gh-warning text-white',
+    };
+    return colors[status] || 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default';
+  };
+
   return (
     <Link
       to={`/org/${encodeURIComponent(project.organization)}/project/${encodeURIComponent(project.name)}`}
@@ -467,13 +513,29 @@ function ProjectCard({ project }: { project: ADOProject }) {
         <div className="text-sm text-gh-text-secondary">Repositories</div>
       </div>
       
-      <div className="flex gap-2 text-xs text-gh-text-secondary">
+      <div className="flex gap-2 text-xs mb-4">
         {project.visibility && (
           <Badge color={project.visibility === 'public' ? 'green' : 'gray'}>
             {project.visibility}
           </Badge>
         )}
       </div>
+      
+      {project.status_counts && Object.keys(project.status_counts).length > 0 && (
+        <div className="space-y-2">
+          <div className="text-xs font-semibold text-gh-text-secondary uppercase tracking-wide">Status Breakdown</div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(project.status_counts).map(([status, count]) => (
+              <span
+                key={status}
+                className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}
+              >
+                {status.replace(/_/g, ' ')}: {count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </Link>
   );
 }

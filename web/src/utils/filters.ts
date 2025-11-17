@@ -25,12 +25,21 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
       params.set('organization', filters.organization);
     }
   }
+  
+  // Handle project (can be string or array)
+  if (filters.project) {
+    if (Array.isArray(filters.project)) {
+      params.set('project', filters.project.join(','));
+    } else {
+      params.set('project', filters.project);
+    }
+  }
 
   // Handle size filters
   if (filters.min_size !== undefined) params.set('min_size', filters.min_size.toString());
   if (filters.max_size !== undefined) params.set('max_size', filters.max_size.toString());
 
-  // Handle boolean feature filters
+  // Handle boolean feature filters - GitHub
   if (filters.has_lfs !== undefined) params.set('has_lfs', filters.has_lfs.toString());
   if (filters.has_submodules !== undefined) params.set('has_submodules', filters.has_submodules.toString());
   if (filters.has_large_files !== undefined) params.set('has_large_files', filters.has_large_files.toString());
@@ -52,6 +61,21 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
   if (filters.has_release_assets !== undefined) params.set('has_release_assets', filters.has_release_assets.toString());
   if (filters.has_webhooks !== undefined) params.set('has_webhooks', filters.has_webhooks.toString());
   if (filters.visibility) params.set('visibility', filters.visibility);
+
+  // Handle Azure DevOps feature filters
+  if (filters.ado_is_git !== undefined) params.set('ado_is_git', filters.ado_is_git.toString());
+  if (filters.ado_has_boards !== undefined) params.set('ado_has_boards', filters.ado_has_boards.toString());
+  if (filters.ado_has_pipelines !== undefined) params.set('ado_has_pipelines', filters.ado_has_pipelines.toString());
+  if (filters.ado_has_ghas !== undefined) params.set('ado_has_ghas', filters.ado_has_ghas.toString());
+  if (filters.ado_pull_request_count) params.set('ado_pull_request_count', filters.ado_pull_request_count);
+  if (filters.ado_work_item_count) params.set('ado_work_item_count', filters.ado_work_item_count);
+  if (filters.ado_branch_policy_count) params.set('ado_branch_policy_count', filters.ado_branch_policy_count);
+  if (filters.ado_yaml_pipeline_count) params.set('ado_yaml_pipeline_count', filters.ado_yaml_pipeline_count);
+  if (filters.ado_classic_pipeline_count) params.set('ado_classic_pipeline_count', filters.ado_classic_pipeline_count);
+  if (filters.ado_has_wiki !== undefined) params.set('ado_has_wiki', filters.ado_has_wiki.toString());
+  if (filters.ado_test_plan_count) params.set('ado_test_plan_count', filters.ado_test_plan_count);
+  if (filters.ado_package_feed_count) params.set('ado_package_feed_count', filters.ado_package_feed_count);
+  if (filters.ado_service_hook_count) params.set('ado_service_hook_count', filters.ado_service_hook_count);
 
   // Handle complexity and size category (arrays)
   if (filters.complexity) {
@@ -176,10 +200,55 @@ export function searchParamsToFilters(searchParams: URLSearchParams): Repository
   const visibility = searchParams.get('visibility');
   if (visibility) filters.visibility = visibility as 'public' | 'private' | 'internal';
 
+  // Azure DevOps feature filters
+  const adoIsGit = searchParams.get('ado_is_git');
+  if (adoIsGit) filters.ado_is_git = adoIsGit === 'true';
+
+  const adoHasBoards = searchParams.get('ado_has_boards');
+  if (adoHasBoards) filters.ado_has_boards = adoHasBoards === 'true';
+
+  const adoHasPipelines = searchParams.get('ado_has_pipelines');
+  if (adoHasPipelines) filters.ado_has_pipelines = adoHasPipelines === 'true';
+
+  const adoHasGHAS = searchParams.get('ado_has_ghas');
+  if (adoHasGHAS) filters.ado_has_ghas = adoHasGHAS === 'true';
+
+  const adoPullRequestCount = searchParams.get('ado_pull_request_count');
+  if (adoPullRequestCount) filters.ado_pull_request_count = adoPullRequestCount;
+
+  const adoWorkItemCount = searchParams.get('ado_work_item_count');
+  if (adoWorkItemCount) filters.ado_work_item_count = adoWorkItemCount;
+
+  const adoBranchPolicyCount = searchParams.get('ado_branch_policy_count');
+  if (adoBranchPolicyCount) filters.ado_branch_policy_count = adoBranchPolicyCount;
+
+  const adoYAMLPipelineCount = searchParams.get('ado_yaml_pipeline_count');
+  if (adoYAMLPipelineCount) filters.ado_yaml_pipeline_count = adoYAMLPipelineCount;
+
+  const adoClassicPipelineCount = searchParams.get('ado_classic_pipeline_count');
+  if (adoClassicPipelineCount) filters.ado_classic_pipeline_count = adoClassicPipelineCount;
+
+  const adoHasWiki = searchParams.get('ado_has_wiki');
+  if (adoHasWiki) filters.ado_has_wiki = adoHasWiki === 'true';
+
+  const adoTestPlanCount = searchParams.get('ado_test_plan_count');
+  if (adoTestPlanCount) filters.ado_test_plan_count = adoTestPlanCount;
+
+  const adoPackageFeedCount = searchParams.get('ado_package_feed_count');
+  if (adoPackageFeedCount) filters.ado_package_feed_count = adoPackageFeedCount;
+
+  const adoServiceHookCount = searchParams.get('ado_service_hook_count');
+  if (adoServiceHookCount) filters.ado_service_hook_count = adoServiceHookCount;
+
   // Array filters
   const organization = searchParams.get('organization');
   if (organization) {
     filters.organization = organization.includes(',') ? organization.split(',') : organization;
+  }
+  
+  const project = searchParams.get('project');
+  if (project) {
+    filters.project = project.includes(',') ? project.split(',') : project;
   }
 
   const complexity = searchParams.get('complexity');

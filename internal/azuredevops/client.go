@@ -373,7 +373,8 @@ func (c *Client) ValidateCredentials(ctx context.Context) error {
 }
 
 // GetPipelineDefinitions gets pipeline definitions for a repository
-func (c *Client) GetPipelineDefinitions(ctx context.Context, projectName, repoID string) ([]build.BuildDefinitionReference, error) {
+// Returns BuildDefinition (full) instead of BuildDefinitionReference to get Process info
+func (c *Client) GetPipelineDefinitions(ctx context.Context, projectName, repoID string) ([]build.BuildDefinition, error) {
 	repoType := TfsGitRepositoryType
 	definitions, err := c.buildClient.GetDefinitions(ctx, build.GetDefinitionsArgs{
 		Project:        &projectName,
@@ -385,10 +386,29 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projectName, repoID
 	}
 
 	if definitions == nil || definitions.Value == nil {
-		return []build.BuildDefinitionReference{}, nil
+		return []build.BuildDefinition{}, nil
 	}
 
-	return definitions.Value, nil
+	// Get full definition for each to access Process field
+	fullDefs := make([]build.BuildDefinition, 0, len(definitions.Value))
+	for _, defRef := range definitions.Value {
+		if defRef.Id == nil {
+			continue
+		}
+		fullDef, err := c.buildClient.GetDefinition(ctx, build.GetDefinitionArgs{
+			Project:      &projectName,
+			DefinitionId: defRef.Id,
+		})
+		if err != nil {
+			// Log error but continue with other definitions
+			continue
+		}
+		if fullDef != nil {
+			fullDefs = append(fullDefs, *fullDef)
+		}
+	}
+
+	return fullDefs, nil
 }
 
 // GetPipelineRuns gets recent pipeline runs for a repository
