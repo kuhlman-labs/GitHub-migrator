@@ -82,6 +82,10 @@ export const api = {
       params.organization = filters.organization.join(',');
     }
     
+    if (filters?.project && Array.isArray(filters.project)) {
+      params.project = filters.project.join(',');
+    }
+    
     if (filters?.complexity && Array.isArray(filters.complexity)) {
       params.complexity = filters.complexity.join(',');
     }
