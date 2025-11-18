@@ -336,38 +336,38 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
             {sourceType === 'github' ? (
               // GitHub features
               [
-                { key: 'has_lfs' as const, label: 'LFS' },
-                { key: 'has_submodules' as const, label: 'Submodules' },
-                { key: 'has_large_files' as const, label: 'Large Files (>100MB)' },
-                { key: 'has_actions' as const, label: 'Actions' },
-                { key: 'has_wiki' as const, label: 'Wiki' },
-                { key: 'has_pages' as const, label: 'Pages' },
-                { key: 'has_discussions' as const, label: 'Discussions' },
-                { key: 'has_projects' as const, label: 'Projects' },
-                { key: 'has_packages' as const, label: 'Packages' },
-                { key: 'has_branch_protections' as const, label: 'Branch Protections' },
-                { key: 'has_rulesets' as const, label: 'Rulesets' },
-                { key: 'is_archived' as const, label: 'Archived' },
-                { key: 'is_fork' as const, label: 'Fork' },
-                { key: 'has_code_scanning' as const, label: 'Code Scanning' },
-                { key: 'has_dependabot' as const, label: 'Dependabot' },
-                { key: 'has_secret_scanning' as const, label: 'Secret Scanning' },
-                { key: 'has_codeowners' as const, label: 'CODEOWNERS' },
-                { key: 'has_self_hosted_runners' as const, label: 'Self-Hosted Runners' },
-                { key: 'has_release_assets' as const, label: 'Release Assets' },
-                { key: 'has_webhooks' as const, label: 'Webhooks' },
-              ].map((feature) => (
-                <label key={feature.key} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filters[feature.key] || false}
-                    onChange={(e) =>
-                      onChange({ ...filters, [feature.key]: e.target.checked ? true : undefined })
-                    }
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700">{feature.label}</span>
-                </label>
+              { key: 'has_lfs' as const, label: 'LFS' },
+              { key: 'has_submodules' as const, label: 'Submodules' },
+              { key: 'has_large_files' as const, label: 'Large Files (>100MB)' },
+              { key: 'has_actions' as const, label: 'Actions' },
+              { key: 'has_wiki' as const, label: 'Wiki' },
+              { key: 'has_pages' as const, label: 'Pages' },
+              { key: 'has_discussions' as const, label: 'Discussions' },
+              { key: 'has_projects' as const, label: 'Projects' },
+              { key: 'has_packages' as const, label: 'Packages' },
+              { key: 'has_branch_protections' as const, label: 'Branch Protections' },
+              { key: 'has_rulesets' as const, label: 'Rulesets' },
+              { key: 'is_archived' as const, label: 'Archived' },
+              { key: 'is_fork' as const, label: 'Fork' },
+              { key: 'has_code_scanning' as const, label: 'Code Scanning' },
+              { key: 'has_dependabot' as const, label: 'Dependabot' },
+              { key: 'has_secret_scanning' as const, label: 'Secret Scanning' },
+              { key: 'has_codeowners' as const, label: 'CODEOWNERS' },
+              { key: 'has_self_hosted_runners' as const, label: 'Self-Hosted Runners' },
+              { key: 'has_release_assets' as const, label: 'Release Assets' },
+              { key: 'has_webhooks' as const, label: 'Webhooks' },
+            ].map((feature) => (
+              <label key={feature.key} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters[feature.key] || false}
+                  onChange={(e) =>
+                    onChange({ ...filters, [feature.key]: e.target.checked ? true : undefined })
+                  }
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">{feature.label}</span>
+              </label>
               ))
             ) : (
               // Azure DevOps features

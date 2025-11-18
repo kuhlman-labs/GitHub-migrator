@@ -30,7 +30,7 @@ func NewADOCollector(client *azuredevops.Client, storage interface{}, logger *sl
 		storage:  storage,
 		logger:   logger,
 		provider: provider,
-		profiler: NewADOProfiler(client, logger, provider),
+		profiler: NewADOProfiler(client, logger, provider, storage),
 		workers:  5, // Default to 5 parallel workers (matches GitHub collector)
 	}
 }
@@ -117,6 +117,15 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 		"organization", organization,
 		"projects", len(projects))
 
+	// After discovery completes, update local dependency flags
+	c.logger.Info("Updating local dependency flags", "organization", organization)
+	if db, ok := c.storage.(*storage.Database); ok {
+		if err := db.UpdateLocalDependencyFlags(ctx); err != nil {
+			c.logger.Warn("Failed to update local dependency flags", "error", err)
+			// Don't fail the whole discovery if this fails
+		}
+	}
+
 	return nil
 }
 
@@ -165,6 +174,15 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 	c.logger.Info("Azure DevOps project discovery complete",
 		"project", projectName,
 		"repositories", len(repos))
+
+	// After discovery completes, update local dependency flags
+	c.logger.Info("Updating local dependency flags", "project", projectName)
+	if db, ok := c.storage.(*storage.Database); ok {
+		if err := db.UpdateLocalDependencyFlags(ctx); err != nil {
+			c.logger.Warn("Failed to update local dependency flags", "error", err)
+			// Don't fail the whole discovery if this fails
+		}
+	}
 
 	return nil
 }
@@ -403,6 +421,15 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 	c.logger.Info("Azure DevOps repository discovery complete",
 		"project", projectName,
 		"repo", repoName)
+
+	// After discovery completes, update local dependency flags
+	c.logger.Info("Updating local dependency flags", "repo", repoName)
+	if db, ok := c.storage.(*storage.Database); ok {
+		if err := db.UpdateLocalDependencyFlags(ctx); err != nil {
+			c.logger.Warn("Failed to update local dependency flags", "error", err)
+			// Don't fail the whole discovery if this fails
+		}
+	}
 
 	return nil
 }

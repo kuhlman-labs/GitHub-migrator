@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/shurcooL/githubv4"
@@ -146,31 +147,48 @@ func (e *Executor) ExecuteADOMigration(ctx context.Context, repo *models.Reposit
 		} else {
 			e.logOperation(ctx, repo, historyID, "INFO", "post_migration", "validate", "Post-migration validation passed", nil)
 		}
+	} else {
+		reason := fmt.Sprintf("Skipping post-migration validation (mode: %s, dry_run: %v)", e.postMigrationMode, dryRun)
+		e.logger.Info(reason, "repo", repo.FullName)
+		e.logOperation(ctx, repo, historyID, "INFO", "post_migration", "skip", reason, nil)
 	}
 
-	// Update final status
-	status = models.StatusMigrationComplete
+	// Phase 5: Mark complete (matches GitHub migration flow)
+	completionStatus := models.StatusComplete
+	completionMsg := "Migration completed successfully"
+
 	if dryRun {
-		status = models.StatusDryRunComplete
+		completionStatus = models.StatusDryRunComplete
+		completionMsg = "Dry run completed successfully - repository can be migrated safely"
 	}
-	repo.Status = string(status)
+
+	e.logger.Info("ADO migration complete", "repo", repo.FullName, "dry_run", dryRun)
+	e.logOperation(ctx, repo, historyID, "INFO", "migration", "complete", completionMsg, nil)
+	e.updateHistoryStatus(ctx, historyID, "completed", nil)
+
+	repo.Status = string(completionStatus)
+	now := time.Now()
+
+	// Set appropriate timestamps based on migration type
+	if dryRun {
+		// Set last dry run timestamp
+		repo.LastDryRunAt = &now
+	} else {
+		// Set migration completion timestamp
+		repo.MigratedAt = &now
+	}
+
 	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
 		e.logger.Error("Failed to update repository status", "error", err)
 	}
-
-	// Update history as completed
-	e.updateHistoryStatus(ctx, historyID, "completed", nil)
-
-	e.logger.Info("ADO migration completed successfully",
-		"repo", repo.FullName,
-		"dry_run", dryRun)
-	e.logOperation(ctx, repo, historyID, "INFO", "migration", "complete", "Migration completed successfully", nil)
 
 	return nil
 }
 
 // startADORepositoryMigration starts a migration from Azure DevOps to GitHub using GraphQL
 // This uses the GitHub Enterprise Importer API with ADO-specific parameters
+//
+//nolint:gocyclo // Complexity is inherent to ADO migration orchestration
 func (e *Executor) startADORepositoryMigration(ctx context.Context, repo *models.Repository, batch *models.Batch) (string, error) {
 	// Get destination org name for this repository
 	destOrgName := e.getDestinationOrg(repo, batch)

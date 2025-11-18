@@ -149,7 +149,7 @@ func TestADOProfiler_ComplexityFactors(t *testing.T) {
 
 func TestADOProfiler_EstimateComplexity(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	profiler := NewADOProfiler(nil, logger, nil)
+	profiler := NewADOProfiler(nil, logger, nil, nil)
 
 	tests := []struct {
 		name               string
@@ -240,7 +240,7 @@ func TestADOProfiler_EstimateComplexity(t *testing.T) {
 
 func TestADOProfiler_EstimateComplexityWithBreakdown(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	profiler := NewADOProfiler(nil, logger, nil)
+	profiler := NewADOProfiler(nil, logger, nil, nil)
 
 	tests := []struct {
 		name                string

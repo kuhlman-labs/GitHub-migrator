@@ -4,6 +4,8 @@ import "github.com/kuhlman-labs/github-migrator/internal/models"
 
 // CalculateComplexity calculates the complexity score for a GitHub repository
 // This matches the logic from buildGitHubComplexityScoreSQL() but works in-memory
+//
+//nolint:gocyclo // Complexity is inherent to the calculation logic
 func (p *Profiler) CalculateComplexity(repo *models.Repository) (int, *models.ComplexityBreakdown) {
 	breakdown := &models.ComplexityBreakdown{}
 	complexity := 0

@@ -91,13 +91,13 @@ func TestNewExecutor(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing source client",
+			name: "missing source client is allowed for ADO sources",
 			cfg: ExecutorConfig{
 				DestClient: &github.Client{},
 				Storage:    &storage.Database{},
 				Logger:     logger,
 			},
-			wantErr: true,
+			wantErr: false, // SourceClient can be nil for Azure DevOps sources
 		},
 		{
 			name: "missing destination client",

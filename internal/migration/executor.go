@@ -79,8 +79,8 @@ type Executor struct {
 // ExecutorConfig configures the migration executor
 type ExecutorConfig struct {
 	SourceClient         *github.Client
-	SourceToken          string         // Source PAT (required for ADO sources, optional for GitHub if SourceClient provided)
-	SourceURL            string         // Source system URL (GitHub base URL or ADO org URL, e.g., https://dev.azure.com/org)
+	SourceToken          string // Source PAT (required for ADO sources, optional for GitHub if SourceClient provided)
+	SourceURL            string // Source system URL (GitHub base URL or ADO org URL, e.g., https://dev.azure.com/org)
 	DestClient           *github.Client
 	Storage              *storage.Database
 	Logger               *slog.Logger
@@ -177,16 +177,31 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 	if repo.DestinationFullName != nil && *repo.DestinationFullName != "" {
 		parts := strings.Split(*repo.DestinationFullName, "/")
 		if len(parts) >= 2 {
-			return parts[1]
+			return sanitizeRepoName(parts[1])
 		}
 		// If only one part, return it as the repo name
 		if len(parts) == 1 {
-			return parts[0]
+			return sanitizeRepoName(parts[0])
 		}
 	}
 
-	// Default to source repo name
-	return repo.Name()
+	// For ADO repos, extract ONLY the repository name (last part)
+	// ADO full_name format: org/project/repo -> we want just "repo"
+	if repo.ADOProject != nil && *repo.ADOProject != "" {
+		parts := strings.Split(repo.FullName, "/")
+		if len(parts) >= 3 {
+			// Return sanitized repo name (last part)
+			return sanitizeRepoName(parts[len(parts)-1])
+		}
+	}
+
+	// Default to source repo name (works for GitHub org/repo format)
+	return sanitizeRepoName(repo.Name())
+}
+
+// sanitizeRepoName replaces spaces with hyphens for GitHub compatibility
+func sanitizeRepoName(name string) string {
+	return strings.ReplaceAll(name, " ", "-")
 }
 
 // shouldExcludeReleases determines whether to exclude releases during migration
@@ -342,7 +357,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	if e.sourceClient == nil {
 		return fmt.Errorf("source client is required for GitHub-to-GitHub migrations")
 	}
-	
+
 	e.logger.Info("Starting migration",
 		"repo", repo.FullName,
 		"dry_run", dryRun,

@@ -185,7 +185,7 @@ type Repository struct {
 
 	// Complexity scoring (calculated during profiling and stored for performance)
 	ComplexityScore     *int    `json:"complexity_score,omitempty" db:"complexity_score" gorm:"column:complexity_score"` // Calculated during profiling
-	ComplexityBreakdown *string `json:"-" db:"complexity_breakdown" gorm:"column:complexity_breakdown;type:text"`         // JSON breakdown stored as string, marshaled as object via MarshalJSON
+	ComplexityBreakdown *string `json:"-" db:"complexity_breakdown" gorm:"column:complexity_breakdown;type:text"`        // JSON breakdown stored as string, marshaled as object via MarshalJSON
 }
 
 // TableName specifies the table name for Repository model
@@ -215,12 +215,12 @@ func (r *Repository) GetComplexityBreakdown() (*ComplexityBreakdown, error) {
 	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
 		return nil, nil
 	}
-	
+
 	var breakdown ComplexityBreakdown
 	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal complexity breakdown: %w", err)
 	}
-	
+
 	return &breakdown, nil
 }
 
@@ -228,30 +228,30 @@ func (r *Repository) GetComplexityBreakdown() (*ComplexityBreakdown, error) {
 func (r *Repository) MarshalJSON() ([]byte, error) {
 	// Create an alias without MarshalJSON to avoid recursion
 	type Alias Repository
-	
+
 	// Marshal the main struct (complexity_breakdown is excluded via json:"-")
 	data, err := json.Marshal((*Alias)(r))
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// If no complexity breakdown, return as-is
 	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
 		return data, nil
 	}
-	
+
 	// Parse the marshaled JSON
 	var result map[string]interface{}
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	
+
 	// Deserialize the complexity breakdown string and add it as an object
 	var breakdown ComplexityBreakdown
 	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err == nil {
 		result["complexity_breakdown"] = breakdown
 	}
-	
+
 	return json.Marshal(result)
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -26,9 +26,50 @@ export function MigrationReadinessTab({
   
   // Destination configuration
   const [editingDestination, setEditingDestination] = useState(false);
+  
+  // Helper to sanitize names for GitHub (replace spaces with hyphens)
+  const sanitizeForGitHub = (name: string): string => {
+    return name.replace(/\s+/g, '-');
+  };
+  
+  // Calculate the suggested default (ignoring any saved custom destination)
+  const getSuggestedDefault = () => {
+    // If it's an ADO repo (has ado_project), transform to GitHub-compatible format
+    if (repository.ado_project) {
+      // ADO format: org/project/repo -> GitHub format: org-project/repo
+      // Replace spaces with hyphens for GitHub compatibility
+      const parts = repository.full_name.split('/');
+      if (parts.length >= 3) {
+        const [org, project, ...repoParts] = parts;
+        const sanitizedOrg = sanitizeForGitHub(org);
+        const sanitizedProject = sanitizeForGitHub(project);
+        const sanitizedRepo = repoParts.map(sanitizeForGitHub).join('/');
+        return `${sanitizedOrg}-${sanitizedProject}/${sanitizedRepo}`;
+      }
+    }
+    
+    // Default: use full_name as is
+    return repository.full_name;
+  };
+  
+  // Get the current destination (saved custom value or suggested default)
+  const getDefaultDestination = () => {
+    if (repository.destination_full_name) {
+      return repository.destination_full_name;
+    }
+    return getSuggestedDefault();
+  };
+  
   const [destinationFullName, setDestinationFullName] = useState<string>(
-    repository.destination_full_name || repository.full_name
+    getDefaultDestination()
   );
+
+  // Sync destinationFullName with repository data when it changes (but not while editing)
+  useEffect(() => {
+    if (!editingDestination) {
+      setDestinationFullName(getDefaultDestination());
+    }
+  }, [repository.destination_full_name, repository.full_name, repository.ado_project, editingDestination]);
 
   // Migration options state
   const [excludeReleases, setExcludeReleases] = useState(repository.exclude_releases);
@@ -410,7 +451,8 @@ export function MigrationReadinessTab({
                 <button
                   onClick={() => {
                     setEditingDestination(false);
-                    setDestinationFullName(repository.destination_full_name || repository.full_name);
+                    // Reset to the saved/default value using the same logic
+                    setDestinationFullName(getDefaultDestination());
                   }}
                   disabled={updateRepositoryMutation.isPending}
                   className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
@@ -432,8 +474,12 @@ export function MigrationReadinessTab({
               </div>
             )}
             <p className="mt-1 text-xs text-gray-500">
-              {destinationFullName === repository.full_name 
-                ? 'Using same organization as source (default)' 
+              {destinationFullName === getSuggestedDefault()
+                ? repository.ado_project 
+                  ? 'Suggested default preserving ADO org and project (spaces replaced with hyphens)' 
+                  : 'Suggested default using same organization as source'
+                : repository.ado_project
+                  ? 'Using custom destination'
                 : 'Using custom destination organization'}
             </p>
           </div>

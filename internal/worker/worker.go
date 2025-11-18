@@ -199,14 +199,14 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 		delete(w.active, repo.ID)
 		w.mu.Unlock()
 	}()
-	
+
 	// Recover from panics to prevent worker crashes and update repository status
 	defer func() {
 		if r := recover(); r != nil {
 			w.logger.Error("Migration panicked - recovering",
 				"repo", repo.FullName,
 				"panic", r)
-			
+
 			// Update status to failed
 			ctx := context.Background()
 			dryRun := repo.Status == string(models.StatusDryRunInProgress)

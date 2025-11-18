@@ -29,6 +29,9 @@ const (
 
 	formatCSV  = "csv"
 	formatJSON = "json"
+
+	sourceTypeGitHub      = "github"
+	sourceTypeAzureDevOps = "azuredevops"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -48,7 +51,7 @@ type Handler struct {
 	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
 	authConfig       *config.AuthConfig   // Auth configuration for permission checks
 	sourceBaseURL    string               // Source GitHub base URL for permission checks
-	sourceType       string               // Source type: "github" or "azuredevops"
+	sourceType       string               // Source type: sourceTypeGitHub or sourceTypeAzureDevOps
 	adoHandler       *ADOHandler          // ADO-specific handler (set by server if ADO is configured)
 }
 
@@ -831,7 +834,7 @@ func (h *Handler) ResetRepositoryStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"message": "Repository status reset to pending",
+		"message":    "Repository status reset to pending",
 		"repository": repo,
 	})
 }
@@ -2350,6 +2353,8 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetAnalyticsSummary handles GET /api/v1/analytics/summary
+//
+//nolint:gocyclo // Complexity is inherent to analytics aggregation
 func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -2447,7 +2452,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	// For Azure DevOps sources, also get project-level stats
 	var projectStats []*storage.OrganizationStats
-	if h.sourceType == "azuredevops" {
+	if h.sourceType == sourceTypeAzureDevOps {
 		projectStats, err = h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 		if err != nil {
 			h.logger.Error("Failed to get project stats", "error", err)
@@ -2469,7 +2474,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	// Get migration completion stats - use project-level for ADO, org-level for GitHub
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == "azuredevops" {
+	if h.sourceType == sourceTypeAzureDevOps {
 		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	} else {
 		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -2616,7 +2621,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	// Get organization/project breakdowns
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == "azuredevops" {
+	if h.sourceType == sourceTypeAzureDevOps {
 		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	} else {
 		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -2750,7 +2755,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add ADO-specific data if source is Azure DevOps
-	if h.sourceType == "azuredevops" {
+	if h.sourceType == sourceTypeAzureDevOps {
 		// Add project progress separately for clarity
 		report["project_progress"] = migrationCompletionStats
 
@@ -2844,7 +2849,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 
 	// Get organization/project breakdowns
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == "azuredevops" {
+	if h.sourceType == sourceTypeAzureDevOps {
 		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	} else {
 		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -2950,12 +2955,12 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 	output.WriteString("\n")
 
 	// Section 3: Organization/Project Progress
-	if sourceType == "azuredevops" {
+	if sourceType == sourceTypeAzureDevOps {
 		output.WriteString("=== PROJECT PROGRESS ===\n")
 	} else {
 		output.WriteString("=== ORGANIZATION PROGRESS ===\n")
 	}
-	if sourceType == "azuredevops" {
+	if sourceType == sourceTypeAzureDevOps {
 		output.WriteString("Project,Total,Completed,In Progress,Pending,Failed,Completion %\n")
 	} else {
 		output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
@@ -2997,7 +3002,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 	output.WriteString("Feature,Repository Count,Percentage\n")
 	totalRepos := featureStats.TotalRepositories
 	if totalRepos > 0 {
-		if sourceType == "azuredevops" {
+		if sourceType == sourceTypeAzureDevOps {
 			// ADO-specific features
 			output.WriteString(fmt.Sprintf("TFVC Repositories,%d,%.1f%%\n", featureStats.ADOTFVCCount, float64(featureStats.ADOTFVCCount)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Azure Boards,%d,%.1f%%\n", featureStats.ADOHasBoards, float64(featureStats.ADOHasBoards)/float64(totalRepos)*100))
@@ -3033,7 +3038,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 	output.WriteString("\n")
 
 	// ADO Risk Analysis
-	if sourceType == "azuredevops" {
+	if sourceType == sourceTypeAzureDevOps {
 		output.WriteString("=== AZURE DEVOPS MIGRATION RISKS ===\n")
 		output.WriteString("Risk Factor,Repository Count,Percentage\n")
 		if totalRepos > 0 {
@@ -3117,7 +3122,7 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 	}
 
 	// Add ADO-specific data if source is Azure DevOps
-	if sourceType == "azuredevops" {
+	if sourceType == sourceTypeAzureDevOps {
 		report["project_progress"] = orgStats
 		report["ado_risk_analysis"] = map[string]interface{}{
 			"tfvc_repos":                   featureStats.ADOTFVCCount,
@@ -3310,7 +3315,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// For Azure DevOps sources, return aggregated organizations (not individual projects)
-	if h.sourceType == "azuredevops" {
+	if h.sourceType == sourceTypeAzureDevOps {
 		// Get all ADO projects to aggregate by organization
 		projects, err := h.db.GetADOProjects(ctx, "")
 		if err != nil {
@@ -3366,7 +3371,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 						GROUP BY status
 					`, orgName).
 					Scan(&results).Error
-				
+
 				if err != nil {
 					h.logger.Warn("Failed to get status counts for organization", "org", orgName, "error", err)
 					// Fall back to assuming pending if query fails
@@ -3411,7 +3416,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Only applicable for Azure DevOps sources
-	if h.sourceType != "azuredevops" {
+	if h.sourceType != sourceTypeAzureDevOps {
 		h.sendJSON(w, http.StatusOK, []interface{}{})
 		return
 	}
@@ -3454,7 +3459,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 					GROUP BY status
 				`, project.Name).
 				Scan(&results).Error
-			
+
 			if err != nil {
 				h.logger.Warn("Failed to get status counts for project", "project", project.Name, "error", err)
 				// Fallback: assume all pending

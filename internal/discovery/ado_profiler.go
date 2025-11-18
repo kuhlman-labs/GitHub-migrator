@@ -20,14 +20,16 @@ type ADOProfiler struct {
 	client         *azuredevops.Client
 	logger         *slog.Logger
 	sourceProvider interface{} // Will be source.Provider
+	storage        interface{} // Will be *storage.Database
 }
 
 // NewADOProfiler creates a new ADO profiler
-func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger, sourceProvider interface{}) *ADOProfiler {
+func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger, sourceProvider interface{}, storage interface{}) *ADOProfiler {
 	return &ADOProfiler{
 		client:         client,
 		logger:         logger,
 		sourceProvider: sourceProvider,
+		storage:        storage,
 	}
 }
 
@@ -181,6 +183,49 @@ func (p *ADOProfiler) cloneAndAnalyzeGit(ctx context.Context, repo *models.Repos
 		"has_lfs", repo.HasLFS,
 		"has_submodules", repo.HasSubmodules,
 		"has_large_files", repo.HasLargeFiles)
+
+	// Analyze and save dependencies (submodules, etc.)
+	if err := p.analyzeDependencies(ctx, repo, tempDir); err != nil {
+		p.logger.Warn("Failed to analyze dependencies",
+			"repo", repo.FullName,
+			"error", err)
+		// Don't fail the whole profiling if dependency analysis fails
+	}
+
+	return nil
+}
+
+// analyzeDependencies analyzes repository dependencies and saves them to the database
+func (p *ADOProfiler) analyzeDependencies(ctx context.Context, repo *models.Repository, repoPath string) error {
+	p.logger.Debug("Analyzing dependencies", "repo", repo.FullName)
+
+	// Create dependency analyzer
+	depAnalyzer := NewDependencyAnalyzer(p.logger)
+
+	// Analyze dependencies from cloned repo (submodules, workflows, etc.)
+	// Note: Workflow dependencies are GitHub Actions specific, but submodules work for any Git repo
+	dependencies, err := depAnalyzer.AnalyzeDependencies(ctx, repoPath, repo.FullName, repo.ID)
+	if err != nil {
+		return fmt.Errorf("failed to analyze dependencies from repo: %w", err)
+	}
+
+	// Save dependencies to database
+	if len(dependencies) > 0 {
+		// Type assert storage to *storage.Database
+		if db, ok := p.storage.(interface {
+			SaveRepositoryDependencies(ctx context.Context, repoID int64, dependencies []*models.RepositoryDependency) error
+		}); ok {
+			if err := db.SaveRepositoryDependencies(ctx, repo.ID, dependencies); err != nil {
+				return fmt.Errorf("failed to save dependencies: %w", err)
+			}
+
+			p.logger.Info("Dependencies saved",
+				"repo", repo.FullName,
+				"count", len(dependencies))
+		} else {
+			p.logger.Warn("Storage not available for saving dependencies", "repo", repo.FullName)
+		}
+	}
 
 	return nil
 }

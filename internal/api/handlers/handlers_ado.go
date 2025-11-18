@@ -69,6 +69,8 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 					h.logger.Error("ADO organization discovery failed",
 						"organization", req.Organization,
 						"error", err)
+				} else {
+					h.logger.Info("ADO organization discovery completed", "organization", req.Organization)
 				}
 			}()
 		}
@@ -96,6 +98,10 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 							"project", project,
 							"error", err)
 						// Continue with other projects
+					} else {
+						h.logger.Info("ADO project discovery completed",
+							"organization", req.Organization,
+							"project", project)
 					}
 				}
 			}()
@@ -128,8 +134,8 @@ func (h *ADOHandler) ListADOProjects(w http.ResponseWriter, r *http.Request) {
 	// Enrich projects with repository counts and status breakdowns
 	type ProjectWithCount struct {
 		*models.ADOProject
-		RepositoryCount int                `json:"repository_count"`
-		StatusCounts    map[string]int     `json:"status_counts"`
+		RepositoryCount int            `json:"repository_count"`
+		StatusCounts    map[string]int `json:"status_counts"`
 	}
 
 	enrichedProjects := make([]ProjectWithCount, 0, len(projects))
@@ -161,7 +167,7 @@ func (h *ADOHandler) ListADOProjects(w http.ResponseWriter, r *http.Request) {
 					GROUP BY status
 				`, project.Name).
 				Scan(&results).Error
-			
+
 			if err != nil {
 				h.logger.Warn("Failed to get status counts for project", "project", project.Name, "error", err)
 				// Fallback: assume all pending

@@ -25,7 +25,7 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
       params.set('organization', filters.organization);
     }
   }
-  
+
   // Handle project (can be string or array)
   if (filters.project) {
     if (Array.isArray(filters.project)) {

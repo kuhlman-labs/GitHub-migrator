@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"strings"
 
 	"gorm.io/gorm"
@@ -144,11 +143,11 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			"has_self_hosted_runners": "has_self_hosted_runners",
 			"has_release_assets":      "has_release_assets",
 			// Azure DevOps features
-			"ado_is_git":       "ado_is_git",
-			"ado_has_boards":   "ado_has_boards",
+			"ado_is_git":        "ado_is_git",
+			"ado_has_boards":    "ado_has_boards",
 			"ado_has_pipelines": "ado_has_pipelines",
-			"ado_has_ghas":     "ado_has_ghas",
-			"ado_has_wiki":     "ado_has_wiki",
+			"ado_has_ghas":      "ado_has_ghas",
+			"ado_has_wiki":      "ado_has_wiki",
 		}
 
 		for key, column := range featureColumns {
@@ -185,9 +184,9 @@ func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
 		for key, value := range filters {
 			// Support "> 0" syntax for "has any"
 			if value == "> 0" || value == ">0" {
-				db = db.Where(key+" > 0")
+				db = db.Where(key + " > 0")
 			} else if value == "= 0" || value == "=0" || value == "0" {
-				db = db.Where("("+key+" = 0 OR "+key+" IS NULL)")
+				db = db.Where("(" + key + " = 0 OR " + key + " IS NULL)")
 			} else {
 				// Support other operators like ">= 5", etc.
 				db = db.Where(key + " " + value)
@@ -342,73 +341,4 @@ func WithPagination(limit, offset int) func(db *gorm.DB) *gorm.DB {
 		}
 		return db
 	}
-}
-
-// buildComplexityScoreSQL builds the complexity score calculation SQL
-// This should match the calculation in repository.go
-func buildComplexityScoreSQL() string {
-	const (
-		MB100 = 104857600  // 100MB
-		GB1   = 1073741824 // 1GB
-		GB5   = 5368709120 // 5GB
-	)
-
-	// Use TRUE/FALSE for boolean comparisons (works across all databases: SQLite, PostgreSQL, SQL Server)
-	const trueVal = "TRUE"
-
-	return fmt.Sprintf(`(
-		-- Size tier scoring (0-9 points)
-		(CASE 
-			WHEN total_size IS NULL THEN 0
-			WHEN total_size < %d THEN 0
-			WHEN total_size < %d THEN 1
-			WHEN total_size < %d THEN 2
-			ELSE 3
-		END) * 3 +
-		
-		-- High impact features (3-4 points each)
-		CASE WHEN has_large_files = %s THEN 4 ELSE 0 END +
-		CASE WHEN environment_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN secret_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN has_packages = %s THEN 3 ELSE 0 END +
-		CASE WHEN has_self_hosted_runners = %s THEN 3 ELSE 0 END +
-		
-		-- Moderate impact features (2 points each)
-		CASE WHEN variable_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_discussions = %s THEN 2 ELSE 0 END +
-		CASE WHEN release_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_lfs = %s THEN 2 ELSE 0 END +
-		CASE WHEN has_submodules = %s THEN 2 ELSE 0 END +
-		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
-		
-		-- Low impact features (1 point each)
-		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
-		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
-		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
-		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
-		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
-		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
-		CASE WHEN has_codeowners = %s THEN 1 ELSE 0 END +
-		
-		-- Activity-based scoring (0-4 points) using quantiles
-		(CASE 
-			WHEN (
-				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-			) >= 0.75 THEN 4
-			WHEN (
-				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-			) >= 0.25 THEN 2
-			ELSE 0
-		END)
-	)`, MB100, GB1, GB5,
-		trueVal, trueVal, trueVal, // has_large_files, has_packages, has_self_hosted_runners
-		trueVal, trueVal, trueVal, // has_discussions, has_lfs, has_submodules
-		trueVal, trueVal, trueVal, // has_code_scanning, has_dependabot, has_secret_scanning
-		trueVal, trueVal) // has_rulesets, has_codeowners
 }

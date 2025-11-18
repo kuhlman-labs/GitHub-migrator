@@ -80,13 +80,13 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 	// Repository exists - update it
 	// Preserve the ID and migration-related fields
 	repo.ID = existing.ID
-	
+
 	// IMPORTANT: Preserve existing migration state during re-discovery
-	// Re-discovery should only update repository metadata (size, features, etc.), 
+	// Re-discovery should only update repository metadata (size, features, etc.),
 	// not reset migration progress (status, batch_id, priority, etc.)
 	// Only update status if the incoming status is not "pending" (indicating it's an intentional status change)
 	preserveMigrationState := repo.Status == string(models.StatusPending) && existing.Status != string(models.StatusPending)
-	
+
 	// If we're preserving migration state, restore the fields from existing repository
 	if preserveMigrationState {
 		repo.BatchID = existing.BatchID
@@ -203,7 +203,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		"complexity_score":     repo.ComplexityScore,
 		"complexity_breakdown": repo.ComplexityBreakdown,
 	}
-	
+
 	// Only include migration-related updates if we're not preserving migration state
 	if !preserveMigrationState {
 		updateMap["status"] = repo.Status
@@ -329,230 +329,6 @@ func (d *Database) buildStandardGitComplexityFactors() string {
 		-- Submodules
 		(CASE WHEN has_submodules = TRUE THEN 2 ELSE 0 END)
 	)`, MB100, GB1, GB5)
-}
-
-// buildGitHubComplexityScoreSQL generates the SQL expression for calculating GitHub-specific complexity scores
-// This includes activity-based scoring using quantiles from the repository dataset
-func (d *Database) buildGitHubComplexityScoreSQL() string {
-	// GitHub-specific complexity scoring (refined based on GEI migration documentation)
-	// Categories: simple (≤5), medium (6-10), complex (11-17), very_complex (≥18)
-	//
-	// Scoring factors based on remediation difficulty:
-	// HIGH IMPACT (3-4 points):
-	//   - Large files: +4 (requires remediation before migration)
-	//   - Environments: +3 (manual recreation of configs, protection rules)
-	//   - Secrets: +3 (manual recreation, high security sensitivity)
-	//   - Packages: +3 (don't migrate with GEI)
-	//   - Self-hosted runners: +3 (infrastructure reconfiguration)
-	//
-	// MODERATE IMPACT (2 points):
-	//   - Variables: +2 (manual recreation, less sensitive than secrets)
-	//   - Discussions: +2 (don't migrate, community impact)
-	//   - Releases: +2 (GHES 3.5.0+ only, may need manual migration)
-	//   - LFS: +2 (special handling required)
-	//   - Submodules: +2 (dependency management complexity)
-	//   - GitHub Apps: +2 (reconfiguration/reinstallation)
-	//   - ProjectsV2: +2 (don't migrate, must be manually recreated)
-	//
-	// LOW IMPACT (1 point):
-	//   - GHAS features: +1 (code scanning, dependabot, secret scanning - simple toggles)
-	//   - Webhooks: +1 (must re-enable, straightforward)
-	//   - Branch protections: +1 (migrates but may need adjustment)
-	//   - Rulesets: +1 (manual recreation, replaces deprecated tag protections)
-	//   - Public visibility: +1 (transformation considerations)
-	//   - Internal visibility: +1 (transformation considerations)
-	//   - CODEOWNERS: +1 (verification required)
-	//
-	// ACTIVITY TIER (0-4 points):
-	//   Uses quantiles to determine activity level relative to customer's repos
-	//   High-activity repos require significantly more planning and coordination
-	//   - High (top 25%): +4 (many users, extensive coordination, high impact)
-	//   - Moderate (25-75%): +2 (some coordination needed)
-	//   - Low (bottom 25%): +0 (few users, low coordination needs)
-	//   Activity combines: branch_count, commit_count, issue_count, pull_request_count
-
-	const (
-		MB100 = 104857600  // 100MB
-		GB1   = 1073741824 // 1GB
-		GB5   = 5368709120 // 5GB
-	)
-
-	// Use TRUE/FALSE for boolean comparisons (works across all databases: SQLite, PostgreSQL, SQL Server)
-	const trueVal = "TRUE"
-
-	return fmt.Sprintf(`(
-		-- Size tier scoring (0-9 points)
-		(CASE 
-			WHEN total_size IS NULL THEN 0
-			WHEN total_size < %d THEN 0
-			WHEN total_size < %d THEN 1
-			WHEN total_size < %d THEN 2
-			ELSE 3
-		END) * 3 +
-		
-		-- High impact features (3-4 points each)
-		CASE WHEN has_large_files = %s THEN 4 ELSE 0 END +
-		CASE WHEN environment_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN secret_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN has_packages = %s THEN 3 ELSE 0 END +
-		CASE WHEN has_self_hosted_runners = %s THEN 3 ELSE 0 END +
-		
-		-- Moderate impact features (2 points each)
-		CASE WHEN variable_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_discussions = %s THEN 2 ELSE 0 END +
-		CASE WHEN release_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_lfs = %s THEN 2 ELSE 0 END +
-		CASE WHEN has_submodules = %s THEN 2 ELSE 0 END +
-		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_projects = %s THEN 2 ELSE 0 END +
-		
-		-- Low impact features (1 point each)
-		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
-		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
-		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
-		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
-		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
-		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
-		CASE WHEN has_codeowners = %s THEN 1 ELSE 0 END +
-		
-		-- Activity-based scoring (0-4 points) using quantiles
-		-- High-activity repos need significantly more coordination and planning
-		-- Calculate percentile rank for each activity metric and average them
-		(CASE 
-			WHEN (
-				-- Average percentile across activity metrics
-				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-			) >= 0.75 THEN 4
-			WHEN (
-				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-			) >= 0.25 THEN 2
-			ELSE 0
-		END)
-	)`, MB100, GB1, GB5,
-		trueVal, trueVal, trueVal, // has_large_files, has_packages, has_self_hosted_runners
-		trueVal, trueVal, trueVal, // has_discussions, has_lfs, has_submodules
-		trueVal,                   // has_projects
-		trueVal, trueVal, trueVal, // has_code_scanning, has_dependabot, has_secret_scanning
-		trueVal, trueVal) // has_rulesets, has_codeowners
-}
-
-// Individual complexity component SQL builders
-// These match the logic in buildGitHubComplexityScoreSQL() but return individual scores
-
-func buildSizePointsSQL() string {
-	const (
-		MB100 = 104857600  // 100MB
-		GB1   = 1073741824 // 1GB
-		GB5   = 5368709120 // 5GB
-	)
-	return fmt.Sprintf(`(CASE 
-		WHEN total_size IS NULL THEN 0
-		WHEN total_size < %d THEN 0
-		WHEN total_size < %d THEN 1
-		WHEN total_size < %d THEN 2
-		ELSE 3
-	END) * 3`, MB100, GB1, GB5)
-}
-
-func buildLargeFilesPointsSQL() string {
-	return "CASE WHEN has_large_files = TRUE THEN 4 ELSE 0 END"
-}
-
-func buildEnvironmentsPointsSQL() string {
-	return "CASE WHEN environment_count > 0 THEN 3 ELSE 0 END"
-}
-
-func buildSecretsPointsSQL() string {
-	return "CASE WHEN secret_count > 0 THEN 3 ELSE 0 END"
-}
-
-func buildPackagesPointsSQL() string {
-	return "CASE WHEN has_packages = TRUE THEN 3 ELSE 0 END"
-}
-
-func buildRunnersPointsSQL() string {
-	return "CASE WHEN has_self_hosted_runners = TRUE THEN 3 ELSE 0 END"
-}
-
-func buildVariablesPointsSQL() string {
-	return "CASE WHEN variable_count > 0 THEN 2 ELSE 0 END"
-}
-
-func buildDiscussionsPointsSQL() string {
-	return "CASE WHEN has_discussions = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildReleasesPointsSQL() string {
-	return "CASE WHEN release_count > 0 THEN 2 ELSE 0 END"
-}
-
-func buildLFSPointsSQL() string {
-	return "CASE WHEN has_lfs = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildSubmodulesPointsSQL() string {
-	return "CASE WHEN has_submodules = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildAppsPointsSQL() string {
-	return "CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END"
-}
-
-func buildProjectsPointsSQL() string {
-	return "CASE WHEN has_projects = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildSecurityPointsSQL() string {
-	return "CASE WHEN has_code_scanning = TRUE OR has_dependabot = TRUE OR has_secret_scanning = TRUE THEN 1 ELSE 0 END"
-}
-
-func buildWebhooksPointsSQL() string {
-	return "CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END"
-}
-
-func buildBranchProtectionsPointsSQL() string {
-	return "CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END"
-}
-
-func buildRulesetsPointsSQL() string {
-	return "CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END"
-}
-
-func buildPublicVisibilityPointsSQL() string {
-	return "CASE WHEN visibility = 'public' THEN 1 ELSE 0 END"
-}
-
-func buildInternalVisibilityPointsSQL() string {
-	return "CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END"
-}
-
-func buildCodeownersPointsSQL() string {
-	return "CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END"
-}
-
-func buildActivityPointsSQL() string {
-	return `(CASE 
-		WHEN (
-			-- Average percentile across activity metrics
-			(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-		) >= 0.75 THEN 4
-		WHEN (
-			(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-		) >= 0.25 THEN 2
-		ELSE 0
-	END)`
 }
 
 // ListRepositories retrieves repositories with optional filters
@@ -1437,10 +1213,10 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-			SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
 			
 			-- Azure DevOps features
 			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
@@ -1457,7 +1233,7 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
 			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
 			
-			COUNT(*) as total
+		COUNT(*) as total
 	FROM repositories
 `
 
@@ -2114,10 +1890,10 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
 			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
 			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-			SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-			SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-			SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-			SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
 			
 			-- Azure DevOps features
 			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
@@ -2134,7 +1910,7 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
 			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
 			
-			COUNT(*) as total
+		COUNT(*) as total
 	FROM repositories r
 	WHERE 1=1
 		AND status != 'wont_migrate'
