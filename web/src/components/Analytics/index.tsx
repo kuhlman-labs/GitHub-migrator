@@ -114,6 +114,7 @@ export function Analytics() {
         onOrganizationChange={setSelectedOrganization}
         onProjectChange={setSelectedProject}
         onBatchChange={setSelectedBatch}
+        sourceType={sourceType}
       />
 
       {/* Tabs Navigation */}
@@ -311,8 +312,9 @@ export function Analytics() {
           {/* Feature Stats */}
           {analytics.feature_stats && (() => {
             const featureStats = analytics.feature_stats;
-            const features = [
-              // Azure DevOps specific features
+            
+            // Separate features by source type
+            const adoFeatures = [
               { label: "Azure Boards", count: featureStats.ado_has_boards, filter: { ado_has_boards: true } },
               { label: "Azure Pipelines", count: featureStats.ado_has_pipelines, filter: { ado_has_pipelines: true } },
               { label: "YAML Pipelines", count: featureStats.ado_has_yaml_pipelines, filter: { ado_yaml_pipeline_count: '> 0' } },
@@ -322,12 +324,13 @@ export function Analytics() {
               { label: "Pull Requests", count: featureStats.ado_has_pull_requests, filter: { ado_pull_request_count: '> 0' } },
               { label: "Work Items", count: featureStats.ado_has_work_items, filter: { ado_work_item_count: '> 0' } },
               { label: "Branch Policies", count: featureStats.ado_has_branch_policies, filter: { ado_branch_policy_count: '> 0' } },
-              { label: "Wikis", count: featureStats.ado_has_wiki, filter: { ado_has_wiki: true } },
+              { label: "Wikis (ADO)", count: featureStats.ado_has_wiki, filter: { ado_has_wiki: true } },
               { label: "Test Plans", count: featureStats.ado_has_test_plans, filter: { ado_test_plan_count: '> 0' } },
               { label: "Package Feeds", count: featureStats.ado_has_package_feeds, filter: { ado_package_feed_count: '> 0' } },
               { label: "Service Hooks", count: featureStats.ado_has_service_hooks, filter: { ado_service_hook_count: '> 0' } },
-              
-              // GitHub specific features
+            ];
+            
+            const githubFeatures = [
               { label: "Archived", count: featureStats.is_archived, filter: { is_archived: true } },
               { label: "Forked Repositories", count: featureStats.is_fork, filter: { is_fork: true } },
               { label: "LFS", count: featureStats.has_lfs, filter: { has_lfs: true } },
@@ -348,7 +351,11 @@ export function Analytics() {
               { label: "Self-Hosted Runners", count: featureStats.has_self_hosted_runners, filter: { has_self_hosted_runners: true } },
               { label: "Release Assets", count: featureStats.has_release_assets, filter: { has_release_assets: true } },
               { label: "Webhooks", count: featureStats.has_webhooks, filter: { has_webhooks: true } },
-            ].filter(feature => feature.count && feature.count > 0);
+            ];
+            
+            // Select features based on source type
+            const features = (sourceType === 'azuredevops' ? adoFeatures : githubFeatures)
+              .filter(feature => feature.count && feature.count > 0);
 
             const featureDescription = sourceType === 'azuredevops'
               ? 'Azure DevOps features detected across repositories, including Azure Boards, Pipelines, work items, branch policies, and configurations requiring special migration handling.'

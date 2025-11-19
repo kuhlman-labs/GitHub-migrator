@@ -1218,20 +1218,20 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
 			
-			-- Azure DevOps features
-			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
-			SUM(CASE WHEN ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
-			SUM(CASE WHEN ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
-			SUM(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
-			SUM(CASE WHEN ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
-			SUM(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
-			SUM(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
-			SUM(CASE WHEN ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
-			SUM(CASE WHEN ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
-			SUM(CASE WHEN ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
-			SUM(CASE WHEN ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
-			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
-			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+		-- Azure DevOps features (only count for ADO sources)
+		SUM(CASE WHEN source = 'azuredevops' AND ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
 			
 		COUNT(*) as total
 	FROM repositories
@@ -1895,20 +1895,20 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
 			
-			-- Azure DevOps features
-			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
-			SUM(CASE WHEN ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
-			SUM(CASE WHEN ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
-			SUM(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
-			SUM(CASE WHEN ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
-			SUM(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
-			SUM(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
-			SUM(CASE WHEN ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
-			SUM(CASE WHEN ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
-			SUM(CASE WHEN ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
-			SUM(CASE WHEN ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
-			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
-			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+		-- Azure DevOps features (only count for ADO sources)
+		SUM(CASE WHEN source = 'azuredevops' AND ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+		SUM(CASE WHEN source = 'azuredevops' AND ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
 			
 		COUNT(*) as total
 	FROM repositories r

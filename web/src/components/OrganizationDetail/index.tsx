@@ -17,16 +17,18 @@ type FeatureFilter = {
   color: string;
 };
 
-const FEATURE_FILTERS: FeatureFilter[] = [
-  // Azure DevOps specific
+// Azure DevOps specific features
+const ADO_FEATURE_FILTERS: FeatureFilter[] = [
   { key: 'ado_has_boards', label: 'Azure Boards', color: 'purple' },
   { key: 'ado_has_pipelines', label: 'Azure Pipelines', color: 'green' },
   { key: 'ado_has_ghas', label: 'GHAS (ADO)', color: 'green' },
   { key: 'ado_pull_request_count', label: 'Has Pull Requests', color: 'indigo' },
   { key: 'ado_work_item_count', label: 'Has Work Items', color: 'purple' },
   { key: 'ado_branch_policy_count', label: 'Has Branch Policies', color: 'red' },
-  
-  // GitHub specific
+];
+
+// GitHub specific features
+const GITHUB_FEATURE_FILTERS: FeatureFilter[] = [
   { key: 'is_archived', label: 'Archived', color: 'gray' },
   { key: 'is_fork', label: 'Fork', color: 'purple' },
   { key: 'has_lfs', label: 'LFS', color: 'blue' },
@@ -319,40 +321,49 @@ export function OrganizationDetail() {
       </div>
 
       {/* Feature Filters Panel - only for repository view */}
-      {!isADOOrg && showFilters && (
-        <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 mb-6">
-          <h3 className="text-base font-semibold text-gh-text-primary mb-4">Filter by Features</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {FEATURE_FILTERS.map((featureFilter) => {
-              const count = repositories.filter(r => {
-                const value = r[featureFilter.key];
-                return typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
-              }).length;
-              return (
-                <label
-                  key={featureFilter.key}
-                  className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer transition-all ${
-                    selectedFeatures.has(featureFilter.key)
-                      ? 'border-gh-blue bg-gh-info-bg'
-                      : 'border-gh-border-default hover:border-gh-border-hover'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedFeatures.has(featureFilter.key)}
-                    onChange={() => toggleFeature(featureFilter.key)}
-                    className="w-4 h-4 text-gh-blue rounded border-gh-border-default focus:ring-gh-blue"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gh-text-primary truncate">{featureFilter.label}</div>
-                    <div className="text-xs text-gh-text-secondary">{count} repos</div>
-                  </div>
-                </label>
-              );
-            })}
+      {!isADOOrg && showFilters && (() => {
+        // Determine the source type from the repositories
+        const sourceType = repositories.length > 0 ? repositories[0].source : null;
+        const isADOSource = sourceType === 'azuredevops';
+        
+        // Select the appropriate feature filters based on source
+        const featureFilters = isADOSource ? ADO_FEATURE_FILTERS : GITHUB_FEATURE_FILTERS;
+        
+        return (
+          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 mb-6">
+            <h3 className="text-base font-semibold text-gh-text-primary mb-4">Filter by Features</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {featureFilters.map((featureFilter) => {
+                const count = repositories.filter(r => {
+                  const value = r[featureFilter.key];
+                  return typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
+                }).length;
+                return (
+                  <label
+                    key={featureFilter.key}
+                    className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer transition-all ${
+                      selectedFeatures.has(featureFilter.key)
+                        ? 'border-gh-blue bg-gh-info-bg'
+                        : 'border-gh-border-default hover:border-gh-border-hover'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedFeatures.has(featureFilter.key)}
+                      onChange={() => toggleFeature(featureFilter.key)}
+                      className="w-4 h-4 text-gh-blue rounded border-gh-border-default focus:ring-gh-blue"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gh-text-primary truncate">{featureFilter.label}</div>
+                      <div className="text-xs text-gh-text-secondary">{count} repos</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Repository count - only for repository view */}
       {!isADOOrg && (
@@ -370,7 +381,9 @@ export function OrganizationDetail() {
           {selectedFeatures.size > 0 && (
             <div className="flex gap-2 flex-wrap">
               {Array.from(selectedFeatures).map((feature) => {
-                const featureConfig = FEATURE_FILTERS.find(f => f.key === feature);
+                // Look in both filter arrays for the feature config
+                const featureConfig = ADO_FEATURE_FILTERS.find(f => f.key === feature) || 
+                                     GITHUB_FEATURE_FILTERS.find(f => f.key === feature);
                 return (
                   <span
                     key={feature}
@@ -581,15 +594,15 @@ function RepositoryCard({ repository }: { repository: Repository }) {
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
-        {/* Azure DevOps specific badges */}
-        {repository.ado_project && <Badge color="blue">ADO: {repository.ado_project}</Badge>}
-        {repository.ado_is_git === false && <Badge color="red">TFVC</Badge>}
-        {repository.ado_has_boards && <Badge color="purple">Azure Boards</Badge>}
-        {repository.ado_has_pipelines && <Badge color="green">Pipelines</Badge>}
-        {repository.ado_has_ghas && <Badge color="green">GHAS</Badge>}
-        {repository.ado_pull_request_count > 0 && <Badge color="indigo">PRs: {repository.ado_pull_request_count}</Badge>}
-        {repository.ado_work_item_count > 0 && <Badge color="purple">Work Items: {repository.ado_work_item_count}</Badge>}
-        {repository.ado_branch_policy_count > 0 && <Badge color="red">Policies: {repository.ado_branch_policy_count}</Badge>}
+        {/* Azure DevOps specific badges - only show for ADO sources */}
+        {repository.source === 'azuredevops' && repository.ado_project && <Badge color="blue">ADO: {repository.ado_project}</Badge>}
+        {repository.source === 'azuredevops' && repository.ado_is_git === false && <Badge color="red">TFVC</Badge>}
+        {repository.source === 'azuredevops' && repository.ado_has_boards && <Badge color="purple">Azure Boards</Badge>}
+        {repository.source === 'azuredevops' && repository.ado_has_pipelines && <Badge color="green">Pipelines</Badge>}
+        {repository.source === 'azuredevops' && repository.ado_has_ghas && <Badge color="green">GHAS</Badge>}
+        {repository.source === 'azuredevops' && repository.ado_pull_request_count > 0 && <Badge color="indigo">PRs: {repository.ado_pull_request_count}</Badge>}
+        {repository.source === 'azuredevops' && repository.ado_work_item_count > 0 && <Badge color="purple">Work Items: {repository.ado_work_item_count}</Badge>}
+        {repository.source === 'azuredevops' && repository.ado_branch_policy_count > 0 && <Badge color="red">Policies: {repository.ado_branch_policy_count}</Badge>}
         
         {/* GitHub specific badges */}
         {repository.is_archived && <Badge color="gray">Archived</Badge>}
