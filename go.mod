@@ -17,8 +17,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/driver/sqlite v1.5.7
-	gorm.io/driver/sqlserver v1.5.4
-	gorm.io/gorm v1.25.12
+	gorm.io/driver/sqlserver v1.6.3
+	gorm.io/gorm v1.30.0
 )
 
 require (
@@ -36,7 +36,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-sqlite3 v1.14.32 // indirect
-	github.com/microsoft/go-mssqldb v1.7.2 // indirect
+	github.com/microsoft/go-mssqldb v1.8.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/shurcooL/graphql v0.0.0-20230722043721-ed46e5a46466 // indirect
