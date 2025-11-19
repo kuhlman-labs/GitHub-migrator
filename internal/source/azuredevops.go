@@ -58,7 +58,12 @@ func (p *AzureDevOpsProvider) Name() string {
 //
 //nolint:dupl // Similar to GitHub clone but with ADO-specific authentication
 func (p *AzureDevOpsProvider) CloneRepository(ctx context.Context, info RepositoryInfo, destPath string, opts CloneOptions) error {
-	// Get authenticated URL
+	// Validate and sanitize destination path to prevent command injection
+	if err := ValidateDestPath(destPath); err != nil {
+		return fmt.Errorf("invalid destination path: %w", err)
+	}
+
+	// Get authenticated URL with validation
 	authURL, err := p.GetAuthenticatedCloneURL(info.CloneURL)
 	if err != nil {
 		return fmt.Errorf("failed to get authenticated URL: %w", err)
@@ -82,7 +87,7 @@ func (p *AzureDevOpsProvider) CloneRepository(ctx context.Context, info Reposito
 	args = append(args, authURL, destPath)
 
 	// Execute git clone
-	// #nosec G204 -- arguments are constructed from controlled inputs
+	// Arguments are validated and sanitized before use
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	var stderr bytes.Buffer
@@ -110,10 +115,14 @@ func (p *AzureDevOpsProvider) CloneRepository(ctx context.Context, info Reposito
 
 // GetAuthenticatedCloneURL returns a clone URL with embedded credentials
 func (p *AzureDevOpsProvider) GetAuthenticatedCloneURL(cloneURL string) (string, error) {
-	// Parse the clone URL
+	// Validate and parse the clone URL
+	if err := ValidateCloneURL(cloneURL); err != nil {
+		return "", fmt.Errorf("invalid clone URL: %w", err)
+	}
+
 	parsedURL, err := url.Parse(cloneURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid clone URL: %w", err)
+		return "", fmt.Errorf("failed to parse clone URL: %w", err)
 	}
 
 	// Azure DevOps PAT authentication format: https://PAT@dev.azure.com/org/project/_git/repo
@@ -202,6 +211,11 @@ func (p *AzureDevOpsProvider) NormalizeRepoURL(rawURL string) (string, error) {
 
 // fetchLFSObjects fetches Git LFS objects for a cloned repository
 func (p *AzureDevOpsProvider) fetchLFSObjects(ctx context.Context, repoPath string) error {
+	// Validate path before using as working directory
+	if err := ValidateDestPath(repoPath); err != nil {
+		return fmt.Errorf("invalid repository path: %w", err)
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "lfs", "fetch", "--all")
 	cmd.Dir = repoPath
 
@@ -215,4 +229,4 @@ func (p *AzureDevOpsProvider) fetchLFSObjects(ctx context.Context, repoPath stri
 	return nil
 }
 
-// Note: sanitizeGitError is defined in github.go and reused here
+// Note: validateCloneURL, validateDestPath, and sanitizeGitError are defined in github.go and reused here

