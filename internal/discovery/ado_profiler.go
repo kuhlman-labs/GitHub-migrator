@@ -243,7 +243,15 @@ func (p *ADOProfiler) setupTempDir(fullName string) (string, error) {
 	// Use full name with slashes replaced to avoid collisions
 	// For example: "org/project/repo" becomes "org_project_repo"
 	safeName := strings.ReplaceAll(fullName, "/", "_")
+	// Also sanitize other potentially dangerous characters
+	safeName = strings.ReplaceAll(safeName, "..", "_")
+	safeName = strings.ReplaceAll(safeName, "\\", "_")
 	tempDir := filepath.Join(tempBase, safeName)
+
+	// Validate the constructed path
+	if err := source.ValidateRepoPath(tempDir); err != nil {
+		return "", fmt.Errorf("invalid temp directory path: %w", err)
+	}
 
 	// Remove if it already exists
 	if err := os.RemoveAll(tempDir); err != nil {

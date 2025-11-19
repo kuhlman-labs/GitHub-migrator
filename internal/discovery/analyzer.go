@@ -13,6 +13,7 @@ import (
 
 	"github.com/kuhlman-labs/github-migrator/internal/embedded"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
 )
 
 const (
@@ -241,9 +242,15 @@ func (a *Analyzer) runGitSizer(ctx context.Context, repoPath string) (*GitSizerO
 // 3. Check .git/config for [filter "lfs"] configuration
 // 4. Check for LFS pointer files in the repository
 func (a *Analyzer) detectLFS(ctx context.Context, repoPath string) bool {
+	// Validate repository path
+	if err := source.ValidateRepoPath(repoPath); err != nil {
+		a.logger.Warn("Invalid repository path", "path", repoPath, "error", err)
+		return false
+	}
+
 	// Method 1: Check .gitattributes file
 	gitattributesPath := repoPath + "/.gitattributes"
-	// #nosec G304 -- repoPath is a controlled temporary directory path
+	// #nosec G304 -- repoPath is validated via ValidateRepoPath above
 	if data, err := os.ReadFile(gitattributesPath); err == nil {
 		if strings.Contains(string(data), "filter=lfs") {
 			a.logger.Debug("LFS detected via .gitattributes", "repo_path", repoPath)
@@ -267,7 +274,7 @@ func (a *Analyzer) detectLFS(ctx context.Context, repoPath string) bool {
 
 	// Method 3: Check .git/config for LFS filter configuration
 	gitConfigPath := filepath.Join(repoPath, ".git", "config")
-	// #nosec G304 -- repoPath is a controlled temporary directory path
+	// #nosec G304 -- repoPath is validated via ValidateRepoPath above
 	if data, err := os.ReadFile(gitConfigPath); err == nil {
 		if strings.Contains(string(data), "[filter \"lfs\"]") {
 			a.logger.Debug("LFS detected via .git/config", "repo_path", repoPath)
@@ -304,6 +311,12 @@ func (a *Analyzer) detectLFSPointerFiles(ctx context.Context, repoPath string) b
 // 2. Run "git submodule status" command
 // 3. Check .git/config for [submodule sections
 func (a *Analyzer) detectSubmodules(ctx context.Context, repoPath string) bool {
+	// Validate repository path
+	if err := source.ValidateRepoPath(repoPath); err != nil {
+		a.logger.Warn("Invalid repository path", "path", repoPath, "error", err)
+		return false
+	}
+
 	// Method 1: Check for .gitmodules file
 	gitmodulesPath := repoPath + "/.gitmodules"
 	if _, err := os.Stat(gitmodulesPath); err == nil {
@@ -327,7 +340,7 @@ func (a *Analyzer) detectSubmodules(ctx context.Context, repoPath string) bool {
 
 	// Method 3: Check .git/config for submodule configuration
 	gitConfigPath := filepath.Join(repoPath, ".git", "config")
-	// #nosec G304 -- repoPath is a controlled temporary directory path
+	// #nosec G304 -- repoPath is validated via ValidateRepoPath above
 	if data, err := os.ReadFile(gitConfigPath); err == nil {
 		if strings.Contains(string(data), "[submodule") {
 			a.logger.Debug("Submodules detected via .git/config", "repo_path", repoPath)

@@ -192,3 +192,37 @@ func sanitizeGitError(errMsg, token string) string {
 	// Replace token with [REDACTED]
 	return strings.ReplaceAll(errMsg, token, "[REDACTED]")
 }
+
+// ValidateRepoPath validates that a repository path is safe to use for file operations
+// This prevents path traversal attacks and ensures paths are within expected boundaries
+func ValidateRepoPath(repoPath string) error {
+	if repoPath == "" {
+		return fmt.Errorf("repository path cannot be empty")
+	}
+
+	// Clean the path to resolve any . or .. components
+	cleanPath := filepath.Clean(repoPath)
+
+	// Check for dangerous characters
+	dangerousChars := []string{"\n", "\r", "\x00"}
+	for _, char := range dangerousChars {
+		if strings.Contains(repoPath, char) {
+			return fmt.Errorf("path contains dangerous character")
+		}
+	}
+
+	// Ensure the cleaned path doesn't escape using path traversal
+	// Check if the path tries to go up beyond the root
+	if strings.Contains(cleanPath, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path contains directory traversal")
+	}
+
+	// For absolute paths, ensure they are truly absolute and normalized
+	if filepath.IsAbs(repoPath) {
+		if repoPath != cleanPath {
+			return fmt.Errorf("path is not normalized")
+		}
+	}
+
+	return nil
+}
