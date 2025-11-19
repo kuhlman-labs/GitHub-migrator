@@ -18,8 +18,20 @@ updates:
     schedule:
       interval: "weekly"
       
-  # Enable version updates for Terraform
+  # Enable version updates for Terraform - dev environment
   - package-ecosystem: "terraform"
-    directory: "/terraform"
+    directory: "/terraform/environments/dev"
+    schedule:
+      interval: "weekly"
+      
+  # Enable version updates for Terraform - prod environment
+  - package-ecosystem: "terraform"
+    directory: "/terraform/environments/prod"
+    schedule:
+      interval: "weekly"
+      
+  # Enable version updates for Terraform - modules
+  - package-ecosystem: "terraform"
+    directory: "/terraform/modules"
     schedule:
       interval: "weekly"
