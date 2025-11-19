@@ -1485,6 +1485,70 @@ func TestGetFeatureStats(t *testing.T) {
 	}
 }
 
+func TestGetFeatureStats_TFVCOnlyCountsADO(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create GitHub repos with ADOIsGit=false (should NOT be counted as TFVC)
+	ghRepo1 := createTestRepository("github-org/repo1")
+	ghRepo1.Source = "ghes"
+	ghRepo1.ADOIsGit = false // This should NOT be counted as TFVC
+	if err := db.SaveRepository(ctx, ghRepo1); err != nil {
+		t.Fatalf("Failed to save GitHub repo: %v", err)
+	}
+
+	ghRepo2 := createTestRepository("github-org/repo2")
+	ghRepo2.Source = "ghes"
+	ghRepo2.ADOIsGit = false // This should NOT be counted as TFVC
+	if err := db.SaveRepository(ctx, ghRepo2); err != nil {
+		t.Fatalf("Failed to save GitHub repo: %v", err)
+	}
+
+	// Create ADO repos with ADOIsGit=false (SHOULD be counted as TFVC)
+	adoRepo1 := createTestRepository("ado-org/project/tfvc-repo1")
+	adoRepo1.Source = "azuredevops"
+	adoRepo1.ADOIsGit = false // This SHOULD be counted as TFVC
+	adoRepo1.ADOHasPipelines = true
+	if err := db.SaveRepository(ctx, adoRepo1); err != nil {
+		t.Fatalf("Failed to save ADO TFVC repo: %v", err)
+	}
+
+	adoRepo2 := createTestRepository("ado-org/project/git-repo")
+	adoRepo2.Source = "azuredevops"
+	adoRepo2.ADOIsGit = true // This should NOT be counted as TFVC
+	adoRepo2.ADOHasBoards = true
+	if err := db.SaveRepository(ctx, adoRepo2); err != nil {
+		t.Fatalf("Failed to save ADO Git repo: %v", err)
+	}
+
+	// Get feature stats
+	stats, err := db.GetFeatureStats(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get feature stats: %v", err)
+	}
+
+	// Verify total repositories
+	if stats.TotalRepositories != 4 {
+		t.Errorf("Expected 4 total repositories, got %d", stats.TotalRepositories)
+	}
+
+	// Verify TFVC count only includes ADO repos
+	if stats.ADOTFVCCount != 1 {
+		t.Errorf("Expected 1 TFVC repository (ADO only), got %d", stats.ADOTFVCCount)
+	}
+
+	// Verify other ADO features are also filtered by source
+	if stats.ADOHasPipelines != 1 {
+		t.Errorf("Expected 1 repo with ADO Pipelines, got %d", stats.ADOHasPipelines)
+	}
+
+	if stats.ADOHasBoards != 1 {
+		t.Errorf("Expected 1 repo with ADO Boards, got %d", stats.ADOHasBoards)
+	}
+}
+
 func createRepoWithHistory(t *testing.T, db *Database, ctx context.Context, fullName, status string) {
 	now := time.Now()
 	repo := createTestRepository(fullName)
