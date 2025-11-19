@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os/exec"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	ghapi "github.com/google/go-github/v75/github"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
 )
 
 // Profiler profiles GitHub-specific features via API
@@ -676,21 +678,29 @@ func (p *Profiler) profileProjectContent(ctx context.Context, org, name string, 
 // checkWikiHasContent checks if a wiki repository exists and has content
 // Uses git ls-remote which is fast and doesn't require cloning
 func (p *Profiler) checkWikiHasContent(ctx context.Context, wikiURL string) (bool, error) {
+	// Validate the wiki URL to prevent command injection
+	if err := source.ValidateCloneURL(wikiURL); err != nil {
+		return false, fmt.Errorf("invalid wiki URL: %w", err)
+	}
+
 	// Add authentication to the URL if we have a token
 	// Format: https://TOKEN@github.com/org/repo.wiki.git
 	authenticatedURL := wikiURL
 	if p.token != "" {
 		// Parse and inject the token into the URL
-		if strings.HasPrefix(wikiURL, "https://") {
-			authenticatedURL = strings.Replace(wikiURL, "https://", fmt.Sprintf("https://%s@", p.token), 1)
-		} else if strings.HasPrefix(wikiURL, "http://") {
-			authenticatedURL = strings.Replace(wikiURL, "http://", fmt.Sprintf("http://%s@", p.token), 1)
+		parsedURL, err := url.Parse(wikiURL)
+		if err != nil {
+			return false, fmt.Errorf("failed to parse wiki URL: %w", err)
 		}
+
+		// Use url.User to properly encode the token
+		parsedURL.User = url.User(p.token)
+		authenticatedURL = parsedURL.String()
 	}
 
 	// Use git ls-remote to check if the wiki repo exists and has refs
 	// If the wiki has been initialized, it will have at least a master/main branch
-	// #nosec G204 -- wikiURL is constructed from controlled repository data
+	// #nosec G204 -- URL is validated via ValidateCloneURL and properly constructed using url.Parse
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", authenticatedURL)
 
 	var stdout, stderr bytes.Buffer

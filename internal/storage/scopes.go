@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -181,15 +183,49 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 // WithADOCountFilters filters by Azure DevOps count-based fields
 func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
+		// Whitelist of allowed column names to prevent SQL injection
+		allowedColumns := map[string]bool{
+			"ado_pull_request_count":     true,
+			"ado_work_item_count":        true,
+			"ado_branch_policy_count":    true,
+			"ado_yaml_pipeline_count":    true,
+			"ado_classic_pipeline_count": true,
+			"ado_test_plan_count":        true,
+			"ado_package_feed_count":     true,
+			"ado_service_hook_count":     true,
+		}
+
 		for key, value := range filters {
-			// Support "> 0" syntax for "has any"
-			if value == "> 0" || value == ">0" {
-				db = db.Where(key + " > 0")
-			} else if value == "= 0" || value == "=0" || value == "0" {
-				db = db.Where("(" + key + " = 0 OR " + key + " IS NULL)")
-			} else {
-				// Support other operators like ">= 5", etc.
-				db = db.Where(key + " " + value)
+			// Validate that key is in the whitelist
+			if !allowedColumns[key] {
+				// Skip invalid column names silently to prevent information leakage
+				continue
+			}
+
+			// Parse and validate the value to extract operator and number safely
+			operator, numValue, err := parseFilterValue(value)
+			if err != nil {
+				// Skip invalid values silently
+				continue
+			}
+
+			// Use parameterized queries to prevent SQL injection
+			switch operator {
+			case ">":
+				db = db.Where(key+" > ?", numValue)
+			case ">=":
+				db = db.Where(key+" >= ?", numValue)
+			case "<":
+				db = db.Where(key+" < ?", numValue)
+			case "<=":
+				db = db.Where(key+" <= ?", numValue)
+			case "=":
+				if numValue == 0 {
+					// Handle zero specially to include NULL values
+					db = db.Where("("+key+" = 0 OR "+key+" IS NULL)", numValue)
+				} else {
+					db = db.Where(key+" = ?", numValue)
+				}
 			}
 		}
 		return db
@@ -341,4 +377,56 @@ func WithPagination(limit, offset int) func(db *gorm.DB) *gorm.DB {
 		}
 		return db
 	}
+}
+
+// parseFilterValue safely parses a filter value like "> 0", ">=5", "= 0" into operator and numeric value
+// Returns the operator, numeric value, and any error
+func parseFilterValue(value string) (string, int, error) {
+	value = strings.TrimSpace(value)
+
+	// Handle common patterns
+	if value == "> 0" || value == ">0" {
+		return ">", 0, nil
+	}
+	if value == "= 0" || value == "=0" || value == "0" {
+		return "=", 0, nil
+	}
+
+	// Parse operator from the beginning
+	var operator string
+	var numStr string
+
+	if strings.HasPrefix(value, ">=") {
+		operator = ">="
+		numStr = strings.TrimSpace(value[2:])
+	} else if strings.HasPrefix(value, "<=") {
+		operator = "<="
+		numStr = strings.TrimSpace(value[2:])
+	} else if strings.HasPrefix(value, ">") {
+		operator = ">"
+		numStr = strings.TrimSpace(value[1:])
+	} else if strings.HasPrefix(value, "<") {
+		operator = "<"
+		numStr = strings.TrimSpace(value[1:])
+	} else if strings.HasPrefix(value, "=") {
+		operator = "="
+		numStr = strings.TrimSpace(value[1:])
+	} else {
+		// No operator, assume equality
+		operator = "="
+		numStr = value
+	}
+
+	// Parse the numeric value
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid numeric value: %s", numStr)
+	}
+
+	// Validate the numeric value is non-negative (count fields can't be negative)
+	if num < 0 {
+		return "", 0, fmt.Errorf("negative values not allowed")
+	}
+
+	return operator, num, nil
 }

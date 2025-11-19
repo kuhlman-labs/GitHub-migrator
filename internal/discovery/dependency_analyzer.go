@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,6 +46,11 @@ type WorkflowDependency struct {
 
 // ExtractSubmodules parses .gitmodules file to extract submodule information
 func (da *DependencyAnalyzer) ExtractSubmodules(ctx context.Context, repoPath string) ([]SubmoduleInfo, error) {
+	// Validate repository path to prevent path traversal
+	if err := source.ValidateRepoPath(repoPath); err != nil {
+		return nil, fmt.Errorf("invalid repository path: %w", err)
+	}
+
 	gitmodulesPath := filepath.Join(repoPath, ".gitmodules")
 
 	// Check if .gitmodules exists
@@ -52,7 +58,7 @@ func (da *DependencyAnalyzer) ExtractSubmodules(ctx context.Context, repoPath st
 		return nil, nil
 	}
 
-	// #nosec G304 -- repoPath is a controlled temporary directory path
+	// #nosec G304 -- repoPath is validated via ValidateRepoPath above
 	content, err := os.ReadFile(gitmodulesPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read .gitmodules: %w", err)
@@ -133,6 +139,11 @@ func ExtractGitHubRepoFromURL(url string) (string, error) {
 
 // ExtractWorkflowDependencies scans GitHub Actions workflow files for reusable workflow dependencies
 func (da *DependencyAnalyzer) ExtractWorkflowDependencies(ctx context.Context, repoPath string) ([]WorkflowDependency, error) {
+	// Validate repository path to prevent path traversal
+	if err := source.ValidateRepoPath(repoPath); err != nil {
+		return nil, fmt.Errorf("invalid repository path: %w", err)
+	}
+
 	workflowsDir := filepath.Join(repoPath, ".github", "workflows")
 
 	// Check if workflows directory exists
@@ -142,7 +153,7 @@ func (da *DependencyAnalyzer) ExtractWorkflowDependencies(ctx context.Context, r
 
 	var dependencies []WorkflowDependency
 
-	// Read all workflow files
+	// Read all workflow files - path is validated and constructed safely
 	files, err := os.ReadDir(workflowsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workflows directory: %w", err)
@@ -196,7 +207,12 @@ func (da *DependencyAnalyzer) parseWorkflowFile(filePath, fileName string) ([]Wo
 
 // readWorkflowFile reads a workflow file from disk
 func (da *DependencyAnalyzer) readWorkflowFile(filePath string) ([]byte, error) {
-	// #nosec G304 -- repoPath is a controlled temporary directory path
+	// Validate file path to prevent path traversal
+	if err := source.ValidateRepoPath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+
+	// #nosec G304 -- filePath is validated via ValidateRepoPath above
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workflow file: %w", err)

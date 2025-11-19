@@ -132,17 +132,16 @@ func TestNewDestinationProviderFromConfig(t *testing.T) {
 			expectedType: ProviderGitHub,
 		},
 		{
-			name: "GitLab destination",
+			name: "GitLab destination (not supported)",
 			cfg: config.DestinationConfig{
 				Type:    "gitlab",
 				BaseURL: "https://gitlab.com",
 				Token:   "test_token",
 			},
-			expectError:  false,
-			expectedType: ProviderGitLab,
+			expectError: true,
 		},
 		{
-			name: "Azure DevOps destination (not implemented)",
+			name: "Azure DevOps destination (not supported)",
 			cfg: config.DestinationConfig{
 				Type:  "azuredevops",
 				Token: "test_token",

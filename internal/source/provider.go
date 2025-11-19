@@ -3,6 +3,10 @@ package source
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
+	"path/filepath"
+	"strings"
 )
 
 // ErrAuthenticationFailed indicates authentication to the source system failed
@@ -115,3 +119,110 @@ const (
 	// FeatureDiscussions indicates discussions/forums support
 	FeatureDiscussions Feature = "discussions"
 )
+
+// ValidateCloneURL validates that a clone URL is safe to use in git commands
+// This prevents command injection attacks by ensuring the URL is well-formed
+// and doesn't contain dangerous characters.
+func ValidateCloneURL(cloneURL string) error {
+	if cloneURL == "" {
+		return fmt.Errorf("clone URL cannot be empty")
+	}
+
+	// Parse URL to ensure it's valid
+	parsedURL, err := url.Parse(cloneURL)
+	if err != nil {
+		return fmt.Errorf("malformed URL: %w", err)
+	}
+
+	// Only allow https and ssh protocols for git operations
+	scheme := strings.ToLower(parsedURL.Scheme)
+	if scheme != "https" && scheme != "http" && scheme != "ssh" && scheme != "git" {
+		return fmt.Errorf("unsupported URL scheme: %s (only https, http, ssh, git allowed)", scheme)
+	}
+
+	// Ensure the URL has a host
+	if parsedURL.Host == "" {
+		return fmt.Errorf("URL must have a host")
+	}
+
+	// Check for potentially dangerous characters that could be used for injection
+	// Even though we use exec.CommandContext with separate args, validate the URL
+	dangerousChars := []string{"\n", "\r", "\x00", "`", "$", ";", "|", "&", "<", ">"}
+	for _, char := range dangerousChars {
+		if strings.Contains(cloneURL, char) {
+			return fmt.Errorf("URL contains potentially dangerous character")
+		}
+	}
+
+	return nil
+}
+
+// ValidateDestPath validates that a destination path is safe to use in git commands
+// This prevents command injection and directory traversal attacks.
+func ValidateDestPath(destPath string) error {
+	if destPath == "" {
+		return fmt.Errorf("destination path cannot be empty")
+	}
+
+	// Clean the path to resolve any . or .. components
+	cleanPath := filepath.Clean(destPath)
+
+	// Check for null bytes and other dangerous characters
+	dangerousChars := []string{"\n", "\r", "\x00", "`", "$", ";", "|", "&", "<", ">"}
+	for _, char := range dangerousChars {
+		if strings.Contains(destPath, char) {
+			return fmt.Errorf("path contains potentially dangerous character")
+		}
+	}
+
+	// Ensure the path doesn't try to escape using absolute path tricks
+	// This is a safety check to prevent directory traversal
+	if strings.HasPrefix(cleanPath, "..") {
+		return fmt.Errorf("path cannot start with '..'")
+	}
+
+	return nil
+}
+
+// sanitizeGitError removes token from error messages to prevent credential leakage
+func sanitizeGitError(errMsg, token string) string {
+	if token == "" {
+		return errMsg
+	}
+	// Replace token with [REDACTED]
+	return strings.ReplaceAll(errMsg, token, "[REDACTED]")
+}
+
+// ValidateRepoPath validates that a repository path is safe to use for file operations
+// This prevents path traversal attacks and ensures paths are within expected boundaries
+func ValidateRepoPath(repoPath string) error {
+	if repoPath == "" {
+		return fmt.Errorf("repository path cannot be empty")
+	}
+
+	// Clean the path to resolve any . or .. components
+	cleanPath := filepath.Clean(repoPath)
+
+	// Check for dangerous characters
+	dangerousChars := []string{"\n", "\r", "\x00"}
+	for _, char := range dangerousChars {
+		if strings.Contains(repoPath, char) {
+			return fmt.Errorf("path contains dangerous character")
+		}
+	}
+
+	// Ensure the cleaned path doesn't escape using path traversal
+	// Check if the path tries to go up beyond the root
+	if strings.Contains(cleanPath, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path contains directory traversal")
+	}
+
+	// For absolute paths, ensure they are truly absolute and normalized
+	if filepath.IsAbs(repoPath) {
+		if repoPath != cleanPath {
+			return fmt.Errorf("path is not normalized")
+		}
+	}
+
+	return nil
+}
