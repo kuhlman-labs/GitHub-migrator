@@ -76,7 +76,7 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
         )}
         
         {/* Azure DevOps Specific Properties */}
-        {repository.ado_project && (
+        {repository.source === 'azuredevops' && repository.ado_project && (
           <>
             <ProfileItem label="ADO Project" value={repository.ado_project} />
             <ProfileItem label="Repository Type" value={repository.ado_is_git ? "Git" : "TFVC (Requires Conversion)"} />

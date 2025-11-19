@@ -8,6 +8,7 @@ interface FilterBarProps {
   onOrganizationChange: (org: string) => void;
   onProjectChange: (project: string) => void;
   onBatchChange: (batch: string) => void;
+  sourceType?: 'github' | 'azuredevops';
 }
 
 export function FilterBar({
@@ -17,6 +18,7 @@ export function FilterBar({
   onOrganizationChange,
   onProjectChange,
   onBatchChange,
+  sourceType = 'github',
 }: FilterBarProps) {
   const { data: organizations } = useOrganizations();
   const { data: projects } = useProjects();
@@ -65,24 +67,27 @@ export function FilterBar({
           </select>
         </div>
 
-        <div className="flex-1 min-w-[200px]">
-          <label htmlFor="project-filter" className="block text-sm font-semibold text-gh-text-primary mb-1">
-            Project
-          </label>
-          <select
-            id="project-filter"
-            value={selectedProject}
-            onChange={(e) => onProjectChange(e.target.value)}
-            className="block w-full rounded-md border-gh-border-default text-sm px-3 py-1.5"
-          >
-            <option value="">All Projects</option>
-            {projects?.map((project) => (
-              <option key={project.project} value={project.project}>
-                {project.project} ({project.total_repos} repos)
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Only show Project filter for Azure DevOps sources */}
+        {sourceType === 'azuredevops' && (
+          <div className="flex-1 min-w-[200px]">
+            <label htmlFor="project-filter" className="block text-sm font-semibold text-gh-text-primary mb-1">
+              Project
+            </label>
+            <select
+              id="project-filter"
+              value={selectedProject}
+              onChange={(e) => onProjectChange(e.target.value)}
+              className="block w-full rounded-md border-gh-border-default text-sm px-3 py-1.5"
+            >
+              <option value="">All Projects</option>
+              {projects?.map((project) => (
+                <option key={project.project} value={project.project}>
+                  {project.project} ({project.total_repos} repos)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex-1 min-w-[200px]">
           <label htmlFor="batch-filter" className="block text-sm font-semibold text-gh-text-primary mb-1">
