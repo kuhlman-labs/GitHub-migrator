@@ -30,23 +30,13 @@ func NewProviderFromConfig(cfg config.SourceConfig) (Provider, error) {
 }
 
 // NewDestinationProviderFromConfig creates a destination provider based on configuration
-// This is similar to NewProviderFromConfig but uses DestinationConfig
+// Currently only GitHub is supported as a destination provider
 func NewDestinationProviderFromConfig(cfg config.DestinationConfig) (Provider, error) {
 	providerType := strings.ToLower(cfg.Type)
 
-	switch providerType {
-	case "github":
-		return NewGitHubProvider(cfg.BaseURL, cfg.Token)
-
-	case "gitlab":
-		return NewGitLabProvider(cfg.BaseURL, cfg.Token)
-
-	case "azuredevops", "ado":
-		// For destination, we might not have organization in the config
-		// This needs to be handled differently for ADO
-		return nil, fmt.Errorf("Azure DevOps as destination not yet implemented")
-
-	default:
-		return nil, fmt.Errorf("unsupported provider type: %s (supported: github, gitlab)", cfg.Type)
+	if providerType != "github" {
+		return nil, fmt.Errorf("unsupported destination provider type: %s (only github is supported as destination)", cfg.Type)
 	}
+
+	return NewGitHubProvider(cfg.BaseURL, cfg.Token)
 }
