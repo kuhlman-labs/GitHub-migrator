@@ -32,6 +32,11 @@ updates:
       
   # Enable version updates for Terraform - modules
   - package-ecosystem: "terraform"
-    directory: "/terraform/modules"
+    directory: "/terraform/modules/app-service"
+    schedule:
+      interval: "weekly"
+      
+  - package-ecosystem: "terraform"
+    directory: "/terraform/modules/postgresql"
     schedule:
       interval: "weekly"
