@@ -91,7 +91,7 @@ Extracted binaries are stored in:
 To clean up:
 
 ```go
-import "github.com/brettkuhlman/github-migrator/internal/embedded"
+import "github.com/kuhlman-labs/github-migrator/internal/embedded"
 
 // Call during application shutdown
 embedded.CleanupExtractedBinaries()

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 // TestSaveRepository_SetsIDOnInsert verifies that SaveRepository sets the ID after INSERT

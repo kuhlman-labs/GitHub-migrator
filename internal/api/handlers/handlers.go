@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/auth"
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/discovery"
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/source"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	ghapi "github.com/google/go-github/v75/github"
+	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/discovery"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 const (
@@ -28,6 +29,9 @@ const (
 
 	formatCSV  = "csv"
 	formatJSON = "json"
+
+	sourceTypeGitHub      = "github"
+	sourceTypeAzureDevOps = "azuredevops"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -47,6 +51,13 @@ type Handler struct {
 	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
 	authConfig       *config.AuthConfig   // Auth configuration for permission checks
 	sourceBaseURL    string               // Source GitHub base URL for permission checks
+	sourceType       string               // Source type: sourceTypeGitHub or sourceTypeAzureDevOps
+	adoHandler       *ADOHandler          // ADO-specific handler (set by server if ADO is configured)
+}
+
+// SetADOHandler sets the ADO handler reference for delegating ADO operations
+func (h *Handler) SetADOHandler(adoHandler *ADOHandler) {
+	h.adoHandler = adoHandler
 }
 
 // NewHandler creates a new Handler instance
@@ -54,7 +65,7 @@ type Handler struct {
 // sourceBaseConfig is used for per-org client creation in enterprise discovery (can be nil for PAT-only mode)
 // authConfig is used for permission checks (can be nil if auth is disabled)
 // sourceBaseURL is the source GitHub base URL for permission checks
-func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig, authConfig *config.AuthConfig, sourceBaseURL string) *Handler {
+func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig, authConfig *config.AuthConfig, sourceBaseURL string, sourceType string) *Handler {
 	var collector *discovery.Collector
 	// Use API client for discovery operations (will use App client if available, otherwise PAT)
 	if sourceDualClient != nil && sourceProvider != nil {
@@ -76,6 +87,7 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 		sourceBaseConfig: sourceBaseConfig,
 		authConfig:       authConfig,
 		sourceBaseURL:    sourceBaseURL,
+		sourceType:       sourceType,
 	}
 }
 
@@ -85,6 +97,28 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		"status": "healthy",
 		"time":   time.Now().Format(time.RFC3339),
 	})
+}
+
+// GetConfig handles GET /api/v1/config
+// Returns application-level configuration for the frontend
+func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	// Default to github if not set
+	sourceType := h.sourceType
+	if sourceType == "" {
+		sourceType = "github"
+	}
+
+	response := map[string]interface{}{
+		"source_type":  sourceType,
+		"auth_enabled": h.authConfig != nil && h.authConfig.Enabled,
+	}
+
+	// Add Entra ID enabled flag if auth is enabled
+	if h.authConfig != nil && h.authConfig.Enabled {
+		response["entraid_enabled"] = h.authConfig.EntraIDEnabled
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // getClientForOrg returns the appropriate GitHub client for an organization
@@ -271,6 +305,15 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Project filter (for Azure DevOps - can be comma-separated list)
+	if project := r.URL.Query().Get("project"); project != "" {
+		if strings.Contains(project, ",") {
+			filters["ado_project"] = strings.Split(project, ",")
+		} else {
+			filters["ado_project"] = project
+		}
+	}
+
 	// Size range filters (in bytes)
 	if minSizeStr := r.URL.Query().Get("min_size"); minSizeStr != "" {
 		if minSize, err := strconv.ParseInt(minSizeStr, 10, 64); err == nil {
@@ -337,6 +380,47 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 	if hasWebhooks := r.URL.Query().Get("has_webhooks"); hasWebhooks != "" {
 		filters["has_webhooks"] = hasWebhooks == boolTrue
+	}
+
+	// Azure DevOps feature filters
+	if adoIsGit := r.URL.Query().Get("ado_is_git"); adoIsGit != "" {
+		filters["ado_is_git"] = adoIsGit == boolTrue
+	}
+	if adoHasBoards := r.URL.Query().Get("ado_has_boards"); adoHasBoards != "" {
+		filters["ado_has_boards"] = adoHasBoards == boolTrue
+	}
+	if adoHasPipelines := r.URL.Query().Get("ado_has_pipelines"); adoHasPipelines != "" {
+		filters["ado_has_pipelines"] = adoHasPipelines == boolTrue
+	}
+	if adoHasGHAS := r.URL.Query().Get("ado_has_ghas"); adoHasGHAS != "" {
+		filters["ado_has_ghas"] = adoHasGHAS == boolTrue
+	}
+	if adoPullRequestCount := r.URL.Query().Get("ado_pull_request_count"); adoPullRequestCount != "" {
+		filters["ado_pull_request_count"] = adoPullRequestCount
+	}
+	if adoWorkItemCount := r.URL.Query().Get("ado_work_item_count"); adoWorkItemCount != "" {
+		filters["ado_work_item_count"] = adoWorkItemCount
+	}
+	if adoBranchPolicyCount := r.URL.Query().Get("ado_branch_policy_count"); adoBranchPolicyCount != "" {
+		filters["ado_branch_policy_count"] = adoBranchPolicyCount
+	}
+	if adoYAMLPipelineCount := r.URL.Query().Get("ado_yaml_pipeline_count"); adoYAMLPipelineCount != "" {
+		filters["ado_yaml_pipeline_count"] = adoYAMLPipelineCount
+	}
+	if adoClassicPipelineCount := r.URL.Query().Get("ado_classic_pipeline_count"); adoClassicPipelineCount != "" {
+		filters["ado_classic_pipeline_count"] = adoClassicPipelineCount
+	}
+	if adoHasWiki := r.URL.Query().Get("ado_has_wiki"); adoHasWiki != "" {
+		filters["ado_has_wiki"] = adoHasWiki == boolTrue
+	}
+	if adoTestPlanCount := r.URL.Query().Get("ado_test_plan_count"); adoTestPlanCount != "" {
+		filters["ado_test_plan_count"] = adoTestPlanCount
+	}
+	if adoPackageFeedCount := r.URL.Query().Get("ado_package_feed_count"); adoPackageFeedCount != "" {
+		filters["ado_package_feed_count"] = adoPackageFeedCount
+	}
+	if adoServiceHookCount := r.URL.Query().Get("ado_service_hook_count"); adoServiceHookCount != "" {
+		filters["ado_service_hook_count"] = adoServiceHookCount
 	}
 
 	// Visibility filter
@@ -434,7 +518,7 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Parse the action from the path
-	// Possible actions: rediscover, mark-remediated, unlock, rollback, mark-wont-migrate
+	// Possible actions: rediscover, mark-remediated, unlock, rollback, mark-wont-migrate, reset
 	var action string
 	var fullName string
 
@@ -453,6 +537,9 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 	} else if strings.HasSuffix(fullPath, "/mark-wont-migrate") {
 		action = "mark-wont-migrate"
 		fullName = strings.TrimSuffix(fullPath, "/mark-wont-migrate")
+	} else if strings.HasSuffix(fullPath, "/reset") {
+		action = "reset"
+		fullName = strings.TrimSuffix(fullPath, "/reset")
 	} else {
 		h.sendError(w, http.StatusNotFound, "Unknown repository action")
 		return
@@ -482,6 +569,8 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 		h.RollbackRepository(w, r)
 	case "mark-wont-migrate":
 		h.MarkRepositoryWontMigrate(w, r)
+	case "reset":
+		h.ResetRepositoryStatus(w, r)
 	default:
 		h.sendError(w, http.StatusNotFound, "Unknown repository action")
 	}
@@ -694,40 +783,145 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, repo)
 }
 
-// RediscoverRepository handles POST /api/v1/repositories/{fullName}/rediscover
-func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
-	// Get fullName from context (if routed via HandleRepositoryAction) or path value
-	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
-	if !ok || fullName == "" {
-		fullName = r.PathValue("fullName")
-	}
-	if fullName == "" {
+// ResetRepositoryStatus handles POST /api/v1/repositories/{fullName}/reset
+// Resets a stuck repository back to pending status
+func (h *Handler) ResetRepositoryStatus(w http.ResponseWriter, r *http.Request) {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
 		h.sendError(w, http.StatusBadRequest, "Repository name is required")
 		return
 	}
 
-	// URL decode the fullName
-	decodedFullName, err := url.QueryUnescape(fullName)
-	if err != nil {
-		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
-		decodedFullName = fullName
-	}
-
-	if h.collector == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
-		return
-	}
-
 	ctx := r.Context()
-
-	// Check if repository exists
 	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
 		h.sendError(w, http.StatusNotFound, "Repository not found")
 		return
 	}
 
-	// Extract org and repo name from decodedFullName
+	// Only allow resetting repositories in "stuck" states
+	allowedStates := []string{
+		string(models.StatusDryRunInProgress),
+		string(models.StatusMigratingContent),
+		string(models.StatusPreMigration),
+		string(models.StatusArchiveGenerating),
+		string(models.StatusPostMigration),
+	}
+
+	allowed := false
+	for _, state := range allowedStates {
+		if repo.Status == state {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		h.sendError(w, http.StatusBadRequest, fmt.Sprintf("Cannot reset repository in status '%s'. Only in-progress states can be reset.", repo.Status))
+		return
+	}
+
+	h.logger.Info("Resetting repository status",
+		"repo", repo.FullName,
+		"old_status", repo.Status)
+
+	// Reset to pending
+	repo.Status = string(models.StatusPending)
+	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+		h.logger.Error("Failed to reset repository status", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to reset repository status")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    "Repository status reset to pending",
+		"repository": repo,
+	})
+}
+
+// RediscoverRepository handles POST /api/v1/repositories/{fullName}/rediscover
+func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	ctx := r.Context()
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Delegate to appropriate handler based on repository type
+	if h.isADORepository(repo) {
+		h.rediscoverADORepository(w, ctx, repo, decodedFullName)
+		return
+	}
+
+	h.rediscoverGitHubRepository(w, ctx, decodedFullName)
+}
+
+// getDecodedRepoName extracts and decodes the repository name from the request
+func (h *Handler) getDecodedRepoName(r *http.Request) (string, error) {
+	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
+	if !ok || fullName == "" {
+		fullName = r.PathValue("fullName")
+	}
+	if fullName == "" {
+		return "", fmt.Errorf("repository name is required")
+	}
+
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		return fullName, nil
+	}
+
+	return decodedFullName, nil
+}
+
+// isADORepository checks if a repository is from Azure DevOps
+func (h *Handler) isADORepository(repo *models.Repository) bool {
+	return repo.ADOProject != nil && *repo.ADOProject != ""
+}
+
+// rediscoverADORepository handles rediscovery of Azure DevOps repositories
+func (h *Handler) rediscoverADORepository(w http.ResponseWriter, ctx context.Context, repo *models.Repository, decodedFullName string) {
+	if h.adoHandler == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "ADO discovery service not configured")
+		return
+	}
+
+	h.logger.Info("Delegating rediscovery to ADO handler", "repo", decodedFullName)
+
+	if err := h.adoHandler.RediscoverADORepository(ctx, repo); err != nil {
+		h.logger.Error("Failed to rediscover ADO repository", "error", err, "repo", decodedFullName)
+		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to rediscover repository: %v", err))
+		return
+	}
+
+	updatedRepo, err := h.db.GetRepository(ctx, decodedFullName)
+	if err != nil {
+		h.logger.Error("Failed to fetch updated repository", "error", err, "repo", decodedFullName)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch updated repository")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    "Repository rediscovered successfully",
+		"repository": updatedRepo,
+	})
+}
+
+// rediscoverGitHubRepository handles rediscovery of GitHub repositories
+func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.Context, decodedFullName string) {
+	if h.collector == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "GitHub discovery service not configured")
+		return
+	}
+
 	parts := strings.SplitN(decodedFullName, "/", 2)
 	if len(parts) != 2 {
 		h.sendError(w, http.StatusBadRequest, "Invalid repository name format")
@@ -735,8 +929,6 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	org, repoName := parts[0], parts[1]
 
-	// Get the appropriate client for this organization
-	// In JWT-only mode, this creates an org-specific client with installation token
 	client, err := h.getClientForOrg(ctx, org)
 	if err != nil {
 		h.logger.Error("Failed to get client for organization", "error", err, "org", org)
@@ -744,7 +936,6 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch repository from GitHub API
 	ghRepo, _, err := client.REST().Repositories.Get(ctx, org, repoName)
 	if err != nil {
 		h.logger.Error("Failed to fetch repository from GitHub", "error", err, "repo", decodedFullName)
@@ -752,27 +943,28 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run discovery asynchronously
-	go func() {
-		bgCtx := context.Background()
-		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
-			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
-		} else {
-			h.logger.Info("Re-discovery completed", "repo", decodedFullName)
-
-			// Update local dependency flags after re-discovery
-			// This ensures dependencies are correctly classified as local/external
-			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
-				h.logger.Warn("Failed to update local dependency flags after re-discovery", "error", err)
-			}
-		}
-	}()
+	h.startAsyncRediscovery(ghRepo, decodedFullName)
 
 	h.sendJSON(w, http.StatusAccepted, map[string]string{
 		"message":   "Re-discovery started",
 		"full_name": decodedFullName,
 		"status":    "in_progress",
 	})
+}
+
+// startAsyncRediscovery runs repository discovery asynchronously
+func (h *Handler) startAsyncRediscovery(ghRepo *ghapi.Repository, decodedFullName string) {
+	go func() {
+		bgCtx := context.Background()
+		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
+			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
+		} else {
+			h.logger.Info("Re-discovery completed", "repo", decodedFullName)
+			if err := h.db.UpdateLocalDependencyFlags(bgCtx); err != nil {
+				h.logger.Warn("Failed to update local dependency flags after re-discovery", "error", err)
+			}
+		}
+	}()
 }
 
 // MarkRepositoryRemediated handles POST /api/v1/repositories/{fullName}/mark-remediated
@@ -2161,15 +2353,18 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetAnalyticsSummary handles GET /api/v1/analytics/summary
+//
+//nolint:gocyclo // Complexity is inherent to analytics aggregation
 func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get filter parameters
 	orgFilter := r.URL.Query().Get("organization")
+	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	// Get repository stats with filters
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
@@ -2211,28 +2406,28 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get complexity distribution
-	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get complexity distribution", "error", err)
 		complexityDistribution = []*storage.ComplexityDistribution{}
 	}
 
 	// Get migration velocity (last 30 days)
-	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
 	if err != nil {
 		h.logger.Error("Failed to get migration velocity", "error", err)
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
 
 	// Get migration time series
-	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, batchFilter)
+	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get migration time series", "error", err)
 		migrationTimeSeries = []*storage.MigrationTimeSeriesPoint{}
 	}
 
 	// Get average migration time
-	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get average migration time", "error", err)
 		avgMigrationTime = 0
@@ -2249,25 +2444,41 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get discovery statistics with filters
-	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, batchFilter)
+	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get organization stats", "error", err)
 		orgStats = []*storage.OrganizationStats{}
 	}
 
-	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	// For Azure DevOps sources, also get project-level stats
+	var projectStats []*storage.OrganizationStats
+	if h.sourceType == sourceTypeAzureDevOps {
+		projectStats, err = h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		if err != nil {
+			h.logger.Error("Failed to get project stats", "error", err)
+			projectStats = []*storage.OrganizationStats{}
+		}
+	}
+
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get size distribution", "error", err)
 		sizeDistribution = []*storage.SizeDistribution{}
 	}
 
-	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get feature stats", "error", err)
 		featureStats = &storage.FeatureStats{}
 	}
 
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	// Get migration completion stats - use project-level for ADO, org-level for GitHub
+	var migrationCompletionStats []*storage.MigrationCompletionStats
+	if h.sourceType == sourceTypeAzureDevOps {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	} else {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	}
 	if err != nil {
 		h.logger.Error("Failed to get migration completion stats", "error", err)
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
@@ -2287,6 +2498,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		"average_migration_time":     avgMigrationTime,
 		"estimated_completion_date":  estimatedCompletionDate,
 		"organization_stats":         orgStats,
+		"project_stats":              projectStats,
 		"size_distribution":          sizeDistribution,
 		"feature_stats":              featureStats,
 		"migration_completion_stats": migrationCompletionStats,
@@ -2329,10 +2541,11 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	// Get filter parameters
 	orgFilter := r.URL.Query().Get("organization")
+	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	// Get basic analytics
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
@@ -2374,21 +2587,21 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get migration velocity (last 30 days)
-	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
 	if err != nil {
 		h.logger.Error("Failed to get migration velocity", "error", err)
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
 
 	// Get migration time series for trend analysis
-	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, batchFilter)
+	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get migration time series", "error", err)
 		migrationTimeSeries = []*storage.MigrationTimeSeriesPoint{}
 	}
 
 	// Get average migration time
-	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get average migration time", "error", err)
 		avgMigrationTime = 0
@@ -2406,29 +2619,34 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		estimatedCompletionDate = &dateStr
 	}
 
-	// Get organization breakdowns
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	// Get organization/project breakdowns
+	var migrationCompletionStats []*storage.MigrationCompletionStats
+	if h.sourceType == sourceTypeAzureDevOps {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	} else {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	}
 	if err != nil {
 		h.logger.Error("Failed to get migration completion stats", "error", err)
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
 	}
 
 	// Get complexity distribution
-	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get complexity distribution", "error", err)
 		complexityDistribution = []*storage.ComplexityDistribution{}
 	}
 
 	// Get size distribution
-	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get size distribution", "error", err)
 		sizeDistribution = []*storage.SizeDistribution{}
 	}
 
 	// Get feature stats
-	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get feature stats", "error", err)
 		featureStats = &storage.FeatureStats{}
@@ -2483,6 +2701,9 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	// Build executive report
 	report := map[string]interface{}{
+		// Source type identifier
+		"source_type": h.sourceType,
+
 		// Executive Summary
 		"executive_summary": map[string]interface{}{
 			"total_repositories":        total,
@@ -2506,7 +2727,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 			"migration_trend":      migrationTimeSeries,
 		},
 
-		// Organization Progress
+		// Organization Progress (or Project Progress for ADO)
 		"organization_progress": migrationCompletionStats,
 
 		// Risk & Complexity Analysis
@@ -2533,6 +2754,22 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		"status_breakdown": stats,
 	}
 
+	// Add ADO-specific data if source is Azure DevOps
+	if h.sourceType == sourceTypeAzureDevOps {
+		// Add project progress separately for clarity
+		report["project_progress"] = migrationCompletionStats
+
+		// Add ADO-specific risk analysis
+		report["ado_risk_analysis"] = map[string]interface{}{
+			"tfvc_repos":                   featureStats.ADOTFVCCount,
+			"classic_pipelines":            featureStats.ADOHasClassicPipelines,
+			"repos_with_active_work_items": featureStats.ADOHasWorkItems,
+			"repos_with_wikis":             featureStats.ADOHasWiki,
+			"repos_with_test_plans":        featureStats.ADOHasTestPlans,
+			"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+		}
+	}
+
 	h.sendJSON(w, http.StatusOK, report)
 }
 
@@ -2541,6 +2778,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	format := r.URL.Query().Get("format")
 	orgFilter := r.URL.Query().Get("organization")
+	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	if format != formatCSV && format != formatJSON {
@@ -2549,7 +2787,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Get all the same data as GetExecutiveReport
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, batchFilter)
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
@@ -2589,12 +2827,12 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		successRate = float64(migrated) / float64(migrated+failed) * 100
 	}
 
-	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, batchFilter, 30)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
 	if err != nil {
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
 
-	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, batchFilter)
+	avgMigrationTime, err := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		avgMigrationTime = 0
 	}
@@ -2609,22 +2847,28 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		estimatedCompletionDate = completionDate.Format("2006-01-02")
 	}
 
-	migrationCompletionStats, err := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, batchFilter)
+	// Get organization/project breakdowns
+	var migrationCompletionStats []*storage.MigrationCompletionStats
+	if h.sourceType == sourceTypeAzureDevOps {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	} else {
+		migrationCompletionStats, err = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	}
 	if err != nil {
 		migrationCompletionStats = []*storage.MigrationCompletionStats{}
 	}
 
-	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, batchFilter)
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		complexityDistribution = []*storage.ComplexityDistribution{}
 	}
 
-	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, batchFilter)
+	sizeDistribution, err := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		sizeDistribution = []*storage.SizeDistribution{}
 	}
 
-	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, batchFilter)
+	featureStats, err := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		featureStats = &storage.FeatureStats{}
 	}
@@ -2654,19 +2898,19 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if format == formatCSV {
-		h.exportExecutiveReportCSV(w, total, migrated, inProgress, pending, failed, completionRate, successRate,
+		h.exportExecutiveReportCSV(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
 			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	} else {
-		h.exportExecutiveReportJSON(w, total, migrated, inProgress, pending, failed, completionRate, successRate,
+		h.exportExecutiveReportJSON(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
 			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	}
 }
 
-func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrated, inProgress, pending, failed int,
+func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
 	velocity *storage.MigrationVelocity, avgMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
@@ -2680,6 +2924,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 
 	// Section 1: Executive Summary
 	output.WriteString("EXECUTIVE MIGRATION PROGRESS REPORT\n")
+	output.WriteString(fmt.Sprintf("Source: %s\n", strings.ToUpper(sourceType)))
 	output.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
 	output.WriteString("\n")
 
@@ -2709,9 +2954,17 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 	}
 	output.WriteString("\n")
 
-	// Section 3: Organization Progress
-	output.WriteString("=== ORGANIZATION PROGRESS ===\n")
-	output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	// Section 3: Organization/Project Progress
+	if sourceType == sourceTypeAzureDevOps {
+		output.WriteString("=== PROJECT PROGRESS ===\n")
+	} else {
+		output.WriteString("=== ORGANIZATION PROGRESS ===\n")
+	}
+	if sourceType == sourceTypeAzureDevOps {
+		output.WriteString("Project,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	} else {
+		output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	}
 	for _, org := range orgStats {
 		completionPct := 0.0
 		if org.TotalRepos > 0 {
@@ -2749,18 +3002,55 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 	output.WriteString("Feature,Repository Count,Percentage\n")
 	totalRepos := featureStats.TotalRepositories
 	if totalRepos > 0 {
-		output.WriteString(fmt.Sprintf("Archived,%d,%.1f%%\n", featureStats.IsArchived, float64(featureStats.IsArchived)/float64(totalRepos)*100))
+		if sourceType == sourceTypeAzureDevOps {
+			// ADO-specific features
+			output.WriteString(fmt.Sprintf("TFVC Repositories,%d,%.1f%%\n", featureStats.ADOTFVCCount, float64(featureStats.ADOTFVCCount)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Azure Boards,%d,%.1f%%\n", featureStats.ADOHasBoards, float64(featureStats.ADOHasBoards)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Azure Pipelines,%d,%.1f%%\n", featureStats.ADOHasPipelines, float64(featureStats.ADOHasPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("YAML Pipelines,%d,%.1f%%\n", featureStats.ADOHasYAMLPipelines, float64(featureStats.ADOHasYAMLPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Classic Pipelines,%d,%.1f%%\n", featureStats.ADOHasClassicPipelines, float64(featureStats.ADOHasClassicPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Pull Requests,%d,%.1f%%\n", featureStats.ADOHasPullRequests, float64(featureStats.ADOHasPullRequests)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Work Items,%d,%.1f%%\n", featureStats.ADOHasWorkItems, float64(featureStats.ADOHasWorkItems)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Branch Policies,%d,%.1f%%\n", featureStats.ADOHasBranchPolicies, float64(featureStats.ADOHasBranchPolicies)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.ADOHasWiki, float64(featureStats.ADOHasWiki)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Test Plans,%d,%.1f%%\n", featureStats.ADOHasTestPlans, float64(featureStats.ADOHasTestPlans)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Package Feeds,%d,%.1f%%\n", featureStats.ADOHasPackageFeeds, float64(featureStats.ADOHasPackageFeeds)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Service Hooks,%d,%.1f%%\n", featureStats.ADOHasServiceHooks, float64(featureStats.ADOHasServiceHooks)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("GHAS (Azure DevOps),%d,%.1f%%\n", featureStats.ADOHasGHAS, float64(featureStats.ADOHasGHAS)/float64(totalRepos)*100))
+		} else {
+			// GitHub features
+			output.WriteString(fmt.Sprintf("Archived,%d,%.1f%%\n", featureStats.IsArchived, float64(featureStats.IsArchived)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, float64(featureStats.HasLargeFiles)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, float64(featureStats.HasActions)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, float64(featureStats.HasWiki)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, float64(featureStats.HasPages)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Discussions,%d,%.1f%%\n", featureStats.HasDiscussions, float64(featureStats.HasDiscussions)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Projects,%d,%.1f%%\n", featureStats.HasProjects, float64(featureStats.HasProjects)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Branch Protections,%d,%.1f%%\n", featureStats.HasBranchProtections, float64(featureStats.HasBranchProtections)/float64(totalRepos)*100))
+		}
+		// Common features
 		output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
 		output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
 		output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, float64(featureStats.HasLargeFiles)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, float64(featureStats.HasActions)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, float64(featureStats.HasWiki)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, float64(featureStats.HasPages)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Discussions,%d,%.1f%%\n", featureStats.HasDiscussions, float64(featureStats.HasDiscussions)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Projects,%d,%.1f%%\n", featureStats.HasProjects, float64(featureStats.HasProjects)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Branch Protections,%d,%.1f%%\n", featureStats.HasBranchProtections, float64(featureStats.HasBranchProtections)/float64(totalRepos)*100))
 	}
 	output.WriteString("\n")
+
+	// ADO Risk Analysis
+	if sourceType == sourceTypeAzureDevOps {
+		output.WriteString("=== AZURE DEVOPS MIGRATION RISKS ===\n")
+		output.WriteString("Risk Factor,Repository Count,Percentage\n")
+		if totalRepos > 0 {
+			output.WriteString(fmt.Sprintf("TFVC Repositories (Requires Conversion),%d,%.1f%%\n", featureStats.ADOTFVCCount, float64(featureStats.ADOTFVCCount)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Classic Pipelines (Manual Recreation),%d,%.1f%%\n", featureStats.ADOHasClassicPipelines, float64(featureStats.ADOHasClassicPipelines)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Active Work Items (Won't Migrate),%d,%.1f%%\n", featureStats.ADOHasWorkItems, float64(featureStats.ADOHasWorkItems)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Wikis (Manual Migration),%d,%.1f%%\n", featureStats.ADOHasWiki, float64(featureStats.ADOHasWiki)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Test Plans (No GitHub Equivalent),%d,%.1f%%\n", featureStats.ADOHasTestPlans, float64(featureStats.ADOHasTestPlans)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Package Feeds (Separate Migration),%d,%.1f%%\n", featureStats.ADOHasPackageFeeds, float64(featureStats.ADOHasPackageFeeds)/float64(totalRepos)*100))
+		}
+		output.WriteString("\n")
+	}
 
 	// Section 7: Batch Performance
 	output.WriteString("=== BATCH PERFORMANCE ===\n")
@@ -2786,7 +3076,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, total, migrate
 	}
 }
 
-func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrated, inProgress, pending, failed int,
+func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
 	velocity *storage.MigrationVelocity, avgMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
@@ -2797,6 +3087,7 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrat
 	w.Header().Set("Content-Disposition", "attachment; filename=executive_migration_report.json")
 
 	report := map[string]interface{}{
+		"source_type": sourceType,
 		"report_metadata": map[string]interface{}{
 			"generated_at": time.Now().Format(time.RFC3339),
 			"report_type":  "Executive Migration Progress Report",
@@ -2828,6 +3119,19 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, total, migrat
 			"pending_batches":     pendingBatches,
 		},
 		"status_breakdown": statusBreakdown,
+	}
+
+	// Add ADO-specific data if source is Azure DevOps
+	if sourceType == sourceTypeAzureDevOps {
+		report["project_progress"] = orgStats
+		report["ado_risk_analysis"] = map[string]interface{}{
+			"tfvc_repos":                   featureStats.ADOTFVCCount,
+			"classic_pipelines":            featureStats.ADOHasClassicPipelines,
+			"repos_with_active_work_items": featureStats.ADOHasWorkItems,
+			"repos_with_wikis":             featureStats.ADOHasWiki,
+			"repos_with_test_plans":        featureStats.ADOHasTestPlans,
+			"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+		}
 	}
 
 	if err := json.NewEncoder(w).Encode(report); err != nil {
@@ -3006,9 +3310,92 @@ func (h *Handler) checkRepositoriesAccess(ctx context.Context, repoFullNames []s
 }
 
 // ListOrganizations handles GET /api/v1/organizations
+// Returns GitHub organizations or ADO projects depending on source type
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// For Azure DevOps sources, return aggregated organizations (not individual projects)
+	if h.sourceType == sourceTypeAzureDevOps {
+		// Get all ADO projects to aggregate by organization
+		projects, err := h.db.GetADOProjects(ctx, "")
+		if err != nil {
+			if h.handleContextError(ctx, err, "get ADO projects", r) {
+				return
+			}
+			h.logger.Error("Failed to get ADO projects", "error", err)
+			h.sendError(w, http.StatusInternalServerError, "Failed to fetch projects")
+			return
+		}
+
+		// Aggregate projects by organization
+		orgMap := make(map[string]struct {
+			projectCount int
+			repoCount    int
+			projects     []string
+		})
+
+		for _, project := range projects {
+			orgData := orgMap[project.Organization]
+			orgData.projectCount++
+			orgData.projects = append(orgData.projects, project.Name)
+
+			// Count repositories for this project
+			repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
+			if err != nil {
+				h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
+			}
+			orgData.repoCount += repoCount
+
+			orgMap[project.Organization] = orgData
+		}
+
+		// Transform into organization stats
+		orgStats := make([]interface{}, 0, len(orgMap))
+		for orgName, orgData := range orgMap {
+			// Get actual status distribution for all repos in this organization
+			statusCounts := make(map[string]int)
+			if orgData.repoCount > 0 {
+				// Query actual repository statuses grouped by organization
+				var results []struct {
+					Status string
+					Count  int
+				}
+				err := h.db.DB().WithContext(ctx).
+					Raw(`
+						SELECT status, COUNT(*) as count
+						FROM repositories
+						WHERE ado_project IN (
+							SELECT name FROM ado_projects WHERE organization = ?
+						)
+						AND status != 'wont_migrate'
+						GROUP BY status
+					`, orgName).
+					Scan(&results).Error
+
+				if err != nil {
+					h.logger.Warn("Failed to get status counts for organization", "org", orgName, "error", err)
+					// Fall back to assuming pending if query fails
+					statusCounts["pending"] = orgData.repoCount
+				} else {
+					for _, result := range results {
+						statusCounts[result.Status] = result.Count
+					}
+				}
+			}
+
+			orgStats = append(orgStats, map[string]interface{}{
+				"organization":   orgName,
+				"total_repos":    orgData.repoCount,
+				"total_projects": orgData.projectCount,
+				"status_counts":  statusCounts,
+			})
+		}
+
+		h.sendJSON(w, http.StatusOK, orgStats)
+		return
+	}
+
+	// For GitHub sources, use standard organization stats
 	orgStats, err := h.db.GetOrganizationStats(ctx)
 	if err != nil {
 		// Check if request was canceled by client (e.g., navigating away)
@@ -3021,6 +3408,77 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, orgStats)
+}
+
+// ListProjects handles GET /api/v1/projects
+// Returns ADO projects with repository counts and status breakdown
+func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Only applicable for Azure DevOps sources
+	if h.sourceType != sourceTypeAzureDevOps {
+		h.sendJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	// Get all ADO projects
+	projects, err := h.db.GetADOProjects(ctx, "")
+	if err != nil {
+		if h.handleContextError(ctx, err, "get ADO projects", r) {
+			return
+		}
+		h.logger.Error("Failed to get ADO projects", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch projects")
+		return
+	}
+
+	// Build project stats with repository counts and status distribution
+	projectStats := make([]interface{}, 0, len(projects))
+	for _, project := range projects {
+		// Count repositories for this project
+		repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
+		if err != nil {
+			h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
+			repoCount = 0
+		}
+
+		// Get status distribution for repos in this project
+		statusCounts := make(map[string]int)
+		if repoCount > 0 {
+			// Query actual status distribution using SQL for efficiency
+			var results []struct {
+				Status string
+				Count  int
+			}
+			err := h.db.DB().WithContext(ctx).
+				Raw(`
+					SELECT status, COUNT(*) as count
+					FROM repositories
+					WHERE ado_project = ?
+					AND status != 'wont_migrate'
+					GROUP BY status
+				`, project.Name).
+				Scan(&results).Error
+
+			if err != nil {
+				h.logger.Warn("Failed to get status counts for project", "project", project.Name, "error", err)
+				// Fallback: assume all pending
+				statusCounts["pending"] = repoCount
+			} else {
+				for _, result := range results {
+					statusCounts[result.Status] = result.Count
+				}
+			}
+		}
+
+		projectStats = append(projectStats, map[string]interface{}{
+			"project":       project.Name,
+			"total_repos":   repoCount,
+			"status_counts": statusCounts,
+		})
+	}
+
+	h.sendJSON(w, http.StatusOK, projectStats)
 }
 
 // GetOrganizationList handles GET /api/v1/organizations/list

@@ -74,6 +74,8 @@ func (p *GitHubProvider) Name() string {
 }
 
 // CloneRepository clones a repository to the specified directory
+//
+//nolint:dupl // Similar to ADO clone but with GitHub-specific authentication
 func (p *GitHubProvider) CloneRepository(ctx context.Context, info RepositoryInfo, destPath string, opts CloneOptions) error {
 	// Get authenticated URL
 	authURL, err := p.GetAuthenticatedCloneURL(info.CloneURL)

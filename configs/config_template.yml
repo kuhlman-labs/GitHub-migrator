@@ -68,25 +68,32 @@ database:
 # Source Repository System Configuration
 # =============================================================================
 # This is where you're migrating FROM
-# Currently only GitHub is fully supported for migrations
 source:
   # Source system type
-  # Supported: "github" (full support)
-  # In development: "gitlab", "azuredevops" (not yet ready for production)
+  # Supported: 
+  #   - "github" (full support - GitHub to GitHub migrations)
+  #   - "azuredevops" (full support - Azure DevOps to GitHub migrations)
+  # In development: "gitlab"
   type: github
   
   # API base URL
   # For GitHub Enterprise Server: https://github.company.com/api/v3
   # For GitHub.com: https://api.github.com
+  # For Azure DevOps: https://dev.azure.com/your-organization
   base_url: "https://github.company.com/api/v3"
   
   # Personal Access Token (PAT) - REQUIRED
-  # This token is REQUIRED for all migration operations
-  # If GitHub App is configured, PAT is used for migrations only
-  # Required permissions:
-  # - Organization admin access (both source and destination)
-  # - Scopes: repo, read:org, read:user, admin:org
-  token: "ghp_xxxx"
+  # GitHub: Used for all migration operations
+  #   - If GitHub App is configured, PAT is used for migrations only
+  #   - Required scopes: repo, read:org, read:user, admin:org
+  # Azure DevOps: Server-level PAT for executing migrations
+  #   - Required scopes: Code (Read), Build (Read), Work Items (Read), 
+  #     Project and Team (Read), Graph (Read)
+  token: "ghp_xxxx"  # or Azure DevOps PAT
+  
+  # Azure DevOps specific configuration (only used when type is "azuredevops")
+  # Organization name - REQUIRED for ADO
+  # organization: "your-ado-org"
   
   # ==========================================================================
   # GitHub App Authentication (Optional but Recommended for Large Migrations)
@@ -369,14 +376,42 @@ auth:
     #   - "my-company-org/platform-engineering"
   
   # ==========================================================================
-  # Future Provider Support (Not Yet Implemented)
+  # Azure DevOps Authentication (Entra ID OAuth)
   # ==========================================================================
-  # These fields are planned for future GitLab and Azure DevOps support
-  # DO NOT USE - Not yet functional in current version
-  #
-  # For Azure DevOps migrations (when implemented):
-  # organization: "your-ado-org"  # Required for Azure DevOps
-  # username: "your-username"     # Optional for Azure DevOps (defaults to token)
+  # When source type is "azuredevops", users can authenticate via Microsoft Entra ID
+  # This provides user-level access control for ADO organizations and projects
+  # The server-level ADO PAT (source.token) is used for migration execution
+  
+  # Enable Entra ID OAuth for Azure DevOps
+  # Only used when source.type = "azuredevops"
+  # Default: false
+  # entraid_enabled: false
+  
+  # Microsoft Entra ID Tenant ID (Azure AD Directory ID)
+  # Find this in Azure Portal → Azure Active Directory → Overview
+  # Example: "12345678-1234-1234-1234-123456789012"
+  # entraid_tenant_id: "your-tenant-id"
+  
+  # Entra ID Application (Client) ID
+  # Create an App Registration in Azure Portal → Azure Active Directory
+  # → App registrations → New registration
+  # Example: "87654321-4321-4321-4321-210987654321"
+  # entraid_client_id: "your-client-id"
+  
+  # Entra ID Application Client Secret
+  # Generate in Azure Portal → App registrations → Your App → Certificates & secrets
+  # IMPORTANT: Keep this secret and don't commit to version control!
+  # entraid_client_secret: "your-client-secret"
+  
+  # Entra ID OAuth Callback URL
+  # Must match the redirect URI configured in your Entra ID App Registration
+  # Format: https://your-migrator-domain.com/api/v1/auth/entraid/callback
+  # entraid_callback_url: "https://migrator.company.com/api/v1/auth/entraid/callback"
+  
+  # Azure DevOps Organization URL
+  # Used to validate user access to the ADO organization
+  # Format: https://dev.azure.com/your-organization
+  # ado_organization_url: "https://dev.azure.com/your-ado-org"
 
 # Example: Enabled authentication with org membership requirement
 # auth:
@@ -389,6 +424,29 @@ auth:
 #   authorization_rules:
 #     require_org_membership:
 #       - "acme-corp"
+
+# Example: Azure DevOps with Entra ID OAuth
+# source:
+#   type: azuredevops
+#   base_url: "https://dev.azure.com/your-organization"
+#   token: "${SOURCE_ADO_TOKEN}"  # Server-level ADO PAT
+#   organization: "your-organization"
+# 
+# destination:
+#   type: github
+#   base_url: "https://api.github.com"
+#   token: "${DEST_GITHUB_TOKEN}"
+# 
+# auth:
+#   enabled: true
+#   entraid_enabled: true
+#   entraid_tenant_id: "${ENTRAID_TENANT_ID}"
+#   entraid_client_id: "${ENTRAID_CLIENT_ID}"
+#   entraid_client_secret: "${ENTRAID_CLIENT_SECRET}"
+#   entraid_callback_url: "https://migrator.company.com/api/v1/auth/entraid/callback"
+#   ado_organization_url: "https://dev.azure.com/your-organization"
+#   session_secret: "${AUTH_SESSION_SECRET}"
+#   session_duration_hours: 24
 
 # Example: Team-based access control
 # auth:

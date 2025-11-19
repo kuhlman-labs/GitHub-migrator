@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/batch"
+	"github.com/kuhlman-labs/github-migrator/internal/batch"
 )
 
 // SchedulerWorker periodically checks for and executes scheduled batches

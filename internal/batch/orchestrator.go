@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // Orchestrator coordinates batch organization, scheduling, and execution

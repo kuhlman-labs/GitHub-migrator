@@ -1,12 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { Organization, Repository, Analytics, Batch, MigrationHistoryEntry, RepositoryFilters } from '../types';
+import { Organization, Project, Repository, Analytics, Batch, MigrationHistoryEntry, RepositoryFilters } from '../types';
 
 // Organization queries
 export function useOrganizations() {
   return useQuery<Organization[], Error>({
     queryKey: ['organizations'],
     queryFn: () => api.listOrganizations(),
+  });
+}
+
+// Project queries
+export function useProjects() {
+  return useQuery<Project[], Error>({
+    queryKey: ['projects'],
+    queryFn: () => api.listProjects(),
   });
 }
 
@@ -32,6 +40,7 @@ export function useRepository(fullName: string) {
 // Analytics queries
 interface AnalyticsFilters {
   organization?: string;
+  project?: string;
   batch_id?: string;
 }
 

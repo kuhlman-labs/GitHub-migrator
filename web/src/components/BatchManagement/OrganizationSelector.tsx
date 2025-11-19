@@ -5,6 +5,9 @@ interface OrganizationSelectorProps {
   selectedOrganizations: string[];
   onChange: (selected: string[]) => void;
   loading?: boolean;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
 }
 
 export function OrganizationSelector({
@@ -12,6 +15,9 @@ export function OrganizationSelector({
   selectedOrganizations,
   onChange,
   loading = false,
+  placeholder = 'All Organizations',
+  searchPlaceholder = 'Search organizations...',
+  emptyMessage = 'No organizations found',
 }: OrganizationSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,7 +66,7 @@ export function OrganizationSelector({
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-700">
             {selectedOrganizations.length === 0
-              ? 'All Organizations'
+              ? placeholder
               : `${selectedOrganizations.length} selected`}
           </span>
           <svg
@@ -79,7 +85,7 @@ export function OrganizationSelector({
           <div className="p-2 border-b border-gray-200">
             <input
               type="text"
-              placeholder="Search organizations..."
+              placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -91,7 +97,7 @@ export function OrganizationSelector({
             {loading ? (
               <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
             ) : filteredOrgs.length === 0 ? (
-              <div className="p-4 text-center text-sm text-gray-500">No organizations found</div>
+              <div className="p-4 text-center text-sm text-gray-500">{emptyMessage}</div>
             ) : (
               <>
                 <div className="flex gap-2 p-2 border-b border-gray-100">

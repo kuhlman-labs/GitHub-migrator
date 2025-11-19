@@ -116,6 +116,14 @@ type AuthConfig struct {
 	SessionSecret           string             `mapstructure:"session_secret"`
 	SessionDurationHours    int                `mapstructure:"session_duration_hours"`
 	AuthorizationRules      AuthorizationRules `mapstructure:"authorization_rules"`
+
+	// Entra ID OAuth for Azure DevOps
+	EntraIDEnabled      bool   `mapstructure:"entraid_enabled"`
+	EntraIDTenantID     string `mapstructure:"entraid_tenant_id"`
+	EntraIDClientID     string `mapstructure:"entraid_client_id"`
+	EntraIDClientSecret string `mapstructure:"entraid_client_secret"`
+	EntraIDCallbackURL  string `mapstructure:"entraid_callback_url"`
+	ADOOrganizationURL  string `mapstructure:"ado_organization_url"` // e.g., https://dev.azure.com/your-org
 }
 
 // AuthorizationRules defines rules for authorizing users
@@ -238,6 +246,12 @@ func bindEnvVars() {
 		"auth.authorization_rules.require_enterprise_membership",
 		"auth.authorization_rules.require_enterprise_slug",
 		"auth.authorization_rules.privileged_teams",
+		"auth.entraid_enabled",
+		"auth.entraid_tenant_id",
+		"auth.entraid_client_id",
+		"auth.entraid_client_secret",
+		"auth.entraid_callback_url",
+		"auth.ado_organization_url",
 	}
 
 	for _, key := range envKeys {
@@ -275,6 +289,7 @@ func setDefaults() {
 	viper.SetDefault("auth.frontend_url", "http://localhost:3000")
 	viper.SetDefault("auth.session_duration_hours", 24)
 	viper.SetDefault("auth.authorization_rules.require_enterprise_admin", false)
+	viper.SetDefault("auth.entraid_enabled", false)
 }
 
 // MigrateDeprecatedConfig migrates old GitHub config format to new Source/Destination format

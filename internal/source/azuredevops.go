@@ -1,9 +1,12 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
+	"os/exec"
 	"strings"
 )
 
@@ -52,10 +55,57 @@ func (p *AzureDevOpsProvider) Name() string {
 }
 
 // CloneRepository clones a repository to the specified directory
+//
+//nolint:dupl // Similar to GitHub clone but with ADO-specific authentication
 func (p *AzureDevOpsProvider) CloneRepository(ctx context.Context, info RepositoryInfo, destPath string, opts CloneOptions) error {
-	// TODO: Implement Azure DevOps clone logic
-	// Similar to GitHub but with different URL structure and auth
-	return fmt.Errorf("Azure DevOps provider not yet implemented")
+	// Get authenticated URL
+	authURL, err := p.GetAuthenticatedCloneURL(info.CloneURL)
+	if err != nil {
+		return fmt.Errorf("failed to get authenticated URL: %w", err)
+	}
+
+	// Build git clone command with options
+	args := []string{"clone"}
+
+	if opts.Shallow {
+		args = append(args, "--depth=1")
+	}
+
+	if opts.Bare {
+		args = append(args, "--bare")
+	}
+
+	if !opts.IncludeSubmodules {
+		args = append(args, "--no-recurse-submodules")
+	}
+
+	args = append(args, authURL, destPath)
+
+	// Execute git clone
+	// #nosec G204 -- arguments are constructed from controlled inputs
+	cmd := exec.CommandContext(ctx, "git", args...)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	// Set GIT_TERMINAL_PROMPT=0 to prevent interactive prompts
+	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+
+	if err := cmd.Run(); err != nil {
+		// Sanitize error message to avoid leaking token
+		sanitizedErr := sanitizeGitError(stderr.String(), p.token)
+		return fmt.Errorf("%w: %s", ErrCloneFailed, sanitizedErr)
+	}
+
+	// If LFS is requested and supported, fetch LFS objects
+	if opts.IncludeLFS {
+		if err := p.fetchLFSObjects(ctx, destPath); err != nil {
+			// Log warning but don't fail - LFS might not be configured
+			return fmt.Errorf("warning: failed to fetch LFS objects: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // GetAuthenticatedCloneURL returns a clone URL with embedded credentials
@@ -66,18 +116,46 @@ func (p *AzureDevOpsProvider) GetAuthenticatedCloneURL(cloneURL string) (string,
 		return "", fmt.Errorf("invalid clone URL: %w", err)
 	}
 
-	// Azure DevOps format: https://USERNAME:TOKEN@dev.azure.com/org/project/_git/repo
-	// For PATs, username can be anything or the token itself
-	parsedURL.User = url.UserPassword(p.username, p.token)
+	// Azure DevOps PAT authentication format: https://PAT@dev.azure.com/org/project/_git/repo
+	// The PAT goes in the username field with no password (most reliable method)
+	// Alternative format is username:PAT@ but PAT alone works universally
+	parsedURL.User = url.User(p.token)
 
 	return parsedURL.String(), nil
 }
 
 // ValidateCredentials validates that the provider's credentials are valid
 func (p *AzureDevOpsProvider) ValidateCredentials(ctx context.Context) error {
-	// TODO: Implement Azure DevOps credential validation
-	// Use Azure DevOps REST API to verify token
-	return fmt.Errorf("Azure DevOps provider not yet implemented")
+	// Build base API URL to list projects
+	// https://dev.azure.com/{org}/_apis/projects?api-version=6.0
+	apiURL := fmt.Sprintf("https://dev.azure.com/%s/_apis/projects?api-version=6.0&$top=1", p.organization)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authorization header (PAT as Basic auth with empty username)
+	req.SetBasicAuth("", p.token)
+	req.Header.Set("Accept", "application/json")
+
+	// Make request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrAuthenticationFailed, err.Error())
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("%w: invalid credentials", ErrAuthenticationFailed)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to validate credentials: status %d", resp.StatusCode)
+	}
+
+	return nil
 }
 
 // SupportsFeature indicates whether a specific feature is supported
@@ -121,3 +199,20 @@ func (p *AzureDevOpsProvider) NormalizeRepoURL(rawURL string) (string, error) {
 
 	return parsedURL.String(), nil
 }
+
+// fetchLFSObjects fetches Git LFS objects for a cloned repository
+func (p *AzureDevOpsProvider) fetchLFSObjects(ctx context.Context, repoPath string) error {
+	cmd := exec.CommandContext(ctx, "git", "lfs", "fetch", "--all")
+	cmd.Dir = repoPath
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git lfs fetch failed: %w (stderr: %s)", err, stderr.String())
+	}
+
+	return nil
+}
+
+// Note: sanitizeGitError is defined in github.go and reused here

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/migration"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/migration"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // MigrationWorker polls for queued repositories and executes migrations
@@ -200,6 +200,29 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 		w.mu.Unlock()
 	}()
 
+	// Recover from panics to prevent worker crashes and update repository status
+	defer func() {
+		if r := recover(); r != nil {
+			w.logger.Error("Migration panicked - recovering",
+				"repo", repo.FullName,
+				"panic", r)
+
+			// Update status to failed
+			ctx := context.Background()
+			dryRun := repo.Status == string(models.StatusDryRunInProgress)
+			failedStatus := models.StatusMigrationFailed
+			if dryRun {
+				failedStatus = models.StatusDryRunFailed
+			}
+			repo.Status = string(failedStatus)
+			if updateErr := w.storage.UpdateRepository(ctx, repo); updateErr != nil {
+				w.logger.Error("Failed to update repository status after panic",
+					"repo", repo.FullName,
+					"error", updateErr)
+			}
+		}
+	}()
+
 	// Determine if this is a dry run
 	dryRun := repo.Status == string(models.StatusDryRunQueued)
 
@@ -246,7 +269,19 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 	}
 
 	// Execute the migration (pass batch for applying batch-level settings)
-	err := w.executor.ExecuteMigration(ctx, repo, batch, dryRun)
+	// Route to ADO-specific migration handler if this is an ADO source repository
+	var err error
+	if repo.ADOProject != nil && *repo.ADOProject != "" {
+		// This is an Azure DevOps source repository
+		w.logger.Info("Executing ADO migration",
+			"repo", repo.FullName,
+			"ado_project", *repo.ADOProject,
+			"dry_run", dryRun)
+		err = w.executor.ExecuteADOMigration(ctx, repo, batch, dryRun)
+	} else {
+		// This is a GitHub source repository (default)
+		err = w.executor.ExecuteMigration(ctx, repo, batch, dryRun)
+	}
 
 	if err != nil {
 		w.logger.Error("Migration failed",

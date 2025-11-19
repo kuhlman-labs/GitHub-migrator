@@ -6,6 +6,7 @@ import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 
 interface ComplexityChartProps {
   data: ComplexityDistribution[];
+  source?: 'github' | 'azuredevops' | 'all';
 }
 
 const COMPLEXITY_COLORS: Record<string, string> = {
@@ -22,7 +23,7 @@ const COMPLEXITY_LABELS: Record<string, string> = {
   very_complex: 'Very Complex',
 };
 
-export function ComplexityChart({ data }: ComplexityChartProps) {
+export function ComplexityChart({ data, source = 'all' }: ComplexityChartProps) {
   const navigate = useNavigate();
 
   // Ensure all complexity levels are shown, even if they have 0 count
@@ -43,16 +44,27 @@ export function ComplexityChart({ data }: ComplexityChartProps) {
     }
   };
 
+  // Dynamic description based on source
+  const getDescription = () => {
+    if (source === 'azuredevops') {
+      return 'Repositories categorized by ADO → GitHub migration complexity factors including TFVC detection, pipeline types, Azure Boards, wikis, and test plans.';
+    } else if (source === 'github') {
+      return 'Repositories categorized by GitHub migration complexity factors including size, LFS, submodules, environments, secrets, and more.';
+    } else {
+      return 'Repositories categorized by migration complexity. Scoring varies by source: GitHub factors include size, LFS, and environments; Azure DevOps includes TFVC, pipelines, and boards.';
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <div className="flex justify-between items-start mb-4">
         <div>
           <h2 className="text-lg font-medium text-gray-900 mb-1">Repository Complexity Distribution</h2>
           <p className="text-sm text-gray-600">
-            Repositories categorized by migration complexity based on size, LFS usage, submodules, large files, and branch protections.
+            {getDescription()}
           </p>
         </div>
-        <ComplexityInfoModal />
+        <ComplexityInfoModal source={source} />
       </div>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={chartData}>

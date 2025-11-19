@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"gopkg.in/yaml.v3"
 )
 

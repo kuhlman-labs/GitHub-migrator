@@ -8,21 +8,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/api/handlers"
-	"github.com/brettkuhlman/github-migrator/internal/api/middleware"
-	"github.com/brettkuhlman/github-migrator/internal/auth"
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/source"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/api/handlers"
+	"github.com/kuhlman-labs/github-migrator/internal/api/middleware"
+	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 type Server struct {
-	config      *config.Config
-	db          *storage.Database
-	logger      *slog.Logger
-	handler     *handlers.Handler
-	authHandler *handlers.AuthHandler
+	config              *config.Config
+	db                  *storage.Database
+	logger              *slog.Logger
+	handler             *handlers.Handler
+	authHandler         *handlers.AuthHandler
+	adoHandler          *handlers.ADOHandler
+	entraIDOAuthHandler *auth.EntraIDOAuthHandler
 }
 
 func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient) *Server {
@@ -65,12 +68,51 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	// Determine source base URL for permission checks
 	sourceBaseURL := cfg.Auth.GetOAuthBaseURL(cfg)
 
+	// Create main handler
+	mainHandler := handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig, &cfg.Auth, sourceBaseURL, cfg.Source.Type)
+
+	// Create ADO handler if source is Azure DevOps
+	var adoHandler *handlers.ADOHandler
+	var entraIDOAuthHandler *auth.EntraIDOAuthHandler
+	if cfg.Source.Type == "azuredevops" && cfg.Source.Token != "" {
+		// Validate ADO configuration before attempting connection
+		if cfg.Source.BaseURL == "" {
+			logger.Warn("Azure DevOps integration disabled: SOURCE_BASE_URL not configured")
+		} else {
+			// Create ADO client
+			adoClient, err := azuredevops.NewClient(azuredevops.ClientConfig{
+				OrganizationURL:     cfg.Source.BaseURL,
+				PersonalAccessToken: cfg.Source.Token,
+				Logger:              logger,
+			})
+			if err != nil {
+				logger.Warn("Failed to create ADO client - check your ADO organization URL and PAT permissions",
+					"error", err,
+					"org_url", cfg.Source.BaseURL,
+					"hint", "Ensure SOURCE_BASE_URL is a valid Azure DevOps organization URL (e.g., https://dev.azure.com/your-org)")
+			} else {
+				adoHandler = handlers.NewADOHandler(mainHandler, adoClient, sourceProvider)
+				// Link the ADO handler to the main handler so it can delegate ADO repo operations
+				mainHandler.SetADOHandler(adoHandler)
+				logger.Info("Azure DevOps integration enabled", "org_url", cfg.Source.BaseURL)
+			}
+		}
+
+		// Create Entra ID OAuth handler if enabled
+		if cfg.Auth.Enabled && cfg.Auth.EntraIDEnabled {
+			entraIDOAuthHandler = auth.NewEntraIDOAuthHandler(&cfg.Auth)
+			logger.Info("Entra ID OAuth enabled for Azure DevOps")
+		}
+	}
+
 	return &Server{
-		config:      cfg,
-		db:          db,
-		logger:      logger,
-		handler:     handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig, &cfg.Auth, sourceBaseURL),
-		authHandler: authHandler,
+		config:              cfg,
+		db:                  db,
+		logger:              logger,
+		handler:             mainHandler,
+		authHandler:         authHandler,
+		adoHandler:          adoHandler,
+		entraIDOAuthHandler: entraIDOAuthHandler,
 	}
 }
 
@@ -99,8 +141,22 @@ func (s *Server) Router() http.Handler {
 		}
 	}
 
+	// Entra ID OAuth endpoints for Azure DevOps (public - no auth required)
+	if s.config.Auth.Enabled && s.entraIDOAuthHandler != nil {
+		mux.HandleFunc("GET /api/v1/auth/entraid/login", s.entraIDOAuthHandler.Login)
+		mux.HandleFunc("GET /api/v1/auth/entraid/callback", s.entraIDOAuthHandler.Callback)
+
+		// Protected Entra ID endpoints
+		if authMiddleware != nil {
+			mux.Handle("GET /api/v1/auth/entraid/user", authMiddleware.RequireAuth(http.HandlerFunc(s.entraIDOAuthHandler.GetUser)))
+		}
+	}
+
 	// Health check (always public)
 	mux.HandleFunc("/health", s.handler.Health)
+
+	// Application config endpoint (always public)
+	mux.HandleFunc("GET /api/v1/config", s.handler.GetConfig)
 
 	// Helper to conditionally wrap with auth
 	protect := func(pattern string, handler http.HandlerFunc) {
@@ -127,6 +183,7 @@ func (s *Server) Router() http.Handler {
 	// Organization endpoints
 	protect("GET /api/v1/organizations", s.handler.ListOrganizations)
 	protect("GET /api/v1/organizations/list", s.handler.GetOrganizationList)
+	protect("GET /api/v1/projects", s.handler.ListProjects)
 
 	// Batch endpoints
 	protect("GET /api/v1/batches", s.handler.ListBatches)
@@ -153,6 +210,14 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/analytics/progress", s.handler.GetMigrationProgress)
 	protect("GET /api/v1/analytics/executive-report", s.handler.GetExecutiveReport)
 	protect("GET /api/v1/analytics/executive-report/export", s.handler.ExportExecutiveReport)
+
+	// Azure DevOps specific endpoints
+	if s.adoHandler != nil {
+		protect("POST /api/v1/ado/discover", s.adoHandler.StartADODiscovery)
+		protect("GET /api/v1/ado/discovery/status", s.adoHandler.ADODiscoveryStatus)
+		protect("GET /api/v1/ado/projects", s.adoHandler.ListADOProjects)
+		protect("GET /api/v1/ado/projects/{organization}/{project}", s.adoHandler.GetADOProject)
+	}
 
 	// Self-service endpoints
 	protect("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)

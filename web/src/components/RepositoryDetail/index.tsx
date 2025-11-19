@@ -171,7 +171,13 @@ export function RepositoryDetail() {
             </Link>
           ) : (
             <Link 
-              to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
+              to={
+                // For ADO repos, navigate to /org/{organization}/project/{project}
+                repository.ado_project ? 
+                  `/org/${encodeURIComponent(repository.full_name.split('/')[0])}/project/${encodeURIComponent(repository.ado_project)}` :
+                  // For GitHub repos, navigate to /org/{organization}
+                  `/org/${encodeURIComponent(repository.full_name.split('/')[0])}`
+              }
               className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
             >
               ← Back to Repositories

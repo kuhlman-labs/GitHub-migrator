@@ -294,6 +294,11 @@ See [OPERATIONS.md](./docs/OPERATIONS.md#authentication-setup) for detailed conf
 - [config_template.yml](./configs/config_template.yml) - Complete YAML configuration reference with examples
 - [env.example](./configs/env.example) - Environment variables template (alternative to YAML config)
 
+### Migration Guides
+
+- [ADO_SETUP_GUIDE.md](./docs/ADO_SETUP_GUIDE.md) - Complete guide for migrating from Azure DevOps
+- [ADO_FEATURE_MIGRATION.md](./docs/ADO_FEATURE_MIGRATION.md) - Comprehensive Azure DevOps feature migration matrix
+
 ## Development
 
 ### Quick Reference

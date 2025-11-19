@@ -1,26 +1,32 @@
-import { useOrganizations, useBatches } from '../../hooks/useQueries';
+import { useOrganizations, useBatches, useProjects } from '../../hooks/useQueries';
 import { api } from '../../services/api';
 
 interface FilterBarProps {
   selectedOrganization: string;
+  selectedProject: string;
   selectedBatch: string;
   onOrganizationChange: (org: string) => void;
+  onProjectChange: (project: string) => void;
   onBatchChange: (batch: string) => void;
 }
 
 export function FilterBar({
   selectedOrganization,
+  selectedProject,
   selectedBatch,
   onOrganizationChange,
+  onProjectChange,
   onBatchChange,
 }: FilterBarProps) {
   const { data: organizations } = useOrganizations();
+  const { data: projects } = useProjects();
   const { data: batches } = useBatches();
 
   const handleExecutiveReportExport = async (format: 'csv' | 'json') => {
     try {
       const filters = {
         organization: selectedOrganization || undefined,
+        project: selectedProject || undefined,
         batch_id: selectedBatch || undefined,
       };
       const blob = await api.exportExecutiveReport(format, filters);
@@ -54,6 +60,25 @@ export function FilterBar({
             {organizations?.map((org) => (
               <option key={org.organization} value={org.organization}>
                 {org.organization} ({org.total_repos} repos)
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex-1 min-w-[200px]">
+          <label htmlFor="project-filter" className="block text-sm font-semibold text-gh-text-primary mb-1">
+            Project
+          </label>
+          <select
+            id="project-filter"
+            value={selectedProject}
+            onChange={(e) => onProjectChange(e.target.value)}
+            className="block w-full rounded-md border-gh-border-default text-sm px-3 py-1.5"
+          >
+            <option value="">All Projects</option>
+            {projects?.map((project) => (
+              <option key={project.project} value={project.project}>
+                {project.project} ({project.total_repos} repos)
               </option>
             ))}
           </select>

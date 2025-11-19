@@ -376,9 +376,10 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const groupReposByOrg = (repos: Repository[]) => {
     const groups: Record<string, Repository[]> = {};
     repos.forEach((repo) => {
-      const org = repo.full_name.split('/')[0];
-      if (!groups[org]) groups[org] = [];
-      groups[org].push(repo);
+      // For ADO repos, group by project; for GitHub repos, group by org (first part of full_name)
+      const groupKey = repo.ado_project || repo.full_name.split('/')[0];
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(repo);
     });
     return groups;
   };
@@ -607,7 +608,10 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                       <div key={repo.id} className="p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-gray-900 text-sm truncate">
-                            {repo.full_name.split('/')[1] || repo.full_name}
+                            {repo.ado_project 
+                              ? repo.full_name // For ADO, full_name is just the repo name
+                              : repo.full_name.split('/')[1] || repo.full_name // For GitHub, extract repo name from org/repo
+                            }
                           </div>
                           <div className="text-xs text-gray-600 mt-0.5">
                             {formatBytes(repo.total_size || 0)} • {repo.branch_count} branches

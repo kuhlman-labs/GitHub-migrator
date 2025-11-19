@@ -87,6 +87,47 @@ export interface Repository {
   exclude_metadata: boolean;
   exclude_git_data: boolean;
   exclude_owner_projects: boolean;
+  // Azure DevOps specific fields
+  ado_project?: string;
+  ado_is_git: boolean;
+  ado_has_boards: boolean;
+  ado_has_pipelines: boolean;
+  ado_has_ghas: boolean;
+  ado_pull_request_count: number;
+  ado_work_item_count: number;
+  ado_branch_policy_count: number;
+  // Enhanced Pipeline Data
+  ado_pipeline_count: number;
+  ado_yaml_pipeline_count: number;
+  ado_classic_pipeline_count: number;
+  ado_pipeline_run_count: number;
+  ado_has_service_connections: boolean;
+  ado_has_variable_groups: boolean;
+  ado_has_self_hosted_agents: boolean;
+  // Enhanced Work Item Data
+  ado_work_item_linked_count: number;
+  ado_active_work_item_count: number;
+  ado_work_item_types?: string;
+  // Pull Request Details
+  ado_open_pr_count: number;
+  ado_pr_with_linked_work_items: number;
+  ado_pr_with_attachments: number;
+  // Enhanced Branch Policy Data
+  ado_branch_policy_types?: string;
+  ado_required_reviewer_count: number;
+  ado_build_validation_policies: number;
+  // Wiki & Documentation
+  ado_has_wiki: boolean;
+  ado_wiki_page_count: number;
+  // Test Plans
+  ado_test_plan_count: number;
+  ado_test_case_count: number;
+  // Artifacts & Packages
+  ado_package_feed_count: number;
+  ado_has_artifacts: boolean;
+  // Service Hooks & Extensions
+  ado_service_hook_count: number;
+  ado_installed_extensions?: string;
   // Computed fields
   complexity_score?: number;
   complexity_breakdown?: ComplexityBreakdown;
@@ -114,6 +155,19 @@ export interface ComplexityBreakdown {
   internal_visibility_points: number;
   codeowners_points: number;
   activity_points: number;
+  // Azure DevOps specific breakdown
+  ado_tfvc_points?: number;
+  ado_classic_pipeline_points?: number;
+  ado_package_feed_points?: number;
+  ado_service_connection_points?: number;
+  ado_active_pipeline_points?: number;
+  ado_active_boards_points?: number;
+  ado_wiki_points?: number;
+  ado_test_plan_points?: number;
+  ado_variable_group_points?: number;
+  ado_service_hook_points?: number;
+  ado_many_prs_points?: number;
+  ado_branch_policy_points?: number;
 }
 
 export interface MigrationHistory {
@@ -163,7 +217,47 @@ export interface Batch {
 export interface Organization {
   organization: string;
   total_repos: number;
+  total_projects?: number; // For ADO orgs, total number of projects
   status_counts: Record<string, number>;
+  ado_organization?: string; // For ADO projects, the parent organization name
+  enterprise?: string; // For GitHub orgs, the parent enterprise name (future enhancement)
+}
+
+export interface Project {
+  project: string;
+  total_repos: number;
+  status_counts: Record<string, number>;
+}
+
+// Azure DevOps Project type
+export interface ADOProject {
+  id: string;
+  name: string;
+  organization: string;
+  description?: string;
+  url: string;
+  status_counts?: Record<string, number>;
+  state: string;
+  visibility: string;
+  last_update: string;
+  discovered_at: string;
+  updated_at: string;
+  repository_count?: number; // Populated when listing projects
+}
+
+export interface ADODiscoveryRequest {
+  organization: string;
+  projects?: string[];
+  workers?: number;
+}
+
+export interface ADODiscoveryStatus {
+  total_repositories: number;
+  total_projects: number;
+  tfvc_repositories: number;
+  git_repositories: number;
+  status_breakdown: Record<string, number>;
+  organization?: string;
 }
 
 export interface SizeDistribution {
@@ -172,6 +266,7 @@ export interface SizeDistribution {
 }
 
 export interface FeatureStats {
+  // GitHub features
   is_archived: number;
   is_fork: number;
   has_lfs: number;
@@ -192,6 +287,22 @@ export interface FeatureStats {
   has_self_hosted_runners: number;
   has_release_assets: number;
   has_webhooks: number;
+  
+  // Azure DevOps features
+  ado_tfvc_count: number;
+  ado_has_boards: number;
+  ado_has_pipelines: number;
+  ado_has_ghas: number;
+  ado_has_pull_requests: number;
+  ado_has_work_items: number;
+  ado_has_branch_policies: number;
+  ado_has_yaml_pipelines: number;
+  ado_has_classic_pipelines: number;
+  ado_has_wiki: number;
+  ado_has_test_plans: number;
+  ado_has_package_feeds: number;
+  ado_has_service_hooks: number;
+  
   total_repositories: number;
 }
 
@@ -233,6 +344,7 @@ export interface Analytics {
   migration_time_series?: MigrationTimeSeriesPoint[];
   estimated_completion_date?: string;
   organization_stats?: Organization[];
+  project_stats?: Organization[];
   size_distribution?: SizeDistribution[];
   feature_stats?: FeatureStats;
   migration_completion_stats?: MigrationCompletionStats[];
@@ -267,6 +379,15 @@ export interface RiskAnalysis {
   size_distribution: SizeDistribution[];
 }
 
+export interface ADORiskAnalysis {
+  tfvc_repos: number;
+  classic_pipelines: number;
+  repos_with_active_work_items: number;
+  repos_with_wikis: number;
+  repos_with_test_plans: number;
+  repos_with_package_feeds: number;
+}
+
 export interface BatchPerformance {
   total_batches: number;
   completed_batches: number;
@@ -275,10 +396,13 @@ export interface BatchPerformance {
 }
 
 export interface ExecutiveReport {
+  source_type: 'github' | 'azuredevops';
   executive_summary: ExecutiveSummary;
   velocity_metrics: VelocityMetrics;
   organization_progress: MigrationCompletionStats[];
+  project_progress?: MigrationCompletionStats[]; // For Azure DevOps
   risk_analysis: RiskAnalysis;
+  ado_risk_analysis?: ADORiskAnalysis; // For Azure DevOps specific risks
   batch_performance: BatchPerformance;
   feature_migration_status: FeatureStats;
   status_breakdown: Record<string, number>;
@@ -341,8 +465,11 @@ export interface RepositoryFilters {
   batch_id?: number;
   source?: string;
   organization?: string | string[];
+  project?: string | string[]; // For Azure DevOps projects
   min_size?: number;
   max_size?: number;
+  
+  // GitHub features
   has_lfs?: boolean;
   has_submodules?: boolean;
   has_large_files?: boolean;
@@ -364,6 +491,22 @@ export interface RepositoryFilters {
   has_self_hosted_runners?: boolean;
   has_release_assets?: boolean;
   has_webhooks?: boolean;
+  
+  // Azure DevOps features
+  ado_is_git?: boolean;
+  ado_has_boards?: boolean;
+  ado_has_pipelines?: boolean;
+  ado_has_ghas?: boolean;
+  ado_pull_request_count?: string; // Supports '> 0' for filtering
+  ado_work_item_count?: string;
+  ado_branch_policy_count?: string;
+  ado_yaml_pipeline_count?: string;
+  ado_classic_pipeline_count?: string;
+  ado_has_wiki?: boolean;
+  ado_test_plan_count?: string;
+  ado_package_feed_count?: string;
+  ado_service_hook_count?: string;
+  
   complexity?: string | string[];
   size_category?: string | string[];
   search?: string;

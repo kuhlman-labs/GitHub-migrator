@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/source"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
 	ghapi "github.com/google/go-github/v75/github"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // Collector discovers and profiles repositories

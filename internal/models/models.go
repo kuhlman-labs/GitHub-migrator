@@ -1,6 +1,8 @@
 package models
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -124,6 +126,56 @@ type Repository struct {
 	ExcludeGitData       bool `json:"exclude_git_data" db:"exclude_git_data" gorm:"column:exclude_git_data;default:false"`                   // Exclude git data (commits, refs)
 	ExcludeOwnerProjects bool `json:"exclude_owner_projects" db:"exclude_owner_projects" gorm:"column:exclude_owner_projects;default:false"` // Exclude organization/user projects
 
+	// Azure DevOps specific fields
+	ADOProject           *string `json:"ado_project,omitempty" db:"ado_project" gorm:"column:ado_project"`                                     // ADO project name
+	ADOIsGit             bool    `json:"ado_is_git" db:"ado_is_git" gorm:"column:ado_is_git;default:true"`                                     // false = TFVC
+	ADOHasBoards         bool    `json:"ado_has_boards" db:"ado_has_boards" gorm:"column:ado_has_boards;default:false"`                        // Azure Boards integration
+	ADOHasPipelines      bool    `json:"ado_has_pipelines" db:"ado_has_pipelines" gorm:"column:ado_has_pipelines;default:false"`               // Azure Pipelines configured
+	ADOHasGHAS           bool    `json:"ado_has_ghas" db:"ado_has_ghas" gorm:"column:ado_has_ghas;default:false"`                              // GitHub Advanced Security
+	ADOPullRequestCount  int     `json:"ado_pull_request_count" db:"ado_pull_request_count" gorm:"column:ado_pull_request_count;default:0"`    // Total PR count
+	ADOWorkItemCount     int     `json:"ado_work_item_count" db:"ado_work_item_count" gorm:"column:ado_work_item_count;default:0"`             // Linked work items
+	ADOBranchPolicyCount int     `json:"ado_branch_policy_count" db:"ado_branch_policy_count" gorm:"column:ado_branch_policy_count;default:0"` // Branch policies
+
+	// Enhanced Pipeline Data
+	ADOPipelineCount         int  `json:"ado_pipeline_count" db:"ado_pipeline_count" gorm:"column:ado_pipeline_count;default:0"`                                // Total number of pipelines
+	ADOYAMLPipelineCount     int  `json:"ado_yaml_pipeline_count" db:"ado_yaml_pipeline_count" gorm:"column:ado_yaml_pipeline_count;default:0"`                 // YAML pipelines (easier to migrate)
+	ADOClassicPipelineCount  int  `json:"ado_classic_pipeline_count" db:"ado_classic_pipeline_count" gorm:"column:ado_classic_pipeline_count;default:0"`        // Classic pipelines (require manual recreation)
+	ADOPipelineRunCount      int  `json:"ado_pipeline_run_count" db:"ado_pipeline_run_count" gorm:"column:ado_pipeline_run_count;default:0"`                    // Recent pipeline runs (indicates active CI/CD)
+	ADOHasServiceConnections bool `json:"ado_has_service_connections" db:"ado_has_service_connections" gorm:"column:ado_has_service_connections;default:false"` // External service integrations
+	ADOHasVariableGroups     bool `json:"ado_has_variable_groups" db:"ado_has_variable_groups" gorm:"column:ado_has_variable_groups;default:false"`             // Variable groups used
+	ADOHasSelfHostedAgents   bool `json:"ado_has_self_hosted_agents" db:"ado_has_self_hosted_agents" gorm:"column:ado_has_self_hosted_agents;default:false"`    // Uses self-hosted agents
+
+	// Enhanced Work Item Data
+	ADOWorkItemLinkedCount int     `json:"ado_work_item_linked_count" db:"ado_work_item_linked_count" gorm:"column:ado_work_item_linked_count;default:0"` // Work items with commit/PR links
+	ADOActiveWorkItemCount int     `json:"ado_active_work_item_count" db:"ado_active_work_item_count" gorm:"column:ado_active_work_item_count;default:0"` // Active (non-closed) work items
+	ADOWorkItemTypes       *string `json:"ado_work_item_types,omitempty" db:"ado_work_item_types" gorm:"column:ado_work_item_types;type:text"`            // JSON array of work item types used
+
+	// Pull Request Details
+	ADOOpenPRCount           int `json:"ado_open_pr_count" db:"ado_open_pr_count" gorm:"column:ado_open_pr_count;default:0"`                                     // Open pull requests
+	ADOPRWithLinkedWorkItems int `json:"ado_pr_with_linked_work_items" db:"ado_pr_with_linked_work_items" gorm:"column:ado_pr_with_linked_work_items;default:0"` // PRs with work item links (these migrate)
+	ADOPRWithAttachments     int `json:"ado_pr_with_attachments" db:"ado_pr_with_attachments" gorm:"column:ado_pr_with_attachments;default:0"`                   // PRs with attachments
+
+	// Enhanced Branch Policy Data
+	ADOBranchPolicyTypes       *string `json:"ado_branch_policy_types,omitempty" db:"ado_branch_policy_types" gorm:"column:ado_branch_policy_types;type:text"`         // JSON array of policy types
+	ADORequiredReviewerCount   int     `json:"ado_required_reviewer_count" db:"ado_required_reviewer_count" gorm:"column:ado_required_reviewer_count;default:0"`       // Required reviewer policies
+	ADOBuildValidationPolicies int     `json:"ado_build_validation_policies" db:"ado_build_validation_policies" gorm:"column:ado_build_validation_policies;default:0"` // Build validation requirements
+
+	// Wiki & Documentation
+	ADOHasWiki       bool `json:"ado_has_wiki" db:"ado_has_wiki" gorm:"column:ado_has_wiki;default:false"`                  // Repository has wiki (doesn't migrate)
+	ADOWikiPageCount int  `json:"ado_wiki_page_count" db:"ado_wiki_page_count" gorm:"column:ado_wiki_page_count;default:0"` // Number of wiki pages
+
+	// Test Plans
+	ADOTestPlanCount int `json:"ado_test_plan_count" db:"ado_test_plan_count" gorm:"column:ado_test_plan_count;default:0"` // Test plans linked to repo
+	ADOTestCaseCount int `json:"ado_test_case_count" db:"ado_test_case_count" gorm:"column:ado_test_case_count;default:0"` // Test cases in plans
+
+	// Artifacts & Packages
+	ADOPackageFeedCount int  `json:"ado_package_feed_count" db:"ado_package_feed_count" gorm:"column:ado_package_feed_count;default:0"` // Package feeds associated
+	ADOHasArtifacts     bool `json:"ado_has_artifacts" db:"ado_has_artifacts" gorm:"column:ado_has_artifacts;default:false"`            // Build artifacts configured
+
+	// Service Hooks & Extensions
+	ADOServiceHookCount    int     `json:"ado_service_hook_count" db:"ado_service_hook_count" gorm:"column:ado_service_hook_count;default:0"`                 // Service hooks/webhooks configured
+	ADOInstalledExtensions *string `json:"ado_installed_extensions,omitempty" db:"ado_installed_extensions" gorm:"column:ado_installed_extensions;type:text"` // JSON array of repo-specific extensions
+
 	// Timestamps
 	DiscoveredAt    time.Time  `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
@@ -131,14 +183,76 @@ type Repository struct {
 	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty" db:"last_discovery_at" gorm:"column:last_discovery_at"` // Latest discovery refresh
 	LastDryRunAt    *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at" gorm:"column:last_dry_run_at"`       // Latest dry run execution
 
-	// Computed fields (not stored in DB)
-	ComplexityScore     *int                 `json:"complexity_score,omitempty" db:"-" gorm:"-"`     // Calculated server-side
-	ComplexityBreakdown *ComplexityBreakdown `json:"complexity_breakdown,omitempty" db:"-" gorm:"-"` // Individual component scores
+	// Complexity scoring (calculated during profiling and stored for performance)
+	ComplexityScore     *int    `json:"complexity_score,omitempty" db:"complexity_score" gorm:"column:complexity_score"` // Calculated during profiling
+	ComplexityBreakdown *string `json:"-" db:"complexity_breakdown" gorm:"column:complexity_breakdown;type:text"`        // JSON breakdown stored as string, marshaled as object via MarshalJSON
 }
 
 // TableName specifies the table name for Repository model
 func (Repository) TableName() string {
 	return "repositories"
+}
+
+// SetComplexityBreakdown serializes a ComplexityBreakdown struct to JSON and stores it
+func (r *Repository) SetComplexityBreakdown(breakdown *ComplexityBreakdown) error {
+	if breakdown == nil {
+		r.ComplexityBreakdown = nil
+		return nil
+	}
+
+	data, err := json.Marshal(breakdown)
+	if err != nil {
+		return fmt.Errorf("failed to marshal complexity breakdown: %w", err)
+	}
+
+	jsonStr := string(data)
+	r.ComplexityBreakdown = &jsonStr
+	return nil
+}
+
+// GetComplexityBreakdown deserializes the JSON complexity breakdown
+func (r *Repository) GetComplexityBreakdown() (*ComplexityBreakdown, error) {
+	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
+		return nil, nil
+	}
+
+	var breakdown ComplexityBreakdown
+	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal complexity breakdown: %w", err)
+	}
+
+	return &breakdown, nil
+}
+
+// MarshalJSON implements custom JSON marshaling to convert complexity_breakdown from string to object
+func (r *Repository) MarshalJSON() ([]byte, error) {
+	// Create an alias without MarshalJSON to avoid recursion
+	type Alias Repository
+
+	// Marshal the main struct (complexity_breakdown is excluded via json:"-")
+	data, err := json.Marshal((*Alias)(r))
+	if err != nil {
+		return nil, err
+	}
+
+	// If no complexity breakdown, return as-is
+	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
+		return data, nil
+	}
+
+	// Parse the marshaled JSON
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+
+	// Deserialize the complexity breakdown string and add it as an object
+	var breakdown ComplexityBreakdown
+	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err == nil {
+		result["complexity_breakdown"] = breakdown
+	}
+
+	return json.Marshal(result)
 }
 
 // ComplexityBreakdown provides individual component scores for transparency
@@ -164,6 +278,20 @@ type ComplexityBreakdown struct {
 	InternalVisibilityPoints int `json:"internal_visibility_points"` // 1 point if internal
 	CodeownersPoints         int `json:"codeowners_points"`          // 1 point if has CODEOWNERS
 	ActivityPoints           int `json:"activity_points"`            // 0, 2, or 4 points based on quantile
+
+	// Azure DevOps specific complexity factors
+	ADOTFVCPoints              int `json:"ado_tfvc_points"`               // 50 points - blocking, requires Git conversion
+	ADOClassicPipelinePoints   int `json:"ado_classic_pipeline_points"`   // 5 points per pipeline - manual recreation required
+	ADOPackageFeedPoints       int `json:"ado_package_feed_points"`       // 3 points - separate migration process
+	ADOServiceConnectionPoints int `json:"ado_service_connection_points"` // 3 points - must recreate in GitHub
+	ADOActivePipelinePoints    int `json:"ado_active_pipeline_points"`    // 3 points - CI/CD reconfiguration needed
+	ADOActiveBoardsPoints      int `json:"ado_active_boards_points"`      // 3 points - work items don't migrate
+	ADOWikiPoints              int `json:"ado_wiki_points"`               // 2 points per 10 pages - manual migration needed
+	ADOTestPlanPoints          int `json:"ado_test_plan_points"`          // 2 points - no GitHub equivalent
+	ADOVariableGroupPoints     int `json:"ado_variable_group_points"`     // 1 point - convert to GitHub secrets
+	ADOServiceHookPoints       int `json:"ado_service_hook_points"`       // 1 point - recreate webhooks
+	ADOManyPRsPoints           int `json:"ado_many_prs_points"`           // 2 points - metadata migration time
+	ADOBranchPolicyPoints      int `json:"ado_branch_policy_points"`      // 1 point - need validation/recreation
 }
 
 // MigrationStatus represents the status of a repository migration
