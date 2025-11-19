@@ -7,6 +7,7 @@ import type {
   RepositoryDetailResponse, 
   MigrationLogsResponse,
   Organization,
+  Project,
   MigrationHistoryEntry,
   RepositoryFilters,
   RepositoryListResponse,
@@ -42,7 +43,29 @@ export const api = {
   },
 
   async getDiscoveryStatus() {
-    const { data } = await client.get('/discovery/status');
+    const { data} = await client.get('/discovery/status');
+    return data;
+  },
+
+  // Azure DevOps Discovery
+  async startADODiscovery(params: { organization?: string; project?: string; workers?: number }) {
+    const { data } = await client.post('/ado/discover', params);
+    return data;
+  },
+
+  async getADODiscoveryStatus(organization?: string) {
+    const { data } = await client.get('/ado/discovery/status', { params: { organization } });
+    return data;
+  },
+
+  async listADOProjects(organization?: string) {
+    const { data } = await client.get('/ado/projects', { params: { organization } });
+    // Backend returns { projects: [...], total: n }, extract the projects array
+    return data.projects || [];
+  },
+
+  async getADOProject(organization: string, project: string) {
+    const { data } = await client.get(`/ado/projects/${encodeURIComponent(organization)}/${encodeURIComponent(project)}`);
     return data;
   },
 
@@ -57,6 +80,10 @@ export const api = {
     
     if (filters?.organization && Array.isArray(filters.organization)) {
       params.organization = filters.organization.join(',');
+    }
+    
+    if (filters?.project && Array.isArray(filters.project)) {
+      params.project = filters.project.join(',');
     }
     
     if (filters?.complexity && Array.isArray(filters.complexity)) {
@@ -123,6 +150,11 @@ export const api = {
   // Organizations
   async listOrganizations(): Promise<Organization[]> {
     const { data } = await client.get('/organizations');
+    return data;
+  },
+
+  async listProjects(): Promise<Project[]> {
+    const { data } = await client.get('/projects');
     return data;
   },
 
@@ -291,10 +323,21 @@ export const api = {
     return data;
   },
 
+  // Configuration
+  async getConfig(): Promise<{
+    source_type: 'github' | 'azuredevops';
+    auth_enabled: boolean;
+    entraid_enabled?: boolean;
+  }> {
+    const { data } = await client.get('/config');
+    return data;
+  },
+
   // Authentication
   async getAuthConfig(): Promise<{
     enabled: boolean;
     login_url?: string;
+    entraid_login_url?: string;
     authorization_rules?: {
       requires_org_membership?: boolean;
       required_orgs?: string[];

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/auth"
-	"github.com/brettkuhlman/github-migrator/internal/config"
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 func TestHandler_ListRepositories_Filtering(t *testing.T) {

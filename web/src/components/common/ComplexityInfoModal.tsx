@@ -1,7 +1,15 @@
 import { useState } from 'react';
 
-export function ComplexityInfoModal() {
+interface ComplexityInfoModalProps {
+  source?: 'github' | 'azuredevops' | 'all';  // Allows context-aware display
+}
+
+export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps) {
   const [isOpen, setIsOpen] = useState(false);
+
+  // Determine what to show based on source
+  const showGitHub = source === 'github' || source === 'all';
+  const showADO = source === 'azuredevops' || source === 'all';
 
   return (
     <>
@@ -22,7 +30,9 @@ export function ComplexityInfoModal() {
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
               <div className="flex justify-between items-start">
                 <h2 className="text-xl font-semibold text-gray-900">
-                  Repository Complexity Scoring
+                  {source === 'azuredevops' ? 'Azure DevOps Migration Complexity' : 
+                   source === 'github' ? 'GitHub Migration Complexity' :
+                   'Repository Complexity Scoring'}
                 </h2>
                 <button
                   onClick={() => setIsOpen(false)}
@@ -39,10 +49,22 @@ export function ComplexityInfoModal() {
               {/* Overview */}
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">Overview</h3>
-                <p className="text-gray-700 mb-2">
-                  We calculate a GitHub-specific complexity score for each repository to estimate migration effort and potential challenges. 
-                  The score combines multiple factors, each weighted by their remediation difficulty based on GitHub's migration documentation.
-                </p>
+                {source === 'azuredevops' ? (
+                  <p className="text-gray-700 mb-2">
+                    We calculate an Azure DevOps-specific complexity score to estimate migration effort from ADO to GitHub. 
+                    The score accounts for ADO-specific features like TFVC repositories, classic pipelines, Azure Boards, wikis, and test plans that require special handling during migration.
+                  </p>
+                ) : source === 'github' ? (
+                  <p className="text-gray-700 mb-2">
+                    We calculate a GitHub-specific complexity score to estimate migration effort between GitHub instances. 
+                    The score combines multiple factors, each weighted by their remediation difficulty based on GitHub's migration documentation.
+                  </p>
+                ) : (
+                  <p className="text-gray-700 mb-2">
+                    We calculate source-specific complexity scores to estimate migration effort and potential challenges. 
+                    The scoring methodology adapts based on your repository source (GitHub or Azure DevOps), with each factor weighted by remediation difficulty.
+                  </p>
+                )}
                 <p className="text-sm text-gray-600 italic">
                   Activity levels are calculated using quantiles relative to your repository dataset, making the scoring adaptive to your specific environment.
                 </p>
@@ -52,7 +74,7 @@ export function ComplexityInfoModal() {
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-3">Scoring Factors</h3>
                 <div className="space-y-4">
-                  {/* Repository Size */}
+                  {/* Repository Size - Common to both */}
                   <div className="border-l-4 border-blue-500 pl-4">
                     <div className="flex justify-between items-start mb-1">
                       <h4 className="font-medium text-gray-900">Repository Size</h4>
@@ -69,10 +91,13 @@ export function ComplexityInfoModal() {
                     </ul>
                   </div>
 
-                  {/* High Impact Features */}
-                  <div className="mb-3">
-                    <h4 className="font-semibold text-gray-900 mb-2">High Impact (3-4 points)</h4>
-                    <p className="text-sm text-gray-600 mb-3">Features requiring significant remediation effort before or after migration</p>
+                  {/* GitHub-Specific Factors */}
+                  {showGitHub && (
+                    <>
+                      {/* High Impact Features */}
+                      <div className="mb-3">
+                        <h4 className="font-semibold text-gray-900 mb-2">GitHub High Impact (3-4 points)</h4>
+                        <p className="text-sm text-gray-600 mb-3">Features requiring significant remediation effort before or after migration</p>
                     
                     <div className="space-y-3">
                       <div className="border-l-4 border-red-500 pl-4">
@@ -272,8 +297,80 @@ export function ComplexityInfoModal() {
                       </div>
                     </div>
                   </div>
+                    </>
+                  )}
 
-                  {/* Activity-Based Scoring */}
+                  {/* Azure DevOps Specific Factors */}
+                  {showADO && (
+                    <div className="mb-3">
+                      <h4 className="font-semibold text-gray-900 mb-2">Azure DevOps Specific Factors</h4>
+                    <p className="text-sm text-gray-600 mb-3">Additional complexity factors for ADO → GitHub migrations</p>
+                    
+                    <div className="space-y-3">
+                      <div className="border-l-4 border-red-700 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">TFVC Repository</h5>
+                          <span className="text-sm font-semibold text-red-700">50 points (BLOCKING)</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Must be converted to Git before migration. Use git-tfs or convert in ADO first.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Classic Pipelines</h5>
+                          <span className="text-sm font-semibold text-red-600">5 points per pipeline</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Cannot be automatically converted. Must manually recreate as GitHub Actions workflows.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Package Feeds / Service Connections / Active Pipelines</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points each</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Require separate migration to GitHub Packages or recreation in GitHub.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Active Work Items (Azure Boards)</h5>
+                          <span className="text-sm font-semibold text-red-600">3 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Work items don't migrate with GEI. Only PR links migrate. Consider third-party tools.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-orange-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Wiki Pages / Test Plans</h5>
+                          <span className="text-sm font-semibold text-orange-600">2 points</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Manual migration required for wikis. Test plans have no GitHub equivalent.
+                        </p>
+                      </div>
+
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex justify-between items-start mb-1">
+                          <h5 className="font-medium text-gray-900">Variable Groups / Service Hooks / Branch Policies / Many PRs</h5>
+                          <span className="text-sm font-semibold text-yellow-600">1-2 points each</span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Must recreate as GitHub secrets/webhooks or verify after migration.
+                        </p>
+                      </div>
+                    </div>
+                    </div>
+                  )}
+
+                  {/* Activity-Based Scoring - Common to both */}
                   <div className="border-l-4 border-purple-500 pl-4">
                     <div className="flex justify-between items-start mb-1">
                       <h4 className="font-medium text-gray-900">Activity Level (Quantile-Based)</h4>
@@ -334,30 +431,82 @@ export function ComplexityInfoModal() {
               </div>
 
               {/* Example */}
-              <div className="bg-blue-50 rounded-lg p-4">
-                <h3 className="text-lg font-medium text-blue-900 mb-2">Example Calculation</h3>
-                <div className="text-sm text-blue-800 space-y-1">
-                  <p className="font-medium">Repository with:</p>
-                  <ul className="ml-4 space-y-1">
-                    <li>• Size: 2.5 GB → <span className="font-semibold">6 points</span></li>
-                    <li>• Has large files → <span className="font-semibold">+4 points</span></li>
-                    <li>• Has 3 environments → <span className="font-semibold">+3 points</span></li>
-                    <li>• Has 15 secrets → <span className="font-semibold">+3 points</span></li>
-                    <li>• Has 8 variables → <span className="font-semibold">+2 points</span></li>
-                    <li>• Has discussions → <span className="font-semibold">+2 points</span></li>
-                    <li>• Uses LFS → <span className="font-semibold">+2 points</span></li>
-                    <li>• Has Advanced Security → <span className="font-semibold">+1 point</span></li>
-                    <li>• Has 2 webhooks → <span className="font-semibold">+1 point</span></li>
-                    <li>• Has branch protections → <span className="font-semibold">+1 point</span></li>
-                    <li>• Has rulesets → <span className="font-semibold">+1 point</span></li>
-                    <li>• High activity (top 25%) → <span className="font-semibold">+4 points</span></li>
-                  </ul>
-                  <p className="font-bold text-blue-900 pt-2">Total Score: 31 → Very Complex</p>
-                  <p className="text-xs text-blue-700 pt-1 italic">
-                    This repository requires significant planning for environments, secrets, and variables that don't migrate.
-                  </p>
+              {source === 'azuredevops' ? (
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <h3 className="text-lg font-medium text-purple-900 mb-2">Azure DevOps Example</h3>
+                  <div className="text-sm text-purple-800 space-y-1">
+                    <p className="font-medium">ADO Repository with:</p>
+                    <ul className="ml-4 space-y-1">
+                      <li>• Size: 2.5 GB → <span className="font-semibold">6 points</span></li>
+                      <li>• 3 Classic build pipelines → <span className="font-semibold">+15 points</span></li>
+                      <li>• Active Azure Boards (20 work items) → <span className="font-semibold">+3 points</span></li>
+                      <li>• Wiki with 45 pages → <span className="font-semibold">+10 points</span></li>
+                      <li>• 2 package feeds → <span className="font-semibold">+6 points</span></li>
+                      <li>• 5 service connections → <span className="font-semibold">+3 points</span></li>
+                      <li>• 3 branch policies → <span className="font-semibold">+3 points</span></li>
+                      <li>• 150+ pull requests → <span className="font-semibold">+2 points</span></li>
+                    </ul>
+                    <p className="font-bold text-purple-900 pt-2">Total Score: 48 → Very Complex</p>
+                    <p className="text-xs text-purple-700 pt-1 italic">
+                      This ADO repository requires manual recreation of classic pipelines, work item export, and wiki migration planning.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : source === 'github' ? (
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <h3 className="text-lg font-medium text-blue-900 mb-2">GitHub Example</h3>
+                  <div className="text-sm text-blue-800 space-y-1">
+                    <p className="font-medium">Repository with:</p>
+                    <ul className="ml-4 space-y-1">
+                      <li>• Size: 2.5 GB → <span className="font-semibold">6 points</span></li>
+                      <li>• Has large files → <span className="font-semibold">+4 points</span></li>
+                      <li>• Has 3 environments → <span className="font-semibold">+3 points</span></li>
+                      <li>• Has 15 secrets → <span className="font-semibold">+3 points</span></li>
+                      <li>• Has 8 variables → <span className="font-semibold">+2 points</span></li>
+                      <li>• Has discussions → <span className="font-semibold">+2 points</span></li>
+                      <li>• Uses LFS → <span className="font-semibold">+2 points</span></li>
+                      <li>• Has Advanced Security → <span className="font-semibold">+1 point</span></li>
+                      <li>• Has 2 webhooks → <span className="font-semibold">+1 point</span></li>
+                      <li>• Has branch protections → <span className="font-semibold">+1 point</span></li>
+                      <li>• Has rulesets → <span className="font-semibold">+1 point</span></li>
+                      <li>• High activity (top 25%) → <span className="font-semibold">+4 points</span></li>
+                    </ul>
+                    <p className="font-bold text-blue-900 pt-2">Total Score: 31 → Very Complex</p>
+                    <p className="text-xs text-blue-700 pt-1 italic">
+                      This repository requires significant planning for environments, secrets, and variables that don't migrate.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <h3 className="text-base font-medium text-blue-900 mb-2">GitHub Example</h3>
+                    <div className="text-xs text-blue-800 space-y-1">
+                      <ul className="ml-2 space-y-0.5">
+                        <li>• Size: 2.5 GB: <span className="font-semibold">6 pts</span></li>
+                        <li>• Large files: <span className="font-semibold">+4 pts</span></li>
+                        <li>• Environments: <span className="font-semibold">+3 pts</span></li>
+                        <li>• Secrets: <span className="font-semibold">+3 pts</span></li>
+                        <li>• More features: <span className="font-semibold">+11 pts</span></li>
+                      </ul>
+                      <p className="font-bold text-blue-900 pt-1">Total: 27 → Complex</p>
+                    </div>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-4">
+                    <h3 className="text-base font-medium text-purple-900 mb-2">ADO Example</h3>
+                    <div className="text-xs text-purple-800 space-y-1">
+                      <ul className="ml-2 space-y-0.5">
+                        <li>• Size: 2.5 GB: <span className="font-semibold">6 pts</span></li>
+                        <li>• 3 Classic pipelines: <span className="font-semibold">+15 pts</span></li>
+                        <li>• Azure Boards: <span className="font-semibold">+3 pts</span></li>
+                        <li>• Wiki: <span className="font-semibold">+10 pts</span></li>
+                        <li>• More features: <span className="font-semibold">+14 pts</span></li>
+                      </ul>
+                      <p className="font-bold text-purple-900 pt-1">Total: 48 → Very Complex</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t border-gray-200">

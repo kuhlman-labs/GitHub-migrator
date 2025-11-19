@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
-	"github.com/brettkuhlman/github-migrator/internal/storage"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // MigrationExecutor is the interface for executing repository migrations

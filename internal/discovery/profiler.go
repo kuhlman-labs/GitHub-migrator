@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/brettkuhlman/github-migrator/internal/github"
-	"github.com/brettkuhlman/github-migrator/internal/models"
 	ghapi "github.com/google/go-github/v75/github"
+	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 // Profiler profiles GitHub-specific features via API
@@ -777,6 +777,21 @@ func (p *Profiler) estimateMetadataSize(ctx context.Context, org, name string, r
 			"repo", repo.FullName,
 			"estimated_gb", estimateGB)
 	}
+
+	// Calculate and store complexity score
+	complexity, breakdown := p.CalculateComplexity(repo)
+	repo.ComplexityScore = &complexity
+
+	// Serialize complexity breakdown to JSON for storage
+	if err := repo.SetComplexityBreakdown(breakdown); err != nil {
+		p.logger.Warn("Failed to serialize complexity breakdown",
+			"repo", repo.FullName,
+			"error", err)
+	}
+
+	p.logger.Debug("GitHub repository complexity calculated",
+		"repo", repo.FullName,
+		"complexity", complexity)
 
 	return nil
 }

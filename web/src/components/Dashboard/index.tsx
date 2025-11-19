@@ -5,21 +5,43 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
 import { useOrganizations } from '../../hooks/useQueries';
-import { useStartDiscovery } from '../../hooks/useMutations';
+import { useStartDiscovery, useStartADODiscovery } from '../../hooks/useMutations';
+import { api } from '../../services/api';
 
 export function Dashboard() {
   const { data: organizations = [], isLoading, isFetching } = useOrganizations();
   const startDiscoveryMutation = useStartDiscovery();
+  const startADODiscoveryMutation = useStartADODiscovery();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
-  const [discoveryType, setDiscoveryType] = useState<'organization' | 'enterprise'>('organization');
+  const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
+  const [discoveryType, setDiscoveryType] = useState<'organization' | 'enterprise' | 'ado-org' | 'ado-project'>('organization');
   const [organization, setOrganization] = useState('');
   const [enterpriseSlug, setEnterpriseSlug] = useState('');
+  const [adoOrganization, setAdoOrganization] = useState('');
+  const [adoProject, setAdoProject] = useState('');
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
+
+  // Fetch source type on mount
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const config = await api.getConfig();
+        setSourceType(config.source_type);
+        // Set default discovery type based on source
+        if (config.source_type === 'azuredevops') {
+          setDiscoveryType('ado-org');
+        }
+      } catch (error) {
+        console.error('Failed to fetch config:', error);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   const handleStartDiscovery = async () => {
     // Validate input based on discovery type
@@ -33,6 +55,16 @@ export function Dashboard() {
       return;
     }
 
+    if (discoveryType === 'ado-org' && !adoOrganization.trim()) {
+      setDiscoveryError('Azure DevOps organization name is required');
+      return;
+    }
+
+    if (discoveryType === 'ado-project' && (!adoOrganization.trim() || !adoProject.trim())) {
+      setDiscoveryError('Both Azure DevOps organization and project names are required');
+      return;
+    }
+
     setDiscoveryError(null);
     setDiscoverySuccess(null);
 
@@ -41,6 +73,18 @@ export function Dashboard() {
         await startDiscoveryMutation.mutateAsync({ enterprise_slug: enterpriseSlug.trim() });
         setDiscoverySuccess(`Enterprise discovery started for ${enterpriseSlug}`);
         setEnterpriseSlug('');
+      } else if (discoveryType === 'ado-org') {
+        await startADODiscoveryMutation.mutateAsync({ organization: adoOrganization.trim() });
+        setDiscoverySuccess(`ADO organization discovery started for ${adoOrganization}`);
+        setAdoOrganization('');
+      } else if (discoveryType === 'ado-project') {
+        await startADODiscoveryMutation.mutateAsync({ 
+          organization: adoOrganization.trim(), 
+          project: adoProject.trim() 
+        });
+        setDiscoverySuccess(`ADO project discovery started for ${adoOrganization}/${adoProject}`);
+        setAdoOrganization('');
+        setAdoProject('');
       } else {
         await startDiscoveryMutation.mutateAsync({ organization: organization.trim() });
         setDiscoverySuccess(`Discovery started for ${organization}`);
@@ -107,7 +151,7 @@ export function Dashboard() {
       <div className="mb-4 text-sm text-gh-text-secondary">
         {totalItems > 0 ? (
           <>
-            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} organizations with {totalRepos} total repositories
+            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {totalItems === 1 ? 'organization' : 'organizations'} with {totalRepos} total repositories
           </>
         ) : (
           'No organizations found'
@@ -140,13 +184,18 @@ export function Dashboard() {
 
       {showDiscoveryModal && (
         <DiscoveryModal
+          sourceType={sourceType}
           discoveryType={discoveryType}
           setDiscoveryType={setDiscoveryType}
           organization={organization}
           setOrganization={setOrganization}
           enterpriseSlug={enterpriseSlug}
           setEnterpriseSlug={setEnterpriseSlug}
-          loading={startDiscoveryMutation.isPending}
+          adoOrganization={adoOrganization}
+          setAdoOrganization={setAdoOrganization}
+          adoProject={adoProject}
+          setAdoProject={setAdoProject}
+          loading={startDiscoveryMutation.isPending || startADODiscoveryMutation.isPending}
           error={discoveryError}
           onStart={handleStartDiscovery}
           onClose={() => {
@@ -154,6 +203,8 @@ export function Dashboard() {
             setDiscoveryError(null);
             setOrganization('');
             setEnterpriseSlug('');
+            setAdoOrganization('');
+            setAdoProject('');
           }}
         />
       )}
@@ -193,6 +244,7 @@ function OrganizationCard({ organization }: { organization: Organization }) {
   };
 
   const totalRepos = organization.total_repos;
+  const totalProjects = organization.total_projects;
   const statusCounts = organization.status_counts;
 
   return (
@@ -200,13 +252,39 @@ function OrganizationCard({ organization }: { organization: Organization }) {
       to={`/org/${encodeURIComponent(organization.organization)}`}
       className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
     >
-      <h3 className="text-lg font-semibold text-gh-text-primary mb-4">
-        {organization.organization}
-      </h3>
-      
       <div className="mb-4">
-        <div className="text-3xl font-semibold text-gh-blue mb-1">{totalRepos}</div>
-        <div className="text-sm text-gh-text-secondary">Total Repositories</div>
+        <h3 className="text-lg font-semibold text-gh-text-primary mb-2">
+          {organization.organization}
+        </h3>
+        {/* Show hierarchy badge */}
+        {organization.ado_organization && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md font-medium">
+              ADO Org: {organization.ado_organization}
+            </span>
+          </div>
+        )}
+        {organization.enterprise && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-md font-medium">
+              GitHub Enterprise: {organization.enterprise}
+            </span>
+          </div>
+        )}
+      </div>
+      
+      <div className="mb-4 space-y-3">
+        <div>
+          <div className="text-3xl font-semibold text-gh-blue mb-1">{totalRepos}</div>
+          <div className="text-sm text-gh-text-secondary">Total Repositories</div>
+        </div>
+        
+        {totalProjects !== undefined && (
+          <div>
+            <div className="text-2xl font-semibold text-gh-text-primary mb-1">{totalProjects}</div>
+            <div className="text-sm text-gh-text-secondary">Total Projects</div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -231,12 +309,17 @@ function OrganizationCard({ organization }: { organization: Organization }) {
 }
 
 interface DiscoveryModalProps {
-  discoveryType: 'organization' | 'enterprise';
-  setDiscoveryType: (type: 'organization' | 'enterprise') => void;
+  sourceType: 'github' | 'azuredevops';
+  discoveryType: 'organization' | 'enterprise' | 'ado-org' | 'ado-project';
+  setDiscoveryType: (type: 'organization' | 'enterprise' | 'ado-org' | 'ado-project') => void;
   organization: string;
   setOrganization: (org: string) => void;
   enterpriseSlug: string;
   setEnterpriseSlug: (slug: string) => void;
+  adoOrganization: string;
+  setAdoOrganization: (org: string) => void;
+  adoProject: string;
+  setAdoProject: (project: string) => void;
   loading: boolean;
   error: string | null;
   onStart: () => void;
@@ -244,12 +327,17 @@ interface DiscoveryModalProps {
 }
 
 function DiscoveryModal({ 
+  sourceType,
   discoveryType,
   setDiscoveryType,
   organization, 
   setOrganization,
   enterpriseSlug,
   setEnterpriseSlug,
+  adoOrganization,
+  setAdoOrganization,
+  adoProject,
+  setAdoProject,
   loading, 
   error, 
   onStart, 
@@ -260,7 +348,11 @@ function DiscoveryModal({
     onStart();
   };
 
-  const isFormValid = discoveryType === 'organization' ? organization.trim() : enterpriseSlug.trim();
+  const isFormValid = 
+    (discoveryType === 'organization' && organization.trim()) ||
+    (discoveryType === 'enterprise' && enterpriseSlug.trim()) ||
+    (discoveryType === 'ado-org' && adoOrganization.trim()) ||
+    (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim());
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -284,32 +376,61 @@ function DiscoveryModal({
             <label className="block text-sm font-semibold text-gh-text-primary mb-2">
               Discovery Type
             </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setDiscoveryType('organization')}
-                disabled={loading}
-                className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  discoveryType === 'organization'
-                    ? 'bg-gh-blue text-white'
-                    : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                Organization
-              </button>
-              <button
-                type="button"
-                onClick={() => setDiscoveryType('enterprise')}
-                disabled={loading}
-                className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  discoveryType === 'enterprise'
-                    ? 'bg-gh-blue text-white'
-                    : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                Enterprise
-              </button>
-            </div>
+            {sourceType === 'github' ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDiscoveryType('organization')}
+                  disabled={loading}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    discoveryType === 'organization'
+                      ? 'bg-gh-blue text-white'
+                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Organization
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDiscoveryType('enterprise')}
+                  disabled={loading}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    discoveryType === 'enterprise'
+                      ? 'bg-gh-blue text-white'
+                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Enterprise
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDiscoveryType('ado-org')}
+                  disabled={loading}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    discoveryType === 'ado-org'
+                      ? 'bg-gh-blue text-white'
+                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Organization
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDiscoveryType('ado-project')}
+                  disabled={loading}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    discoveryType === 'ado-project'
+                      ? 'bg-gh-blue text-white'
+                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Project
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Organization Input */}
@@ -353,6 +474,66 @@ function DiscoveryModal({
               <p className="mt-2 text-xs text-gh-text-secondary">
                 Enter the GitHub Enterprise slug to discover repositories across all organizations.
               </p>
+            </div>
+          )}
+
+          {/* ADO Organization Input */}
+          {discoveryType === 'ado-org' && (
+            <div className="mb-4">
+              <label htmlFor="ado-organization" className="block text-sm font-semibold text-gh-text-primary mb-2">
+                Azure DevOps Organization
+              </label>
+              <input
+                id="ado-organization"
+                type="text"
+                value={adoOrganization}
+                onChange={(e) => setAdoOrganization(e.target.value)}
+                placeholder="e.g., your-ado-org"
+                disabled={loading}
+                className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
+                autoFocus
+              />
+              <p className="mt-2 text-xs text-gh-text-secondary">
+                Discover all projects and repositories in this Azure DevOps organization.
+              </p>
+            </div>
+          )}
+
+          {/* ADO Project Input */}
+          {discoveryType === 'ado-project' && (
+            <div className="space-y-4 mb-4">
+              <div>
+                <label htmlFor="ado-org-project" className="block text-sm font-semibold text-gh-text-primary mb-2">
+                  Azure DevOps Organization
+                </label>
+                <input
+                  id="ado-org-project"
+                  type="text"
+                  value={adoOrganization}
+                  onChange={(e) => setAdoOrganization(e.target.value)}
+                  placeholder="e.g., your-ado-org"
+                  disabled={loading}
+                  className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label htmlFor="ado-project-name" className="block text-sm font-semibold text-gh-text-primary mb-2">
+                  Project Name
+                </label>
+                <input
+                  id="ado-project-name"
+                  type="text"
+                  value={adoProject}
+                  onChange={(e) => setAdoProject(e.target.value)}
+                  placeholder="e.g., your-project"
+                  disabled={loading}
+                  className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
+                  autoFocus
+                />
+                <p className="mt-2 text-xs text-gh-text-secondary">
+                  Discover repositories in a specific Azure DevOps project.
+                </p>
+              </div>
             </div>
           )}
 

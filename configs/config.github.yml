@@ -1,0 +1,231 @@
+# =============================================================================
+# GitHub to GitHub Migration - YAML Configuration
+# =============================================================================
+# This configuration is specifically for:
+#   SOURCE: GitHub (Cloud or Enterprise Server)
+#   DESTINATION: GitHub (Cloud or Enterprise Server)
+#
+# For Azure DevOps sources, use: config.azuredevops.yml
+#
+# Note: You can also use environment variables (see env.github.example)
+# Environment variables override settings in this file
+# =============================================================================
+
+# Server configuration
+server:
+  port: 8080
+
+# Database configuration
+database:
+  # Database type: "sqlite", "postgres", or "sqlserver"
+  type: sqlite
+  dsn: ./data/migrator.db
+  
+  # Connection pool settings (PostgreSQL/SQL Server only)
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime_seconds: 300
+  
+  # Use GORM AutoMigrate (not recommended for production)
+  auto_migrate: false
+  
+  # SQL Server specific
+  trust_server_certificate: false
+  
+  # PostgreSQL specific  
+  ssl_mode: disable
+
+# =============================================================================
+# SOURCE: GitHub Configuration
+# =============================================================================
+source:
+  # Source type - MUST be "github"
+  type: github
+  
+  # GitHub Base URL
+  # - For GitHub Cloud: https://api.github.com
+  # - For GitHub Enterprise Server: https://github.example.com/api/v3
+  base_url: https://api.github.com
+  
+  # Authentication Method 1: Personal Access Token (PAT)
+  # Required scopes: repo, admin:org
+  token: ghp_YourSourceGitHubPATHere
+  
+  # Authentication Method 2: GitHub App (Optional - for better rate limits)
+  # Uncomment if using GitHub App authentication
+  # app_id: 123456
+  # app_private_key: |
+  #   -----BEGIN RSA PRIVATE KEY-----
+  #   Your private key content here
+  #   -----END RSA PRIVATE KEY-----
+  # app_installation_id: 789012  # Optional: omit for multi-org discovery
+
+# =============================================================================
+# DESTINATION: GitHub Configuration
+# =============================================================================
+destination:
+  # Destination type - MUST be "github"
+  type: github
+  
+  # GitHub Base URL
+  # - For GitHub Cloud: https://api.github.com
+  # - For GitHub Enterprise Server: https://github.example.com/api/v3
+  base_url: https://api.github.com
+  
+  # Authentication Method 1: Personal Access Token (PAT)
+  # Required scopes: repo, admin:org, workflow
+  token: ghp_YourDestinationGitHubPATHere
+  
+  # Authentication Method 2: GitHub App (Optional)
+  # Uncomment if using GitHub App authentication
+  # app_id: 234567
+  # app_private_key: |
+  #   -----BEGIN RSA PRIVATE KEY-----
+  #   Your destination private key here
+  #   -----END RSA PRIVATE KEY-----
+  # app_installation_id: 890123
+
+# =============================================================================
+# Migration Configuration
+# =============================================================================
+migration:
+  # Number of concurrent migration workers
+  workers: 5
+  
+  # Polling interval for checking migration status (seconds)
+  poll_interval_seconds: 30
+  
+  # When to apply post-migration settings
+  # Options: "production_only", "always", "never"
+  post_migration_mode: production_only
+  
+  # Action when destination repository already exists
+  # Options: "fail", "skip", "overwrite"
+  dest_repo_exists_action: fail
+  
+  # Repository visibility handling
+  visibility_handling:
+    # How to handle public repositories: "public", "private", "internal"
+    public_repos: private
+    
+    # How to handle internal repositories: "internal", "private", "public"
+    internal_repos: private
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  # Log level: "debug", "info", "warn", "error"
+  level: info
+  
+  # Log format: "json" or "text"
+  format: json
+  
+  # Log output file
+  output_file: ./logs/migrator.log
+  
+  # Log rotation settings
+  max_size: 100      # MB
+  max_backups: 3     # Number of old log files to retain
+  max_age: 28        # Days
+
+# =============================================================================
+# Authentication & Authorization (Optional - for web UI)
+# =============================================================================
+auth:
+  # Enable authentication for the web interface
+  enabled: false
+  
+  # GitHub OAuth App configuration (for user authentication)
+  # Create at: GitHub → Settings → Developer settings → OAuth Apps
+  # github_oauth_client_id: Iv1.YourClientID
+  # github_oauth_client_secret: YourClientSecret
+  # github_oauth_base_url: https://api.github.com  # Optional: defaults to source URL
+  
+  # Callback and frontend URLs
+  # callback_url: http://localhost:8080/api/v1/auth/callback
+  # frontend_url: http://localhost:3000
+  
+  # Session configuration
+  # session_secret: your-random-secret-key-here
+  # session_duration_hours: 24
+  
+  # Authorization rules
+  authorization_rules:
+    # Require user to be member of specific organizations (comma-separated)
+    # require_org_membership:
+    #   - org1
+    #   - org2
+    
+    # Require user to be member of specific teams (format: "org/team-slug")
+    # require_team_membership:
+    #   - org1/migration-team
+    #   - org2/admins
+    
+    # Require GitHub Enterprise admin role
+    require_enterprise_admin: false
+    
+    # Require enterprise membership
+    require_enterprise_membership: false
+    # require_enterprise_slug: your-enterprise
+    
+    # Privileged teams (format: "org/team-slug") - grants full access
+    # privileged_teams:
+    #   - platform-eng/migration-admins
+
+# =============================================================================
+# Example Configurations
+# =============================================================================
+
+# Example 1: GitHub Cloud to GitHub Cloud with PAT
+# source:
+#   type: github
+#   base_url: https://api.github.com
+#   token: ghp_sourcetoken
+# destination:
+#   type: github
+#   base_url: https://api.github.com
+#   token: ghp_desttoken
+
+# Example 2: GitHub Enterprise Server to GitHub Cloud
+# source:
+#   type: github
+#   base_url: https://github.company.com/api/v3
+#   token: ghp_sourcetoken
+# destination:
+#   type: github
+#   base_url: https://api.github.com
+#   token: ghp_cloudtoken
+
+# Example 3: Using GitHub App for source (better rate limits)
+# source:
+#   type: github
+#   base_url: https://api.github.com
+#   app_id: 123456
+#   app_private_key: |
+#     -----BEGIN RSA PRIVATE KEY-----
+#     ...
+#     -----END RSA PRIVATE KEY-----
+#   app_installation_id: 789012
+# destination:
+#   type: github
+#   base_url: https://api.github.com
+#   token: ghp_desttoken
+
+# Example 4: With authentication and authorization
+# auth:
+#   enabled: true
+#   github_oauth_client_id: Iv1.ClientID
+#   github_oauth_client_secret: secret
+#   callback_url: https://migrator.company.com/api/v1/auth/callback
+#   frontend_url: https://migrator.company.com
+#   session_secret: random-secret-key
+#   session_duration_hours: 24
+#   authorization_rules:
+#     require_org_membership:
+#       - engineering
+#     require_team_membership:
+#       - engineering/platform-team
+#     privileged_teams:
+#       - engineering/migration-admins
+

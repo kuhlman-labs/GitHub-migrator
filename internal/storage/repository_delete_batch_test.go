@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 func TestDeleteBatch(t *testing.T) {

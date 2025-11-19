@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/brettkuhlman/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
 )
 
 const testTeamMembershipPath = "/orgs/test-org/teams/admin-team/memberships/testuser"

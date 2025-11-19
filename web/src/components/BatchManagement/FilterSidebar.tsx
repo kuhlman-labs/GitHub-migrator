@@ -13,11 +13,27 @@ interface FilterSidebarProps {
 
 export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse }: FilterSidebarProps) {
   const [organizations, setOrganizations] = useState<string[]>([]);
+  const [projects, setProjects] = useState<string[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
 
   useEffect(() => {
+    loadConfig();
     loadOrganizations();
   }, []);
+
+  const loadConfig = async () => {
+    try {
+      const config = await api.getConfig();
+      setSourceType(config.source_type);
+      if (config.source_type === 'azuredevops') {
+        loadProjects();
+      }
+    } catch (error) {
+      console.error('Failed to load config:', error);
+    }
+  };
 
   const loadOrganizations = async () => {
     setLoadingOrgs(true);
@@ -29,6 +45,21 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
       setOrganizations([]);
     } finally {
       setLoadingOrgs(false);
+    }
+  };
+
+  const loadProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const projectList = await api.listADOProjects();
+      // Extract unique project names from the project list
+      const projectNames = projectList.map((p: any) => p.name || p.project_name);
+      setProjects(projectNames || []);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+      setProjects([]);
+    } finally {
+      setLoadingProjects(false);
     }
   };
 
@@ -44,16 +75,31 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
     });
   };
 
+  const getSelectedProjects = (): string[] => {
+    if (!filters.project) return [];
+    return Array.isArray(filters.project) ? filters.project : [filters.project];
+  };
+
+  const handleProjectChange = (selected: string[]) => {
+    onChange({
+      ...filters,
+      project: selected.length > 0 ? selected : undefined,
+    });
+  };
+
   const activeFilterCount = () => {
     let count = 0;
     if (filters.organization) count++;
+    if (filters.project) count++;
     if (filters.search) count++;
     if (filters.min_size || filters.max_size) count++;
     if (filters.size_category) count++;
     if (filters.complexity) count++;
+    // Common features
     if (filters.has_lfs) count++;
     if (filters.has_submodules) count++;
     if (filters.has_large_files) count++;
+    // GitHub features
     if (filters.has_actions) count++;
     if (filters.has_wiki) count++;
     if (filters.has_pages) count++;
@@ -70,6 +116,13 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
     if (filters.has_codeowners) count++;
     if (filters.has_self_hosted_runners) count++;
     if (filters.has_release_assets) count++;
+    // ADO features
+    if (filters.ado_is_git !== undefined) count++;
+    if (filters.ado_has_boards) count++;
+    if (filters.ado_has_pipelines) count++;
+    if (filters.ado_has_ghas) count++;
+    if (filters.ado_has_wiki) count++;
+    // Other
     if (filters.visibility) count++;
     if (filters.sort_by && filters.sort_by !== 'name') count++;
     return count;
@@ -140,8 +193,8 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
           />
         </div>
 
-        {/* Organization */}
-        <FilterSection title="Organization" defaultExpanded={true}>
+        {/* Organization - Always show for filtering */}
+        <FilterSection title={sourceType === 'azuredevops' ? 'Organization' : 'Organization'} defaultExpanded={true}>
           <OrganizationSelector
             organizations={organizations}
             selectedOrganizations={getSelectedOrganizations()}
@@ -149,6 +202,21 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
             loading={loadingOrgs}
           />
         </FilterSection>
+
+        {/* Project (for Azure DevOps only) */}
+        {sourceType === 'azuredevops' && (
+          <FilterSection title="Project" defaultExpanded={true}>
+            <OrganizationSelector
+              organizations={projects}
+              selectedOrganizations={getSelectedProjects()}
+              onChange={handleProjectChange}
+              loading={loadingProjects}
+              placeholder="All Projects"
+              searchPlaceholder="Search projects..."
+              emptyMessage="No projects found"
+            />
+          </FilterSection>
+        )}
 
         {/* Complexity */}
         <FilterSection title="Complexity" defaultExpanded={true}>
@@ -265,7 +333,9 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
         {/* Features */}
         <FilterSection title="Features" defaultExpanded={false}>
           <div className="space-y-2">
-            {[
+            {sourceType === 'github' ? (
+              // GitHub features
+              [
               { key: 'has_lfs' as const, label: 'LFS' },
               { key: 'has_submodules' as const, label: 'Submodules' },
               { key: 'has_large_files' as const, label: 'Large Files (>100MB)' },
@@ -298,7 +368,32 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                 />
                 <span className="text-sm text-gray-700">{feature.label}</span>
               </label>
-            ))}
+              ))
+            ) : (
+              // Azure DevOps features
+              [
+                { key: 'ado_is_git' as const, label: 'Git (vs TFVC)' },
+                { key: 'ado_has_boards' as const, label: 'Azure Boards' },
+                { key: 'ado_has_pipelines' as const, label: 'Azure Pipelines' },
+                { key: 'ado_has_wiki' as const, label: 'Wiki' },
+                { key: 'ado_has_ghas' as const, label: 'GHAS (Advanced Security)' },
+                { key: 'has_lfs' as const, label: 'LFS' },
+                { key: 'has_submodules' as const, label: 'Submodules' },
+                { key: 'has_large_files' as const, label: 'Large Files (>100MB)' },
+              ].map((feature) => (
+                <label key={feature.key} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filters[feature.key] || false}
+                    onChange={(e) =>
+                      onChange({ ...filters, [feature.key]: e.target.checked ? true : undefined })
+                    }
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">{feature.label}</span>
+                </label>
+              ))
+            )}
           </div>
         </FilterSection>
 
@@ -317,7 +412,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
             <option value="">All</option>
             <option value="public">Public</option>
             <option value="private">Private</option>
-            <option value="internal">Internal</option>
+            {sourceType === 'github' && <option value="internal">Internal</option>}
           </select>
         </FilterSection>
 

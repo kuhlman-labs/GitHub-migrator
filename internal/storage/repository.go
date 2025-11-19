@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/brettkuhlman/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -20,46 +18,205 @@ const (
 	batchStatusInProgress = "in_progress"
 )
 
+// RepositoryFilter contains optional filters for repository queries
+type RepositoryFilter struct {
+	Status          *string // Filter by status
+	BatchID         *int64  // Filter by batch ID
+	Owner           *string // Filter by owner (organization)
+	HasADOProject   *bool   // Filter repositories that have ADO project set
+	ADOOrganization *string // Filter by ADO organization
+	ADOProject      *string // Filter by ADO project name
+	IsADOGit        *bool   // Filter by ADO Git vs TFVC
+}
+
 // SaveRepository inserts or updates a repository in the database using GORM
 func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) error {
-	// Use GORM's Clauses for upsert (works across SQLite, PostgreSQL, SQL Server)
-	// OnConflict will update all columns except those intentionally preserved
-	result := d.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "full_name"}}, // Conflict on unique index
-		DoUpdates: clause.AssignmentColumns([]string{
-			// Update discovery fields
-			"source", "source_url", "total_size", "largest_file", "largest_file_size",
-			"largest_commit", "largest_commit_size", "has_lfs", "has_submodules",
-			"has_large_files", "large_file_count", "default_branch", "branch_count",
-			"commit_count", "last_commit_sha", "last_commit_date", "is_archived",
-			"is_fork", "has_wiki", "has_pages", "has_discussions", "has_actions",
-			"has_projects", "has_packages", "branch_protections", "has_rulesets",
-			"tag_protection_count", "environment_count", "secret_count", "variable_count",
-			"webhook_count", "contributor_count", "top_contributors", "issue_count",
-			"pull_request_count", "tag_count", "open_issue_count", "open_pr_count",
-			"has_code_scanning", "has_dependabot", "has_secret_scanning", "has_codeowners",
-			"visibility", "workflow_count", "has_self_hosted_runners", "collaborator_count",
-			"installed_apps_count", "release_count", "has_release_assets",
-			"has_oversized_commits", "oversized_commit_details", "has_long_refs",
-			"long_ref_details", "has_blocking_files", "blocking_file_details",
-			"has_large_file_warnings", "large_file_warning_details", "has_oversized_repository",
-			"oversized_repository_details", "estimated_metadata_size", "metadata_size_details",
-			"source_migration_id", "is_source_locked", "updated_at", "last_discovery_at",
-			// Note: destination_url, destination_full_name, and exclusion flags are intentionally excluded
-			// from updates to preserve manually configured settings during re-discovery
-		}),
-	}).Create(repo)
+	// Check if repository already exists
+	var existing models.Repository
+	err := d.db.WithContext(ctx).Where("full_name = ?", repo.FullName).First(&existing).Error
 
-	if result.Error != nil {
-		return fmt.Errorf("failed to save repository: %w", result.Error)
+	if err == gorm.ErrRecordNotFound {
+		// Insert new repository
+		// Set timestamps if not already set
+		if repo.DiscoveredAt.IsZero() {
+			repo.DiscoveredAt = time.Now()
+		}
+		if repo.UpdatedAt.IsZero() {
+			repo.UpdatedAt = time.Now()
+		}
+
+		// CRITICAL FIX: GORM by default omits zero values from INSERT statements
+		// This means ADOIsGit=false won't be inserted, and DB uses DEFAULT TRUE
+		// Solution: Explicitly set all fields that can have meaningful zero values
+		// We use a map for the critical boolean field to force its inclusion
+
+		// First, create a base insert to get the ID
+		// We'll use a temporary approach: set ADOIsGit to the opposite, then update it
+		tempIsGit := repo.ADOIsGit
+		if !tempIsGit {
+			// For TFVC repos (false), we need special handling
+			repo.ADOIsGit = true // Temporarily set to true for insert
+		}
+
+		result := d.db.WithContext(ctx).Create(repo)
+		if result.Error != nil {
+			return fmt.Errorf("failed to create repository: %w", result.Error)
+		}
+
+		// Now immediately update the ADOIsGit field to the correct value
+		if !tempIsGit {
+			updateResult := d.db.WithContext(ctx).Model(&models.Repository{}).
+				Where("id = ?", repo.ID).
+				Update("ado_is_git", false)
+			if updateResult.Error != nil {
+				return fmt.Errorf("failed to set ado_is_git to false: %w", updateResult.Error)
+			}
+		}
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to check existing repository: %w", err)
 	}
 
-	// If this was an update (not insert), fetch the ID
-	if repo.ID == 0 {
-		if err := d.db.WithContext(ctx).Where("full_name = ?", repo.FullName).
-			Select("id").First(repo).Error; err != nil {
-			return fmt.Errorf("failed to retrieve repository ID after save: %w", err)
-		}
+	// Repository exists - update it
+	// Preserve the ID and migration-related fields
+	repo.ID = existing.ID
+
+	// IMPORTANT: Preserve existing migration state during re-discovery
+	// Re-discovery should only update repository metadata (size, features, etc.),
+	// not reset migration progress (status, batch_id, priority, etc.)
+	// Only update status if the incoming status is not "pending" (indicating it's an intentional status change)
+	preserveMigrationState := repo.Status == string(models.StatusPending) && existing.Status != string(models.StatusPending)
+
+	// If we're preserving migration state, restore the fields from existing repository
+	if preserveMigrationState {
+		repo.BatchID = existing.BatchID
+		repo.Priority = existing.Priority
+		repo.DestinationURL = existing.DestinationURL
+		repo.DestinationFullName = existing.DestinationFullName
+	}
+
+	// GORM's Updates() with structs skips zero values (false, 0, "", nil) by default
+	// We need to convert to a map to include these values in the update
+	// This is especially important for ADOIsGit which can be false (TFVC repos)
+	updateMap := map[string]interface{}{
+		"source":            repo.Source,
+		"source_url":        repo.SourceURL,
+		"total_size":        repo.TotalSize,
+		"default_branch":    repo.DefaultBranch,
+		"branch_count":      repo.BranchCount,
+		"commit_count":      repo.CommitCount,
+		"visibility":        repo.Visibility,
+		"updated_at":        time.Now(),
+		"last_discovery_at": repo.LastDiscoveryAt,
+		// Boolean fields - include explicitly to handle false values
+		"is_archived":              repo.IsArchived,
+		"is_fork":                  repo.IsFork,
+		"has_lfs":                  repo.HasLFS,
+		"has_submodules":           repo.HasSubmodules,
+		"has_large_files":          repo.HasLargeFiles,
+		"has_wiki":                 repo.HasWiki,
+		"has_pages":                repo.HasPages,
+		"has_discussions":          repo.HasDiscussions,
+		"has_actions":              repo.HasActions,
+		"has_projects":             repo.HasProjects,
+		"has_packages":             repo.HasPackages,
+		"has_rulesets":             repo.HasRulesets,
+		"has_code_scanning":        repo.HasCodeScanning,
+		"has_dependabot":           repo.HasDependabot,
+		"has_secret_scanning":      repo.HasSecretScanning,
+		"has_codeowners":           repo.HasCodeowners,
+		"has_self_hosted_runners":  repo.HasSelfHostedRunners,
+		"has_release_assets":       repo.HasReleaseAssets,
+		"has_oversized_commits":    repo.HasOversizedCommits,
+		"has_long_refs":            repo.HasLongRefs,
+		"has_blocking_files":       repo.HasBlockingFiles,
+		"has_large_file_warnings":  repo.HasLargeFileWarnings,
+		"has_oversized_repository": repo.HasOversizedRepository,
+		"is_source_locked":         repo.IsSourceLocked,
+		// ADO-specific fields - CRITICAL: Include ADOIsGit which can be false
+		"ado_project":                   repo.ADOProject,
+		"ado_is_git":                    repo.ADOIsGit, // This is the key field that needs false support
+		"ado_has_boards":                repo.ADOHasBoards,
+		"ado_has_pipelines":             repo.ADOHasPipelines,
+		"ado_has_ghas":                  repo.ADOHasGHAS,
+		"ado_pull_request_count":        repo.ADOPullRequestCount,
+		"ado_work_item_count":           repo.ADOWorkItemCount,
+		"ado_branch_policy_count":       repo.ADOBranchPolicyCount,
+		"ado_pipeline_count":            repo.ADOPipelineCount,
+		"ado_yaml_pipeline_count":       repo.ADOYAMLPipelineCount,
+		"ado_classic_pipeline_count":    repo.ADOClassicPipelineCount,
+		"ado_pipeline_run_count":        repo.ADOPipelineRunCount,
+		"ado_has_service_connections":   repo.ADOHasServiceConnections,
+		"ado_has_variable_groups":       repo.ADOHasVariableGroups,
+		"ado_has_self_hosted_agents":    repo.ADOHasSelfHostedAgents,
+		"ado_work_item_linked_count":    repo.ADOWorkItemLinkedCount,
+		"ado_active_work_item_count":    repo.ADOActiveWorkItemCount,
+		"ado_work_item_types":           repo.ADOWorkItemTypes,
+		"ado_open_pr_count":             repo.ADOOpenPRCount,
+		"ado_pr_with_linked_work_items": repo.ADOPRWithLinkedWorkItems,
+		"ado_pr_with_attachments":       repo.ADOPRWithAttachments,
+		"ado_branch_policy_types":       repo.ADOBranchPolicyTypes,
+		"ado_required_reviewer_count":   repo.ADORequiredReviewerCount,
+		"ado_build_validation_policies": repo.ADOBuildValidationPolicies,
+		"ado_has_wiki":                  repo.ADOHasWiki,
+		"ado_wiki_page_count":           repo.ADOWikiPageCount,
+		"ado_test_plan_count":           repo.ADOTestPlanCount,
+		"ado_test_case_count":           repo.ADOTestCaseCount,
+		"ado_package_feed_count":        repo.ADOPackageFeedCount,
+		"ado_has_artifacts":             repo.ADOHasArtifacts,
+		"ado_service_hook_count":        repo.ADOServiceHookCount,
+		"ado_installed_extensions":      repo.ADOInstalledExtensions,
+		// Integer and string fields
+		"large_file_count":             repo.LargeFileCount,
+		"largest_file":                 repo.LargestFile,
+		"largest_file_size":            repo.LargestFileSize,
+		"largest_commit":               repo.LargestCommit,
+		"largest_commit_size":          repo.LargestCommitSize,
+		"last_commit_sha":              repo.LastCommitSHA,
+		"last_commit_date":             repo.LastCommitDate,
+		"branch_protections":           repo.BranchProtections,
+		"tag_protection_count":         repo.TagProtectionCount,
+		"environment_count":            repo.EnvironmentCount,
+		"secret_count":                 repo.SecretCount,
+		"variable_count":               repo.VariableCount,
+		"webhook_count":                repo.WebhookCount,
+		"contributor_count":            repo.ContributorCount,
+		"top_contributors":             repo.TopContributors,
+		"issue_count":                  repo.IssueCount,
+		"pull_request_count":           repo.PullRequestCount,
+		"tag_count":                    repo.TagCount,
+		"open_issue_count":             repo.OpenIssueCount,
+		"open_pr_count":                repo.OpenPRCount,
+		"workflow_count":               repo.WorkflowCount,
+		"collaborator_count":           repo.CollaboratorCount,
+		"installed_apps_count":         repo.InstalledAppsCount,
+		"release_count":                repo.ReleaseCount,
+		"oversized_commit_details":     repo.OversizedCommitDetails,
+		"long_ref_details":             repo.LongRefDetails,
+		"blocking_file_details":        repo.BlockingFileDetails,
+		"large_file_warning_details":   repo.LargeFileWarningDetails,
+		"oversized_repository_details": repo.OversizedRepositoryDetails,
+		"estimated_metadata_size":      repo.EstimatedMetadataSize,
+		"metadata_size_details":        repo.MetadataSizeDetails,
+		"source_migration_id":          repo.SourceMigrationID,
+		// Complexity scoring fields
+		"complexity_score":     repo.ComplexityScore,
+		"complexity_breakdown": repo.ComplexityBreakdown,
+	}
+
+	// Only include migration-related updates if we're not preserving migration state
+	if !preserveMigrationState {
+		updateMap["status"] = repo.Status
+		updateMap["batch_id"] = repo.BatchID
+		updateMap["priority"] = repo.Priority
+		updateMap["destination_url"] = repo.DestinationURL
+		updateMap["destination_full_name"] = repo.DestinationFullName
+	}
+
+	result := d.db.WithContext(ctx).Model(&existing).Updates(updateMap)
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update repository: %w", result.Error)
 	}
 
 	return nil
@@ -77,60 +234,81 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
 
-	// Calculate complexity score
-	_ = d.populateComplexityScores(ctx, []*models.Repository{&repo})
+	// Complexity scores are now stored in the database, no need to calculate on retrieval
 
 	return &repo, nil
 }
 
-// buildGitHubComplexityScoreSQL generates the SQL expression for calculating GitHub-specific complexity scores
-// This includes activity-based scoring using quantiles from the repository dataset
-func (d *Database) buildGitHubComplexityScoreSQL() string {
-	// GitHub-specific complexity scoring (refined based on GEI migration documentation)
+// buildADOComplexityScoreSQL generates the SQL expression for calculating Azure DevOps-specific complexity scores
+// Based on what GitHub Enterprise Importer supports for ADO migrations
+//
+//nolint:unused // Reserved for future ADO-specific complexity queries
+func (d *Database) buildADOComplexityScoreSQL() string {
+	// ADO-specific complexity scoring based on GEI migration support
 	// Categories: simple (≤5), medium (6-10), complex (11-17), very_complex (≥18)
 	//
-	// Scoring factors based on remediation difficulty:
-	// HIGH IMPACT (3-4 points):
-	//   - Large files: +4 (requires remediation before migration)
-	//   - Environments: +3 (manual recreation of configs, protection rules)
-	//   - Secrets: +3 (manual recreation, high security sensitivity)
-	//   - Packages: +3 (don't migrate with GEI)
-	//   - Self-hosted runners: +3 (infrastructure reconfiguration)
+	// Scoring factors:
+	// BLOCKING (50 points):
+	//   - TFVC repository: +50 (requires git conversion before migration)
+	//
+	// HIGH IMPACT (3 points):
+	//   - Azure Boards: +3 (work items don't migrate, only PR links)
+	//   - Azure Pipelines: +3 (YAML files migrate, but history doesn't)
 	//
 	// MODERATE IMPACT (2 points):
-	//   - Variables: +2 (manual recreation, less sensitive than secrets)
-	//   - Discussions: +2 (don't migrate, community impact)
-	//   - Releases: +2 (GHES 3.5.0+ only, may need manual migration)
-	//   - LFS: +2 (special handling required)
-	//   - Submodules: +2 (dependency management complexity)
-	//   - GitHub Apps: +2 (reconfiguration/reinstallation)
-	//   - ProjectsV2: +2 (don't migrate, must be manually recreated)
+	//   - Many PRs: +2 (PRs migrate with GEI, but many means more complexity)
+	//   - LFS: +2 (special handling)
+	//   - Submodules: +2 (dependency management)
 	//
 	// LOW IMPACT (1 point):
-	//   - GHAS features: +1 (code scanning, dependabot, secret scanning - simple toggles)
-	//   - Webhooks: +1 (must re-enable, straightforward)
-	//   - Branch protections: +1 (migrates but may need adjustment)
-	//   - Rulesets: +1 (manual recreation, replaces deprecated tag protections)
-	//   - Public visibility: +1 (transformation considerations)
-	//   - Internal visibility: +1 (transformation considerations)
-	//   - CODEOWNERS: +1 (verification required)
+	//   - Branch policies: +1 (migrate with GEI)
+	//   - Work item links: +1 (PR links migrate)
+	//   - GHAS: +1 (GitHub Advanced Security for ADO)
 	//
-	// ACTIVITY TIER (0-4 points):
-	//   Uses quantiles to determine activity level relative to customer's repos
-	//   High-activity repos require significantly more planning and coordination
-	//   - High (top 25%): +4 (many users, extensive coordination, high impact)
-	//   - Moderate (25-75%): +2 (some coordination needed)
-	//   - Low (bottom 25%): +0 (few users, low coordination needs)
-	//   Activity combines: branch_count, commit_count, issue_count, pull_request_count
+	// STANDARD GIT FACTORS:
+	//   - Size-based: 0-9 points
+	//   - Large files: +4 points
+	//   - Activity-based: 0-4 points
 
+	return `(
+		-- TFVC repos are blocking (50 points)
+		(CASE WHEN ado_is_git = FALSE THEN 50 ELSE 0 END) +
+		
+		-- Azure Boards (work items don't migrate)
+		(CASE WHEN ado_has_boards = TRUE THEN 3 ELSE 0 END) +
+		
+		-- Azure Pipelines (history doesn't migrate)
+		(CASE WHEN ado_has_pipelines = TRUE THEN 3 ELSE 0 END) +
+		
+		-- Pull requests (these migrate, but many PRs adds complexity)
+		(CASE WHEN ado_pull_request_count > 50 THEN 2 
+		      WHEN ado_pull_request_count > 10 THEN 1 
+		      ELSE 0 END) +
+		
+		-- Branch policies (these migrate with GEI)
+		(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) +
+		
+		-- Work items (PR links migrate, not the items themselves)
+		(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) +
+		
+		-- GHAS for ADO
+		(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) +
+		
+		-- Standard git factors (size, large files, LFS, submodules, activity)
+		-- These are shared with GitHub scoring
+		` + d.buildStandardGitComplexityFactors() + `
+	)`
+}
+
+// buildStandardGitComplexityFactors returns SQL for complexity factors common to both GitHub and ADO
+//
+//nolint:unused // Reserved for future shared complexity calculations
+func (d *Database) buildStandardGitComplexityFactors() string {
 	const (
 		MB100 = 104857600  // 100MB
 		GB1   = 1073741824 // 1GB
 		GB5   = 5368709120 // 5GB
 	)
-
-	// Use TRUE/FALSE for boolean comparisons (works across all databases: SQLite, PostgreSQL, SQL Server)
-	const trueVal = "TRUE"
 
 	return fmt.Sprintf(`(
 		-- Size tier scoring (0-9 points)
@@ -142,169 +320,15 @@ func (d *Database) buildGitHubComplexityScoreSQL() string {
 			ELSE 3
 		END) * 3 +
 		
-		-- High impact features (3-4 points each)
-		CASE WHEN has_large_files = %s THEN 4 ELSE 0 END +
-		CASE WHEN environment_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN secret_count > 0 THEN 3 ELSE 0 END +
-		CASE WHEN has_packages = %s THEN 3 ELSE 0 END +
-		CASE WHEN has_self_hosted_runners = %s THEN 3 ELSE 0 END +
+		-- Large files (blocking for GitHub migrations)
+		(CASE WHEN has_large_files = TRUE THEN 4 ELSE 0 END) +
 		
-		-- Moderate impact features (2 points each)
-		CASE WHEN variable_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_discussions = %s THEN 2 ELSE 0 END +
-		CASE WHEN release_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_lfs = %s THEN 2 ELSE 0 END +
-		CASE WHEN has_submodules = %s THEN 2 ELSE 0 END +
-		CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END +
-		CASE WHEN has_projects = %s THEN 2 ELSE 0 END +
+		-- LFS
+		(CASE WHEN has_lfs = TRUE THEN 2 ELSE 0 END) +
 		
-		-- Low impact features (1 point each)
-		CASE WHEN has_code_scanning = %s OR has_dependabot = %s OR has_secret_scanning = %s THEN 1 ELSE 0 END +
-		CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END +
-		CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END +
-		CASE WHEN has_rulesets = %s THEN 1 ELSE 0 END +
-		CASE WHEN visibility = 'public' THEN 1 ELSE 0 END +
-		CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END +
-		CASE WHEN has_codeowners = %s THEN 1 ELSE 0 END +
-		
-		-- Activity-based scoring (0-4 points) using quantiles
-		-- High-activity repos need significantly more coordination and planning
-		-- Calculate percentile rank for each activity metric and average them
-		(CASE 
-			WHEN (
-				-- Average percentile across activity metrics
-				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-			) >= 0.75 THEN 4
-			WHEN (
-				(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-				 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-			) >= 0.25 THEN 2
-			ELSE 0
-		END)
-	)`, MB100, GB1, GB5,
-		trueVal, trueVal, trueVal, // has_large_files, has_packages, has_self_hosted_runners
-		trueVal, trueVal, trueVal, // has_discussions, has_lfs, has_submodules
-		trueVal,                   // has_projects
-		trueVal, trueVal, trueVal, // has_code_scanning, has_dependabot, has_secret_scanning
-		trueVal, trueVal) // has_rulesets, has_codeowners
-}
-
-// Individual complexity component SQL builders
-// These match the logic in buildGitHubComplexityScoreSQL() but return individual scores
-
-func buildSizePointsSQL() string {
-	const (
-		MB100 = 104857600  // 100MB
-		GB1   = 1073741824 // 1GB
-		GB5   = 5368709120 // 5GB
-	)
-	return fmt.Sprintf(`(CASE 
-		WHEN total_size IS NULL THEN 0
-		WHEN total_size < %d THEN 0
-		WHEN total_size < %d THEN 1
-		WHEN total_size < %d THEN 2
-		ELSE 3
-	END) * 3`, MB100, GB1, GB5)
-}
-
-func buildLargeFilesPointsSQL() string {
-	return "CASE WHEN has_large_files = TRUE THEN 4 ELSE 0 END"
-}
-
-func buildEnvironmentsPointsSQL() string {
-	return "CASE WHEN environment_count > 0 THEN 3 ELSE 0 END"
-}
-
-func buildSecretsPointsSQL() string {
-	return "CASE WHEN secret_count > 0 THEN 3 ELSE 0 END"
-}
-
-func buildPackagesPointsSQL() string {
-	return "CASE WHEN has_packages = TRUE THEN 3 ELSE 0 END"
-}
-
-func buildRunnersPointsSQL() string {
-	return "CASE WHEN has_self_hosted_runners = TRUE THEN 3 ELSE 0 END"
-}
-
-func buildVariablesPointsSQL() string {
-	return "CASE WHEN variable_count > 0 THEN 2 ELSE 0 END"
-}
-
-func buildDiscussionsPointsSQL() string {
-	return "CASE WHEN has_discussions = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildReleasesPointsSQL() string {
-	return "CASE WHEN release_count > 0 THEN 2 ELSE 0 END"
-}
-
-func buildLFSPointsSQL() string {
-	return "CASE WHEN has_lfs = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildSubmodulesPointsSQL() string {
-	return "CASE WHEN has_submodules = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildAppsPointsSQL() string {
-	return "CASE WHEN installed_apps_count > 0 THEN 2 ELSE 0 END"
-}
-
-func buildProjectsPointsSQL() string {
-	return "CASE WHEN has_projects = TRUE THEN 2 ELSE 0 END"
-}
-
-func buildSecurityPointsSQL() string {
-	return "CASE WHEN has_code_scanning = TRUE OR has_dependabot = TRUE OR has_secret_scanning = TRUE THEN 1 ELSE 0 END"
-}
-
-func buildWebhooksPointsSQL() string {
-	return "CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END"
-}
-
-func buildBranchProtectionsPointsSQL() string {
-	return "CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END"
-}
-
-func buildRulesetsPointsSQL() string {
-	return "CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END"
-}
-
-func buildPublicVisibilityPointsSQL() string {
-	return "CASE WHEN visibility = 'public' THEN 1 ELSE 0 END"
-}
-
-func buildInternalVisibilityPointsSQL() string {
-	return "CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END"
-}
-
-func buildCodeownersPointsSQL() string {
-	return "CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END"
-}
-
-func buildActivityPointsSQL() string {
-	return `(CASE 
-		WHEN (
-			-- Average percentile across activity metrics
-			(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-		) >= 0.75 THEN 4
-		WHEN (
-			(CAST(branch_count AS REAL) / NULLIF((SELECT MAX(branch_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(commit_count AS REAL) / NULLIF((SELECT MAX(commit_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(issue_count AS REAL) / NULLIF((SELECT MAX(issue_count) FROM repositories WHERE source = 'ghes'), 0) +
-			 CAST(pull_request_count AS REAL) / NULLIF((SELECT MAX(pull_request_count) FROM repositories WHERE source = 'ghes'), 0)) / 4.0
-		) >= 0.25 THEN 2
-		ELSE 0
-	END)`
+		-- Submodules
+		(CASE WHEN has_submodules = TRUE THEN 2 ELSE 0 END)
+	)`, MB100, GB1, GB5)
 }
 
 // ListRepositories retrieves repositories with optional filters
@@ -366,6 +390,11 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 		query = query.Scopes(WithOrganization(org))
 	}
 
+	// Apply ADO project filter
+	if project, ok := filters["ado_project"]; ok {
+		query = query.Scopes(WithADOProject(project))
+	}
+
 	// Apply visibility filter
 	if visibility, ok := filters["visibility"].(string); ok {
 		query = query.Scopes(WithVisibility(visibility))
@@ -374,11 +403,14 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	// Apply feature flags
 	featureFlags := make(map[string]bool)
 	featureKeys := []string{
+		// GitHub features
 		"has_lfs", "has_submodules", "has_large_files", "has_actions", "has_wiki",
 		"has_pages", "has_discussions", "has_projects", "has_packages", "has_rulesets",
 		"is_archived", "is_fork", "has_code_scanning", "has_dependabot", "has_secret_scanning",
 		"has_codeowners", "has_self_hosted_runners", "has_release_assets", "has_branch_protections",
 		"has_webhooks",
+		// Azure DevOps features
+		"ado_is_git", "ado_has_boards", "ado_has_pipelines", "ado_has_ghas", "ado_has_wiki",
 	}
 	for _, key := range featureKeys {
 		if value, ok := filters[key].(bool); ok {
@@ -387,6 +419,22 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	}
 	if len(featureFlags) > 0 {
 		query = query.Scopes(WithFeatureFlags(featureFlags))
+	}
+
+	// Apply ADO count-based filters
+	adoCountFilters := make(map[string]string)
+	adoCountKeys := []string{
+		"ado_pull_request_count", "ado_work_item_count", "ado_branch_policy_count",
+		"ado_yaml_pipeline_count", "ado_classic_pipeline_count", "ado_test_plan_count",
+		"ado_package_feed_count", "ado_service_hook_count",
+	}
+	for _, key := range adoCountKeys {
+		if value, ok := filters[key].(string); ok {
+			adoCountFilters[key] = value
+		}
+	}
+	if len(adoCountFilters) > 0 {
+		query = query.Scopes(WithADOCountFilters(adoCountFilters))
 	}
 
 	// Apply size category filter
@@ -421,136 +469,11 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	return query
 }
 
-// populateComplexityScores calculates and sets the complexity_score and complexity_breakdown fields for repositories
+// populateComplexityScores is DEPRECATED - complexity scores are now calculated during profiling and stored in the database
+// This function is kept for backward compatibility but does nothing
 func (d *Database) populateComplexityScores(ctx context.Context, repos []*models.Repository) error {
-	if len(repos) == 0 {
-		return nil
-	}
-
-	// Build a map of repo IDs for quick lookup
-	repoIDs := make([]string, len(repos))
-	repoMap := make(map[int64]*models.Repository)
-	for i, repo := range repos {
-		repoIDs[i] = fmt.Sprintf("%d", repo.ID)
-		repoMap[repo.ID] = repo
-	}
-
-	// Calculate complexity scores AND individual components in one query
-	query := fmt.Sprintf(`
-		SELECT 
-			id,
-			%s as complexity_score,
-			%s as size_points,
-			%s as large_files_points,
-			%s as environments_points,
-			%s as secrets_points,
-			%s as packages_points,
-			%s as runners_points,
-			%s as variables_points,
-			%s as discussions_points,
-			%s as releases_points,
-			%s as lfs_points,
-			%s as submodules_points,
-			%s as apps_points,
-			%s as projects_points,
-			%s as security_points,
-			%s as webhooks_points,
-			%s as branch_protections_points,
-			%s as rulesets_points,
-			%s as public_visibility_points,
-			%s as internal_visibility_points,
-			%s as codeowners_points,
-			%s as activity_points
-		FROM repositories
-		WHERE id IN (%s)
-	`,
-		d.buildGitHubComplexityScoreSQL(),
-		buildSizePointsSQL(),
-		buildLargeFilesPointsSQL(),
-		buildEnvironmentsPointsSQL(),
-		buildSecretsPointsSQL(),
-		buildPackagesPointsSQL(),
-		buildRunnersPointsSQL(),
-		buildVariablesPointsSQL(),
-		buildDiscussionsPointsSQL(),
-		buildReleasesPointsSQL(),
-		buildLFSPointsSQL(),
-		buildSubmodulesPointsSQL(),
-		buildAppsPointsSQL(),
-		buildProjectsPointsSQL(),
-		buildSecurityPointsSQL(),
-		buildWebhooksPointsSQL(),
-		buildBranchProtectionsPointsSQL(),
-		buildRulesetsPointsSQL(),
-		buildPublicVisibilityPointsSQL(),
-		buildInternalVisibilityPointsSQL(),
-		buildCodeownersPointsSQL(),
-		buildActivityPointsSQL(),
-		strings.Join(repoIDs, ","))
-
-	// Use GORM Raw() for complex analytics query
-	type ComplexityResult struct {
-		ID                       int64
-		ComplexityScore          int
-		SizePoints               int
-		LargeFilesPoints         int
-		EnvironmentsPoints       int
-		SecretsPoints            int
-		PackagesPoints           int
-		RunnersPoints            int
-		VariablesPoints          int
-		DiscussionsPoints        int
-		ReleasesPoints           int
-		LFSPoints                int
-		SubmodulesPoints         int
-		AppsPoints               int
-		ProjectsPoints           int
-		SecurityPoints           int
-		WebhooksPoints           int
-		BranchProtectionsPoints  int
-		RulesetsPoints           int
-		PublicVisibilityPoints   int
-		InternalVisibilityPoints int
-		CodeownersPoints         int
-		ActivityPoints           int
-	}
-
-	var results []ComplexityResult
-	err := d.db.WithContext(ctx).Raw(query).Scan(&results).Error
-	if err != nil {
-		return err
-	}
-
-	for _, result := range results {
-		if repo, ok := repoMap[result.ID]; ok {
-			score := result.ComplexityScore
-			repo.ComplexityScore = &score
-			repo.ComplexityBreakdown = &models.ComplexityBreakdown{
-				SizePoints:               result.SizePoints,
-				LargeFilesPoints:         result.LargeFilesPoints,
-				EnvironmentsPoints:       result.EnvironmentsPoints,
-				SecretsPoints:            result.SecretsPoints,
-				PackagesPoints:           result.PackagesPoints,
-				RunnersPoints:            result.RunnersPoints,
-				VariablesPoints:          result.VariablesPoints,
-				DiscussionsPoints:        result.DiscussionsPoints,
-				ReleasesPoints:           result.ReleasesPoints,
-				LFSPoints:                result.LFSPoints,
-				SubmodulesPoints:         result.SubmodulesPoints,
-				AppsPoints:               result.AppsPoints,
-				ProjectsPoints:           result.ProjectsPoints,
-				SecurityPoints:           result.SecurityPoints,
-				WebhooksPoints:           result.WebhooksPoints,
-				BranchProtectionsPoints:  result.BranchProtectionsPoints,
-				RulesetsPoints:           result.RulesetsPoints,
-				PublicVisibilityPoints:   result.PublicVisibilityPoints,
-				InternalVisibilityPoints: result.InternalVisibilityPoints,
-				CodeownersPoints:         result.CodeownersPoints,
-				ActivityPoints:           result.ActivityPoints,
-			}
-		}
-	}
-
+	// Complexity scores are now pre-calculated during repository profiling and stored in the database
+	// No need to calculate them on every retrieval
 	return nil
 }
 
@@ -738,8 +661,7 @@ func (d *Database) GetRepositoryByID(ctx context.Context, id int64) (*models.Rep
 		return nil, fmt.Errorf("failed to get repository by ID: %w", err)
 	}
 
-	// Calculate complexity score
-	_ = d.populateComplexityScores(ctx, []*models.Repository{&repo})
+	// Complexity scores are now stored in the database, no need to calculate on retrieval
 
 	return &repo, nil
 }
@@ -1230,6 +1152,7 @@ func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution
 
 // FeatureStats represents aggregated feature usage statistics
 type FeatureStats struct {
+	// GitHub features
 	IsArchived           int `json:"is_archived" gorm:"column:archived_count"`
 	IsFork               int `json:"is_fork" gorm:"column:fork_count"`
 	HasLFS               int `json:"has_lfs" gorm:"column:lfs_count"`
@@ -1250,13 +1173,30 @@ type FeatureStats struct {
 	HasSelfHostedRunners int `json:"has_self_hosted_runners" gorm:"column:self_hosted_runners_count"`
 	HasReleaseAssets     int `json:"has_release_assets" gorm:"column:release_assets_count"`
 	HasWebhooks          int `json:"has_webhooks" gorm:"column:webhooks_count"`
-	TotalRepositories    int `json:"total_repositories" gorm:"column:total"`
+
+	// Azure DevOps features
+	ADOTFVCCount           int `json:"ado_tfvc_count" gorm:"column:ado_tfvc_count"`
+	ADOHasBoards           int `json:"ado_has_boards" gorm:"column:ado_has_boards_count"`
+	ADOHasPipelines        int `json:"ado_has_pipelines" gorm:"column:ado_has_pipelines_count"`
+	ADOHasGHAS             int `json:"ado_has_ghas" gorm:"column:ado_has_ghas_count"`
+	ADOHasPullRequests     int `json:"ado_has_pull_requests" gorm:"column:ado_has_pull_requests_count"`
+	ADOHasWorkItems        int `json:"ado_has_work_items" gorm:"column:ado_has_work_items_count"`
+	ADOHasBranchPolicies   int `json:"ado_has_branch_policies" gorm:"column:ado_has_branch_policies_count"`
+	ADOHasYAMLPipelines    int `json:"ado_has_yaml_pipelines" gorm:"column:ado_has_yaml_pipelines_count"`
+	ADOHasClassicPipelines int `json:"ado_has_classic_pipelines" gorm:"column:ado_has_classic_pipelines_count"`
+	ADOHasWiki             int `json:"ado_has_wiki" gorm:"column:ado_has_wiki_count"`
+	ADOHasTestPlans        int `json:"ado_has_test_plans" gorm:"column:ado_has_test_plans_count"`
+	ADOHasPackageFeeds     int `json:"ado_has_package_feeds" gorm:"column:ado_has_package_feeds_count"`
+	ADOHasServiceHooks     int `json:"ado_has_service_hooks" gorm:"column:ado_has_service_hooks_count"`
+
+	TotalRepositories int `json:"total_repositories" gorm:"column:total"`
 }
 
 // GetFeatureStats returns aggregated statistics on feature usage
 func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	query := `
 		SELECT 
+			-- GitHub features
 			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
 			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
 			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
@@ -1277,6 +1217,22 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
 		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+			
+			-- Azure DevOps features
+			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+			SUM(CASE WHEN ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+			SUM(CASE WHEN ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+			SUM(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+			SUM(CASE WHEN ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+			SUM(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+			SUM(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+			SUM(CASE WHEN ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+			SUM(CASE WHEN ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+			SUM(CASE WHEN ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+			SUM(CASE WHEN ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+			
 		COUNT(*) as total
 	FROM repositories
 `
@@ -1553,17 +1509,17 @@ type ComplexityDistribution struct {
 }
 
 // GetComplexityDistribution categorizes repositories by complexity score
+// Uses the stored complexity_score field which is calculated during profiling
+// and supports both GitHub and Azure DevOps repositories
 //
 //nolint:dupl // Similar query pattern but different business logic
-func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, batchFilter string) ([]*ComplexityDistribution, error) {
-	// Calculate complexity score using GitHub-specific formula with activity quantiles
-	// This matches the calculation in applyComplexityFilter()
-
+func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*ComplexityDistribution, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use nested subqueries
+	// Use stored complexity_score field (supports both GitHub and ADO repositories)
 	query := `
 		SELECT 
 			category,
@@ -1571,19 +1527,17 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 		FROM (
 			SELECT 
 				CASE 
-					WHEN complexity_score <= 5 THEN 'simple'
+					WHEN COALESCE(complexity_score, 0) <= 5 THEN 'simple'
 					WHEN complexity_score <= 10 THEN 'medium'
 					WHEN complexity_score <= 17 THEN 'complex'
 					ELSE 'very_complex'
 				END as category
-			FROM (
-				SELECT ` + d.buildGitHubComplexityScoreSQL() + ` as complexity_score
-				FROM repositories r
-				WHERE 1=1
-					AND status != 'wont_migrate'
-					` + orgFilterSQL + `
-					` + batchFilterSQL + `
-			) as scored_repos
+			FROM repositories r
+			WHERE 1=1
+				AND status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + projectFilterSQL + `
+				` + batchFilterSQL + `
 		) as categorized
 		GROUP BY category
 		ORDER BY 
@@ -1596,7 +1550,8 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, bat
 	`
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	var distribution []*ComplexityDistribution
@@ -1615,9 +1570,10 @@ type MigrationVelocity struct {
 }
 
 // GetMigrationVelocity calculates migration velocity over the specified period
-func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFilter string, days int) (*MigrationVelocity, error) {
+func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectFilter, batchFilter string, days int) (*MigrationVelocity, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	// Use dialect-specific date arithmetic
@@ -1627,15 +1583,18 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFil
 	case DBTypePostgres, DBTypePostgreSQL:
 		dateCondition = fmt.Sprintf("AND mh.completed_at >= NOW() - INTERVAL '%d days'", days)
 		args = append(args, orgArgs...)
+		args = append(args, projectArgs...)
 		args = append(args, batchArgs...)
 	case DBTypeSQLServer, DBTypeMSSQL:
 		dateCondition = fmt.Sprintf("AND mh.completed_at >= DATEADD(day, -%d, GETUTCDATE())", days)
 		args = append(args, orgArgs...)
+		args = append(args, projectArgs...)
 		args = append(args, batchArgs...)
 	default: // SQLite
 		dateCondition = "AND mh.completed_at >= datetime('now', '-' || ? || ' days')"
 		args = []interface{}{days}
 		args = append(args, orgArgs...)
+		args = append(args, projectArgs...)
 		args = append(args, batchArgs...)
 	}
 
@@ -1648,6 +1607,7 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, batchFil
 			` + dateCondition + `
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
+			` + projectFilterSQL + `
 			` + batchFilterSQL + `
 	`
 
@@ -1677,9 +1637,10 @@ type MigrationTimeSeriesPoint struct {
 // GetMigrationTimeSeries returns daily migration completions for the last 30 days
 //
 //nolint:dupl // Similar query pattern but different business logic
-func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchFilter string) ([]*MigrationTimeSeriesPoint, error) {
+func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*MigrationTimeSeriesPoint, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	// Use dialect-specific date arithmetic
@@ -1704,13 +1665,15 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 			` + dateCondition + `
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
+			` + projectFilterSQL + `
 			` + batchFilterSQL + `
 		GROUP BY DATE(mh.completed_at)
 		ORDER BY date ASC
 	`
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	var series []*MigrationTimeSeriesPoint
@@ -1723,9 +1686,10 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, batchF
 }
 
 // GetAverageMigrationTime calculates the average migration duration
-func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, batchFilter string) (float64, error) {
+func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, projectFilter, batchFilter string) (float64, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	query := `
@@ -1737,11 +1701,13 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, batch
 			AND mh.duration_seconds IS NOT NULL
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
+			` + projectFilterSQL + `
 			` + batchFilterSQL + `
 	`
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	var result struct {
@@ -1794,10 +1760,19 @@ func (d *Database) buildBatchFilter(batchFilter string) (string, []interface{}) 
 	return " AND r.batch_id = ?", []interface{}{batchID}
 }
 
+// buildProjectFilter builds SQL filter for ADO project (ado_project field)
+func (d *Database) buildProjectFilter(projectFilter string) (string, []interface{}) {
+	if projectFilter == "" {
+		return "", nil
+	}
+	return " AND r.ado_project = ?", []interface{}{projectFilter}
+}
+
 // GetRepositoryStatsByStatusFiltered returns repository counts by status with filters
-func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFilter, batchFilter string) (map[string]int, error) {
+func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) (map[string]int, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	query := `
@@ -1805,12 +1780,14 @@ func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFi
 		FROM repositories r
 		WHERE 1=1
 			` + orgFilterSQL + `
+			` + projectFilterSQL + `
 			` + batchFilterSQL + `
 		GROUP BY status
 	`
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	type StatusCount struct {
@@ -1835,9 +1812,10 @@ func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFi
 // GetSizeDistributionFiltered returns size distribution with filters
 //
 //nolint:dupl // Similar query pattern but different business logic
-func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, batchFilter string) ([]*SizeDistribution, error) {
+func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*SizeDistribution, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use a subquery
@@ -1858,6 +1836,7 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 			WHERE 1=1
 				AND status != 'wont_migrate'
 				` + orgFilterSQL + `
+				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 		) categorized
 		GROUP BY category
@@ -1872,7 +1851,8 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 	`
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	var distribution []*SizeDistribution
@@ -1885,13 +1865,15 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, b
 }
 
 // GetFeatureStatsFiltered returns feature stats with filters
-func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batchFilter string) (*FeatureStats, error) {
+func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) (*FeatureStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	query := `
 		SELECT 
+			-- GitHub features
 			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
 			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
 			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
@@ -1912,16 +1894,34 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
 		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+			
+			-- Azure DevOps features
+			SUM(CASE WHEN ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+			SUM(CASE WHEN ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+			SUM(CASE WHEN ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+			SUM(CASE WHEN ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+			SUM(CASE WHEN ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+			SUM(CASE WHEN ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+			SUM(CASE WHEN ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+			SUM(CASE WHEN ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+			SUM(CASE WHEN ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+			SUM(CASE WHEN ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+			SUM(CASE WHEN ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+			SUM(CASE WHEN ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+			SUM(CASE WHEN ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+			
 		COUNT(*) as total
 	FROM repositories r
 	WHERE 1=1
 		AND status != 'wont_migrate'
 		` + orgFilterSQL + `
+		` + projectFilterSQL + `
 		` + batchFilterSQL + `
 `
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	var stats FeatureStats
@@ -1934,9 +1934,10 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, batch
 }
 
 // GetOrganizationStatsFiltered returns organization stats with batch filter
-func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, batchFilter string) ([]*OrganizationStats, error) {
+func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*OrganizationStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	// Use dialect-specific string functions
@@ -1953,6 +1954,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 			WHERE POSITION('/' IN full_name) > 0
 				AND status != 'wont_migrate'
 				` + orgFilterSQL + `
+				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 			GROUP BY org, status
 			ORDER BY total DESC, org ASC
@@ -1968,6 +1970,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 			WHERE CHARINDEX('/', full_name) > 0
 				AND status != 'wont_migrate'
 				` + orgFilterSQL + `
+				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 			GROUP BY org, status
 			ORDER BY total DESC, org ASC
@@ -1983,6 +1986,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 			WHERE INSTR(full_name, '/') > 0
 				AND status != 'wont_migrate'
 				` + orgFilterSQL + `
+				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 			GROUP BY org, status
 			ORDER BY total DESC, org ASC
@@ -1990,7 +1994,8 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	}
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	type OrgStatusResult struct {
@@ -2047,12 +2052,92 @@ func (d *Database) UpdateRepositoryValidation(ctx context.Context, fullName stri
 	return nil
 }
 
+// GetProjectStatsFiltered returns repository counts grouped by ADO project (for Azure DevOps sources)
+func (d *Database) GetProjectStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*OrganizationStats, error) {
+	// Build filter clauses and collect arguments
+	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
+	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+
+	query := `
+		SELECT 
+			r.ado_project as org,
+			COUNT(*) as total,
+			r.status as status,
+			COUNT(*) as status_count
+		FROM repositories r
+		WHERE r.ado_project IS NOT NULL
+			AND r.ado_project != ''
+			AND r.status != 'wont_migrate'
+			` + orgFilterSQL + `
+			` + projectFilterSQL + `
+			` + batchFilterSQL + `
+		GROUP BY r.ado_project, r.status
+		ORDER BY total DESC, r.ado_project ASC
+	`
+
+	// Combine all arguments
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
+
+	// Use GORM Raw() for analytics query
+	type ProjectCount struct {
+		Org         string
+		Total       int
+		Status      string
+		StatusCount int
+	}
+
+	var results []ProjectCount
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project stats: %w", err)
+	}
+
+	// Group by project and aggregate status counts
+	projectMap := make(map[string]*OrganizationStats)
+	for _, result := range results {
+		if _, exists := projectMap[result.Org]; !exists {
+			projectMap[result.Org] = &OrganizationStats{
+				Organization: result.Org,
+				TotalRepos:   0,
+				StatusCounts: make(map[string]int),
+			}
+		}
+		projectMap[result.Org].StatusCounts[result.Status] = result.StatusCount
+	}
+
+	// Calculate total repos for each project
+	for projectName, stats := range projectMap {
+		total := 0
+		for _, count := range stats.StatusCounts {
+			total += count
+		}
+		stats.TotalRepos = total
+		projectMap[projectName] = stats
+	}
+
+	// Convert map to array
+	projectStatsArray := make([]*OrganizationStats, 0, len(projectMap))
+	for _, stats := range projectMap {
+		projectStatsArray = append(projectStatsArray, stats)
+	}
+
+	// Sort by total repos descending
+	sort.Slice(projectStatsArray, func(i, j int) bool {
+		return projectStatsArray[i].TotalRepos > projectStatsArray[j].TotalRepos
+	})
+
+	return projectStatsArray, nil
+}
+
 // GetMigrationCompletionStatsByOrgFiltered returns migration completion stats with org and batch filters
 //
 //nolint:dupl // Similar to GetMigrationCompletionStatsByOrg but with filters
-func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, orgFilter, batchFilter string) ([]*MigrationCompletionStats, error) {
+func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*MigrationCompletionStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	// Use dialect-specific string functions
@@ -2071,6 +2156,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			WHERE full_name LIKE '%/%'
 				AND status != 'wont_migrate'
 				` + orgFilterSQL + `
+				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 			GROUP BY organization
 			ORDER BY total_repos DESC
@@ -2088,6 +2174,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			WHERE full_name LIKE '%/%'
 				AND status != 'wont_migrate'
 				` + orgFilterSQL + `
+				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 			GROUP BY organization
 			ORDER BY total_repos DESC
@@ -2105,6 +2192,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			WHERE full_name LIKE '%/%'
 				AND status != 'wont_migrate'
 				` + orgFilterSQL + `
+				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 			GROUP BY organization
 			ORDER BY total_repos DESC
@@ -2112,13 +2200,57 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 	}
 
 	// Combine all arguments
-	args := append(orgArgs, batchArgs...)
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
 
 	// Use GORM Raw() for analytics query
 	var stats []*MigrationCompletionStats
 	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&stats).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration completion stats: %w", err)
+	}
+
+	return stats, nil
+}
+
+// GetMigrationCompletionStatsByProjectFiltered returns migration completion stats grouped by ADO project
+// Similar to GetMigrationCompletionStatsByOrgFiltered but groups by ado_project field
+//
+//nolint:dupl // Similar to GetMigrationCompletionStatsByOrgFiltered but groups by project
+func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*MigrationCompletionStats, error) {
+	// Build filter clauses and collect arguments
+	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
+	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+
+	// Query groups by ado_project field for Azure DevOps repositories
+	query := `
+		SELECT 
+			ado_project as organization,
+			COUNT(*) as total_repos,
+			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+		FROM repositories r
+		WHERE ado_project IS NOT NULL AND ado_project != ''
+			AND status != 'wont_migrate'
+			` + orgFilterSQL + `
+			` + projectFilterSQL + `
+			` + batchFilterSQL + `
+		GROUP BY ado_project
+		ORDER BY total_repos DESC
+	`
+
+	// Combine all arguments
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
+
+	// Use GORM Raw() for analytics query
+	var stats []*MigrationCompletionStats
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&stats).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration completion stats by project: %w", err)
 	}
 
 	return stats, nil

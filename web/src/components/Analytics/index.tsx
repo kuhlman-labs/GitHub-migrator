@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -10,6 +10,7 @@ import { MigrationTrendChart } from './MigrationTrendChart';
 import { ComplexityChart } from './ComplexityChart';
 import { KPICard } from './KPICard';
 import { getRepositoriesUrl } from '../../utils/filters';
+import { api } from '../../services/api';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#656D76',
@@ -26,13 +27,29 @@ type AnalyticsTab = 'discovery' | 'migration';
 export function Analytics() {
   const navigate = useNavigate();
   const [selectedOrganization, setSelectedOrganization] = useState('');
+  const [selectedProject, setSelectedProject] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('');
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
+  const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
 
   const { data: analytics, isLoading, isFetching } = useAnalytics({
     organization: selectedOrganization || undefined,
+    project: selectedProject || undefined,
     batch_id: selectedBatch || undefined,
   });
+
+  // Fetch source type on mount
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const config = await api.getConfig();
+        setSourceType(config.source_type);
+      } catch (error) {
+        console.error('Failed to fetch config:', error);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   // Calculate days until completion (must be before early returns to satisfy rules of hooks)
   const daysUntilCompletion = useMemo(() => {
@@ -92,8 +109,10 @@ export function Analytics() {
       {/* Filter Bar */}
       <FilterBar
         selectedOrganization={selectedOrganization}
+        selectedProject={selectedProject}
         selectedBatch={selectedBatch}
         onOrganizationChange={setSelectedOrganization}
+        onProjectChange={setSelectedProject}
         onBatchChange={setSelectedBatch}
       />
 
@@ -161,13 +180,15 @@ export function Analytics() {
 
         {/* Complexity and Size Distribution Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <ComplexityChart data={analytics.complexity_distribution || []} />
+          <ComplexityChart data={analytics.complexity_distribution || []} source={sourceType} />
           
           {/* Size Distribution */}
           {analytics.size_distribution && analytics.size_distribution.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Repository Size Distribution</h3>
-              <p className="text-sm text-gray-600 mb-4">Distribution of repositories by disk size, helping identify storage requirements and migration capacity planning needs.</p>
+              <p className="text-sm text-gray-600 mb-4">
+                Distribution of {sourceType === 'azuredevops' ? 'Azure DevOps' : 'GitHub'} repositories by disk size, helping identify storage requirements and migration capacity planning needs.
+              </p>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie
@@ -227,57 +248,86 @@ export function Analytics() {
 
         {/* Organization Breakdown and Feature Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Organization Breakdown */}
-          {analytics.organization_stats && analytics.organization_stats.length > 0 && (
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Organization Breakdown</h3>
-              <p className="text-sm text-gray-600 mb-4">Total repository count and distribution across source organizations, useful for workload allocation and team coordination.</p>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Organization
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Repositories
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Percentage
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {analytics.organization_stats
-                      .sort((a, b) => b.total_repos - a.total_repos)
-                      .map((org) => {
-                        const percentage = analytics.total_repositories > 0
-                          ? ((org.total_repos / analytics.total_repositories) * 100).toFixed(1)
-                          : '0.0';
-                        return (
-                          <tr key={org.organization} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {org.organization}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {org.total_repos}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {percentage}%
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
+          {/* Organization/Project Breakdown */}
+          {(() => {
+            // Use project_stats for ADO, organization_stats for GitHub
+            const stats = sourceType === 'azuredevops' && analytics.project_stats 
+              ? analytics.project_stats 
+              : analytics.organization_stats;
+            
+            if (!stats || stats.length === 0) return null;
+            
+            return (
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  {sourceType === 'azuredevops' ? 'Project Breakdown' : 'Organization Breakdown'}
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Total repository count and distribution across {sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'source organizations'}, useful for workload allocation and team coordination.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Repositories
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Percentage
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {stats
+                        .sort((a, b) => b.total_repos - a.total_repos)
+                        .map((org) => {
+                          const percentage = analytics.total_repositories > 0
+                            ? ((org.total_repos / analytics.total_repositories) * 100).toFixed(1)
+                            : '0.0';
+                          return (
+                            <tr key={org.organization} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {org.organization}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {org.total_repos}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {percentage}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Feature Stats */}
           {analytics.feature_stats && (() => {
             const featureStats = analytics.feature_stats;
             const features = [
+              // Azure DevOps specific features
+              { label: "Azure Boards", count: featureStats.ado_has_boards, filter: { ado_has_boards: true } },
+              { label: "Azure Pipelines", count: featureStats.ado_has_pipelines, filter: { ado_has_pipelines: true } },
+              { label: "YAML Pipelines", count: featureStats.ado_has_yaml_pipelines, filter: { ado_yaml_pipeline_count: '> 0' } },
+              { label: "Classic Pipelines", count: featureStats.ado_has_classic_pipelines, filter: { ado_classic_pipeline_count: '> 0' } },
+              { label: "GHAS (Azure DevOps)", count: featureStats.ado_has_ghas, filter: { ado_has_ghas: true } },
+              { label: "TFVC Repositories", count: featureStats.ado_tfvc_count, filter: { ado_is_git: false } },
+              { label: "Pull Requests", count: featureStats.ado_has_pull_requests, filter: { ado_pull_request_count: '> 0' } },
+              { label: "Work Items", count: featureStats.ado_has_work_items, filter: { ado_work_item_count: '> 0' } },
+              { label: "Branch Policies", count: featureStats.ado_has_branch_policies, filter: { ado_branch_policy_count: '> 0' } },
+              { label: "Wikis", count: featureStats.ado_has_wiki, filter: { ado_has_wiki: true } },
+              { label: "Test Plans", count: featureStats.ado_has_test_plans, filter: { ado_test_plan_count: '> 0' } },
+              { label: "Package Feeds", count: featureStats.ado_has_package_feeds, filter: { ado_package_feed_count: '> 0' } },
+              { label: "Service Hooks", count: featureStats.ado_has_service_hooks, filter: { ado_service_hook_count: '> 0' } },
+              
+              // GitHub specific features
               { label: "Archived", count: featureStats.is_archived, filter: { is_archived: true } },
               { label: "Forked Repositories", count: featureStats.is_fork, filter: { is_fork: true } },
               { label: "LFS", count: featureStats.has_lfs, filter: { has_lfs: true } },
@@ -298,12 +348,16 @@ export function Analytics() {
               { label: "Self-Hosted Runners", count: featureStats.has_self_hosted_runners, filter: { has_self_hosted_runners: true } },
               { label: "Release Assets", count: featureStats.has_release_assets, filter: { has_release_assets: true } },
               { label: "Webhooks", count: featureStats.has_webhooks, filter: { has_webhooks: true } },
-            ].filter(feature => feature.count > 0);
+            ].filter(feature => feature.count && feature.count > 0);
+
+            const featureDescription = sourceType === 'azuredevops'
+              ? 'Azure DevOps features detected across repositories, including Azure Boards, Pipelines, work items, branch policies, and configurations requiring special migration handling.'
+              : 'GitHub features detected across repositories, including Actions, security tools, LFS, and advanced configurations requiring special migration handling.';
 
             return features.length > 0 ? (
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
-                <p className="text-sm text-gray-600 mb-4">GitHub features detected across repositories, including Actions, security tools, LFS, and advanced configurations requiring special migration handling.</p>
+                <p className="text-sm text-gray-600 mb-4">{featureDescription}</p>
                 <div className="space-y-1">
                   {features.map(feature => (
                     <FeatureStat 
@@ -448,14 +502,18 @@ export function Analytics() {
         {/* Migration Progress by Organization */}
         {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Migration Progress by Organization</h3>
-            <p className="text-sm text-gray-600 mb-4">Detailed migration status breakdown by organization, showing completion rates and identifying areas requiring attention.</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Migration Progress by {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Detailed migration status breakdown by {sourceType === 'azuredevops' ? 'Azure DevOps project' : 'organization'}, showing completion rates and identifying areas requiring attention.
+            </p>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Organization
+                      {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Total
