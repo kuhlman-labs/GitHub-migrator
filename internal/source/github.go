@@ -23,6 +23,7 @@ type GitHubProvider struct {
 // baseURL should be the API base URL (e.g., "https://api.github.com" or "https://github.example.com/api/v3")
 // For github.com, use "https://api.github.com"
 // For GHES, use "https://your-ghes-instance.com/api/v3"
+// For Data Residency (GHEC), use "https://company.ghe.com"
 func NewGitHubProvider(baseURL, token string) (*GitHubProvider, error) {
 	if token == "" {
 		return nil, fmt.Errorf("token is required")
