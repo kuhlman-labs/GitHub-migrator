@@ -106,7 +106,7 @@ func (p *GitHubProvider) CloneRepository(ctx context.Context, info RepositoryInf
 	args = append(args, authURL, destPath)
 
 	// Execute git clone
-	// Arguments are validated and sanitized before use
+	// #nosec G204 -- destPath validated via ValidateDestPath, authURL validated via ValidateCloneURL
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	var stderr bytes.Buffer
