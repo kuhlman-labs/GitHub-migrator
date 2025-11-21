@@ -3405,7 +3405,7 @@ func (h *Handler) writeCSVColumnHeaders(output *strings.Builder) {
 		output.WriteString("Is Git,Pipeline Count,YAML Pipelines,Classic Pipelines,Has Boards,Has Wiki,")
 		output.WriteString("Pull Requests,Work Items,Branch Policies,Test Plans,Package Feeds,Service Hooks")
 	} else {
-		output.WriteString("Workflow Count,Environment Count,Secret Count,Has Actions,Has Packages,")
+		output.WriteString("Workflow Count,Environment Count,Secret Count,Has Actions,Has Environments,Has Packages,")
 		output.WriteString("Has Projects,Branch Protections,Has Rulesets,Contributor Count,")
 		output.WriteString("Issue Count,Pull Request Count,Has Self-Hosted Runners")
 	}
@@ -3514,11 +3514,12 @@ func (h *Handler) writeCSVSourceSpecificFields(output *strings.Builder, repo *mo
 			repo.ADOPackageFeedCount,
 			repo.ADOServiceHookCount))
 	} else {
-		output.WriteString(fmt.Sprintf("%d,%d,%d,%s,%s,%s,%d,%s,",
+		output.WriteString(fmt.Sprintf("%d,%d,%d,%s,%s,%s,%s,%d,%s,",
 			repo.WorkflowCount,
 			repo.EnvironmentCount,
 			repo.SecretCount,
 			formatBool(repo.HasActions),
+			formatBool(repo.EnvironmentCount > 0),
 			formatBool(repo.HasPackages),
 			formatBool(repo.HasProjects),
 			repo.BranchProtections,
