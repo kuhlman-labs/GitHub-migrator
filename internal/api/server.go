@@ -210,6 +210,7 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/analytics/progress", s.handler.GetMigrationProgress)
 	protect("GET /api/v1/analytics/executive-report", s.handler.GetExecutiveReport)
 	protect("GET /api/v1/analytics/executive-report/export", s.handler.ExportExecutiveReport)
+	protect("GET /api/v1/analytics/detailed-discovery-report/export", s.handler.ExportDetailedDiscoveryReport)
 
 	// Azure DevOps specific endpoints
 	if s.adoHandler != nil {

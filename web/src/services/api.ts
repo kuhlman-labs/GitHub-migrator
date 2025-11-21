@@ -291,6 +291,14 @@ export const api = {
     return data;
   },
 
+  async exportDetailedDiscoveryReport(format: 'csv' | 'json', filters?: { organization?: string; project?: string; batch_id?: string }): Promise<Blob> {
+    const { data } = await client.get('/analytics/detailed-discovery-report/export', {
+      params: { format, ...filters },
+      responseType: 'blob',
+    });
+    return data;
+  },
+
   // Migration History
   async getMigrationHistoryList(): Promise<{ migrations: MigrationHistoryEntry[]; total: number }> {
     const { data } = await client.get('/migrations/history');
