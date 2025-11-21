@@ -21,16 +21,16 @@ type Repository struct {
 	SourceURL string `json:"source_url" db:"source_url" gorm:"column:source_url;not null"`
 
 	// Git properties
-	TotalSize         *int64     `json:"total_size,omitempty" db:"total_size" gorm:"column:total_size"`
-	LargestFile       *string    `json:"largest_file,omitempty" db:"largest_file" gorm:"column:largest_file"`
-	LargestFileSize   *int64     `json:"largest_file_size,omitempty" db:"largest_file_size" gorm:"column:largest_file_size"`
-	LargestCommit     *string    `json:"largest_commit,omitempty" db:"largest_commit" gorm:"column:largest_commit"`
-	LargestCommitSize *int64     `json:"largest_commit_size,omitempty" db:"largest_commit_size" gorm:"column:largest_commit_size"`
-	HasLFS            bool       `json:"has_lfs" db:"has_lfs" gorm:"column:has_lfs;default:false"`
-	HasSubmodules     bool       `json:"has_submodules" db:"has_submodules" gorm:"column:has_submodules;default:false"`
-	HasLargeFiles     bool       `json:"has_large_files" db:"has_large_files" gorm:"column:has_large_files;default:false"` // Files > 100MB in history
-	LargeFileCount    int        `json:"large_file_count" db:"large_file_count" gorm:"column:large_file_count;default:0"`
-	DefaultBranch     *string    `json:"default_branch,omitempty" db:"default_branch" gorm:"column:default_branch"`
+	TotalSize          *int64     `json:"total_size,omitempty" db:"total_size" gorm:"column:total_size"`
+	LargestFile        *string    `json:"largest_file,omitempty" db:"largest_file" gorm:"column:largest_file"`
+	LargestFileSize    *int64     `json:"largest_file_size,omitempty" db:"largest_file_size" gorm:"column:largest_file_size"`
+	LargestCommit      *string    `json:"largest_commit,omitempty" db:"largest_commit" gorm:"column:largest_commit"`
+	LargestCommitSize  *int64     `json:"largest_commit_size,omitempty" db:"largest_commit_size" gorm:"column:largest_commit_size"`
+	HasLFS             bool       `json:"has_lfs" db:"has_lfs" gorm:"column:has_lfs;default:false"`
+	HasSubmodules      bool       `json:"has_submodules" db:"has_submodules" gorm:"column:has_submodules;default:false"`
+	HasLargeFiles      bool       `json:"has_large_files" db:"has_large_files" gorm:"column:has_large_files;default:false"` // Files > 100MB in history
+	LargeFileCount     int        `json:"large_file_count" db:"large_file_count" gorm:"column:large_file_count;default:0"`
+	DefaultBranch      *string    `json:"default_branch,omitempty" db:"default_branch" gorm:"column:default_branch"`
 	BranchCount        int        `json:"branch_count" db:"branch_count" gorm:"column:branch_count;default:0"`
 	CommitCount        int        `json:"commit_count" db:"commit_count" gorm:"column:commit_count;default:0"`
 	CommitsLast12Weeks int        `json:"commits_last_12_weeks" db:"commits_last_12_weeks" gorm:"column:commits_last_12_weeks;default:0"`
