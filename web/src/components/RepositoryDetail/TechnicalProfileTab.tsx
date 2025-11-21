@@ -24,6 +24,10 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
         <ProfileItem label="Branches" value={repository.branch_count} />
         <ProfileItem label="Tags/Releases" value={repository.tag_count} />
         <ProfileItem label="Commits" value={repository.commit_count.toLocaleString()} />
+        <ProfileItem 
+          label="Commits (Last 12 Weeks)" 
+          value={repository.commits_last_12_weeks ? repository.commits_last_12_weeks.toLocaleString() : '0'} 
+        />
         <ProfileItem label="Has LFS" value={repository.has_lfs ? 'Yes' : 'No'} />
         <ProfileItem label="Has Submodules" value={repository.has_submodules ? 'Yes' : 'No'} />
         

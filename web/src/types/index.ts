@@ -15,6 +15,7 @@ export interface Repository {
   default_branch: string;
   branch_count: number;
   commit_count: number;
+  commits_last_12_weeks: number;
   last_commit_sha?: string;
   last_commit_date?: string;
   is_archived: boolean;

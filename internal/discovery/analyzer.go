@@ -163,6 +163,9 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 	// Get tag count
 	repo.TagCount = a.getTagCount(ctx, repoPath)
 
+	// Get commit count for the past 12 weeks
+	repo.CommitsLast12Weeks = a.getCommitsLast12Weeks(ctx, repoPath)
+
 	// Validate GitHub migration limits
 	a.validateCommitSizes(output, repo)
 	a.validateGitReferences(ctx, repoPath, repo)
@@ -199,6 +202,7 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 		"largest_commit", logLargestCommit,
 		"largest_commit_size", logLargestCommitSize,
 		"commits", repo.CommitCount,
+		"commits_last_12_weeks", repo.CommitsLast12Weeks,
 		"has_lfs", repo.HasLFS,
 		"has_submodules", repo.HasSubmodules,
 		"branches", repo.BranchCount)
@@ -406,6 +410,30 @@ func (a *Analyzer) getTagCount(ctx context.Context, repoPath string) int {
 		if len(bytes.TrimSpace(line)) > 0 {
 			count++
 		}
+	}
+
+	return count
+}
+
+// getCommitsLast12Weeks returns the number of commits in the past 12 weeks
+func (a *Analyzer) getCommitsLast12Weeks(ctx context.Context, repoPath string) int {
+	// Calculate the date 12 weeks ago from now
+	// Use --all to count commits across all branches
+	cmd := exec.CommandContext(ctx, "git", "rev-list", "--all", "--count", "--since=12.week.ago")
+	cmd.Dir = repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		a.logger.Debug("Failed to get commits from last 12 weeks", "error", err)
+		return 0
+	}
+
+	// Parse the count from output
+	countStr := strings.TrimSpace(string(output))
+	var count int
+	if _, err := fmt.Sscanf(countStr, "%d", &count); err != nil {
+		a.logger.Debug("Failed to parse commit count", "error", err, "output", countStr)
+		return 0
 	}
 
 	return count

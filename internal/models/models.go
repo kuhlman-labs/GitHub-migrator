@@ -31,10 +31,11 @@ type Repository struct {
 	HasLargeFiles     bool       `json:"has_large_files" db:"has_large_files" gorm:"column:has_large_files;default:false"` // Files > 100MB in history
 	LargeFileCount    int        `json:"large_file_count" db:"large_file_count" gorm:"column:large_file_count;default:0"`
 	DefaultBranch     *string    `json:"default_branch,omitempty" db:"default_branch" gorm:"column:default_branch"`
-	BranchCount       int        `json:"branch_count" db:"branch_count" gorm:"column:branch_count;default:0"`
-	CommitCount       int        `json:"commit_count" db:"commit_count" gorm:"column:commit_count;default:0"`
-	LastCommitSHA     *string    `json:"last_commit_sha,omitempty" db:"last_commit_sha" gorm:"column:last_commit_sha"`
-	LastCommitDate    *time.Time `json:"last_commit_date,omitempty" db:"last_commit_date" gorm:"column:last_commit_date"`
+	BranchCount        int        `json:"branch_count" db:"branch_count" gorm:"column:branch_count;default:0"`
+	CommitCount        int        `json:"commit_count" db:"commit_count" gorm:"column:commit_count;default:0"`
+	CommitsLast12Weeks int        `json:"commits_last_12_weeks" db:"commits_last_12_weeks" gorm:"column:commits_last_12_weeks;default:0"`
+	LastCommitSHA      *string    `json:"last_commit_sha,omitempty" db:"last_commit_sha" gorm:"column:last_commit_sha"`
+	LastCommitDate     *time.Time `json:"last_commit_date,omitempty" db:"last_commit_date" gorm:"column:last_commit_date"`
 
 	// GitHub features
 	IsArchived         bool `json:"is_archived" db:"is_archived" gorm:"column:is_archived;default:false"`
