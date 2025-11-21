@@ -3171,10 +3171,13 @@ func (h *Handler) ExportDetailedDiscoveryReport(w http.ResponseWriter, r *http.R
 	// Get local dependencies count for each repository
 	localDepsCount := h.getLocalDependenciesCount(ctx, repos)
 
+	// Get batch names for repositories
+	batchNames := h.getBatchNames(ctx, repos)
+
 	if format == formatCSV {
-		h.exportDetailedDiscoveryReportCSV(w, repos, localDepsCount)
+		h.exportDetailedDiscoveryReportCSV(w, repos, localDepsCount, batchNames)
 	} else {
-		h.exportDetailedDiscoveryReportJSON(w, repos, localDepsCount, orgFilter, projectFilter, batchFilter)
+		h.exportDetailedDiscoveryReportJSON(w, repos, localDepsCount, batchNames, orgFilter, projectFilter, batchFilter)
 	}
 }
 
@@ -3226,7 +3229,75 @@ func (h *Handler) getLocalDependenciesCount(ctx context.Context, repos []*models
 	return localDepsCount
 }
 
-func (h *Handler) exportDetailedDiscoveryReportJSON(w http.ResponseWriter, repos []*models.Repository, localDepsCount map[int64]int, orgFilter, projectFilter, batchFilter string) {
+// getBatchNames retrieves batch names for repositories
+func (h *Handler) getBatchNames(ctx context.Context, repos []*models.Repository) map[int64]string {
+	batchNames := make(map[int64]string)
+	uniqueBatchIDs := make(map[int64]bool)
+
+	// Collect unique batch IDs
+	for _, repo := range repos {
+		if repo.BatchID != nil {
+			uniqueBatchIDs[*repo.BatchID] = true
+		}
+	}
+
+	// Fetch batch details for each unique ID
+	for batchID := range uniqueBatchIDs {
+		batch, err := h.db.GetBatch(ctx, batchID)
+		if err == nil && batch != nil {
+			batchNames[batchID] = batch.Name
+		}
+	}
+
+	return batchNames
+}
+
+// titleCase capitalizes the first letter of each word
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	words := strings.Fields(strings.ToLower(s))
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// formatStatusForDisplay converts internal status to human-readable format
+func formatStatusForDisplay(status string) string {
+	// Replace underscores with spaces and title-case each word
+	status = strings.ReplaceAll(status, "_", " ")
+	return titleCase(status)
+}
+
+// formatSourceForDisplay converts internal source type to human-readable format
+func formatSourceForDisplay(source string) string {
+	switch source {
+	case "github":
+		return "GitHub"
+	case "azuredevops":
+		return "Azure DevOps"
+	case "gitlab":
+		return "GitLab"
+	case "ghes":
+		return "GitHub Enterprise Server"
+	default:
+		return titleCase(source)
+	}
+}
+
+// formatVisibilityForDisplay capitalizes visibility
+func formatVisibilityForDisplay(visibility string) string {
+	if visibility == "" {
+		return ""
+	}
+	return titleCase(visibility)
+}
+
+func (h *Handler) exportDetailedDiscoveryReportJSON(w http.ResponseWriter, repos []*models.Repository, localDepsCount map[int64]int, batchNames map[int64]string, orgFilter, projectFilter, batchFilter string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=detailed_discovery_report.json")
 
@@ -3288,31 +3359,48 @@ func (h *Handler) exportDetailedDiscoveryReportJSON(w http.ResponseWriter, repos
 	}
 }
 
-func (h *Handler) exportDetailedDiscoveryReportCSV(w http.ResponseWriter, repos []*models.Repository, localDepsCount map[int64]int) {
+func (h *Handler) exportDetailedDiscoveryReportCSV(w http.ResponseWriter, repos []*models.Repository, localDepsCount map[int64]int, batchNames map[int64]string) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=detailed_discovery_report.csv")
 
 	var output strings.Builder
 
-	// Header section
-	output.WriteString("DETAILED REPOSITORY DISCOVERY REPORT\n")
-	output.WriteString(fmt.Sprintf("Source: %s\n", strings.ToUpper(h.sourceType)))
-	output.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
-	output.WriteString(fmt.Sprintf("Total Repositories: %d\n", len(repos)))
-	output.WriteString("\n")
+	// Write report header
+	h.writeCSVReportHeader(&output, len(repos))
 
-	// CSV header row - comprehensive fields for batch planning
+	// Write CSV column headers
+	h.writeCSVColumnHeaders(&output)
+
+	// Write data rows
+	for _, repo := range repos {
+		h.writeCSVRepoRow(&output, repo, localDepsCount, batchNames)
+	}
+
+	if _, err := w.Write([]byte(output.String())); err != nil {
+		h.logger.Error("Failed to write CSV response", "error", err)
+	}
+}
+
+func (h *Handler) writeCSVReportHeader(output *strings.Builder, repoCount int) {
+	sourceDisplay := formatSourceForDisplay(h.sourceType)
+	output.WriteString("DETAILED REPOSITORY DISCOVERY REPORT\n")
+	output.WriteString(fmt.Sprintf("Source: %s\n", sourceDisplay))
+	output.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
+	output.WriteString(fmt.Sprintf("Total Repositories: %d\n", repoCount))
+	output.WriteString("\n")
+}
+
+func (h *Handler) writeCSVColumnHeaders(output *strings.Builder) {
 	if h.sourceType == sourceTypeAzureDevOps {
-		output.WriteString("Repository,Organization,Project,Source,Status,Batch ID,")
+		output.WriteString("Repository,Organization,Project,Source,Status,Batch,")
 	} else {
-		output.WriteString("Repository,Organization,Source,Status,Batch ID,")
+		output.WriteString("Repository,Organization,Source,Status,Batch,")
 	}
 	output.WriteString("Size (Bytes),Size (Human),Commit Count,Commits (Last 12 Weeks),")
 	output.WriteString("Has LFS,Has Submodules,Has Large Files,Large File Count,Largest File Size (Bytes),")
 	output.WriteString("Has Blocking Files,Local Dependencies,Complexity Score,")
 	output.WriteString("Default Branch,Branch Count,Last Commit Date,Visibility,Is Archived,Is Fork,")
 
-	// Source-specific fields
 	if h.sourceType == sourceTypeAzureDevOps {
 		output.WriteString("Is Git,Pipeline Count,YAML Pipelines,Classic Pipelines,Has Boards,Has Wiki,")
 		output.WriteString("Pull Requests,Work Items,Branch Policies,Test Plans,Package Feeds,Service Hooks")
@@ -3322,138 +3410,124 @@ func (h *Handler) exportDetailedDiscoveryReportCSV(w http.ResponseWriter, repos 
 		output.WriteString("Issue Count,Pull Request Count,Has Self-Hosted Runners")
 	}
 	output.WriteString("\n")
+}
 
-	// Data rows
-	for _, repo := range repos {
-		// Common fields
-		output.WriteString(escapesCSV(repo.FullName))
-		output.WriteString(",")
-		output.WriteString(escapesCSV(repo.Organization()))
-		output.WriteString(",")
+func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Repository, localDepsCount map[int64]int, batchNames map[int64]string) {
+	// Common fields
+	output.WriteString(escapesCSV(repo.FullName))
+	output.WriteString(",")
+	output.WriteString(escapesCSV(repo.Organization()))
+	output.WriteString(",")
 
-		// ADO project field
-		if h.sourceType == sourceTypeAzureDevOps {
-			if repo.ADOProject != nil {
-				output.WriteString(escapesCSV(*repo.ADOProject))
-			}
-			output.WriteString(",")
-		}
-
-		output.WriteString(escapesCSV(repo.Source))
-		output.WriteString(",")
-		output.WriteString(escapesCSV(repo.Status))
-		output.WriteString(",")
-
-		// Batch ID
-		if repo.BatchID != nil {
-			output.WriteString(fmt.Sprintf("%d", *repo.BatchID))
+	// ADO project field
+	if h.sourceType == sourceTypeAzureDevOps {
+		if repo.ADOProject != nil {
+			output.WriteString(escapesCSV(*repo.ADOProject))
 		}
 		output.WriteString(",")
-
-		// Size fields
-		if repo.TotalSize != nil {
-			output.WriteString(fmt.Sprintf("%d", *repo.TotalSize))
-			output.WriteString(",")
-			output.WriteString(escapesCSV(formatBytes(*repo.TotalSize)))
-		} else {
-			output.WriteString("0,0 B")
-		}
-		output.WriteString(",")
-
-		// Commit data
-		output.WriteString(fmt.Sprintf("%d,%d,", repo.CommitCount, repo.CommitsLast12Weeks))
-
-		// Boolean flags
-		output.WriteString(formatBool(repo.HasLFS))
-		output.WriteString(",")
-		output.WriteString(formatBool(repo.HasSubmodules))
-		output.WriteString(",")
-		output.WriteString(formatBool(repo.HasLargeFiles))
-		output.WriteString(",")
-		output.WriteString(fmt.Sprintf("%d,", repo.LargeFileCount))
-
-		// Largest file size
-		if repo.LargestFileSize != nil {
-			output.WriteString(fmt.Sprintf("%d", *repo.LargestFileSize))
-		} else {
-			output.WriteString("0")
-		}
-		output.WriteString(",")
-
-		// Blocking files
-		output.WriteString(formatBool(repo.HasBlockingFiles))
-		output.WriteString(",")
-
-		// Local dependencies
-		if count, exists := localDepsCount[repo.ID]; exists {
-			output.WriteString(fmt.Sprintf("%d", count))
-		} else {
-			output.WriteString("0")
-		}
-		output.WriteString(",")
-
-		// Complexity score
-		if repo.ComplexityScore != nil {
-			output.WriteString(fmt.Sprintf("%d", *repo.ComplexityScore))
-		}
-		output.WriteString(",")
-
-		// Git metadata
-		if repo.DefaultBranch != nil {
-			output.WriteString(escapesCSV(*repo.DefaultBranch))
-		}
-		output.WriteString(",")
-		output.WriteString(fmt.Sprintf("%d,", repo.BranchCount))
-
-		// Last commit date
-		if repo.LastCommitDate != nil {
-			output.WriteString(repo.LastCommitDate.Format("2006-01-02"))
-		}
-		output.WriteString(",")
-
-		// Repository properties
-		output.WriteString(escapesCSV(repo.Visibility))
-		output.WriteString(",")
-		output.WriteString(formatBool(repo.IsArchived))
-		output.WriteString(",")
-		output.WriteString(formatBool(repo.IsFork))
-		output.WriteString(",")
-
-		// Source-specific fields
-		if h.sourceType == sourceTypeAzureDevOps {
-			output.WriteString(formatBool(repo.ADOIsGit))
-			output.WriteString(",")
-			output.WriteString(fmt.Sprintf("%d,%d,%d,", repo.ADOPipelineCount, repo.ADOYAMLPipelineCount, repo.ADOClassicPipelineCount))
-			output.WriteString(formatBool(repo.ADOHasBoards))
-			output.WriteString(",")
-			output.WriteString(formatBool(repo.ADOHasWiki))
-			output.WriteString(",")
-			output.WriteString(fmt.Sprintf("%d,%d,%d,%d,%d,%d",
-				repo.ADOPullRequestCount,
-				repo.ADOWorkItemCount,
-				repo.ADOBranchPolicyCount,
-				repo.ADOTestPlanCount,
-				repo.ADOPackageFeedCount,
-				repo.ADOServiceHookCount))
-		} else {
-			output.WriteString(fmt.Sprintf("%d,%d,%d,", repo.WorkflowCount, repo.EnvironmentCount, repo.SecretCount))
-			output.WriteString(formatBool(repo.HasActions))
-			output.WriteString(",")
-			output.WriteString(formatBool(repo.HasPackages))
-			output.WriteString(",")
-			output.WriteString(formatBool(repo.HasProjects))
-			output.WriteString(",")
-			output.WriteString(fmt.Sprintf("%d,", repo.BranchProtections))
-			output.WriteString(formatBool(repo.HasRulesets))
-			output.WriteString(",")
-			output.WriteString(fmt.Sprintf("%d,%d,%d,", repo.ContributorCount, repo.IssueCount, repo.PullRequestCount))
-			output.WriteString(formatBool(repo.HasSelfHostedRunners))
-		}
-		output.WriteString("\n")
 	}
 
-	if _, err := w.Write([]byte(output.String())); err != nil {
-		h.logger.Error("Failed to write CSV response", "error", err)
+	// Format source and status for human readability
+	output.WriteString(escapesCSV(formatSourceForDisplay(repo.Source)))
+	output.WriteString(",")
+	output.WriteString(escapesCSV(formatStatusForDisplay(repo.Status)))
+	output.WriteString(",")
+
+	// Batch name (instead of just ID)
+	if repo.BatchID != nil {
+		if batchName, exists := batchNames[*repo.BatchID]; exists {
+			output.WriteString(escapesCSV(batchName))
+		} else {
+			output.WriteString(fmt.Sprintf("Batch %d", *repo.BatchID))
+		}
+	}
+	output.WriteString(",")
+
+	// Size fields
+	if repo.TotalSize != nil {
+		output.WriteString(fmt.Sprintf("%d,%s,", *repo.TotalSize, escapesCSV(formatBytes(*repo.TotalSize))))
+	} else {
+		output.WriteString("0,0 B,")
+	}
+
+	// Commit, file, and complexity data
+	output.WriteString(fmt.Sprintf("%d,%d,", repo.CommitCount, repo.CommitsLast12Weeks))
+	output.WriteString(fmt.Sprintf("%s,%s,%s,%d,", formatBool(repo.HasLFS), formatBool(repo.HasSubmodules), formatBool(repo.HasLargeFiles), repo.LargeFileCount))
+
+	if repo.LargestFileSize != nil {
+		output.WriteString(fmt.Sprintf("%d,", *repo.LargestFileSize))
+	} else {
+		output.WriteString("0,")
+	}
+
+	output.WriteString(formatBool(repo.HasBlockingFiles))
+	output.WriteString(",")
+
+	// Local dependencies
+	if count, exists := localDepsCount[repo.ID]; exists {
+		output.WriteString(fmt.Sprintf("%d,", count))
+	} else {
+		output.WriteString("0,")
+	}
+
+	// Complexity score
+	if repo.ComplexityScore != nil {
+		output.WriteString(fmt.Sprintf("%d,", *repo.ComplexityScore))
+	} else {
+		output.WriteString(",")
+	}
+
+	// Git metadata
+	if repo.DefaultBranch != nil {
+		output.WriteString(escapesCSV(*repo.DefaultBranch))
+	}
+	output.WriteString(",")
+	output.WriteString(fmt.Sprintf("%d,", repo.BranchCount))
+
+	if repo.LastCommitDate != nil {
+		output.WriteString(repo.LastCommitDate.Format("2006-01-02"))
+	}
+	output.WriteString(",")
+
+	// Repository properties (formatted for readability)
+	output.WriteString(fmt.Sprintf("%s,%s,%s,", escapesCSV(formatVisibilityForDisplay(repo.Visibility)), formatBool(repo.IsArchived), formatBool(repo.IsFork)))
+
+	// Source-specific fields
+	h.writeCSVSourceSpecificFields(output, repo)
+	output.WriteString("\n")
+}
+
+func (h *Handler) writeCSVSourceSpecificFields(output *strings.Builder, repo *models.Repository) {
+	if h.sourceType == sourceTypeAzureDevOps {
+		output.WriteString(fmt.Sprintf("%s,%d,%d,%d,%s,%s,",
+			formatBool(repo.ADOIsGit),
+			repo.ADOPipelineCount,
+			repo.ADOYAMLPipelineCount,
+			repo.ADOClassicPipelineCount,
+			formatBool(repo.ADOHasBoards),
+			formatBool(repo.ADOHasWiki)))
+		output.WriteString(fmt.Sprintf("%d,%d,%d,%d,%d,%d",
+			repo.ADOPullRequestCount,
+			repo.ADOWorkItemCount,
+			repo.ADOBranchPolicyCount,
+			repo.ADOTestPlanCount,
+			repo.ADOPackageFeedCount,
+			repo.ADOServiceHookCount))
+	} else {
+		output.WriteString(fmt.Sprintf("%d,%d,%d,%s,%s,%s,%d,%s,",
+			repo.WorkflowCount,
+			repo.EnvironmentCount,
+			repo.SecretCount,
+			formatBool(repo.HasActions),
+			formatBool(repo.HasPackages),
+			formatBool(repo.HasProjects),
+			repo.BranchProtections,
+			formatBool(repo.HasRulesets)))
+		output.WriteString(fmt.Sprintf("%d,%d,%d,%s",
+			repo.ContributorCount,
+			repo.IssueCount,
+			repo.PullRequestCount,
+			formatBool(repo.HasSelfHostedRunners)))
 	}
 }
 
