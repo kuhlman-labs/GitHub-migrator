@@ -1,3 +1,5 @@
+import { XCircleFillIcon, AlertIcon, CheckCircleIcon, ChevronDownIcon } from '@primer/octicons-react';
+
 interface CollapsibleValidationSectionProps {
   id: string;
   title: string;
@@ -78,15 +80,10 @@ export function CollapsibleValidationSection({
           {renderIcon()}
           <h3 className={`text-lg font-medium ${config.textColor}`}>{title}</h3>
         </div>
-        <svg 
-          className={`w-4 h-4 text-gray-500 transition-transform ${expanded ? 'transform rotate-90' : ''}`} 
-          fill="none" 
-          viewBox="0 0 24 24" 
-          strokeWidth={2} 
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-        </svg>
+        <ChevronDownIcon 
+          className={`text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          size={16}
+        />
       </button>
       
       {expanded && (

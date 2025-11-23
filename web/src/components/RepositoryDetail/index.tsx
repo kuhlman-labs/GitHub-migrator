@@ -15,6 +15,7 @@ import { DependenciesTab } from './DependenciesTab';
 import { ActivityLogTab } from './ActivityLogTab';
 import { useRepository, useBatches } from '../../hooks/useQueries';
 import { useRediscoverRepository, useUnlockRepository, useRollbackRepository, useMarkRepositoryWontMigrate } from '../../hooks/useMutations';
+import { useToast } from '../../contexts/ToastContext';
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
@@ -27,6 +28,7 @@ export function RepositoryDetail() {
   const unlockMutation = useUnlockRepository();
   const rollbackMutation = useRollbackRepository();
   const markWontMigrateMutation = useMarkRepositoryWontMigrate();
+  const { showSuccess, showError } = useToast();
   
   const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<'readiness' | 'profile' | 'relationships' | 'activity'>('readiness');
@@ -46,11 +48,11 @@ export function RepositoryDetail() {
       });
       
       // Show success message
-      alert(`${dryRun ? 'Dry run' : 'Migration'} started successfully!`);
+      showSuccess(`${dryRun ? 'Dry run' : 'Migration'} started successfully!`);
     } catch (error: any) {
       console.error('Failed to start migration:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to start migration. Please try again.';
-      alert(errorMessage);
+      showError(errorMessage);
     } finally {
       setMigrating(false);
     }
@@ -65,11 +67,11 @@ export function RepositoryDetail() {
 
     try {
       await rediscoverMutation.mutateAsync(decodeURIComponent(fullName));
-      alert('Re-discovery started! Repository data will be updated shortly.');
+      showSuccess('Re-discovery started! Repository data will be updated shortly.');
     } catch (error: any) {
       console.error('Failed to start re-discovery:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to start re-discovery. Please try again.';
-      alert(errorMessage);
+      showError(errorMessage);
     }
   };
 
@@ -82,11 +84,11 @@ export function RepositoryDetail() {
 
     try {
       await unlockMutation.mutateAsync(decodeURIComponent(fullName));
-      alert('Repository unlocked successfully!');
+      showSuccess('Repository unlocked successfully!');
     } catch (error: any) {
       console.error('Failed to unlock repository:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to unlock repository. Please try again.';
-      alert(errorMessage);
+      showError(errorMessage);
     }
   };
 
@@ -100,11 +102,11 @@ export function RepositoryDetail() {
       });
       setShowRollbackDialog(false);
       setRollbackReason('');
-      alert('Repository rolled back successfully! It can now be migrated again.');
+      showSuccess('Repository rolled back successfully! It can now be migrated again.');
     } catch (error: any) {
       console.error('Failed to rollback repository:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to rollback repository. Please try again.';
-      alert(errorMessage);
+      showError(errorMessage);
     }
   };
 
@@ -126,11 +128,11 @@ export function RepositoryDetail() {
         fullName: decodeURIComponent(fullName), 
         unmark: isWontMigrate 
       });
-      alert(`Repository ${action}ed successfully!`);
+      showSuccess(`Repository ${action}ed successfully!`);
     } catch (error: any) {
       console.error(`Failed to ${action} repository:`, error);
       const errorMsg = error.response?.data?.error || `Failed to ${action} repository. Please try again.`;
-      alert(errorMsg);
+      showError(errorMsg);
     }
   };
 
@@ -162,30 +164,65 @@ export function RepositoryDetail() {
       
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="mb-4">
-          {locationState?.fromBatch && locationState?.batchId ? (
-            <Link 
-              to="/batches"
-              state={{ selectedBatchId: locationState.batchId }}
-              className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-            >
-              ← Back to Batch {locationState.batchName ? `"${locationState.batchName}"` : `#${locationState.batchId}`}
-            </Link>
-          ) : (
-            <Link 
-              to={
-                // For ADO repos, navigate to /org/{organization}/project/{project}
-                repository.ado_project ? 
-                  `/org/${encodeURIComponent(repository.full_name.split('/')[0])}/project/${encodeURIComponent(repository.ado_project)}` :
-                  // For GitHub repos, navigate to /org/{organization}
-                  `/org/${encodeURIComponent(repository.full_name.split('/')[0])}`
-              }
-              className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-            >
-              ← Back to Repositories
-            </Link>
-          )}
-        </div>
+        {/* Breadcrumbs */}
+        <nav aria-label="Breadcrumb" className="mb-4">
+          <ol className="flex items-center text-sm">
+            <li>
+              <Link to="/" className="text-gh-blue-2 hover:underline">Dashboard</Link>
+            </li>
+            <li className="text-gh-text-muted mx-2">/</li>
+            {locationState?.fromBatch && locationState?.batchId ? (
+              <>
+                <li>
+                  <Link to="/batches" className="text-gh-blue-2 hover:underline">Batches</Link>
+                </li>
+                <li className="text-gh-text-muted mx-2">/</li>
+                <li className="font-semibold text-gh-text-primary">
+                  {locationState.batchName || `Batch #${locationState.batchId}`}
+                </li>
+              </>
+            ) : repository.ado_project ? (
+              <>
+                <li>
+                  <Link 
+                    to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
+                    className="text-gh-blue-2 hover:underline"
+                  >
+                    {repository.full_name.split('/')[0]}
+                  </Link>
+                </li>
+                <li className="text-gh-text-muted mx-2">/</li>
+                <li>
+                  <Link 
+                    to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}/project/${encodeURIComponent(repository.ado_project)}`}
+                    className="text-gh-blue-2 hover:underline"
+                  >
+                    {repository.ado_project}
+                  </Link>
+                </li>
+                <li className="text-gh-text-muted mx-2">/</li>
+                <li className="font-semibold text-gh-text-primary">
+                  {repository.full_name.split('/').slice(1).join('/')}
+                </li>
+              </>
+            ) : (
+              <>
+                <li>
+                  <Link 
+                    to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
+                    className="text-gh-blue-2 hover:underline"
+                  >
+                    {repository.full_name.split('/')[0]}
+                  </Link>
+                </li>
+                <li className="text-gh-text-muted mx-2">/</li>
+                <li className="font-semibold text-gh-text-primary">
+                  {repository.full_name.split('/').slice(1).join('/')}
+                </li>
+              </>
+            )}
+          </ol>
+        </nav>
         <div className="flex justify-between items-start">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">

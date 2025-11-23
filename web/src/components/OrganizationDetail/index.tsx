@@ -243,17 +243,29 @@ export function OrganizationDetail() {
   return (
     <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
-      <div className="mb-6">
-        {projectName ? (
-          <Link to={`/org/${encodeURIComponent(orgName || '')}`} className="text-gh-blue hover:underline text-sm font-medium">
-            ← Back to {orgName}
-          </Link>
-        ) : (
-          <Link to="/" className="text-gh-blue hover:underline text-sm font-medium">
-            ← Back to Organizations
-          </Link>
-        )}
-      </div>
+      
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb" className="mb-6">
+        <ol className="flex items-center text-sm">
+          <li>
+            <Link to="/" className="text-gh-blue-2 hover:underline">Dashboard</Link>
+          </li>
+          <li className="text-gh-text-muted mx-2">/</li>
+          {projectName ? (
+            <>
+              <li>
+                <Link to={`/org/${encodeURIComponent(orgName || '')}`} className="text-gh-blue-2 hover:underline">
+                  {orgName}
+                </Link>
+              </li>
+              <li className="text-gh-text-muted mx-2">/</li>
+              <li className="font-semibold text-gh-text-primary">{projectName}</li>
+            </>
+          ) : (
+            <li className="font-semibold text-gh-text-primary">{orgName}</li>
+          )}
+        </ol>
+      </nav>
 
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-gh-text-primary">{projectName || orgName || ''}</h1>

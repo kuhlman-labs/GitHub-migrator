@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, TextInput, Flash, Label, FormControl } from '@primer/react';
-import { SearchIcon, XIcon } from '@primer/octicons-react';
+import { Blankslate } from '@primer/react/experimental';
+import { SearchIcon, XIcon, RepoIcon } from '@primer/octicons-react';
 import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -163,9 +164,22 @@ export function Dashboard() {
       {isLoading ? (
         <LoadingSpinner />
       ) : filteredOrgs.length === 0 ? (
-        <div className="text-center py-12 text-gh-text-secondary">
-          No organizations found
-        </div>
+        <Blankslate>
+          <Blankslate.Visual>
+            <RepoIcon size={48} />
+          </Blankslate.Visual>
+          <Blankslate.Heading>No organizations discovered yet</Blankslate.Heading>
+          <Blankslate.Description>
+            {searchTerm 
+              ? 'No organizations match your search. Try a different search term.'
+              : 'Get started by discovering repositories from your GitHub organizations or Azure DevOps projects.'}
+          </Blankslate.Description>
+          {!searchTerm && (
+            <Blankslate.PrimaryAction onClick={() => setShowDiscoveryModal(true)}>
+              Start Discovery
+            </Blankslate.PrimaryAction>
+          )}
+        </Blankslate>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
@@ -437,7 +451,7 @@ function DiscoveryModal({
         </FormControl>
 
         {discoveryType === 'organization' && (
-          <FormControl className="mb-3">
+          <FormControl className="mb-3" required>
             <FormControl.Label>Organization Name</FormControl.Label>
             <TextInput
               value={organization}
@@ -445,15 +459,24 @@ function DiscoveryModal({
               placeholder="e.g., your-github-org"
               disabled={loading}
               autoFocus
+              required
+              aria-invalid={error && !organization.trim() ? true : undefined}
+              aria-describedby={error && !organization.trim() ? "org-error" : undefined}
             />
-            <FormControl.Caption>
-              Enter the GitHub organization name to discover all repositories.
-            </FormControl.Caption>
+            {error && !organization.trim() ? (
+              <FormControl.Validation variant="error" id="org-error">
+                Organization name is required
+              </FormControl.Validation>
+            ) : (
+              <FormControl.Caption>
+                Enter the GitHub organization name to discover all repositories.
+              </FormControl.Caption>
+            )}
           </FormControl>
         )}
 
         {discoveryType === 'enterprise' && (
-          <FormControl className="mb-3">
+          <FormControl className="mb-3" required>
             <FormControl.Label>Enterprise Slug</FormControl.Label>
             <TextInput
               value={enterpriseSlug}
@@ -461,15 +484,24 @@ function DiscoveryModal({
               placeholder="e.g., your-enterprise-slug"
               disabled={loading}
               autoFocus
+              required
+              aria-invalid={error && !enterpriseSlug.trim() ? true : undefined}
+              aria-describedby={error && !enterpriseSlug.trim() ? "enterprise-error" : undefined}
             />
-            <FormControl.Caption>
-              Enter the GitHub Enterprise slug to discover repositories across all organizations.
-            </FormControl.Caption>
+            {error && !enterpriseSlug.trim() ? (
+              <FormControl.Validation variant="error" id="enterprise-error">
+                Enterprise slug is required
+              </FormControl.Validation>
+            ) : (
+              <FormControl.Caption>
+                Enter the GitHub Enterprise slug to discover repositories across all organizations.
+              </FormControl.Caption>
+            )}
           </FormControl>
         )}
 
         {discoveryType === 'ado-org' && (
-          <FormControl className="mb-3">
+          <FormControl className="mb-3" required>
             <FormControl.Label>Azure DevOps Organization</FormControl.Label>
             <TextInput
               value={adoOrganization}
@@ -477,25 +509,42 @@ function DiscoveryModal({
               placeholder="e.g., your-ado-org"
               disabled={loading}
               autoFocus
+              required
+              aria-invalid={error && !adoOrganization.trim() ? true : undefined}
+              aria-describedby={error && !adoOrganization.trim() ? "ado-org-error" : undefined}
             />
-            <FormControl.Caption>
-              Discover all projects and repositories in this Azure DevOps organization.
-            </FormControl.Caption>
+            {error && !adoOrganization.trim() ? (
+              <FormControl.Validation variant="error" id="ado-org-error">
+                Azure DevOps organization name is required
+              </FormControl.Validation>
+            ) : (
+              <FormControl.Caption>
+                Discover all projects and repositories in this Azure DevOps organization.
+              </FormControl.Caption>
+            )}
           </FormControl>
         )}
 
         {discoveryType === 'ado-project' && (
           <div className="space-y-3 mb-3">
-            <FormControl>
+            <FormControl required>
               <FormControl.Label>Azure DevOps Organization</FormControl.Label>
               <TextInput
                 value={adoOrganization}
                 onChange={(e) => setAdoOrganization(e.target.value)}
                 placeholder="e.g., your-ado-org"
                 disabled={loading}
+                required
+                aria-invalid={error && !adoOrganization.trim() ? true : undefined}
+                aria-describedby={error && !adoOrganization.trim() ? "ado-proj-org-error" : undefined}
               />
+              {error && !adoOrganization.trim() && (
+                <FormControl.Validation variant="error" id="ado-proj-org-error">
+                  Azure DevOps organization name is required
+                </FormControl.Validation>
+              )}
             </FormControl>
-            <FormControl>
+            <FormControl required>
               <FormControl.Label>Project Name</FormControl.Label>
               <TextInput
                 value={adoProject}
@@ -503,18 +552,21 @@ function DiscoveryModal({
                 placeholder="e.g., your-project"
                 disabled={loading}
                 autoFocus
+                required
+                aria-invalid={error && !adoProject.trim() ? true : undefined}
+                aria-describedby={error && !adoProject.trim() ? "ado-proj-error" : undefined}
               />
-              <FormControl.Caption>
-                Discover repositories in a specific Azure DevOps project.
-              </FormControl.Caption>
+              {error && !adoProject.trim() ? (
+                <FormControl.Validation variant="error" id="ado-proj-error">
+                  Project name is required
+                </FormControl.Validation>
+              ) : (
+                <FormControl.Caption>
+                  Discover repositories in a specific Azure DevOps project.
+                </FormControl.Caption>
+              )}
             </FormControl>
           </div>
-        )}
-
-        {error && (
-          <Flash variant="danger" className="mb-3">
-            {error}
-          </Flash>
         )}
 
         <div className="flex justify-end gap-2 pt-4 border-t border-gh-border-default">
@@ -528,7 +580,7 @@ function DiscoveryModal({
           <Button
             type="submit"
             variant="primary"
-            disabled={loading || !isFormValid}
+            disabled={loading}
           >
             {loading ? 'Starting...' : 'Start Discovery'}
           </Button>

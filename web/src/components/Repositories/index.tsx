@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { TextInput, Button } from '@primer/react';
-import { SearchIcon } from '@primer/octicons-react';
+import { Blankslate } from '@primer/react/experimental';
+import { SearchIcon, RepoIcon } from '@primer/octicons-react';
 import type { Repository, RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -278,33 +279,22 @@ export function Repositories() {
       {isLoading ? (
         <LoadingSpinner />
       ) : repositories.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border border-gh-border-default">
-          <svg
-            className="mx-auto h-12 w-12 text-gh-text-secondary"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-            />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gh-text-primary">No repositories found</h3>
-          <p className="mt-1 text-sm text-gh-text-secondary">
-            Try adjusting your filters or search term.
-          </p>
+        <Blankslate border>
+          <Blankslate.Visual>
+            <RepoIcon size={48} />
+          </Blankslate.Visual>
+          <Blankslate.Heading>No repositories found</Blankslate.Heading>
+          <Blankslate.Description>
+            {activeFilterCount > 0 || searchTerm
+              ? 'Try adjusting your filters or search term to find repositories.'
+              : 'No repositories have been discovered yet. Start by discovering repositories from your organizations.'}
+          </Blankslate.Description>
           {activeFilterCount > 0 && (
-            <button
-              onClick={clearAllFilters}
-              className="mt-4 px-4 py-2 text-sm font-medium bg-gh-blue text-white rounded-md hover:bg-gh-blue-hover"
-            >
+            <Blankslate.PrimaryAction onClick={clearAllFilters}>
               Clear All Filters
-            </button>
+            </Blankslate.PrimaryAction>
           )}
-        </div>
+        </Blankslate>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">

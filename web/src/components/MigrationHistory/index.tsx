@@ -1,16 +1,20 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { TextInput } from '@primer/react';
-import { SearchIcon } from '@primer/octicons-react';
+import { Blankslate } from '@primer/react/experimental';
+import { SearchIcon, HistoryIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { MigrationHistoryEntry } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
+import { useToast } from '../../contexts/ToastContext';
 import { formatDate, formatDuration } from '../../utils/format';
 import { useMigrationHistory } from '../../hooks/useQueries';
 
 export function MigrationHistory() {
   const { data, isLoading, isFetching } = useMigrationHistory();
   const migrations = data?.migrations || [];
+  const { showError } = useToast();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -32,7 +36,7 @@ export function MigrationHistory() {
     } catch (error: any) {
       console.error('Failed to export migration history:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to export migration history. Please try again.';
-      alert(errorMessage);
+      showError(errorMessage);
     } finally {
       setExporting(false);
     }
@@ -86,11 +90,24 @@ export function MigrationHistory() {
       </div>
 
       {filteredMigrations.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm p-12 text-center text-gray-500">
-          {migrations.length === 0 
-            ? 'No migrations yet'
-            : 'No migrations match your search'}
-        </div>
+        <Blankslate border>
+          <Blankslate.Visual>
+            <HistoryIcon size={48} />
+          </Blankslate.Visual>
+          <Blankslate.Heading>
+            {migrations.length === 0 ? 'No migration history yet' : 'No migrations match your search'}
+          </Blankslate.Heading>
+          <Blankslate.Description>
+            {migrations.length === 0 
+              ? 'Once you start migrating repositories, their migration history will appear here.'
+              : 'Try adjusting your search term to find migrations.'}
+          </Blankslate.Description>
+          {migrations.length === 0 && (
+            <Blankslate.PrimaryAction as={Link} to="/">
+              Go to Dashboard
+            </Blankslate.PrimaryAction>
+          )}
+        </Blankslate>
       ) : (
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="overflow-x-auto">

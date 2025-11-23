@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { ChevronDownIcon } from '@primer/octicons-react';
 
 interface OrganizationSelectorProps {
   organizations: string[];
@@ -69,14 +70,10 @@ export function OrganizationSelector({
               ? placeholder
               : `${selectedOrganizations.length} selected`}
           </span>
-          <svg
-            className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDownIcon
+            className={`text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            size={16}
+          />
         </div>
       </button>
 

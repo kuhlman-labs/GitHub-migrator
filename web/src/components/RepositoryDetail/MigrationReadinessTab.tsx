@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Checkbox, TextInput } from '@primer/react';
+import { Button, Checkbox, TextInput, FormControl } from '@primer/react';
 import { XCircleFillIcon, AlertIcon, ChevronDownIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -8,6 +8,7 @@ import { Badge } from '../common/Badge';
 import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 import { useUpdateRepository } from '../../hooks/useMutations';
 import { formatBytes } from '../../utils/format';
+import { useToast } from '../../contexts/ToastContext';
 
 interface MigrationReadinessTabProps {
   repository: Repository;
@@ -20,6 +21,7 @@ export function MigrationReadinessTab({
 }: MigrationReadinessTabProps) {
   const queryClient = useQueryClient();
   const updateRepositoryMutation = useUpdateRepository();
+  const { showSuccess, showError } = useToast();
   
   // Batch assignment state - show pending and ready batches
   const batches = allBatches.filter(b => b.status === 'pending' || b.status === 'ready');
@@ -113,7 +115,7 @@ export function MigrationReadinessTab({
   const handleSaveDestination = async () => {
     // Validate format
     if (!destinationFullName.includes('/')) {
-      alert('Destination must be in "organization/repository" format');
+      showError('Destination must be in "organization/repository" format');
       return;
     }
 
@@ -124,10 +126,11 @@ export function MigrationReadinessTab({
       });
       
       setEditingDestination(false);
+      showSuccess('Destination saved successfully!');
     } catch (error: any) {
       console.error('Failed to save destination:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to save destination. Please try again.';
-      alert(errorMessage);
+      showError(errorMessage);
     }
   };
 
@@ -142,12 +145,12 @@ export function MigrationReadinessTab({
       await queryClient.invalidateQueries({ queryKey: ['repository', repository.full_name] });
       await queryClient.invalidateQueries({ queryKey: ['batches'] });
       
-      alert('Repository assigned to batch successfully!');
+      showSuccess('Repository assigned to batch successfully!');
       setSelectedBatchId(null);
     } catch (error: any) {
       console.error('Failed to assign to batch:', error);
       const errorMsg = error.response?.data?.error || 'Failed to assign to batch. Please try again.';
-      alert(errorMsg);
+      showError(errorMsg);
     } finally {
       setAssigningBatch(false);
     }
@@ -168,11 +171,11 @@ export function MigrationReadinessTab({
       await queryClient.invalidateQueries({ queryKey: ['repository', repository.full_name] });
       await queryClient.invalidateQueries({ queryKey: ['batches'] });
       
-      alert('Repository removed from batch successfully!');
+      showSuccess('Repository removed from batch successfully!');
     } catch (error: any) {
       console.error('Failed to remove from batch:', error);
       const errorMsg = error.response?.data?.error || 'Failed to remove from batch. Please try again.';
-      alert(errorMsg);
+      showError(errorMsg);
     } finally {
       setAssigningBatch(false);
     }
@@ -188,11 +191,11 @@ export function MigrationReadinessTab({
       // Invalidate queries to refresh the data
       await queryClient.invalidateQueries({ queryKey: ['repository', repository.full_name] });
       
-      alert('Migration options saved successfully!');
+      showSuccess('Migration options saved successfully!');
     } catch (error: any) {
       console.error('Failed to save migration options:', error);
       const errorMsg = error.response?.data?.error || 'Failed to save migration options. Please try again.';
-      alert(errorMsg);
+      showError(errorMsg);
     } finally {
       setSavingOptions(false);
     }
@@ -421,48 +424,60 @@ export function MigrationReadinessTab({
         {/* Destination Configuration */}
         {canMigrate && (
           <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Destination (where to migrate)
-            </label>
             {editingDestination ? (
-              <div className="flex items-center gap-2">
-                <TextInput
-                  value={destinationFullName}
-                  onChange={(e) => setDestinationFullName(e.target.value)}
-                  placeholder="org/repo"
-                  disabled={updateRepositoryMutation.isPending}
-                  style={{ flexGrow: 1 }}
-                />
-                <Button
-                  onClick={handleSaveDestination}
-                  disabled={updateRepositoryMutation.isPending}
-                  className="bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                >
-                  {updateRepositoryMutation.isPending ? 'Saving...' : 'Save'}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setEditingDestination(false);
-                    // Reset to the saved/default value using the same logic
-                    setDestinationFullName(getDefaultDestination());
-                  }}
-                  disabled={updateRepositoryMutation.isPending}
-                  variant="default"
-                >
-                  Cancel
-                </Button>
-              </div>
+              <FormControl required>
+                <FormControl.Label>Destination (where to migrate)</FormControl.Label>
+                <div className="flex items-center gap-2">
+                  <TextInput
+                    value={destinationFullName}
+                    onChange={(e) => setDestinationFullName(e.target.value)}
+                    placeholder="org/repo"
+                    disabled={updateRepositoryMutation.isPending}
+                    style={{ flexGrow: 1 }}
+                    required
+                    aria-invalid={!destinationFullName.trim() ? true : undefined}
+                  />
+                  <Button
+                    onClick={handleSaveDestination}
+                    disabled={updateRepositoryMutation.isPending}
+                    style={{ backgroundColor: '#1a7f37', color: 'white' }}
+                  >
+                    {updateRepositoryMutation.isPending ? 'Saving...' : 'Save'}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setEditingDestination(false);
+                      // Reset to the saved/default value using the same logic
+                      setDestinationFullName(getDefaultDestination());
+                    }}
+                    disabled={updateRepositoryMutation.isPending}
+                    variant="default"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                {!destinationFullName.trim() && (
+                  <FormControl.Validation variant="error">
+                    Destination repository name is required
+                  </FormControl.Validation>
+                )}
+              </FormControl>
             ) : (
-              <div className="flex items-center gap-2">
-                <code className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-900">
-                  {destinationFullName}
-                </code>
-                <Button
-                  onClick={() => setEditingDestination(true)}
-                  variant="default"
-                >
-                  Edit
-                </Button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Destination (where to migrate)
+                </label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-900">
+                    {destinationFullName}
+                  </code>
+                  <Button
+                    onClick={() => setEditingDestination(true)}
+                    variant="default"
+                  >
+                    Edit
+                  </Button>
+                </div>
               </div>
             )}
             <p className="mt-1 text-xs text-gray-500">

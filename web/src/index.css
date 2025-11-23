@@ -51,6 +51,30 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Screen reader only utility for accessibility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.focus\:not-sr-only:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
 html {
   /* Prevent layout shift when scrollbar appears/disappears */
   overflow-y: scroll;
@@ -226,6 +250,13 @@ span[class*="Label"][class*="done"],
 [data-variant="done"] {
   background-color: #8250DF !important;
   color: #FFFFFF !important;
+}
+
+/* Breadcrumbs styling - Custom implementation */
+nav[aria-label="Breadcrumb"] ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 /* Sponsors (Pink/Purple) */

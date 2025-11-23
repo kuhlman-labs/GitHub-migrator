@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { ChevronDownIcon, ChevronRightIcon } from '@primer/octicons-react';
 import { Repository } from '../../types';
 import { api } from '../../services/api';
 import { formatBytes } from '../../utils/format';
 import { CollapsibleValidationSection } from './CollapsibleValidationSection';
 import { MetadataBreakdownBar } from './MetadataBreakdownBar';
+import { useToast } from '../../contexts/ToastContext';
 
 interface MigrationReadinessSectionProps {
   repository: Repository;
@@ -41,6 +43,8 @@ export function MigrationReadinessSection({
   onUpdate, 
   onRevalidate 
 }: MigrationReadinessSectionProps) {
+  const { showSuccess, showError } = useToast();
+  
   // Exclusion flags state
   const [flags, setFlags] = useState({
     exclude_releases: repository.exclude_releases,
@@ -155,10 +159,10 @@ export function MigrationReadinessSection({
     setIsSaving(true);
     try {
       await api.updateRepository(repository.full_name, flags);
-      alert('Migration options saved successfully!');
+      showSuccess('Migration options saved successfully!');
       onUpdate();
     } catch (error: any) {
-      alert(`Failed to save migration options: ${error.response?.data?.error || error.message}`);
+      showError(`Failed to save migration options: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -184,10 +188,10 @@ export function MigrationReadinessSection({
     setIsRemediating(true);
     try {
       await api.markRepositoryRemediated(repository.full_name);
-      alert('Re-validation started. The repository will be re-analyzed for migration limits.');
+      showSuccess('Re-validation started. The repository will be re-analyzed for migration limits.');
       onRevalidate();
     } catch (error: any) {
-      alert(`Failed to start re-validation: ${error.response?.data?.error || error.message}`);
+      showError(`Failed to start re-validation: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsRemediating(false);
     }
@@ -429,9 +433,19 @@ export function MigrationReadinessSection({
                 metadata: !prev.metadata,
                 gitLimits: !prev.gitLimits
               }))}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
             >
-              {(expandedSections.repoSize || expandedSections.metadata || expandedSections.gitLimits) ? '▼ Hide' : '▶ View'} Validation Details
+              {(expandedSections.repoSize || expandedSections.metadata || expandedSections.gitLimits) ? (
+                <>
+                  <ChevronDownIcon size={16} />
+                  Hide Validation Details
+                </>
+              ) : (
+                <>
+                  <ChevronRightIcon size={16} />
+                  View Validation Details
+                </>
+              )}
             </button>
           )}
       

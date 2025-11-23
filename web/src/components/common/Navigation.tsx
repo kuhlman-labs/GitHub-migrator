@@ -15,7 +15,16 @@ export function Navigation() {
     } !important`;
   
   return (
-    <nav className="bg-gh-header-bg border-b border-white/10">
+    <>
+      {/* Skip link for accessibility */}
+      <a 
+        href="#main-content" 
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-gh-accent-emphasis focus:text-white focus:rounded"
+      >
+        Skip to main content
+      </a>
+      
+      <nav className="bg-gh-header-bg border-b border-white/10" aria-label="Main navigation">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-6">
@@ -48,6 +57,7 @@ export function Navigation() {
         </div>
       </div>
     </nav>
+    </>
   );
 }
 

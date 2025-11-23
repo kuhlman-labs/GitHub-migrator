@@ -12,29 +12,32 @@ import { Navigation } from './components/common/Navigation';
 import { Login } from './components/Auth/Login';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 
 function App() {
   return (
     <ThemeProvider colorMode="light">
       <BaseStyles>
-    <Router>
-      <AuthProvider>
-        <div className="min-h-screen bg-gh-canvas-default">
-          <Routes>
-            {/* Login page (public) */}
-            <Route path="/login" element={<Login />} />
-            
-            {/* Protected routes with navigation */}
-            <Route path="*" element={
-              <ProtectedRoute>
-                <Navigation />
-                <ProtectedRoutes />
-              </ProtectedRoute>
-            } />
-          </Routes>
-        </div>
-      </AuthProvider>
-    </Router>
+        <Router>
+          <AuthProvider>
+            <ToastProvider>
+              <div className="min-h-screen bg-gh-canvas-default">
+                <Routes>
+                  {/* Login page (public) */}
+                  <Route path="/login" element={<Login />} />
+                  
+                  {/* Protected routes with navigation */}
+                  <Route path="*" element={
+                    <ProtectedRoute>
+                      <Navigation />
+                      <ProtectedRoutes />
+                    </ProtectedRoute>
+                  } />
+                </Routes>
+              </div>
+            </ToastProvider>
+          </AuthProvider>
+        </Router>
       </BaseStyles>
     </ThemeProvider>
   );
@@ -49,42 +52,42 @@ function ProtectedRoutes() {
           
           {/* Standard pages (with container) */}
           <Route path="/" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <Dashboard />
             </main>
           } />
           <Route path="/org/:orgName" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <OrganizationDetail />
             </main>
           } />
           <Route path="/org/:orgName/project/:projectName" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <OrganizationDetail />
             </main>
           } />
           <Route path="/repository/:fullName" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <RepositoryDetail />
             </main>
           } />
           <Route path="/analytics" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <Analytics />
             </main>
           } />
           <Route path="/repositories" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <Repositories />
             </main>
           } />
           <Route path="/batches" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <BatchManagement />
             </main>
           } />
           <Route path="/history" element={
-            <main className="container mx-auto px-4 py-8">
+            <main id="main-content" className="container mx-auto px-4 py-8">
               <MigrationHistory />
             </main>
           } />

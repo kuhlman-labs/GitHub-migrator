@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { TextInput, Button, UnderlineNav } from '@primer/react';
-import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon } from '@primer/octicons-react';
+import { Blankslate } from '@primer/react/experimental';
+import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { StatusBadge } from '../common/StatusBadge';
 import { Pagination } from '../common/Pagination';
 import { formatBytes, formatDate } from '../../utils/format';
+import { useToast } from '../../contexts/ToastContext';
 
 type BatchTab = 'active' | 'completed';
 
@@ -15,6 +17,7 @@ export function BatchManagement() {
   const navigate = useNavigate();
   const location = useLocation();
   const locationState = location.state as { selectedBatchId?: number } | null;
+  const { showSuccess, showError, showWarning } = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [batchRepositories, setBatchRepositories] = useState<Repository[]>([]);
@@ -104,14 +107,14 @@ export function BatchManagement() {
 
     try {
       await api.dryRunBatch(batchId, onlyPending);
-      alert('Dry run started successfully. Batch will move to "ready" status when all dry runs complete.');
+      showSuccess('Dry run started successfully. Batch will move to "ready" status when all dry runs complete.');
       await loadBatches();
       if (selectedBatch?.id === batchId) {
         await loadBatchRepositories(batchId);
       }
     } catch (error: any) {
       console.error('Failed to start dry run:', error);
-      alert(error.response?.data?.error || 'Failed to start dry run');
+      showError(error.response?.data?.error || 'Failed to start dry run');
     }
   };
 
@@ -135,14 +138,14 @@ export function BatchManagement() {
 
     try {
       await api.startBatch(batchId, skipDryRun);
-      alert('Batch migration started successfully');
+      showSuccess('Batch migration started successfully');
       await loadBatches();
       if (selectedBatch?.id === batchId) {
         await loadBatchRepositories(batchId);
       }
     } catch (error: any) {
       console.error('Failed to start batch:', error);
-      alert(error.response?.data?.error || 'Failed to start batch migration');
+      showError(error.response?.data?.error || 'Failed to start batch migration');
     }
   };
 
@@ -177,12 +180,12 @@ export function BatchManagement() {
         const isDryRunFailed = repo.status === 'dry_run_failed';
         await api.retryRepository(repo.id, isDryRunFailed);
       }
-      alert(`Queued ${failedRepos.length} repositories for retry`);
+      showSuccess(`Queued ${failedRepos.length} repositories for retry`);
       await loadBatchRepositories(selectedBatch.id);
     } catch (error: any) {
       console.error('Failed to retry batch failures:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to retry failed repositories';
-      alert(errorMessage);
+      showError(errorMessage);
     }
   };
 
@@ -192,14 +195,14 @@ export function BatchManagement() {
     
     try {
       await api.retryRepository(repo.id, isDryRunFailed);
-      alert(`Repository queued for ${actionType} retry`);
+      showSuccess(`Repository queued for ${actionType} retry`);
       if (selectedBatch) {
         await loadBatchRepositories(selectedBatch.id);
       }
     } catch (error: any) {
       console.error('Failed to retry repository:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to retry repository';
-      alert(errorMessage);
+      showError(errorMessage);
     }
   };
 
@@ -213,7 +216,7 @@ export function BatchManagement() {
 
   const handleDeleteBatch = async (batch: Batch) => {
     if (batch.status === 'in_progress') {
-      alert('Cannot delete a batch that is currently in progress.');
+      showWarning('Cannot delete a batch that is currently in progress.');
       return;
     }
 
@@ -227,7 +230,7 @@ export function BatchManagement() {
 
     try {
       await api.deleteBatch(batch.id);
-      alert('Batch deleted successfully');
+      showSuccess('Batch deleted successfully');
       // Clear selection if we deleted the selected batch
       if (selectedBatch?.id === batch.id) {
         setSelectedBatch(null);
@@ -235,7 +238,7 @@ export function BatchManagement() {
       await loadBatches();
     } catch (error: any) {
       console.error('Failed to delete batch:', error);
-      alert(error.response?.data?.error || 'Failed to delete batch');
+      showError(error.response?.data?.error || 'Failed to delete batch');
     }
   };
 
@@ -374,9 +377,26 @@ export function BatchManagement() {
               {loading ? (
                 <LoadingSpinner />
               ) : paginatedBatches.length === 0 ? (
-                <div className="text-center py-8 text-gh-text-secondary">
-                  {searchTerm ? 'No batches match your search' : 'No batches found'}
-                </div>
+                <Blankslate>
+                  <Blankslate.Visual>
+                    <PackageIcon size={48} />
+                  </Blankslate.Visual>
+                  <Blankslate.Heading>
+                    {searchTerm ? 'No batches match your search' : `No ${activeTab} batches`}
+                  </Blankslate.Heading>
+                  <Blankslate.Description>
+                    {searchTerm 
+                      ? 'Try a different search term to find batches.'
+                      : activeTab === 'active'
+                      ? 'Create a batch to group repositories for migration.'
+                      : 'Completed batches will appear here once migrations finish.'}
+                  </Blankslate.Description>
+                  {!searchTerm && activeTab === 'active' && (
+                    <Blankslate.PrimaryAction onClick={() => navigate('/batches/new')}>
+                      Create New Batch
+                    </Blankslate.PrimaryAction>
+                  )}
+                </Blankslate>
               ) : (
                 <>
                   <div className="space-y-2 mb-4">
