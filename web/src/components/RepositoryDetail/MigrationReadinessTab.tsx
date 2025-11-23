@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button } from '@primer/react';
+import { Button, Checkbox, TextInput } from '@primer/react';
 import { XCircleFillIcon, AlertIcon, ChevronDownIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -426,13 +426,12 @@ export function MigrationReadinessTab({
             </label>
             {editingDestination ? (
               <div className="flex items-center gap-2">
-                <input
-                  type="text"
+                <TextInput
                   value={destinationFullName}
                   onChange={(e) => setDestinationFullName(e.target.value)}
                   placeholder="org/repo"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   disabled={updateRepositoryMutation.isPending}
+                  style={{ flexGrow: 1 }}
                 />
                 <Button
                   onClick={handleSaveDestination}
@@ -539,20 +538,20 @@ export function MigrationReadinessTab({
           </p>
           
           <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <label className="flex items-start cursor-pointer">
-              <input
-                type="checkbox"
+            <div className="flex items-start gap-3">
+              <Checkbox
                 checked={excludeReleases}
                 onChange={(e) => setExcludeReleases(e.target.checked)}
-                className="mt-1 mr-3 h-4 w-4"
               />
               <div className="flex-1">
-                <div className="font-medium text-gray-900">Exclude Releases</div>
+                <label className="font-medium text-gray-900 cursor-pointer" onClick={() => setExcludeReleases(!excludeReleases)}>
+                  Exclude Releases
+                </label>
                 <div className="text-sm text-gray-600 mt-1">
                   Skip migrating releases and their assets. This can significantly reduce metadata size for repositories with large release assets.
                 </div>
               </div>
-            </label>
+            </div>
           </div>
 
           {hasOptionsChanges && (

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { Button, UnderlineNav } from '@primer/react';
+import { Button, UnderlineNav, Textarea, FormControl } from '@primer/react';
 import { CalendarIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository } from '../../types';
@@ -157,7 +157,7 @@ export function RepositoryDetail() {
     : null;
 
   return (
-    <div className="max-w-6xl mx-auto relative">
+    <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       {/* Header */}
@@ -459,19 +459,17 @@ export function RepositoryDetail() {
               You can optionally provide a reason for the rollback.
             </p>
             
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Reason (optional)
-              </label>
-              <textarea
+            <FormControl>
+              <FormControl.Label>Reason (optional)</FormControl.Label>
+              <Textarea
                 value={rollbackReason}
                 onChange={(e) => setRollbackReason(e.target.value)}
                 placeholder="e.g., CI/CD integration issues, workflow failures..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 rows={3}
                 disabled={rollbackMutation.isPending}
+                block
               />
-            </div>
+            </FormControl>
 
             <div className="flex justify-end gap-3">
               <button

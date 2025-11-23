@@ -20,14 +20,14 @@ export function Pagination({ currentPage, totalItems, pageSize, onPageChange }: 
   return (
     <div className="flex items-center justify-between border-t border-gh-border-default bg-white px-4 py-3 rounded-b-lg">
       <div className="hidden sm:block">
-        <p className="text-sm text-gh-text-secondary">
-          Showing <span className="font-medium">{startItem}</span> to{' '}
-          <span className="font-medium">{endItem}</span> of{' '}
-          <span className="font-medium">{totalItems}</span> results
-        </p>
-      </div>
+          <p className="text-sm text-gh-text-secondary">
+            Showing <span className="font-medium">{startItem}</span> to{' '}
+            <span className="font-medium">{endItem}</span> of{' '}
+            <span className="font-medium">{totalItems}</span> results
+          </p>
+        </div>
       
-      <div>
+        <div>
         <PrimerPagination
           pageCount={totalPages}
           currentPage={currentPage}

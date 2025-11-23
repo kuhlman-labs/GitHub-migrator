@@ -17,24 +17,24 @@ function App() {
   return (
     <ThemeProvider colorMode="light">
       <BaseStyles>
-        <Router>
-          <AuthProvider>
-            <div className="min-h-screen bg-gh-canvas-default">
-              <Routes>
-                {/* Login page (public) */}
-                <Route path="/login" element={<Login />} />
-                
-                {/* Protected routes with navigation */}
-                <Route path="*" element={
-                  <ProtectedRoute>
-                    <Navigation />
-                    <ProtectedRoutes />
-                  </ProtectedRoute>
-                } />
-              </Routes>
-            </div>
-          </AuthProvider>
-        </Router>
+    <Router>
+      <AuthProvider>
+        <div className="min-h-screen bg-gh-canvas-default">
+          <Routes>
+            {/* Login page (public) */}
+            <Route path="/login" element={<Login />} />
+            
+            {/* Protected routes with navigation */}
+            <Route path="*" element={
+              <ProtectedRoute>
+                <Navigation />
+                <ProtectedRoutes />
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </div>
+      </AuthProvider>
+    </Router>
       </BaseStyles>
     </ThemeProvider>
   );

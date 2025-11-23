@@ -20,8 +20,8 @@ export function UserProfile() {
         <div className="flex items-center gap-2 cursor-pointer hover:opacity-80">
           <Avatar src={user.avatar_url} size={32} alt={user.login} />
           <span className="text-sm font-semibold text-gh-text-primary hidden md:inline">
-            {user.login}
-          </span>
+          {user.login}
+        </span>
         </div>
       </ActionMenu.Anchor>
 
@@ -32,17 +32,17 @@ export function UserProfile() {
               <div className="flex flex-col gap-1">
                 <div className="text-sm font-semibold text-gh-text-primary">
                   {user.name || user.login}
-                </div>
-                <div className="text-xs text-gh-text-muted">@{user.login}</div>
-                {user.email && (
-                  <div className="text-xs text-gh-text-muted">{user.email}</div>
-                )}
               </div>
+                <div className="text-xs text-gh-text-muted">@{user.login}</div>
+            {user.email && (
+                  <div className="text-xs text-gh-text-muted">{user.email}</div>
+            )}
+          </div>
             </ActionList.Item>
           </ActionList.Group>
           
           <ActionList.Divider />
-          
+
           <ActionList.Group>
             <ActionList.LinkItem
               href={`https://github.com/${user.login}`}

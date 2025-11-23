@@ -48,8 +48,8 @@ export function MigrationHistory() {
     <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-light text-gray-900">Migration History</h1>
-        <div className="flex gap-4">
+        <h1 className="text-2xl font-semibold text-gray-900">Migration History</h1>
+        <div className="flex items-center gap-4">
           <TextInput
             leadingVisual={SearchIcon}
             placeholder="Search repositories..."
@@ -57,20 +57,27 @@ export function MigrationHistory() {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: 300 }}
           />
-          <button
-            onClick={() => handleExport('csv')}
-            disabled={exporting}
-            className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {exporting ? 'Exporting...' : 'Export CSV'}
-          </button>
-          <button
-            onClick={() => handleExport('json')}
-            disabled={exporting}
-            className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {exporting ? 'Exporting...' : 'Export JSON'}
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gh-text-secondary whitespace-nowrap">Export:</span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleExport('csv')}
+                disabled={exporting}
+                className="px-3 py-1.5 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Export migration history as CSV"
+              >
+                CSV
+              </button>
+              <button
+                onClick={() => handleExport('json')}
+                disabled={exporting}
+                className="px-3 py-1.5 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Export migration history as JSON"
+              >
+                JSON
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

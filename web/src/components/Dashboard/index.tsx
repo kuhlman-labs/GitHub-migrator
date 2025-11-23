@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Heading, Button, TextInput, Flash, Label, FormControl } from '@primer/react';
+import { Button, TextInput, Flash, Label, FormControl } from '@primer/react';
 import { SearchIcon, XIcon } from '@primer/octicons-react';
 import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -122,25 +122,25 @@ export function Dashboard() {
   }, [searchTerm]);
 
   return (
-    <div className="relative">
+    <div className="max-w-7xl mx-auto relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
-        <Heading as="h1">Organizations</Heading>
-        <div className="flex gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">Organizations</h1>
+        <div className="flex items-center gap-4">
+          <TextInput
+            leadingVisual={SearchIcon}
+            placeholder="Search organizations..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ width: 300 }}
+          />
           <Button
             variant="primary"
             onClick={() => setShowDiscoveryModal(true)}
           >
             Start Discovery
           </Button>
-          <TextInput
-            leadingVisual={SearchIcon}
-            placeholder="Search organizations..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: 250 }}
-          />
         </div>
       </div>
 

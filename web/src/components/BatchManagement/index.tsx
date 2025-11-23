@@ -331,31 +331,28 @@ export function BatchManagement() {
     <div className="max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-gh-text-primary">Batch Management</h1>
-        <Button
-          onClick={handleCreateBatch}
-          variant="primary"
-          leadingVisual={PlusIcon}
-        >
-          Create New Batch
-        </Button>
+        <div className="flex items-center gap-4">
+          <TextInput
+            leadingVisual={SearchIcon}
+            placeholder="Search batches..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ width: 300 }}
+          />
+          <Button
+            onClick={handleCreateBatch}
+            variant="primary"
+            leadingVisual={PlusIcon}
+          >
+            Create New Batch
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Batch List */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card">
-            {/* Header with Search */}
-            <div className="p-4 border-b border-gh-border-default">
-              <h2 className="text-base font-semibold text-gh-text-primary mb-3">Batches</h2>
-              <TextInput
-                leadingVisual={SearchIcon}
-                placeholder="Search batches..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                block
-              />
-            </div>
-
             {/* Tabs */}
             <UnderlineNav aria-label="Batch tabs">
               <UnderlineNav.Item

@@ -252,8 +252,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       setCurrentPage(nextPage);
       setFilters({ ...filters, offset: (nextPage - 1) * currentPageSize });
     } else {
-      // Refresh available repos to exclude newly added ones
-      await loadAvailableRepos();
+    // Refresh available repos to exclude newly added ones
+    await loadAvailableRepos();
     }
   };
 
