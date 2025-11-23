@@ -1,61 +1,59 @@
+import { Label } from '@primer/react';
+
 interface StatusBadgeProps {
   status: string;
-  size?: 'sm' | 'md';
+  size?: 'small' | 'large';
 }
 
-export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
-  const getStatusColor = (status: string) => {
-    // Map all backend statuses to GitHub color scheme
-    const colors: Record<string, string> = {
-      // Pending / Ready (neutral gray)
-      pending: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
-      ready: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
+export function StatusBadge({ status, size = 'large' }: StatusBadgeProps) {
+  const getStatusVariant = (status: string): 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors' => {
+    // Map all backend statuses to Primer Label variants
+    const statusMap: Record<string, 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors'> = {
+      // Pending / Ready (neutral)
+      pending: 'default',
+      ready: 'default',
       
-      // Requires Attention (orange/amber)
-      remediation_required: 'bg-amber-500 text-white',
+      // Requires Attention (attention/warning)
+      remediation_required: 'attention',
       
-      // In Progress (blue)
-      dry_run_queued: 'bg-gh-blue text-white',
-      dry_run_in_progress: 'bg-gh-blue text-white',
-      pre_migration: 'bg-gh-blue text-white',
-      archive_generating: 'bg-gh-blue text-white',
-      queued_for_migration: 'bg-gh-blue text-white',
-      migrating_content: 'bg-gh-blue text-white',
-      post_migration: 'bg-gh-blue text-white',
-      in_progress: 'bg-gh-blue text-white',
+      // In Progress (accent/blue)
+      dry_run_queued: 'accent',
+      dry_run_in_progress: 'accent',
+      pre_migration: 'accent',
+      archive_generating: 'accent',
+      queued_for_migration: 'accent',
+      migrating_content: 'accent',
+      post_migration: 'accent',
+      in_progress: 'accent',
       
-      // Complete (green)
-      dry_run_complete: 'bg-gh-success text-white',
-      migration_complete: 'bg-gh-success text-white',
-      complete: 'bg-gh-success text-white',
-      completed: 'bg-gh-success text-white',
+      // Complete (success/green)
+      dry_run_complete: 'success',
+      migration_complete: 'success',
+      complete: 'success',
+      completed: 'success',
       
-      // Partial Success / Warnings (yellow/orange)
-      completed_with_errors: 'bg-gh-warning text-white',
-      rolled_back: 'bg-gh-warning text-white',
+      // Partial Success / Warnings (attention)
+      completed_with_errors: 'attention',
+      rolled_back: 'attention',
       
-      // Failed (red)
-      dry_run_failed: 'bg-gh-danger text-white',
-      migration_failed: 'bg-gh-danger text-white',
-      failed: 'bg-gh-danger text-white',
+      // Failed (danger/red)
+      dry_run_failed: 'danger',
+      migration_failed: 'danger',
+      failed: 'danger',
       
-      // Cancelled (gray)
-      cancelled: 'bg-gh-text-secondary text-white',
+      // Cancelled (secondary)
+      cancelled: 'secondary',
       
-      // Won't Migrate (muted)
-      wont_migrate: 'bg-gray-500 text-white',
+      // Won't Migrate (secondary)
+      wont_migrate: 'secondary',
     };
-    return colors[status] || 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default';
+    return statusMap[status] || 'default';
   };
   
-  const sizeClasses = size === 'sm' 
-    ? 'text-xs px-2 h-5' 
-    : 'text-xs px-3 h-6';
-  
   return (
-    <span className={`inline-flex items-center rounded-full font-medium ${getStatusColor(status)} ${sizeClasses}`}>
+    <Label variant={getStatusVariant(status)} size={size}>
       {status.replace(/_/g, ' ')}
-    </span>
+    </Label>
   );
 }
 

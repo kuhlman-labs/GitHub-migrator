@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { TextInput } from '@primer/react';
+import { SearchIcon } from '@primer/octicons-react';
 import type { RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { FilterSection } from './FilterSection';
@@ -184,12 +186,12 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
         {/* Search */}
         <div className="p-4 border-b border-gray-200">
           <label className="block text-xs font-medium text-gray-700 mb-2">Search</label>
-          <input
-            type="text"
+          <TextInput
+            leadingVisual={SearchIcon}
             value={filters.search || ''}
             onChange={(e) => onChange({ ...filters, search: e.target.value || undefined })}
             placeholder="Repository name..."
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            block
           />
         </div>
 

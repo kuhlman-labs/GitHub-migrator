@@ -52,7 +52,11 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
         phase: logPhase || undefined,
         limit: 500,
       });
-      setLogs(response.logs || []);
+      // Sort logs by timestamp descending (most recent first)
+      const sortedLogs = (response.logs || []).sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      setLogs(sortedLogs);
     } catch (error) {
       console.error('Failed to load logs:', error);
     } finally {

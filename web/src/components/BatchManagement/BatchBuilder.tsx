@@ -239,8 +239,22 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     setCurrentBatchRepos([...currentBatchRepos, ...selectedRepos]);
     setSelectedRepoIds(new Set());
     
-    // Refresh available repos to exclude newly added ones
-    await loadAvailableRepos();
+    // Check if all repos on current page were added
+    const remainingRepos = availableRepos.filter((r) => !selectedRepoIds.has(r.id) && !currentBatchRepos.some((cr) => cr.id === r.id));
+    
+    // Calculate pagination values
+    const currentPageSize = filters.limit || 50;
+    const totalPagesCount = Math.ceil(totalAvailable / currentPageSize);
+    
+    // If no repos remain on current page and there are more pages, auto-advance to next page
+    if (remainingRepos.length === 0 && currentPage < totalPagesCount) {
+      const nextPage = currentPage + 1;
+      setCurrentPage(nextPage);
+      setFilters({ ...filters, offset: (nextPage - 1) * currentPageSize });
+    } else {
+      // Refresh available repos to exclude newly added ones
+      await loadAvailableRepos();
+    }
   };
 
   const handleRemoveRepo = (repoId: number) => {
@@ -488,8 +502,24 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
-              <p className="mt-2 text-sm text-gray-500">No repositories available</p>
-              <p className="text-xs text-gray-400 mt-1">Try adjusting your filters</p>
+              <p className="mt-2 text-sm text-gray-500">
+                {currentPage < totalPages 
+                  ? 'All repositories on this page have been added'
+                  : 'No repositories available'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {currentPage < totalPages 
+                  ? `Go to the next page to add more repositories`
+                  : 'Try adjusting your filters'}
+              </p>
+              {currentPage < totalPages && (
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  Go to Next Page →
+                </button>
+              )}
             </div>
           ) : (
             Object.entries(availableGroups).map(([org, repos]) => (

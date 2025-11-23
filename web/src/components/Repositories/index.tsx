@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+import { TextInput, Button } from '@primer/react';
+import { SearchIcon } from '@primer/octicons-react';
 import type { Repository, RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -147,30 +149,29 @@ export function Repositories() {
         {/* Search Bar */}
         <form onSubmit={handleSearchSubmit} className="mb-4">
           <div className="flex gap-2">
-            <input
-              type="text"
+            <TextInput
+              leadingVisual={SearchIcon}
               placeholder="Search repositories..."
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              className="flex-1 px-3 py-2 text-sm border border-gh-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-gh-blue focus:border-transparent"
+              style={{ flex: 1 }}
             />
-            <button
+            <Button
               type="submit"
-              className="px-4 py-2 text-sm font-medium bg-gh-blue text-white rounded-md hover:bg-gh-blue-hover transition-colors"
+              variant="primary"
             >
               Search
-            </button>
+            </Button>
             {localSearch && (
-              <button
+              <Button
                 type="button"
                 onClick={() => {
                   setLocalSearch('');
                   removeFilter('search');
                 }}
-                className="px-4 py-2 text-sm font-medium text-gh-text-secondary hover:text-gh-text-primary transition-colors"
               >
                 Clear
-              </button>
+              </Button>
             )}
           </div>
         </form>
@@ -356,7 +357,7 @@ function RepositoryCard({ repository }: { repository: Repository }) {
         {repository.full_name}
       </h3>
       <div className="mb-3 flex items-center justify-between">
-        <StatusBadge status={repository.status} size="sm" />
+        <StatusBadge status={repository.status} size="small" />
       </div>
       <div className="space-y-1.5 text-sm text-gh-text-secondary mb-3">
         <div>Size: {formatBytes(repository.total_size)}</div>

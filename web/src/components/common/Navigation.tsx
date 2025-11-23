@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { MarkGithubIcon } from '@primer/octicons-react';
 import { UserProfile } from './UserProfile';
 
 export function Navigation() {
@@ -7,11 +8,11 @@ export function Navigation() {
   const isActive = (path: string) => location.pathname === path;
   
   const linkClass = (path: string) =>
-    `px-3 py-2 text-gh-header-text font-medium transition-colors border-b-2 ${
+    `px-4 py-2 font-medium transition-colors border-b-2 ${
       isActive(path)
-        ? 'border-white/50'
-        : 'border-transparent hover:text-white/80'
-    }`;
+        ? 'text-white border-white'
+        : 'text-white/90 border-transparent hover:text-white hover:border-gray-300'
+    } !important`;
   
   return (
     <nav className="bg-gh-header-bg border-b border-white/10">
@@ -19,26 +20,22 @@ export function Navigation() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-6">
             <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <img 
-                src="/github-mark-white.png" 
-                alt="GitHub" 
-                className="w-8 h-8"
-              />
+              <MarkGithubIcon size={32} className="text-white" />
               <span className="text-gh-header-text font-semibold text-base">
                 Migrator
               </span>
             </Link>
             <div className="flex space-x-1 ml-4">
-              <Link to="/" className={linkClass('/')}>
+              <Link to="/" className={linkClass('/')} style={{ color: isActive('/') ? '#ffffff' : 'rgba(255, 255, 255, 0.9)' }}>
                 Dashboard
               </Link>
-              <Link to="/analytics" className={linkClass('/analytics')}>
+              <Link to="/analytics" className={linkClass('/analytics')} style={{ color: isActive('/analytics') ? '#ffffff' : 'rgba(255, 255, 255, 0.9)' }}>
                 Analytics
               </Link>
-              <Link to="/batches" className={linkClass('/batches')}>
+              <Link to="/batches" className={linkClass('/batches')} style={{ color: isActive('/batches') ? '#ffffff' : 'rgba(255, 255, 255, 0.9)' }}>
                 Batches
               </Link>
-              <Link to="/history" className={linkClass('/history')}>
+              <Link to="/history" className={linkClass('/history')} style={{ color: isActive('/history') ? '#ffffff' : 'rgba(255, 255, 255, 0.9)' }}>
                 History
               </Link>
             </div>

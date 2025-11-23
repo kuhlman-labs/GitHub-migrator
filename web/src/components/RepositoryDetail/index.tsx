@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
+import { Button } from '@primer/react';
 import { api } from '../../services/api';
 import type { Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -274,23 +275,24 @@ export function RepositoryDetail() {
 
           {/* Migration Actions */}
           <div className="flex flex-col gap-3 ml-6">
-            <button
+            <Button
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
-              className="px-4 py-2 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              variant="default"
+              sx={{ whiteSpace: 'nowrap' }}
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
-            </button>
+            </Button>
             
             {/* Won't Migrate Toggle */}
             {!isInActiveMigration && repository.status !== 'complete' && (
               <button
                 onClick={handleToggleWontMigrate}
                 disabled={markWontMigrateMutation.isPending}
-                className={`px-4 py-2 border rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
+                className={`px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
                   repository.status === 'wont_migrate'
-                    ? 'border-blue-500 text-blue-600 hover:bg-blue-50'
-                    : 'border-gray-500 text-gray-700 hover:bg-gray-50'
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
                 }`}
               >
                 {markWontMigrateMutation.isPending 
@@ -306,14 +308,14 @@ export function RepositoryDetail() {
                 <button
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
-                  className="px-4 py-2 border border-gh-border-default rounded-md text-sm font-medium text-gh-text-primary hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </button>
                 <button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
                 </button>
@@ -321,50 +323,55 @@ export function RepositoryDetail() {
             )}
             {repository.status === 'dry_run_failed' && (
               <>
-                <button
+                <Button
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  variant="danger"
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Re-running...' : 'Re-run Dry Run'}
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  variant="primary"
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Starting...' : 'Start Migration Anyway'}
-                </button>
+                </Button>
               </>
             )}
             {repository.status === 'migration_failed' && (
               <>
-                <button
+                <Button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  variant="danger"
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   Retry Migration
-                </button>
+                </Button>
                 {repository.is_source_locked && repository.source_migration_id && (
-                  <button
+                  <Button
                     onClick={handleUnlock}
                     disabled={unlockMutation.isPending}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    variant="danger"
+                    sx={{ whiteSpace: 'nowrap' }}
                   >
                     {unlockMutation.isPending ? 'Unlocking...' : '🔓 Unlock Source'}
-                  </button>
+                  </Button>
                 )}
               </>
             )}
             {repository.status === 'complete' && (
-              <button
+              <Button
                 onClick={() => setShowRollbackDialog(true)}
                 disabled={rollbackMutation.isPending}
-                className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                variant="danger"
+                sx={{ whiteSpace: 'nowrap' }}
               >
                 {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback Migration'}
-              </button>
+              </Button>
             )}
           </div>
         </div>

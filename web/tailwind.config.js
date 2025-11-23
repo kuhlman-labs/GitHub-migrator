@@ -7,18 +7,36 @@ export default {
   theme: {
     extend: {
       colors: {
-        // GitHub color palette
+        // GitHub Primer Brand Colors
         gh: {
-          // Primary
-          blue: '#0969DA',
-          'blue-hover': '#0860CA',
+          // Primary Palette - GitHub Green
+          'green-1': '#BFFFD1',
+          'green-3': '#5FED83',
+          'green-4': '#08872B',
+          'green-5': '#104C35',
           
-          // Text
+          // Blue Palette - For accents and trust
+          'blue-1': '#9EECFF',
+          'blue-2': '#3094FF',
+          'blue-4': '#0527FC',
+          'blue-6': '#001C4D',
+          
+          // Purple Palette - For AI/Intelligence features
+          'purple-1': '#D0B0FF',
+          'purple-2': '#C06EFF',
+          'purple-4': '#501DAF',
+          'purple-6': '#000240',
+          
+          // Neutrals
+          black: '#000000',
+          white: '#FFFFFF',
+          
+          // Text colors (from Primer)
           'text-primary': '#1F2328',
           'text-secondary': '#656D76',
           'text-muted': '#8C959F',
           
-          // Canvas
+          // Canvas colors
           'canvas-default': '#F6F8FA',
           'canvas-raised': '#FFFFFF',
           'canvas-inset': '#F6F8FA',
@@ -28,30 +46,18 @@ export default {
           'border-muted': '#E5E9ED',
           'border-hover': '#8C959F',
           
-          // Header (darker like GitHub)
+          // Header (darker)
           'header-bg': '#0D1117',
           'header-text': '#FFFFFF',
-          
-          // Status colors
-          success: '#1A7F37',
-          'success-hover': '#1A7F37',
-          'success-emphasis': '#2DA44E',
-          danger: '#D1242F',
-          'danger-hover': '#B52324',
-          warning: '#9A6700',
-          'warning-emphasis': '#BF8700',
-          
-          // State backgrounds
-          'success-bg': '#DFF7E9',
-          'danger-bg': '#FFEBEC',
-          'warning-bg': '#FFF8C5',
-          'info-bg': '#DBF0FF',
-          'neutral-bg': '#F6F8FA',
         },
       },
       boxShadow: {
         'gh-card': '0 1px 0 rgba(31, 35, 40, 0.04)',
-        'gh-focus': '0 0 0 3px rgba(9, 105, 218, 0.3)',
+        'gh-focus': '0 0 0 3px rgba(48, 148, 255, 0.3)',
+      },
+      fontFamily: {
+        'mona': ['Mona Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        'monaspace': ['Monaspace Neon', 'ui-monospace', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'monospace'],
       },
     },
   },

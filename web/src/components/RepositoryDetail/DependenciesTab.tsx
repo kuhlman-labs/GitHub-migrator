@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import type { DependenciesResponse, RepositoryDependency } from '../../types';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { Pagination } from '../common/Pagination';
 
 interface DependenciesTabProps {
   fullName: string;
@@ -13,11 +14,18 @@ interface MergedDependency extends RepositoryDependency {
   all_metadata: any[];
 }
 
+type ScopeFilter = 'all' | 'local' | 'external';
+
 export function DependenciesTab({ fullName }: DependenciesTabProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DependenciesResponse | null>(null);
   const [deduplicatedDeps, setDeduplicatedDeps] = useState<MergedDependency[]>([]);
+  
+  // Filter and pagination state
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Deduplicate dependencies by dependency_full_name
   const deduplicateDependencies = (dependencies: RepositoryDependency[]): MergedDependency[] => {
@@ -90,6 +98,11 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
     fetchDependencies();
   }, [fullName]);
 
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [scopeFilter]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -130,6 +143,19 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
       return acc;
     }, {} as Record<string, number>)
   };
+
+  // Filter dependencies by scope
+  const filteredDeps = deduplicatedDeps.filter(dep => {
+    if (scopeFilter === 'local') return dep.is_local;
+    if (scopeFilter === 'external') return !dep.is_local;
+    return true; // 'all'
+  });
+
+  // Paginate filtered dependencies
+  const totalItems = filteredDeps.length;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedDeps = filteredDeps.slice(startIndex, endIndex);
 
   return (
     <div className="space-y-6">
@@ -189,32 +215,91 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
       {/* Dependencies List */}
       <div className="bg-white rounded-lg shadow-sm">
         <div className="p-6">
-          <h3 className="text-lg font-semibold mb-4">All Dependencies ({deduplicatedSummary.total})</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Repository
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Detection Methods
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Scope
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Details
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {deduplicatedDeps.map((dep) => (
-                  <MergedDependencyRow key={dep.id} dependency={dep} />
-                ))}
-              </tbody>
-            </table>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">
+              All Dependencies ({deduplicatedSummary.total})
+            </h3>
+            
+            {/* Scope Filter */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setScopeFilter('all')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  scopeFilter === 'all'
+                    ? 'bg-gh-blue-2 text-white'
+                    : 'bg-gh-canvas-inset text-gh-text-primary hover:bg-gh-border-muted'
+                }`}
+              >
+                All ({deduplicatedSummary.total})
+              </button>
+              <button
+                onClick={() => setScopeFilter('local')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  scopeFilter === 'local'
+                    ? 'bg-gh-green-4 text-white'
+                    : 'bg-gh-canvas-inset text-gh-text-primary hover:bg-gh-border-muted'
+                }`}
+              >
+                Local ({deduplicatedSummary.local})
+              </button>
+              <button
+                onClick={() => setScopeFilter('external')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  scopeFilter === 'external'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gh-canvas-inset text-gh-text-primary hover:bg-gh-border-muted'
+                }`}
+              >
+                External ({deduplicatedSummary.external})
+              </button>
+            </div>
           </div>
+          
+          {filteredDeps.length === 0 ? (
+            <div className="text-center py-8 text-gh-text-muted">
+              No {scopeFilter === 'all' ? '' : scopeFilter} dependencies found
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Repository
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Detection Methods
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Scope
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Details
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {paginatedDeps.map((dep) => (
+                      <MergedDependencyRow key={dep.id} dependency={dep} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Pagination */}
+              {totalItems > pageSize && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalItems={totalItems}
+                    pageSize={pageSize}
+                    onPageChange={setCurrentPage}
+                  />
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

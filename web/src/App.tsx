@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ThemeProvider, BaseStyles } from '@primer/react';
 import { Dashboard } from './components/Dashboard';
 import { OrganizationDetail } from './components/OrganizationDetail';
 import { RepositoryDetail } from './components/RepositoryDetail';
@@ -14,24 +15,28 @@ import { AuthProvider } from './contexts/AuthContext';
 
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <div className="min-h-screen bg-gh-canvas-default">
-          <Routes>
-            {/* Login page (public) */}
-            <Route path="/login" element={<Login />} />
-            
-            {/* Protected routes with navigation */}
-            <Route path="*" element={
-              <ProtectedRoute>
-                <Navigation />
-                <ProtectedRoutes />
-              </ProtectedRoute>
-            } />
-          </Routes>
-        </div>
-      </AuthProvider>
-    </Router>
+    <ThemeProvider colorMode="light">
+      <BaseStyles>
+        <Router>
+          <AuthProvider>
+            <div className="min-h-screen bg-gh-canvas-default">
+              <Routes>
+                {/* Login page (public) */}
+                <Route path="/login" element={<Login />} />
+                
+                {/* Protected routes with navigation */}
+                <Route path="*" element={
+                  <ProtectedRoute>
+                    <Navigation />
+                    <ProtectedRoutes />
+                  </ProtectedRoute>
+                } />
+              </Routes>
+            </div>
+          </AuthProvider>
+        </Router>
+      </BaseStyles>
+    </ThemeProvider>
   );
 }
 

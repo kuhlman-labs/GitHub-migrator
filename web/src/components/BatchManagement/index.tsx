@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { TextInput, Button } from '@primer/react';
+import { SearchIcon, PlusIcon, CalendarIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -329,12 +331,13 @@ export function BatchManagement() {
     <div className="max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-gh-text-primary">Batch Management</h1>
-        <button
+        <Button
           onClick={handleCreateBatch}
-          className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
+          variant="primary"
+          leadingVisual={PlusIcon}
         >
           Create New Batch
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -344,25 +347,13 @@ export function BatchManagement() {
             {/* Header with Search */}
             <div className="p-4 border-b border-gh-border-default">
               <h2 className="text-base font-semibold text-gh-text-primary mb-3">Batches</h2>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search batches..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-3 py-2 pr-8 text-sm border border-gh-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-gh-blue"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gh-text-secondary hover:text-gh-text-primary"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </div>
+              <TextInput
+                leadingVisual={SearchIcon}
+                placeholder="Search batches..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                block
+              />
             </div>
 
             {/* Tabs */}
@@ -781,12 +772,13 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
         <div className="flex-1">
           <h3 className="font-medium text-gray-900">{batch.name}</h3>
           <div className="flex gap-2 mt-2">
-            <StatusBadge status={batch.status} size="sm" />
+            <StatusBadge status={batch.status} size="small" />
             <span className="text-xs text-gray-600">{batch.repository_count} repos</span>
           </div>
           {batch.scheduled_at && (
             <div className="mt-1.5 text-xs text-blue-700 flex items-center gap-1">
-              🗓️ {formatDate(batch.scheduled_at)}
+              <CalendarIcon size={12} />
+              {formatDate(batch.scheduled_at)}
             </div>
           )}
         </div>
@@ -866,7 +858,7 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
         </div>
       </Link>
       <div className="flex items-center gap-3">
-        <StatusBadge status={repository.status} size="sm" />
+        <StatusBadge status={repository.status} size="small" />
         {isFailed && onRetry && (
           <button
             onClick={(e) => {

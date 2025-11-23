@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { TextInput } from '@primer/react';
+import { SearchIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { MigrationHistoryEntry } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -48,12 +50,12 @@ export function MigrationHistory() {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-light text-gray-900">Migration History</h1>
         <div className="flex gap-4">
-          <input
-            type="text"
+          <TextInput
+            leadingVisual={SearchIcon}
             placeholder="Search repositories..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            style={{ width: 300 }}
           />
           <button
             onClick={() => handleExport('csv')}

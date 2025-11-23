@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { TextInput } from '@primer/react';
+import { SearchIcon } from '@primer/octicons-react';
 import type { Repository, ADOProject, Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -258,24 +260,24 @@ export function OrganizationDetail() {
         
         {/* Search for projects when viewing ADO org */}
         {isADOOrg && (
-          <input
-            type="text"
+          <TextInput
+            leadingVisual={SearchIcon}
             placeholder="Search projects..."
             value={projectSearchTerm}
             onChange={(e) => setProjectSearchTerm(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+            style={{ width: 300 }}
           />
         )}
         
         {/* Only show search and filters when NOT viewing an ADO org (i.e., viewing repos) */}
         {!isADOOrg && (
           <div className="flex gap-3">
-            <input
-              type="text"
+            <TextInput
+              leadingVisual={SearchIcon}
               placeholder="Search repositories..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+              style={{ width: 300 }}
             />
             <select
               value={filter}
@@ -568,7 +570,7 @@ function RepositoryCard({ repository }: { repository: Repository }) {
         {displayName}
       </h3>
       <div className="mb-3 flex items-center justify-between">
-        <StatusBadge status={repository.status} size="sm" />
+        <StatusBadge status={repository.status} size="small" />
       </div>
       <div className="space-y-1.5 text-sm text-gh-text-secondary mb-3">
         <div>Size: {formatBytes(repository.total_size)}</div>

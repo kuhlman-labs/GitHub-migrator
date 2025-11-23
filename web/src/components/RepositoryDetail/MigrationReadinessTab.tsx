@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Button } from '@primer/react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -441,36 +442,41 @@ export function MigrationReadinessTab({
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   disabled={updateRepositoryMutation.isPending}
                 />
-                <button
+                <Button
                   onClick={handleSaveDestination}
                   disabled={updateRepositoryMutation.isPending}
-                  className="px-3 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50"
+                  sx={{
+                    bg: '#1A7F37',
+                    color: 'white',
+                    '&:hover': { bg: '#116329' },
+                    '&:disabled': { opacity: 0.5 }
+                  }}
                 >
                   {updateRepositoryMutation.isPending ? 'Saving...' : 'Save'}
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => {
                     setEditingDestination(false);
                     // Reset to the saved/default value using the same logic
                     setDestinationFullName(getDefaultDestination());
                   }}
                   disabled={updateRepositoryMutation.isPending}
-                  className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                  variant="default"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-900">
                   {destinationFullName}
                 </code>
-                <button
+                <Button
                   onClick={() => setEditingDestination(true)}
-                  className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50"
+                  variant="default"
                 >
                   Edit
-                </button>
+                </Button>
               </div>
             )}
             <p className="mt-1 text-xs text-gray-500">
@@ -496,13 +502,13 @@ export function MigrationReadinessTab({
                 <div className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm">
                   <Badge color="blue">{currentBatch?.name || `Batch #${repository.batch_id}`}</Badge>
                 </div>
-                <button
+                <Button
                   onClick={handleRemoveFromBatch}
                   disabled={assigningBatch}
-                  className="px-3 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                  variant="default"
                 >
                   {assigningBatch ? 'Removing...' : 'Remove from Batch'}
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -519,13 +525,18 @@ export function MigrationReadinessTab({
                     </option>
                   ))}
                 </select>
-                <button
+                <Button
                   onClick={handleAssignToBatch}
                   disabled={!selectedBatchId || assigningBatch}
-                  className="px-3 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover disabled:opacity-50"
+                  sx={{
+                    bg: '#1A7F37',
+                    color: 'white',
+                    '&:hover': { bg: '#116329' },
+                    '&:disabled': { opacity: 0.5 }
+                  }}
                 >
                   {assigningBatch ? 'Assigning...' : 'Assign to Batch'}
-                </button>
+                </Button>
               </div>
             )}
             <p className="mt-1 text-xs text-gray-500">
@@ -564,20 +575,26 @@ export function MigrationReadinessTab({
 
           {hasOptionsChanges && (
             <div className="flex gap-2 mt-3">
-              <button
+              <Button
                 onClick={handleSaveMigrationOptions}
                 disabled={savingOptions}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                sx={{
+                  flexGrow: 1,
+                  bg: '#0969DA',
+                  color: 'white',
+                  '&:hover': { bg: '#0860CA' },
+                  '&:disabled': { opacity: 0.5 }
+                }}
               >
                 {savingOptions ? 'Saving...' : 'Save Options'}
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setExcludeReleases(repository.exclude_releases)}
                 disabled={savingOptions}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                variant="default"
               >
                 Reset
-              </button>
+              </Button>
             </div>
           )}
         </div>

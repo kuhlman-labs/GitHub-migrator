@@ -11,13 +11,17 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@primer/octicons-react": "^19.21.0",
+    "@primer/primitives": "^11.3.1",
+    "@primer/react": "^38.2.0",
     "@tanstack/react-query": "^5.90.10",
     "@tanstack/react-query-devtools": "^5.90.2",
     "axios": "^1.13.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
-    "recharts": "^3.4.1"
+    "recharts": "^3.4.1",
+    "styled-components": "^6.1.19"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
