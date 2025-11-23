@@ -36,17 +36,17 @@ export const RefreshIndicator: React.FC<RefreshIndicatorProps> = ({
   // Subtle indicator - just a small spinner in the corner
   if (subtle) {
     return (
-      <div className="absolute top-4 right-4 z-10">
-        <Spinner size="small" />
+      <div className="absolute top-4 right-4 z-10" role="status" aria-live="polite">
+        <Spinner size="small" aria-label="Refreshing data" />
       </div>
     );
   }
 
   // Original style indicator (for when subtle = false)
   return (
-    <div className="absolute top-4 right-4 z-10">
-      <div className="flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full shadow-sm">
-        <Spinner size="small" />
+    <div className="absolute top-4 right-4 z-10" role="status" aria-live="polite">
+      <div className="flex items-center gap-2 bg-gh-accent-subtle text-gh-accent-fg px-3 py-1.5 rounded-full shadow-sm">
+        <Spinner size="small" aria-label="Refreshing data" />
         <span className="text-sm font-medium">Updating...</span>
       </div>
     </div>
