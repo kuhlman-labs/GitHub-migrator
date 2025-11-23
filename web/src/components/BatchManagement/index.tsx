@@ -525,18 +525,18 @@ export function BatchManagement() {
                 <div className="flex gap-2">
                   {(selectedBatch.status === 'pending' || selectedBatch.status === 'ready') && (
                     <>
-                      <button
+                      <Button
                         onClick={() => handleEditBatch(selectedBatch)}
-                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        variant="default"
                       >
                         Edit Batch
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={() => handleDeleteBatch(selectedBatch)}
-                        className="px-4 py-1.5 border border-red-600 text-red-600 rounded-md text-sm font-medium hover:bg-red-50"
+                        variant="danger"
                       >
                         Delete
-                      </button>
+                      </Button>
                     </>
                   )}
                   
@@ -550,12 +550,12 @@ export function BatchManagement() {
                           Run Dry Run ({groupedRepos.needs_dry_run.length} repos)
                         </button>
                       )}
-                      <button
+                      <Button
                         onClick={() => handleStartBatch(selectedBatch.id, true)}
-                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        variant="default"
                       >
                         Skip & Migrate
-                      </button>
+                      </Button>
                     </>
                   )}
                   
@@ -563,7 +563,7 @@ export function BatchManagement() {
                     <>
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id)}
-                        className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
+                        className="px-4 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
                       >
                         Start Migration
                       </button>
@@ -576,13 +576,13 @@ export function BatchManagement() {
                           Dry Run Pending ({groupedRepos.needs_dry_run.length})
                         </button>
                       ) : null}
-                      <button
+                      <Button
                         onClick={() => handleDryRunBatch(selectedBatch.id, false)}
-                        className="px-3 py-1.5 border border-gh-border-default text-gh-text-secondary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        variant="default"
                         title="Re-run dry run for all repositories"
                       >
                         Re-run All Dry Runs
-                      </button>
+                      </Button>
                     </>
                   )}
                   
@@ -600,12 +600,13 @@ export function BatchManagement() {
                     }
                     
                     return (
-                      <button
+                      <Button
                         onClick={handleRetryFailed}
-                        className="px-4 py-1.5 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis whitespace-nowrap"
+                        variant="danger"
+                        sx={{ whiteSpace: 'nowrap' }}
                       >
                         {buttonText}
-                      </button>
+                      </Button>
                     );
                   })()}
                 </div>
@@ -788,7 +789,7 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
               e.stopPropagation();
               onStart();
             }}
-            className="text-sm px-3 py-1 bg-gh-success text-white rounded hover:bg-gh-success-hover"
+            className="text-sm px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
           >
             Start
           </button>
@@ -860,16 +861,17 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
       <div className="flex items-center gap-3">
         <StatusBadge status={repository.status} size="small" />
         {isFailed && onRetry && (
-          <button
+          <Button
             onClick={(e) => {
               e.preventDefault();
               onRetry();
             }}
-            className="text-sm px-3 py-1.5 bg-gh-warning text-white rounded-md font-medium hover:bg-gh-warning-emphasis whitespace-nowrap"
+            variant="danger"
+            size="small"
             title={isDryRunFailed ? 'Re-run the dry run for this repository' : 'Retry the production migration'}
           >
             {isDryRunFailed ? 'Re-run Dry Run' : 'Retry Migration'}
-          </button>
+          </Button>
         )}
       </div>
     </div>

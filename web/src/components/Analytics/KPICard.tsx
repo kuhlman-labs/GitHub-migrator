@@ -1,3 +1,5 @@
+import { InfoIcon } from '@primer/octicons-react';
+
 interface KPICardProps {
   title: string;
   value: string | number;
@@ -69,19 +71,10 @@ export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip,
       {tooltip && (
         <div className="absolute top-2 right-2">
           <div className="relative group/tooltip">
-            <svg 
-              className="w-4 h-4 text-gh-text-muted hover:text-gh-text-secondary cursor-help" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" 
-              />
-            </svg>
+            <InfoIcon 
+              size={16}
+              className="text-gh-text-muted hover:text-gh-text-secondary cursor-help" 
+            />
             <div className="invisible group-hover/tooltip:visible absolute right-0 top-6 w-64 p-2 bg-gh-header-bg text-white text-xs rounded shadow-lg z-10">
               {tooltip}
             </div>

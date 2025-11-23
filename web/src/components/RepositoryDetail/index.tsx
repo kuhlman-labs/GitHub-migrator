@@ -481,13 +481,13 @@ export function RepositoryDetail() {
               >
                 Cancel
               </button>
-              <button
+              <Button
                 onClick={handleRollback}
                 disabled={rollbackMutation.isPending}
-                className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700 disabled:opacity-50"
+                variant="danger"
               >
                 {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ChevronRightIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDuration } from '../../utils/format';
@@ -726,14 +727,10 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
         className="flex items-center justify-between w-full px-3 py-2 -mx-3 rounded hover:bg-gh-info-bg transition-colors cursor-pointer group text-left"
       >
         {content}
-        <svg 
-          className="w-4 h-4 text-gh-text-secondary opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0" 
-          fill="none" 
-          stroke="currentColor" 
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
+        <ChevronRightIcon 
+          size={16}
+          className="text-gh-text-secondary opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0" 
+        />
       </button>
     );
   }

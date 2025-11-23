@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Heading, Button, TextInput, Flash, Label, FormControl } from '@primer/react';
-import { SearchIcon } from '@primer/octicons-react';
+import { SearchIcon, XIcon } from '@primer/octicons-react';
 import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -383,9 +383,7 @@ function DiscoveryModal({
               className="text-gh-text-secondary hover:text-gh-text-primary"
               aria-label="Close"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <XIcon size={20} />
             </button>
           </div>
       <form onSubmit={handleSubmit} className="p-4">
