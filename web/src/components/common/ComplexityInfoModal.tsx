@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Dialog, Button, IconButton } from '@primer/react';
+import { Button, IconButton } from '@primer/react';
 import { InfoIcon, XIcon } from '@primer/octicons-react';
 
 interface ComplexityInfoModalProps {
-  source?: 'github' | 'azuredevops' | 'all';
+  source?: 'github' | 'ghes' | 'azuredevops' | 'all';
 }
 
 export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps) {

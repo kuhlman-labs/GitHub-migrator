@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { UnderlineNav } from '@primer/react';
 import { ChevronRightIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -120,28 +121,20 @@ export function Analytics() {
 
       {/* Tabs Navigation */}
       <div className="mb-8">
-        <nav className="flex space-x-1 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('discovery')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'discovery'
-                ? 'border-gh-blue text-gh-blue'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+        <UnderlineNav aria-label="Analytics sections">
+          <UnderlineNav.Item
+            aria-current={activeTab === 'discovery' ? 'page' : undefined}
+            onSelect={() => setActiveTab('discovery')}
           >
             Discovery Analytics
-          </button>
-          <button
-            onClick={() => setActiveTab('migration')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'migration'
-                ? 'border-green-500 text-green-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+          </UnderlineNav.Item>
+          <UnderlineNav.Item
+            aria-current={activeTab === 'migration' ? 'page' : undefined}
+            onSelect={() => setActiveTab('migration')}
           >
             Migration Analytics
-          </button>
-        </nav>
+          </UnderlineNav.Item>
+        </UnderlineNav>
       </div>
 
       {/* SECTION 1: DISCOVERY ANALYTICS */}

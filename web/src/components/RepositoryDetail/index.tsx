@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { Button } from '@primer/react';
+import { Button, UnderlineNav } from '@primer/react';
+import { CalendarIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -231,9 +232,7 @@ export function RepositoryDetail() {
             {/* Compact Timestamp Display */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gh-text-secondary mb-4 pb-4 border-b border-gh-border-default">
               <div className="flex items-center gap-1.5">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+                <CalendarIcon size={16} />
                 <TimestampDisplay 
                   timestamp={repository.discovered_at} 
                   label="Discovered"
@@ -279,7 +278,7 @@ export function RepositoryDetail() {
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
               variant="default"
-              sx={{ whiteSpace: 'nowrap' }}
+              style={{ whiteSpace: 'nowrap' }}
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
             </Button>
@@ -327,7 +326,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
                   variant="danger"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  style={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Re-running...' : 'Re-run Dry Run'}
                 </Button>
@@ -335,7 +334,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="primary"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  style={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Starting...' : 'Start Migration Anyway'}
                 </Button>
@@ -347,7 +346,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="danger"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  style={{ whiteSpace: 'nowrap' }}
                 >
                   Retry Migration
                 </Button>
@@ -356,7 +355,7 @@ export function RepositoryDetail() {
                     onClick={handleUnlock}
                     disabled={unlockMutation.isPending}
                     variant="danger"
-                    sx={{ whiteSpace: 'nowrap' }}
+                    style={{ whiteSpace: 'nowrap' }}
                   >
                     {unlockMutation.isPending ? 'Unlocking...' : '🔓 Unlock Source'}
                   </Button>
@@ -368,7 +367,7 @@ export function RepositoryDetail() {
                 onClick={() => setShowRollbackDialog(true)}
                 disabled={rollbackMutation.isPending}
                 variant="danger"
-                sx={{ whiteSpace: 'nowrap' }}
+                style={{ whiteSpace: 'nowrap' }}
               >
                 {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback Migration'}
               </Button>
@@ -401,28 +400,32 @@ export function RepositoryDetail() {
 
       {/* Tabs */}
       <div className="bg-white rounded-lg shadow-sm mb-6">
-        <div className="border-b border-gray-200">
-          <nav className="flex -mb-px">
-            {[
-              { id: 'readiness' as const, label: 'Migration Readiness' },
-              { id: 'profile' as const, label: 'Technical Profile' },
-              { id: 'relationships' as const, label: 'Relationships' },
-              { id: 'activity' as const, label: 'Activity Log' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
+        <UnderlineNav aria-label="Repository details">
+          <UnderlineNav.Item
+            aria-current={activeTab === 'readiness' ? 'page' : undefined}
+            onSelect={() => setActiveTab('readiness')}
+          >
+            Migration Readiness
+          </UnderlineNav.Item>
+          <UnderlineNav.Item
+            aria-current={activeTab === 'profile' ? 'page' : undefined}
+            onSelect={() => setActiveTab('profile')}
+          >
+            Technical Profile
+          </UnderlineNav.Item>
+          <UnderlineNav.Item
+            aria-current={activeTab === 'relationships' ? 'page' : undefined}
+            onSelect={() => setActiveTab('relationships')}
+          >
+            Relationships
+          </UnderlineNav.Item>
+          <UnderlineNav.Item
+            aria-current={activeTab === 'activity' ? 'page' : undefined}
+            onSelect={() => setActiveTab('activity')}
+          >
+            Activity Log
+          </UnderlineNav.Item>
+        </UnderlineNav>
 
         <div className="p-6">
           {activeTab === 'readiness' && (

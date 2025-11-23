@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@primer/react';
+import { XCircleFillIcon, AlertIcon, ChevronDownIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -332,13 +333,9 @@ export function MigrationReadinessTab({
           >
             <div className="flex items-center gap-3">
               {hasBlockingIssues ? (
-                <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
+                <XCircleFillIcon size={24} className="text-red-600" />
               ) : (
-                <svg className="w-6 h-6 text-yellow-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                </svg>
+                <AlertIcon size={24} className="text-yellow-600" />
               )}
               <div className="text-left">
                 <h3 className="font-semibold text-gray-900">
@@ -351,15 +348,10 @@ export function MigrationReadinessTab({
                 </p>
               </div>
             </div>
-            <svg 
-              className={`w-5 h-5 text-gray-400 transition-transform ${expandedValidation ? 'rotate-180' : ''}`}
-              fill="none" 
-              viewBox="0 0 24 24" 
-              strokeWidth={2} 
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
+            <ChevronDownIcon 
+              size={20}
+              className={`text-gray-400 transition-transform ${expandedValidation ? 'rotate-180' : ''}`}
+            />
           </button>
           
           {expandedValidation && (
@@ -445,12 +437,7 @@ export function MigrationReadinessTab({
                 <Button
                   onClick={handleSaveDestination}
                   disabled={updateRepositoryMutation.isPending}
-                  sx={{
-                    bg: '#1A7F37',
-                    color: 'white',
-                    '&:hover': { bg: '#116329' },
-                    '&:disabled': { opacity: 0.5 }
-                  }}
+                  className="bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                 >
                   {updateRepositoryMutation.isPending ? 'Saving...' : 'Save'}
                 </Button>
@@ -528,12 +515,7 @@ export function MigrationReadinessTab({
                 <Button
                   onClick={handleAssignToBatch}
                   disabled={!selectedBatchId || assigningBatch}
-                  sx={{
-                    bg: '#1A7F37',
-                    color: 'white',
-                    '&:hover': { bg: '#116329' },
-                    '&:disabled': { opacity: 0.5 }
-                  }}
+                  className="bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                 >
                   {assigningBatch ? 'Assigning...' : 'Assign to Batch'}
                 </Button>
@@ -578,13 +560,7 @@ export function MigrationReadinessTab({
               <Button
                 onClick={handleSaveMigrationOptions}
                 disabled={savingOptions}
-                sx={{
-                  flexGrow: 1,
-                  bg: '#0969DA',
-                  color: 'white',
-                  '&:hover': { bg: '#0860CA' },
-                  '&:disabled': { opacity: 0.5 }
-                }}
+                className="flex-grow bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {savingOptions ? 'Saving...' : 'Save Options'}
               </Button>
