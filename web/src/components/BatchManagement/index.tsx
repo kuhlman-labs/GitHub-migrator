@@ -26,6 +26,10 @@ export function BatchManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+  
+  // Delete confirmation dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<Batch | null>(null);
 
   useEffect(() => {
     loadBatches();
@@ -214,28 +218,29 @@ export function BatchManagement() {
     navigate(`/batches/${batch.id}/edit`);
   };
 
-  const handleDeleteBatch = async (batch: Batch) => {
+  const handleDeleteBatch = (batch: Batch) => {
     if (batch.status === 'in_progress') {
       showWarning('Cannot delete a batch that is currently in progress.');
       return;
     }
+    
+    setBatchToDelete(batch);
+    setShowDeleteDialog(true);
+  };
 
-    const confirmMessage = batch.repository_count > 0
-      ? `Delete batch "${batch.name}"? This will remove ${batch.repository_count} repositories from the batch, making them available for other batches.`
-      : `Delete batch "${batch.name}"?`;
-
-    if (!confirm(confirmMessage)) {
-      return;
-    }
+  const confirmDeleteBatch = async () => {
+    if (!batchToDelete) return;
 
     try {
-      await api.deleteBatch(batch.id);
+      await api.deleteBatch(batchToDelete.id);
       showSuccess('Batch deleted successfully');
       // Clear selection if we deleted the selected batch
-      if (selectedBatch?.id === batch.id) {
+      if (selectedBatch?.id === batchToDelete.id) {
         setSelectedBatch(null);
       }
       await loadBatches();
+      setShowDeleteDialog(false);
+      setBatchToDelete(null);
     } catch (error: any) {
       console.error('Failed to delete batch:', error);
       showError(error.response?.data?.error || 'Failed to delete batch');
@@ -545,19 +550,19 @@ export function BatchManagement() {
                   {selectedBatch.status === 'pending' && (
                     <>
                       {groupedRepos.needs_dry_run.length > 0 && (
-                        <button
+                        <Button
                           onClick={() => handleDryRunBatch(selectedBatch.id, true)}
-                          className="px-4 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                          variant="primary"
                         >
                           Run Dry Run ({groupedRepos.needs_dry_run.length} repos)
-                        </button>
+                        </Button>
                       )}
-                      <Button
+                      <button
                         onClick={() => handleStartBatch(selectedBatch.id, true)}
-                        variant="default"
+                        className="px-4 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 border border-green-600"
                       >
                         Skip & Migrate
-                      </Button>
+                      </button>
                     </>
                   )}
                   
@@ -565,22 +570,22 @@ export function BatchManagement() {
                     <>
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id)}
-                        className="px-4 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
+                        className="px-4 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 border border-green-600"
                       >
                         Start Migration
                       </button>
                       {groupedRepos.needs_dry_run.length > 0 ? (
-                        <button
+                        <Button
                           onClick={() => handleDryRunBatch(selectedBatch.id, true)}
-                          className="px-3 py-1.5 border border-blue-600 text-blue-600 rounded-md text-sm font-medium hover:bg-blue-50"
+                          variant="primary"
                           title="Run dry run only for repositories that need it"
                         >
                           Dry Run Pending ({groupedRepos.needs_dry_run.length})
-                        </button>
+                        </Button>
                       ) : null}
                       <Button
                         onClick={() => handleDryRunBatch(selectedBatch.id, false)}
-                        variant="default"
+                        variant="primary"
                         title="Re-run dry run for all repositories"
                       >
                         Re-run All Dry Runs
@@ -749,6 +754,70 @@ export function BatchManagement() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteDialog && batchToDelete && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={() => {
+              setShowDeleteDialog(false);
+              setBatchToDelete(null);
+            }}
+          />
+          
+          {/* Dialog */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div 
+              className="bg-white rounded-lg shadow-xl max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 border-b border-gh-border-default">
+                <h3 className="text-base font-semibold text-gh-text-primary">
+                  Delete Batch
+                </h3>
+              </div>
+              
+              <div className="p-4">
+                <p className="text-sm text-gh-text-secondary mb-3">
+                  {batchToDelete.repository_count > 0 ? (
+                    <>
+                      Are you sure you want to delete batch <strong>"{batchToDelete.name}"</strong>?
+                      <br /><br />
+                      This will remove <strong>{batchToDelete.repository_count} {batchToDelete.repository_count === 1 ? 'repository' : 'repositories'}</strong> from the batch, making them available for other batches.
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to delete batch <strong>"{batchToDelete.name}"</strong>?
+                    </>
+                  )}
+                </p>
+                <p className="text-sm text-gh-text-muted">
+                  This action cannot be undone.
+                </p>
+              </div>
+              
+              <div className="px-4 py-3 border-t border-gh-border-default flex justify-end gap-2">
+                <Button
+                  onClick={() => {
+                    setShowDeleteDialog(false);
+                    setBatchToDelete(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmDeleteBatch}
+                  variant="danger"
+                >
+                  Delete Batch
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
     </div>
   );

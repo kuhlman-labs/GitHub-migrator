@@ -353,3 +353,58 @@ nav[aria-label="Pagination"] span[aria-label*="..."] {
   background-clip: padding-box;
 }
 
+/* Custom checkbox styling */
+.custom-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #D1D9E0;
+  border-radius: 3px;
+  background-color: #F6F8FA;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.custom-checkbox:hover {
+  border-color: #8C959F;
+}
+
+.custom-checkbox:checked {
+  background-color: #0969DA;
+  border-color: #0969DA;
+}
+
+.custom-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Checkbox on blue background - inverted colors */
+.custom-checkbox.on-blue {
+  background-color: white;
+  border-color: white;
+}
+
+.custom-checkbox.on-blue:hover {
+  background-color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
+.custom-checkbox.on-blue:checked {
+  background-color: white;
+  border-color: white;
+}
+
+.custom-checkbox.on-blue:checked::after {
+  border-color: #3094FF;
+}
+

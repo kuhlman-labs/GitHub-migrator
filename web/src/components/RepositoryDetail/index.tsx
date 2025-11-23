@@ -168,13 +168,13 @@ export function RepositoryDetail() {
         <nav aria-label="Breadcrumb" className="mb-4">
           <ol className="flex items-center text-sm">
             <li>
-              <Link to="/" className="text-gh-blue-2 hover:underline">Dashboard</Link>
+              <Link to="/" className="text-blue-600 hover:underline" style={{ color: '#2563eb' }}>Dashboard</Link>
             </li>
             <li className="text-gh-text-muted mx-2">/</li>
             {locationState?.fromBatch && locationState?.batchId ? (
               <>
                 <li>
-                  <Link to="/batches" className="text-gh-blue-2 hover:underline">Batches</Link>
+                  <Link to="/batches" className="text-blue-600 hover:underline" style={{ color: '#2563eb' }}>Batches</Link>
                 </li>
                 <li className="text-gh-text-muted mx-2">/</li>
                 <li className="font-semibold text-gh-text-primary">
@@ -186,7 +186,8 @@ export function RepositoryDetail() {
                 <li>
                   <Link 
                     to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
-                    className="text-gh-blue-2 hover:underline"
+                    className="text-blue-600 hover:underline"
+                    style={{ color: '#2563eb' }}
                   >
                     {repository.full_name.split('/')[0]}
                   </Link>
@@ -195,7 +196,8 @@ export function RepositoryDetail() {
                 <li>
                   <Link 
                     to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}/project/${encodeURIComponent(repository.ado_project)}`}
-                    className="text-gh-blue-2 hover:underline"
+                    className="text-blue-600 hover:underline"
+                    style={{ color: '#2563eb' }}
                   >
                     {repository.ado_project}
                   </Link>
@@ -210,7 +212,8 @@ export function RepositoryDetail() {
                 <li>
                   <Link 
                     to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
-                    className="text-gh-blue-2 hover:underline"
+                    className="text-blue-600 hover:underline"
+                    style={{ color: '#2563eb' }}
                   >
                     {repository.full_name.split('/')[0]}
                   </Link>
@@ -418,7 +421,8 @@ export function RepositoryDetail() {
             href={repository.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="text-blue-600 hover:underline font-medium"
+            style={{ color: '#2563eb' }}
           >
             View Source Repository →
           </a>
@@ -427,7 +431,8 @@ export function RepositoryDetail() {
               href={repository.destination_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-green-600 hover:underline"
+              className="text-green-600 hover:underline font-medium"
+              style={{ color: '#16a34a' }}
             >
               View Migrated Repository →
             </a>
@@ -488,47 +493,68 @@ export function RepositoryDetail() {
 
       {/* Rollback Dialog */}
       {showRollbackDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Rollback Migration</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              This will mark the repository as rolled back and allow it to be migrated again in the future.
-              You can optionally provide a reason for the rollback.
-            </p>
-            
-            <FormControl>
-              <FormControl.Label>Reason (optional)</FormControl.Label>
-              <Textarea
-                value={rollbackReason}
-                onChange={(e) => setRollbackReason(e.target.value)}
-                placeholder="e.g., CI/CD integration issues, workflow failures..."
-                rows={3}
-                disabled={rollbackMutation.isPending}
-                block
-              />
-            </FormControl>
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowRollbackDialog(false);
-                  setRollbackReason('');
-                }}
-                disabled={rollbackMutation.isPending}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <Button
-                onClick={handleRollback}
-                disabled={rollbackMutation.isPending}
-                variant="danger"
-              >
-                {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
-              </Button>
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={() => {
+              setShowRollbackDialog(false);
+              setRollbackReason('');
+            }}
+          />
+          
+          {/* Dialog */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div 
+              className="bg-white rounded-lg shadow-xl max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 border-b border-gh-border-default">
+                <h3 className="text-base font-semibold text-gh-text-primary">
+                  Rollback Migration
+                </h3>
+              </div>
+              
+              <div className="p-4">
+                <p className="text-sm text-gh-text-secondary mb-4">
+                  This will mark the repository as rolled back and allow it to be migrated again in the future.
+                  You can optionally provide a reason for the rollback.
+                </p>
+                
+                <FormControl>
+                  <FormControl.Label>Reason (optional)</FormControl.Label>
+                  <Textarea
+                    value={rollbackReason}
+                    onChange={(e) => setRollbackReason(e.target.value)}
+                    placeholder="e.g., CI/CD integration issues, workflow failures..."
+                    rows={3}
+                    disabled={rollbackMutation.isPending}
+                    block
+                  />
+                </FormControl>
+              </div>
+              
+              <div className="px-4 py-3 border-t border-gh-border-default flex justify-end gap-2">
+                <Button
+                  onClick={() => {
+                    setShowRollbackDialog(false);
+                    setRollbackReason('');
+                  }}
+                  disabled={rollbackMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleRollback}
+                  disabled={rollbackMutation.isPending}
+                  variant="danger"
+                >
+                  {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
