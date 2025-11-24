@@ -12,21 +12,28 @@ interface KPICardProps {
 
 export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip, onClick }: KPICardProps) {
   const colorClasses = {
-    blue: 'text-gh-blue',
-    green: 'text-gh-success',
-    purple: 'text-purple-700',
-    yellow: 'text-gh-warning',
+    blue: 'text-blue-600',
+    green: 'text-green-600',
+    purple: 'text-purple-600',
+    yellow: 'text-orange-600',
   };
   
   const iconBgClasses = {
-    blue: 'bg-gh-info-bg',
-    green: 'bg-gh-success-bg',
-    purple: 'bg-purple-100',
-    yellow: 'bg-gh-warning-bg',
+    blue: 'bg-blue-50',
+    green: 'bg-green-50',
+    purple: 'bg-purple-50',
+    yellow: 'bg-orange-50',
+  };
+
+  const borderColorClasses = {
+    blue: 'border-l-blue-500',
+    green: 'border-l-green-500',
+    purple: 'border-l-purple-500',
+    yellow: 'border-l-orange-500',
   };
 
   const isClickable = !!onClick;
-  const baseClasses = "bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 relative group transition-all";
+  const baseClasses = `bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 relative group transition-all border-l-4 ${borderColorClasses[color]}`;
   const clickableClasses = isClickable 
     ? "cursor-pointer hover:border-gh-blue hover:shadow-lg" 
     : "hover:border-gh-border-hover";

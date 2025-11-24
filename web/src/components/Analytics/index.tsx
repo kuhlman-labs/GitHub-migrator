@@ -158,7 +158,7 @@ export function Analytics() {
           <KPICard
             title="Organizations"
             value={analytics.organization_stats?.length || 0}
-            color="blue"
+            color="purple"
             subtitle={sourceType === 'azuredevops' ? 'ADO projects' : 'GitHub orgs'}
             tooltip={`Number of ${sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'GitHub organizations'} with repositories`}
           />
@@ -173,7 +173,7 @@ export function Analytics() {
           <KPICard
             title="Features Detected"
             value={analytics.feature_stats ? Object.entries(analytics.feature_stats).filter(([key, value]) => key !== 'total_repositories' && typeof value === 'number' && value > 0).length : 0}
-            color="blue"
+            color="green"
             tooltip="Number of different features detected across all repositories (LFS, Actions, Wikis, etc.)"
           />
         </div>
