@@ -71,24 +71,27 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
   return (
     <div className="space-y-4">
       {/* View Mode Toggle */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-4">
+      <div 
+        className="flex items-center gap-2 pb-4"
+        style={{ borderBottom: '1px solid var(--borderColor-default)' }}
+      >
         <button
           onClick={() => setViewMode('history')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            viewMode === 'history'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
+          className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+          style={{
+            backgroundColor: viewMode === 'history' ? 'var(--accent-emphasis)' : 'var(--control-bgColor-rest)',
+            color: viewMode === 'history' ? '#ffffff' : 'var(--fgColor-default)'
+          }}
         >
           Migration History
         </button>
         <button
           onClick={() => setViewMode('logs')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            viewMode === 'logs'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
+          className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+          style={{
+            backgroundColor: viewMode === 'logs' ? 'var(--accent-emphasis)' : 'var(--control-bgColor-rest)',
+            color: viewMode === 'logs' ? '#ffffff' : 'var(--fgColor-default)'
+          }}
         >
           Detailed Logs
         </button>
@@ -98,11 +101,18 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
       {viewMode === 'history' && (
         <div>
           {history.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <svg className="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <div className="text-center py-12" style={{ color: 'var(--fgColor-muted)' }}>
+              <svg 
+                className="w-12 h-12 mx-auto mb-3" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                strokeWidth={1.5} 
+                stroke="currentColor"
+                style={{ color: 'var(--fgColor-muted)' }}
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="font-medium">No migration history yet</p>
+              <p className="font-medium" style={{ color: 'var(--fgColor-default)' }}>No migration history yet</p>
               <p className="text-sm mt-1">History will appear here once migration activities begin</p>
             </div>
           ) : (
@@ -123,7 +133,12 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
             <select
               value={logLevel}
               onChange={(e) => setLogLevel(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 rounded-lg text-sm cursor-pointer"
+              style={{
+                backgroundColor: 'var(--control-bgColor-rest)',
+                border: '1px solid var(--borderColor-default)',
+                color: 'var(--fgColor-default)'
+              }}
             >
               <option value="">All Levels</option>
               <option value="DEBUG">Debug</option>
@@ -135,7 +150,12 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
             <select
               value={logPhase}
               onChange={(e) => setLogPhase(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 rounded-lg text-sm cursor-pointer"
+              style={{
+                backgroundColor: 'var(--control-bgColor-rest)',
+                border: '1px solid var(--borderColor-default)',
+                color: 'var(--fgColor-default)'
+              }}
             >
               <option value="">All Phases</option>
               <option value="discovery">Discovery</option>
@@ -150,12 +170,22 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
               placeholder="Search logs..."
               value={logSearch}
               onChange={(e) => setLogSearch(e.target.value)}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="flex-1 px-3 py-2 rounded-lg text-sm"
+              style={{
+                backgroundColor: 'var(--control-bgColor-rest)',
+                border: '1px solid var(--borderColor-default)',
+                color: 'var(--fgColor-default)'
+              }}
             />
 
             <button
               onClick={loadLogs}
-              className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+              className="px-4 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-opacity hover:opacity-80"
+              style={{
+                border: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--control-bgColor-rest)',
+                color: 'var(--fgColor-default)'
+              }}
             >
               Refresh
             </button>
@@ -163,23 +193,33 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
 
           {/* Logs Display */}
           {logsLoading ? (
-            <div className="text-center py-8 text-gray-500">Loading logs...</div>
+            <div className="text-center py-8" style={{ color: 'var(--fgColor-muted)' }}>Loading logs...</div>
           ) : logs.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <svg className="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <div className="text-center py-12" style={{ color: 'var(--fgColor-muted)' }}>
+              <svg 
+                className="w-12 h-12 mx-auto mb-3" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                strokeWidth={1.5} 
+                stroke="currentColor"
+                style={{ color: 'var(--fgColor-muted)' }}
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
               </svg>
-              <p className="font-medium">No logs available</p>
+              <p className="font-medium" style={{ color: 'var(--fgColor-default)' }}>No logs available</p>
               <p className="text-sm mt-1">Logs will appear here during migration activities</p>
             </div>
           ) : (
             <>
-              <div className="space-y-1 font-mono text-sm max-h-96 overflow-y-auto bg-gray-50 rounded-lg p-4">
+              <div 
+                className="space-y-1 font-mono text-sm max-h-96 overflow-y-auto rounded-lg p-4"
+                style={{ backgroundColor: 'var(--bgColor-muted)' }}
+              >
                 {filteredLogs.map((log) => (
                   <LogEntry key={log.id} log={log} />
                 ))}
               </div>
-              <div className="mt-4 text-sm text-gray-500">
+              <div className="mt-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                 Showing {filteredLogs.length} of {logs.length} logs
               </div>
             </>
@@ -192,26 +232,44 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
 
 function MigrationEvent({ event }: { event: MigrationHistory }) {
   return (
-    <div className="border-l-4 border-blue-500 pl-4 py-3 bg-white rounded-r-lg shadow-sm">
+    <div 
+      className="pl-4 py-3 rounded-r-lg shadow-sm"
+      style={{
+        borderLeft: '4px solid var(--accent-emphasis)',
+        backgroundColor: 'var(--bgColor-default)'
+      }}
+    >
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <span 
+              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--accent-subtle)',
+                color: 'var(--fgColor-accent)'
+              }}
+            >
               {event.phase}
             </span>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
               {formatDate(event.started_at)}
             </span>
           </div>
-          <div className="text-sm text-gray-700 mb-1">{event.message}</div>
+          <div className="text-sm mb-1" style={{ color: 'var(--fgColor-default)' }}>{event.message}</div>
           {event.error_message && (
-            <div className="text-sm text-red-600 bg-red-50 p-2 rounded mt-2">
+            <div 
+              className="text-sm p-2 rounded mt-2"
+              style={{
+                backgroundColor: 'var(--danger-subtle)',
+                color: 'var(--fgColor-danger)'
+              }}
+            >
               <span className="font-medium">Error: </span>
               {event.error_message}
             </div>
           )}
           {event.duration_seconds !== undefined && event.duration_seconds !== null && (
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
               Duration: {event.duration_seconds}s
             </div>
           )}
@@ -224,13 +282,33 @@ function MigrationEvent({ event }: { event: MigrationHistory }) {
 function LogEntry({ log }: { log: MigrationLog }) {
   const [expanded, setExpanded] = useState(false);
 
-  const getLevelColor = (level: string) => {
+  const getLevelStyle = (level: string) => {
     switch (level) {
-      case 'ERROR': return 'text-red-600 bg-red-50';
-      case 'WARN': return 'text-yellow-600 bg-yellow-50';
-      case 'INFO': return 'text-blue-600 bg-blue-50';
-      case 'DEBUG': return 'text-gray-600 bg-gray-50';
-      default: return 'text-gray-600 bg-gray-50';
+      case 'ERROR': 
+        return { 
+          backgroundColor: 'var(--danger-subtle)', 
+          color: 'var(--fgColor-danger)' 
+        };
+      case 'WARN': 
+        return { 
+          backgroundColor: 'var(--attention-subtle)', 
+          color: 'var(--fgColor-attention)' 
+        };
+      case 'INFO': 
+        return { 
+          backgroundColor: 'var(--accent-subtle)', 
+          color: 'var(--fgColor-accent)' 
+        };
+      case 'DEBUG': 
+        return { 
+          backgroundColor: 'var(--bgColor-muted)', 
+          color: 'var(--fgColor-muted)' 
+        };
+      default: 
+        return { 
+          backgroundColor: 'var(--bgColor-muted)', 
+          color: 'var(--fgColor-muted)' 
+        };
     }
   };
 
@@ -245,26 +323,39 @@ function LogEntry({ log }: { log: MigrationLog }) {
   };
 
   return (
-    <div className="hover:bg-gray-100 p-2 rounded cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div 
+      className="p-2 rounded cursor-pointer transition-opacity hover:opacity-80" 
+      onClick={() => setExpanded(!expanded)}
+      style={{ backgroundColor: expanded ? 'var(--control-bgColor-hover)' : 'transparent' }}
+    >
       <div className="flex items-start gap-2">
         {/* Timestamp */}
-        <span className="text-gray-500 whitespace-nowrap text-xs">
+        <span className="whitespace-nowrap text-xs" style={{ color: 'var(--fgColor-muted)' }}>
           {new Date(log.timestamp).toLocaleTimeString()}
         </span>
         
         {/* Level Badge */}
-        <span className={`px-2 py-0.5 rounded text-xs font-medium ${getLevelColor(log.level)}`}>
+        <span 
+          className="px-2 py-0.5 rounded text-xs font-medium"
+          style={getLevelStyle(log.level)}
+        >
           {getLevelIcon(log.level)} {log.level}
         </span>
         
         {/* Phase & Operation */}
-        <span className="text-gray-600 whitespace-nowrap text-xs">
+        <span className="whitespace-nowrap text-xs" style={{ color: 'var(--fgColor-muted)' }}>
           [{log.phase}:{log.operation}]
         </span>
         
         {/* Initiated By */}
         {log.initiated_by && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 whitespace-nowrap">
+          <span 
+            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
+            style={{
+              backgroundColor: 'var(--accent-subtle)',
+              color: 'var(--fgColor-accent)'
+            }}
+          >
             <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
             </svg>
@@ -273,15 +364,27 @@ function LogEntry({ log }: { log: MigrationLog }) {
         )}
         
         {/* Message */}
-        <span className={`flex-1 text-xs ${log.level === 'ERROR' ? 'text-red-700 font-medium' : 'text-gray-800'}`}>
+        <span 
+          className="flex-1 text-xs"
+          style={{ 
+            color: log.level === 'ERROR' ? 'var(--fgColor-danger)' : 'var(--fgColor-default)',
+            fontWeight: log.level === 'ERROR' ? 500 : 400
+          }}
+        >
           {log.message}
         </span>
       </div>
       
       {/* Expanded Details */}
       {expanded && log.details && (
-        <div className="mt-2 pl-4 border-l-2 border-gray-300">
-          <pre className="text-xs text-gray-600 whitespace-pre-wrap break-words">
+        <div 
+          className="mt-2 pl-4"
+          style={{ borderLeft: '2px solid var(--borderColor-default)' }}
+        >
+          <pre 
+            className="text-xs whitespace-pre-wrap break-words"
+            style={{ color: 'var(--fgColor-muted)' }}
+          >
             {log.details}
           </pre>
         </div>

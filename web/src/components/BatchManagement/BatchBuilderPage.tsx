@@ -50,7 +50,7 @@ export function BatchBuilderPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
         <LoadingSpinner />
       </div>
     );
@@ -58,7 +58,7 @@ export function BatchBuilderPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 p-8">
+      <div className="min-h-screen p-8" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
         <div className="max-w-4xl mx-auto">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-semibold text-red-900 mb-2">Error</h2>
@@ -76,15 +76,21 @@ export function BatchBuilderPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] bg-gray-50 flex flex-col">
-      <div className="border-b border-gray-200 bg-white shadow-sm flex-shrink-0">
+    <div className="h-[calc(100vh-4rem)] flex flex-col" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+      <div 
+        className="border-b shadow-sm flex-shrink-0"
+        style={{
+          borderColor: 'var(--borderColor-default)',
+          backgroundColor: 'var(--bgColor-default)'
+        }}
+      >
         <div className="max-w-full px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--fgColor-default)' }}>
                 {isEditing ? 'Edit Batch' : 'Create New Batch'}
               </h1>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
                 {isEditing
                   ? 'Modify repositories and batch settings'
                   : 'Select repositories and configure your migration batch'}
@@ -92,7 +98,12 @@ export function BatchBuilderPage() {
             </div>
             <button
               onClick={handleClose}
-              className="px-4 py-2 text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 border rounded-lg transition-colors"
+              style={{
+                color: 'var(--fgColor-default)',
+                borderColor: 'var(--borderColor-default)',
+                backgroundColor: 'var(--control-bgColor-rest)'
+              }}
             >
               Cancel
             </button>

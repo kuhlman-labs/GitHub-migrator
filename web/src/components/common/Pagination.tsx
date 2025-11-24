@@ -18,12 +18,18 @@ export function Pagination({ currentPage, totalItems, pageSize, onPageChange }: 
   const endItem = Math.min(currentPage * pageSize, totalItems);
 
   return (
-    <div className="flex items-center justify-between border-t border-gh-border-default bg-white px-4 py-3 rounded-b-lg">
+    <div 
+      className="flex items-center justify-between px-4 py-3 rounded-b-lg"
+      style={{
+        borderTop: '1px solid var(--borderColor-default)',
+        backgroundColor: 'var(--bgColor-default)'
+      }}
+    >
       <div className="hidden sm:block">
-          <p className="text-sm text-gh-text-secondary">
-            Showing <span className="font-medium">{startItem}</span> to{' '}
-            <span className="font-medium">{endItem}</span> of{' '}
-            <span className="font-medium">{totalItems}</span> results
+          <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+            Showing <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{startItem}</span> to{' '}
+            <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{endItem}</span> of{' '}
+            <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{totalItems}</span> results
           </p>
         </div>
       

@@ -20,6 +20,9 @@ const STATUS_COLORS: Record<string, string> = {
   migration_complete: '#1A7F37',
   complete: '#1A7F37',
   failed: '#D1242F',
+  dry_run_failed: '#D1242F',
+  migration_failed: '#D1242F',
+  rolled_back: '#FB8500',
   dry_run_complete: '#8250DF',
   wont_migrate: '#6B7280',
 };
@@ -104,9 +107,9 @@ export function Analytics() {
     .reduce((sum, d) => sum + d.count, 0) || 0;
 
   return (
-    <div className="max-w-7xl mx-auto relative">
+    <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
-      <h1 className="text-2xl font-semibold text-gh-text-primary mb-8">Analytics Dashboard</h1>
+      <h1 className="text-2xl font-semibold mb-8" style={{ color: 'var(--fgColor-default)' }}>Analytics Dashboard</h1>
 
       {/* Filter Bar */}
       <FilterBar
@@ -140,9 +143,9 @@ export function Analytics() {
       {/* SECTION 1: DISCOVERY ANALYTICS */}
       {activeTab === 'discovery' && (
       <section className="mb-12">
-        <div className="border-l-4 border-blue-500 pl-4 mb-6">
-          <h2 className="text-2xl font-light text-gray-900">Discovery Analytics</h2>
-          <p className="text-sm text-gray-600 mt-1">
+        <div className="border-l-4 pl-4 mb-6" style={{ borderColor: 'var(--accent-emphasis)' }}>
+          <h2 className="text-2xl font-light" style={{ color: 'var(--fgColor-default)' }}>Discovery Analytics</h2>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
             Source environment overview to drive batch planning decisions
           </p>
         </div>
@@ -184,9 +187,9 @@ export function Analytics() {
           
           {/* Size Distribution */}
           {analytics.size_distribution && analytics.size_distribution.length > 0 && (
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Repository Size Distribution</h3>
-              <p className="text-sm text-gray-600 mb-4">
+            <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+              <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Repository Size Distribution</h3>
+              <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
                 Distribution of {sourceType === 'azuredevops' ? 'Azure DevOps' : 'GitHub'} repositories by disk size, helping identify storage requirements and migration capacity planning needs.
               </p>
               <ResponsiveContainer width="100%" height={250}>
@@ -220,6 +223,15 @@ export function Analytics() {
                       `${value} repositories`,
                       props.payload.name
                     ]}
+                    contentStyle={{
+                      backgroundColor: 'rgba(27, 31, 36, 0.95)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '6px',
+                      color: '#ffffff',
+                      padding: '8px 12px'
+                    }}
+                    labelStyle={{ color: '#ffffff', fontWeight: 600 }}
+                    itemStyle={{ color: '#ffffff' }}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -236,7 +248,7 @@ export function Analytics() {
                       className="w-4 h-4 rounded flex-shrink-0" 
                       style={{ backgroundColor: sizeColors[item.category] || '#9CA3AF' }}
                     />
-                    <span className="text-sm text-gray-700 truncate">
+                    <span className="text-sm truncate" style={{ color: 'var(--fgColor-default)' }}>
                       {sizeCategories[item.category] || item.category}: {item.count}
                     </span>
                   </button>
@@ -258,29 +270,29 @@ export function Analytics() {
             if (!stats || stats.length === 0) return null;
             
             return (
-              <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
+              <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+                <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>
                   {sourceType === 'azuredevops' ? 'Project Breakdown' : 'Organization Breakdown'}
                 </h3>
-                <p className="text-sm text-gray-600 mb-4">
+                <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
                   Total repository count and distribution across {sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'source organizations'}, useful for workload allocation and team coordination.
                 </p>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
+                    <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                           {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                           Repositories
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                           Percentage
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="divide-y" style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-muted)' }}>
                       {stats
                         .sort((a, b) => b.total_repos - a.total_repos)
                         .map((org) => {
@@ -288,14 +300,14 @@ export function Analytics() {
                             ? ((org.total_repos / analytics.total_repositories) * 100).toFixed(1)
                             : '0.0';
                           return (
-                            <tr key={org.organization} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <tr key={org.organization} className="hover:opacity-80 transition-opacity">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>
                                 {org.organization}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-default)' }}>
                                 {org.total_repos}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-default)' }}>
                                 {percentage}%
                               </td>
                             </tr>
@@ -361,9 +373,9 @@ export function Analytics() {
               : 'GitHub features detected across repositories, including Actions, security tools, LFS, and advanced configurations requiring special migration handling.';
 
             return features.length > 0 ? (
-              <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Feature Usage Statistics</h3>
-                <p className="text-sm text-gray-600 mb-4">{featureDescription}</p>
+              <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+                <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Feature Usage Statistics</h3>
+                <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>{featureDescription}</p>
                 <div className="space-y-1">
                   {features.map(feature => (
                     <FeatureStat 
@@ -385,9 +397,9 @@ export function Analytics() {
       {/* SECTION 2: MIGRATION ANALYTICS */}
       {activeTab === 'migration' && (
       <section>
-        <div className="border-l-4 border-green-500 pl-4 mb-6">
-          <h2 className="text-2xl font-light text-gray-900">Migration Analytics</h2>
-          <p className="text-sm text-gray-600 mt-1">
+        <div className="border-l-4 pl-4 mb-6" style={{ borderColor: 'var(--success-emphasis)' }}>
+          <h2 className="text-2xl font-light" style={{ color: 'var(--fgColor-default)' }}>Migration Analytics</h2>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
             Migration progress and performance for executive reporting
           </p>
         </div>
@@ -429,9 +441,9 @@ export function Analytics() {
           <MigrationTrendChart data={analytics.migration_time_series || []} />
 
           {/* Status Breakdown Pie Chart */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Current Status Distribution</h2>
-            <p className="text-sm text-gray-600 mb-4">Real-time snapshot of repository migration states, showing pending, in-progress, completed, and failed migrations.</p>
+          <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+            <h2 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Current Status Distribution</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>Real-time snapshot of repository migration states, showing pending, in-progress, completed, and failed migrations.</p>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
@@ -463,10 +475,23 @@ export function Analytics() {
                   ))}
                 </Pie>
                 <Tooltip 
-                  formatter={(value: number, _name: string, props: any) => [
-                    `${value} repositories`,
-                    props.payload.name
-                  ]}
+                  formatter={(value: number, name: string) => [`${value} repositories`, name]}
+                  contentStyle={{
+                    backgroundColor: 'rgba(27, 31, 36, 0.95)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '6px',
+                    color: '#ffffff',
+                    padding: '8px 12px'
+                  }}
+                  labelStyle={{ 
+                    color: '#ffffff',
+                    fontWeight: 600,
+                    marginBottom: '4px'
+                  }}
+                  itemStyle={{
+                    color: '#ffffff',
+                    padding: '4px 0'
+                  }}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -495,7 +520,7 @@ export function Analytics() {
                       className="w-4 h-4 rounded flex-shrink-0" 
                       style={{ backgroundColor: item.fill }}
                     />
-                    <span className="text-sm text-gray-700 truncate">
+                    <span className="text-sm style={{ color: 'var(--fgColor-default)' }} truncate">
                       {item.name}: {item.value} ({percentage}%)
                     </span>
                   </button>
@@ -507,75 +532,78 @@ export function Analytics() {
 
         {/* Migration Progress by Organization */}
         {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
+          <div className="rounded-lg shadow-sm p-6 mb-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+            <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>
               Migration Progress by {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
             </h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
               Detailed migration status breakdown by {sourceType === 'azuredevops' ? 'Azure DevOps project' : 'organization'}, showing completion rates and identifying areas requiring attention.
             </p>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
+                <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       Total
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       Completed
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       In Progress
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       Pending
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       Failed
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       Progress
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="divide-y" style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-muted)' }}>
                   {analytics.migration_completion_stats.map((org) => {
                     const completionPercentage = org.total_repos > 0 
                       ? Math.round((org.completed_count / org.total_repos) * 100)
                       : 0;
                     
                     return (
-                      <tr key={org.organization} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <tr key={org.organization} className="hover:opacity-80 transition-opacity">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>
                           {org.organization}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                           {org.total_repos}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" style={{ color: 'var(--fgColor-success)' }}>
                           {org.completed_count}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-accent)' }}>
                           {org.in_progress_count}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                           {org.pending_count}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-danger)' }}>
                           {org.failed_count}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 min-w-[100px]">
+                            <div className="flex-1 rounded-full h-2 min-w-[100px]" style={{ backgroundColor: 'var(--borderColor-muted)' }}>
                               <div
-                                className="bg-gh-success h-2 rounded-full"
-                                style={{ width: `${completionPercentage}%` }}
+                                className="h-2 rounded-full"
+                                style={{ 
+                                  width: `${completionPercentage}%`,
+                                  backgroundColor: 'var(--success-emphasis)'
+                                }}
                               />
                             </div>
-                            <span className="text-sm font-medium text-gray-700 min-w-[3rem] text-right">
+                            <span className="text-sm font-medium min-w-[3rem] text-right" style={{ color: 'var(--fgColor-default)' }}>
                               {completionPercentage}%
                             </span>
                           </div>
@@ -591,33 +619,33 @@ export function Analytics() {
 
         {/* Performance Metrics Card */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Performance Metrics</h3>
-            <p className="text-sm text-gray-600 mb-4">Key migration performance indicators including average time per repository and daily throughput over the last 30 days.</p>
+          <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+            <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Performance Metrics</h3>
+            <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>Key migration performance indicators including average time per repository and daily throughput over the last 30 days.</p>
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-700">Average Migration Time</span>
-                <span className="text-lg font-medium text-gray-900">
+                <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>Average Migration Time</span>
+                <span className="text-lg font-medium" style={{ color: 'var(--fgColor-default)' }}>
                   {analytics.average_migration_time && analytics.average_migration_time > 0 
                     ? formatDuration(analytics.average_migration_time) 
                     : 'N/A'}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-700">Total Migrated</span>
-                <span className="text-lg font-medium text-green-600">
+                <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>Total Migrated</span>
+                <span className="text-lg font-medium" style={{ color: 'var(--fgColor-success)' }}>
                   {analytics.migrated_count}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-700">Failed Migrations</span>
-                <span className="text-lg font-medium text-red-600">
+                <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>Failed Migrations</span>
+                <span className="text-lg font-medium" style={{ color: 'var(--fgColor-danger)' }}>
                   {analytics.failed_count}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-700">Daily Average (30 days)</span>
-                <span className="text-lg font-medium text-blue-600">
+                <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>Daily Average (30 days)</span>
+                <span className="text-lg font-medium" style={{ color: 'var(--fgColor-accent)' }}>
                   {analytics.migration_velocity ? analytics.migration_velocity.repos_per_day.toFixed(1) : '0'}
                 </span>
               </div>
@@ -625,15 +653,26 @@ export function Analytics() {
           </div>
 
           {/* Status Breakdown Bar Chart */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Status Breakdown</h2>
-            <p className="text-sm text-gray-600 mb-4">Visual comparison of repository counts across all migration statuses, including dry-run and excluded repositories.</p>
+          <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+            <h2 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Status Breakdown</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>Visual comparison of repository counts across all migration statuses, including dry-run and excluded repositories.</p>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={statusChartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} tick={{ fontSize: 11 }} />
                 <YAxis />
-                <Tooltip />
+                <Tooltip 
+                  contentStyle={{
+                    backgroundColor: 'rgba(27, 31, 36, 0.95)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '6px',
+                    color: '#ffffff',
+                    padding: '8px 12px'
+                  }}
+                  labelStyle={{ color: '#ffffff', fontWeight: 600 }}
+                  itemStyle={{ color: '#ffffff' }}
+                  cursor={{ fill: 'rgba(127, 127, 127, 0.1)' }}
+                />
                 <Bar dataKey="value" fill="#3B82F6" radius={[4, 4, 0, 0]}>
                   {statusChartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
@@ -645,25 +684,25 @@ export function Analytics() {
         </div>
 
         {/* Detailed Status Table */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Detailed Status Breakdown</h2>
-          <p className="text-sm text-gray-600 mb-4">Comprehensive status listing with exact counts and percentages for reporting and tracking purposes.</p>
+        <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+          <h2 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Detailed Status Breakdown</h2>
+          <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>Comprehensive status listing with exact counts and percentages for reporting and tracking purposes.</p>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
+              <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Count
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Percentage
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y" style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-muted)' }}>
                 {(() => {
                   // Calculate total from all status counts (including wont_migrate)
                   const totalAllStatuses = Object.values(analytics.status_breakdown).reduce((sum, count) => sum + count, 0);
@@ -682,13 +721,13 @@ export function Analytics() {
                                 className="w-3 h-3 rounded-full mr-3"
                                 style={{ backgroundColor: STATUS_COLORS[status] || '#9CA3AF' }}
                               ></div>
-                              <span className="text-sm text-gray-900">{status.replace(/_/g, ' ')}</span>
+                              <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>{status.replace(/_/g, ' ')}</span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-default)' }}>
                             {count}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-default)' }}>
                             {percentage}%
                           </td>
                         </tr>
@@ -710,10 +749,10 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
   
   const content = (
     <>
-      <span className="text-sm text-gray-700 flex-1 text-left">{label}</span>
+      <span className="text-sm style={{ color: 'var(--fgColor-default)' }} flex-1 text-left">{label}</span>
       <div className="flex items-center gap-3 ml-auto">
-        <span className="text-sm font-medium text-gray-900 min-w-[40px] text-right">{count}</span>
-        <span className="text-sm text-gray-500 min-w-[55px] text-left">({percentage}%)</span>
+        <span className="text-sm font-medium style={{ color: 'var(--fgColor-default)' }} min-w-[40px] text-right">{count}</span>
+        <span className="text-sm style={{ color: 'var(--fgColor-muted)' }} min-w-[55px] text-left">({percentage}%)</span>
       </div>
     </>
   );

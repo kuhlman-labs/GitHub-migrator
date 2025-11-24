@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Button, Checkbox, TextInput, FormControl } from '@primer/react';
-import { XCircleFillIcon, AlertIcon, ChevronDownIcon } from '@primer/octicons-react';
+import { Button, Checkbox, TextInput, FormControl, Select, IconButton } from '@primer/react';
+import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -29,7 +29,6 @@ export function MigrationReadinessTab({
   const [assigningBatch, setAssigningBatch] = useState(false);
   
   // Destination configuration
-  const [editingDestination, setEditingDestination] = useState(false);
   
   // Helper to sanitize names for GitHub (replace spaces with hyphens)
   const sanitizeForGitHub = (name: string): string => {
@@ -68,17 +67,16 @@ export function MigrationReadinessTab({
     getDefaultDestination()
   );
 
-  // Sync destinationFullName with repository data when it changes (but not while editing)
+  // Sync destinationFullName with repository data when it changes
   useEffect(() => {
-    if (!editingDestination) {
       setDestinationFullName(getDefaultDestination());
-    }
-  }, [repository.destination_full_name, repository.full_name, repository.ado_project, editingDestination]);
+  }, [repository.destination_full_name, repository.full_name, repository.ado_project]);
 
   // Migration options state
   const [excludeReleases, setExcludeReleases] = useState(repository.exclude_releases);
   const [savingOptions, setSavingOptions] = useState(false);
   const hasOptionsChanges = excludeReleases !== repository.exclude_releases;
+  const [showMigrationOptionsInfo, setShowMigrationOptionsInfo] = useState(false);
 
   // Validation state
   const [expandedValidation, setExpandedValidation] = useState(false);
@@ -125,7 +123,6 @@ export function MigrationReadinessTab({
         updates: { destination_full_name: destinationFullName },
       });
       
-      setEditingDestination(false);
       showSuccess('Destination saved successfully!');
     } catch (error: any) {
       console.error('Failed to save destination:', error);
@@ -281,44 +278,98 @@ export function MigrationReadinessTab({
   return (
     <div className="space-y-6">
       {/* Complexity Score Summary */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h3 className="text-lg font-semibold mb-4">Migration Complexity</h3>
+      <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+        <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>Migration Complexity</h3>
         
-        <div className={`mb-4 p-4 ${categoryBg} rounded-lg border-l-4 ${categoryColor.replace('text-', 'border-')}`}>
+        <div 
+          className="mb-4 p-4 rounded-lg"
+          style={{
+            backgroundColor: categoryBg === 'bg-green-50' ? 'var(--success-subtle)' :
+                            categoryBg === 'bg-yellow-50' ? 'var(--attention-subtle)' :
+                            categoryBg === 'bg-orange-50' ? 'var(--attention-subtle)' :
+                            'var(--danger-subtle)',
+            borderLeft: `4px solid ${
+              categoryColor === 'text-green-600' ? 'var(--success-emphasis)' :
+              categoryColor === 'text-yellow-600' ? 'var(--attention-emphasis)' :
+              categoryColor === 'text-orange-600' ? 'var(--attention-emphasis)' :
+              'var(--danger-emphasis)'
+            }`
+          }}
+        >
           <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium text-gray-700">Total Complexity Score</span>
-            <span className={`text-3xl font-bold ${categoryColor}`}>{totalPoints}</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Total Complexity Score</span>
+            <span 
+              className="text-3xl font-bold"
+              style={{
+                color: categoryColor === 'text-green-600' ? 'var(--fgColor-success)' :
+                       categoryColor === 'text-yellow-600' ? 'var(--fgColor-attention)' :
+                       categoryColor === 'text-orange-600' ? 'var(--fgColor-attention)' :
+                       'var(--fgColor-danger)'
+              }}
+            >
+              {totalPoints}
+            </span>
           </div>
           <div className="text-sm">
-            <span className="font-medium text-gray-700">Category: </span>
-            <span className={`font-semibold ${categoryColor}`}>{category}</span>
+            <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Category: </span>
+            <span 
+              className="font-semibold"
+              style={{
+                color: categoryColor === 'text-green-600' ? 'var(--fgColor-success)' :
+                       categoryColor === 'text-yellow-600' ? 'var(--fgColor-attention)' :
+                       categoryColor === 'text-orange-600' ? 'var(--fgColor-attention)' :
+                       'var(--fgColor-danger)'
+              }}
+            >
+              {category}
+            </span>
           </div>
         </div>
 
         {/* Top Contributing Factors */}
         {complexityContributors.length > 0 && (
           <div className="space-y-2 mb-4">
-            <h4 className="text-sm font-medium text-gray-700">Contributing Factors:</h4>
+            <h4 className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Contributing Factors:</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {complexityContributors.slice(0, 8).map((contributor, idx) => (
-                <div key={idx} className="flex justify-between items-center py-2 px-3 bg-gray-50 rounded border border-gray-200">
-                  <span className="text-sm text-gray-900">{contributor.label}</span>
-                  <span className={`text-sm font-semibold ${contributor.color}`}>
+                <div 
+                  key={idx} 
+                  className="flex justify-between items-center py-2 px-3 rounded"
+                  style={{
+                    backgroundColor: 'var(--bgColor-muted)',
+                    border: '1px solid var(--borderColor-default)'
+                  }}
+                >
+                  <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>{contributor.label}</span>
+                  <span 
+                    className="text-sm font-semibold"
+                    style={{
+                      color: contributor.color.includes('red') ? 'var(--fgColor-danger)' :
+                             contributor.color.includes('orange') ? 'var(--fgColor-attention)' :
+                             contributor.color.includes('yellow') ? 'var(--fgColor-attention)' :
+                             contributor.color.includes('blue') ? 'var(--fgColor-accent)' :
+                             contributor.color.includes('purple') ? 'var(--fgColor-done)' :
+                             'var(--fgColor-default)'
+                    }}
+                  >
                     +{contributor.points}
                   </span>
                 </div>
               ))}
             </div>
             {complexityContributors.length > 8 && (
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs mt-2" style={{ color: 'var(--fgColor-muted)' }}>
                 ... and {complexityContributors.length - 8} more factors
               </p>
             )}
           </div>
         )}
 
-        <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
-          <p className="text-xs text-blue-700">
+        <div 
+          className="pt-3 flex items-center justify-between"
+          style={{ borderTop: '1px solid var(--borderColor-default)' }}
+        >
+          <p className="text-xs" style={{ color: 'var(--fgColor-accent)' }}>
             💡 {repository.source === 'azuredevops' ? 
               'Scoring based on ADO → GitHub migration complexity factors' :
               'Scoring based on GitHub migration documentation'}
@@ -329,81 +380,102 @@ export function MigrationReadinessTab({
 
       {/* Validation Issues - Only show if there are issues */}
       {(hasBlockingIssues || hasWarnings) && (
-        <div className="bg-white rounded-lg shadow-sm border-2 border-red-200">
+        <div 
+          className="rounded-lg shadow-sm border-2" 
+          style={{ 
+            backgroundColor: 'var(--bgColor-default)', 
+            borderColor: hasBlockingIssues ? 'var(--borderColor-danger)' : 'var(--borderColor-attention)'
+          }}
+        >
           <button
             onClick={() => setExpandedValidation(!expandedValidation)}
-            className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            className="w-full px-6 py-4 flex items-center justify-between transition-opacity hover:opacity-80"
           >
             <div className="flex items-center gap-3">
               {hasBlockingIssues ? (
-                <XCircleFillIcon size={24} className="text-red-600" />
+                <span style={{ color: 'var(--fgColor-danger)' }}>
+                  <XCircleFillIcon size={24} />
+                </span>
               ) : (
-                <AlertIcon size={24} className="text-yellow-600" />
+                <span style={{ color: 'var(--fgColor-attention)' }}>
+                  <AlertIcon size={24} />
+                </span>
               )}
               <div className="text-left">
-                <h3 className="font-semibold text-gray-900">
+                <h3 className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
                   {hasBlockingIssues ? '⚠️ Validation Issues (Blocking)' : '⚠ Validation Warnings'}
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                   {hasBlockingIssues 
                     ? 'These issues must be resolved before migration' 
                     : 'Repository can migrate but has warnings to review'}
                 </p>
               </div>
             </div>
+            <span style={{ color: 'var(--fgColor-muted)' }}>
             <ChevronDownIcon 
               size={20}
-              className={`text-gray-400 transition-transform ${expandedValidation ? 'rotate-180' : ''}`}
+                className={`transition-transform ${expandedValidation ? 'rotate-180' : ''}`}
             />
+            </span>
           </button>
           
           {expandedValidation && (
-            <div className="px-6 pb-4 border-t border-gray-200 pt-4">
+            <div 
+              className="px-6 pb-4 pt-4"
+              style={{ borderTop: '1px solid var(--borderColor-default)' }}
+            >
               <div className="space-y-4">
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Issues Found:</h4>
+                  <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--fgColor-default)' }}>Issues Found:</h4>
                   <ul className="space-y-2 text-sm">
                     {repository.has_oversized_repository && (
-                      <li className="flex items-start gap-2 text-red-700">
-                        <span className="text-red-600 font-bold">✗</span>
+                      <li className="flex items-start gap-2" style={{ color: 'var(--fgColor-danger)' }}>
+                        <span className="font-bold">✗</span>
                         <span>Repository size exceeds 40 GB limit ({formatBytes(repository.total_size)})</span>
                       </li>
                     )}
                     {repository.has_blocking_files && (
-                      <li className="flex items-start gap-2 text-red-700">
-                        <span className="text-red-600 font-bold">✗</span>
+                      <li className="flex items-start gap-2" style={{ color: 'var(--fgColor-danger)' }}>
+                        <span className="font-bold">✗</span>
                         <span>Files larger than 400 MB detected</span>
                       </li>
                     )}
                     {repository.has_oversized_commits && (
-                      <li className="flex items-start gap-2 text-red-700">
-                        <span className="text-red-600 font-bold">✗</span>
+                      <li className="flex items-start gap-2" style={{ color: 'var(--fgColor-danger)' }}>
+                        <span className="font-bold">✗</span>
                         <span>Commits larger than 2 GB detected</span>
                       </li>
                     )}
                     {repository.has_long_refs && (
-                      <li className="flex items-start gap-2 text-red-700">
-                        <span className="text-red-600 font-bold">✗</span>
+                      <li className="flex items-start gap-2" style={{ color: 'var(--fgColor-danger)' }}>
+                        <span className="font-bold">✗</span>
                         <span>Git references longer than 255 bytes detected</span>
                       </li>
                     )}
                     {repository.estimated_metadata_size && repository.estimated_metadata_size > 35 * 1024 * 1024 * 1024 && (
-                      <li className="flex items-start gap-2 text-yellow-700">
-                        <span className="text-yellow-600 font-bold">⚠</span>
+                      <li className="flex items-start gap-2" style={{ color: 'var(--fgColor-attention)' }}>
+                        <span className="font-bold">⚠</span>
                         <span>Metadata size approaching 40 GB limit (est. {formatBytes(repository.estimated_metadata_size)})</span>
                       </li>
                     )}
                     {repository.has_large_file_warnings && (
-                      <li className="flex items-start gap-2 text-yellow-700">
-                        <span className="text-yellow-600 font-bold">⚠</span>
+                      <li className="flex items-start gap-2" style={{ color: 'var(--fgColor-attention)' }}>
+                        <span className="font-bold">⚠</span>
                         <span>Large files (100-400 MB) detected - consider Git LFS</span>
                       </li>
                     )}
                   </ul>
                 </div>
 
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm text-blue-800">
+                <div 
+                  className="p-3 rounded-lg"
+                  style={{
+                    backgroundColor: 'var(--accent-subtle)',
+                    border: '1px solid var(--borderColor-accent-muted)'
+                  }}
+                >
+                  <p className="text-sm" style={{ color: 'var(--fgColor-accent)' }}>
                     <span className="font-semibold">💡 Remediation: </span>
                     {hasBlockingIssues 
                       ? 'These issues must be fixed before the repository can be migrated. Consider using BFG Repo Cleaner or git-filter-repo to address large files and commits.' 
@@ -418,69 +490,31 @@ export function MigrationReadinessTab({
 
       {/* Migration Configuration - Hide if migration is complete */}
       {repository.status !== 'complete' && (
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h3 className="text-lg font-semibold mb-4">Migration Configuration</h3>
+      <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+        <h3 className="text-lg font-semibold mb-6" style={{ color: 'var(--fgColor-default)' }}>Migration Configuration</h3>
 
+        <div className="space-y-6">
         {/* Destination Configuration */}
         {canMigrate && (
-          <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-            {editingDestination ? (
               <FormControl required>
-                <FormControl.Label>Destination (where to migrate)</FormControl.Label>
-                <div className="flex items-center gap-2">
+              <FormControl.Label>Destination repository</FormControl.Label>
                   <TextInput
                     value={destinationFullName}
                     onChange={(e) => setDestinationFullName(e.target.value)}
                     placeholder="org/repo"
+                onBlur={handleSaveDestination}
                     disabled={updateRepositoryMutation.isPending}
-                    style={{ flexGrow: 1 }}
+                block
                     required
                     aria-invalid={!destinationFullName.trim() ? true : undefined}
-                  />
-                  <Button
-                    onClick={handleSaveDestination}
-                    disabled={updateRepositoryMutation.isPending}
-                    style={{ backgroundColor: '#1a7f37', color: 'white' }}
-                  >
-                    {updateRepositoryMutation.isPending ? 'Saving...' : 'Save'}
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setEditingDestination(false);
-                      // Reset to the saved/default value using the same logic
-                      setDestinationFullName(getDefaultDestination());
-                    }}
-                    disabled={updateRepositoryMutation.isPending}
-                    variant="default"
-                  >
-                    Cancel
-                  </Button>
-                </div>
+                monospace
+              />
                 {!destinationFullName.trim() && (
                   <FormControl.Validation variant="error">
                     Destination repository name is required
                   </FormControl.Validation>
                 )}
-              </FormControl>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Destination (where to migrate)
-                </label>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-900">
-                    {destinationFullName}
-                  </code>
-                  <Button
-                    onClick={() => setEditingDestination(true)}
-                    variant="default"
-                  >
-                    Edit
-                  </Button>
-                </div>
-              </div>
-            )}
-            <p className="mt-1 text-xs text-gray-500">
+              <FormControl.Caption>
               {destinationFullName === getSuggestedDefault()
                 ? repository.ado_project 
                   ? 'Suggested default preserving ADO org and project (spaces replaced with hyphens)' 
@@ -488,95 +522,109 @@ export function MigrationReadinessTab({
                 : repository.ado_project
                   ? 'Using custom destination'
                 : 'Using custom destination organization'}
-            </p>
-          </div>
+              </FormControl.Caption>
+            </FormControl>
         )}
 
         {/* Batch Assignment */}
         {canChangeBatch && (
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Batch Assignment
-            </label>
+            <div 
+              className="pt-6"
+              style={{ borderTop: '1px solid var(--borderColor-default)' }}
+            >
+              <FormControl>
+                <FormControl.Label>Batch assignment</FormControl.Label>
             {repository.batch_id ? (
               <div className="flex items-center gap-2">
-                <div className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm">
-                  <Badge color="blue">{currentBatch?.name || `Batch #${repository.batch_id}`}</Badge>
+                  <div 
+                    className="flex-1 px-3 py-2 rounded-md"
+                    style={{
+                      backgroundColor: 'var(--bgColor-muted)',
+                      border: '1px solid var(--borderColor-default)'
+                    }}
+                  >
+                    <Badge>{currentBatch?.name || `Batch #${repository.batch_id}`}</Badge>
                 </div>
                 <Button
                   onClick={handleRemoveFromBatch}
                   disabled={assigningBatch}
                   variant="default"
                 >
-                  {assigningBatch ? 'Removing...' : 'Remove from Batch'}
+                    {assigningBatch ? 'Removing...' : 'Remove'}
                 </Button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <select
-                  value={selectedBatchId || ''}
+                  <Select
+                    value={selectedBatchId?.toString() || ''}
                   onChange={(e) => setSelectedBatchId(e.target.value ? Number(e.target.value) : null)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   disabled={assigningBatch}
+                    block
                 >
-                  <option value="">Select a batch...</option>
+                    <Select.Option value="">Select a batch...</Select.Option>
                   {batches.map((batch) => (
-                    <option key={batch.id} value={batch.id}>
+                      <Select.Option key={batch.id} value={batch.id.toString()}>
                       {batch.name} ({batch.type}) - {batch.status} - {batch.repository_count} repos
-                    </option>
+                      </Select.Option>
                   ))}
-                </select>
+                  </Select>
                 <Button
                   onClick={handleAssignToBatch}
                   disabled={!selectedBatchId || assigningBatch}
-                  className="bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                    variant="primary"
                 >
-                  {assigningBatch ? 'Assigning...' : 'Assign to Batch'}
+                    {assigningBatch ? 'Assigning...' : 'Assign'}
                 </Button>
               </div>
             )}
-            <p className="mt-1 text-xs text-gray-500">
+              <FormControl.Caption>
               {repository.batch_id
-                ? 'Repository is assigned to a batch'
+                  ? 'Repository is assigned to a batch for grouped migration'
                 : batches.length === 0
                 ? 'No pending or ready batches available. Create a batch first.'
                 : 'Assign this repository to a batch for grouped migration'}
-            </p>
+              </FormControl.Caption>
+            </FormControl>
           </div>
         )}
 
         {/* Migration Options */}
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <h4 className="text-sm font-semibold text-gray-900 mb-2">Migration Options</h4>
-          <p className="text-gray-600 text-sm mb-3">
-            Configure what data to include or exclude from the migration.
-          </p>
-          
-          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex items-start gap-3">
+          <div 
+            className="pt-6"
+            style={{ borderTop: '1px solid var(--borderColor-default)' }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-sm font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>Migration options</h4>
+                <p className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>Configure what data to include or exclude</p>
+              </div>
+              <IconButton
+                icon={InfoIcon}
+                variant="invisible"
+                size="small"
+                aria-label="Migration options information"
+                onClick={() => setShowMigrationOptionsInfo(true)}
+              />
+            </div>
+
+            <FormControl>
               <Checkbox
                 checked={excludeReleases}
                 onChange={(e) => setExcludeReleases(e.target.checked)}
+                value="exclude-releases"
               />
-              <div className="flex-1">
-                <label className="font-medium text-gray-900 cursor-pointer" onClick={() => setExcludeReleases(!excludeReleases)}>
-                  Exclude Releases
-                </label>
-                <div className="text-sm text-gray-600 mt-1">
-                  Skip migrating releases and their assets. This can significantly reduce metadata size for repositories with large release assets.
-                </div>
-              </div>
-            </div>
-          </div>
+              <FormControl.Label>Exclude releases</FormControl.Label>
+              <FormControl.Caption>Reduces metadata size for repos with large release assets</FormControl.Caption>
+            </FormControl>
 
           {hasOptionsChanges && (
-            <div className="flex gap-2 mt-3">
+              <div className="flex gap-2 mt-4">
               <Button
                 onClick={handleSaveMigrationOptions}
                 disabled={savingOptions}
-                className="flex-grow bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  variant="primary"
               >
-                {savingOptions ? 'Saving...' : 'Save Options'}
+                  {savingOptions ? 'Saving...' : 'Save Changes'}
               </Button>
               <Button
                 onClick={() => setExcludeReleases(repository.exclude_releases)}
@@ -585,6 +633,56 @@ export function MigrationReadinessTab({
               >
                 Reset
               </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Migration Options Info Modal */}
+          {showMigrationOptionsInfo && (
+            <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }} onClick={() => setShowMigrationOptionsInfo(false)}>
+              <div className="rounded-lg p-6 max-w-2xl w-full mx-4" style={{ backgroundColor: 'var(--bgColor-default)' }} onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration Options</h3>
+                  <Button
+                    variant="invisible"
+                    onClick={() => setShowMigrationOptionsInfo(false)}
+                    aria-label="Close dialog"
+                  >
+                    <XIcon />
+                  </Button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div 
+                    className="pl-4 py-2"
+                    style={{ borderLeft: '4px solid var(--accent-emphasis)' }}
+                  >
+                    <h4 className="font-semibold text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>Exclude releases</h4>
+                    <p className="text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                      When enabled, this option skips migrating releases and their associated assets during the migration process.
+                    </p>
+                    <p className="text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                      <strong>Use this option when:</strong>
+                    </p>
+                    <ul className="list-disc pl-5 text-sm space-y-1 mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                      <li>Your repository has many releases with large binary assets</li>
+                      <li>Release assets are stored elsewhere or can be recreated</li>
+                      <li>You want to significantly reduce migration time and metadata size</li>
+                    </ul>
+                    <div 
+                      className="rounded-md p-3 mt-3"
+                      style={{
+                        backgroundColor: 'var(--accent-subtle)',
+                        border: '1px solid var(--borderColor-accent-muted)'
+                      }}
+                    >
+                      <p className="text-xs" style={{ color: 'var(--fgColor-accent)' }}>
+                        <strong>Note:</strong> Release tags and their associated commit history will still be migrated, but release notes and assets will not be included.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

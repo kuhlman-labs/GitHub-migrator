@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useParams, Link, useLocation } from 'react-router-dom';
-import { Button, UnderlineNav, Textarea, FormControl } from '@primer/react';
+import { useParams, Link as RouterLink, useLocation } from 'react-router-dom';
+import { Button, UnderlineNav, Textarea, FormControl, Link, useTheme } from '@primer/react';
 import { CalendarIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository } from '../../types';
@@ -29,6 +29,7 @@ export function RepositoryDetail() {
   const rollbackMutation = useRollbackRepository();
   const markWontMigrateMutation = useMarkRepositoryWontMigrate();
   const { showSuccess, showError } = useToast();
+  const { theme } = useTheme();
   
   const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<'readiness' | 'profile' | 'relationships' | 'activity'>('readiness');
@@ -159,25 +160,25 @@ export function RepositoryDetail() {
     : null;
 
   return (
-    <div className="max-w-7xl mx-auto relative">
+    <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+      <div className="rounded-lg shadow-sm p-6 mb-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
         {/* Breadcrumbs */}
         <nav aria-label="Breadcrumb" className="mb-4">
           <ol className="flex items-center text-sm">
             <li>
-              <Link to="/" className="text-blue-600 hover:underline" style={{ color: '#2563eb' }}>Dashboard</Link>
+              <Link as={RouterLink} to="/" muted>Dashboard</Link>
             </li>
-            <li className="text-gh-text-muted mx-2">/</li>
+            <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
             {locationState?.fromBatch && locationState?.batchId ? (
               <>
                 <li>
-                  <Link to="/batches" className="text-blue-600 hover:underline" style={{ color: '#2563eb' }}>Batches</Link>
+                  <Link as={RouterLink} to="/batches" muted>Batches</Link>
                 </li>
-                <li className="text-gh-text-muted mx-2">/</li>
-                <li className="font-semibold text-gh-text-primary">
+                <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
+                <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
                   {locationState.batchName || `Batch #${locationState.batchId}`}
                 </li>
               </>
@@ -185,25 +186,25 @@ export function RepositoryDetail() {
               <>
                 <li>
                   <Link 
+                    as={RouterLink}
                     to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
-                    className="text-blue-600 hover:underline"
-                    style={{ color: '#2563eb' }}
+                    muted
                   >
                     {repository.full_name.split('/')[0]}
                   </Link>
                 </li>
-                <li className="text-gh-text-muted mx-2">/</li>
+                <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
                 <li>
                   <Link 
+                    as={RouterLink}
                     to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}/project/${encodeURIComponent(repository.ado_project)}`}
-                    className="text-blue-600 hover:underline"
-                    style={{ color: '#2563eb' }}
+                    muted
                   >
                     {repository.ado_project}
                   </Link>
                 </li>
-                <li className="text-gh-text-muted mx-2">/</li>
-                <li className="font-semibold text-gh-text-primary">
+                <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
+                <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
                   {repository.full_name.split('/').slice(1).join('/')}
                 </li>
               </>
@@ -211,15 +212,15 @@ export function RepositoryDetail() {
               <>
                 <li>
                   <Link 
+                    as={RouterLink}
                     to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
-                    className="text-blue-600 hover:underline"
-                    style={{ color: '#2563eb' }}
+                    muted
                   >
                     {repository.full_name.split('/')[0]}
                   </Link>
                 </li>
-                <li className="text-gh-text-muted mx-2">/</li>
-                <li className="font-semibold text-gh-text-primary">
+                <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
+                <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
                   {repository.full_name.split('/').slice(1).join('/')}
                 </li>
               </>
@@ -229,7 +230,7 @@ export function RepositoryDetail() {
         <div className="flex justify-between items-start">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-light text-gray-900">
+              <h1 className="text-3xl font-light" style={{ color: 'var(--fgColor-default)' }}>
                 {repository.full_name}
               </h1>
               {(() => {
@@ -243,19 +244,37 @@ export function RepositoryDetail() {
                 
                 if (hasBlockingIssues) {
                   return (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    <span 
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        backgroundColor: 'var(--danger-subtle)',
+                        color: 'var(--fgColor-danger)'
+                      }}
+                    >
                       ⚠️ Validation Failed
                     </span>
                   );
                 } else if (hasWarnings) {
                   return (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    <span 
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        backgroundColor: 'var(--attention-subtle)',
+                        color: 'var(--fgColor-attention)'
+                      }}
+                    >
                       ⚠ Has Warnings
                     </span>
                   );
                 } else {
                   return (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span 
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        backgroundColor: 'var(--success-subtle)',
+                        color: 'var(--fgColor-success)'
+                      }}
+                    >
                       ✓ Validation Passed
                     </span>
                   );
@@ -270,7 +289,13 @@ export function RepositoryDetail() {
             </div>
 
             {/* Compact Timestamp Display */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gh-text-secondary mb-4 pb-4 border-b border-gh-border-default">
+            <div 
+              className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm mb-4 pb-4"
+              style={{ 
+                color: 'var(--fgColor-muted)',
+                borderBottom: '1px solid var(--borderColor-default)' 
+              }}
+            >
               <div className="flex items-center gap-1.5">
                 <CalendarIcon size={16} />
                 <TimestampDisplay 
@@ -281,7 +306,7 @@ export function RepositoryDetail() {
               </div>
               {repository.last_discovery_at && (
                 <div className="flex items-center gap-1">
-                  <span className="text-gh-text-secondary">•</span>
+                  <span style={{ color: 'var(--fgColor-muted)' }}>•</span>
                   <TimestampDisplay 
                     timestamp={repository.last_discovery_at} 
                     label="Data refreshed"
@@ -291,7 +316,7 @@ export function RepositoryDetail() {
               )}
               {repository.last_dry_run_at && (
                 <div className="flex items-center gap-1">
-                  <span className="text-gh-text-secondary">•</span>
+                  <span style={{ color: 'var(--fgColor-muted)' }}>•</span>
                   <TimestampDisplay 
                     timestamp={repository.last_dry_run_at} 
                     label="Dry run"
@@ -301,7 +326,7 @@ export function RepositoryDetail() {
               )}
               {repository.migrated_at && (
                 <div className="flex items-center gap-1">
-                  <span className="text-gh-text-secondary">•</span>
+                  <span style={{ color: 'var(--fgColor-muted)' }}>•</span>
                   <TimestampDisplay 
                     timestamp={repository.migrated_at} 
                     label="Migrated"
@@ -325,36 +350,49 @@ export function RepositoryDetail() {
             
             {/* Won't Migrate Toggle */}
             {!isInActiveMigration && repository.status !== 'complete' && (
-              <button
+              <Button
                 onClick={handleToggleWontMigrate}
                 disabled={markWontMigrateMutation.isPending}
-                className={`px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
-                  repository.status === 'wont_migrate'
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
-                }`}
+                variant={repository.status === 'wont_migrate' ? 'primary' : 'default'}
+                style={{ whiteSpace: 'nowrap' }}
               >
                 {markWontMigrateMutation.isPending 
                   ? 'Processing...' 
                   : repository.status === 'wont_migrate' 
                     ? 'Unmark Won\'t Migrate'
                     : 'Mark as Won\'t Migrate'}
-              </button>
+              </Button>
             )}
             
             {canMigrate && repository.status !== 'migration_failed' && repository.status !== 'dry_run_failed' && (
               <>
-                <button
+                <Button
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  variant="primary"
+                  style={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
-                </button>
+                </Button>
                 <button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-4 py-2 rounded-md text-sm font-medium border-0 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap transition-all cursor-pointer"
+                  style={{ 
+                    backgroundColor: '#2da44e',
+                    color: '#ffffff',
+                    fontWeight: 500
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#2c974b';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#2da44e';
+                    }
+                  }}
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
                 </button>
@@ -421,8 +459,8 @@ export function RepositoryDetail() {
             href={repository.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline font-medium"
-            style={{ color: '#2563eb' }}
+            className="hover:underline font-medium"
+            style={{ color: theme?.colors.accent.fg }}
           >
             View Source Repository →
           </a>
@@ -431,8 +469,8 @@ export function RepositoryDetail() {
               href={repository.destination_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-green-600 hover:underline font-medium"
-              style={{ color: '#16a34a' }}
+              className="hover:underline font-medium"
+              style={{ color: theme?.colors.success.fg }}
             >
               View Migrated Repository →
             </a>
@@ -441,7 +479,7 @@ export function RepositoryDetail() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-lg shadow-sm mb-6">
+      <div className="rounded-lg shadow-sm mb-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
         <UnderlineNav aria-label="Repository details">
           <UnderlineNav.Item
             aria-current={activeTab === 'readiness' ? 'page' : undefined}
@@ -506,7 +544,8 @@ export function RepositoryDetail() {
           {/* Dialog */}
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div 
-              className="bg-white rounded-lg shadow-xl max-w-md w-full"
+              className="rounded-lg shadow-xl max-w-md w-full"
+              style={{ backgroundColor: 'var(--bgColor-default)' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="px-4 py-3 border-b border-gh-border-default">
@@ -517,43 +556,43 @@ export function RepositoryDetail() {
               
               <div className="p-4">
                 <p className="text-sm text-gh-text-secondary mb-4">
-                  This will mark the repository as rolled back and allow it to be migrated again in the future.
-                  You can optionally provide a reason for the rollback.
-                </p>
-                
-                <FormControl>
-                  <FormControl.Label>Reason (optional)</FormControl.Label>
-                  <Textarea
-                    value={rollbackReason}
-                    onChange={(e) => setRollbackReason(e.target.value)}
-                    placeholder="e.g., CI/CD integration issues, workflow failures..."
-                    rows={3}
-                    disabled={rollbackMutation.isPending}
-                    block
-                  />
-                </FormControl>
+              This will mark the repository as rolled back and allow it to be migrated again in the future.
+              You can optionally provide a reason for the rollback.
+            </p>
+            
+            <FormControl>
+              <FormControl.Label>Reason (optional)</FormControl.Label>
+              <Textarea
+                value={rollbackReason}
+                onChange={(e) => setRollbackReason(e.target.value)}
+                placeholder="e.g., CI/CD integration issues, workflow failures..."
+                rows={3}
+                disabled={rollbackMutation.isPending}
+                block
+              />
+            </FormControl>
               </div>
-              
+
               <div className="px-4 py-3 border-t border-gh-border-default flex justify-end gap-2">
                 <Button
-                  onClick={() => {
-                    setShowRollbackDialog(false);
-                    setRollbackReason('');
-                  }}
-                  disabled={rollbackMutation.isPending}
-                >
-                  Cancel
+                onClick={() => {
+                  setShowRollbackDialog(false);
+                  setRollbackReason('');
+                }}
+                disabled={rollbackMutation.isPending}
+              >
+                Cancel
                 </Button>
-                <Button
-                  onClick={handleRollback}
-                  disabled={rollbackMutation.isPending}
-                  variant="danger"
-                >
-                  {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
-                </Button>
-              </div>
+              <Button
+                onClick={handleRollback}
+                disabled={rollbackMutation.isPending}
+                variant="danger"
+              >
+                {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
+              </Button>
             </div>
           </div>
+        </div>
         </>
       )}
     </div>

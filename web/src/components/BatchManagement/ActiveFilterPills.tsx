@@ -99,18 +99,30 @@ export function ActiveFilterPills({ filters, onRemoveFilter, onClearAll }: Activ
   }
 
   return (
-    <div className="flex items-center gap-2 flex-wrap mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
-      <span className="text-sm font-medium text-gray-700">Active filters:</span>
+    <div 
+      className="flex items-center gap-2 flex-wrap mb-4 p-3 rounded-lg"
+      style={{ 
+        backgroundColor: 'var(--accent-subtle)',
+        border: '1px solid var(--borderColor-accent-muted)' 
+      }}
+    >
+      <span className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Active filters:</span>
       {activeFilters.map((filter, index) => (
         <button
           key={`${filter.key}-${index}`}
           onClick={() => onRemoveFilter(filter.key)}
-          className="inline-flex items-center gap-1.5 px-3 py-1 bg-white text-sm text-gray-700 border border-gray-300 rounded-full hover:bg-gray-50 hover:border-gray-400 transition-colors group"
+          className="inline-flex items-center gap-1.5 px-3 py-1 text-sm rounded-full transition-opacity hover:opacity-80 group"
+          style={{
+            backgroundColor: 'var(--bgColor-default)',
+            border: '1px solid var(--borderColor-default)',
+            color: 'var(--fgColor-default)'
+          }}
         >
-          <span className="font-medium text-gray-900">{filter.label}:</span>
-          <span className="text-gray-700">{filter.value}</span>
+          <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{filter.label}:</span>
+          <span style={{ color: 'var(--fgColor-muted)' }}>{filter.value}</span>
           <svg
-            className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600"
+            className="w-3.5 h-3.5 group-hover:opacity-100"
+            style={{ color: 'var(--fgColor-muted)' }}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -122,7 +134,8 @@ export function ActiveFilterPills({ filters, onRemoveFilter, onClearAll }: Activ
       {activeFilters.length > 1 && (
         <button
           onClick={onClearAll}
-          className="ml-2 text-sm text-blue-600 hover:text-blue-700 font-medium underline"
+          className="ml-2 text-sm font-medium underline hover:opacity-80"
+          style={{ color: 'var(--fgColor-accent)' }}
         >
           Clear all
         </button>

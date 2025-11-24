@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Primer Primitives - Base tokens */
+@import '@primer/primitives/dist/css/base/size/size.css';
+@import '@primer/primitives/dist/css/base/typography/typography.css';
+@import '@primer/primitives/dist/css/functional/size/border.css';
+@import '@primer/primitives/dist/css/functional/size/breakpoints.css';
+@import '@primer/primitives/dist/css/functional/size/size.css';
+@import '@primer/primitives/dist/css/functional/size/viewport.css';
+@import '@primer/primitives/dist/css/functional/typography/typography.css';
+
+/* Primer Primitives - Color themes */
+@import '@primer/primitives/dist/css/functional/themes/light.css';
+@import '@primer/primitives/dist/css/functional/themes/dark.css';
+@import '@primer/primitives/dist/css/functional/themes/dark-dimmed.css';
+
 /* GitHub Primer Brand Fonts */
 @font-face {
   font-family: 'Mona Sans';
@@ -16,32 +30,65 @@
 }
 
 @theme {
-  /* GitHub Primer Brand Colors */
-  --color-gh-green-1: #BFFFD1;
-  --color-gh-green-3: #5FED83;
-  --color-gh-green-4: #08872B;
-  --color-gh-green-5: #104C35;
-  --color-gh-blue-1: #9EECFF;
-  --color-gh-blue-2: #3094FF;
-  --color-gh-blue-4: #0527FC;
-  --color-gh-blue-6: #001C4D;
-  --color-gh-purple-1: #D0B0FF;
-  --color-gh-purple-2: #C06EFF;
-  --color-gh-purple-4: #501DAF;
-  --color-gh-purple-6: #000240;
-  --color-gh-black: #000000;
-  --color-gh-white: #FFFFFF;
+  /* Primer-aligned Color System */
+  
+  /* Foreground Colors */
   --color-gh-text-primary: #1F2328;
   --color-gh-text-secondary: #656D76;
   --color-gh-text-muted: #8C959F;
+  --color-gh-text-link: #0969DA;
+  --color-gh-text-on-emphasis: #FFFFFF;
+  
+  /* Canvas/Background Colors */
   --color-gh-canvas-default: #F6F8FA;
   --color-gh-canvas-raised: #FFFFFF;
   --color-gh-canvas-inset: #F6F8FA;
+  --color-gh-canvas-subtle: #F6F8FA;
+  
+  /* Border Colors */
   --color-gh-border-default: #D1D9E0;
   --color-gh-border-muted: #E5E9ED;
   --color-gh-border-hover: #8C959F;
+  
+  /* Header */
   --color-gh-header-bg: #0D1117;
   --color-gh-header-text: #FFFFFF;
+  
+  /* Accent Colors (Primary Actions - Blue) */
+  --color-gh-accent-fg: #0969DA;
+  --color-gh-accent-emphasis: #0969DA;
+  --color-gh-accent-subtle: #DFF7FF;
+  --color-gh-accent-muted: rgba(84, 174, 255, 0.4);
+  
+  /* Success Colors (Green) */
+  --color-gh-success-fg: #1F883D;
+  --color-gh-success-emphasis: #1F883D;
+  --color-gh-success-subtle: #DFF7E6;
+  --color-gh-success-muted: rgba(74, 194, 107, 0.4);
+  
+  /* Danger Colors (Red) */
+  --color-gh-danger-fg: #D1242F;
+  --color-gh-danger-emphasis: #CF222E;
+  --color-gh-danger-subtle: #FFEBE9;
+  --color-gh-danger-muted: rgba(255, 129, 130, 0.4);
+  
+  /* Attention Colors (Yellow/Orange) */
+  --color-gh-attention-fg: #9A6700;
+  --color-gh-attention-emphasis: #BF8700;
+  --color-gh-attention-subtle: #FFF8C5;
+  --color-gh-attention-muted: rgba(212, 167, 44, 0.4);
+  
+  /* Done/Purple Colors */
+  --color-gh-done-fg: #8250DF;
+  --color-gh-done-emphasis: #8250DF;
+  --color-gh-done-subtle: #FBF0FF;
+  --color-gh-done-muted: rgba(194, 151, 255, 0.4);
+  
+  /* Sponsor Colors (Pink) */
+  --color-gh-sponsors-fg: #BF3989;
+  --color-gh-sponsors-emphasis: #BF3989;
+  --color-gh-sponsors-subtle: #FFEFF7;
+  --color-gh-sponsors-muted: rgba(255, 128, 200, 0.4);
 }
 
 :root {
@@ -406,5 +453,17 @@ nav[aria-label="Pagination"] span[aria-label*="..."] {
 
 .custom-checkbox.on-blue:checked::after {
   border-color: #3094FF;
+}
+
+/* Ensure Primer checkboxes render correctly */
+input[type="checkbox"]:not(.custom-checkbox) {
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
+}
+
+/* Primer checkbox specific overrides */
+.FormControl-checkbox {
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
 }
 

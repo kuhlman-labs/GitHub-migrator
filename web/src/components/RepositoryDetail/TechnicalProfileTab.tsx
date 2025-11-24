@@ -17,7 +17,12 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
         <ProfileItem 
           label="Last Commit SHA" 
           value={repository.last_commit_sha ? (
-            <code className="text-xs bg-gray-100 px-2 py-1 rounded">{repository.last_commit_sha.substring(0, 8)}</code>
+            <code 
+              className="text-xs px-2 py-1 rounded"
+              style={{ backgroundColor: 'var(--bgColor-muted)' }}
+            >
+              {repository.last_commit_sha.substring(0, 8)}
+            </code>
           ) : 'Unknown'} 
         />
         <ProfileItem label="Total Size" value={formatBytes(repository.total_size)} />
@@ -36,7 +41,10 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
           <ProfileItem 
             label="Largest File" 
             value={
-              <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+              <code 
+                className="text-xs px-2 py-1 rounded break-all"
+                style={{ backgroundColor: 'var(--bgColor-muted)' }}
+              >
                 {repository.largest_file}
               </code>
             } 
@@ -56,7 +64,10 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
           <ProfileItem 
             label="Largest Commit" 
             value={
-              <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+              <code 
+                className="text-xs px-2 py-1 rounded"
+                style={{ backgroundColor: 'var(--bgColor-muted)' }}
+              >
                 {repository.largest_commit.substring(0, 8)}
               </code>
             } 
@@ -85,8 +96,16 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
             <ProfileItem label="ADO Project" value={repository.ado_project} />
             <ProfileItem label="Repository Type" value={repository.ado_is_git ? "Git" : "TFVC (Requires Conversion)"} />
             {!repository.ado_is_git && (
-              <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-xs text-red-700">⚠️ TFVC repositories must be converted to Git before migration</p>
+              <div 
+                className="px-3 py-2 rounded-md"
+                style={{
+                  backgroundColor: 'var(--danger-subtle)',
+                  border: '1px solid var(--borderColor-danger)'
+                }}
+              >
+                <p className="text-xs" style={{ color: 'var(--fgColor-danger)' }}>
+                  ⚠️ TFVC repositories must be converted to Git before migration
+                </p>
               </div>
             )}
             

@@ -120,14 +120,14 @@ export function Repositories() {
   }, [searchParams]);
 
   return (
-    <div className="max-w-7xl mx-auto relative">
+    <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-semibold text-gh-text-primary">Repositories</h1>
+            <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Repositories</h1>
             <p className="text-sm text-gh-text-secondary mt-1">
               {totalItems > 0 ? (
                 <>
@@ -179,7 +179,14 @@ export function Repositories() {
 
         {/* Active Filters Display */}
         {activeFilterCount > 0 && (
-          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-4">
+          <div 
+            className="rounded-lg border p-4"
+            style={{
+              backgroundColor: 'var(--bgColor-default)',
+              borderColor: 'var(--borderColor-default)',
+              boxShadow: 'var(--shadow-resting-small)'
+            }}
+          >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gh-text-primary">Active Filters</h3>
               <button
@@ -341,7 +348,12 @@ function RepositoryCard({ repository }: { repository: Repository }) {
   return (
     <Link
       to={`/repository/${encodeURIComponent(repository.full_name)}`}
-      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
+      className="rounded-lg border transition-colors p-6 block"
+      style={{
+        backgroundColor: 'var(--bgColor-default)',
+        borderColor: 'var(--borderColor-default)',
+        boxShadow: 'var(--shadow-resting-small)'
+      }}
     >
       <h3 className="text-base font-semibold text-gh-text-primary mb-3 truncate">
         {repository.full_name}

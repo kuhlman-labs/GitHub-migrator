@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Button } from '@primer/react';
 import { ChevronDownIcon } from '@primer/octicons-react';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
@@ -412,7 +413,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   };
 
   return (
-    <div className="bg-gray-50 h-full flex">
+    <div className="h-full flex" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
       {/* Filter Sidebar */}
       <FilterSidebar
         filters={filters}
@@ -422,18 +423,27 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       />
 
       {/* Middle Panel - Available Repositories */}
-      <div className={`flex-1 min-w-0 grid grid-rows-[auto_1fr_auto] bg-white border-r border-gray-200 transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}>
-        <div className="p-4 border-b border-gray-200 bg-white row-start-1">
+      <div 
+        className={`flex-1 min-w-0 grid grid-rows-[auto_1fr_auto] border-r transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}
+        style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-default)' }}
+      >
+        <div 
+          className="p-4 border-b row-start-1"
+          style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }}
+        >
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Available Repositories</h3>
-              <p className="text-sm text-gray-600 mt-0.5">
+              <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Available Repositories</h3>
+              <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
                 {totalAvailable} repositories available
               </p>
             </div>
             {selectedRepoIds.size > 0 && (
               <div className="flex items-center gap-2">
-                <span className="px-3 py-1.5 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">
+                <span 
+                  className="px-3 py-1.5 rounded-full text-sm font-semibold"
+                  style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
+                >
                   {selectedRepoIds.size} selected
                 </span>
               </div>
@@ -444,41 +454,41 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           <div className="flex flex-wrap gap-2 mb-3">
             <button
               onClick={() => handleQuickFilter()}
-              className={`flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                !filters.complexity
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}
+              className="flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+              style={!filters.complexity
+                ? { backgroundColor: 'var(--accent-emphasis)', color: 'var(--fgColor-onEmphasis)', borderColor: 'var(--accent-emphasis)' }
+                : { borderColor: 'var(--borderColor-default)', color: 'var(--fgColor-default)', backgroundColor: 'var(--control-bgColor-rest)' }
+              }
             >
               All
             </button>
             <button
               onClick={() => handleQuickFilter(['simple'])}
-              className={`flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                Array.isArray(filters.complexity) && filters.complexity.length === 1 && filters.complexity[0] === 'simple'
-                  ? 'bg-green-600 text-white border-green-600'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}
+              className="flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+              style={Array.isArray(filters.complexity) && filters.complexity.length === 1 && filters.complexity[0] === 'simple'
+                ? { backgroundColor: 'var(--success-emphasis)', color: 'var(--fgColor-onEmphasis)', borderColor: 'var(--success-emphasis)' }
+                : { borderColor: 'var(--borderColor-default)', color: 'var(--fgColor-default)', backgroundColor: 'var(--control-bgColor-rest)' }
+              }
             >
               Simple
             </button>
             <button
               onClick={() => handleQuickFilter(['medium'])}
-              className={`flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                Array.isArray(filters.complexity) && filters.complexity.length === 1 && filters.complexity[0] === 'medium'
-                  ? 'bg-yellow-600 text-white border-yellow-600'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}
+              className="flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+              style={Array.isArray(filters.complexity) && filters.complexity.length === 1 && filters.complexity[0] === 'medium'
+                ? { backgroundColor: '#FB8500', color: '#ffffff', borderColor: '#FB8500' }
+                : { borderColor: 'var(--borderColor-default)', color: 'var(--fgColor-default)', backgroundColor: 'var(--control-bgColor-rest)' }
+              }
             >
               Medium
             </button>
             <button
               onClick={() => handleQuickFilter(['complex', 'very_complex'])}
-              className={`flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                Array.isArray(filters.complexity) && filters.complexity.includes('complex')
-                  ? 'bg-orange-600 text-white border-orange-600'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}
+              className="flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+              style={Array.isArray(filters.complexity) && filters.complexity.includes('complex')
+                ? { backgroundColor: '#F97316', color: '#ffffff', borderColor: '#F97316' }
+                : { borderColor: 'var(--borderColor-default)', color: 'var(--fgColor-default)', backgroundColor: 'var(--control-bgColor-rest)' }
+              }
             >
               Complex
             </button>
@@ -500,15 +510,15 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             </div>
           ) : Object.keys(availableGroups).length === 0 ? (
             <div className="text-center py-12">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="mx-auto h-12 w-12" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                 {currentPage < totalPages 
                   ? 'All repositories on this page have been added'
                   : 'No repositories available'}
               </p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
                 {currentPage < totalPages 
                   ? `Go to the next page to add more repositories`
                   : 'Try adjusting your filters'}
@@ -516,7 +526,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               {currentPage < totalPages && (
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
-                  className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors shadow-sm"
+                  className="mt-4 px-4 py-2 text-sm font-medium rounded-md transition-colors shadow-sm"
+                  style={{ backgroundColor: 'var(--accent-emphasis)', color: 'var(--fgColor-onEmphasis)' }}
                 >
                   Go to Next Page →
                 </button>
@@ -537,26 +548,45 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         </div>
 
         {/* Bottom Section - Pagination & Add Button */}
-        <div className="bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3">
+        <div 
+          className="shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3"
+          style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)' }}
+        >
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <div 
+              className="px-4 py-3"
+              style={{ 
+                borderBottom: '1px solid var(--borderColor-muted)', 
+                backgroundColor: 'var(--bgColor-muted)' 
+              }}
+            >
               <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">
+                <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                   Page {currentPage} of {totalPages}
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-3 py-1.5 text-sm border rounded-lg hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    style={{
+                      borderColor: 'var(--borderColor-default)',
+                      color: 'var(--fgColor-default)',
+                      backgroundColor: 'var(--control-bgColor-rest)'
+                    }}
                   >
                     Previous
                   </button>
                   <button
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-3 py-1.5 text-sm border rounded-lg hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    style={{
+                      borderColor: 'var(--borderColor-default)',
+                      color: 'var(--fgColor-default)',
+                      backgroundColor: 'var(--control-bgColor-rest)'
+                    }}
                   >
                     Next
                   </button>
@@ -570,7 +600,21 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             <button
               onClick={handleAddSelected}
               disabled={selectedRepoIds.size === 0 || loading}
-              className="w-full px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+              className="w-full px-4 py-2.5 font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg border-0 cursor-pointer"
+              style={{ 
+                backgroundColor: '#2da44e',
+                color: '#ffffff'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.currentTarget.disabled) {
+                  e.currentTarget.style.backgroundColor = '#2c974b';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.currentTarget.disabled) {
+                  e.currentTarget.style.backgroundColor = '#2da44e';
+                }
+              }}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -582,33 +626,46 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       </div>
 
       {/* Right Panel - Selected Repositories & Batch Info */}
-      <div className={`flex-shrink-0 flex flex-col bg-white transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}>
+      <div 
+        className={`flex-shrink-0 flex flex-col transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}
+        style={{ backgroundColor: 'var(--bgColor-default)' }}
+      >
         {/* Sticky Header with Batch Info */}
-        <div className="flex-shrink-0 sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
+        <div 
+          className="flex-shrink-0 sticky top-0 z-20 shadow-sm"
+          style={{ 
+            backgroundColor: 'var(--bgColor-default)', 
+            borderBottom: '1px solid var(--borderColor-default)' 
+          }}
+        >
           <div className="p-4">
             <div className="flex justify-between items-center mb-3">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
                 Selected Repositories
               </h3>
-              <p className="text-sm text-gray-600 mt-0.5">
+              <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
                 {currentBatchRepos.length} {currentBatchRepos.length === 1 ? 'repository' : 'repositories'}
               </p>
             </div>
             {currentBatchRepos.length > 0 && (
               <button
                 onClick={handleClearAll}
-                className="text-sm text-red-600 hover:text-red-700 font-medium transition-colors"
+                className="text-sm font-medium transition-colors hover:opacity-80"
+                style={{ color: 'var(--fgColor-danger)' }}
               >
                 Clear All
               </button>
             )}
             </div>
             {/* Batch Size Indicator */}
-            <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-lg">
+            <div 
+              className="border p-2.5 rounded-lg"
+              style={{ backgroundColor: 'var(--accent-subtle)', borderColor: 'var(--accent-muted)' }}
+            >
               <div className="flex items-center justify-between">
-                <div className="text-xs font-medium text-blue-900">Total Batch Size</div>
-                <div className="text-lg font-bold text-blue-900">{formatBytes(totalSize)}</div>
+                <div className="text-xs font-medium" style={{ color: 'var(--fgColor-accent)' }}>Total Batch Size</div>
+                <div className="text-lg font-bold" style={{ color: 'var(--fgColor-accent)' }}>{formatBytes(totalSize)}</div>
               </div>
             </div>
           </div>
@@ -618,39 +675,64 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         <div className="flex-1 overflow-y-auto p-4 min-h-0">
           {currentBatchRepos.length === 0 ? (
             <div className="text-center py-12">
-              <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="mx-auto h-12 w-12" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="mt-2 text-sm text-gray-500">No repositories selected</p>
-              <p className="text-xs text-gray-400 mt-1">Select repositories from the left</p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--fgColor-muted)' }}>No repositories selected</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>Select repositories from the left</p>
             </div>
           ) : (
             <div className="space-y-3">
               {Object.entries(currentGroups).map(([org, repos]) => (
-                <div key={org} className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                  <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-3 py-2 border-b border-gray-200">
-                    <span className="font-semibold text-gray-900 text-sm">{org}</span>
-                    <span className="ml-2 px-2 py-0.5 bg-white text-gray-700 rounded-full text-xs font-medium border border-gray-200">
+                <div 
+                  key={org} 
+                  className="rounded-lg overflow-hidden shadow-sm"
+                  style={{ 
+                    border: '1px solid var(--borderColor-default)',
+                    backgroundColor: 'var(--bgColor-default)' 
+                  }}
+                >
+                  <div 
+                    className="px-3 py-2"
+                    style={{ 
+                      backgroundColor: 'var(--bgColor-muted)',
+                      borderBottom: '1px solid var(--borderColor-default)' 
+                    }}
+                  >
+                    <span className="font-semibold text-sm" style={{ color: 'var(--fgColor-default)' }}>{org}</span>
+                    <span 
+                      className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        backgroundColor: 'var(--bgColor-default)',
+                        color: 'var(--fgColor-default)',
+                        border: '1px solid var(--borderColor-default)'
+                      }}
+                    >
                       {repos.length}
                     </span>
                   </div>
-                  <div className="divide-y divide-gray-200">
-                    {repos.map((repo) => (
-                      <div key={repo.id} className="p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                  <div style={{ borderTop: '1px solid var(--borderColor-muted)' }}>
+                    {repos.map((repo, index) => (
+                      <div 
+                        key={repo.id} 
+                        className="p-3 flex items-center justify-between hover:opacity-80 transition-opacity"
+                        style={{ borderTop: index > 0 ? '1px solid var(--borderColor-muted)' : 'none' }}
+                      >
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900 text-sm truncate">
+                          <div className="font-medium text-sm truncate" style={{ color: 'var(--fgColor-default)' }}>
                             {repo.ado_project 
                               ? repo.full_name // For ADO, full_name is just the repo name
                               : repo.full_name.split('/')[1] || repo.full_name // For GitHub, extract repo name from org/repo
                             }
                           </div>
-                          <div className="text-xs text-gray-600 mt-0.5">
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
                             {formatBytes(repo.total_size || 0)} • {repo.branch_count} branches
                           </div>
                         </div>
                         <button
                           onClick={() => handleRemoveRepo(repo.id)}
-                          className="ml-2 p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                          className="ml-2 p-1 rounded transition-opacity hover:opacity-80"
+                          style={{ color: 'var(--fgColor-danger)' }}
                           title="Remove repository"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -667,11 +749,17 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         </div>
 
         {/* Bottom Batch Configuration Form - Compact */}
-        <div className="flex-shrink-0 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+        <div 
+          className="flex-shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
+          style={{ 
+            borderTop: '1px solid var(--borderColor-default)',
+            backgroundColor: 'var(--bgColor-default)' 
+          }}
+        >
           {/* Essential Fields - Always Visible */}
           <div className="p-3 space-y-2.5">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
+            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
               Batch Name *
             </label>
             <input
@@ -679,14 +767,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               value={batchName}
               onChange={(e) => setBatchName(e.target.value)}
               placeholder="e.g., Wave 1, Q1 Migration"
-              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              style={{
+                border: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--control-bgColor-rest)',
+                color: 'var(--fgColor-default)'
+              }}
               disabled={loading}
               required
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
+            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
               Description
             </label>
             <textarea
@@ -694,43 +787,63 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               onChange={(e) => setBatchDescription(e.target.value)}
               placeholder="Optional description"
               rows={1}
-              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+              className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+              style={{
+                border: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--control-bgColor-rest)',
+                color: 'var(--fgColor-default)'
+              }}
               disabled={loading}
             />
             </div>
           </div>
 
           {/* Collapsible Migration Settings */}
-          <div className="border-t border-gray-200">
+          <div style={{ borderTop: '1px solid var(--borderColor-default)' }}>
             <button
               type="button"
               onClick={() => setShowMigrationSettings(!showMigrationSettings)}
-              className="w-full px-3 py-2.5 flex items-center justify-between text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              className="w-full px-3 py-2.5 flex items-center justify-between text-sm font-medium hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--fgColor-default)' }}
             >
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 <span>Migration Settings</span>
                 {(destinationOrg || excludeReleases || migrationAPI !== 'GEI') && (
-                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                  <span 
+                    className="px-1.5 py-0.5 text-xs rounded-full font-medium"
+                    style={{
+                      backgroundColor: 'var(--accent-subtle)',
+                      color: 'var(--fgColor-accent)'
+                    }}
+                  >
                     {[destinationOrg ? 1 : 0, excludeReleases ? 1 : 0, migrationAPI !== 'GEI' ? 1 : 0].reduce((a, b) => a + b, 0)} configured
                   </span>
                 )}
               </div>
+              <span style={{ color: 'var(--fgColor-muted)' }}>
               <ChevronDownIcon
-                className={`text-gray-400 transition-transform ${showMigrationSettings ? 'rotate-180' : ''}`}
+                  className={`transition-transform ${showMigrationSettings ? 'rotate-180' : ''}`}
                 size={20}
               />
+              </span>
             </button>
 
             {showMigrationSettings && (
-              <div className="p-3 space-y-2.5 bg-gray-50 border-t border-gray-200">
+              <div 
+                className="p-3 space-y-2.5"
+                style={{ 
+                  backgroundColor: 'var(--bgColor-muted)',
+                  borderTop: '1px solid var(--borderColor-default)' 
+                }}
+              >
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
                     Destination Organization
-                    <span className="ml-1 text-gray-500 font-normal text-xs">— Default for repos without specific destination</span>
+                    <span className="ml-1 font-normal text-xs" style={{ color: 'var(--fgColor-muted)' }}>— Default for repos without specific destination</span>
                   </label>
                   <input
                     type="text"
@@ -738,7 +851,12 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                     onChange={(e) => setDestinationOrg(e.target.value)}
                     placeholder="Leave blank to use source org"
                     list="organizations-list"
-                    className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    style={{
+                      border: '1px solid var(--borderColor-default)',
+                      backgroundColor: 'var(--control-bgColor-rest)',
+                      color: 'var(--fgColor-default)'
+                    }}
                     disabled={loading}
                   />
                   <datalist id="organizations-list">
@@ -749,13 +867,18 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
                     Migration API
                   </label>
                   <select
                     value={migrationAPI}
                     onChange={(e) => setMigrationAPI(e.target.value as 'GEI' | 'ELM')}
-                    className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    style={{
+                      border: '1px solid var(--borderColor-default)',
+                      backgroundColor: 'var(--control-bgColor-rest)',
+                      color: 'var(--fgColor-default)'
+                    }}
                     disabled={loading}
                   >
                     <option value="GEI">GEI (GitHub Enterprise Importer)</option>
@@ -769,12 +892,13 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                     id="exclude-releases"
                     checked={excludeReleases}
                     onChange={(e) => setExcludeReleases(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    style={{ borderColor: 'var(--borderColor-default)' }}
                     disabled={loading}
                   />
-                  <label htmlFor="exclude-releases" className="text-xs text-gray-700 cursor-pointer">
+                  <label htmlFor="exclude-releases" className="text-xs cursor-pointer" style={{ color: 'var(--fgColor-default)' }}>
                     <span className="font-semibold">Exclude Releases</span>
-                    <span className="block text-gray-500 mt-0.5">Skip releases during migration (repo settings override)</span>
+                    <span className="block mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>Skip releases during migration (repo settings override)</span>
                   </label>
                 </div>
               </div>
@@ -782,9 +906,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           </div>
 
           {/* Scheduled Date Section */}
-          <div className="border-t border-gray-200 p-3">
+          <div className="p-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
           <div className="relative z-[60]">
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
+            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
               Scheduled Date (Optional)
             </label>
             <input
@@ -792,11 +916,16 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
               min={formatDateForInput(new Date().toISOString())}
-              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              style={{
+                border: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--control-bgColor-rest)',
+                color: 'var(--fgColor-default)'
+              }}
               disabled={loading}
               placeholder="Select date and time"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
               Batch will auto-start at the scheduled time (after dry run is complete)
             </p>
             </div>
@@ -805,39 +934,64 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           {/* Error Message */}
           {error && (
             <div className="px-3 pb-3">
-            <div className="bg-red-50 border border-red-200 text-red-800 px-2.5 py-1.5 rounded-lg text-xs">
+            <div 
+              className="px-2.5 py-1.5 rounded-lg text-xs"
+              style={{
+                backgroundColor: 'var(--danger-subtle)',
+                border: '1px solid var(--borderColor-danger)',
+                color: 'var(--fgColor-danger)'
+              }}
+            >
               {error}
               </div>
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="border-t border-gray-200 p-3 bg-gray-50">
+          <div 
+            className="border-t p-3"
+            style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-muted)' }}
+          >
             <div className="flex flex-col gap-1.5">
-            <button
+            <Button
               onClick={() => handleSubmit(false)}
               disabled={loading || currentBatchRepos.length === 0}
-              className="w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+              variant="primary"
+              block
             >
               {loading ? 'Saving...' : isEditMode ? 'Update Batch' : 'Create Batch'}
-            </button>
+            </Button>
             {!isEditMode && (
               <button
                 onClick={() => handleSubmit(true)}
                 disabled={loading || currentBatchRepos.length === 0}
-                className="w-full px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+                className="w-full px-3 py-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg border-0 cursor-pointer"
+                style={{ 
+                  backgroundColor: '#2da44e',
+                  color: '#ffffff'
+                }}
+                onMouseEnter={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.backgroundColor = '#2c974b';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.backgroundColor = '#2da44e';
+                  }
+                }}
               >
                 Create & Start
               </button>
             )}
-            <button
+            <Button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="w-full px-3 py-1.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              block
             >
               Cancel
-            </button>
+            </Button>
             </div>
           </div>
         </div>

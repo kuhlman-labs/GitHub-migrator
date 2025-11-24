@@ -13,7 +13,13 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+        className="inline-flex items-center gap-1 text-sm font-medium hover:underline cursor-pointer"
+        style={{ 
+          color: 'var(--fgColor-accent)',
+          background: 'none',
+          border: 'none',
+          padding: 0
+        }}
       >
         <InfoIcon size={16} />
         How is complexity calculated?
@@ -26,14 +32,17 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
         >
           {/* Backdrop */}
           <div 
-            className="absolute inset-0 bg-black/60" 
+            className="absolute inset-0" 
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
             onClick={() => setIsOpen(false)}
           />
           
           {/* Dialog */}
           <div
-            className="relative bg-white rounded-lg shadow-2xl border border-gray-200"
+            className="relative rounded-lg shadow-2xl"
             style={{
+              backgroundColor: 'var(--bgColor-default)',
+              border: '1px solid var(--borderColor-default)',
               width: '90%',
               maxWidth: '800px',
               maxHeight: '90vh',
@@ -43,8 +52,11 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
             }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">
+            <div 
+              className="flex items-center justify-between px-6 py-4"
+              style={{ borderBottom: '1px solid var(--borderColor-default)' }}
+            >
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
                 {source === 'azuredevops' ? 'Azure DevOps Migration Complexity' : 
                  source === 'github' ? 'GitHub Migration Complexity' :
                  'Repository Complexity Scoring'}
@@ -64,15 +76,15 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
               <div className="p-6 space-y-6">
                 {/* Overview */}
                 <div>
-                  <h3 className="text-base font-semibold mb-2 text-gh-text-primary">Overview</h3>
-                  <p className="text-sm text-gh-text-secondary mb-2">
+                  <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>Overview</h3>
+                  <p className="text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>
                     {source === 'azuredevops' 
                       ? 'We calculate an Azure DevOps-specific complexity score to estimate migration effort from ADO to GitHub.'
                       : (source === 'github' || source === 'ghes')
                       ? 'We calculate a GitHub-specific complexity score to estimate migration effort between GitHub instances.'
                       : 'We calculate source-specific complexity scores to estimate migration effort and potential challenges.'}
                   </p>
-                  <p className="text-xs text-gh-text-muted italic">
+                  <p className="text-xs italic" style={{ color: 'var(--fgColor-muted)' }}>
                     Activity levels are calculated using quantiles relative to your repository dataset.
                   </p>
                 </div>
@@ -80,18 +92,24 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
                 {/* Scoring Factors - GitHub Specific */}
                 {(source === 'github' || source === 'ghes') && (
                   <div>
-                    <h3 className="text-base font-semibold mb-3 text-gh-text-primary">Scoring Factors</h3>
+                    <h3 className="text-base font-semibold mb-3" style={{ color: 'var(--fgColor-default)' }}>Scoring Factors</h3>
                     
                     {/* Repository Size */}
-                    <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div 
+                      className="mb-4 p-4 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--accent-subtle)',
+                        border: '1px solid var(--borderColor-accent-muted)'
+                      }}
+                    >
                       <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-semibold text-blue-900">Repository Size</h4>
-                        <span className="text-sm font-semibold text-blue-600">Weight: 3 (max 9 points)</span>
+                        <h4 className="font-semibold" style={{ color: 'var(--fgColor-accent)' }}>Repository Size</h4>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-accent)' }}>Weight: 3 (max 9 points)</span>
                       </div>
-                      <p className="text-sm text-blue-800 mb-2">
+                      <p className="text-sm mb-2" style={{ color: 'var(--fgColor-accent)' }}>
                         Larger repositories take longer to migrate and have higher resource requirements.
                       </p>
-                      <ul className="text-sm text-blue-900 space-y-1 ml-4">
+                      <ul className="text-sm space-y-1 ml-4" style={{ color: 'var(--fgColor-accent)' }}>
                         <li>• &lt;100MB: <span className="font-medium">0 points</span></li>
                         <li>• 100MB - 1GB: <span className="font-medium">3 points</span></li>
                         <li>• 1GB - 5GB: <span className="font-medium">6 points</span></li>
@@ -101,72 +119,120 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
 
                     {/* High Impact Features */}
                     <div className="mb-3">
-                      <h4 className="font-semibold text-red-800 mb-2">High Impact (3-4 points each)</h4>
-                      <p className="text-sm text-gray-600 mb-3">Features requiring significant remediation effort</p>
+                      <h4 className="font-semibold mb-2" style={{ color: 'var(--fgColor-danger)' }}>High Impact (3-4 points each)</h4>
+                      <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>Features requiring significant remediation effort</p>
                       
                       <div className="space-y-2">
-                        <div className="p-3 bg-red-50 rounded border border-red-200">
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
                           <div className="flex justify-between items-start mb-1">
-                            <span className="font-medium text-red-900">Large Files (&gt;100MB)</span>
-                            <span className="text-sm font-semibold text-red-600">4 points</span>
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>Large Files (&gt;100MB)</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>4 points</span>
                           </div>
-                          <p className="text-sm text-red-800">Must be remediated before migration (migrate to LFS, remove from history)</p>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Must be remediated before migration (migrate to LFS, remove from history)</p>
                         </div>
 
-                        <div className="p-3 bg-red-50 rounded border border-red-200">
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
                           <div className="flex justify-between items-start mb-1">
-                            <span className="font-medium text-red-900">Environments</span>
-                            <span className="text-sm font-semibold text-red-600">3 points</span>
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>Environments</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>3 points</span>
                           </div>
-                          <p className="text-sm text-red-800">Don't migrate. Manual recreation of all configs and protection rules required</p>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Don't migrate. Manual recreation of all configs and protection rules required</p>
                         </div>
 
-                        <div className="p-3 bg-red-50 rounded border border-red-200">
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
                           <div className="flex justify-between items-start mb-1">
-                            <span className="font-medium text-red-900">Secrets</span>
-                            <span className="text-sm font-semibold text-red-600">3 points</span>
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>Secrets</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>3 points</span>
                           </div>
-                          <p className="text-sm text-red-800">Don't migrate. Manual recreation required with high security sensitivity</p>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Don't migrate. Manual recreation required with high security sensitivity</p>
                         </div>
 
-                        <div className="p-3 bg-red-50 rounded border border-red-200">
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
                           <div className="flex justify-between items-start mb-1">
-                            <span className="font-medium text-red-900">GitHub Packages</span>
-                            <span className="text-sm font-semibold text-red-600">3 points</span>
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>GitHub Packages</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>3 points</span>
                           </div>
-                          <p className="text-sm text-red-800">Don't migrate with GEI. Manual migration planning required</p>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Don't migrate with GEI. Manual migration planning required</p>
                         </div>
                       </div>
                     </div>
 
                     {/* Moderate Impact Features */}
                     <div className="mb-3">
-                      <h4 className="font-semibold text-orange-800 mb-2">Moderate Impact (2 points each)</h4>
-                      <p className="text-sm text-gray-600 mb-3">Features requiring manual intervention</p>
+                      <h4 className="font-semibold mb-2" style={{ color: 'var(--fgColor-attention)' }}>Moderate Impact (2 points each)</h4>
+                      <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>Features requiring manual intervention</p>
                       
                       <div className="space-y-2">
-                        <div className="p-2 bg-orange-50 rounded border border-orange-200">
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
                           <div className="flex justify-between items-center">
-                            <span className="font-medium text-orange-900 text-sm">Variables</span>
-                            <span className="text-xs font-semibold text-orange-600">2 points</span>
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Variables</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
                           </div>
                         </div>
-                        <div className="p-2 bg-orange-50 rounded border border-orange-200">
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
                           <div className="flex justify-between items-center">
-                            <span className="font-medium text-orange-900 text-sm">Discussions</span>
-                            <span className="text-xs font-semibold text-orange-600">2 points</span>
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Discussions</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
                           </div>
                         </div>
-                        <div className="p-2 bg-orange-50 rounded border border-orange-200">
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
                           <div className="flex justify-between items-center">
-                            <span className="font-medium text-orange-900 text-sm">Git LFS</span>
-                            <span className="text-xs font-semibold text-orange-600">2 points</span>
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Git LFS</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
                           </div>
                         </div>
-                        <div className="p-2 bg-orange-50 rounded border border-orange-200">
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
                           <div className="flex justify-between items-center">
-                            <span className="font-medium text-orange-900 text-sm">Submodules</span>
-                            <span className="text-xs font-semibold text-orange-600">2 points</span>
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Submodules</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
                           </div>
                         </div>
                       </div>
@@ -174,29 +240,77 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
 
                     {/* Low Impact Features */}
                     <div className="mb-3">
-                      <h4 className="font-semibold text-yellow-800 mb-2">Low Impact (1 point each)</h4>
-                      <p className="text-sm text-gray-600 mb-3">Features requiring straightforward manual steps</p>
+                      <h4 className="font-semibold mb-2" style={{ color: 'var(--fgColor-attention)' }}>Low Impact (1 point each)</h4>
+                      <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>Features requiring straightforward manual steps</p>
                       
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-200 text-sm text-yellow-900">Advanced Security</div>
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-200 text-sm text-yellow-900">Webhooks</div>
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-200 text-sm text-yellow-900">Branch Protections</div>
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-200 text-sm text-yellow-900">Rulesets</div>
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-200 text-sm text-yellow-900">Public/Internal Repos</div>
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-200 text-sm text-yellow-900">CODEOWNERS</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Advanced Security</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Webhooks</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Branch Protections</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Rulesets</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Public/Internal Repos</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >CODEOWNERS</div>
                       </div>
                     </div>
 
                     {/* Activity Level */}
-                    <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <div 
+                      className="p-4 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--done-subtle)',
+                        border: '1px solid var(--borderColor-done-muted)'
+                      }}
+                    >
                       <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-semibold text-purple-900">Activity Level (Quantile-Based)</h4>
-                        <span className="text-sm font-semibold text-purple-600">0-4 points</span>
+                        <h4 className="font-semibold" style={{ color: 'var(--fgColor-done)' }}>Activity Level (Quantile-Based)</h4>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-done)' }}>0-4 points</span>
                       </div>
-                      <p className="text-sm text-purple-800 mb-2">
+                      <p className="text-sm mb-2" style={{ color: 'var(--fgColor-done)' }}>
                         Based on branch count, commits, issues, and pull requests relative to your repository dataset
                       </p>
-                      <ul className="text-sm text-purple-900 space-y-1 ml-4">
+                      <ul className="text-sm space-y-1 ml-4" style={{ color: 'var(--fgColor-done)' }}>
                         <li>• High activity (top 25%): <span className="font-medium">+4 points</span></li>
                         <li>• Moderate activity (25-75%): <span className="font-medium">+2 points</span></li>
                         <li>• Low activity (bottom 25%): <span className="font-medium">0 points</span></li>
@@ -207,42 +321,66 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
 
                 {/* Complexity Categories */}
                 <div>
-                  <h3 className="text-base font-semibold mb-3 text-gh-text-primary">Complexity Categories</h3>
+                  <h3 className="text-base font-semibold mb-3" style={{ color: 'var(--fgColor-default)' }}>Complexity Categories</h3>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                      <div className="w-3 h-3 bg-green-500 rounded-full flex-shrink-0"></div>
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--success-subtle)',
+                        border: '1px solid var(--borderColor-success)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--success-emphasis)' }}></div>
                       <div className="flex-1">
-                        <span className="font-semibold text-green-900">Simple</span>
-                        <span className="text-xs text-green-700 ml-2">(Score ≤ 5)</span>
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-success)' }}>Simple</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-success)' }}>(Score ≤ 5)</span>
                       </div>
-                      <span className="text-xs text-green-600 font-medium">Low effort</span>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-success)' }}>Low effort</span>
                     </div>
 
-                    <div className="flex items-center gap-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                      <div className="w-3 h-3 bg-yellow-500 rounded-full flex-shrink-0"></div>
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--attention-subtle)',
+                        border: '1px solid var(--borderColor-attention)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--attention-emphasis)' }}></div>
                       <div className="flex-1">
-                        <span className="font-semibold text-yellow-900">Medium</span>
-                        <span className="text-xs text-yellow-700 ml-2">(Score 6-10)</span>
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-attention)' }}>Medium</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-attention)' }}>(Score 6-10)</span>
                       </div>
-                      <span className="text-xs text-yellow-600 font-medium">Moderate effort</span>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-attention)' }}>Moderate effort</span>
                     </div>
 
-                    <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
-                      <div className="w-3 h-3 bg-orange-500 rounded-full flex-shrink-0"></div>
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--attention-subtle)',
+                        border: '1px solid var(--borderColor-attention)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--attention-emphasis)' }}></div>
                       <div className="flex-1">
-                        <span className="font-semibold text-orange-900">Complex</span>
-                        <span className="text-xs text-orange-700 ml-2">(Score 11-17)</span>
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-attention)' }}>Complex</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-attention)' }}>(Score 11-17)</span>
                       </div>
-                      <span className="text-xs text-orange-600 font-medium">High effort</span>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-attention)' }}>High effort</span>
                     </div>
 
-                    <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
-                      <div className="w-3 h-3 bg-red-500 rounded-full flex-shrink-0"></div>
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--danger-subtle)',
+                        border: '1px solid var(--borderColor-danger)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--danger-emphasis)' }}></div>
                       <div className="flex-1">
-                        <span className="font-semibold text-red-900">Very Complex</span>
-                        <span className="text-xs text-red-700 ml-2">(Score ≥ 18)</span>
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-danger)' }}>Very Complex</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-danger)' }}>(Score ≥ 18)</span>
                       </div>
-                      <span className="text-xs text-red-600 font-medium">Significant effort</span>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-danger)' }}>Significant effort</span>
                     </div>
                   </div>
                 </div>
@@ -250,8 +388,12 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
             </div>
             
             <div 
-              className="border-t border-gray-200 bg-gray-50 p-4"
-              style={{ flexShrink: 0 }}
+              className="p-4"
+              style={{ 
+                flexShrink: 0,
+                borderTop: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--bgColor-muted)'
+              }}
             >
               <Button variant="primary" onClick={() => setIsOpen(false)} block>
                 Got it!

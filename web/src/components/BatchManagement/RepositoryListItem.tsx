@@ -98,23 +98,31 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
 
   return (
     <label
-      className={`group flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-all ${
+      className="group flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all shadow-sm"
+      style={
         selected 
-          ? 'border-blue-500 bg-blue-50 shadow-sm' 
-          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
-      }`}
+          ? { 
+              border: '2px solid var(--accent-emphasis)', 
+              backgroundColor: 'var(--accent-subtle)' 
+            } 
+          : { 
+              border: '1px solid var(--borderColor-default)', 
+              backgroundColor: 'var(--bgColor-default)' 
+            }
+      }
     >
       <input
         type="checkbox"
         checked={selected}
         onChange={() => onToggle(repository.id)}
-        className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+        className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+        style={{ borderColor: 'var(--borderColor-default)' }}
       />
       
       <div className="flex-1 min-w-0">
         {/* Header with repo name and complexity badge */}
         <div className="flex items-center gap-2 mb-2">
-          <span className="font-semibold text-gray-900 truncate text-sm">
+          <span className="font-semibold truncate text-sm" style={{ color: 'var(--fgColor-default)' }}>
             {repository.ado_project 
               ? repository.full_name // For ADO, full_name is just the repo name
               : repository.full_name.split('/')[1] || repository.full_name // For GitHub, extract repo name from org/repo
@@ -126,7 +134,7 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
         </div>
         
         {/* Metadata row */}
-        <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
+        <div className="flex items-center gap-3 text-xs mb-2" style={{ color: 'var(--fgColor-muted)' }}>
           <span className="flex items-center gap-1">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />

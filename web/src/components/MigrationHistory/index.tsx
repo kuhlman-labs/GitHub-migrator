@@ -48,10 +48,10 @@ export function MigrationHistory() {
   if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="max-w-7xl mx-auto relative">
+    <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">Migration History</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration History</h1>
         <div className="flex items-center gap-4">
           <TextInput
             leadingVisual={SearchIcon}
@@ -61,12 +61,27 @@ export function MigrationHistory() {
             style={{ width: 300 }}
           />
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gh-text-secondary whitespace-nowrap">Export:</span>
+            <span className="text-sm whitespace-nowrap" style={{ color: 'var(--fgColor-muted)' }}>Export:</span>
             <div className="flex gap-1">
               <button
                 onClick={() => handleExport('csv')}
                 disabled={exporting}
-                className="px-3 py-1.5 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1.5 text-sm font-medium border rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--control-bgColor-rest)',
+                  borderColor: 'var(--borderColor-default)',
+                  color: 'var(--fgColor-default)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
+                  }
+                }}
                 title="Export migration history as CSV"
               >
                 CSV
@@ -74,7 +89,22 @@ export function MigrationHistory() {
               <button
                 onClick={() => handleExport('json')}
                 disabled={exporting}
-                className="px-3 py-1.5 text-sm font-medium text-gh-text-primary bg-white border border-gh-border-default rounded-md hover:bg-gh-neutral-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1.5 text-sm font-medium border rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--control-bgColor-rest)',
+                  borderColor: 'var(--borderColor-default)',
+                  color: 'var(--fgColor-default)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
+                  }
+                }}
                 title="Export migration history as JSON"
               >
                 JSON
@@ -84,7 +114,7 @@ export function MigrationHistory() {
         </div>
       </div>
 
-      <div className="mb-4 text-sm text-gray-600">
+      <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
         Showing {filteredMigrations.length} of {migrations.length} migrations
       </div>
 
@@ -108,32 +138,32 @@ export function MigrationHistory() {
           )}
         </Blankslate>
       ) : (
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="rounded-lg shadow-sm overflow-hidden" style={{ backgroundColor: 'var(--bgColor-default)' }}>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
+              <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Repository
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Started At
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Completed At
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Duration
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y" style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-muted)' }}>
                 {filteredMigrations.map((migration) => (
                   <MigrationRow key={migration.id} migration={migration} />
                 ))}
@@ -147,16 +177,16 @@ export function MigrationHistory() {
 }
 
 function MigrationRow({ migration }: { migration: MigrationHistoryEntry }) {
-  const getStatusBadgeClass = (status: string) => {
+  const getStatusBadgeStyles = (status: string) => {
     switch (status) {
       case 'complete':
-        return 'bg-green-100 text-green-800';
+        return { backgroundColor: 'var(--success-subtle)', color: 'var(--fgColor-success)' };
       case 'migration_failed':
-        return 'bg-red-100 text-red-800';
+        return { backgroundColor: 'var(--danger-subtle)', color: 'var(--fgColor-danger)' };
       case 'rolled_back':
-        return 'bg-orange-100 text-orange-800';
+        return { backgroundColor: 'var(--attention-subtle)', color: 'var(--fgColor-attention)' };
       default:
-        return 'bg-gray-100 text-gray-800';
+        return { backgroundColor: 'var(--bgColor-muted)', color: 'var(--fgColor-muted)' };
     }
   };
 
@@ -174,41 +204,45 @@ function MigrationRow({ migration }: { migration: MigrationHistoryEntry }) {
   };
 
   return (
-    <tr className="hover:bg-gray-50 transition-colors">
+    <tr className="hover:opacity-80 transition-opacity">
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="flex flex-col">
-          <div className="text-sm font-medium text-gray-900">{migration.full_name}</div>
+          <div className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>{migration.full_name}</div>
           {migration.destination_url && (
             <a
               href={migration.destination_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:underline"
-              style={{ color: '#2563eb' }}
+              className="text-xs hover:underline"
+              style={{ color: 'var(--fgColor-accent)' }}
             >
               View destination →
             </a>
           )}
         </div>
       </td>
-      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+      <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-muted)' }}>
         {migration.started_at ? formatDate(migration.started_at) : '-'}
       </td>
-      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+      <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-muted)' }}>
         {migration.completed_at ? formatDate(migration.completed_at) : '-'}
       </td>
-      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+      <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-muted)' }}>
         {migration.duration_seconds ? formatDuration(migration.duration_seconds) : '-'}
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
-        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusBadgeClass(migration.status)}`}>
+        <span 
+          className="px-2 py-1 text-xs font-medium rounded-full"
+          style={getStatusBadgeStyles(migration.status)}
+        >
           {getStatusLabel(migration.status)}
         </span>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm">
         <a
           href={`/repository/${encodeURIComponent(migration.full_name)}`}
-          className="text-blue-600 hover:underline"
+          className="hover:underline"
+          style={{ color: 'var(--fgColor-accent)' }}
         >
           View Details
         </a>

@@ -11,32 +11,32 @@ interface KPICardProps {
 }
 
 export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip, onClick }: KPICardProps) {
-  const colorClasses = {
-    blue: 'text-blue-600',
-    green: 'text-green-600',
-    purple: 'text-purple-600',
-    yellow: 'text-orange-600',
+  const colorStyles = {
+    blue: 'var(--fgColor-accent)',
+    green: 'var(--fgColor-success)',
+    purple: 'var(--fgColor-done)',
+    yellow: 'var(--fgColor-attention)',
   };
   
-  const iconBgClasses = {
-    blue: 'bg-blue-50',
-    green: 'bg-green-50',
-    purple: 'bg-purple-50',
-    yellow: 'bg-orange-50',
+  const iconBgStyles = {
+    blue: 'var(--bgColor-accent-muted)',
+    green: 'var(--bgColor-success-muted)',
+    purple: 'var(--bgColor-done-muted)',
+    yellow: 'var(--bgColor-attention-muted)',
   };
 
-  const borderColorClasses = {
-    blue: 'border-l-blue-500',
-    green: 'border-l-green-500',
-    purple: 'border-l-purple-500',
-    yellow: 'border-l-orange-500',
+  const borderColorStyles = {
+    blue: 'var(--borderColor-accent-emphasis)',
+    green: 'var(--borderColor-success-emphasis)',
+    purple: 'var(--borderColor-done-emphasis)',
+    yellow: 'var(--borderColor-attention-emphasis)',
   };
 
   const isClickable = !!onClick;
-  const baseClasses = `bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 relative group transition-all border-l-4 ${borderColorClasses[color]}`;
+  const baseClasses = `rounded-lg border p-6 relative group transition-all border-l-4`;
   const clickableClasses = isClickable 
-    ? "cursor-pointer hover:border-gh-blue hover:shadow-lg" 
-    : "hover:border-gh-border-hover";
+    ? "cursor-pointer hover:shadow-lg" 
+    : "";
 
   const handleClick = () => {
     if (onClick) {
@@ -54,6 +54,12 @@ export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip,
   return (
     <div 
       className={`${baseClasses} ${clickableClasses}`}
+      style={{
+        backgroundColor: 'var(--bgColor-default)',
+        borderColor: 'var(--borderColor-default)',
+        borderLeftColor: borderColorStyles[color],
+        boxShadow: 'var(--shadow-resting-small)'
+      }}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       role={isClickable ? 'button' : undefined}
@@ -62,14 +68,14 @@ export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip,
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <h3 className="text-xs font-semibold text-gh-text-secondary mb-2 uppercase tracking-wide">{title}</h3>
-          <div className={`text-3xl font-semibold mb-1 ${colorClasses[color]}`}>
+          <h3 className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--fgColor-muted)' }}>{title}</h3>
+          <div className="text-3xl font-semibold mb-1" style={{ color: colorStyles[color] }}>
             {value}
           </div>
-          {subtitle && <div className="text-sm text-gh-text-secondary">{subtitle}</div>}
+          {subtitle && <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>{subtitle}</div>}
         </div>
         {icon && (
-          <div className={`p-3 rounded-lg ${iconBgClasses[color]}`}>
+          <div className="p-3 rounded-lg" style={{ backgroundColor: iconBgStyles[color] }}>
             {icon}
           </div>
         )}
@@ -78,11 +84,17 @@ export function KPICard({ title, value, subtitle, color = 'blue', icon, tooltip,
       {tooltip && (
         <div className="absolute top-2 right-2">
           <div className="relative group/tooltip">
-            <InfoIcon 
-              size={16}
-              className="text-gh-text-muted hover:text-gh-text-secondary cursor-help" 
-            />
-            <div className="invisible group-hover/tooltip:visible absolute right-0 top-6 w-64 p-2 bg-gh-header-bg text-white text-xs rounded shadow-lg z-10">
+            <span className="cursor-help" style={{ color: 'var(--fgColor-muted)' }}>
+              <InfoIcon size={16} />
+            </span>
+            <div 
+              className="invisible group-hover/tooltip:visible absolute right-0 top-6 w-64 p-3 text-xs rounded-md shadow-lg z-10 border"
+              style={{
+                backgroundColor: 'var(--overlay-bgColor)',
+                color: 'var(--fgColor-default)',
+                borderColor: 'var(--borderColor-default)'
+              }}
+            >
               {tooltip}
             </div>
           </div>

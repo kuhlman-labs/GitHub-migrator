@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, BaseStyles } from '@primer/react';
 import { Dashboard } from './components/Dashboard';
@@ -14,14 +15,30 @@ import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 
+const THEME_STORAGE_KEY = 'primer-theme-mode';
+
 function App() {
+  // Initialize theme from localStorage or default to 'day'
+  const [colorMode] = useState<'day' | 'night'>(() => {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return (stored === 'day' || stored === 'night') ? stored : 'day';
+  });
+
+  // Set Primer data attributes on document root for theming
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-color-mode', colorMode === 'day' ? 'light' : 'dark');
+    root.setAttribute('data-light-theme', 'light');
+    root.setAttribute('data-dark-theme', 'dark');
+  }, [colorMode]);
+
   return (
-    <ThemeProvider colorMode="light">
+    <ThemeProvider colorMode={colorMode} preventSSRMismatch>
       <BaseStyles>
         <Router>
           <AuthProvider>
             <ToastProvider>
-              <div className="min-h-screen bg-gh-canvas-default">
+              <div className="min-h-screen" style={{ backgroundColor: 'var(--bgColor-default)', color: 'var(--fgColor-default)' }}>
                 <Routes>
                   {/* Login page (public) */}
                   <Route path="/login" element={<Login />} />
@@ -50,44 +67,44 @@ function ProtectedRoutes() {
           <Route path="/batches/new" element={<BatchBuilderPage />} />
           <Route path="/batches/:batchId/edit" element={<BatchBuilderPage />} />
           
-          {/* Standard pages (with container) */}
+          {/* Standard pages (with max-width container and responsive padding) */}
           <Route path="/" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <Dashboard />
             </main>
           } />
           <Route path="/org/:orgName" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <OrganizationDetail />
             </main>
           } />
           <Route path="/org/:orgName/project/:projectName" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <OrganizationDetail />
             </main>
           } />
           <Route path="/repository/:fullName" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <RepositoryDetail />
             </main>
           } />
           <Route path="/analytics" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <Analytics />
             </main>
           } />
           <Route path="/repositories" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <Repositories />
             </main>
           } />
           <Route path="/batches" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <BatchManagement />
             </main>
           } />
           <Route path="/history" element={
-            <main id="main-content" className="container mx-auto px-4 py-8">
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <MigrationHistory />
             </main>
           } />

@@ -123,11 +123,11 @@ export function Dashboard() {
   }, [searchTerm]);
 
   return (
-    <div className="max-w-7xl mx-auto relative">
+    <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">Organizations</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Organizations</h1>
         <div className="flex items-center gap-4">
           <TextInput
             leadingVisual={SearchIcon}
@@ -274,10 +274,15 @@ function OrganizationCard({ organization }: { organization: Organization }) {
   return (
     <Link
       to={`/org/${encodeURIComponent(organization.organization)}`}
-      className="block bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 shadow-gh-card"
+      className="block rounded-lg border transition-colors p-6"
+      style={{
+        backgroundColor: 'var(--bgColor-default)',
+        borderColor: 'var(--borderColor-default)',
+        boxShadow: 'var(--shadow-resting-small)'
+      }}
     >
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gh-text-primary mb-2">
+        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>
           {organization.organization}
         </h3>
         {organization.ado_organization && (
@@ -294,20 +299,20 @@ function OrganizationCard({ organization }: { organization: Organization }) {
       
       <div className="mb-4 space-y-3">
         <div>
-          <div className="text-3xl font-semibold text-blue-600 mb-1">{totalRepos}</div>
-          <div className="text-sm text-gh-text-secondary">Total Repositories</div>
+          <div className="text-3xl font-semibold mb-1" style={{ color: 'var(--fgColor-accent)' }}>{totalRepos}</div>
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Repositories</div>
         </div>
         
         {totalProjects !== undefined && (
           <div>
-            <div className="text-2xl font-semibold text-gh-text-primary mb-1">{totalProjects}</div>
-            <div className="text-sm text-gh-text-secondary">Total Projects</div>
+            <div className="text-2xl font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>{totalProjects}</div>
+            <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Projects</div>
           </div>
         )}
       </div>
 
       <div className="mb-3">
-        <div className="text-xs font-semibold text-gh-text-secondary mb-2 uppercase tracking-wide">
+        <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--fgColor-muted)' }}>
           Status Breakdown
         </div>
         <div className="flex flex-wrap gap-1">
@@ -319,7 +324,7 @@ function OrganizationCard({ organization }: { organization: Organization }) {
         </div>
       </div>
 
-      <div className="text-sm text-blue-600 hover:underline font-medium">
+      <div className="text-sm hover:underline font-medium" style={{ color: 'var(--fgColor-accent)' }}>
         View repositories →
       </div>
     </Link>
@@ -386,9 +391,9 @@ function DiscoveryModal({
       />
       
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto">
-          <div className="flex items-center justify-between p-4 border-b border-gh-border-default">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <div className="rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+          <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--borderColor-default)' }}>
             <h2 id="discovery-modal-title" className="text-xl font-semibold">
               Start Repository Discovery
             </h2>

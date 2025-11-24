@@ -26,7 +26,7 @@ export function BatchManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
-  
+
   // Delete confirmation dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [batchToDelete, setBatchToDelete] = useState<Batch | null>(null);
@@ -223,7 +223,7 @@ export function BatchManagement() {
       showWarning('Cannot delete a batch that is currently in progress.');
       return;
     }
-    
+
     setBatchToDelete(batch);
     setShowDeleteDialog(true);
   };
@@ -336,9 +336,9 @@ export function BatchManagement() {
   }, [activeTab, searchTerm]);
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gh-text-primary">Batch Management</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Batch Management</h1>
         <div className="flex items-center gap-4">
           <TextInput
             leadingVisual={SearchIcon}
@@ -360,7 +360,14 @@ export function BatchManagement() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Batch List */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card">
+          <div 
+            className="rounded-lg border"
+            style={{
+              backgroundColor: 'var(--bgColor-default)',
+              borderColor: 'var(--borderColor-default)',
+              boxShadow: 'var(--shadow-resting-small)'
+            }}
+          >
             {/* Tabs */}
             <UnderlineNav aria-label="Batch tabs">
               <UnderlineNav.Item
@@ -432,22 +439,29 @@ export function BatchManagement() {
         {/* Batch Detail */}
         <div className="lg:col-span-2">
           {selectedBatch ? (
-            <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6">
+            <div 
+              className="rounded-lg border p-6"
+              style={{
+                backgroundColor: 'var(--bgColor-default)',
+                borderColor: 'var(--borderColor-default)',
+                boxShadow: 'var(--shadow-resting-small)'
+              }}
+            >
               <div className="flex justify-between items-start mb-6">
                 <div className="flex-1">
-                  <h2 className="text-xl font-semibold text-gh-text-primary">{selectedBatch.name}</h2>
+                  <h2 className="text-xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>{selectedBatch.name}</h2>
                   {selectedBatch.description && (
-                    <p className="text-gh-text-secondary mt-1">{selectedBatch.description}</p>
+                    <p className="mt-1" style={{ color: 'var(--fgColor-muted)' }}>{selectedBatch.description}</p>
                   )}
                   <div className="flex items-center gap-3 mt-3">
                     <StatusBadge status={selectedBatch.status} />
-                    <span className="text-sm text-gh-text-secondary">
+                    <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                       {selectedBatch.repository_count} repositories
                     </span>
                     {selectedBatch.created_at && (
                       <>
-                        <span className="text-gray-300">•</span>
-                        <span className="text-xs text-gray-400">
+                        <span style={{ color: 'var(--fgColor-muted)' }}>•</span>
+                        <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
                           Created {formatDate(selectedBatch.created_at)}
                         </span>
                       </>
@@ -460,30 +474,32 @@ export function BatchManagement() {
                     {(selectedBatch.destination_org || selectedBatch.exclude_releases || selectedBatch.migration_api !== 'GEI') && (
                       <div>
                         <div className="flex items-center gap-2 mb-2">
-                          <GearIcon size={16} className="text-gray-500" />
-                          <span className="text-sm font-semibold text-gh-text-primary">Migration Settings</span>
+                          <span style={{ color: 'var(--fgColor-muted)' }}>
+                            <GearIcon size={16} />
+                          </span>
+                          <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration Settings</span>
                         </div>
                         <div className="space-y-2 pl-6">
                           {selectedBatch.destination_org && (
                             <div className="text-sm">
-                              <span className="text-gh-text-secondary">Default Destination:</span>
-                              <div className="font-medium text-blue-700 mt-0.5">{selectedBatch.destination_org}</div>
-                              <div className="text-xs text-gray-500 italic mt-0.5">For repos without specific destination</div>
+                              <span style={{ color: 'var(--fgColor-muted)' }}>Default Destination:</span>
+                              <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-accent)' }}>{selectedBatch.destination_org}</div>
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>For repos without specific destination</div>
                             </div>
                           )}
                           {selectedBatch.migration_api && selectedBatch.migration_api !== 'GEI' && (
                             <div className="text-sm">
-                              <span className="text-gh-text-secondary">Migration API:</span>
-                              <div className="font-medium text-gh-text-primary mt-0.5">
+                              <span style={{ color: 'var(--fgColor-muted)' }}>Migration API:</span>
+                              <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                                 {selectedBatch.migration_api === 'ELM' ? 'ELM (Enterprise Live Migrator)' : selectedBatch.migration_api}
                               </div>
                             </div>
                           )}
                           {selectedBatch.exclude_releases && (
                             <div className="text-sm">
-                              <span className="text-gh-text-secondary">Exclude Releases:</span>
-                              <div className="font-medium text-orange-700 mt-0.5">Yes</div>
-                              <div className="text-xs text-gray-500 italic mt-0.5">Repo settings can override</div>
+                              <span style={{ color: 'var(--fgColor-muted)' }}>Exclude Releases:</span>
+                              <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-attention)' }}>Yes</div>
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>Repo settings can override</div>
                             </div>
                           )}
                         </div>
@@ -493,33 +509,35 @@ export function BatchManagement() {
                     {/* Right Column: Schedule & Timestamps */}
                     <div>
                       <div className="flex items-center gap-2 mb-2">
-                        <ClockIcon size={16} className="text-gray-500" />
-                        <span className="text-sm font-semibold text-gh-text-primary">Schedule & Timeline</span>
+                        <span style={{ color: 'var(--fgColor-muted)' }}>
+                          <ClockIcon size={16} />
+                        </span>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Schedule & Timeline</span>
                       </div>
                       <div className="space-y-2 pl-6">
                         {selectedBatch.scheduled_at && (
                           <div className="text-sm">
-                            <span className="text-gh-text-secondary">Scheduled:</span>
-                            <div className="font-medium text-blue-900 mt-0.5">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Scheduled:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.scheduled_at)}
                             </div>
                             {new Date(selectedBatch.scheduled_at) > new Date() && (
-                              <div className="text-xs text-blue-600 italic mt-0.5">Auto-start when ready</div>
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-accent)' }}>Auto-start when ready</div>
                             )}
                           </div>
                         )}
                         {selectedBatch.last_dry_run_at && (
                           <div className="text-sm">
-                            <span className="text-gh-text-secondary">Last Dry Run:</span>
-                            <div className="font-medium text-gh-text-primary mt-0.5">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Last Dry Run:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.last_dry_run_at)}
                             </div>
                           </div>
                         )}
                         {selectedBatch.last_migration_attempt_at && (
                           <div className="text-sm">
-                            <span className="text-gh-text-secondary">Last Migration:</span>
-                            <div className="font-medium text-gh-text-primary mt-0.5">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Last Migration:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.last_migration_attempt_at)}
                             </div>
                           </div>
@@ -559,7 +577,18 @@ export function BatchManagement() {
                       )}
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id, true)}
-                        className="px-4 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 border border-green-600"
+                        className="px-4 py-1.5 rounded-md text-sm font-medium border-0 transition-all cursor-pointer"
+                        style={{ 
+                          backgroundColor: '#2da44e',
+                          color: '#ffffff',
+                          fontWeight: 500
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2c974b';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2da44e';
+                        }}
                       >
                         Skip & Migrate
                       </button>
@@ -570,7 +599,18 @@ export function BatchManagement() {
                     <>
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id)}
-                        className="px-4 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 border border-green-600"
+                        className="px-4 py-1.5 rounded-md text-sm font-medium border-0 transition-all cursor-pointer"
+                        style={{ 
+                          backgroundColor: '#2da44e',
+                          color: '#ffffff',
+                          fontWeight: 500
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2c974b';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2da44e';
+                        }}
                       >
                         Start Migration
                       </button>
@@ -622,7 +662,7 @@ export function BatchManagement() {
               {/* Progress Bar */}
               {progress && progress.total > 0 && (
                 <div className="mb-6 bg-gh-neutral-bg p-4 rounded-lg">
-                  <div className="flex justify-between text-sm text-gh-text-secondary mb-2">
+                  <div className="flex justify-between text-sm mb-2" style={{ color: 'var(--fgColor-muted)' }}>
                     <span>Progress</span>
                     <span>
                       {progress.completed} / {progress.total} ({progress.percentage}%)
@@ -663,7 +703,7 @@ export function BatchManagement() {
                 {/* In Progress Repositories */}
                 {groupedRepos.in_progress.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-blue-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-accent)' }}>
                       In Progress ({groupedRepos.in_progress.length})
                     </h3>
                     <div className="space-y-2">
@@ -683,7 +723,7 @@ export function BatchManagement() {
                 {/* Completed Repositories */}
                 {groupedRepos.complete.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-green-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-success)' }}>
                       Completed ({groupedRepos.complete.length})
                     </h3>
                     <div className="space-y-2">
@@ -703,7 +743,7 @@ export function BatchManagement() {
                 {/* Dry Run Complete (Ready for Migration) */}
                 {groupedRepos.dry_run_complete.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-blue-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-accent)' }}>
                       Ready for Migration ({groupedRepos.dry_run_complete.length})
                     </h3>
                     <div className="space-y-2">
@@ -723,7 +763,7 @@ export function BatchManagement() {
                 {/* Pending Repositories */}
                 {groupedRepos.pending.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-gray-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-default)' }}>
                       Pending ({groupedRepos.pending.length})
                     </h3>
                     <div className="space-y-2">
@@ -748,7 +788,7 @@ export function BatchManagement() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow-sm p-6 text-center text-gray-500">
+            <div className="rounded-lg shadow-sm p-6 text-center" style={{ backgroundColor: 'var(--bgColor-default)', color: 'var(--fgColor-muted)' }}>
               Select a batch to view details
             </div>
           )}
@@ -770,17 +810,18 @@ export function BatchManagement() {
           {/* Dialog */}
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div 
-              className="bg-white rounded-lg shadow-xl max-w-md w-full"
+              className="rounded-lg shadow-xl max-w-md w-full"
+              style={{ backgroundColor: 'var(--bgColor-default)' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="px-4 py-3 border-b border-gh-border-default">
-                <h3 className="text-base font-semibold text-gh-text-primary">
+                <h3 className="text-base font-semibold" style={{ color: 'var(--fgColor-default)' }}>
                   Delete Batch
                 </h3>
               </div>
               
               <div className="p-4">
-                <p className="text-sm text-gh-text-secondary mb-3">
+                <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
                   {batchToDelete.repository_count > 0 ? (
                     <>
                       Are you sure you want to delete batch <strong>"{batchToDelete.name}"</strong>?
@@ -833,22 +874,22 @@ interface BatchCardProps {
 function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
   return (
     <div
-      className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-        isSelected
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-200 hover:border-gray-300'
-      }`}
+      className="p-4 rounded-lg border-2 cursor-pointer transition-all"
+      style={isSelected
+        ? { borderColor: 'var(--accent-emphasis)', backgroundColor: 'var(--accent-subtle)' }
+        : { borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }
+      }
       onClick={onClick}
     >
       <div className="flex justify-between items-start">
         <div className="flex-1">
-          <h3 className="font-medium text-gray-900">{batch.name}</h3>
+          <h3 className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{batch.name}</h3>
           <div className="flex gap-2 mt-2">
             <StatusBadge status={batch.status} size="small" />
-            <span className="text-xs text-gray-600">{batch.repository_count} repos</span>
+            <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>{batch.repository_count} repos</span>
           </div>
           {batch.scheduled_at && (
-            <div className="mt-1.5 text-xs text-blue-700 flex items-center gap-1">
+            <div className="mt-1.5 text-xs flex items-center gap-1" style={{ color: 'var(--fgColor-accent)' }}>
               <CalendarIcon size={12} />
               {formatDate(batch.scheduled_at)}
             </div>
@@ -860,7 +901,18 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
               e.stopPropagation();
               onStart();
             }}
-            className="text-sm px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+            className="text-sm px-3 py-1 rounded border-0 transition-all cursor-pointer"
+            style={{ 
+              backgroundColor: '#2da44e',
+              color: '#ffffff',
+              fontWeight: 500
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#2c974b';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#2da44e';
+            }}
           >
             Start
           </button>
@@ -908,23 +960,36 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
         state={{ fromBatch: true, batchId, batchName }}
         className="flex-1 min-w-0"
       >
-        <div className="font-semibold text-gh-text-primary group-hover:text-gh-blue transition-colors">
+        <div className="font-semibold transition-colors" style={{ color: 'var(--fgColor-default)' }}>
           {repository.full_name}
         </div>
-        <div className="text-sm text-gh-text-secondary mt-1 space-y-0.5">
+        <div className="text-sm mt-1 space-y-0.5" style={{ color: 'var(--fgColor-muted)' }}>
           <div>
             {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs">→ {destinationLabel}:</span>
-            <span className={`text-xs font-medium ${isCustomDestination ? 'text-blue-600' : isBatchDestination ? 'text-purple-600' : 'text-gray-600'}`}>
+            <span 
+              className="text-xs font-medium"
+              style={{ color: isCustomDestination ? 'var(--fgColor-accent)' : isBatchDestination ? 'var(--fgColor-attention)' : 'var(--fgColor-muted)' }}
+            >
               {destination}
             </span>
             {isCustomDestination && (
-              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">custom</span>
+              <span 
+                className="text-xs px-1.5 py-0.5 rounded"
+                style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
+              >
+                custom
+              </span>
             )}
             {isBatchDestination && (
-              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">batch default</span>
+              <span 
+                className="text-xs px-1.5 py-0.5 rounded"
+                style={{ backgroundColor: 'var(--attention-subtle)', color: 'var(--fgColor-attention)' }}
+              >
+                batch default
+              </span>
             )}
           </div>
         </div>
