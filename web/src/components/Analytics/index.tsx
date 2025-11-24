@@ -140,36 +140,41 @@ export function Analytics() {
       {/* SECTION 1: DISCOVERY ANALYTICS */}
       {activeTab === 'discovery' && (
       <section className="mb-12">
-        <div className="border-l-4 border-gh-blue pl-4 mb-6">
-          <h2 className="text-xl font-semibold text-gh-text-primary">Discovery Analytics</h2>
-          <p className="text-sm text-gh-text-secondary mt-1">
+        <div className="border-l-4 border-blue-500 pl-4 mb-6">
+          <h2 className="text-2xl font-light text-gray-900">Discovery Analytics</h2>
+          <p className="text-sm text-gray-600 mt-1">
             Source environment overview to drive batch planning decisions
           </p>
         </div>
 
         {/* Discovery Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatCard
+          <KPICard
             title="Total Repositories"
             value={analytics.total_repositories}
             color="blue"
+            tooltip="Total number of repositories discovered across all organizations"
           />
-          <StatCard
+          <KPICard
             title="Organizations"
             value={analytics.organization_stats?.length || 0}
             color="blue"
+            subtitle={sourceType === 'azuredevops' ? 'ADO projects' : 'GitHub orgs'}
+            tooltip={`Number of ${sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'GitHub organizations'} with repositories`}
           />
-          <StatCard
+          <KPICard
             title="High Complexity"
             value={highComplexityCount}
             color="yellow"
             subtitle={`${analytics.total_repositories > 0 ? Math.round((highComplexityCount / analytics.total_repositories) * 100) : 0}% of total`}
             onClick={() => navigate(getRepositoriesUrl({ complexity: ['complex', 'very_complex'] }))}
+            tooltip="Repositories marked as complex or very complex requiring special attention"
           />
-          <StatCard
+          <KPICard
             title="Features Detected"
             value={analytics.feature_stats ? Object.entries(analytics.feature_stats).filter(([key, value]) => key !== 'total_repositories' && typeof value === 'number' && value > 0).length : 0}
             color="blue"
+            tooltip="Number of different features detected across all repositories (LFS, Actions, Wikis, etc.)"
           />
         </div>
 
@@ -735,55 +740,3 @@ function FeatureStat({ label, count, total, onClick }: { label: string; count: n
   );
 }
 
-interface StatCardProps {
-  title: string;
-  value: number;
-  color: 'blue' | 'green' | 'red' | 'yellow';
-  subtitle?: string;
-  onClick?: () => void;
-}
-
-function StatCard({ title, value, color, subtitle, onClick }: StatCardProps) {
-  const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    red: 'bg-red-50 text-red-600',
-    yellow: 'bg-yellow-50 text-yellow-600',
-  };
-
-  const isClickable = !!onClick;
-  const baseClasses = "bg-white rounded-lg shadow-sm p-6 transition-all";
-  const clickableClasses = isClickable 
-    ? "cursor-pointer hover:shadow-lg hover:border-2 hover:border-blue-500" 
-    : "";
-
-  const handleClick = () => {
-    if (onClick) {
-      onClick();
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault();
-      onClick();
-    }
-  };
-
-  return (
-    <div 
-      className={`${baseClasses} ${clickableClasses}`}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      role={isClickable ? 'button' : undefined}
-      tabIndex={isClickable ? 0 : undefined}
-      aria-label={isClickable ? `View repositories: ${title}` : undefined}
-    >
-      <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
-      <div className={`text-3xl font-light mb-1 ${colorClasses[color]}`}>
-        {value}
-      </div>
-      {subtitle && <div className="text-sm text-gray-500">{subtitle}</div>}
-    </div>
-  );
-}
