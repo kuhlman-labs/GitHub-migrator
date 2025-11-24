@@ -7,6 +7,7 @@ interface RepositoryGroupProps {
   organization: string;
   repositories: Repository[];
   selectedIds: Set<number>;
+  disabledIds?: Set<number>;
   onToggle: (repoId: number) => void;
   onToggleAll: (repoIds: number[]) => void;
 }
@@ -15,16 +16,20 @@ export function RepositoryGroup({
   organization,
   repositories,
   selectedIds,
+  disabledIds,
   onToggle,
   onToggleAll,
 }: RepositoryGroupProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
-  const allSelected = repositories.every((repo) => selectedIds.has(repo.id));
-  const someSelected = repositories.some((repo) => selectedIds.has(repo.id)) && !allSelected;
+  // Only consider non-disabled repos for selection state
+  const enabledRepos = repositories.filter((repo) => !disabledIds?.has(repo.id));
+  const allSelected = enabledRepos.length > 0 && enabledRepos.every((repo) => selectedIds.has(repo.id));
+  const someSelected = enabledRepos.some((repo) => selectedIds.has(repo.id)) && !allSelected;
 
   const handleToggleAll = () => {
-    const repoIds = repositories.map((r) => r.id);
+    // Only toggle enabled repos
+    const repoIds = enabledRepos.map((r) => r.id);
     onToggleAll(repoIds);
   };
 
@@ -92,6 +97,7 @@ export function RepositoryGroup({
               key={repo.id}
               repository={repo}
               selected={selectedIds.has(repo.id)}
+              disabled={disabledIds?.has(repo.id)}
               onToggle={onToggle}
             />
           ))}

@@ -4,10 +4,11 @@ import { formatBytes } from '../../utils/format';
 interface RepositoryListItemProps {
   repository: Repository;
   selected: boolean;
+  disabled?: boolean;
   onToggle: (repoId: number) => void;
 }
 
-export function RepositoryListItem({ repository, selected, onToggle }: RepositoryListItemProps) {
+export function RepositoryListItem({ repository, selected, disabled, onToggle }: RepositoryListItemProps) {
   const getComplexityIndicator = () => {
     // Use backend-calculated score if available (uses proper quantile-based activity scoring)
     // Only fallback to frontend calculation if backend score is missing
@@ -98,9 +99,14 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
 
   return (
     <label
-      className="group flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all shadow-sm"
+      className={`group flex items-start gap-3 p-3 rounded-lg transition-all shadow-sm ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
       style={
-        selected 
+        disabled
+          ? {
+              border: '1px solid var(--borderColor-default)',
+              backgroundColor: 'var(--bgColor-muted)'
+            }
+          : selected 
           ? { 
               border: '2px solid var(--accent-emphasis)', 
               backgroundColor: 'var(--accent-subtle)' 
@@ -113,9 +119,10 @@ export function RepositoryListItem({ repository, selected, onToggle }: Repositor
     >
       <input
         type="checkbox"
-        checked={selected}
-        onChange={() => onToggle(repository.id)}
-        className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+        checked={selected || disabled}
+        disabled={disabled}
+        onChange={() => !disabled && onToggle(repository.id)}
+        className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-0 disabled:opacity-50"
         style={{ borderColor: 'var(--borderColor-default)' }}
       />
       

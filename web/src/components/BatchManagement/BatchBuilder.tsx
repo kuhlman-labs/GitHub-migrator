@@ -6,7 +6,9 @@ import { api } from '../../services/api';
 import { FilterSidebar } from './FilterSidebar';
 import { ActiveFilterPills } from './ActiveFilterPills';
 import { RepositoryGroup } from './RepositoryGroup';
+import { RepositoryListItem } from './RepositoryListItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { Pagination } from '../common/Pagination';
 import { formatBytes, formatDateForInput } from '../../utils/format';
 
 interface BatchBuilderProps {
@@ -156,11 +158,34 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     try {
       const response = await api.listRepositories(filters);
       const repos = Array.isArray(response) ? response : (response.repositories || []);
-      const total = Array.isArray(response) ? response.length : (response.total || repos.length);
       
-      console.log('Loading available repos:', repos.length, 'repositories, total:', total);
+      console.log('API Response:', { 
+        isArray: Array.isArray(response), 
+        reposCount: repos.length, 
+        total: Array.isArray(response) ? 'N/A' : response.total,
+        hasTotal: !Array.isArray(response) && 'total' in response
+      });
+      
+      // Always update repos
       setAvailableRepos(repos);
-      setTotalAvailable(total);
+      
+      // Update total only in specific cases
+      if (Array.isArray(response)) {
+        // No pagination - response is the full array
+        console.log('Setting total from array length:', response.length);
+        setTotalAvailable(response.length);
+      } else if (response.total !== undefined && response.total !== null && response.total > 0) {
+        // Backend provided a valid total
+        console.log('Setting total from response:', response.total);
+        setTotalAvailable(response.total);
+      } else if (currentPage === 1 && repos.length > 0) {
+        // First page with repos but no total - estimate based on page size
+        const estimatedTotal = repos.length < pageSize ? repos.length : repos.length;
+        console.log('Estimating total for first page:', estimatedTotal);
+        setTotalAvailable(estimatedTotal);
+      }
+      // Otherwise, keep existing totalAvailable value
+      
     } catch (err) {
       console.error('Failed to load available repos:', err);
       setError('Failed to load repositories');
@@ -238,11 +263,13 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     if (selectedRepoIds.size === 0) return;
 
     const selectedRepos = availableRepos.filter((r) => selectedRepoIds.has(r.id));
-    setCurrentBatchRepos([...currentBatchRepos, ...selectedRepos]);
+    const newBatchRepos = [...currentBatchRepos, ...selectedRepos];
+    setCurrentBatchRepos(newBatchRepos);
     setSelectedRepoIds(new Set());
     
-    // Check if all repos on current page were added
-    const remainingRepos = availableRepos.filter((r) => !selectedRepoIds.has(r.id) && !currentBatchRepos.some((cr) => cr.id === r.id));
+    // Check if all non-added repos on current page were selected
+    const addedIds = new Set(newBatchRepos.map(r => r.id));
+    const remainingRepos = availableRepos.filter((r) => !addedIds.has(r.id));
     
     // Calculate pagination values
     const currentPageSize = filters.limit || 50;
@@ -253,10 +280,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       const nextPage = currentPage + 1;
       setCurrentPage(nextPage);
       setFilters({ ...filters, offset: (nextPage - 1) * currentPageSize });
-    } else {
-    // Refresh available repos to exclude newly added ones
-    await loadAvailableRepos();
     }
+    // Note: We don't need to manually reload because the useEffect will trigger when filters change
   };
 
   const handleRemoveRepo = (repoId: number) => {
@@ -400,8 +425,14 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     return groups;
   };
 
-  const availableGroups = groupReposByOrg(availableRepos.filter((r) => !currentBatchRepos.some((cr) => cr.id === r.id)));
+  // Track which repos have been added to the batch to disable their checkboxes
+  const addedRepoIds = new Set(currentBatchRepos.map(r => r.id));
+  
+  // Group selected/current batch repos by org for better organization
   const currentGroups = groupReposByOrg(currentBatchRepos);
+  
+  // Filter out already-added repos from the available list for display
+  const availableReposToShow = availableRepos.filter(r => !addedRepoIds.has(r.id));
 
   const totalSize = currentBatchRepos.reduce((sum, repo) => sum + (repo.total_size || 0), 0);
   const pageSize = filters.limit || 50;
@@ -503,27 +534,33 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         </div>
 
         {/* Repository List - Scrollable */}
-        <div className="overflow-y-auto p-4 space-y-3 row-start-2 min-h-0">
+        <div className="overflow-y-auto p-4 space-y-2 row-start-2 min-h-0">
           {availableLoading ? (
             <div className="flex items-center justify-center py-12">
               <LoadingSpinner />
             </div>
-          ) : Object.keys(availableGroups).length === 0 ? (
+          ) : availableReposToShow.length === 0 ? (
             <div className="text-center py-12">
               <svg className="mx-auto h-12 w-12" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
-              <p className="mt-2 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-                {currentPage < totalPages 
-                  ? 'All repositories on this page have been added'
-                  : 'No repositories available'}
+              <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--fgColor-muted)' }}>
+                {availableRepos.length === 0 
+                  ? (currentPage < totalPages 
+                      ? 'Loading next page...'
+                      : 'No repositories available')
+                  : 'All repositories on this page have been added to the batch'}
               </p>
               <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-                {currentPage < totalPages 
-                  ? `Go to the next page to add more repositories`
-                  : 'Try adjusting your filters'}
+                {availableRepos.length === 0
+                  ? (currentPage < totalPages 
+                      ? 'Please wait while we load more repositories'
+                      : 'Try adjusting your filters or add more repositories')
+                  : currentPage < totalPages 
+                    ? `Go to the next page to add more repositories`
+                    : `You've reached the end. ${currentBatchRepos.length} repositories added to batch.`}
               </p>
-              {currentPage < totalPages && (
+              {currentPage < totalPages && availableRepos.length > 0 && (
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
                   className="mt-4 px-4 py-2 text-sm font-medium rounded-md transition-colors shadow-sm"
@@ -534,16 +571,46 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               )}
             </div>
           ) : (
-            Object.entries(availableGroups).map(([org, repos]) => (
-              <RepositoryGroup
-                key={org}
-                organization={org}
-                repositories={repos}
-                selectedIds={selectedRepoIds}
-                onToggle={handleToggleRepo}
-                onToggleAll={handleToggleAllInGroup}
-              />
-            ))
+            <>
+              {/* Select All header */}
+              {availableReposToShow.length > 0 && (
+                <div 
+                  className="sticky top-0 z-10 p-3 mb-2 rounded-lg border flex items-center gap-3"
+                  style={{ 
+                    backgroundColor: 'var(--bgColor-muted)',
+                    borderColor: 'var(--borderColor-default)'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={availableReposToShow.every((repo) => selectedRepoIds.has(repo.id))}
+                    ref={(el) => {
+                      if (el) {
+                        const allSelected = availableReposToShow.every((repo) => selectedRepoIds.has(repo.id));
+                        const someSelected = availableReposToShow.some((repo) => selectedRepoIds.has(repo.id)) && !allSelected;
+                        el.indeterminate = someSelected;
+                      }
+                    }}
+                    onChange={() => handleToggleAllInGroup(availableReposToShow.map(r => r.id))}
+                    className="rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+                    style={{ borderColor: 'var(--borderColor-default)' }}
+                  />
+                  <span className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>
+                    Select all {availableReposToShow.length} on this page
+                  </span>
+                </div>
+              )}
+              
+              {/* Flat list of repositories */}
+              {availableReposToShow.map((repo) => (
+                <RepositoryListItem
+                  key={repo.id}
+                  repository={repo}
+                  selected={selectedRepoIds.has(repo.id)}
+                  onToggle={handleToggleRepo}
+                />
+              ))}
+            </>
           )}
         </div>
 
@@ -553,47 +620,12 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)' }}
         >
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div 
-              className="px-4 py-3"
-              style={{ 
-                borderBottom: '1px solid var(--borderColor-muted)', 
-                backgroundColor: 'var(--bgColor-muted)' 
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-                  Page {currentPage} of {totalPages}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1.5 text-sm border rounded-lg hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    style={{
-                      borderColor: 'var(--borderColor-default)',
-                      color: 'var(--fgColor-default)',
-                      backgroundColor: 'var(--control-bgColor-rest)'
-                    }}
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 text-sm border rounded-lg hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    style={{
-                      borderColor: 'var(--borderColor-default)',
-                      color: 'var(--fgColor-default)',
-                      backgroundColor: 'var(--control-bgColor-rest)'
-                    }}
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <Pagination
+            currentPage={currentPage}
+            totalItems={totalAvailable}
+            pageSize={pageSize}
+            onPageChange={handlePageChange}
+          />
 
           {/* Add Selected Button - Always Visible */}
           <div className="p-4">
