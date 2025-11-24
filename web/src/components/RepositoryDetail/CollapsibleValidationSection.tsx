@@ -1,4 +1,4 @@
-import { XCircleFillIcon, AlertIcon, CheckCircleIcon, ChevronDownIcon } from '@primer/octicons-react';
+import { ChevronDownIcon } from '@primer/octicons-react';
 
 interface CollapsibleValidationSectionProps {
   id: string;

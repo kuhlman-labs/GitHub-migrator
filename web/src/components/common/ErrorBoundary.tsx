@@ -46,11 +46,12 @@ export class ErrorBoundary extends Component<Props, State> {
           >
             Try Again
           </Blankslate.PrimaryAction>
-          <Blankslate.SecondaryAction
+          <button
             onClick={() => window.location.reload()}
+            className="px-4 py-2 text-sm font-medium text-gh-text-secondary hover:text-gh-text-primary transition-colors"
           >
             Refresh Page
-          </Blankslate.SecondaryAction>
+          </button>
         </Blankslate>
       );
     }

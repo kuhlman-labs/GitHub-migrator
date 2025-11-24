@@ -580,7 +580,7 @@ function DiscoveryModal({
           <Button
             type="submit"
             variant="primary"
-            disabled={loading}
+            disabled={loading || !isFormValid}
           >
             {loading ? 'Starting...' : 'Start Discovery'}
           </Button>

@@ -285,7 +285,7 @@ export function Repositories() {
           </Blankslate.Visual>
           <Blankslate.Heading>No repositories found</Blankslate.Heading>
           <Blankslate.Description>
-            {activeFilterCount > 0 || searchTerm
+            {activeFilterCount > 0 || urlFilters.search
               ? 'Try adjusting your filters or search term to find repositories.'
               : 'No repositories have been discovered yet. Start by discovering repositories from your organizations.'}
           </Blankslate.Description>

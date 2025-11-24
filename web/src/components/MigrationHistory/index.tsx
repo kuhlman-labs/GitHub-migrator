@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { TextInput } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { SearchIcon, HistoryIcon } from '@primer/octicons-react';
@@ -103,7 +102,7 @@ export function MigrationHistory() {
               : 'Try adjusting your search term to find migrations.'}
           </Blankslate.Description>
           {migrations.length === 0 && (
-            <Blankslate.PrimaryAction as={Link} to="/">
+            <Blankslate.PrimaryAction href="/">
               Go to Dashboard
             </Blankslate.PrimaryAction>
           )}
