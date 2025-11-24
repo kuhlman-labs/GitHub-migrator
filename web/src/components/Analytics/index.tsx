@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { UnderlineNav } from '@primer/react';
+import { UnderlineNav, ProgressBar } from '@primer/react';
 import { ChevronRightIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -594,13 +594,12 @@ export function Analytics() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <div className="flex-1 rounded-full h-2 min-w-[100px]" style={{ backgroundColor: 'var(--borderColor-muted)' }}>
-                              <div
-                                className="h-2 rounded-full"
-                                style={{ 
-                                  width: `${completionPercentage}%`,
-                                  backgroundColor: 'var(--success-emphasis)'
-                                }}
+                            <div className="flex-1 min-w-[100px]">
+                              <ProgressBar 
+                                progress={completionPercentage} 
+                                aria-label={`${org.organization} ${completionPercentage}% complete`}
+                                bg="success.emphasis"
+                                barSize="small"
                               />
                             </div>
                             <span className="text-sm font-medium min-w-[3rem] text-right" style={{ color: 'var(--fgColor-default)' }}>

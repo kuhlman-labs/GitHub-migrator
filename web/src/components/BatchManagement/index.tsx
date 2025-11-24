@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { TextInput, Button, UnderlineNav } from '@primer/react';
+import { TextInput, Button, UnderlineNav, ProgressBar } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
@@ -661,19 +661,26 @@ export function BatchManagement() {
 
               {/* Progress Bar */}
               {progress && progress.total > 0 && (
-                <div className="mb-6 bg-gh-neutral-bg p-4 rounded-lg">
+                <div 
+                  className="mb-6 p-4 rounded-lg"
+                  style={{ backgroundColor: 'var(--bgColor-muted)' }}
+                >
                   <div className="flex justify-between text-sm mb-2" style={{ color: 'var(--fgColor-muted)' }}>
-                    <span>Progress</span>
+                    <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Progress</span>
                     <span>
-                      {progress.completed} / {progress.total} ({progress.percentage}%)
+                      <span className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                        {progress.completed}
+                      </span>
+                      {' '}/{' '}
+                      {progress.total}
+                      {' '}({progress.percentage}%)
                     </span>
                   </div>
-                  <div className="w-full bg-gh-border-default rounded-full h-2">
-                    <div
-                      className="bg-gh-success h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${progress.percentage}%` }}
-                    />
-                  </div>
+                  <ProgressBar 
+                    progress={progress.percentage} 
+                    aria-label={`${progress.completed} of ${progress.total} repositories completed`}
+                    bg="success.emphasis"
+                  />
                 </div>
               )}
 
