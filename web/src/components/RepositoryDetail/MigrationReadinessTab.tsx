@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Checkbox, TextInput, FormControl, Select, IconButton } from '@primer/react';
+import { Button, Checkbox, TextInput, FormControl, Select, Banner } from '@primer/react';
 import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -259,76 +259,49 @@ export function MigrationReadinessTab({
   const totalPoints = repository.complexity_score ?? 0;
   
   let category = 'Simple';
-  let categoryColor = 'text-green-600';
-  let categoryBg = 'bg-green-50';
+  let bannerVariant: 'success' | 'warning' | 'critical' = 'success';
+  
   if (totalPoints > 17) {
     category = 'Very Complex';
-    categoryColor = 'text-red-600';
-    categoryBg = 'bg-red-50';
+    bannerVariant = 'critical';
   } else if (totalPoints > 10) {
     category = 'Complex';
-    categoryColor = 'text-orange-600';
-    categoryBg = 'bg-orange-50';
+    bannerVariant = 'warning';
   } else if (totalPoints > 5) {
     category = 'Medium';
-    categoryColor = 'text-yellow-600';
-    categoryBg = 'bg-yellow-50';
+    bannerVariant = 'warning';
   }
 
   return (
     <div className="space-y-6">
       {/* Complexity Score Summary */}
-      <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>Migration Complexity</h3>
-        
-        <div 
-          className="mb-4 p-4 rounded-lg"
-          style={{
-            backgroundColor: categoryBg === 'bg-green-50' ? 'var(--success-subtle)' :
-                            categoryBg === 'bg-yellow-50' ? 'var(--attention-subtle)' :
-                            categoryBg === 'bg-orange-50' ? 'var(--attention-subtle)' :
-                            'var(--danger-subtle)',
-            borderLeft: `4px solid ${
-              categoryColor === 'text-green-600' ? 'var(--success-emphasis)' :
-              categoryColor === 'text-yellow-600' ? 'var(--attention-emphasis)' :
-              categoryColor === 'text-orange-600' ? 'var(--attention-emphasis)' :
-              'var(--danger-emphasis)'
-            }`
-          }}
-        >
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Total Complexity Score</span>
-            <span 
-              className="text-3xl font-bold"
-              style={{
-                color: categoryColor === 'text-green-600' ? 'var(--fgColor-success)' :
-                       categoryColor === 'text-yellow-600' ? 'var(--fgColor-attention)' :
-                       categoryColor === 'text-orange-600' ? 'var(--fgColor-attention)' :
-                       'var(--fgColor-danger)'
-              }}
-            >
-              {totalPoints}
-            </span>
-          </div>
-          <div className="text-sm">
-            <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Category: </span>
-            <span 
-              className="font-semibold"
-              style={{
-                color: categoryColor === 'text-green-600' ? 'var(--fgColor-success)' :
-                       categoryColor === 'text-yellow-600' ? 'var(--fgColor-attention)' :
-                       categoryColor === 'text-orange-600' ? 'var(--fgColor-attention)' :
-                       'var(--fgColor-danger)'
-              }}
-            >
-              {category}
-            </span>
-          </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration Complexity</h3>
+          <ComplexityInfoModal source={repository.source as 'github' | 'azuredevops'} />
         </div>
+        
+        <Banner
+          variant={bannerVariant}
+          title={`${category} Migration`}
+          description={
+            <div className="flex items-center gap-4">
+              <div>
+                <span className="text-sm">Complexity Score: </span>
+                <span className="text-2xl font-bold">{totalPoints}</span>
+              </div>
+              <div className="text-xs opacity-90">
+                {repository.source === 'azuredevops' ? 
+                  'Scoring based on ADO → GitHub migration complexity factors' :
+                  'Scoring based on GitHub migration documentation'}
+              </div>
+            </div>
+          }
+        />
 
         {/* Top Contributing Factors */}
         {complexityContributors.length > 0 && (
-          <div className="space-y-2 mb-4">
+          <div className="space-y-2">
             <h4 className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Contributing Factors:</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {complexityContributors.slice(0, 8).map((contributor, idx) => (
@@ -364,18 +337,6 @@ export function MigrationReadinessTab({
             )}
           </div>
         )}
-
-        <div 
-          className="pt-3 flex items-center justify-between"
-          style={{ borderTop: '1px solid var(--borderColor-default)' }}
-        >
-          <p className="text-xs" style={{ color: 'var(--fgColor-accent)' }}>
-            💡 {repository.source === 'azuredevops' ? 
-              'Scoring based on ADO → GitHub migration complexity factors' :
-              'Scoring based on GitHub migration documentation'}
-          </p>
-          <ComplexityInfoModal source={repository.source as 'github' | 'azuredevops'} />
-        </div>
       </div>
 
       {/* Validation Issues - Only show if there are issues */}
@@ -593,48 +554,65 @@ export function MigrationReadinessTab({
             className="pt-6"
             style={{ borderTop: '1px solid var(--borderColor-default)' }}
           >
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
               <div>
-                <h4 className="text-sm font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>Migration options</h4>
-                <p className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>Configure what data to include or exclude</p>
+                <h4 className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration options</h4>
+                <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>Configure what data to include or exclude</p>
               </div>
-              <IconButton
-                icon={InfoIcon}
+              <Button
                 variant="invisible"
                 size="small"
-                aria-label="Migration options information"
+                leadingVisual={InfoIcon}
                 onClick={() => setShowMigrationOptionsInfo(true)}
-              />
+              >
+                View details
+              </Button>
             </div>
 
-            <FormControl>
-              <Checkbox
-                checked={excludeReleases}
-                onChange={(e) => setExcludeReleases(e.target.checked)}
-                value="exclude-releases"
-              />
-              <FormControl.Label>Exclude releases</FormControl.Label>
-              <FormControl.Caption>Reduces metadata size for repos with large release assets</FormControl.Caption>
-            </FormControl>
+            <div 
+              className="rounded-md p-4 space-y-3"
+              style={{
+                backgroundColor: 'var(--bgColor-muted)',
+                border: '1px solid var(--borderColor-default)'
+              }}
+            >
+              <FormControl>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={excludeReleases}
+                    onChange={(e) => setExcludeReleases(e.target.checked)}
+                    value="exclude-releases"
+                  />
+                  <div className="flex-1">
+                    <FormControl.Label>Exclude releases</FormControl.Label>
+                    <FormControl.Caption>
+                      Skip migrating releases and their associated assets. Useful for repositories with many releases or large binary assets. Release tags and commit history will still be migrated.
+                    </FormControl.Caption>
+                  </div>
+                </div>
+              </FormControl>
 
-          {hasOptionsChanges && (
-              <div className="flex gap-2 mt-4">
-              <Button
-                onClick={handleSaveMigrationOptions}
-                disabled={savingOptions}
-                  variant="primary"
-              >
-                  {savingOptions ? 'Saving...' : 'Save Changes'}
-              </Button>
-              <Button
-                onClick={() => setExcludeReleases(repository.exclude_releases)}
-                disabled={savingOptions}
-                variant="default"
-              >
-                Reset
-              </Button>
-              </div>
-            )}
+              {hasOptionsChanges && (
+                <div className="flex gap-2 pt-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+                  <Button
+                    onClick={handleSaveMigrationOptions}
+                    disabled={savingOptions}
+                    variant="primary"
+                    size="small"
+                  >
+                    {savingOptions ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button
+                    onClick={() => setExcludeReleases(repository.exclude_releases)}
+                    disabled={savingOptions}
+                    variant="default"
+                    size="small"
+                  >
+                    Reset
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Migration Options Info Modal */}

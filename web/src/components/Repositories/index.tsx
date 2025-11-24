@@ -128,7 +128,7 @@ export function Repositories() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Repositories</h1>
-            <p className="text-sm text-gh-text-secondary mt-1">
+            <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
               {totalItems > 0 ? (
                 <>
                   Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} repositories
@@ -141,7 +141,8 @@ export function Repositories() {
           </div>
           <Link
             to="/analytics"
-            className="px-4 py-2 text-sm font-medium text-gh-blue hover:text-gh-blue-hover"
+            className="px-4 py-2 text-sm font-medium hover:underline"
+            style={{ color: 'var(--fgColor-accent)' }}
           >
             ← Back to Analytics
           </Link>
@@ -188,10 +189,11 @@ export function Repositories() {
             }}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gh-text-primary">Active Filters</h3>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Active Filters</h3>
               <button
                 onClick={clearAllFilters}
-                className="text-sm text-gh-danger hover:underline font-medium"
+                className="text-sm hover:underline font-medium"
+                style={{ color: 'var(--fgColor-danger)' }}
               >
                 Clear All
               </button>
@@ -325,11 +327,18 @@ export function Repositories() {
 
 function FilterBadge({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex items-center gap-2 px-3 py-1 bg-gh-info-bg text-gh-blue rounded-full text-sm font-medium border border-gh-blue/20">
+    <span 
+      className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium"
+      style={{
+        backgroundColor: 'var(--bgColor-accent-muted)',
+        color: 'var(--fgColor-accent)',
+        border: '1px solid var(--borderColor-accent-muted)'
+      }}
+    >
       {label}
       <button
         onClick={onRemove}
-        className="hover:bg-gh-blue/10 rounded-full p-0.5 transition-colors"
+        className="rounded-full p-0.5 transition-opacity hover:opacity-70"
         aria-label={`Remove ${label} filter`}
       >
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -348,26 +357,29 @@ function RepositoryCard({ repository }: { repository: Repository }) {
   return (
     <Link
       to={`/repository/${encodeURIComponent(repository.full_name)}`}
-      className="rounded-lg border transition-colors p-6 block"
+      className="rounded-lg border transition-opacity hover:opacity-80 p-6 block"
       style={{
         backgroundColor: 'var(--bgColor-default)',
         borderColor: 'var(--borderColor-default)',
         boxShadow: 'var(--shadow-resting-small)'
       }}
     >
-      <h3 className="text-base font-semibold text-gh-text-primary mb-3 truncate">
+      <h3 className="text-base font-semibold mb-3 truncate" style={{ color: 'var(--fgColor-default)' }}>
         {repository.full_name}
       </h3>
       <div className="mb-3 flex items-center justify-between">
         <StatusBadge status={repository.status} size="small" />
       </div>
-      <div className="space-y-1.5 text-sm text-gh-text-secondary mb-3">
+      <div className="space-y-1.5 text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
         <div>Size: {formatBytes(repository.total_size)}</div>
         <div>Branches: {repository.branch_count}</div>
       </div>
       
       {/* Timestamps */}
-      <div className="space-y-1 mb-3 border-t border-gh-border-default pt-3">
+      <div 
+        className="space-y-1 mb-3 pt-3"
+        style={{ borderTop: '1px solid var(--borderColor-default)' }}
+      >
         {repository.last_discovery_at && (
           <TimestampDisplay 
             timestamp={repository.last_discovery_at} 
