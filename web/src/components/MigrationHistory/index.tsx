@@ -185,6 +185,7 @@ function MigrationRow({ migration }: { migration: MigrationHistoryEntry }) {
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-blue-600 hover:underline"
+              style={{ color: '#2563eb' }}
             >
               View destination →
             </a>
