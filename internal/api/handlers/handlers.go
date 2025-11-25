@@ -1902,13 +1902,49 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Apply batch defaults to repositories that don't have options set
+	updatedCount := 0
+	for _, repo := range repos {
+		needsUpdate := false
+
+		// Apply destination org if batch has one and repo doesn't have a destination set
+		if batch.DestinationOrg != nil && *batch.DestinationOrg != "" && repo.DestinationFullName == nil {
+			destinationFullName := fmt.Sprintf("%s/%s", *batch.DestinationOrg, repo.Name())
+			repo.DestinationFullName = &destinationFullName
+			needsUpdate = true
+		}
+
+		// Apply exclude_releases setting from batch if repo doesn't have it set (assuming false is the default)
+		// Only apply if batch has it enabled - we don't want to override if repo explicitly set to false
+		if batch.ExcludeReleases && !repo.ExcludeReleases {
+			repo.ExcludeReleases = batch.ExcludeReleases
+			needsUpdate = true
+		}
+
+		if needsUpdate {
+			repo.UpdatedAt = time.Now()
+			if err := h.db.UpdateRepository(ctx, repo); err != nil {
+				h.logger.Warn("Failed to apply batch defaults to repository", "repo", repo.FullName, "error", err)
+				// Don't fail the entire operation, just log the warning
+			} else {
+				updatedCount++
+			}
+		}
+	}
+
 	// Get updated batch
 	batch, _ = h.db.GetBatch(ctx, batchID)
 
+	message := fmt.Sprintf("Added %d repositories to batch", len(req.RepositoryIDs))
+	if updatedCount > 0 {
+		message += fmt.Sprintf(" (%d inherited batch defaults)", updatedCount)
+	}
+
 	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"batch":              batch,
-		"repositories_added": len(req.RepositoryIDs),
-		"message":            fmt.Sprintf("Added %d repositories to batch", len(req.RepositoryIDs)),
+		"batch":                  batch,
+		"repositories_added":     len(req.RepositoryIDs),
+		"defaults_applied_count": updatedCount,
+		"message":                message,
 	})
 }
 
