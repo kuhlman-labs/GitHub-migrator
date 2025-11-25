@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Button, Checkbox, TextInput, FormControl, Select } from '@primer/react';
+import { useState, useEffect, useRef } from 'react';
+import { Button, Checkbox, TextInput, FormControl, Select, Dialog } from '@primer/react';
 import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -27,6 +27,10 @@ export function MigrationReadinessTab({
   const batches = allBatches.filter(b => b.status === 'pending' || b.status === 'ready');
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [assigningBatch, setAssigningBatch] = useState(false);
+  
+  // Dialog state
+  const [showRemoveDialog, setShowRemoveDialog] = useState(false);
+  const removeButtonRef = useRef<HTMLButtonElement>(null);
   
   // Destination configuration
   
@@ -153,14 +157,16 @@ export function MigrationReadinessTab({
     }
   };
 
-  const handleRemoveFromBatch = async () => {
+  const handleRemoveFromBatch = () => {
     if (!repository.batch_id || assigningBatch) return;
+    setShowRemoveDialog(true);
+  };
 
-    if (!confirm('Are you sure you want to remove this repository from its batch?')) {
-      return;
-    }
+  const confirmRemoveFromBatch = async () => {
+    if (!repository.batch_id) return;
 
     setAssigningBatch(true);
+    setShowRemoveDialog(false);
     try {
       await api.removeRepositoriesFromBatch(repository.batch_id, [repository.id]);
       
@@ -688,6 +694,38 @@ export function MigrationReadinessTab({
           )}
         </div>
       </div>
+      )}
+
+      {/* Remove from Batch Confirmation Dialog */}
+      {showRemoveDialog && (
+        <Dialog
+          returnFocusRef={removeButtonRef}
+          onDismiss={() => setShowRemoveDialog(false)}
+          aria-labelledby="remove-dialog-header"
+        >
+          <Dialog.Header id="remove-dialog-header">
+            Remove from Batch
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              Are you sure you want to remove this repository from its batch?
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowRemoveDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmRemoveFromBatch}>
+              Remove
+            </Button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

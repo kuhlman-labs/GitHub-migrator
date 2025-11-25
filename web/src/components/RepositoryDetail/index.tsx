@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, Link as RouterLink, useLocation } from 'react-router-dom';
-import { Button, UnderlineNav, Textarea, FormControl, Link, useTheme } from '@primer/react';
+import { Button, UnderlineNav, Textarea, FormControl, Link, useTheme, Dialog } from '@primer/react';
 import { CalendarIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository } from '../../types';
@@ -37,6 +37,13 @@ export function RepositoryDetail() {
   // Rollback state
   const [showRollbackDialog, setShowRollbackDialog] = useState(false);
   const [rollbackReason, setRollbackReason] = useState('');
+  
+  // Dialog states
+  const [showRediscoverDialog, setShowRediscoverDialog] = useState(false);
+  const [showUnlockDialog, setShowUnlockDialog] = useState(false);
+  const [showWontMigrateDialog, setShowWontMigrateDialog] = useState(false);
+  const rediscoverButtonRef = useRef<HTMLButtonElement>(null);
+  const unlockButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleStartMigration = async (dryRun: boolean = false) => {
     if (!repository || migrating) return;
@@ -59,13 +66,15 @@ export function RepositoryDetail() {
     }
   };
 
-  const handleRediscover = async () => {
+  const handleRediscover = () => {
     if (!repository || !fullName || rediscoverMutation.isPending) return;
+    setShowRediscoverDialog(true);
+  };
 
-    if (!confirm('Are you sure you want to re-discover this repository? This will update all repository data.')) {
-      return;
-    }
+  const confirmRediscover = async () => {
+    if (!fullName) return;
 
+    setShowRediscoverDialog(false);
     try {
       await rediscoverMutation.mutateAsync(decodeURIComponent(fullName));
       showSuccess('Re-discovery started! Repository data will be updated shortly.');
@@ -76,13 +85,15 @@ export function RepositoryDetail() {
     }
   };
 
-  const handleUnlock = async () => {
+  const handleUnlock = () => {
     if (!repository || !fullName || unlockMutation.isPending) return;
+    setShowUnlockDialog(true);
+  };
 
-    if (!confirm('Are you sure you want to unlock this repository? This will remove the lock from the source repository.')) {
-      return;
-    }
+  const confirmUnlock = async () => {
+    if (!fullName) return;
 
+    setShowUnlockDialog(false);
     try {
       await unlockMutation.mutateAsync(decodeURIComponent(fullName));
       showSuccess('Repository unlocked successfully!');
@@ -111,19 +122,15 @@ export function RepositoryDetail() {
     }
   };
 
-  const handleToggleWontMigrate = async () => {
+  const handleToggleWontMigrate = () => {
     if (!repository || !fullName || markWontMigrateMutation.isPending) return;
+    setShowWontMigrateDialog(true);
+  };
 
-    const isWontMigrate = repository.status === 'wont_migrate';
-    const action = isWontMigrate ? 'unmark' : 'mark as won\'t migrate';
-    const confirmMsg = isWontMigrate
-      ? 'Are you sure you want to unmark this repository? It will be changed to pending status.'
-      : 'Are you sure you want to mark this repository as won\'t migrate? It will be excluded from migration progress and cannot be added to batches.';
+  const confirmToggleWontMigrate = async () => {
+    if (!repository || !fullName) return;
 
-    if (!confirm(confirmMsg)) {
-      return;
-    }
-
+    setShowWontMigrateDialog(false);
     try {
       await markWontMigrateMutation.mutateAsync({ 
         fullName: decodeURIComponent(fullName), 
@@ -594,6 +601,103 @@ export function RepositoryDetail() {
           </div>
         </div>
         </>
+      )}
+
+      {/* Rediscover Confirmation Dialog */}
+      {showRediscoverDialog && (
+        <Dialog
+          returnFocusRef={rediscoverButtonRef}
+          onDismiss={() => setShowRediscoverDialog(false)}
+          aria-labelledby="rediscover-dialog-header"
+        >
+          <Dialog.Header id="rediscover-dialog-header">
+            Re-discover Repository
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              Are you sure you want to re-discover this repository? This will update all repository data.
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowRediscoverDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmRediscover}>
+              Re-discover
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Unlock Confirmation Dialog */}
+      {showUnlockDialog && (
+        <Dialog
+          returnFocusRef={unlockButtonRef}
+          onDismiss={() => setShowUnlockDialog(false)}
+          aria-labelledby="unlock-dialog-header"
+        >
+          <Dialog.Header id="unlock-dialog-header">
+            Unlock Repository
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              Are you sure you want to unlock this repository? This will remove the lock from the source repository.
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowUnlockDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmUnlock}>
+              Unlock
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Won't Migrate Confirmation Dialog */}
+      {showWontMigrateDialog && repository && (
+        <Dialog
+          onDismiss={() => setShowWontMigrateDialog(false)}
+          aria-labelledby="wont-migrate-dialog-header"
+        >
+          <Dialog.Header id="wont-migrate-dialog-header">
+            {repository.status === 'wont_migrate' ? 'Unmark Repository' : 'Mark as Won\'t Migrate'}
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              {repository.status === 'wont_migrate'
+                ? 'Are you sure you want to unmark this repository? It will be changed to pending status.'
+                : 'Are you sure you want to mark this repository as won\'t migrate? It will be excluded from migration progress and cannot be added to batches.'}
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowWontMigrateDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant={repository.status === 'wont_migrate' ? 'primary' : 'danger'} onClick={confirmToggleWontMigrate}>
+              {repository.status === 'wont_migrate' ? 'Unmark' : 'Mark as Won\'t Migrate'}
+            </Button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

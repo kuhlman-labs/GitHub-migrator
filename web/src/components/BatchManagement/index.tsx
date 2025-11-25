@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { TextInput, Button, UnderlineNav, ProgressBar } from '@primer/react';
+import { TextInput, Button, UnderlineNav, ProgressBar, Dialog } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
@@ -26,6 +26,9 @@ export function BatchManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+  
+  // Ref for dialog focus management
+  const dryRunButtonRef = useRef<HTMLButtonElement>(null);
 
   // Pagination for repository groups in batch detail
   const repoPageSize = 20;
@@ -38,6 +41,22 @@ export function BatchManagement() {
   // Delete confirmation dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [batchToDelete, setBatchToDelete] = useState<Batch | null>(null);
+
+  // Dry run confirmation dialog state
+  const [showDryRunDialog, setShowDryRunDialog] = useState(false);
+  const [dryRunBatchId, setDryRunBatchId] = useState<number | null>(null);
+  const [dryRunOnlyPending, setDryRunOnlyPending] = useState(false);
+
+  // Start migration confirmation dialog state
+  const [showStartDialog, setShowStartDialog] = useState(false);
+  const [startBatchId, setStartBatchId] = useState<number | null>(null);
+  const [startSkipDryRun, setStartSkipDryRun] = useState(false);
+  const [startDialogMessage, setStartDialogMessage] = useState('');
+
+  // Retry migration confirmation dialog state
+  const [showRetryDialog, setShowRetryDialog] = useState(false);
+  const [retryBatchId, setRetryBatchId] = useState<number | null>(null);
+  const [retryMessage, setRetryMessage] = useState('');
 
   useEffect(() => {
     loadBatches();
@@ -123,57 +142,63 @@ export function BatchManagement() {
     }
   };
 
-  const handleDryRunBatch = async (batchId: number, onlyPending = false) => {
-    const actionType = onlyPending ? 'pending repositories' : 'all repositories';
-    if (!confirm(`Run dry run for ${actionType}? This will validate repositories before migration.`)) {
-      return;
-    }
+  const handleDryRunBatch = (batchId: number, onlyPending = false) => {
+    setDryRunBatchId(batchId);
+    setDryRunOnlyPending(onlyPending);
+    setShowDryRunDialog(true);
+  };
+
+  const confirmDryRunBatch = async () => {
+    if (!dryRunBatchId) return;
 
     try {
-      await api.dryRunBatch(batchId, onlyPending);
+      await api.dryRunBatch(dryRunBatchId, dryRunOnlyPending);
       showSuccess('Dry run started successfully. Batch will move to "ready" status when all dry runs complete.');
       await loadBatches();
-      if (selectedBatch?.id === batchId) {
-        await loadBatchRepositories(batchId);
+      if (selectedBatch?.id === dryRunBatchId) {
+        await loadBatchRepositories(dryRunBatchId);
       }
+      setShowDryRunDialog(false);
     } catch (error: any) {
       console.error('Failed to start dry run:', error);
       showError(error.response?.data?.error || 'Failed to start dry run');
+      setShowDryRunDialog(false);
     }
   };
 
-  const handleStartBatch = async (batchId: number, skipDryRun = false) => {
+  const handleStartBatch = (batchId: number, skipDryRun = false) => {
     const batch = batches.find(b => b.id === batchId);
     
+    let message = 'Are you sure you want to start migration for this entire batch?';
     if (batch?.status === 'pending' && !skipDryRun) {
-      const shouldSkip = confirm(
-        'This batch has not completed a dry run. Do you want to start migration anyway? ' +
-        '(Recommended: Cancel and run dry run first)'
-      );
-      
-      if (!shouldSkip) {
-        return;
-      }
+      message = 'This batch has not completed a dry run. Do you want to start migration anyway? (Recommended: Cancel and run dry run first)';
     }
+    
+    setStartBatchId(batchId);
+    setStartSkipDryRun(skipDryRun);
+    setStartDialogMessage(message);
+    setShowStartDialog(true);
+  };
 
-    if (!confirm('Are you sure you want to start migration for this entire batch?')) {
-      return;
-    }
+  const confirmStartBatch = async () => {
+    if (!startBatchId) return;
 
     try {
-      await api.startBatch(batchId, skipDryRun);
+      await api.startBatch(startBatchId, startSkipDryRun);
       showSuccess('Batch migration started successfully');
       await loadBatches();
-      if (selectedBatch?.id === batchId) {
-        await loadBatchRepositories(batchId);
+      if (selectedBatch?.id === startBatchId) {
+        await loadBatchRepositories(startBatchId);
       }
+      setShowStartDialog(false);
     } catch (error: any) {
       console.error('Failed to start batch:', error);
       showError(error.response?.data?.error || 'Failed to start batch migration');
+      setShowStartDialog(false);
     }
   };
 
-  const handleRetryFailed = async () => {
+  const handleRetryFailed = () => {
     if (!selectedBatch) return;
 
     const failedRepos = batchRepositories.filter(
@@ -185,18 +210,26 @@ export function BatchManagement() {
     const dryRunFailedCount = failedRepos.filter(r => r.status === 'dry_run_failed').length;
     const migrationFailedCount = failedRepos.filter(r => r.status === 'migration_failed').length;
     
-    let confirmMessage = '';
+    let message = '';
     if (dryRunFailedCount > 0 && migrationFailedCount > 0) {
-      confirmMessage = `Retry ${dryRunFailedCount} failed dry run(s) and ${migrationFailedCount} failed migration(s)?`;
+      message = `Retry ${dryRunFailedCount} failed dry run(s) and ${migrationFailedCount} failed migration(s)?`;
     } else if (dryRunFailedCount > 0) {
-      confirmMessage = `Re-run dry run for ${dryRunFailedCount} failed repositories?`;
+      message = `Re-run dry run for ${dryRunFailedCount} failed repositories?`;
     } else {
-      confirmMessage = `Retry migration for ${migrationFailedCount} failed repositories?`;
+      message = `Retry migration for ${migrationFailedCount} failed repositories?`;
     }
 
-    if (!confirm(confirmMessage)) {
-      return;
-    }
+    setRetryBatchId(selectedBatch.id);
+    setRetryMessage(message);
+    setShowRetryDialog(true);
+  };
+
+  const confirmRetryFailed = async () => {
+    if (!selectedBatch) return;
+
+    const failedRepos = batchRepositories.filter(
+      (r) => r.status === 'migration_failed' || r.status === 'dry_run_failed'
+    );
 
     try {
       // Retry each repository individually with the correct dry_run flag
@@ -206,10 +239,12 @@ export function BatchManagement() {
       }
       showSuccess(`Queued ${failedRepos.length} repositories for retry`);
       await loadBatchRepositories(selectedBatch.id);
+      setShowRetryDialog(false);
     } catch (error: any) {
       console.error('Failed to retry batch failures:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to retry failed repositories';
       showError(errorMessage);
+      setShowRetryDialog(false);
     }
   };
 
@@ -596,6 +631,7 @@ export function BatchManagement() {
                     <>
                       {groupedRepos.needs_dry_run.length > 0 && (
                         <Button
+                          ref={dryRunButtonRef}
                           onClick={() => handleDryRunBatch(selectedBatch.id, true)}
                           variant="primary"
                         >
@@ -942,6 +978,111 @@ export function BatchManagement() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Dry Run Confirmation Dialog */}
+      {showDryRunDialog && (
+        <Dialog
+          returnFocusRef={dryRunButtonRef}
+          onDismiss={() => setShowDryRunDialog(false)}
+          aria-labelledby="dry-run-dialog-header"
+        >
+          <Dialog.Header id="dry-run-dialog-header">
+            Run Dry Run
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              {dryRunOnlyPending ? (
+                <>
+                  Run dry run for <strong>pending repositories</strong>?
+                </>
+              ) : (
+                <>
+                  Run dry run for <strong>all repositories</strong>?
+                </>
+              )}
+            </p>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)' }}>
+              This will validate repositories before migration.
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowDryRunDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmDryRunBatch}>
+              OK
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Start Migration Confirmation Dialog */}
+      {showStartDialog && (
+        <Dialog
+          onDismiss={() => setShowStartDialog(false)}
+          aria-labelledby="start-dialog-header"
+        >
+          <Dialog.Header id="start-dialog-header">
+            Start Migration
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              {startDialogMessage}
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowStartDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmStartBatch}>
+              Start Migration
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Retry Confirmation Dialog */}
+      {showRetryDialog && (
+        <Dialog
+          onDismiss={() => setShowRetryDialog(false)}
+          aria-labelledby="retry-dialog-header"
+        >
+          <Dialog.Header id="retry-dialog-header">
+            Retry Failed Repositories
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              {retryMessage}
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowRetryDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmRetryFailed}>
+              Retry
+            </Button>
+          </div>
+        </Dialog>
       )}
 
     </div>
