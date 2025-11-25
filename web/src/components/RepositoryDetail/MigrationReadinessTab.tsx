@@ -289,11 +289,17 @@ export function MigrationReadinessTab({
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   {totalPoints > 17 ? (
-                    <XCircleFillIcon size={16} style={{ color: 'var(--fgColor-danger)' }} />
+                    <span style={{ color: 'var(--fgColor-danger)' }}>
+                      <XCircleFillIcon size={16} />
+                    </span>
                   ) : totalPoints > 5 ? (
-                    <AlertIcon size={16} style={{ color: 'var(--fgColor-attention)' }} />
+                    <span style={{ color: 'var(--fgColor-attention)' }}>
+                      <AlertIcon size={16} />
+                    </span>
                   ) : (
-                    <CheckCircleFillIcon size={16} style={{ color: 'var(--fgColor-success)' }} />
+                    <span style={{ color: 'var(--fgColor-success)' }}>
+                      <CheckCircleFillIcon size={16} />
+                    </span>
                   )}
                   <span className="text-sm font-medium" style={{ color: 'var(--fgColor-muted)' }}>
                     {category} Migration
