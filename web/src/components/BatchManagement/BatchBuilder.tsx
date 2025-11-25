@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button } from '@primer/react';
+import { Button, Dialog } from '@primer/react';
 import { ChevronDownIcon } from '@primer/octicons-react';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
@@ -55,6 +55,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   // UI state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showMigrationSettings, setShowMigrationSettings] = useState(false);
+  
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Load organizations for autocomplete
   useEffect(() => {
@@ -163,28 +176,34 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         isArray: Array.isArray(response), 
         reposCount: repos.length, 
         total: Array.isArray(response) ? 'N/A' : response.total,
-        hasTotal: !Array.isArray(response) && 'total' in response
+        hasTotal: !Array.isArray(response) && 'total' in response,
+        currentPage: currentPage,
+        filters: filters
       });
       
       // Always update repos
       setAvailableRepos(repos);
       
-      // Update total only in specific cases
+      // Update total based on response
       if (Array.isArray(response)) {
         // No pagination - response is the full array
         console.log('Setting total from array length:', response.length);
         setTotalAvailable(response.length);
       } else if (response.total !== undefined && response.total !== null && response.total > 0) {
-        // Backend provided a valid total
+        // Backend provided a valid positive total
         console.log('Setting total from response:', response.total);
         setTotalAvailable(response.total);
+      } else if (response.total === 0 && repos.length === 0 && currentPage === 1) {
+        // Only accept total=0 if we're on the first page with no repos (legitimate empty result)
+        console.log('Setting total to 0 (no matching repos on first page)');
+        setTotalAvailable(0);
       } else if (currentPage === 1 && repos.length > 0) {
-        // First page with repos but no total - estimate based on page size
+        // First page with repos but no total - estimate
         const estimatedTotal = repos.length < pageSize ? repos.length : repos.length;
         console.log('Estimating total for first page:', estimatedTotal);
         setTotalAvailable(estimatedTotal);
       }
-      // Otherwise, keep existing totalAvailable value
+      // Otherwise, keep existing totalAvailable value (important for pagination)
       
     } catch (err) {
       console.error('Failed to load available repos:', err);
@@ -199,11 +218,13 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const handleFilterChange = (newFilters: RepositoryFilters) => {
     setFilters({ ...newFilters, available_for_batch: true, limit: 50, offset: 0 });
     setCurrentPage(1);
+    setSelectedRepoIds(new Set()); // Clear selections when filters change
   };
 
   const handleClearFilters = () => {
     setFilters({ available_for_batch: true, limit: 50, offset: 0 });
     setCurrentPage(1);
+    setSelectedRepoIds(new Set()); // Clear selections when filters clear
   };
 
   const handleRemoveFilter = (filterKey: keyof RepositoryFilters) => {
@@ -233,6 +254,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         offset: 0,
       });
       setCurrentPage(1);
+      setSelectedRepoIds(new Set()); // Clear selections when quick filter changes
     }
   };
 
@@ -284,14 +306,66 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     // Note: We don't need to manually reload because the useEffect will trigger when filters change
   };
 
+  const executeAddAll = async () => {
+    const alreadyAddedIds = new Set(currentBatchRepos.map(r => r.id));
+    
+    setAvailableLoading(true);
+    setConfirmDialog({ ...confirmDialog, isOpen: false });
+    
+    try {
+      // Fetch all repositories matching the filters (without pagination)
+      const filtersWithoutPagination = { ...filters };
+      delete filtersWithoutPagination.limit;
+      delete filtersWithoutPagination.offset;
+      
+      const response = await api.listRepositories(filtersWithoutPagination);
+      const allRepos = Array.isArray(response) ? response : (response.repositories || []);
+      
+      // Filter out repos that are already in the batch
+      const newRepos = allRepos.filter(r => !alreadyAddedIds.has(r.id));
+      
+      // Add all new repos to the batch
+      const updatedBatch = [...currentBatchRepos, ...newRepos];
+      setCurrentBatchRepos(updatedBatch);
+      setSelectedRepoIds(new Set());
+      
+      console.log(`Added ${newRepos.length} repositories to batch (total now: ${updatedBatch.length})`);
+      
+      // Reload the current page to show updated state
+    await loadAvailableRepos();
+    } catch (err) {
+      console.error('Failed to add all repositories:', err);
+      setError('Failed to add all repositories. Please try again.');
+    } finally {
+      setAvailableLoading(false);
+    }
+  };
+
+  const handleAddAll = () => {
+    if (totalAvailable === 0) return;
+    
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Add all repositories',
+      message: `Add all ${totalAvailable} repositories matching your current filters to the batch?`,
+      onConfirm: executeAddAll,
+    });
+  };
+
   const handleRemoveRepo = (repoId: number) => {
     setCurrentBatchRepos(currentBatchRepos.filter((r) => r.id !== repoId));
   };
 
   const handleClearAll = () => {
-    if (confirm('Remove all repositories from this batch?')) {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Remove all repositories',
+      message: 'Remove all repositories from this batch?',
+      onConfirm: () => {
       setCurrentBatchRepos([]);
-    }
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+      },
+    });
   };
 
   const handleSubmit = async (startImmediately: boolean) => {
@@ -466,19 +540,37 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             <div>
               <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Available Repositories</h3>
               <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
-                {totalAvailable} repositories available
+                {availableLoading ? 'Loading...' : `${totalAvailable} repositories available`}
               </p>
             </div>
-            {selectedRepoIds.size > 0 && (
               <div className="flex items-center gap-2">
+              {selectedRepoIds.size > 0 && (
                 <span 
                   className="px-3 py-1.5 rounded-full text-sm font-semibold"
                   style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
                 >
                   {selectedRepoIds.size} selected
                 </span>
-              </div>
+              )}
+              {totalAvailable > 0 && availableReposToShow.length > 0 && (
+                <button
+                  onClick={handleAddAll}
+                  disabled={availableLoading}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    borderColor: 'var(--borderColor-default)',
+                    color: 'var(--fgColor-accent)',
+                    backgroundColor: 'var(--control-bgColor-rest)'
+                  }}
+                  title="Add all repositories matching current filters"
+                >
+                  <svg className="w-4 h-4 inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Add All ({totalAvailable})
+                </button>
             )}
+            </div>
           </div>
 
           {/* Quick Filter Buttons */}
@@ -545,22 +637,22 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
               <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--fgColor-muted)' }}>
-                {availableRepos.length === 0 
-                  ? (currentPage < totalPages 
-                      ? 'Loading next page...'
-                      : 'No repositories available')
-                  : 'All repositories on this page have been added to the batch'}
+                {totalAvailable === 0
+                  ? 'No repositories match your filters'
+                  : availableRepos.length > 0 
+                    ? 'All repositories on this page have been added to the batch'
+                  : 'No repositories available'}
               </p>
               <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-                {availableRepos.length === 0
-                  ? (currentPage < totalPages 
-                      ? 'Please wait while we load more repositories'
-                      : 'Try adjusting your filters or add more repositories')
-                  : currentPage < totalPages 
-                    ? `Go to the next page to add more repositories`
-                    : `You've reached the end. ${currentBatchRepos.length} repositories added to batch.`}
+                {totalAvailable === 0
+                  ? 'Try adjusting or clearing your filters to see more repositories'
+                  : availableRepos.length > 0
+                    ? (currentPage < totalPages 
+                        ? 'Navigate to the next page to add more repositories'
+                        : `All ${totalAvailable} matching repositories have been added`)
+                    : 'Try adjusting your filters or add more repositories'}
               </p>
-              {currentPage < totalPages && availableRepos.length > 0 && (
+              {availableRepos.length > 0 && currentPage < totalPages && (
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
                   className="mt-4 px-4 py-2 text-sm font-medium rounded-md transition-colors shadow-sm"
@@ -575,9 +667,10 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               {/* Select All header */}
               {availableReposToShow.length > 0 && (
                 <div 
-                  className="sticky top-0 z-10 p-3 mb-2 rounded-lg border flex items-center gap-3"
+                  className="sticky top-0 p-3 mb-2 rounded-lg border flex items-center gap-3"
                   style={{ 
                     backgroundColor: 'var(--bgColor-muted)',
+                    zIndex: 1,
                     borderColor: 'var(--borderColor-default)'
                   }}
                 >
@@ -607,8 +700,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                   key={repo.id}
                   repository={repo}
                   selected={selectedRepoIds.has(repo.id)}
-                  onToggle={handleToggleRepo}
-                />
+                onToggle={handleToggleRepo}
+              />
               ))}
             </>
           )}
@@ -616,8 +709,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
         {/* Bottom Section - Pagination & Add Button */}
         <div 
-          className="shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 row-start-3"
-          style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)' }}
+          className="shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] row-start-3"
+          style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)', zIndex: 1 }}
         >
           {/* Pagination */}
           <Pagination
@@ -664,10 +757,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       >
         {/* Sticky Header with Batch Info */}
         <div 
-          className="flex-shrink-0 sticky top-0 z-20 shadow-sm"
+          className="flex-shrink-0 sticky top-0 shadow-sm"
           style={{ 
             backgroundColor: 'var(--bgColor-default)', 
-            borderBottom: '1px solid var(--borderColor-default)' 
+            borderBottom: '1px solid var(--borderColor-default)',
+            zIndex: 1
           }}
         >
           <div className="p-4">
@@ -1028,6 +1122,74 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      {confirmDialog.isOpen && (
+        <div 
+          className="fixed inset-0 flex items-center justify-center"
+          style={{ zIndex: 99999 }}
+        >
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0" 
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
+            onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+          />
+          
+          {/* Modal Content */}
+          <div 
+            className="relative rounded-lg shadow-xl max-w-lg w-full mx-4"
+            style={{ 
+              backgroundColor: 'var(--bgColor-default)',
+              border: '1px solid var(--borderColor-default)'
+            }}
+          >
+            {/* Header */}
+            <div 
+              className="px-4 py-3 border-b"
+              style={{ borderColor: 'var(--borderColor-default)' }}
+            >
+              <h2 
+                className="text-lg font-semibold"
+                style={{ color: 'var(--fgColor-default)' }}
+              >
+                {confirmDialog.title}
+              </h2>
+            </div>
+            
+            {/* Body */}
+            <div className="px-4 py-4">
+              <p style={{ color: 'var(--fgColor-default)' }}>
+                {confirmDialog.message}
+              </p>
+            </div>
+            
+            {/* Footer */}
+            <div 
+              className="px-4 py-3 border-t flex gap-2 justify-end"
+              style={{ 
+                borderColor: 'var(--borderColor-default)',
+                backgroundColor: 'var(--bgColor-muted)'
+              }}
+            >
+              <Button 
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                  confirmDialog.onConfirm();
+                }}
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

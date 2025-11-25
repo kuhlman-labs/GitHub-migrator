@@ -45,7 +45,7 @@ export function UserProfile() {
           </div>
         </ActionMenu.Anchor>
 
-        <ActionMenu.Overlay>
+        <ActionMenu.Overlay sx={{ zIndex: 99999 }}>
           <ActionList>
             <ActionList.Group>
               <ActionList.Item>
@@ -83,7 +83,7 @@ export function UserProfile() {
         </div>
       </ActionMenu.Anchor>
 
-      <ActionMenu.Overlay>
+      <ActionMenu.Overlay sx={{ zIndex: 99999 }}>
         <ActionList>
           <ActionList.Group>
             <ActionList.Item>
