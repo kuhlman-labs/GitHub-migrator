@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Button, Checkbox, TextInput, FormControl, Select, Banner } from '@primer/react';
-import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon } from '@primer/octicons-react';
+import { Button, Checkbox, TextInput, FormControl, Select } from '@primer/react';
+import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -259,84 +259,103 @@ export function MigrationReadinessTab({
   const totalPoints = repository.complexity_score ?? 0;
   
   let category = 'Simple';
-  let bannerVariant: 'success' | 'warning' | 'critical' = 'success';
   
   if (totalPoints > 17) {
     category = 'Very Complex';
-    bannerVariant = 'critical';
   } else if (totalPoints > 10) {
     category = 'Complex';
-    bannerVariant = 'warning';
   } else if (totalPoints > 5) {
     category = 'Medium';
-    bannerVariant = 'warning';
   }
 
   return (
     <div className="space-y-6">
       {/* Complexity Score Summary */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration Complexity</h3>
-          <ComplexityInfoModal source={repository.source as 'github' | 'azuredevops'} />
-        </div>
-        
-        <Banner
-          variant={bannerVariant}
-          title={`${category} Migration`}
-          description={
-            <div className="flex items-center gap-4">
+      <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)', border: '1px solid var(--borderColor-default)' }}>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration Complexity</h3>
+            <ComplexityInfoModal source={repository.source as 'github' | 'azuredevops'} />
+          </div>
+          
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              backgroundColor: 'var(--bgColor-muted)',
+              border: '1px solid var(--borderColor-default)'
+            }}
+          >
+            <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm">Complexity Score: </span>
-                <span className="text-2xl font-bold">{totalPoints}</span>
-              </div>
-              <div className="text-xs opacity-90">
-                {repository.source === 'azuredevops' ? 
-                  'Scoring based on ADO → GitHub migration complexity factors' :
-                  'Scoring based on GitHub migration documentation'}
-              </div>
-            </div>
-          }
-        />
-
-        {/* Top Contributing Factors */}
-        {complexityContributors.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Contributing Factors:</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {complexityContributors.slice(0, 8).map((contributor, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex justify-between items-center py-2 px-3 rounded"
-                  style={{
-                    backgroundColor: 'var(--bgColor-muted)',
-                    border: '1px solid var(--borderColor-default)'
-                  }}
-                >
-                  <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>{contributor.label}</span>
-                  <span 
-                    className="text-sm font-semibold"
-                    style={{
-                      color: contributor.color.includes('red') ? 'var(--fgColor-danger)' :
-                             contributor.color.includes('orange') ? 'var(--fgColor-attention)' :
-                             contributor.color.includes('yellow') ? 'var(--fgColor-attention)' :
-                             contributor.color.includes('blue') ? 'var(--fgColor-accent)' :
-                             contributor.color.includes('purple') ? 'var(--fgColor-done)' :
-                             'var(--fgColor-default)'
-                    }}
-                  >
-                    +{contributor.points}
+                <div className="flex items-center gap-2 mb-1">
+                  {totalPoints > 17 ? (
+                    <XCircleFillIcon size={16} style={{ color: 'var(--fgColor-danger)' }} />
+                  ) : totalPoints > 5 ? (
+                    <AlertIcon size={16} style={{ color: 'var(--fgColor-attention)' }} />
+                  ) : (
+                    <CheckCircleFillIcon size={16} style={{ color: 'var(--fgColor-success)' }} />
+                  )}
+                  <span className="text-sm font-medium" style={{ color: 'var(--fgColor-muted)' }}>
+                    {category} Migration
                   </span>
                 </div>
-              ))}
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>Complexity Score:</span>
+                  <span 
+                    className="text-3xl font-bold"
+                    style={{
+                      color: totalPoints > 17 ? 'var(--fgColor-danger)' :
+                             totalPoints > 10 ? 'var(--fgColor-attention)' :
+                             totalPoints > 5 ? 'var(--fgColor-attention)' :
+                             'var(--fgColor-success)'
+                    }}
+                  >
+                    {totalPoints}
+                  </span>
+                </div>
+              </div>
             </div>
-            {complexityContributors.length > 8 && (
-              <p className="text-xs mt-2" style={{ color: 'var(--fgColor-muted)' }}>
-                ... and {complexityContributors.length - 8} more factors
-              </p>
-            )}
           </div>
-        )}
+
+          {/* Top Contributing Factors */}
+          {complexityContributors.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Contributing Factors:</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {complexityContributors.slice(0, 8).map((contributor, idx) => (
+                  <div 
+                    key={idx} 
+                    className="flex justify-between items-center py-2 px-3 rounded"
+                    style={{
+                      backgroundColor: 'var(--bgColor-muted)',
+                      border: '1px solid var(--borderColor-default)'
+                    }}
+                  >
+                    <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>{contributor.label}</span>
+                    <span 
+                      className="text-sm font-semibold"
+                      style={{
+                        color: contributor.color.includes('red') ? 'var(--fgColor-danger)' :
+                               contributor.color.includes('orange') ? 'var(--fgColor-attention)' :
+                               contributor.color.includes('yellow') ? 'var(--fgColor-attention)' :
+                               contributor.color.includes('blue') ? 'var(--fgColor-accent)' :
+                               contributor.color.includes('purple') ? 'var(--fgColor-done)' :
+                               'var(--fgColor-default)'
+                      }}
+                    >
+                      +{contributor.points}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {complexityContributors.length > 8 && (
+                <p className="text-xs mt-2" style={{ color: 'var(--fgColor-muted)' }}>
+                  ... and {complexityContributors.length - 8} more factors
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Validation Issues - Only show if there are issues */}
@@ -451,7 +470,7 @@ export function MigrationReadinessTab({
 
       {/* Migration Configuration - Hide if migration is complete */}
       {repository.status !== 'complete' && (
-      <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+      <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)', border: '1px solid var(--borderColor-default)' }}>
         <h3 className="text-lg font-semibold mb-6" style={{ color: 'var(--fgColor-default)' }}>Migration Configuration</h3>
 
         <div className="space-y-6">
@@ -476,13 +495,7 @@ export function MigrationReadinessTab({
                   </FormControl.Validation>
                 )}
               <FormControl.Caption>
-              {destinationFullName === getSuggestedDefault()
-                ? repository.ado_project 
-                  ? 'Suggested default preserving ADO org and project (spaces replaced with hyphens)' 
-                  : 'Suggested default using same organization as source'
-                : repository.ado_project
-                  ? 'Using custom destination'
-                : 'Using custom destination organization'}
+                Destination defaults to same source organization and name but can be customized
               </FormControl.Caption>
             </FormControl>
         )}
@@ -557,7 +570,7 @@ export function MigrationReadinessTab({
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h4 className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration options</h4>
-                <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>Configure what data to include or exclude</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>Configure pre-migration, migration, and post-migration behavior</p>
               </div>
               <Button
                 variant="invisible"
@@ -631,6 +644,10 @@ export function MigrationReadinessTab({
                 </div>
                 
                 <div className="space-y-4">
+                  <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                    Configure options that control pre-migration validation, what data is migrated, and post-migration actions.
+                  </p>
+                  
                   <div 
                     className="pl-4 py-2"
                     style={{ borderLeft: '4px solid var(--accent-emphasis)' }}

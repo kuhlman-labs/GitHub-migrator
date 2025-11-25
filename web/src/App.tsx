@@ -38,7 +38,7 @@ function App() {
         <Router>
           <AuthProvider>
             <ToastProvider>
-              <div className="min-h-screen" style={{ backgroundColor: 'var(--bgColor-default)', color: 'var(--fgColor-default)' }}>
+              <div className="min-h-screen" style={{ backgroundColor: 'var(--bgColor-muted)', color: 'var(--fgColor-default)' }}>
                 <Routes>
                   {/* Login page (public) */}
                   <Route path="/login" element={<Login />} />

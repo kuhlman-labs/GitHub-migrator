@@ -79,9 +79,9 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
                   <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>Overview</h3>
                   <p className="text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>
                     {source === 'azuredevops' 
-                      ? 'We calculate an Azure DevOps-specific complexity score to estimate migration effort from ADO to GitHub.'
+                      ? 'We calculate an Azure DevOps-specific complexity score to estimate migration effort from ADO to GitHub. Scoring is based on ADO → GitHub migration complexity factors.'
                       : (source === 'github' || source === 'ghes')
-                      ? 'We calculate a GitHub-specific complexity score to estimate migration effort between GitHub instances.'
+                      ? 'We calculate a GitHub-specific complexity score to estimate migration effort between GitHub instances. Scoring is based on GitHub migration documentation.'
                       : 'We calculate source-specific complexity scores to estimate migration effort and potential challenges.'}
                   </p>
                   <p className="text-xs italic" style={{ color: 'var(--fgColor-muted)' }}>
