@@ -5,7 +5,6 @@ import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { FilterSidebar } from './FilterSidebar';
 import { ActiveFilterPills } from './ActiveFilterPills';
-import { RepositoryGroup } from './RepositoryGroup';
 import { RepositoryListItem } from './RepositoryListItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pagination } from '../common/Pagination';
