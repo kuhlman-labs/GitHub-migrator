@@ -27,6 +27,14 @@ export function BatchManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
+  // Pagination for repository groups in batch detail
+  const repoPageSize = 20;
+  const [pendingPage, setPendingPage] = useState(1);
+  const [inProgressPage, setInProgressPage] = useState(1);
+  const [failedPage, setFailedPage] = useState(1);
+  const [completePage, setCompletePage] = useState(1);
+  const [dryRunCompletePage, setDryRunCompletePage] = useState(1);
+
   // Delete confirmation dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [batchToDelete, setBatchToDelete] = useState<Batch | null>(null);
@@ -56,6 +64,13 @@ export function BatchManagement() {
   useEffect(() => {
     if (selectedBatch) {
       loadBatchRepositories(selectedBatch.id);
+      
+      // Reset pagination when switching batches
+      setPendingPage(1);
+      setInProgressPage(1);
+      setFailedPage(1);
+      setCompletePage(1);
+      setDryRunCompletePage(1);
       
       // Poll for updates more frequently if batch is in progress or scheduled/ready
       const shouldPoll = 
@@ -95,8 +110,13 @@ export function BatchManagement() {
 
   const loadBatchRepositories = async (batchId: number) => {
     try {
-      const response = await api.listRepositories({ batch_id: batchId });
+      // Fetch all repositories for this batch (without pagination)
+      // Don't set limit/offset to get all repos in the batch
+      const response = await api.listRepositories({ 
+        batch_id: batchId
+      });
       const repos = response.repositories || response as any;
+      console.log(`Loaded ${repos.length} repositories for batch ${batchId}`);
       setBatchRepositories(repos);
     } catch (error) {
       console.error('Failed to load batch repositories:', error);
@@ -300,6 +320,13 @@ export function BatchManagement() {
     });
 
     return groups;
+  };
+
+  // Helper to paginate an array
+  const paginateArray = <T,>(items: T[], page: number, pageSize: number) => {
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return items.slice(startIndex, endIndex);
   };
 
   const progress = selectedBatch ? getBatchProgress(selectedBatch, batchRepositories) : null;
@@ -693,7 +720,7 @@ export function BatchManagement() {
                       Failed ({groupedRepos.failed.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.failed.map((repo) => (
+                      {paginateArray(groupedRepos.failed, failedPage, repoPageSize).map((repo) => (
                         <RepositoryItem
                           key={repo.id}
                           repository={repo}
@@ -704,6 +731,16 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.failed.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={failedPage}
+                          totalItems={groupedRepos.failed.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setFailedPage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -714,7 +751,7 @@ export function BatchManagement() {
                       In Progress ({groupedRepos.in_progress.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.in_progress.map((repo) => (
+                      {paginateArray(groupedRepos.in_progress, inProgressPage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -724,6 +761,16 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.in_progress.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={inProgressPage}
+                          totalItems={groupedRepos.in_progress.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setInProgressPage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -734,7 +781,7 @@ export function BatchManagement() {
                       Completed ({groupedRepos.complete.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.complete.map((repo) => (
+                      {paginateArray(groupedRepos.complete, completePage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -744,6 +791,16 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.complete.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={completePage}
+                          totalItems={groupedRepos.complete.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setCompletePage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -754,7 +811,7 @@ export function BatchManagement() {
                       Ready for Migration ({groupedRepos.dry_run_complete.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.dry_run_complete.map((repo) => (
+                      {paginateArray(groupedRepos.dry_run_complete, dryRunCompletePage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -764,6 +821,16 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.dry_run_complete.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={dryRunCompletePage}
+                          totalItems={groupedRepos.dry_run_complete.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setDryRunCompletePage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -774,7 +841,7 @@ export function BatchManagement() {
                       Pending ({groupedRepos.pending.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.pending.map((repo) => (
+                      {paginateArray(groupedRepos.pending, pendingPage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -784,6 +851,16 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.pending.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={pendingPage}
+                          totalItems={groupedRepos.pending.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setPendingPage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -948,16 +1025,31 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
   
   // Determine destination with batch-level fallback
   let destination = repository.destination_full_name || repository.full_name;
-  let destinationLabel = 'Destination';
-  let isCustomDestination = repository.destination_full_name && repository.destination_full_name !== repository.full_name;
+  let isCustomDestination = false;
   let isBatchDestination = false;
+  let isDefaultDestination = false;
   
-  // If repo doesn't have custom destination but batch has destination_org, show that
-  if (!repository.destination_full_name && batch?.destination_org) {
+  // Calculate what the batch default destination would be for this repository
     const sourceRepoName = repository.full_name.split('/')[1];
-    destination = `${batch.destination_org}/${sourceRepoName}`;
+  const batchDefaultDestination = batch?.destination_org ? `${batch.destination_org}/${sourceRepoName}` : null;
+  
+  // Check if repo has a custom destination
+  if (repository.destination_full_name && repository.destination_full_name !== repository.full_name) {
+    // Check if the destination matches the batch default
+    if (batchDefaultDestination && repository.destination_full_name === batchDefaultDestination) {
+      // Destination matches batch default - show as batch destination
     isBatchDestination = true;
-    destinationLabel = 'Destination (from batch)';
+    } else {
+      // Destination is truly custom (different from both source and batch default)
+      isCustomDestination = true;
+    }
+  } else if (!repository.destination_full_name && batchDefaultDestination) {
+    // If repo doesn't have custom destination but batch has destination_org, show that
+    destination = batchDefaultDestination;
+    isBatchDestination = true;
+  } else if (!repository.destination_full_name) {
+    // No custom destination and no batch destination - using default (same as source)
+    isDefaultDestination = true;
   }
 
   return (
@@ -974,8 +1066,8 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
           <div>
             {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
           </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs">→ {destinationLabel}:</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs">→ Destination:</span>
             <span 
               className="text-xs font-medium"
               style={{ color: isCustomDestination ? 'var(--fgColor-accent)' : isBatchDestination ? 'var(--fgColor-attention)' : 'var(--fgColor-muted)' }}
@@ -984,18 +1076,38 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
             </span>
             {isCustomDestination && (
               <span 
-                className="text-xs px-1.5 py-0.5 rounded"
-                style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide"
+                style={{ 
+                  backgroundColor: '#0969da', 
+                  color: '#ffffff',
+                  border: '1px solid #0969da'
+                }}
               >
-                custom
+                Custom
               </span>
             )}
             {isBatchDestination && (
               <span 
-                className="text-xs px-1.5 py-0.5 rounded"
-                style={{ backgroundColor: 'var(--attention-subtle)', color: 'var(--fgColor-attention)' }}
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide"
+                style={{ 
+                  backgroundColor: '#FB8500', 
+                  color: '#ffffff',
+                  border: '1px solid #FB8500'
+                }}
               >
-                batch default
+                Batch Default
+              </span>
+            )}
+            {isDefaultDestination && (
+              <span 
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide"
+                style={{ 
+                  backgroundColor: '#6e7781', 
+                  color: '#ffffff',
+                  border: '1px solid #6e7781'
+                }}
+              >
+                Default
               </span>
             )}
           </div>

@@ -1458,6 +1458,115 @@ func TestUpdateBatch(t *testing.T) {
 	})
 }
 
+func TestUpdateBatchDestinationOrg(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+
+	// Create a batch with a destination org
+	oldDestOrg := "old-org"
+	destBatch := &models.Batch{
+		Name:           "Dest Test Batch",
+		Type:           "pilot",
+		Status:         "ready",
+		DestinationOrg: &oldDestOrg,
+		CreatedAt:      time.Now(),
+	}
+	if err := db.CreateBatch(ctx, destBatch); err != nil {
+		t.Fatalf("Failed to create batch: %v", err)
+	}
+
+	// Create repositories with batch default destination
+	totalSize := int64(1024)
+	defaultBranch := testMainBranch
+	repo1Dest := "old-org/repo1"
+	repo2Dest := "old-org/repo2"
+	customDest := "custom-org/repo3"
+
+	repo1 := &models.Repository{
+		FullName:            "source-org/repo1",
+		Source:              "ghes",
+		SourceURL:           "https://github.com/source-org/repo1",
+		TotalSize:           &totalSize,
+		DefaultBranch:       &defaultBranch,
+		Status:              string(models.StatusPending),
+		BatchID:             &destBatch.ID,
+		DestinationFullName: &repo1Dest,
+	}
+	repo2 := &models.Repository{
+		FullName:            "source-org/repo2",
+		Source:              "ghes",
+		SourceURL:           "https://github.com/source-org/repo2",
+		TotalSize:           &totalSize,
+		DefaultBranch:       &defaultBranch,
+		Status:              string(models.StatusPending),
+		BatchID:             &destBatch.ID,
+		DestinationFullName: &repo2Dest,
+	}
+	repo3 := &models.Repository{
+		FullName:            "source-org/repo3",
+		Source:              "ghes",
+		SourceURL:           "https://github.com/source-org/repo3",
+		TotalSize:           &totalSize,
+		DefaultBranch:       &defaultBranch,
+		Status:              string(models.StatusPending),
+		BatchID:             &destBatch.ID,
+		DestinationFullName: &customDest, // Custom destination, should not be updated
+	}
+
+	if err := db.SaveRepository(ctx, repo1); err != nil {
+		t.Fatalf("Failed to save repo1: %v", err)
+	}
+	if err := db.SaveRepository(ctx, repo2); err != nil {
+		t.Fatalf("Failed to save repo2: %v", err)
+	}
+	if err := db.SaveRepository(ctx, repo3); err != nil {
+		t.Fatalf("Failed to save repo3: %v", err)
+	}
+
+	// Update batch destination org
+	newDestOrg := "new-org"
+	updates := map[string]interface{}{
+		"destination_org": newDestOrg,
+	}
+
+	body, _ := json.Marshal(updates)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/v1/batches/%d", destBatch.ID), bytes.NewReader(body))
+	req.SetPathValue("id", fmt.Sprintf("%d", destBatch.ID))
+	w := httptest.NewRecorder()
+
+	h.UpdateBatch(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+
+	// Verify repositories with old batch default were updated
+	updatedRepo1, err := db.GetRepository(ctx, "source-org/repo1")
+	if err != nil {
+		t.Fatalf("Failed to get repo1: %v", err)
+	}
+	if updatedRepo1.DestinationFullName == nil || *updatedRepo1.DestinationFullName != "new-org/repo1" {
+		t.Errorf("Expected repo1 destination 'new-org/repo1', got '%v'", updatedRepo1.DestinationFullName)
+	}
+
+	updatedRepo2, err := db.GetRepository(ctx, "source-org/repo2")
+	if err != nil {
+		t.Fatalf("Failed to get repo2: %v", err)
+	}
+	if updatedRepo2.DestinationFullName == nil || *updatedRepo2.DestinationFullName != "new-org/repo2" {
+		t.Errorf("Expected repo2 destination 'new-org/repo2', got '%v'", updatedRepo2.DestinationFullName)
+	}
+
+	// Verify custom destination was NOT updated
+	updatedRepo3, err := db.GetRepository(ctx, "source-org/repo3")
+	if err != nil {
+		t.Fatalf("Failed to get repo3: %v", err)
+	}
+	if updatedRepo3.DestinationFullName == nil || *updatedRepo3.DestinationFullName != "custom-org/repo3" {
+		t.Errorf("Expected repo3 destination 'custom-org/repo3' (unchanged), got '%v'", updatedRepo3.DestinationFullName)
+	}
+}
+
 func TestAddRepositoriesToBatch(t *testing.T) {
 	h, db := setupTestHandler(t)
 	ctx := context.Background()

@@ -1726,6 +1726,20 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Track if destination_org is being changed - we'll need to update repos
+	oldDestinationOrg := ""
+	newDestinationOrg := ""
+	destinationOrgChanged := false
+
+	if updates.DestinationOrg != nil {
+		newDestinationOrg = *updates.DestinationOrg
+		if batch.DestinationOrg != nil {
+			oldDestinationOrg = *batch.DestinationOrg
+		}
+		// Destination changed if old and new are different (including nil -> value or value -> nil)
+		destinationOrgChanged = oldDestinationOrg != newDestinationOrg
+	}
+
 	// Apply updates
 	if updates.Name != nil {
 		batch.Name = *updates.Name
@@ -1753,6 +1767,67 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to update batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to update batch")
 		return
+	}
+
+	// If destination_org changed, update repositories that were using the old batch default
+	if destinationOrgChanged && oldDestinationOrg != "" {
+		h.logger.Info("Batch destination_org changed, updating repository destinations",
+			"batch_id", batchID,
+			"old_destination_org", oldDestinationOrg,
+			"new_destination_org", newDestinationOrg)
+
+		// Get all repositories in this batch
+		repos, err := h.db.ListRepositories(ctx, map[string]interface{}{"batch_id": batchID})
+		if err != nil {
+			h.logger.Error("Failed to list batch repositories for destination update", "error", err)
+			// Don't fail the batch update, just log the error
+		} else {
+			updatedCount := 0
+			for _, repo := range repos {
+				if repo.DestinationFullName == nil || *repo.DestinationFullName == "" {
+					continue
+				}
+
+				// Extract repo name from full_name (e.g., "org/repo" -> "repo")
+				parts := strings.Split(repo.FullName, "/")
+				if len(parts) != 2 {
+					continue
+				}
+				repoName := parts[1]
+
+				// Check if this repo was using the old batch default destination
+				expectedOldDestination := fmt.Sprintf("%s/%s", oldDestinationOrg, repoName)
+				if *repo.DestinationFullName == expectedOldDestination {
+					// Update to new batch default destination
+					if newDestinationOrg != "" {
+						newDestination := fmt.Sprintf("%s/%s", newDestinationOrg, repoName)
+						repo.DestinationFullName = &newDestination
+					} else {
+						// If new destination org is empty, clear the destination
+						repo.DestinationFullName = nil
+					}
+
+					if err := h.db.UpdateRepository(ctx, repo); err != nil {
+						h.logger.Error("Failed to update repository destination",
+							"repo_id", repo.ID,
+							"repo_name", repo.FullName,
+							"error", err)
+					} else {
+						updatedCount++
+						h.logger.Debug("Updated repository destination",
+							"repo_id", repo.ID,
+							"repo_name", repo.FullName,
+							"new_destination", repo.DestinationFullName)
+					}
+				}
+			}
+
+			if updatedCount > 0 {
+				h.logger.Info("Updated repository destinations for batch default change",
+					"batch_id", batchID,
+					"updated_count", updatedCount)
+			}
+		}
 	}
 
 	h.sendJSON(w, http.StatusOK, batch)
