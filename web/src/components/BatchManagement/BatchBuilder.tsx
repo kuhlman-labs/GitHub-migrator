@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Dialog } from '@primer/react';
+import { Button } from '@primer/react';
 import { ChevronDownIcon } from '@primer/octicons-react';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
