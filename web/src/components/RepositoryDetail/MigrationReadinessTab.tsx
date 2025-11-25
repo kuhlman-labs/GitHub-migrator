@@ -699,8 +699,8 @@ export function MigrationReadinessTab({
       {/* Remove from Batch Confirmation Dialog */}
       {showRemoveDialog && (
         <Dialog
-          returnFocusRef={removeButtonRef}
-          onDismiss={() => setShowRemoveDialog(false)}
+          returnFocusRef={removeButtonRef as React.RefObject<HTMLElement>}
+          onClose={() => setShowRemoveDialog(false)}
           aria-labelledby="remove-dialog-header"
         >
           <Dialog.Header id="remove-dialog-header">

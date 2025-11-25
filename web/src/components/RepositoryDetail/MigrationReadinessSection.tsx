@@ -814,8 +814,8 @@ export function MigrationReadinessSection({
       {/* Mark as Remediated Confirmation Dialog */}
       {showRemediateDialog && (
         <Dialog
-          returnFocusRef={remediateButtonRef}
-          onDismiss={() => setShowRemediateDialog(false)}
+          returnFocusRef={remediateButtonRef as React.RefObject<HTMLElement>}
+          onClose={() => setShowRemediateDialog(false)}
           aria-labelledby="remediate-dialog-header"
         >
           <Dialog.Header id="remediate-dialog-header">

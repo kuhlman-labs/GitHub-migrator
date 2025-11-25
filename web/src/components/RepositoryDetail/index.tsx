@@ -130,6 +130,9 @@ export function RepositoryDetail() {
   const confirmToggleWontMigrate = async () => {
     if (!repository || !fullName) return;
 
+    const isWontMigrate = repository.status === 'wont_migrate';
+    const action = isWontMigrate ? 'unmark' : 'mark';
+    
     setShowWontMigrateDialog(false);
     try {
       await markWontMigrateMutation.mutateAsync({ 
@@ -606,8 +609,8 @@ export function RepositoryDetail() {
       {/* Rediscover Confirmation Dialog */}
       {showRediscoverDialog && (
         <Dialog
-          returnFocusRef={rediscoverButtonRef}
-          onDismiss={() => setShowRediscoverDialog(false)}
+          returnFocusRef={rediscoverButtonRef as React.RefObject<HTMLElement>}
+          onClose={() => setShowRediscoverDialog(false)}
           aria-labelledby="rediscover-dialog-header"
         >
           <Dialog.Header id="rediscover-dialog-header">
@@ -638,8 +641,8 @@ export function RepositoryDetail() {
       {/* Unlock Confirmation Dialog */}
       {showUnlockDialog && (
         <Dialog
-          returnFocusRef={unlockButtonRef}
-          onDismiss={() => setShowUnlockDialog(false)}
+          returnFocusRef={unlockButtonRef as React.RefObject<HTMLElement>}
+          onClose={() => setShowUnlockDialog(false)}
           aria-labelledby="unlock-dialog-header"
         >
           <Dialog.Header id="unlock-dialog-header">
@@ -670,7 +673,7 @@ export function RepositoryDetail() {
       {/* Won't Migrate Confirmation Dialog */}
       {showWontMigrateDialog && repository && (
         <Dialog
-          onDismiss={() => setShowWontMigrateDialog(false)}
+          onClose={() => setShowWontMigrateDialog(false)}
           aria-labelledby="wont-migrate-dialog-header"
         >
           <Dialog.Header id="wont-migrate-dialog-header">

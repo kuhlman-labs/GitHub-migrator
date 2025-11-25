@@ -55,7 +55,6 @@ export function BatchManagement() {
 
   // Retry migration confirmation dialog state
   const [showRetryDialog, setShowRetryDialog] = useState(false);
-  const [retryBatchId, setRetryBatchId] = useState<number | null>(null);
   const [retryMessage, setRetryMessage] = useState('');
 
   useEffect(() => {
@@ -219,7 +218,6 @@ export function BatchManagement() {
       message = `Retry migration for ${migrationFailedCount} failed repositories?`;
     }
 
-    setRetryBatchId(selectedBatch.id);
     setRetryMessage(message);
     setShowRetryDialog(true);
   };
@@ -983,8 +981,8 @@ export function BatchManagement() {
       {/* Dry Run Confirmation Dialog */}
       {showDryRunDialog && (
         <Dialog
-          returnFocusRef={dryRunButtonRef}
-          onDismiss={() => setShowDryRunDialog(false)}
+          returnFocusRef={dryRunButtonRef as React.RefObject<HTMLElement>}
+          onClose={() => setShowDryRunDialog(false)}
           aria-labelledby="dry-run-dialog-header"
         >
           <Dialog.Header id="dry-run-dialog-header">
@@ -1026,7 +1024,7 @@ export function BatchManagement() {
       {/* Start Migration Confirmation Dialog */}
       {showStartDialog && (
         <Dialog
-          onDismiss={() => setShowStartDialog(false)}
+          onClose={() => setShowStartDialog(false)}
           aria-labelledby="start-dialog-header"
         >
           <Dialog.Header id="start-dialog-header">
@@ -1057,7 +1055,7 @@ export function BatchManagement() {
       {/* Retry Confirmation Dialog */}
       {showRetryDialog && (
         <Dialog
-          onDismiss={() => setShowRetryDialog(false)}
+          onClose={() => setShowRetryDialog(false)}
           aria-labelledby="retry-dialog-header"
         >
           <Dialog.Header id="retry-dialog-header">

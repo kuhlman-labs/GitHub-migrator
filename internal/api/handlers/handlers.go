@@ -1814,10 +1814,14 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 							"error", err)
 					} else {
 						updatedCount++
+						newDest := ""
+						if repo.DestinationFullName != nil {
+							newDest = *repo.DestinationFullName
+						}
 						h.logger.Debug("Updated repository destination",
 							"repo_id", repo.ID,
 							"repo_name", repo.FullName,
-							"new_destination", repo.DestinationFullName)
+							"new_destination", newDest)
 					}
 				}
 			}
