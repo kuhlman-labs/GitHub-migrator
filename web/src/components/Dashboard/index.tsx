@@ -127,7 +127,9 @@ export function Dashboard() {
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Organizations</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+          {sourceType === 'azuredevops' ? 'Azure DevOps Organizations' : 'Organizations'}
+        </h1>
         <div className="flex items-center gap-4">
           <TextInput
             leadingVisual={SearchIcon}
@@ -168,11 +170,15 @@ export function Dashboard() {
           <Blankslate.Visual>
             <RepoIcon size={48} />
           </Blankslate.Visual>
-          <Blankslate.Heading>No organizations discovered yet</Blankslate.Heading>
+          <Blankslate.Heading>
+            {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
+          </Blankslate.Heading>
           <Blankslate.Description>
             {searchTerm 
               ? 'No organizations match your search. Try a different search term.'
-              : 'Get started by discovering repositories from your GitHub organizations or Azure DevOps projects.'}
+              : sourceType === 'azuredevops'
+                ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
+                : 'Get started by discovering repositories from your GitHub organizations.'}
           </Blankslate.Description>
           {!searchTerm && (
             <Blankslate.PrimaryAction onClick={() => setShowDiscoveryModal(true)}>
