@@ -367,53 +367,66 @@ export function RepositoryDetail() {
 
           {/* Migration Actions */}
           <div className="flex flex-col gap-3 ml-6">
-            <Button
+            <button
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
-              variant="invisible"
+              className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
               style={{ 
                 whiteSpace: 'nowrap',
                 border: '1px solid var(--borderColor-default)',
                 backgroundColor: 'var(--bgColor-muted)',
                 color: 'var(--fgColor-default)'
               }}
-              sx={{
-                '&:hover:not(:disabled)': {
-                  backgroundColor: 'var(--control-bgColor-hover)',
-                  borderColor: 'var(--borderColor-default)'
+              onMouseEnter={(e) => {
+                if (!rediscoverMutation.isPending) {
+                  e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!rediscoverMutation.isPending) {
+                  e.currentTarget.style.backgroundColor = 'var(--bgColor-muted)';
                 }
               }}
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
-            </Button>
+            </button>
             
             {/* Won't Migrate Toggle */}
             {!isInActiveMigration && repository.status !== 'complete' && (
-              <Button
-                onClick={handleToggleWontMigrate}
-                disabled={markWontMigrateMutation.isPending}
-                variant={repository.status === 'wont_migrate' ? 'primary' : 'invisible'}
-                style={{ 
-                  whiteSpace: 'nowrap',
-                  ...(repository.status !== 'wont_migrate' && {
+              repository.status === 'wont_migrate' ? (
+                <Button
+                  onClick={handleToggleWontMigrate}
+                  disabled={markWontMigrateMutation.isPending}
+                  variant="primary"
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {markWontMigrateMutation.isPending ? 'Processing...' : 'Unmark Won\'t Migrate'}
+                </Button>
+              ) : (
+                <button
+                  onClick={handleToggleWontMigrate}
+                  disabled={markWontMigrateMutation.isPending}
+                  className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  style={{ 
+                    whiteSpace: 'nowrap',
                     border: '1px solid var(--borderColor-attention-emphasis)',
                     backgroundColor: 'var(--bgColor-attention-muted)',
                     color: 'var(--fgColor-attention)'
-                  })
-                }}
-                sx={repository.status !== 'wont_migrate' ? {
-                  '&:hover:not(:disabled)': {
-                    backgroundColor: 'var(--control-attention-bgColor-hover)',
-                    borderColor: 'var(--borderColor-attention-emphasis)'
-                  }
-                } : {}}
-              >
-                {markWontMigrateMutation.isPending 
-                  ? 'Processing...' 
-                  : repository.status === 'wont_migrate' 
-                    ? 'Unmark Won\'t Migrate'
-                    : 'Mark as Won\'t Migrate'}
-              </Button>
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!markWontMigrateMutation.isPending) {
+                      e.currentTarget.style.backgroundColor = 'var(--control-attention-bgColor-hover)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!markWontMigrateMutation.isPending) {
+                      e.currentTarget.style.backgroundColor = 'var(--bgColor-attention-muted)';
+                    }
+                  }}
+                >
+                  Mark as Won't Migrate
+                </button>
+              )
             )}
             
             {canMigrate && repository.status !== 'migration_failed' && repository.status !== 'dry_run_failed' && (
@@ -426,32 +439,32 @@ export function RepositoryDetail() {
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </Button>
-                <Button
+                <button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  variant="invisible"
+                  className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
                   style={{ 
                     whiteSpace: 'nowrap',
                     backgroundColor: '#1a7f37',
                     color: '#ffffff',
                     border: '1px solid #1a7f37',
-                    fontWeight: 600,
-                    boxShadow: 'none'
+                    fontWeight: 600
                   }}
-                  sx={{
-                    '&:hover:not(:disabled)': {
-                      backgroundColor: '#2da44e !important',
-                      borderColor: '#2da44e !important',
-                      color: '#ffffff !important'
-                    },
-                    '&:active:not(:disabled)': {
-                      backgroundColor: '#298e46 !important',
-                      borderColor: '#298e46 !important'
+                  onMouseEnter={(e) => {
+                    if (!migrating) {
+                      e.currentTarget.style.backgroundColor = '#2da44e';
+                      e.currentTarget.style.borderColor = '#2da44e';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!migrating) {
+                      e.currentTarget.style.backgroundColor = '#1a7f37';
+                      e.currentTarget.style.borderColor = '#1a7f37';
                     }
                   }}
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
-                </Button>
+                </button>
               </>
             )}
             {repository.status === 'dry_run_failed' && (
