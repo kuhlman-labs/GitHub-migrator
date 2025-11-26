@@ -578,3 +578,82 @@ export interface DependenciesResponse {
   summary: DependencySummary;
 }
 
+// Setup wizard types
+export interface SetupStatus {
+  setup_completed: boolean;
+  completed_at?: string;
+  current_config?: MaskedConfigData;
+}
+
+export interface MaskedConfigData {
+  source_type: string;
+  source_base_url: string;
+  source_token: string; // masked
+  dest_base_url: string;
+  dest_token: string; // masked
+  database_type: string;
+  database_dsn: string; // masked
+  server_port: number;
+}
+
+export interface SetupConfig {
+  source: {
+    type: 'github' | 'azuredevops';
+    base_url: string;
+    token: string;
+    organization?: string; // For Azure DevOps
+  };
+  destination: {
+    base_url: string;
+    token: string;
+    // GitHub App for enhanced discovery (optional, always available since destination is GitHub)
+    app_id?: number;
+    app_private_key?: string;
+    app_installation_id?: number;
+  };
+  database: {
+    type: 'sqlite' | 'postgres' | 'sqlserver';
+    dsn: string;
+  };
+  server: {
+    port: number;
+  };
+  migration: {
+    workers: number;
+    poll_interval_seconds: number;
+    dest_repo_exists_action: 'fail' | 'skip' | 'delete';
+    visibility_handling: {
+      public_repos: 'public' | 'internal' | 'private';
+      internal_repos: 'internal' | 'private';
+    };
+  };
+  logging: {
+    level: 'debug' | 'info' | 'warn' | 'error';
+    format: 'json' | 'text';
+    output_file: string;
+  };
+  auth?: {
+    enabled: boolean;
+    // GitHub OAuth (only when source or destination is GitHub)
+    github_oauth_client_id?: string;
+    github_oauth_client_secret?: string;
+    github_oauth_base_url?: string;
+    // Azure AD (only when source is Azure DevOps)
+    azure_ad_tenant_id?: string;
+    azure_ad_client_id?: string;
+    azure_ad_client_secret?: string;
+    // Common auth settings
+    callback_url?: string;
+    frontend_url?: string;
+    session_secret?: string;
+    session_duration_hours?: number;
+  };
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
+  warnings?: string[];
+  details?: Record<string, any>;
+}
+

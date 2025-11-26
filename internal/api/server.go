@@ -158,6 +158,14 @@ func (s *Server) Router() http.Handler {
 	// Application config endpoint (always public)
 	mux.HandleFunc("GET /api/v1/config", s.handler.GetConfig)
 
+	// Setup endpoints (public for initial configuration)
+	setupHandler := handlers.NewSetupHandler(s.db, s.logger, s.config)
+	mux.HandleFunc("GET /api/v1/setup/status", setupHandler.GetSetupStatus)
+	mux.HandleFunc("POST /api/v1/setup/validate-source", setupHandler.ValidateSource)
+	mux.HandleFunc("POST /api/v1/setup/validate-destination", setupHandler.ValidateDestination)
+	mux.HandleFunc("POST /api/v1/setup/validate-database", setupHandler.ValidateDatabase)
+	mux.HandleFunc("POST /api/v1/setup/apply", setupHandler.ApplySetup)
+
 	// Helper to conditionally wrap with auth
 	protect := func(pattern string, handler http.HandlerFunc) {
 		if authMiddleware != nil {

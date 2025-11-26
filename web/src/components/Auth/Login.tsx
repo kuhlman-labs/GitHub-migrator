@@ -1,5 +1,5 @@
 import { useAuth } from '../../contexts/AuthContext';
-import { Heading, Button, Flash } from '@primer/react';
+import { Button, Flash } from '@primer/react';
 import { MarkGithubIcon } from '@primer/octicons-react';
 
 export function Login() {
@@ -20,19 +20,22 @@ export function Login() {
             <MarkGithubIcon size={64} />
           </div>
 
-          {/* Title */}
-          <Heading as="h1" className="text-2xl text-center mb-2">
+          {/* Title - Using standard h1 with Primer-aligned classes (semibold for headings) */}
+          <h1 className="text-2xl font-semibold text-center mb-2">
             GitHub Migration Server
-          </Heading>
-          <p className="text-gray-600 text-center mb-8">
+          </h1>
+          {/* Description - Using standard p with normal weight (no font-weight class = 400) */}
+          <p className="text-base text-center mb-8" style={{ color: 'var(--fgColor-muted)' }}>
             Sign in to continue
           </p>
 
           {/* Authorization Requirements */}
           {hasRules && (
             <Flash variant="default" className="mb-4">
+              {/* Use semibold only for the label/heading */}
               <p className="text-sm font-semibold mb-2">Access Requirements</p>
-              <ul className="text-xs text-gray-600 pl-4 space-y-1">
+              {/* List items use normal weight (400) - no font-weight class */}
+              <ul className="text-xs pl-4 space-y-1 list-disc" style={{ color: 'var(--fgColor-muted)' }}>
                 {requiresOrg && (
                   <li>
                     Organization member: {hasRules.required_orgs?.join(', ')}
@@ -67,8 +70,8 @@ export function Login() {
             Sign in with GitHub
           </Button>
 
-          {/* Info Text */}
-          <p className="mt-6 text-xs text-gray-500 text-center">
+          {/* Info Text - caption size with normal weight */}
+          <p className="mt-6 text-xs text-center" style={{ color: 'var(--fgColor-muted)' }}>
             You will be redirected to GitHub to authenticate
           </p>
         </div>

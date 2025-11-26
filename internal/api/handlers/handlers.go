@@ -105,7 +105,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	// Default to github if not set
 	sourceType := h.sourceType
 	if sourceType == "" {
-		sourceType = "github"
+		sourceType = sourceTypeGitHub
 	}
 
 	response := map[string]interface{}{
