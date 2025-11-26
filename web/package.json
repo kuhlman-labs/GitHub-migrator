@@ -11,6 +11,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/mona-sans": "^5.2.8",
+    "@fontsource/monaspace-neon": "^5.2.5",
     "@primer/octicons-react": "^19.21.0",
     "@primer/primitives": "^11.3.1",
     "@primer/react": "^38.2.0",

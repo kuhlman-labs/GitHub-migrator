@@ -482,6 +482,7 @@ export function BatchManagement() {
             disabled={refreshing || loading}
             leadingVisual={SyncIcon}
             aria-label="Refresh batches"
+            variant="invisible"
           >
             Refresh
           </Button>

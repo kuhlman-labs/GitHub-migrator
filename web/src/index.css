@@ -14,20 +14,9 @@
 @import '@primer/primitives/dist/css/functional/themes/dark.css';
 @import '@primer/primitives/dist/css/functional/themes/dark-dimmed.css';
 
-/* GitHub Primer Brand Fonts */
-@font-face {
-  font-family: 'Mona Sans';
-  src: url('/fonts/Mona-Sans.woff2') format('woff2');
-  font-weight: 100 900;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Monaspace Neon';
-  src: url('/fonts/MonaspaceNeon-Medium.woff2') format('woff2');
-  font-weight: 100 900;
-  font-display: swap;
-}
+/* GitHub Primer Brand Fonts - from npm packages */
+@import '@fontsource-variable/mona-sans';
+@import '@fontsource/monaspace-neon/500.css';
 
 @theme {
   /* Primer-aligned Color System */
@@ -174,16 +163,21 @@ select:not([class*="Select"]):focus {
 span[class*="TextInput-wrapper"] {
   display: inline-flex !important;
   align-items: center !important;
-  border: 1px solid #D1D9E0 !important;
+  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
   border-radius: 6px !important;
-  background-color: #F6F8FA !important;
+  background-color: transparent !important;
   padding: 0 !important;
   overflow: hidden !important;
+  transition: all 0.2s ease !important;
+}
+
+span[class*="TextInput-wrapper"]:hover {
+  border-color: var(--borderColor-emphasis, #8C959F) !important;
 }
 
 span[class*="TextInput-wrapper"]:focus-within {
-  border-color: #3094FF !important;
-  background-color: #FFFFFF !important;
+  border-color: var(--focus-outlineColor, #3094FF) !important;
+  background-color: var(--bgColor-default, #FFFFFF) !important;
   box-shadow: 0 0 0 3px rgba(48, 148, 255, 0.3) !important;
 }
 
@@ -192,7 +186,12 @@ span[class*="TextInput-wrapper"] svg {
   margin-left: 12px !important;
   margin-right: 0 !important;
   flex-shrink: 0 !important;
-  color: #656D76 !important;
+  color: var(--fgColor-muted, #656D76) !important;
+  transition: color 0.2s ease !important;
+}
+
+span[class*="TextInput-wrapper"]:focus-within svg {
+  color: var(--fgColor-default, #24292F) !important;
 }
 
 /* Input itself - remove border and add padding */
@@ -203,6 +202,12 @@ span[class*="TextInput-wrapper"] input {
   flex: 1 !important;
   outline: none !important;
   box-shadow: none !important;
+  color: var(--fgColor-default, #24292F) !important;
+}
+
+span[class*="TextInput-wrapper"] input::placeholder {
+  color: var(--fgColor-muted, #656D76) !important;
+  opacity: 0.8 !important;
 }
 
 span[class*="TextInput-wrapper"] input:focus {
