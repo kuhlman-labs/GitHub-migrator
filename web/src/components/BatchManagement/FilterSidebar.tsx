@@ -215,8 +215,8 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
           <label className="block text-xs font-medium mb-2" style={{ color: 'var(--fgColor-default)' }}>Search</label>
           <TextInput
             leadingVisual={SearchIcon}
-            value={filters.search || ''}
-            onChange={(e) => onChange({ ...filters, search: e.target.value || undefined })}
+            value={filters.search ?? ''}
+            onChange={(e) => onChange({ ...filters, search: e.target.value.trim() || undefined })}
             placeholder="Repository name..."
             block
           />
@@ -335,7 +335,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                 <input
                   type="number"
                   placeholder="Min"
-                  value={filters.min_size ? Math.round(filters.min_size / 1024 / 1024) : ''}
+                  value={filters.min_size ? Math.round(filters.min_size / 1024 / 1024).toString() : ''}
                   onChange={(e) =>
                     onChange({
                       ...filters,
@@ -352,7 +352,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                 <input
                   type="number"
                   placeholder="Max"
-                  value={filters.max_size ? Math.round(filters.max_size / 1024 / 1024) : ''}
+                  value={filters.max_size ? Math.round(filters.max_size / 1024 / 1024).toString() : ''}
                   onChange={(e) =>
                     onChange({
                       ...filters,

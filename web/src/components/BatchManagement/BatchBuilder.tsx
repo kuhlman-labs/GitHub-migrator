@@ -19,15 +19,15 @@ interface BatchBuilderProps {
 export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const isEditMode = !!batch;
 
-  // Batch metadata
-  const [batchName, setBatchName] = useState(batch?.name || '');
-  const [batchDescription, setBatchDescription] = useState(batch?.description || '');
-  const [scheduledAt, setScheduledAt] = useState(formatDateForInput(batch?.scheduled_at));
+  // Batch metadata - ensure all inputs start with defined values (never undefined)
+  const [batchName, setBatchName] = useState('');
+  const [batchDescription, setBatchDescription] = useState('');
+  const [scheduledAt, setScheduledAt] = useState('');
 
   // Migration settings
-  const [destinationOrg, setDestinationOrg] = useState(batch?.destination_org || '');
-  const [migrationAPI, setMigrationAPI] = useState<'GEI' | 'ELM'>(batch?.migration_api || 'GEI');
-  const [excludeReleases, setExcludeReleases] = useState(batch?.exclude_releases || false);
+  const [destinationOrg, setDestinationOrg] = useState('');
+  const [migrationAPI, setMigrationAPI] = useState<'GEI' | 'ELM'>('GEI');
+  const [excludeReleases, setExcludeReleases] = useState(false);
   
   // Organization list for autocomplete
   const [organizations, setOrganizations] = useState<string[]>([]);

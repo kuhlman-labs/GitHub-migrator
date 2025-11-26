@@ -714,6 +714,15 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 		return nil, fmt.Errorf("failed to get batch: %w", err)
 	}
 
+	// Ensure repository_count is accurate by querying the actual count
+	// This prevents data inconsistency issues where the count may be stale
+	var count int64
+	if err := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("batch_id = ?", batch.ID).
+		Count(&count).Error; err == nil {
+		batch.RepositoryCount = int(count)
+	}
+
 	return &batch, nil
 }
 
@@ -729,6 +738,17 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 	err := d.db.WithContext(ctx).Order("created_at DESC").Find(&batches).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list batches: %w", err)
+	}
+
+	// Ensure repository_count is accurate by querying the actual count
+	// This prevents data inconsistency issues where the count may be stale
+	for _, batch := range batches {
+		var count int64
+		if err := d.db.WithContext(ctx).Model(&models.Repository{}).
+			Where("batch_id = ?", batch.ID).
+			Count(&count).Error; err == nil {
+			batch.RepositoryCount = int(count)
+		}
 	}
 
 	return batches, nil

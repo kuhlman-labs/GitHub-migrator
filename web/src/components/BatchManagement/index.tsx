@@ -2,10 +2,12 @@ import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { TextInput, Button, UnderlineNav, ProgressBar, Dialog } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon } from '@primer/octicons-react';
+import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon, SyncIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
+import { formatBatchDuration } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Pagination } from '../common/Pagination';
 import { formatBytes, formatDate } from '../../utils/format';
@@ -16,12 +18,13 @@ type BatchTab = 'active' | 'completed';
 export function BatchManagement() {
   const navigate = useNavigate();
   const location = useLocation();
-  const locationState = location.state as { selectedBatchId?: number } | null;
+  const locationState = location.state as { selectedBatchId?: number; refreshData?: boolean } | null;
   const { showSuccess, showError, showWarning } = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [batchRepositories, setBatchRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<BatchTab>('active');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,12 +65,22 @@ export function BatchManagement() {
 
     // Poll for batch list updates every 30 seconds to catch scheduled batches starting
     const batchListInterval = setInterval(() => {
-      loadBatches();
+      loadBatches(true); // Pass true to indicate this is a background refresh
     }, 30000);
 
     return () => clearInterval(batchListInterval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Handle immediate refresh when navigating back from create/edit
+  useEffect(() => {
+    if (locationState?.refreshData) {
+      loadBatches();
+      // Clear the state to prevent refresh on subsequent renders
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationState?.refreshData]);
 
   // Handle location state to auto-select batch when navigating from repository detail
   useEffect(() => {
@@ -97,9 +110,10 @@ export function BatchManagement() {
         (selectedBatch.scheduled_at && new Date(selectedBatch.scheduled_at) > new Date());
 
       if (shouldPoll) {
-        const pollInterval = selectedBatch.status === 'in_progress' ? 10000 : 30000;
+        // More aggressive polling for in-progress batches (5s), moderate for ready (15s)
+        const pollInterval = selectedBatch.status === 'in_progress' ? 5000 : 15000;
         const interval = setInterval(() => {
-          loadBatches();
+          loadBatches(true);
           loadBatchRepositories(selectedBatch.id);
         }, pollInterval);
         return () => clearInterval(interval);
@@ -107,8 +121,15 @@ export function BatchManagement() {
     }
   }, [selectedBatch]);
 
-  const loadBatches = async () => {
+  const loadBatches = async (isBackgroundRefresh = false) => {
     try {
+      // Only show refreshing indicator for manual/foreground refreshes
+      if (!isBackgroundRefresh) {
+        if (!loading) {
+          setRefreshing(true);
+        }
+      }
+
       const data = await api.listBatches();
       setBatches(data);
       
@@ -121,8 +142,12 @@ export function BatchManagement() {
       }
     } catch (error) {
       console.error('Failed to load batches:', error);
+      if (!isBackgroundRefresh) {
+        showError('Failed to refresh batches');
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -236,7 +261,10 @@ export function BatchManagement() {
         await api.retryRepository(repo.id, isDryRunFailed);
       }
       showSuccess(`Queued ${failedRepos.length} repositories for retry`);
-      await loadBatchRepositories(selectedBatch.id);
+      await Promise.all([
+        loadBatches(),
+        loadBatchRepositories(selectedBatch.id)
+      ]);
       setShowRetryDialog(false);
     } catch (error: any) {
       console.error('Failed to retry batch failures:', error);
@@ -254,12 +282,22 @@ export function BatchManagement() {
       await api.retryRepository(repo.id, isDryRunFailed);
       showSuccess(`Repository queued for ${actionType} retry`);
       if (selectedBatch) {
-        await loadBatchRepositories(selectedBatch.id);
+        await Promise.all([
+          loadBatches(),
+          loadBatchRepositories(selectedBatch.id)
+        ]);
       }
     } catch (error: any) {
       console.error('Failed to retry repository:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to retry repository';
       showError(errorMessage);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    await loadBatches();
+    if (selectedBatch) {
+      await loadBatchRepositories(selectedBatch.id);
     }
   };
 
@@ -396,7 +434,9 @@ export function BatchManagement() {
   }, [activeTab, searchTerm]);
 
   return (
-    <div>
+    <div className="relative">
+      <RefreshIndicator isRefreshing={refreshing && !loading} />
+      
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Batch Management</h1>
         <div className="flex items-center gap-4">
@@ -407,6 +447,14 @@ export function BatchManagement() {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: 300 }}
           />
+          <Button
+            onClick={handleManualRefresh}
+            disabled={refreshing || loading}
+            leadingVisual={SyncIcon}
+            aria-label="Refresh batches"
+          >
+            Refresh
+          </Button>
           <Button
             onClick={handleCreateBatch}
             variant="primary"
@@ -599,6 +647,14 @@ export function BatchManagement() {
                             <span style={{ color: 'var(--fgColor-muted)' }}>Last Migration:</span>
                             <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.last_migration_attempt_at)}
+                            </div>
+                          </div>
+                        )}
+                        {selectedBatch.started_at && selectedBatch.completed_at && (
+                          <div className="text-sm">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Duration:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-success)' }}>
+                              {formatBatchDuration(selectedBatch)}
                             </div>
                           </div>
                         )}

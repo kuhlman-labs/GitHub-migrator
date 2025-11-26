@@ -45,7 +45,8 @@ export function BatchBuilderPage() {
   };
 
   const handleSuccess = () => {
-    navigate('/batches');
+    // Navigate with state to trigger immediate refresh
+    navigate('/batches', { state: { refreshData: true } });
   };
 
   if (loading) {

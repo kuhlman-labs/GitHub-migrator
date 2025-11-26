@@ -130,10 +130,7 @@ export function RepositoryListItem({ repository, selected, disabled, onToggle }:
         {/* Header with repo name and complexity badge */}
         <div className="flex items-center gap-2 mb-2">
           <span className="font-semibold truncate text-sm" style={{ color: 'var(--fgColor-default)' }}>
-            {repository.ado_project 
-              ? repository.full_name // For ADO, full_name is just the repo name
-              : repository.full_name.split('/')[1] || repository.full_name // For GitHub, extract repo name from org/repo
-            }
+            {repository.full_name}
           </span>
           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${complexity.bgColor} ${complexity.textColor} border ${complexity.borderColor}`}>
             {complexity.label}

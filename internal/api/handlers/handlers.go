@@ -1954,19 +1954,23 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Check each repo is eligible
+	// Check each repo is eligible and separate into eligible and ineligible lists
+	eligibleRepoIDs := []int64{}
 	ineligibleRepos := []string{}
 	ineligibleReasons := make(map[string]string)
+
 	for _, repo := range repos {
 		if eligible, reason := isRepositoryEligibleForBatch(repo); !eligible {
 			ineligibleRepos = append(ineligibleRepos, repo.FullName)
 			ineligibleReasons[repo.FullName] = reason
+		} else {
+			eligibleRepoIDs = append(eligibleRepoIDs, repo.ID)
 		}
 	}
 
-	if len(ineligibleRepos) > 0 {
-		// Build detailed error message
-		errorMsg := "Some repositories are not eligible for batch assignment:\n"
+	// If NO repos are eligible, return error
+	if len(eligibleRepoIDs) == 0 {
+		errorMsg := "No repositories are eligible for batch assignment:\n"
 		for _, repoName := range ineligibleRepos {
 			errorMsg += fmt.Sprintf("  - %s: %s\n", repoName, ineligibleReasons[repoName])
 		}
@@ -1974,16 +1978,27 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Add repositories to batch
-	if err := h.db.AddRepositoriesToBatch(ctx, batchID, req.RepositoryIDs); err != nil {
+	// Add only eligible repositories to batch
+	if err := h.db.AddRepositoriesToBatch(ctx, batchID, eligibleRepoIDs); err != nil {
 		h.logger.Error("Failed to add repositories to batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to add repositories to batch")
 		return
 	}
 
-	// Apply batch defaults to repositories that don't have options set
+	// Re-fetch repositories after adding them to batch to get updated batch_id
+	// This prevents UpdateRepository from overwriting batch_id with the old nil value
+	repos, err = h.db.GetRepositoriesByIDs(ctx, eligibleRepoIDs)
+	if err != nil {
+		h.logger.Error("Failed to re-fetch repositories after adding to batch", "error", err)
+		// Continue anyway - defaults won't be applied but repos are in the batch
+	}
+
+	// Apply batch defaults to eligible repositories that don't have options set
 	updatedCount := 0
+	failedUpdates := []string{}
+
 	for _, repo := range repos {
+
 		needsUpdate := false
 
 		// Apply destination org if batch has one and repo doesn't have a destination set
@@ -2004,7 +2019,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 			repo.UpdatedAt = time.Now()
 			if err := h.db.UpdateRepository(ctx, repo); err != nil {
 				h.logger.Warn("Failed to apply batch defaults to repository", "repo", repo.FullName, "error", err)
-				// Don't fail the entire operation, just log the warning
+				failedUpdates = append(failedUpdates, repo.FullName)
 			} else {
 				updatedCount++
 			}
@@ -2014,17 +2029,38 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	// Get updated batch
 	batch, _ = h.db.GetBatch(ctx, batchID)
 
-	message := fmt.Sprintf("Added %d repositories to batch", len(req.RepositoryIDs))
+	// Build response message
+	message := fmt.Sprintf("Added %d of %d repositories to batch", len(eligibleRepoIDs), len(req.RepositoryIDs))
 	if updatedCount > 0 {
 		message += fmt.Sprintf(" (%d inherited batch defaults)", updatedCount)
 	}
+	if len(ineligibleRepos) > 0 {
+		message += fmt.Sprintf(". %d repos skipped (ineligible)", len(ineligibleRepos))
+	}
+	if len(failedUpdates) > 0 {
+		message += fmt.Sprintf(". %d repos failed to apply defaults", len(failedUpdates))
+	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	response := map[string]interface{}{
 		"batch":                  batch,
-		"repositories_added":     len(req.RepositoryIDs),
+		"repositories_added":     len(eligibleRepoIDs),
+		"repositories_requested": len(req.RepositoryIDs),
 		"defaults_applied_count": updatedCount,
 		"message":                message,
-	})
+	}
+
+	// Include ineligible repos info for transparency
+	if len(ineligibleRepos) > 0 {
+		response["ineligible_count"] = len(ineligibleRepos)
+		response["ineligible_repos"] = ineligibleReasons
+	}
+
+	// Include failed updates for transparency
+	if len(failedUpdates) > 0 {
+		response["failed_updates"] = failedUpdates
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // RemoveRepositoriesFromBatch handles DELETE /api/v1/batches/{id}/repositories

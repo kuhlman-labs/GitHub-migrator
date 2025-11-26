@@ -380,6 +380,24 @@ func (Batch) TableName() string {
 	return "batches"
 }
 
+// Duration calculates the batch execution duration if both StartedAt and CompletedAt are set
+func (b *Batch) Duration() *time.Duration {
+	if b.StartedAt == nil || b.CompletedAt == nil {
+		return nil
+	}
+	duration := b.CompletedAt.Sub(*b.StartedAt)
+	return &duration
+}
+
+// DurationSeconds returns the batch duration in seconds, or 0 if not completed
+func (b *Batch) DurationSeconds() float64 {
+	duration := b.Duration()
+	if duration == nil {
+		return 0
+	}
+	return duration.Seconds()
+}
+
 // Organization extracts the organization from full_name (org/repo)
 func (r *Repository) Organization() string {
 	parts := strings.SplitN(r.FullName, "/", 2)
