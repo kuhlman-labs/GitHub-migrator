@@ -434,8 +434,8 @@ export function BatchManagement() {
   const groupedRepos = groupReposByStatus(batchRepositories);
 
   // Filter batches by tab (active vs completed)
-  const activeStatuses = ['pending', 'ready', 'in_progress'];
-  const completedStatuses = ['completed', 'completed_with_errors', 'failed', 'cancelled'];
+  const activeStatuses = ['pending', 'ready', 'in_progress', 'completed_with_errors', 'failed'];
+  const completedStatuses = ['completed', 'cancelled'];
   
   const filteredByTab = batches.filter((batch) =>
     activeTab === 'active'
