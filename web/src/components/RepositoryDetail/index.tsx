@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useParams, Link as RouterLink, useLocation } from 'react-router-dom';
 import { Button, UnderlineNav, Textarea, FormControl, Link, useTheme, Dialog } from '@primer/react';
-import { CalendarIcon } from '@primer/octicons-react';
+import { CalendarIcon, AlertIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -736,27 +736,75 @@ export function RepositoryDetail() {
           aria-labelledby="wont-migrate-dialog-header"
         >
           <Dialog.Header id="wont-migrate-dialog-header">
-            {repository.status === 'wont_migrate' ? 'Unmark Repository' : 'Mark as Won\'t Migrate'}
+            {repository.status === 'wont_migrate' ? 'Unmark Repository' : 'Mark Repository as Won\'t Migrate'}
           </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
-              {repository.status === 'wont_migrate'
-                ? 'Are you sure you want to unmark this repository? It will be changed to pending status.'
-                : 'Are you sure you want to mark this repository as won\'t migrate? It will be excluded from migration progress and cannot be added to batches.'}
-            </p>
+          <div style={{ padding: '16px 24px' }}>
+            {repository.status === 'wont_migrate' ? (
+              <p style={{ 
+                fontSize: '14px', 
+                color: 'var(--fgColor-default)',
+                lineHeight: '1.5',
+                margin: 0
+              }}>
+                Are you sure you want to unmark this repository? It will be changed to <strong>pending</strong> status and can be added to migration batches again.
+              </p>
+            ) : (
+              <>
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bgColor-attention-muted)',
+                  border: '1px solid var(--borderColor-attention-emphasis)',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ flexShrink: 0, marginTop: '2px', color: 'var(--fgColor-attention)' }}>
+                    <AlertIcon size={16} />
+                  </div>
+                  <div>
+                    <p style={{ 
+                      fontSize: '14px', 
+                      fontWeight: 600,
+                      color: 'var(--fgColor-attention)',
+                      margin: '0 0 4px 0'
+                    }}>
+                      This will exclude the repository from migration
+                    </p>
+                    <p style={{ 
+                      fontSize: '13px', 
+                      color: 'var(--fgColor-default)',
+                      lineHeight: '1.5',
+                      margin: 0
+                    }}>
+                      The repository will be marked as won't migrate and cannot be added to batches or included in migration progress tracking.
+                    </p>
+                  </div>
+                </div>
+                <p style={{ 
+                  fontSize: '14px', 
+                  color: 'var(--fgColor-muted)',
+                  lineHeight: '1.5',
+                  margin: 0
+                }}>
+                  Use this for repositories that don't need to be migrated, such as archived projects or test repositories.
+                </p>
+              </>
+            )}
           </div>
           <div style={{ 
-            padding: '12px 16px', 
+            padding: '16px 24px', 
             borderTop: '1px solid var(--borderColor-default)',
             display: 'flex',
             justifyContent: 'flex-end',
-            gap: '8px'
+            gap: '8px',
+            backgroundColor: 'var(--bgColor-muted)'
           }}>
             <Button onClick={() => setShowWontMigrateDialog(false)}>
               Cancel
             </Button>
             <Button variant={repository.status === 'wont_migrate' ? 'primary' : 'danger'} onClick={confirmToggleWontMigrate}>
-              {repository.status === 'wont_migrate' ? 'Unmark' : 'Mark as Won\'t Migrate'}
+              {repository.status === 'wont_migrate' ? 'Unmark Repository' : 'Mark as Won\'t Migrate'}
             </Button>
           </div>
         </Dialog>
@@ -769,36 +817,59 @@ export function RepositoryDetail() {
           aria-labelledby="migration-dialog-header"
         >
           <Dialog.Header id="migration-dialog-header">
-            {pendingDryRun ? 'Start Dry Run' : 'Start Migration'}
+            {pendingDryRun ? 'Confirm Dry Run' : 'Confirm Migration'}
           </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)', marginBottom: '12px' }}>
+          <div style={{ padding: '16px 24px' }}>
+            <p style={{ 
+              fontSize: '14px', 
+              color: 'var(--fgColor-default)', 
+              lineHeight: '1.5',
+              margin: '0 0 16px 0'
+            }}>
               {pendingDryRun
-                ? 'Are you sure you want to start a dry run? This will simulate the migration process without making actual changes.'
-                : 'Are you sure you want to start the migration? This will begin the actual migration process for this repository.'}
+                ? 'This will simulate the migration process without making any actual changes to the repository.'
+                : 'This will begin the migration process for this repository.'}
             </p>
             {!pendingDryRun && (
-              <div style={{ 
-                padding: '12px', 
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                padding: '12px',
                 borderRadius: '6px',
                 backgroundColor: 'var(--bgColor-attention-muted)',
-                borderLeft: '3px solid var(--borderColor-attention-emphasis)'
+                border: '1px solid var(--borderColor-attention-emphasis)'
               }}>
-                <p style={{ fontSize: '14px', color: 'var(--fgColor-default)', fontWeight: 600 }}>
-                  ⚠️ This is a permanent action
-                </p>
-                <p style={{ fontSize: '13px', color: 'var(--fgColor-muted)', marginTop: '4px' }}>
-                  Make sure you have reviewed the migration readiness and have a backup if needed.
-                </p>
+                <div style={{ flexShrink: 0, marginTop: '2px', color: 'var(--fgColor-attention)' }}>
+                  <AlertIcon size={16} />
+                </div>
+                <div>
+                  <p style={{ 
+                    fontSize: '14px', 
+                    fontWeight: 600,
+                    color: 'var(--fgColor-attention)',
+                    margin: '0 0 4px 0'
+                  }}>
+                    This is a permanent action
+                  </p>
+                  <p style={{ 
+                    fontSize: '13px', 
+                    color: 'var(--fgColor-default)',
+                    lineHeight: '1.5',
+                    margin: 0
+                  }}>
+                    Make sure you have reviewed the migration readiness assessment and have a backup if needed.
+                  </p>
+                </div>
               </div>
             )}
           </div>
           <div style={{ 
-            padding: '12px 16px', 
+            padding: '16px 24px', 
             borderTop: '1px solid var(--borderColor-default)',
             display: 'flex',
             justifyContent: 'flex-end',
-            gap: '8px'
+            gap: '8px',
+            backgroundColor: 'var(--bgColor-muted)'
           }}>
             <Button onClick={() => setShowMigrationDialog(false)}>
               Cancel
