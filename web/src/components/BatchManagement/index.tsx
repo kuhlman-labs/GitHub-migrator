@@ -344,8 +344,38 @@ export function BatchManagement() {
     const completed = repos.filter((r) => r.status === 'complete').length;
     const total = repos.length;
     const percentage = Math.round((completed / total) * 100);
-    
+
     return { completed, total, percentage };
+  };
+
+  // Calculate dry run duration from repository timestamps
+  const getDryRunDuration = (batch: Batch, repos: Repository[]): string | null => {
+    if (!batch.last_dry_run_at || repos.length === 0) return null;
+
+    // Filter repos that have completed dry runs
+    const reposWithDryRun = repos.filter((r) => r.last_dry_run_at);
+    if (reposWithDryRun.length === 0) return null;
+
+    // Find the earliest and latest dry run timestamps
+    const timestamps = reposWithDryRun.map((r) => new Date(r.last_dry_run_at!).getTime());
+    const earliest = Math.min(...timestamps);
+    const latest = Math.max(...timestamps);
+
+    // Calculate duration in seconds
+    const durationSeconds = (latest - earliest) / 1000;
+
+    // Format duration
+    if (durationSeconds < 60) {
+      return `${Math.round(durationSeconds)}s`;
+    } else if (durationSeconds < 3600) {
+      const minutes = Math.floor(durationSeconds / 60);
+      const seconds = Math.round(durationSeconds % 60);
+      return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+    } else {
+      const hours = Math.floor(durationSeconds / 3600);
+      const minutes = Math.round((durationSeconds % 3600) / 60);
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
   };
 
   const groupReposByStatus = (repos: Repository[]) => {
@@ -640,6 +670,14 @@ export function BatchManagement() {
                             <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.last_dry_run_at)}
                             </div>
+                            {(() => {
+                              const duration = getDryRunDuration(selectedBatch, batchRepositories);
+                              return duration ? (
+                                <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+                                  Completed in {duration}
+                                </div>
+                              ) : null;
+                            })()}
                           </div>
                         )}
                         {selectedBatch.last_migration_attempt_at && (
@@ -648,14 +686,11 @@ export function BatchManagement() {
                             <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.last_migration_attempt_at)}
                             </div>
-                          </div>
-                        )}
-                        {selectedBatch.started_at && selectedBatch.completed_at && (
-                          <div className="text-sm">
-                            <span style={{ color: 'var(--fgColor-muted)' }}>Duration:</span>
-                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-success)' }}>
-                              {formatBatchDuration(selectedBatch)}
-                            </div>
+                            {selectedBatch.started_at && selectedBatch.completed_at && (
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+                                Completed in {formatBatchDuration(selectedBatch)}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

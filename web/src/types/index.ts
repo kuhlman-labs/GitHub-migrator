@@ -369,6 +369,7 @@ export interface Analytics {
   pending_count: number;
   success_rate?: number;
   average_migration_time?: number;
+  median_migration_time?: number;
   status_breakdown: Record<string, number>;
   complexity_distribution?: ComplexityDistribution[];
   migration_velocity?: MigrationVelocity;

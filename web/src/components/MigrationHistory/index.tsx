@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TextInput } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { SearchIcon, HistoryIcon } from '@primer/octicons-react';
@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import type { MigrationHistoryEntry } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
+import { Pagination } from '../common/Pagination';
 import { useToast } from '../../contexts/ToastContext';
 import { formatDate, formatDuration } from '../../utils/format';
 import { useMigrationHistory } from '../../hooks/useQueries';
@@ -17,6 +18,8 @@ export function MigrationHistory() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 50;
 
   const handleExport = async (format: 'csv' | 'json') => {
     setExporting(true);
@@ -44,6 +47,17 @@ export function MigrationHistory() {
   const filteredMigrations = migrations.filter(m =>
     m.full_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Reset to page 1 when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredMigrations.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedMigrations = filteredMigrations.slice(startIndex, endIndex);
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -115,7 +129,8 @@ export function MigrationHistory() {
       </div>
 
       <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-        Showing {filteredMigrations.length} of {migrations.length} migrations
+        Showing {startIndex + 1}-{Math.min(endIndex, filteredMigrations.length)} of {filteredMigrations.length} migrations
+        {searchTerm && ` (filtered from ${migrations.length} total)`}
       </div>
 
       {filteredMigrations.length === 0 ? (
@@ -164,12 +179,22 @@ export function MigrationHistory() {
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-muted)' }}>
-                {filteredMigrations.map((migration) => (
+                {paginatedMigrations.map((migration) => (
                   <MigrationRow key={migration.id} migration={migration} />
                 ))}
               </tbody>
             </table>
           </div>
+          
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredMigrations.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
+          )}
         </div>
       )}
     </div>

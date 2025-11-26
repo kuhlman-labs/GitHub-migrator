@@ -631,6 +631,14 @@ export function Analytics() {
                 </span>
               </div>
               <div className="flex justify-between items-center">
+                <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>Median Migration Time</span>
+                <span className="text-lg font-medium" style={{ color: 'var(--fgColor-default)' }}>
+                  {analytics.median_migration_time && analytics.median_migration_time > 0 
+                    ? formatDuration(analytics.median_migration_time) 
+                    : 'N/A'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
                 <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>Total Migrated</span>
                 <span className="text-lg font-medium" style={{ color: 'var(--fgColor-success)' }}>
                   {analytics.migrated_count}

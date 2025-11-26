@@ -2584,6 +2584,13 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		avgMigrationTime = 0
 	}
 
+	// Get median migration time
+	medianMigrationTime, err := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get median migration time", "error", err)
+		medianMigrationTime = 0
+	}
+
 	// Calculate estimated completion date
 	var estimatedCompletionDate *string
 	remaining := total - migrated
@@ -2647,6 +2654,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		"migration_velocity":         migrationVelocity,
 		"migration_time_series":      migrationTimeSeries,
 		"average_migration_time":     avgMigrationTime,
+		"median_migration_time":      medianMigrationTime,
 		"estimated_completion_date":  estimatedCompletionDate,
 		"organization_stats":         orgStats,
 		"project_stats":              projectStats,
@@ -2756,6 +2764,13 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Failed to get average migration time", "error", err)
 		avgMigrationTime = 0
+	}
+
+	// Get median migration time
+	medianMigrationTime, err := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get median migration time", "error", err)
+		medianMigrationTime = 0
 	}
 
 	// Calculate estimated completion date
@@ -2875,6 +2890,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 			"repos_per_day":        migrationVelocity.ReposPerDay,
 			"repos_per_week":       migrationVelocity.ReposPerWeek,
 			"average_duration_sec": avgMigrationTime,
+			"median_duration_sec":  medianMigrationTime,
 			"migration_trend":      migrationTimeSeries,
 		},
 
@@ -2988,6 +3004,11 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		avgMigrationTime = 0
 	}
 
+	medianMigrationTime, err := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	if err != nil {
+		medianMigrationTime = 0
+	}
+
 	var estimatedCompletionDate string
 	var daysRemaining int
 	remaining := total - migrated
@@ -3050,12 +3071,12 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 
 	if format == formatCSV {
 		h.exportExecutiveReportCSV(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
-			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
+			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime), int(medianMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	} else {
 		h.exportExecutiveReportJSON(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
-			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
+			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime), int(medianMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	}
@@ -3063,7 +3084,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
-	velocity *storage.MigrationVelocity, avgMigrationTime int,
+	velocity *storage.MigrationVelocity, avgMigrationTime, medianMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
 	sizeDist []*storage.SizeDistribution, featureStats *storage.FeatureStats,
 	statusBreakdown map[string]int, completedBatches, inProgressBatches, pendingBatches int) {
@@ -3229,7 +3250,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 
 func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
-	velocity *storage.MigrationVelocity, avgMigrationTime int,
+	velocity *storage.MigrationVelocity, avgMigrationTime, medianMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
 	sizeDist []*storage.SizeDistribution, featureStats *storage.FeatureStats,
 	statusBreakdown map[string]int, completedBatches, inProgressBatches, pendingBatches int) {
@@ -3259,6 +3280,7 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 			"repos_per_day":        velocity.ReposPerDay,
 			"repos_per_week":       velocity.ReposPerWeek,
 			"average_duration_sec": avgMigrationTime,
+			"median_duration_sec":  medianMigrationTime,
 		},
 		"organization_progress":    orgStats,
 		"complexity_distribution":  complexityDist,

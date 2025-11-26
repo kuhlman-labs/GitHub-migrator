@@ -9,9 +9,11 @@ export function StatusBadge({ status, size = 'large' }: StatusBadgeProps) {
   const getStatusVariant = (status: string): 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors' => {
     // Map all backend statuses to Primer Label variants
     const statusMap: Record<string, 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors'> = {
-      // Pending / Ready (neutral)
+      // Pending (neutral)
       pending: 'default',
-      ready: 'default',
+      
+      // Ready (blue - indicates batch is ready for migration after dry run)
+      ready: 'accent',
       
       // Requires Attention (attention/warning)
       remediation_required: 'attention',
