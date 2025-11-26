@@ -714,6 +714,15 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 		return nil, fmt.Errorf("failed to get batch: %w", err)
 	}
 
+	// Ensure repository_count is accurate by querying the actual count
+	// This prevents data inconsistency issues where the count may be stale
+	var count int64
+	if err := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("batch_id = ?", batch.ID).
+		Count(&count).Error; err == nil {
+		batch.RepositoryCount = int(count)
+	}
+
 	return &batch, nil
 }
 
@@ -729,6 +738,17 @@ func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 	err := d.db.WithContext(ctx).Order("created_at DESC").Find(&batches).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list batches: %w", err)
+	}
+
+	// Ensure repository_count is accurate by querying the actual count
+	// This prevents data inconsistency issues where the count may be stale
+	for _, batch := range batches {
+		var count int64
+		if err := d.db.WithContext(ctx).Model(&models.Repository{}).
+			Where("batch_id = ?", batch.ID).
+			Count(&count).Error; err == nil {
+			batch.RepositoryCount = int(count)
+		}
 	}
 
 	return batches, nil
@@ -1723,6 +1743,73 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, proje
 	}
 
 	return *result.AvgDuration, nil
+}
+
+// GetMedianMigrationTime calculates the median migration duration
+func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projectFilter, batchFilter string) (float64, error) {
+	// Build filter clauses and collect arguments
+	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
+	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
+	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+
+	// SQLite uses a different approach for median than PostgreSQL
+	var query string
+	switch d.cfg.Type {
+	case DBTypePostgres, DBTypePostgreSQL:
+		// PostgreSQL percentile_cont
+		query = `
+			SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mh.duration_seconds) as median_duration
+			FROM repositories r
+			INNER JOIN migration_history mh ON r.id = mh.repository_id
+			WHERE mh.status = 'completed'
+				AND mh.phase = 'migration'
+				AND mh.duration_seconds IS NOT NULL
+				AND r.status != 'wont_migrate'
+				` + orgFilterSQL + `
+				` + projectFilterSQL + `
+				` + batchFilterSQL + `
+		`
+	default:
+		// SQLite - use subquery approach for median
+		query = `
+			WITH ordered AS (
+				SELECT mh.duration_seconds,
+					ROW_NUMBER() OVER (ORDER BY mh.duration_seconds) as row_num,
+					COUNT(*) OVER () as total_count
+				FROM repositories r
+				INNER JOIN migration_history mh ON r.id = mh.repository_id
+				WHERE mh.status = 'completed'
+					AND mh.phase = 'migration'
+					AND mh.duration_seconds IS NOT NULL
+					AND r.status != 'wont_migrate'
+					` + orgFilterSQL + `
+					` + projectFilterSQL + `
+					` + batchFilterSQL + `
+			)
+			SELECT AVG(duration_seconds) as median_duration
+			FROM ordered
+			WHERE row_num IN ((total_count + 1) / 2, (total_count + 2) / 2)
+		`
+	}
+
+	// Combine all arguments
+	args := append(orgArgs, projectArgs...)
+	args = append(args, batchArgs...)
+
+	// Use GORM Raw() for analytics query
+	var result struct {
+		MedianDuration *float64
+	}
+	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&result).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to get median migration time: %w", err)
+	}
+
+	if result.MedianDuration == nil {
+		return 0, nil
+	}
+
+	return *result.MedianDuration, nil
 }
 
 // buildOrgFilter builds the organization filter clause using parameterized queries

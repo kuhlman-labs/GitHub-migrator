@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { ChevronDownIcon, ChevronRightIcon } from '@primer/octicons-react';
+import { Button, Dialog } from '@primer/react';
 import { Repository } from '../../types';
 import { api } from '../../services/api';
 import { formatBytes } from '../../utils/format';
 import { CollapsibleValidationSection } from './CollapsibleValidationSection';
 import { MetadataBreakdownBar } from './MetadataBreakdownBar';
+import { useToast } from '../../contexts/ToastContext';
 
 interface MigrationReadinessSectionProps {
   repository: Repository;
@@ -41,6 +44,8 @@ export function MigrationReadinessSection({
   onUpdate, 
   onRevalidate 
 }: MigrationReadinessSectionProps) {
+  const { showSuccess, showError } = useToast();
+  
   // Exclusion flags state
   const [flags, setFlags] = useState({
     exclude_releases: repository.exclude_releases,
@@ -52,6 +57,8 @@ export function MigrationReadinessSection({
   
   const [isSaving, setIsSaving] = useState(false);
   const [isRemediating, setIsRemediating] = useState(false);
+  const [showRemediateDialog, setShowRemediateDialog] = useState(false);
+  const remediateButtonRef = useRef<HTMLButtonElement>(null);
   
   // Section expansion state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -155,10 +162,10 @@ export function MigrationReadinessSection({
     setIsSaving(true);
     try {
       await api.updateRepository(repository.full_name, flags);
-      alert('Migration options saved successfully!');
+      showSuccess('Migration options saved successfully!');
       onUpdate();
     } catch (error: any) {
-      alert(`Failed to save migration options: ${error.response?.data?.error || error.message}`);
+      showError(`Failed to save migration options: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -176,18 +183,19 @@ export function MigrationReadinessSection({
   };
   
   // Mark as remediated
-  const handleMarkRemediated = async () => {
-    if (!confirm('Have you fixed all blocking issues in the source repository? This will trigger a full re-validation.')) {
-      return;
-    }
-    
+  const handleMarkRemediated = () => {
+    setShowRemediateDialog(true);
+  };
+  
+  const confirmMarkRemediated = async () => {
+    setShowRemediateDialog(false);
     setIsRemediating(true);
     try {
       await api.markRepositoryRemediated(repository.full_name);
-      alert('Re-validation started. The repository will be re-analyzed for migration limits.');
+      showSuccess('Re-validation started. The repository will be re-analyzed for migration limits.');
       onRevalidate();
     } catch (error: any) {
-      alert(`Failed to start re-validation: ${error.response?.data?.error || error.message}`);
+      showError(`Failed to start re-validation: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsRemediating(false);
     }
@@ -429,9 +437,19 @@ export function MigrationReadinessSection({
                 metadata: !prev.metadata,
                 gitLimits: !prev.gitLimits
               }))}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
             >
-              {(expandedSections.repoSize || expandedSections.metadata || expandedSections.gitLimits) ? '▼ Hide' : '▶ View'} Validation Details
+              {(expandedSections.repoSize || expandedSections.metadata || expandedSections.gitLimits) ? (
+                <>
+                  <ChevronDownIcon size={16} />
+                  Hide Validation Details
+                </>
+              ) : (
+                <>
+                  <ChevronRightIcon size={16} />
+                  View Validation Details
+                </>
+              )}
             </button>
           )}
       
@@ -515,6 +533,7 @@ export function MigrationReadinessSection({
                 
                 <div className="pt-4 border-t border-red-200 mt-4">
                   <button
+                    ref={remediateButtonRef}
                     onClick={handleMarkRemediated}
                     disabled={isRemediating}
                     className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-4 py-2 rounded-lg font-medium transition-colors"
@@ -699,6 +718,7 @@ export function MigrationReadinessSection({
             {hasGitLimitIssues && (
               <div className="pt-4 border-t border-gray-200">
                 <button
+                  ref={remediateButtonRef}
                   onClick={handleMarkRemediated}
                   disabled={isRemediating}
                   className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-4 py-2 rounded-lg font-medium transition-colors"
@@ -790,6 +810,38 @@ export function MigrationReadinessSection({
           </div>
         </div>
       </div>
+
+      {/* Mark as Remediated Confirmation Dialog */}
+      {showRemediateDialog && (
+        <Dialog
+          returnFocusRef={remediateButtonRef as React.RefObject<HTMLElement>}
+          onClose={() => setShowRemediateDialog(false)}
+          aria-labelledby="remediate-dialog-header"
+        >
+          <Dialog.Header id="remediate-dialog-header">
+            Mark as Remediated
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              Have you fixed all blocking issues in the source repository? This will trigger a full re-validation.
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowRemediateDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmMarkRemediated}>
+              Mark as Remediated
+            </Button>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -111,6 +111,21 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 			if isTerminalStatus(newStatus) && batch.CompletedAt == nil {
 				now := time.Now()
 				batch.CompletedAt = &now
+
+				// Log completion with duration
+				if batch.StartedAt != nil {
+					duration := batch.Duration()
+					if duration != nil {
+						su.logger.Info("Batch completed",
+							"batch_id", batch.ID,
+							"batch_name", batch.Name,
+							"status", newStatus,
+							"started_at", batch.StartedAt.Format(time.RFC3339),
+							"completed_at", batch.CompletedAt.Format(time.RFC3339),
+							"duration_seconds", duration.Seconds(),
+							"duration", duration.String())
+					}
+				}
 			}
 
 			if err := su.storage.UpdateBatch(ctx, batch); err != nil {

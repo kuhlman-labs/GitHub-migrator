@@ -1,521 +1,403 @@
 import { useState } from 'react';
+import { Button, IconButton } from '@primer/react';
+import { InfoIcon, XIcon } from '@primer/octicons-react';
 
 interface ComplexityInfoModalProps {
-  source?: 'github' | 'azuredevops' | 'all';  // Allows context-aware display
+  source?: 'github' | 'ghes' | 'azuredevops' | 'all';
 }
 
 export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Determine what to show based on source
-  const showGitHub = source === 'github' || source === 'all';
-  const showADO = source === 'azuredevops' || source === 'all';
-
   return (
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
-        title="Learn how complexity is calculated"
+        className="inline-flex items-center gap-1 text-sm font-medium hover:underline cursor-pointer"
+        style={{ 
+          color: 'var(--fgColor-accent)',
+          background: 'none',
+          border: 'none',
+          padding: 0
+        }}
       >
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-        </svg>
+        <InfoIcon size={16} />
         How is complexity calculated?
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
-              <div className="flex justify-between items-start">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {source === 'azuredevops' ? 'Azure DevOps Migration Complexity' : 
-                   source === 'github' ? 'GitHub Migration Complexity' :
-                   'Repository Complexity Scoring'}
-                </h2>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 space-y-6">
-              {/* Overview */}
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Overview</h3>
-                {source === 'azuredevops' ? (
-                  <p className="text-gray-700 mb-2">
-                    We calculate an Azure DevOps-specific complexity score to estimate migration effort from ADO to GitHub. 
-                    The score accounts for ADO-specific features like TFVC repositories, classic pipelines, Azure Boards, wikis, and test plans that require special handling during migration.
-                  </p>
-                ) : source === 'github' ? (
-                  <p className="text-gray-700 mb-2">
-                    We calculate a GitHub-specific complexity score to estimate migration effort between GitHub instances. 
-                    The score combines multiple factors, each weighted by their remediation difficulty based on GitHub's migration documentation.
-                  </p>
-                ) : (
-                  <p className="text-gray-700 mb-2">
-                    We calculate source-specific complexity scores to estimate migration effort and potential challenges. 
-                    The scoring methodology adapts based on your repository source (GitHub or Azure DevOps), with each factor weighted by remediation difficulty.
-                  </p>
-                )}
-                <p className="text-sm text-gray-600 italic">
-                  Activity levels are calculated using quantiles relative to your repository dataset, making the scoring adaptive to your specific environment.
-                </p>
-              </div>
-
-              {/* Scoring Factors */}
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-3">Scoring Factors</h3>
-                <div className="space-y-4">
-                  {/* Repository Size - Common to both */}
-                  <div className="border-l-4 border-blue-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Repository Size</h4>
-                      <span className="text-sm font-semibold text-blue-600">Weight: 3 (max 9 points)</span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">
-                      Larger repositories take longer to migrate and have higher resource requirements.
-                    </p>
-                    <ul className="text-sm text-gray-700 space-y-1">
-                      <li>• &lt;100MB: <span className="font-medium">0 points</span></li>
-                      <li>• 100MB - 1GB: <span className="font-medium">3 points</span></li>
-                      <li>• 1GB - 5GB: <span className="font-medium">6 points</span></li>
-                      <li>• &gt;5GB: <span className="font-medium">9 points</span></li>
-                    </ul>
-                  </div>
-
-                  {/* GitHub-Specific Factors */}
-                  {showGitHub && (
-                    <>
-                      {/* High Impact Features */}
-                      <div className="mb-3">
-                        <h4 className="font-semibold text-gray-900 mb-2">GitHub High Impact (3-4 points)</h4>
-                        <p className="text-sm text-gray-600 mb-3">Features requiring significant remediation effort before or after migration</p>
-                    
-                    <div className="space-y-3">
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Large Files (&gt;100MB)</h5>
-                          <span className="text-sm font-semibold text-red-600">4 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Must be remediated before migration (migrate to LFS, remove from history). Highest weight.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Environments</h5>
-                          <span className="text-sm font-semibold text-red-600">3 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate. Manual recreation of all configs, protection rules, and deployment branches required.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Secrets</h5>
-                          <span className="text-sm font-semibold text-red-600">3 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate. Manual recreation required with high security sensitivity, affects CI/CD.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">GitHub Packages</h5>
-                          <span className="text-sm font-semibold text-red-600">3 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate with GEI. Manual migration planning and execution required.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Self-Hosted Runners</h5>
-                          <span className="text-sm font-semibold text-red-600">3 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Infrastructure reconfiguration and setup required on destination.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Moderate Impact Features */}
-                  <div className="mb-3">
-                    <h4 className="font-semibold text-gray-900 mb-2">Moderate Impact (2 points)</h4>
-                    <p className="text-sm text-gray-600 mb-3">Features requiring manual intervention but less complexity</p>
-                    
-                    <div className="space-y-3">
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Variables</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate. Manual recreation required, less sensitive than secrets.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Discussions</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate. Community impact, manual recreation loses history.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Releases</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Only migrate on GHES 3.5.0+. May require manual migration on older versions.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Git LFS</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Special handling during migration, proper configuration required on destination.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Submodules</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Dependencies on other repositories that must be migrated first.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">GitHub Apps</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Reconfiguration or reinstallation required on destination.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Projects (ProjectsV2)</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate with GEI. Must be manually recreated on destination organization.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Low Impact Features */}
-                  <div className="mb-3">
-                    <h4 className="font-semibold text-gray-900 mb-2">Low Impact (1 point)</h4>
-                    <p className="text-sm text-gray-600 mb-3">Features requiring straightforward manual steps</p>
-                    
-                    <div className="space-y-3">
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Advanced Security (GHAS)</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Code scanning, Dependabot, secret scanning. Simple toggles to re-enable.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Webhooks</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Must re-enable after migration. Straightforward but critical for integrations.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Branch Protections</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Migrate but certain rules don't (e.g., bypass actors, force push settings).
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Rulesets</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Don't migrate. Manual recreation on destination repository required. Rulesets replace deprecated tag protections.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Public/Internal Visibility</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1 point each</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          May require visibility transformation (e.g., EMU doesn't support public repos).
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">CODEOWNERS</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1 point</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Migrates but verification required to ensure team references are correct.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                    </>
-                  )}
-
-                  {/* Azure DevOps Specific Factors */}
-                  {showADO && (
-                    <div className="mb-3">
-                      <h4 className="font-semibold text-gray-900 mb-2">Azure DevOps Specific Factors</h4>
-                    <p className="text-sm text-gray-600 mb-3">Additional complexity factors for ADO → GitHub migrations</p>
-                    
-                    <div className="space-y-3">
-                      <div className="border-l-4 border-red-700 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">TFVC Repository</h5>
-                          <span className="text-sm font-semibold text-red-700">50 points (BLOCKING)</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Must be converted to Git before migration. Use git-tfs or convert in ADO first.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Classic Pipelines</h5>
-                          <span className="text-sm font-semibold text-red-600">5 points per pipeline</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Cannot be automatically converted. Must manually recreate as GitHub Actions workflows.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Package Feeds / Service Connections / Active Pipelines</h5>
-                          <span className="text-sm font-semibold text-red-600">3 points each</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Require separate migration to GitHub Packages or recreation in GitHub.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-red-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Active Work Items (Azure Boards)</h5>
-                          <span className="text-sm font-semibold text-red-600">3 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Work items don't migrate with GEI. Only PR links migrate. Consider third-party tools.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-orange-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Wiki Pages / Test Plans</h5>
-                          <span className="text-sm font-semibold text-orange-600">2 points</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Manual migration required for wikis. Test plans have no GitHub equivalent.
-                        </p>
-                      </div>
-
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex justify-between items-start mb-1">
-                          <h5 className="font-medium text-gray-900">Variable Groups / Service Hooks / Branch Policies / Many PRs</h5>
-                          <span className="text-sm font-semibold text-yellow-600">1-2 points each</span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Must recreate as GitHub secrets/webhooks or verify after migration.
-                        </p>
-                      </div>
-                    </div>
-                    </div>
-                  )}
-
-                  {/* Activity-Based Scoring - Common to both */}
-                  <div className="border-l-4 border-purple-500 pl-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-900">Activity Level (Quantile-Based)</h4>
-                      <span className="text-sm font-semibold text-purple-600">0-4 points</span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">
-                      Activity level is calculated using quantiles relative to all your repositories. High-activity repos require significantly more planning, coordination, and stakeholder communication.
-                    </p>
-                    <ul className="text-sm text-gray-700 space-y-1">
-                      <li>• High activity (top 25%): <span className="font-medium">+4 points</span> - Many users, extensive coordination needed</li>
-                      <li>• Moderate activity (25-75%): <span className="font-medium">+2 points</span> - Some coordination needed</li>
-                      <li>• Low activity (bottom 25%): <span className="font-medium">0 points</span> - Few users, minimal coordination</li>
-                    </ul>
-                    <p className="text-xs text-gray-500 mt-2 italic">
-                      Combines: branch count, commit count, issue count, and pull request count
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Categories */}
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-3">Complexity Categories</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <span className="font-medium text-green-900">Simple</span>
-                      <span className="text-sm text-green-700 ml-2">(Score ≤ 5)</span>
-                    </div>
-                    <span className="text-xs text-green-600">Low effort, standard migration</span>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-yellow-50 rounded-lg">
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <span className="font-medium text-yellow-900">Medium</span>
-                      <span className="text-sm text-yellow-700 ml-2">(Score 6-10)</span>
-                    </div>
-                    <span className="text-xs text-yellow-600">Moderate effort, may need planning</span>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg">
-                    <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <span className="font-medium text-orange-900">Complex</span>
-                      <span className="text-sm text-orange-700 ml-2">(Score 11-17)</span>
-                    </div>
-                    <span className="text-xs text-orange-600">High effort, requires careful planning</span>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
-                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <span className="font-medium text-red-900">Very Complex</span>
-                      <span className="text-sm text-red-700 ml-2">(Score ≥ 18)</span>
-                    </div>
-                    <span className="text-xs text-red-600">Significant effort, likely needs remediation</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Example */}
-              {source === 'azuredevops' ? (
-                <div className="bg-purple-50 rounded-lg p-4">
-                  <h3 className="text-lg font-medium text-purple-900 mb-2">Azure DevOps Example</h3>
-                  <div className="text-sm text-purple-800 space-y-1">
-                    <p className="font-medium">ADO Repository with:</p>
-                    <ul className="ml-4 space-y-1">
-                      <li>• Size: 2.5 GB → <span className="font-semibold">6 points</span></li>
-                      <li>• 3 Classic build pipelines → <span className="font-semibold">+15 points</span></li>
-                      <li>• Active Azure Boards (20 work items) → <span className="font-semibold">+3 points</span></li>
-                      <li>• Wiki with 45 pages → <span className="font-semibold">+10 points</span></li>
-                      <li>• 2 package feeds → <span className="font-semibold">+6 points</span></li>
-                      <li>• 5 service connections → <span className="font-semibold">+3 points</span></li>
-                      <li>• 3 branch policies → <span className="font-semibold">+3 points</span></li>
-                      <li>• 150+ pull requests → <span className="font-semibold">+2 points</span></li>
-                    </ul>
-                    <p className="font-bold text-purple-900 pt-2">Total Score: 48 → Very Complex</p>
-                    <p className="text-xs text-purple-700 pt-1 italic">
-                      This ADO repository requires manual recreation of classic pipelines, work item export, and wiki migration planning.
-                    </p>
-                  </div>
-                </div>
-              ) : source === 'github' ? (
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <h3 className="text-lg font-medium text-blue-900 mb-2">GitHub Example</h3>
-                  <div className="text-sm text-blue-800 space-y-1">
-                    <p className="font-medium">Repository with:</p>
-                    <ul className="ml-4 space-y-1">
-                      <li>• Size: 2.5 GB → <span className="font-semibold">6 points</span></li>
-                      <li>• Has large files → <span className="font-semibold">+4 points</span></li>
-                      <li>• Has 3 environments → <span className="font-semibold">+3 points</span></li>
-                      <li>• Has 15 secrets → <span className="font-semibold">+3 points</span></li>
-                      <li>• Has 8 variables → <span className="font-semibold">+2 points</span></li>
-                      <li>• Has discussions → <span className="font-semibold">+2 points</span></li>
-                      <li>• Uses LFS → <span className="font-semibold">+2 points</span></li>
-                      <li>• Has Advanced Security → <span className="font-semibold">+1 point</span></li>
-                      <li>• Has 2 webhooks → <span className="font-semibold">+1 point</span></li>
-                      <li>• Has branch protections → <span className="font-semibold">+1 point</span></li>
-                      <li>• Has rulesets → <span className="font-semibold">+1 point</span></li>
-                      <li>• High activity (top 25%) → <span className="font-semibold">+4 points</span></li>
-                    </ul>
-                    <p className="font-bold text-blue-900 pt-2">Total Score: 31 → Very Complex</p>
-                    <p className="text-xs text-blue-700 pt-1 italic">
-                      This repository requires significant planning for environments, secrets, and variables that don't migrate.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-blue-50 rounded-lg p-4">
-                    <h3 className="text-base font-medium text-blue-900 mb-2">GitHub Example</h3>
-                    <div className="text-xs text-blue-800 space-y-1">
-                      <ul className="ml-2 space-y-0.5">
-                        <li>• Size: 2.5 GB: <span className="font-semibold">6 pts</span></li>
-                        <li>• Large files: <span className="font-semibold">+4 pts</span></li>
-                        <li>• Environments: <span className="font-semibold">+3 pts</span></li>
-                        <li>• Secrets: <span className="font-semibold">+3 pts</span></li>
-                        <li>• More features: <span className="font-semibold">+11 pts</span></li>
-                      </ul>
-                      <p className="font-bold text-blue-900 pt-1">Total: 27 → Complex</p>
-                    </div>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-4">
-                    <h3 className="text-base font-medium text-purple-900 mb-2">ADO Example</h3>
-                    <div className="text-xs text-purple-800 space-y-1">
-                      <ul className="ml-2 space-y-0.5">
-                        <li>• Size: 2.5 GB: <span className="font-semibold">6 pts</span></li>
-                        <li>• 3 Classic pipelines: <span className="font-semibold">+15 pts</span></li>
-                        <li>• Azure Boards: <span className="font-semibold">+3 pts</span></li>
-                        <li>• Wiki: <span className="font-semibold">+10 pts</span></li>
-                        <li>• More features: <span className="font-semibold">+14 pts</span></li>
-                      </ul>
-                      <p className="font-bold text-purple-900 pt-1">Total: 48 → Very Complex</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t border-gray-200">
-              <button
+        <div 
+          className="fixed inset-0 flex items-center justify-center"
+          style={{ zIndex: 9999 }}
+        >
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0" 
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
+            onClick={() => setIsOpen(false)}
+          />
+          
+          {/* Dialog */}
+          <div
+            className="relative rounded-lg shadow-2xl"
+            style={{
+              backgroundColor: 'var(--bgColor-default)',
+              border: '1px solid var(--borderColor-default)',
+              width: '90%',
+              maxWidth: '800px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              zIndex: 10000,
+            }}
+          >
+            {/* Header */}
+            <div 
+              className="flex items-center justify-between px-6 py-4"
+              style={{ borderBottom: '1px solid var(--borderColor-default)' }}
+            >
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                {source === 'azuredevops' ? 'Azure DevOps Migration Complexity' : 
+                 source === 'github' ? 'GitHub Migration Complexity' :
+                 'Repository Complexity Scoring'}
+              </h2>
+              <IconButton
+                icon={XIcon}
                 onClick={() => setIsOpen(false)}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
-              >
+                aria-label="Close"
+                variant="invisible"
+              />
+            </div>
+
+            <div 
+              className="overflow-y-auto flex-grow"
+              style={{ maxHeight: 'calc(90vh - 120px)' }}
+            >
+              <div className="p-6 space-y-6">
+                {/* Overview */}
+                <div>
+                  <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>Overview</h3>
+                  <p className="text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                    {source === 'azuredevops' 
+                      ? 'We calculate an Azure DevOps-specific complexity score to estimate migration effort from ADO to GitHub. Scoring is based on ADO → GitHub migration complexity factors.'
+                      : (source === 'github' || source === 'ghes')
+                      ? 'We calculate a GitHub-specific complexity score to estimate migration effort between GitHub instances. Scoring is based on GitHub migration documentation.'
+                      : 'We calculate source-specific complexity scores to estimate migration effort and potential challenges.'}
+                  </p>
+                  <p className="text-xs italic" style={{ color: 'var(--fgColor-muted)' }}>
+                    Activity levels are calculated using quantiles relative to your repository dataset.
+                  </p>
+                </div>
+
+                {/* Scoring Factors - GitHub Specific */}
+                {(source === 'github' || source === 'ghes') && (
+                  <div>
+                    <h3 className="text-base font-semibold mb-3" style={{ color: 'var(--fgColor-default)' }}>Scoring Factors</h3>
+                    
+                    {/* Repository Size */}
+                    <div 
+                      className="mb-4 p-4 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--accent-subtle)',
+                        border: '1px solid var(--borderColor-accent-muted)'
+                      }}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-semibold" style={{ color: 'var(--fgColor-accent)' }}>Repository Size</h4>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-accent)' }}>Weight: 3 (max 9 points)</span>
+                      </div>
+                      <p className="text-sm mb-2" style={{ color: 'var(--fgColor-accent)' }}>
+                        Larger repositories take longer to migrate and have higher resource requirements.
+                      </p>
+                      <ul className="text-sm space-y-1 ml-4" style={{ color: 'var(--fgColor-accent)' }}>
+                        <li>• &lt;100MB: <span className="font-medium">0 points</span></li>
+                        <li>• 100MB - 1GB: <span className="font-medium">3 points</span></li>
+                        <li>• 1GB - 5GB: <span className="font-medium">6 points</span></li>
+                        <li>• &gt;5GB: <span className="font-medium">9 points</span></li>
+                      </ul>
+                    </div>
+
+                    {/* High Impact Features */}
+                    <div className="mb-3">
+                      <h4 className="font-semibold mb-2" style={{ color: 'var(--fgColor-danger)' }}>High Impact (3-4 points each)</h4>
+                      <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>Features requiring significant remediation effort</p>
+                      
+                      <div className="space-y-2">
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>Large Files (&gt;100MB)</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>4 points</span>
+                          </div>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Must be remediated before migration (migrate to LFS, remove from history)</p>
+                        </div>
+
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>Environments</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>3 points</span>
+                          </div>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Don't migrate. Manual recreation of all configs and protection rules required</p>
+                        </div>
+
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>Secrets</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>3 points</span>
+                          </div>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Don't migrate. Manual recreation required with high security sensitivity</p>
+                        </div>
+
+                        <div 
+                          className="p-3 rounded"
+                          style={{
+                            backgroundColor: 'var(--danger-subtle)',
+                            border: '1px solid var(--borderColor-danger)'
+                          }}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-medium" style={{ color: 'var(--fgColor-danger)' }}>GitHub Packages</span>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-danger)' }}>3 points</span>
+                          </div>
+                          <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>Don't migrate with GEI. Manual migration planning required</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Moderate Impact Features */}
+                    <div className="mb-3">
+                      <h4 className="font-semibold mb-2" style={{ color: 'var(--fgColor-attention)' }}>Moderate Impact (2 points each)</h4>
+                      <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>Features requiring manual intervention</p>
+                      
+                      <div className="space-y-2">
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Variables</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
+                          </div>
+                        </div>
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Discussions</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
+                          </div>
+                        </div>
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Git LFS</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
+                          </div>
+                        </div>
+                        <div 
+                          className="p-2 rounded"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)'
+                          }}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-sm" style={{ color: 'var(--fgColor-attention)' }}>Submodules</span>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--fgColor-attention)' }}>2 points</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Low Impact Features */}
+                    <div className="mb-3">
+                      <h4 className="font-semibold mb-2" style={{ color: 'var(--fgColor-attention)' }}>Low Impact (1 point each)</h4>
+                      <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>Features requiring straightforward manual steps</p>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Advanced Security</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Webhooks</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Branch Protections</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Rulesets</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >Public/Internal Repos</div>
+                        <div 
+                          className="p-2 rounded text-sm"
+                          style={{
+                            backgroundColor: 'var(--attention-subtle)',
+                            border: '1px solid var(--borderColor-attention)',
+                            color: 'var(--fgColor-attention)'
+                          }}
+                        >CODEOWNERS</div>
+                      </div>
+                    </div>
+
+                    {/* Activity Level */}
+                    <div 
+                      className="p-4 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--done-subtle)',
+                        border: '1px solid var(--borderColor-done-muted)'
+                      }}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-semibold" style={{ color: 'var(--fgColor-done)' }}>Activity Level (Quantile-Based)</h4>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-done)' }}>0-4 points</span>
+                      </div>
+                      <p className="text-sm mb-2" style={{ color: 'var(--fgColor-done)' }}>
+                        Based on branch count, commits, issues, and pull requests relative to your repository dataset
+                      </p>
+                      <ul className="text-sm space-y-1 ml-4" style={{ color: 'var(--fgColor-done)' }}>
+                        <li>• High activity (top 25%): <span className="font-medium">+4 points</span></li>
+                        <li>• Moderate activity (25-75%): <span className="font-medium">+2 points</span></li>
+                        <li>• Low activity (bottom 25%): <span className="font-medium">0 points</span></li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Complexity Categories */}
+                <div>
+                  <h3 className="text-base font-semibold mb-3" style={{ color: 'var(--fgColor-default)' }}>Complexity Categories</h3>
+                  <div className="space-y-2">
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--success-subtle)',
+                        border: '1px solid var(--borderColor-success)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--success-emphasis)' }}></div>
+                      <div className="flex-1">
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-success)' }}>Simple</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-success)' }}>(Score ≤ 5)</span>
+                      </div>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-success)' }}>Low effort</span>
+                    </div>
+
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--attention-subtle)',
+                        border: '1px solid var(--borderColor-attention)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--attention-emphasis)' }}></div>
+                      <div className="flex-1">
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-attention)' }}>Medium</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-attention)' }}>(Score 6-10)</span>
+                      </div>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-attention)' }}>Moderate effort</span>
+                    </div>
+
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--attention-subtle)',
+                        border: '1px solid var(--borderColor-attention)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--attention-emphasis)' }}></div>
+                      <div className="flex-1">
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-attention)' }}>Complex</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-attention)' }}>(Score 11-17)</span>
+                      </div>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-attention)' }}>High effort</span>
+                    </div>
+
+                    <div 
+                      className="flex items-center gap-3 p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--danger-subtle)',
+                        border: '1px solid var(--borderColor-danger)'
+                      }}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--danger-emphasis)' }}></div>
+                      <div className="flex-1">
+                        <span className="font-semibold" style={{ color: 'var(--fgColor-danger)' }}>Very Complex</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--fgColor-danger)' }}>(Score ≥ 18)</span>
+                      </div>
+                      <span className="text-xs font-medium" style={{ color: 'var(--fgColor-danger)' }}>Significant effort</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div 
+              className="p-4"
+              style={{ 
+                flexShrink: 0,
+                borderTop: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--bgColor-muted)'
+              }}
+            >
+              <Button variant="primary" onClick={() => setIsOpen(false)} block>
                 Got it!
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -523,4 +405,3 @@ export function ComplexityInfoModal({ source = 'all' }: ComplexityInfoModalProps
     </>
   );
 }
-

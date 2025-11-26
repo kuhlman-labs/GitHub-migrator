@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link as RouterLink } from 'react-router-dom';
+import { TextInput, Button, Token, Checkbox, FormControl, Link } from '@primer/react';
+import { SearchIcon, FilterIcon } from '@primer/octicons-react';
 import type { Repository, ADOProject, Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -178,6 +180,50 @@ export function OrganizationDetail() {
     setSearchTerm('');
   };
 
+  // Calculate dynamic feature counts based on currently filtered repos
+  const getFeatureCount = (feature: keyof Repository) => {
+    // Get repos that match status and search filters
+    let baseRepos = repositories.filter((repo: Repository) => {
+      // Status filter
+      if (filter !== 'all') {
+        const allowedStatuses = STATUS_MAP[filter] || [];
+        if (!allowedStatuses.includes(repo.status)) {
+          return false;
+        }
+      }
+
+      // Search filter
+      if (searchTerm && !repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // Apply all OTHER selected features (not the current one)
+    if (selectedFeatures.size > 0) {
+      baseRepos = baseRepos.filter((repo: Repository) => {
+        for (const selectedFeature of selectedFeatures) {
+          // Skip the feature we're counting
+          if (selectedFeature === feature) continue;
+          
+          const value = repo[selectedFeature];
+          const hasFeature = typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
+          if (!hasFeature) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    // Count how many of these repos have the target feature
+    return baseRepos.filter((repo: Repository) => {
+      const value = repo[feature];
+      return typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
+    }).length;
+  };
+
   const filteredRepos = repositories.filter((repo: Repository) => {
     // Status filter - check if repo status matches any of the mapped backend statuses
     if (filter !== 'all') {
@@ -239,48 +285,65 @@ export function OrganizationDetail() {
   const totalProjects = filteredProjects.length;
 
   return (
-    <div className="max-w-7xl mx-auto relative">
+    <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
-      <div className="mb-6">
-        {projectName ? (
-          <Link to={`/org/${encodeURIComponent(orgName || '')}`} className="text-gh-blue hover:underline text-sm font-medium">
-            ← Back to {orgName}
-          </Link>
-        ) : (
-          <Link to="/" className="text-gh-blue hover:underline text-sm font-medium">
-            ← Back to Organizations
-          </Link>
-        )}
-      </div>
+      
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb" className="mb-6">
+        <ol className="flex items-center text-sm">
+          <li>
+            <Link as={RouterLink} to="/" muted>Dashboard</Link>
+          </li>
+          <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
+          {projectName ? (
+            <>
+              <li>
+                <Link as={RouterLink} to={`/org/${encodeURIComponent(orgName || '')}`} muted>
+                  {orgName}
+                </Link>
+              </li>
+              <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
+              <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{projectName}</li>
+            </>
+          ) : (
+            <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{orgName}</li>
+          )}
+        </ol>
+      </nav>
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gh-text-primary">{projectName || orgName || ''}</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>{projectName || orgName || ''}</h1>
         
         {/* Search for projects when viewing ADO org */}
         {isADOOrg && (
-          <input
-            type="text"
+          <TextInput
+            leadingVisual={SearchIcon}
             placeholder="Search projects..."
             value={projectSearchTerm}
             onChange={(e) => setProjectSearchTerm(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+            style={{ width: 300 }}
           />
         )}
         
         {/* Only show search and filters when NOT viewing an ADO org (i.e., viewing repos) */}
         {!isADOOrg && (
           <div className="flex gap-3">
-            <input
-              type="text"
+            <TextInput
+              leadingVisual={SearchIcon}
               placeholder="Search repositories..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+              style={{ width: 300 }}
             />
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+              className="px-3 py-1.5 text-sm rounded-md"
+              style={{
+                border: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--control-bgColor-rest)',
+                color: 'var(--fgColor-default)'
+              }}
             >
               {statuses.map((status) => (
                 <option key={status} value={status}>
@@ -288,33 +351,21 @@ export function OrganizationDetail() {
                 </option>
               ))}
             </select>
-            <button
+            <Button
               onClick={() => setShowFilters(!showFilters)}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors font-medium ${
-                selectedFeatures.size > 0
-                  ? 'bg-gh-blue text-white hover:bg-gh-blue-hover'
-                  : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-              }`}
+              variant={selectedFeatures.size > 0 ? 'primary' : 'default'}
+              leadingVisual={FilterIcon}
             >
-              <span className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
                 Features
-                {selectedFeatures.size > 0 && (
-                  <span className="bg-white text-gh-blue rounded-full px-2 py-0.5 text-xs font-medium">
-                    {selectedFeatures.size}
-                  </span>
-                )}
-              </span>
-            </button>
+              {selectedFeatures.size > 0 && ` (${selectedFeatures.size})`}
+            </Button>
             {hasActiveFilters && (
-              <button
+              <Button
                 onClick={clearAllFilters}
-                className="px-3 py-1.5 text-sm text-gh-text-secondary hover:text-gh-text-primary transition-colors font-medium"
+                variant="invisible"
               >
                 Clear All
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -330,34 +381,79 @@ export function OrganizationDetail() {
         const featureFilters = isADOSource ? ADO_FEATURE_FILTERS : GITHUB_FEATURE_FILTERS;
         
         return (
-          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6 mb-6">
-            <h3 className="text-base font-semibold text-gh-text-primary mb-4">Filter by Features</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div 
+            className="rounded-lg border p-6 mb-6"
+            style={{
+              backgroundColor: 'var(--bgColor-default)',
+              borderColor: 'var(--borderColor-default)',
+              boxShadow: 'var(--shadow-resting-small)'
+            }}
+          >
+            <h3 className="text-base font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>
+              Filter by Features
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {featureFilters.map((featureFilter) => {
-                const count = repositories.filter(r => {
-                  const value = r[featureFilter.key];
-                  return typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
-                }).length;
+                const count = getFeatureCount(featureFilter.key);
+                const isSelected = selectedFeatures.has(featureFilter.key);
+                const isDisabled = count === 0 && !isSelected;
+                
                 return (
-                  <label
-                    key={featureFilter.key}
-                    className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer transition-all ${
-                      selectedFeatures.has(featureFilter.key)
-                        ? 'border-gh-blue bg-gh-info-bg'
-                        : 'border-gh-border-default hover:border-gh-border-hover'
-                    }`}
+                  <FormControl key={featureFilter.key} disabled={isDisabled}>
+                    <div 
+                      className={`flex items-center gap-2 p-2 rounded transition-all ${
+                        !isDisabled ? 'cursor-pointer' : ''
+                      }`}
+                      style={{
+                        backgroundColor: isSelected ? 'var(--accent-subtle)' : 'transparent'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isDisabled && !isSelected) {
+                          e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isDisabled && !isSelected) {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }
+                      }}
+                      onClick={() => !isDisabled && toggleFeature(featureFilter.key)}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedFeatures.has(featureFilter.key)}
-                      onChange={() => toggleFeature(featureFilter.key)}
-                      className="w-4 h-4 text-gh-blue rounded border-gh-border-default focus:ring-gh-blue"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gh-text-primary truncate">{featureFilter.label}</div>
-                      <div className="text-xs text-gh-text-secondary">{count} repos</div>
+                      <Checkbox
+                        checked={isSelected}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggleFeature(featureFilter.key);
+                        }}
+                        disabled={isDisabled}
+                        value={featureFilter.key}
+                      />
+                      <FormControl.Label className="flex-1 select-none">
+                        <div className="flex items-center justify-between">
+                          <span 
+                            className="text-sm font-medium"
+                            style={{ 
+                              color: isDisabled ? 'var(--fgColor-disabled)' : 'var(--fgColor-default)' 
+                            }}
+                          >
+                        {featureFilter.label}
+                          </span>
+                          <span 
+                            className={`ml-2 text-xs ${isSelected ? 'font-semibold' : ''}`}
+                            style={{ 
+                              color: isSelected 
+                                ? 'var(--fgColor-accent)' 
+                                : isDisabled 
+                                  ? 'var(--fgColor-disabled)' 
+                                  : 'var(--fgColor-muted)' 
+                            }}
+                          >
+                            ({count})
+                          </span>
+                      </div>
+                      </FormControl.Label>
                     </div>
-                  </label>
+                  </FormControl>
                 );
               })}
             </div>
@@ -385,20 +481,12 @@ export function OrganizationDetail() {
                 const featureConfig = ADO_FEATURE_FILTERS.find(f => f.key === feature) || 
                                      GITHUB_FEATURE_FILTERS.find(f => f.key === feature);
                 return (
-                  <span
+                  <Token
                     key={feature}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-gh-info-bg text-gh-blue rounded-full text-xs font-medium border border-gh-blue/20"
-                  >
-                    {featureConfig?.label}
-                    <button
-                      onClick={() => toggleFeature(feature)}
-                      className="hover:bg-gh-blue/10 rounded-full p-0.5"
-                    >
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </span>
+                    text={featureConfig?.label || String(feature)}
+                    onRemove={() => toggleFeature(feature)}
+                    leadingVisual={FilterIcon}
+                  />
                 );
               })}
             </div>
@@ -507,11 +595,16 @@ function ProjectCard({ project }: { project: ADOProject }) {
   };
 
   return (
-    <Link
+    <RouterLink
       to={`/org/${encodeURIComponent(project.organization)}/project/${encodeURIComponent(project.name)}`}
-      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
+      className="rounded-lg border transition-colors p-6 block"
+      style={{
+        backgroundColor: 'var(--bgColor-default)',
+        borderColor: 'var(--borderColor-default)',
+        boxShadow: 'var(--shadow-resting-small)'
+      }}
     >
-      <h3 className="text-base font-semibold text-gh-text-primary mb-3">
+      <h3 className="text-base font-semibold mb-3" style={{ color: 'var(--fgColor-default)' }}>
         {project.name}
       </h3>
       
@@ -549,7 +642,7 @@ function ProjectCard({ project }: { project: ADOProject }) {
           </div>
         </div>
       )}
-    </Link>
+    </RouterLink>
   );
 }
 
@@ -560,15 +653,20 @@ function RepositoryCard({ repository }: { repository: Repository }) {
     : repository.full_name; // Keep full name for GitHub repos
 
   return (
-    <Link
+    <RouterLink
       to={`/repository/${encodeURIComponent(repository.full_name)}`}
-      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
+      className="rounded-lg border transition-colors p-6 block"
+      style={{
+        backgroundColor: 'var(--bgColor-default)',
+        borderColor: 'var(--borderColor-default)',
+        boxShadow: 'var(--shadow-resting-small)'
+      }}
     >
-      <h3 className="text-base font-semibold text-gh-text-primary mb-3 truncate">
+      <h3 className="text-base font-semibold mb-3 truncate" style={{ color: 'var(--fgColor-default)' }}>
         {displayName}
       </h3>
       <div className="mb-3 flex items-center justify-between">
-        <StatusBadge status={repository.status} size="sm" />
+        <StatusBadge status={repository.status} size="small" />
       </div>
       <div className="space-y-1.5 text-sm text-gh-text-secondary mb-3">
         <div>Size: {formatBytes(repository.total_size)}</div>
@@ -627,7 +725,7 @@ function RepositoryCard({ repository }: { repository: Repository }) {
         {repository.visibility === 'internal' && <Badge color="yellow">Internal</Badge>}
         {repository.has_release_assets && <Badge color="pink">Releases</Badge>}
       </div>
-    </Link>
+    </RouterLink>
   );
 }
 

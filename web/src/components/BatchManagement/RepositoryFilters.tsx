@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { TextInput, Select, Checkbox, FormControl } from '@primer/react';
+import { SearchIcon } from '@primer/octicons-react';
 import type { RepositoryFilters as Filters } from '../../types';
 import { api } from '../../services/api';
 
@@ -176,31 +178,30 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
           </div>
           <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1 bg-white">
             {organizations.map((org) => (
-              <label key={org} className="flex items-center gap-2 px-2 py-1.5 hover:bg-blue-50 rounded cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
+              <div key={org} className="px-2 py-1.5 hover:bg-blue-50 rounded transition-colors">
+                <Checkbox
                   checked={isOrgSelected(org)}
                   onChange={(e) => handleOrganizationChange(org, e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">{org}</span>
-              </label>
+                >
+                  {org}
+                </Checkbox>
+              </div>
             ))}
           </div>
         </div>
       )}
 
       {/* Search */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
-        <input
-          type="text"
+      <FormControl>
+        <FormControl.Label>Search</FormControl.Label>
+        <TextInput
+          leadingVisual={SearchIcon}
           value={filters.search || ''}
           onChange={(e) => onChange({ ...filters, search: e.target.value || undefined })}
           placeholder="Search repository names..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          block
         />
-      </div>
+      </FormControl>
 
       {/* Quick Filters */}
       <div className="flex gap-2">
@@ -277,139 +278,105 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
           </div>
 
           {/* Size Range */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Size Range (MB)
-            </label>
+          <FormControl>
+            <FormControl.Label>Size Range (MB)</FormControl.Label>
             <div className="grid grid-cols-2 gap-2">
-              <input
+              <TextInput
                 type="number"
                 placeholder="Min"
-                value={filters.min_size ? Math.round(filters.min_size / 1024 / 1024) : ''}
+                value={filters.min_size ? Math.round(filters.min_size / 1024 / 1024).toString() : ''}
                 onChange={(e) =>
                   onChange({
                     ...filters,
                     min_size: e.target.value ? parseInt(e.target.value) * 1024 * 1024 : undefined,
                   })
                 }
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <input
+              <TextInput
                 type="number"
                 placeholder="Max"
-                value={filters.max_size ? Math.round(filters.max_size / 1024 / 1024) : ''}
+                value={filters.max_size ? Math.round(filters.max_size / 1024 / 1024).toString() : ''}
                 onChange={(e) =>
                   onChange({
                     ...filters,
                     max_size: e.target.value ? parseInt(e.target.value) * 1024 * 1024 : undefined,
                   })
                 }
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-          </div>
+          </FormControl>
 
           {/* Feature Toggles */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Features</label>
+          <FormControl>
+            <FormControl.Label>Features</FormControl.Label>
             <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_lfs || false}
-                  onChange={(e) => onChange({ ...filters, has_lfs: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has LFS</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_submodules || false}
-                  onChange={(e) => onChange({ ...filters, has_submodules: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Submodules</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_large_files || false}
-                  onChange={(e) => onChange({ ...filters, has_large_files: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Large Files (&gt;100MB)</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_actions || false}
-                  onChange={(e) => onChange({ ...filters, has_actions: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Actions</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_wiki || false}
-                  onChange={(e) => onChange({ ...filters, has_wiki: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Wiki</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_pages || false}
-                  onChange={(e) => onChange({ ...filters, has_pages: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Pages</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_discussions || false}
-                  onChange={(e) => onChange({ ...filters, has_discussions: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Discussions</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_projects || false}
-                  onChange={(e) => onChange({ ...filters, has_projects: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Projects</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.has_branch_protections || false}
-                  onChange={(e) => onChange({ ...filters, has_branch_protections: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Has Branch Protections</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.is_archived || false}
-                  onChange={(e) => onChange({ ...filters, is_archived: e.target.checked ? true : undefined })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Is Archived</span>
-              </label>
+              <Checkbox
+                checked={filters.has_lfs || false}
+                onChange={(e) => onChange({ ...filters, has_lfs: e.target.checked ? true : undefined })}
+              >
+                Has LFS
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_submodules || false}
+                onChange={(e) => onChange({ ...filters, has_submodules: e.target.checked ? true : undefined })}
+              >
+                Has Submodules
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_large_files || false}
+                onChange={(e) => onChange({ ...filters, has_large_files: e.target.checked ? true : undefined })}
+              >
+                Has Large Files (&gt;100MB)
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_actions || false}
+                onChange={(e) => onChange({ ...filters, has_actions: e.target.checked ? true : undefined })}
+              >
+                Has Actions
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_wiki || false}
+                onChange={(e) => onChange({ ...filters, has_wiki: e.target.checked ? true : undefined })}
+              >
+                Has Wiki
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_pages || false}
+                onChange={(e) => onChange({ ...filters, has_pages: e.target.checked ? true : undefined })}
+              >
+                Has Pages
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_discussions || false}
+                onChange={(e) => onChange({ ...filters, has_discussions: e.target.checked ? true : undefined })}
+              >
+                Has Discussions
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_projects || false}
+                onChange={(e) => onChange({ ...filters, has_projects: e.target.checked ? true : undefined })}
+              >
+                Has Projects
+              </Checkbox>
+              <Checkbox
+                checked={filters.has_branch_protections || false}
+                onChange={(e) => onChange({ ...filters, has_branch_protections: e.target.checked ? true : undefined })}
+              >
+                Has Branch Protections
+              </Checkbox>
+              <Checkbox
+                checked={filters.is_archived || false}
+                onChange={(e) => onChange({ ...filters, is_archived: e.target.checked ? true : undefined })}
+              >
+                Is Archived
+              </Checkbox>
             </div>
-          </div>
+          </FormControl>
 
           {/* Sort By */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
-            <select
+          <FormControl>
+            <FormControl.Label>Sort By</FormControl.Label>
+            <Select
               value={filters.sort_by || 'name'}
               onChange={(e) =>
                 onChange({
@@ -417,14 +384,14 @@ export function RepositoryFilters({ filters, onChange, onClear }: RepositoryFilt
                   sort_by: (e.target.value as any) || undefined,
                 })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              block
             >
               <option value="name">Name</option>
               <option value="size">Size</option>
               <option value="org">Organization</option>
               <option value="updated">Last Updated</option>
-            </select>
-          </div>
+            </Select>
+          </FormControl>
         </>
       )}
     </div>

@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+import { TextInput, Button } from '@primer/react';
+import { Blankslate } from '@primer/react/experimental';
+import { SearchIcon, RepoIcon } from '@primer/octicons-react';
 import type { Repository, RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -117,15 +120,15 @@ export function Repositories() {
   }, [searchParams]);
 
   return (
-    <div className="max-w-7xl mx-auto relative">
+    <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-semibold text-gh-text-primary">Repositories</h1>
-            <p className="text-sm text-gh-text-secondary mt-1">
+            <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Repositories</h1>
+            <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
               {totalItems > 0 ? (
                 <>
                   Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} repositories
@@ -138,7 +141,8 @@ export function Repositories() {
           </div>
           <Link
             to="/analytics"
-            className="px-4 py-2 text-sm font-medium text-gh-blue hover:text-gh-blue-hover"
+            className="px-4 py-2 text-sm font-medium hover:underline"
+            style={{ color: 'var(--fgColor-accent)' }}
           >
             ← Back to Analytics
           </Link>
@@ -147,42 +151,49 @@ export function Repositories() {
         {/* Search Bar */}
         <form onSubmit={handleSearchSubmit} className="mb-4">
           <div className="flex gap-2">
-            <input
-              type="text"
+            <TextInput
+              leadingVisual={SearchIcon}
               placeholder="Search repositories..."
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              className="flex-1 px-3 py-2 text-sm border border-gh-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-gh-blue focus:border-transparent"
+              style={{ flex: 1 }}
             />
-            <button
+            <Button
               type="submit"
-              className="px-4 py-2 text-sm font-medium bg-gh-blue text-white rounded-md hover:bg-gh-blue-hover transition-colors"
+              variant="primary"
             >
               Search
-            </button>
+            </Button>
             {localSearch && (
-              <button
+              <Button
                 type="button"
                 onClick={() => {
                   setLocalSearch('');
                   removeFilter('search');
                 }}
-                className="px-4 py-2 text-sm font-medium text-gh-text-secondary hover:text-gh-text-primary transition-colors"
               >
                 Clear
-              </button>
+              </Button>
             )}
           </div>
         </form>
 
         {/* Active Filters Display */}
         {activeFilterCount > 0 && (
-          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-4">
+          <div 
+            className="rounded-lg border p-4"
+            style={{
+              backgroundColor: 'var(--bgColor-default)',
+              borderColor: 'var(--borderColor-default)',
+              boxShadow: 'var(--shadow-resting-small)'
+            }}
+          >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gh-text-primary">Active Filters</h3>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Active Filters</h3>
               <button
                 onClick={clearAllFilters}
-                className="text-sm text-gh-danger hover:underline font-medium"
+                className="text-sm hover:underline font-medium"
+                style={{ color: 'var(--fgColor-danger)' }}
               >
                 Clear All
               </button>
@@ -277,33 +288,22 @@ export function Repositories() {
       {isLoading ? (
         <LoadingSpinner />
       ) : repositories.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border border-gh-border-default">
-          <svg
-            className="mx-auto h-12 w-12 text-gh-text-secondary"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-            />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gh-text-primary">No repositories found</h3>
-          <p className="mt-1 text-sm text-gh-text-secondary">
-            Try adjusting your filters or search term.
-          </p>
+        <Blankslate border>
+          <Blankslate.Visual>
+            <RepoIcon size={48} />
+          </Blankslate.Visual>
+          <Blankslate.Heading>No repositories found</Blankslate.Heading>
+          <Blankslate.Description>
+            {activeFilterCount > 0 || urlFilters.search
+              ? 'Try adjusting your filters or search term to find repositories.'
+              : 'No repositories have been discovered yet. Start by discovering repositories from your organizations.'}
+          </Blankslate.Description>
           {activeFilterCount > 0 && (
-            <button
-              onClick={clearAllFilters}
-              className="mt-4 px-4 py-2 text-sm font-medium bg-gh-blue text-white rounded-md hover:bg-gh-blue-hover"
-            >
+            <Blankslate.PrimaryAction onClick={clearAllFilters}>
               Clear All Filters
-            </button>
+            </Blankslate.PrimaryAction>
           )}
-        </div>
+        </Blankslate>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
@@ -327,11 +327,18 @@ export function Repositories() {
 
 function FilterBadge({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex items-center gap-2 px-3 py-1 bg-gh-info-bg text-gh-blue rounded-full text-sm font-medium border border-gh-blue/20">
+    <span 
+      className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium"
+      style={{
+        backgroundColor: 'var(--bgColor-accent-muted)',
+        color: 'var(--fgColor-accent)',
+        border: '1px solid var(--borderColor-accent-muted)'
+      }}
+    >
       {label}
       <button
         onClick={onRemove}
-        className="hover:bg-gh-blue/10 rounded-full p-0.5 transition-colors"
+        className="rounded-full p-0.5 transition-opacity hover:opacity-70"
         aria-label={`Remove ${label} filter`}
       >
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -350,21 +357,29 @@ function RepositoryCard({ repository }: { repository: Repository }) {
   return (
     <Link
       to={`/repository/${encodeURIComponent(repository.full_name)}`}
-      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
+      className="rounded-lg border transition-opacity hover:opacity-80 p-6 block"
+      style={{
+        backgroundColor: 'var(--bgColor-default)',
+        borderColor: 'var(--borderColor-default)',
+        boxShadow: 'var(--shadow-resting-small)'
+      }}
     >
-      <h3 className="text-base font-semibold text-gh-text-primary mb-3 truncate">
+      <h3 className="text-base font-semibold mb-3 truncate" style={{ color: 'var(--fgColor-default)' }}>
         {repository.full_name}
       </h3>
       <div className="mb-3 flex items-center justify-between">
-        <StatusBadge status={repository.status} size="sm" />
+        <StatusBadge status={repository.status} size="small" />
       </div>
-      <div className="space-y-1.5 text-sm text-gh-text-secondary mb-3">
+      <div className="space-y-1.5 text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
         <div>Size: {formatBytes(repository.total_size)}</div>
         <div>Branches: {repository.branch_count}</div>
       </div>
       
       {/* Timestamps */}
-      <div className="space-y-1 mb-3 border-t border-gh-border-default pt-3">
+      <div 
+        className="space-y-1 mb-3 pt-3"
+        style={{ borderTop: '1px solid var(--borderColor-default)' }}
+      >
         {repository.last_discovery_at && (
           <TimestampDisplay 
             timestamp={repository.last_discovery_at} 

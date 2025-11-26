@@ -56,11 +56,11 @@ export function ComplexityChart({ data, source = 'all' }: ComplexityChartProps) 
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6">
+    <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h2 className="text-lg font-medium text-gray-900 mb-1">Repository Complexity Distribution</h2>
-          <p className="text-sm text-gray-600">
+          <h2 className="text-lg font-medium mb-1" style={{ color: 'var(--fgColor-default)' }}>Repository Complexity Distribution</h2>
+          <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
             {getDescription()}
           </p>
         </div>
@@ -73,7 +73,16 @@ export function ComplexityChart({ data, source = 'all' }: ComplexityChartProps) 
           <YAxis />
           <Tooltip 
             formatter={(value: number) => [`${value} repos`, 'Count']}
-            cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }}
+            cursor={{ fill: 'rgba(127, 127, 127, 0.1)' }}
+            contentStyle={{
+              backgroundColor: 'rgba(27, 31, 36, 0.95)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              color: '#ffffff',
+              padding: '8px 12px'
+            }}
+            labelStyle={{ color: '#ffffff', fontWeight: 600 }}
+            itemStyle={{ color: '#ffffff' }}
           />
           <Bar 
             dataKey="count" 
@@ -94,13 +103,13 @@ export function ComplexityChart({ data, source = 'all' }: ComplexityChartProps) 
           <button
             key={item.category}
             onClick={() => navigate(getRepositoriesUrl({ complexity: [item.category] }))}
-            className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-gray-100 transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3 py-1.5 rounded hover:opacity-80 transition-opacity cursor-pointer"
           >
             <div 
               className="w-4 h-4 rounded" 
               style={{ backgroundColor: item.fill }}
             />
-            <span className="text-sm text-gray-700">
+            <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>
               {item.name}: {item.count}
             </span>
           </button>

@@ -1726,6 +1726,20 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Track if destination_org is being changed - we'll need to update repos
+	oldDestinationOrg := ""
+	newDestinationOrg := ""
+	destinationOrgChanged := false
+
+	if updates.DestinationOrg != nil {
+		newDestinationOrg = *updates.DestinationOrg
+		if batch.DestinationOrg != nil {
+			oldDestinationOrg = *batch.DestinationOrg
+		}
+		// Destination changed if old and new are different (including nil -> value or value -> nil)
+		destinationOrgChanged = oldDestinationOrg != newDestinationOrg
+	}
+
 	// Apply updates
 	if updates.Name != nil {
 		batch.Name = *updates.Name
@@ -1753,6 +1767,71 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to update batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to update batch")
 		return
+	}
+
+	// If destination_org changed, update repositories that were using the old batch default
+	if destinationOrgChanged && oldDestinationOrg != "" {
+		h.logger.Info("Batch destination_org changed, updating repository destinations",
+			"batch_id", batchID,
+			"old_destination_org", oldDestinationOrg,
+			"new_destination_org", newDestinationOrg)
+
+		// Get all repositories in this batch
+		repos, err := h.db.ListRepositories(ctx, map[string]interface{}{"batch_id": batchID})
+		if err != nil {
+			h.logger.Error("Failed to list batch repositories for destination update", "error", err)
+			// Don't fail the batch update, just log the error
+		} else {
+			updatedCount := 0
+			for _, repo := range repos {
+				if repo.DestinationFullName == nil || *repo.DestinationFullName == "" {
+					continue
+				}
+
+				// Extract repo name from full_name (e.g., "org/repo" -> "repo")
+				parts := strings.Split(repo.FullName, "/")
+				if len(parts) != 2 {
+					continue
+				}
+				repoName := parts[1]
+
+				// Check if this repo was using the old batch default destination
+				expectedOldDestination := fmt.Sprintf("%s/%s", oldDestinationOrg, repoName)
+				if *repo.DestinationFullName == expectedOldDestination {
+					// Update to new batch default destination
+					if newDestinationOrg != "" {
+						newDestination := fmt.Sprintf("%s/%s", newDestinationOrg, repoName)
+						repo.DestinationFullName = &newDestination
+					} else {
+						// If new destination org is empty, clear the destination
+						repo.DestinationFullName = nil
+					}
+
+					if err := h.db.UpdateRepository(ctx, repo); err != nil {
+						h.logger.Error("Failed to update repository destination",
+							"repo_id", repo.ID,
+							"repo_name", repo.FullName,
+							"error", err)
+					} else {
+						updatedCount++
+						newDest := ""
+						if repo.DestinationFullName != nil {
+							newDest = *repo.DestinationFullName
+						}
+						h.logger.Debug("Updated repository destination",
+							"repo_id", repo.ID,
+							"repo_name", repo.FullName,
+							"new_destination", newDest)
+					}
+				}
+			}
+
+			if updatedCount > 0 {
+				h.logger.Info("Updated repository destinations for batch default change",
+					"batch_id", batchID,
+					"updated_count", updatedCount)
+			}
+		}
 	}
 
 	h.sendJSON(w, http.StatusOK, batch)
@@ -1875,19 +1954,23 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Check each repo is eligible
+	// Check each repo is eligible and separate into eligible and ineligible lists
+	eligibleRepoIDs := []int64{}
 	ineligibleRepos := []string{}
 	ineligibleReasons := make(map[string]string)
+
 	for _, repo := range repos {
 		if eligible, reason := isRepositoryEligibleForBatch(repo); !eligible {
 			ineligibleRepos = append(ineligibleRepos, repo.FullName)
 			ineligibleReasons[repo.FullName] = reason
+		} else {
+			eligibleRepoIDs = append(eligibleRepoIDs, repo.ID)
 		}
 	}
 
-	if len(ineligibleRepos) > 0 {
-		// Build detailed error message
-		errorMsg := "Some repositories are not eligible for batch assignment:\n"
+	// If NO repos are eligible, return error
+	if len(eligibleRepoIDs) == 0 {
+		errorMsg := "No repositories are eligible for batch assignment:\n"
 		for _, repoName := range ineligibleRepos {
 			errorMsg += fmt.Sprintf("  - %s: %s\n", repoName, ineligibleReasons[repoName])
 		}
@@ -1895,21 +1978,89 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Add repositories to batch
-	if err := h.db.AddRepositoriesToBatch(ctx, batchID, req.RepositoryIDs); err != nil {
+	// Add only eligible repositories to batch
+	if err := h.db.AddRepositoriesToBatch(ctx, batchID, eligibleRepoIDs); err != nil {
 		h.logger.Error("Failed to add repositories to batch", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to add repositories to batch")
 		return
 	}
 
+	// Re-fetch repositories after adding them to batch to get updated batch_id
+	// This prevents UpdateRepository from overwriting batch_id with the old nil value
+	repos, err = h.db.GetRepositoriesByIDs(ctx, eligibleRepoIDs)
+	if err != nil {
+		h.logger.Error("Failed to re-fetch repositories after adding to batch", "error", err)
+		// Continue anyway - defaults won't be applied but repos are in the batch
+	}
+
+	// Apply batch defaults to eligible repositories that don't have options set
+	updatedCount := 0
+	failedUpdates := []string{}
+
+	for _, repo := range repos {
+
+		needsUpdate := false
+
+		// Apply destination org if batch has one and repo doesn't have a destination set
+		if batch.DestinationOrg != nil && *batch.DestinationOrg != "" && repo.DestinationFullName == nil {
+			destinationFullName := fmt.Sprintf("%s/%s", *batch.DestinationOrg, repo.Name())
+			repo.DestinationFullName = &destinationFullName
+			needsUpdate = true
+		}
+
+		// Apply exclude_releases setting from batch if repo doesn't have it set (assuming false is the default)
+		// Only apply if batch has it enabled - we don't want to override if repo explicitly set to false
+		if batch.ExcludeReleases && !repo.ExcludeReleases {
+			repo.ExcludeReleases = batch.ExcludeReleases
+			needsUpdate = true
+		}
+
+		if needsUpdate {
+			repo.UpdatedAt = time.Now()
+			if err := h.db.UpdateRepository(ctx, repo); err != nil {
+				h.logger.Warn("Failed to apply batch defaults to repository", "repo", repo.FullName, "error", err)
+				failedUpdates = append(failedUpdates, repo.FullName)
+			} else {
+				updatedCount++
+			}
+		}
+	}
+
 	// Get updated batch
 	batch, _ = h.db.GetBatch(ctx, batchID)
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"batch":              batch,
-		"repositories_added": len(req.RepositoryIDs),
-		"message":            fmt.Sprintf("Added %d repositories to batch", len(req.RepositoryIDs)),
-	})
+	// Build response message
+	message := fmt.Sprintf("Added %d of %d repositories to batch", len(eligibleRepoIDs), len(req.RepositoryIDs))
+	if updatedCount > 0 {
+		message += fmt.Sprintf(" (%d inherited batch defaults)", updatedCount)
+	}
+	if len(ineligibleRepos) > 0 {
+		message += fmt.Sprintf(". %d repos skipped (ineligible)", len(ineligibleRepos))
+	}
+	if len(failedUpdates) > 0 {
+		message += fmt.Sprintf(". %d repos failed to apply defaults", len(failedUpdates))
+	}
+
+	response := map[string]interface{}{
+		"batch":                  batch,
+		"repositories_added":     len(eligibleRepoIDs),
+		"repositories_requested": len(req.RepositoryIDs),
+		"defaults_applied_count": updatedCount,
+		"message":                message,
+	}
+
+	// Include ineligible repos info for transparency
+	if len(ineligibleRepos) > 0 {
+		response["ineligible_count"] = len(ineligibleRepos)
+		response["ineligible_repos"] = ineligibleReasons
+	}
+
+	// Include failed updates for transparency
+	if len(failedUpdates) > 0 {
+		response["failed_updates"] = failedUpdates
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // RemoveRepositoriesFromBatch handles DELETE /api/v1/batches/{id}/repositories
@@ -2433,6 +2584,13 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		avgMigrationTime = 0
 	}
 
+	// Get median migration time
+	medianMigrationTime, err := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get median migration time", "error", err)
+		medianMigrationTime = 0
+	}
+
 	// Calculate estimated completion date
 	var estimatedCompletionDate *string
 	remaining := total - migrated
@@ -2496,6 +2654,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		"migration_velocity":         migrationVelocity,
 		"migration_time_series":      migrationTimeSeries,
 		"average_migration_time":     avgMigrationTime,
+		"median_migration_time":      medianMigrationTime,
 		"estimated_completion_date":  estimatedCompletionDate,
 		"organization_stats":         orgStats,
 		"project_stats":              projectStats,
@@ -2605,6 +2764,13 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Failed to get average migration time", "error", err)
 		avgMigrationTime = 0
+	}
+
+	// Get median migration time
+	medianMigrationTime, err := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	if err != nil {
+		h.logger.Error("Failed to get median migration time", "error", err)
+		medianMigrationTime = 0
 	}
 
 	// Calculate estimated completion date
@@ -2724,6 +2890,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 			"repos_per_day":        migrationVelocity.ReposPerDay,
 			"repos_per_week":       migrationVelocity.ReposPerWeek,
 			"average_duration_sec": avgMigrationTime,
+			"median_duration_sec":  medianMigrationTime,
 			"migration_trend":      migrationTimeSeries,
 		},
 
@@ -2837,6 +3004,11 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		avgMigrationTime = 0
 	}
 
+	medianMigrationTime, err := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	if err != nil {
+		medianMigrationTime = 0
+	}
+
 	var estimatedCompletionDate string
 	var daysRemaining int
 	remaining := total - migrated
@@ -2899,12 +3071,12 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 
 	if format == formatCSV {
 		h.exportExecutiveReportCSV(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
-			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
+			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime), int(medianMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	} else {
 		h.exportExecutiveReportJSON(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
-			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime),
+			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime), int(medianMigrationTime),
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	}
@@ -2912,7 +3084,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
-	velocity *storage.MigrationVelocity, avgMigrationTime int,
+	velocity *storage.MigrationVelocity, avgMigrationTime, medianMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
 	sizeDist []*storage.SizeDistribution, featureStats *storage.FeatureStats,
 	statusBreakdown map[string]int, completedBatches, inProgressBatches, pendingBatches int) {
@@ -3078,7 +3250,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 
 func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType string, total, migrated, inProgress, pending, failed int,
 	completionRate, successRate float64, estimatedCompletionDate string, daysRemaining int,
-	velocity *storage.MigrationVelocity, avgMigrationTime int,
+	velocity *storage.MigrationVelocity, avgMigrationTime, medianMigrationTime int,
 	orgStats []*storage.MigrationCompletionStats, complexityDist []*storage.ComplexityDistribution,
 	sizeDist []*storage.SizeDistribution, featureStats *storage.FeatureStats,
 	statusBreakdown map[string]int, completedBatches, inProgressBatches, pendingBatches int) {
@@ -3108,6 +3280,7 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 			"repos_per_day":        velocity.ReposPerDay,
 			"repos_per_week":       velocity.ReposPerWeek,
 			"average_duration_sec": avgMigrationTime,
+			"median_duration_sec":  medianMigrationTime,
 		},
 		"organization_progress":    orgStats,
 		"complexity_distribution":  complexityDist,

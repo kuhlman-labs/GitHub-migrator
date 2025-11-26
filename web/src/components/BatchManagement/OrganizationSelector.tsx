@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { ChevronDownIcon } from '@primer/octicons-react';
 
 interface OrganizationSelectorProps {
   organizations: string[];
@@ -61,56 +62,72 @@ export function OrganizationSelector({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 text-left border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+        className="w-full px-3 py-2 text-left rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-opacity hover:opacity-80"
+        style={{
+          border: '1px solid var(--borderColor-default)',
+          backgroundColor: 'var(--control-bgColor-rest)',
+          color: 'var(--fgColor-default)'
+        }}
       >
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-700">
+          <span className="text-sm">
             {selectedOrganizations.length === 0
               ? placeholder
               : `${selectedOrganizations.length} selected`}
           </span>
-          <svg
-            className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <span style={{ color: 'var(--fgColor-muted)' }}>
+          <ChevronDownIcon
+              className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            size={16}
+          />
+          </span>
         </div>
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
-          <div className="p-2 border-b border-gray-200">
+        <div 
+          className="absolute z-50 mt-1 w-full rounded-lg shadow-lg"
+          style={{
+            backgroundColor: 'var(--bgColor-default)',
+            border: '1px solid var(--borderColor-default)'
+          }}
+        >
+          <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
             <input
               type="text"
               placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{
+                border: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--control-bgColor-rest)',
+                color: 'var(--fgColor-default)'
+              }}
               onClick={(e) => e.stopPropagation()}
             />
           </div>
 
           <div className="max-h-64 overflow-y-auto">
             {loading ? (
-              <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
+              <div className="p-4 text-center text-sm" style={{ color: 'var(--fgColor-muted)' }}>Loading...</div>
             ) : filteredOrgs.length === 0 ? (
-              <div className="p-4 text-center text-sm text-gray-500">{emptyMessage}</div>
+              <div className="p-4 text-center text-sm" style={{ color: 'var(--fgColor-muted)' }}>{emptyMessage}</div>
             ) : (
               <>
-                <div className="flex gap-2 p-2 border-b border-gray-100">
+                <div className="flex gap-2 p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
                   <button
                     onClick={handleSelectAll}
-                    className="flex-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    className="flex-1 px-2 py-1 text-xs rounded transition-opacity hover:opacity-80"
+                    style={{ color: 'var(--fgColor-accent)' }}
                   >
                     Select All
                   </button>
                   {selectedOrganizations.length > 0 && (
                     <button
                       onClick={handleClearAll}
-                      className="flex-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                      className="flex-1 px-2 py-1 text-xs rounded transition-opacity hover:opacity-80"
+                      style={{ color: 'var(--fgColor-default)' }}
                     >
                       Clear All
                     </button>
@@ -120,15 +137,16 @@ export function OrganizationSelector({
                   {filteredOrgs.map((org) => (
                     <label
                       key={org}
-                      className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 rounded cursor-pointer transition-colors"
+                      className="flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-opacity hover:opacity-80"
                     >
                       <input
                         type="checkbox"
                         checked={selectedOrganizations.includes(org)}
                         onChange={() => handleToggle(org)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded text-blue-600 focus:ring-blue-500"
+                        style={{ borderColor: 'var(--borderColor-default)' }}
                       />
-                      <span className="text-sm text-gray-700">{org}</span>
+                      <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>{org}</span>
                     </label>
                   ))}
                 </div>

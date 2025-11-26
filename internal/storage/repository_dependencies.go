@@ -36,6 +36,7 @@ func (d *Database) SaveRepositoryDependencies(ctx context.Context, repoID int64,
 }
 
 // GetRepositoryDependencies retrieves all dependencies for a repository using GORM
+// For local dependencies, it enriches the dependency_url with the actual source_url from the repositories table
 func (d *Database) GetRepositoryDependencies(ctx context.Context, repoID int64) ([]*models.RepositoryDependency, error) {
 	// Initialize as empty slice instead of nil so JSON serialization returns [] not null
 	dependencies := make([]*models.RepositoryDependency, 0)
@@ -47,6 +48,13 @@ func (d *Database) GetRepositoryDependencies(ctx context.Context, repoID int64) 
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query dependencies: %w", err)
+	}
+
+	// Enrich local dependencies with actual source URLs
+	if err := d.enrichDependencyURLs(ctx, dependencies); err != nil {
+		// Log error but don't fail the request
+		// Dependencies will just have their stored URLs
+		return dependencies, nil
 	}
 
 	return dependencies, nil
@@ -91,6 +99,58 @@ func (d *Database) ClearRepositoryDependencies(ctx context.Context, repoID int64
 	if err != nil {
 		return fmt.Errorf("failed to clear dependencies: %w", err)
 	}
+	return nil
+}
+
+// enrichDependencyURLs updates dependency URLs for local dependencies with actual source URLs
+func (d *Database) enrichDependencyURLs(ctx context.Context, dependencies []*models.RepositoryDependency) error {
+	if len(dependencies) == 0 {
+		return nil
+	}
+
+	// Collect all local dependency names
+	localDepNames := make([]string, 0)
+	for _, dep := range dependencies {
+		if dep.IsLocal {
+			localDepNames = append(localDepNames, dep.DependencyFullName)
+		}
+	}
+
+	if len(localDepNames) == 0 {
+		return nil
+	}
+
+	// Fetch source URLs for all local dependencies in one query
+	type RepoURL struct {
+		FullName  string
+		SourceURL string
+	}
+	var repoURLs []RepoURL
+	err := d.db.WithContext(ctx).
+		Model(&models.Repository{}).
+		Select("full_name, source_url").
+		Where("full_name IN ?", localDepNames).
+		Find(&repoURLs).Error
+
+	if err != nil {
+		return fmt.Errorf("failed to fetch source URLs: %w", err)
+	}
+
+	// Create a map for quick lookup
+	urlMap := make(map[string]string)
+	for _, repoURL := range repoURLs {
+		urlMap[repoURL.FullName] = repoURL.SourceURL
+	}
+
+	// Update dependency URLs
+	for _, dep := range dependencies {
+		if dep.IsLocal {
+			if sourceURL, exists := urlMap[dep.DependencyFullName]; exists {
+				dep.DependencyURL = sourceURL
+			}
+		}
+	}
+
 	return nil
 }
 

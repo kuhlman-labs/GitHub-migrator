@@ -215,6 +215,36 @@ export interface Batch {
   exclude_releases?: boolean;
 }
 
+// Helper function to calculate batch duration in seconds
+export function getBatchDuration(batch: Batch): number | null {
+  if (!batch.started_at || !batch.completed_at) {
+    return null;
+  }
+  const startTime = new Date(batch.started_at).getTime();
+  const endTime = new Date(batch.completed_at).getTime();
+  return (endTime - startTime) / 1000; // Duration in seconds
+}
+
+// Helper function to format batch duration as human-readable string
+export function formatBatchDuration(batch: Batch): string | null {
+  const durationSeconds = getBatchDuration(batch);
+  if (durationSeconds === null) {
+    return null;
+  }
+
+  const hours = Math.floor(durationSeconds / 3600);
+  const minutes = Math.floor((durationSeconds % 3600) / 60);
+  const seconds = Math.floor(durationSeconds % 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
+
 export interface Organization {
   organization: string;
   total_repos: number;
@@ -339,6 +369,7 @@ export interface Analytics {
   pending_count: number;
   success_rate?: number;
   average_migration_time?: number;
+  median_migration_time?: number;
   status_breakdown: Record<string, number>;
   complexity_distribution?: ComplexityDistribution[];
   migration_velocity?: MigrationVelocity;
