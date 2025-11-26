@@ -42,21 +42,39 @@ export function RepositoryDetail() {
   const [showRediscoverDialog, setShowRediscoverDialog] = useState(false);
   const [showUnlockDialog, setShowUnlockDialog] = useState(false);
   const [showWontMigrateDialog, setShowWontMigrateDialog] = useState(false);
+  const [showMigrationDialog, setShowMigrationDialog] = useState(false);
+  const [pendingDryRun, setPendingDryRun] = useState(false);
   const rediscoverButtonRef = useRef<HTMLButtonElement>(null);
   const unlockButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleStartMigration = async (dryRun: boolean = false) => {
     if (!repository || migrating) return;
 
+    // For actual migration (not dry run), show confirmation dialog
+    if (!dryRun) {
+      setPendingDryRun(false);
+      setShowMigrationDialog(true);
+      return;
+    }
+
+    // For dry run, show confirmation dialog
+    setPendingDryRun(true);
+    setShowMigrationDialog(true);
+  };
+
+  const confirmStartMigration = async () => {
+    if (!repository) return;
+
+    setShowMigrationDialog(false);
     setMigrating(true);
     try {
       await api.startMigration({
         repository_ids: [repository.id],
-        dry_run: dryRun,
+        dry_run: pendingDryRun,
       });
       
       // Show success message
-      showSuccess(`${dryRun ? 'Dry run' : 'Migration'} started successfully!`);
+      showSuccess(`${pendingDryRun ? 'Dry run' : 'Migration'} started successfully!`);
     } catch (error: any) {
       console.error('Failed to start migration:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to start migration. Please try again.';
@@ -352,8 +370,19 @@ export function RepositoryDetail() {
             <Button
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
-              variant="default"
-              style={{ whiteSpace: 'nowrap' }}
+              variant="invisible"
+              style={{ 
+                whiteSpace: 'nowrap',
+                border: '1px solid var(--borderColor-default)',
+                backgroundColor: 'var(--bgColor-muted)',
+                color: 'var(--fgColor-default)'
+              }}
+              sx={{
+                '&:hover:not(:disabled)': {
+                  backgroundColor: 'var(--control-bgColor-hover)',
+                  borderColor: 'var(--borderColor-default)'
+                }
+              }}
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
             </Button>
@@ -363,8 +392,21 @@ export function RepositoryDetail() {
               <Button
                 onClick={handleToggleWontMigrate}
                 disabled={markWontMigrateMutation.isPending}
-                variant={repository.status === 'wont_migrate' ? 'primary' : 'default'}
-                style={{ whiteSpace: 'nowrap' }}
+                variant={repository.status === 'wont_migrate' ? 'primary' : 'invisible'}
+                style={{ 
+                  whiteSpace: 'nowrap',
+                  ...(repository.status !== 'wont_migrate' && {
+                    border: '1px solid var(--borderColor-attention-emphasis)',
+                    backgroundColor: 'var(--bgColor-attention-muted)',
+                    color: 'var(--fgColor-attention)'
+                  })
+                }}
+                sx={repository.status !== 'wont_migrate' ? {
+                  '&:hover:not(:disabled)': {
+                    backgroundColor: 'var(--control-attention-bgColor-hover)',
+                    borderColor: 'var(--borderColor-attention-emphasis)'
+                  }
+                } : {}}
               >
                 {markWontMigrateMutation.isPending 
                   ? 'Processing...' 
@@ -384,28 +426,32 @@ export function RepositoryDetail() {
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </Button>
-                <button
+                <Button
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 rounded-md text-sm font-medium border-0 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap transition-all cursor-pointer"
+                  variant="invisible"
                   style={{ 
-                    backgroundColor: '#2da44e',
+                    whiteSpace: 'nowrap',
+                    backgroundColor: '#1a7f37',
                     color: '#ffffff',
-                    fontWeight: 500
+                    border: '1px solid #1a7f37',
+                    fontWeight: 600,
+                    boxShadow: 'none'
                   }}
-                  onMouseEnter={(e) => {
-                    if (!e.currentTarget.disabled) {
-                      e.currentTarget.style.backgroundColor = '#2c974b';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!e.currentTarget.disabled) {
-                      e.currentTarget.style.backgroundColor = '#2da44e';
+                  sx={{
+                    '&:hover:not(:disabled)': {
+                      backgroundColor: '#2da44e !important',
+                      borderColor: '#2da44e !important',
+                      color: '#ffffff !important'
+                    },
+                    '&:active:not(:disabled)': {
+                      backgroundColor: '#298e46 !important',
+                      borderColor: '#298e46 !important'
                     }
                   }}
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
-                </button>
+                </Button>
               </>
             )}
             {repository.status === 'dry_run_failed' && (
@@ -698,6 +744,54 @@ export function RepositoryDetail() {
             </Button>
             <Button variant={repository.status === 'wont_migrate' ? 'primary' : 'danger'} onClick={confirmToggleWontMigrate}>
               {repository.status === 'wont_migrate' ? 'Unmark' : 'Mark as Won\'t Migrate'}
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Migration Confirmation Dialog */}
+      {showMigrationDialog && repository && (
+        <Dialog
+          onClose={() => setShowMigrationDialog(false)}
+          aria-labelledby="migration-dialog-header"
+        >
+          <Dialog.Header id="migration-dialog-header">
+            {pendingDryRun ? 'Start Dry Run' : 'Start Migration'}
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)', marginBottom: '12px' }}>
+              {pendingDryRun
+                ? 'Are you sure you want to start a dry run? This will simulate the migration process without making actual changes.'
+                : 'Are you sure you want to start the migration? This will begin the actual migration process for this repository.'}
+            </p>
+            {!pendingDryRun && (
+              <div style={{ 
+                padding: '12px', 
+                borderRadius: '6px',
+                backgroundColor: 'var(--bgColor-attention-muted)',
+                borderLeft: '3px solid var(--borderColor-attention-emphasis)'
+              }}>
+                <p style={{ fontSize: '14px', color: 'var(--fgColor-default)', fontWeight: 600 }}>
+                  ⚠️ This is a permanent action
+                </p>
+                <p style={{ fontSize: '13px', color: 'var(--fgColor-muted)', marginTop: '4px' }}>
+                  Make sure you have reviewed the migration readiness and have a backup if needed.
+                </p>
+              </div>
+            )}
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowMigrationDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmStartMigration}>
+              {pendingDryRun ? 'Start Dry Run' : 'Start Migration'}
             </Button>
           </div>
         </Dialog>

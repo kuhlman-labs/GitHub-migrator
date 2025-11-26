@@ -57,6 +57,7 @@ const GITHUB_FEATURE_FILTERS: FeatureFilter[] = [
 const STATUS_MAP: Record<string, string[]> = {
   all: [],
   pending: ['pending'],
+  remediation_required: ['remediation_required'],
   in_progress: [
     'dry_run_queued',
     'dry_run_in_progress',
@@ -69,6 +70,7 @@ const STATUS_MAP: Record<string, string[]> = {
   complete: ['dry_run_complete', 'migration_complete', 'complete'],
   failed: ['dry_run_failed', 'migration_failed'],
   rolled_back: ['rolled_back'],
+  wont_migrate: ['wont_migrate'],
 };
 
 export function OrganizationDetail() {
@@ -252,7 +254,7 @@ export function OrganizationDetail() {
     return true;
   });
 
-  const statuses = ['all', 'pending', 'in_progress', 'complete', 'failed', 'rolled_back'];
+  const statuses = ['all', 'pending', 'remediation_required', 'in_progress', 'complete', 'failed', 'rolled_back', 'wont_migrate'];
   const hasActiveFilters = selectedFeatures.size > 0 || filter !== 'all' || searchTerm !== '';
 
   // Paginate
@@ -345,15 +347,27 @@ export function OrganizationDetail() {
                 color: 'var(--fgColor-default)'
               }}
             >
-              {statuses.map((status) => (
-                <option key={status} value={status}>
-                  {status === 'all' ? 'All Status' : status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')}
-                </option>
-              ))}
+              {statuses.map((status) => {
+                let label = '';
+                if (status === 'all') {
+                  label = 'All Status';
+                } else if (status === 'wont_migrate') {
+                  label = "Won't Migrate";
+                } else if (status === 'remediation_required') {
+                  label = "Needs Remediation";
+                } else {
+                  label = status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
+                }
+                return (
+                  <option key={status} value={status}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
             <Button
               onClick={() => setShowFilters(!showFilters)}
-              variant={selectedFeatures.size > 0 ? 'primary' : 'default'}
+              variant={selectedFeatures.size > 0 ? 'primary' : 'invisible'}
               leadingVisual={FilterIcon}
             >
                 Features
