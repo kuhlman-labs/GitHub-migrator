@@ -428,11 +428,10 @@ func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) Validation
 			response.Error = fmt.Sprintf("Invalid directory: %v", err)
 			return response
 		}
-		// Ensure absDir is within absSafeBaseDir
-		// Clean the paths to resolve any .. or . components
-		cleanSafeDir := filepath.Clean(absSafeBaseDir) + string(filepath.Separator)
-		cleanAbsDir := filepath.Clean(absDir) + string(filepath.Separator)
-		if !strings.HasPrefix(cleanAbsDir, cleanSafeDir) {
+		// Ensure absDir is strictly within absSafeBaseDir using filepath.Rel
+		// This is more robust than HasPrefix and handles symlinks better
+		rel, err := filepath.Rel(absSafeBaseDir, absDir)
+		if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".") {
 			response.Valid = false
 			response.Error = fmt.Sprintf("Database directory must be inside %s", safeBaseDir)
 			return response
