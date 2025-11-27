@@ -14,10 +14,6 @@
 @import '@primer/primitives/dist/css/functional/themes/dark.css';
 @import '@primer/primitives/dist/css/functional/themes/dark-dimmed.css';
 
-/* GitHub Primer Brand Fonts - from npm packages */
-@import '@fontsource-variable/mona-sans';
-@import '@fontsource/monaspace-neon/500.css';
-
 @theme {
   /* Primer-aligned Color System */
   
@@ -81,8 +77,15 @@
 }
 
 :root {
-  font-family: 'Mona Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-weight: 600; /* SemiBold as per brand guidelines */
+  /* Override Primer's font stacks to include GitHub brand fonts */
+  --fontStack-sansSerif: 'Mona Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --fontStack-monospace: 'Monaspace Neon', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, Liberation Mono, monospace;
+  --fontStack-system: 'Mona Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --fontStack-sansSerifDisplay: 'Mona Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  
+  /* Use Primer's typography tokens as base */
+  font-family: var(--fontStack-sansSerif);
+  font-weight: var(--base-text-weight-normal); /* 400 - normal weight for body text */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -122,12 +125,28 @@ body {
   min-height: 100vh;
   background-color: #F6F8FA;
   color: #1F2328;
-  font-size: 14px;
+  /* Use Primer's body text size token */
+  font-size: var(--text-body-size-medium); /* 0.875rem = 14px */
+  line-height: var(--text-body-lineHeight-medium); /* 1.42857 ≈ 20px */
+  font-weight: var(--text-body-weight); /* 400 - normal */
 }
 
 code, pre {
-  font-family: 'Monaspace Neon', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  font-weight: 500; /* Medium as per brand guidelines */
+  /* Use Primer's monospace font stack */
+  font-family: var(--fontStack-monospace);
+  font-weight: var(--text-codeBlock-weight); /* 400 - normal weight */
+}
+
+/* Inline code gets slightly different treatment */
+code {
+  font-size: var(--text-codeInline-size); /* 0.9285em - relative to parent */
+  font-weight: var(--text-codeInline-weight); /* 400 - normal */
+}
+
+/* Code blocks */
+pre {
+  font-size: var(--text-codeBlock-size); /* 0.8125rem = 13px */
+  line-height: var(--text-codeBlock-lineHeight); /* 1.5385 */
 }
 
 /* GitHub-style focus rings */

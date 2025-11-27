@@ -11,7 +11,10 @@ import type {
   MigrationHistoryEntry,
   RepositoryFilters,
   RepositoryListResponse,
-  DependenciesResponse
+  DependenciesResponse,
+  SetupStatus,
+  SetupConfig,
+  ValidationResult
 } from '../types';
 
 const client = axios.create({
@@ -378,6 +381,32 @@ export const api = {
 
   async refreshToken(): Promise<void> {
     await client.post('/auth/refresh');
+  },
+
+  // Setup
+  async getSetupStatus(): Promise<SetupStatus> {
+    const { data } = await client.get('/setup/status');
+    return data;
+  },
+
+  async validateSourceConnection(config: SetupConfig['source']): Promise<ValidationResult> {
+    const { data } = await client.post('/setup/validate-source', config);
+    return data;
+  },
+
+  async validateDestinationConnection(config: SetupConfig['destination']): Promise<ValidationResult> {
+    const { data } = await client.post('/setup/validate-destination', config);
+    return data;
+  },
+
+  async validateDatabaseConnection(config: SetupConfig['database']): Promise<ValidationResult> {
+    const { data } = await client.post('/setup/validate-database', config);
+    return data;
+  },
+
+  async applySetup(config: SetupConfig): Promise<void> {
+    const { data } = await client.post('/setup/apply', config);
+    return data;
   },
 };
 

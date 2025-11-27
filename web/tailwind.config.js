@@ -196,8 +196,40 @@ export default {
         'gh-focus': '0 0 0 3px rgba(48, 148, 255, 0.3)',
       },
       fontFamily: {
+        // Extend Primer's font stacks with GitHub brand fonts
+        // Using sans as default aligns with Primer's system
+        'sans': ['Mona Sans', 'var(--fontStack-sansSerif)'],
+        'mono': ['Monaspace Neon', 'var(--fontStack-monospace)'],
+        // Legacy aliases for explicit usage
         'mona': ['Mona Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         'monaspace': ['Monaspace Neon', 'ui-monospace', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'monospace'],
+      },
+      fontWeight: {
+        // Map to Primer's base typography weights
+        'light': 'var(--base-text-weight-light)', // 300
+        'normal': 'var(--base-text-weight-normal)', // 400
+        'medium': 'var(--base-text-weight-medium)', // 500
+        'semibold': 'var(--base-text-weight-semibold)', // 600
+      },
+      fontSize: {
+        // Map common sizes to Primer typography tokens
+        'xs': 'var(--text-caption-size)', // 0.75rem = 12px
+        'sm': 'var(--text-body-size-small)', // 0.75rem = 12px
+        'base': 'var(--text-body-size-medium)', // 0.875rem = 14px
+        'lg': 'var(--text-body-size-large)', // 1rem = 16px
+        'xl': 'var(--text-title-size-small)', // 1rem = 16px
+        '2xl': 'var(--text-title-size-medium)', // 1.25rem = 20px
+        '3xl': 'var(--text-subtitle-size)', // 1.25rem = 20px
+        '4xl': 'var(--text-title-size-large)', // 2rem = 32px
+        '5xl': 'var(--text-display-size)', // 2.5rem = 40px
+      },
+      lineHeight: {
+        // Primer line heights for proper alignment
+        'tight': 'var(--text-caption-lineHeight)', // 1.3333
+        'snug': 'var(--text-display-lineHeight)', // 1.4
+        'normal': 'var(--text-body-lineHeight-medium)', // 1.42857
+        'relaxed': 'var(--text-title-lineHeight-large)', // 1.5
+        'loose': 'var(--text-subtitle-lineHeight)', // 1.6
       },
     },
   },
