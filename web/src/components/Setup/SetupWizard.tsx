@@ -6,7 +6,7 @@ import { StepIndicator } from './StepIndicator';
 import { ConnectionTest } from './ConnectionTest';
 import { CollapsibleSection } from './CollapsibleSection';
 import { ConfigSummary } from './ConfigSummary';
-import { RestartInstructions } from './RestartInstructions';
+import { RestartMonitor } from './RestartMonitor';
 import type { SetupConfig } from '../../types';
 
 const STEP_TITLES = [
@@ -59,11 +59,17 @@ export function SetupWizard() {
   const [logFormat, setLogFormat] = useState<'json' | 'text'>('json');
   const [logOutputFile, setLogOutputFile] = useState('./logs/migrator.log');
 
-  // GitHub App Discovery (optional, always available)
-  const [githubAppEnabled, setGithubAppEnabled] = useState(false);
-  const [githubAppID, setGithubAppID] = useState('');
-  const [githubAppPrivateKey, setGithubAppPrivateKey] = useState('');
-  const [githubAppInstallationID, setGithubAppInstallationID] = useState('');
+  // GitHub App Discovery for Source (optional, only when source is GitHub)
+  const [sourceGithubAppEnabled, setSourceGithubAppEnabled] = useState(false);
+  const [sourceGithubAppID, setSourceGithubAppID] = useState('');
+  const [sourceGithubAppPrivateKey, setSourceGithubAppPrivateKey] = useState('');
+  const [sourceGithubAppInstallationID, setSourceGithubAppInstallationID] = useState('');
+
+  // GitHub App Discovery for Destination (optional, always available)
+  const [destGithubAppEnabled, setDestGithubAppEnabled] = useState(false);
+  const [destGithubAppID, setDestGithubAppID] = useState('');
+  const [destGithubAppPrivateKey, setDestGithubAppPrivateKey] = useState('');
+  const [destGithubAppInstallationID, setDestGithubAppInstallationID] = useState('');
 
   // Authentication (optional, conditional on source type)
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -81,19 +87,32 @@ export function SetupWizard() {
   const [sessionSecret, setSessionSecret] = useState('');
   const [sessionDuration, setSessionDuration] = useState(24);
 
+  // Authorization rules (optional)
+  const [requireOrgMembership, setRequireOrgMembership] = useState('');
+  const [requireTeamMembership, setRequireTeamMembership] = useState('');
+  const [requireEnterpriseAdmin, setRequireEnterpriseAdmin] = useState(false);
+  const [requireEnterpriseMembership, setRequireEnterpriseMembership] = useState(false);
+  const [enterpriseSlug, setEnterpriseSlug] = useState('');
+  const [privilegedTeams, setPrivilegedTeams] = useState('');
+
   const buildConfig = (): SetupConfig => ({
     source: {
       type: sourceType,
       base_url: sourceBaseURL,
       token: sourceToken,
       organization: sourceType === 'azuredevops' ? sourceOrganization : undefined,
+      // GitHub App for source (only when source is GitHub)
+      app_id: sourceType === 'github' && sourceGithubAppEnabled && sourceGithubAppID ? parseInt(sourceGithubAppID) : undefined,
+      app_private_key: sourceType === 'github' && sourceGithubAppEnabled && sourceGithubAppPrivateKey ? sourceGithubAppPrivateKey : undefined,
+      app_installation_id: sourceType === 'github' && sourceGithubAppEnabled && sourceGithubAppInstallationID ? parseInt(sourceGithubAppInstallationID) : undefined,
     },
     destination: {
       base_url: destBaseURL,
       token: destToken,
-      app_id: githubAppEnabled && githubAppID ? parseInt(githubAppID) : undefined,
-      app_private_key: githubAppEnabled && githubAppPrivateKey ? githubAppPrivateKey : undefined,
-      app_installation_id: githubAppEnabled && githubAppInstallationID ? parseInt(githubAppInstallationID) : undefined,
+      // GitHub App for destination (always available since destination is always GitHub)
+      app_id: destGithubAppEnabled && destGithubAppID ? parseInt(destGithubAppID) : undefined,
+      app_private_key: destGithubAppEnabled && destGithubAppPrivateKey ? destGithubAppPrivateKey : undefined,
+      app_installation_id: destGithubAppEnabled && destGithubAppInstallationID ? parseInt(destGithubAppInstallationID) : undefined,
     },
     database: {
       type: dbType,
@@ -128,6 +147,15 @@ export function SetupWizard() {
       frontend_url: frontendURL,
       session_secret: sessionSecret,
       session_duration_hours: sessionDuration,
+      authorization_rules: (requireOrgMembership || requireTeamMembership || requireEnterpriseAdmin || 
+                           requireEnterpriseMembership || enterpriseSlug || privilegedTeams) ? {
+        require_org_membership: requireOrgMembership ? requireOrgMembership.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+        require_team_membership: requireTeamMembership ? requireTeamMembership.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+        require_enterprise_admin: requireEnterpriseAdmin || undefined,
+        require_enterprise_membership: requireEnterpriseMembership || undefined,
+        enterprise_slug: enterpriseSlug || undefined,
+        privileged_teams: privilegedTeams ? privilegedTeams.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+      } : undefined,
     } : undefined,
   });
 
@@ -205,7 +233,10 @@ export function SetupWizard() {
   };
 
   if (restartingServer) {
-    return <RestartInstructions />;
+    return <RestartMonitor onServerOnline={() => {
+      // Redirect to dashboard when server is back online
+      window.location.href = '/';
+    }} />;
   }
 
   return (
@@ -663,10 +694,85 @@ export function SetupWizard() {
             </FormControl>
           </CollapsibleSection>
 
-          {/* GitHub App Discovery Section */}
+          {/* GitHub App Discovery for Source (only when source is GitHub) */}
+          {sourceType === 'github' && (
+            <CollapsibleSection
+              title="GitHub App Discovery (Source)"
+              description="Use a GitHub App for enhanced repository discovery from source GitHub"
+              isOptional
+              defaultExpanded={false}
+            >
+              <FormControl className="mb-4">
+                <FormControl.Label>
+                  <input
+                    type="checkbox"
+                    checked={sourceGithubAppEnabled}
+                    onChange={(e) => setSourceGithubAppEnabled(e.target.checked)}
+                    className="mr-2"
+                  />
+                  Enable GitHub App for Source Discovery
+                </FormControl.Label>
+                <FormControl.Caption>
+                  Use a GitHub App instead of PAT for source discovery operations. This is separate from user authentication.
+                </FormControl.Caption>
+              </FormControl>
+
+              {sourceGithubAppEnabled && (
+                <>
+                  <FormControl className="mb-4">
+                    <FormControl.Label>GitHub App ID</FormControl.Label>
+                    <TextInput
+                      type="number"
+                      value={sourceGithubAppID}
+                      onChange={(e) => setSourceGithubAppID(e.target.value)}
+                      placeholder="123456"
+                      block
+                    />
+                    <FormControl.Caption>Your GitHub App's ID from the app settings</FormControl.Caption>
+                  </FormControl>
+
+                  <FormControl className="mb-4">
+                    <FormControl.Label>Installation ID</FormControl.Label>
+                    <TextInput
+                      type="number"
+                      value={sourceGithubAppInstallationID}
+                      onChange={(e) => setSourceGithubAppInstallationID(e.target.value)}
+                      placeholder="12345678"
+                      block
+                    />
+                    <FormControl.Caption>The installation ID for this app in the source organization. Leave blank for Enterprise GitHub Apps.</FormControl.Caption>
+                  </FormControl>
+
+                  <FormControl>
+                    <FormControl.Label>Private Key (PEM)</FormControl.Label>
+                    <textarea
+                      value={sourceGithubAppPrivateKey}
+                      onChange={(e) => setSourceGithubAppPrivateKey(e.target.value)}
+                      placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
+                      rows={6}
+                      className="form-control"
+                      style={{
+                        width: '100%',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        backgroundColor: 'var(--bgColor-inset)',
+                        color: 'var(--fgColor-default)',
+                        border: '1px solid var(--borderColor-default)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                      }}
+                    />
+                    <FormControl.Caption>Paste your GitHub App's private key (file path or full PEM content)</FormControl.Caption>
+                  </FormControl>
+                </>
+              )}
+            </CollapsibleSection>
+          )}
+
+          {/* GitHub App Discovery for Destination (always available) */}
           <CollapsibleSection
-            title="GitHub App Discovery"
-            description="Use a GitHub App for enhanced repository discovery (destination only)"
+            title="GitHub App Discovery (Destination)"
+            description="Use a GitHub App for enhanced repository discovery on destination GitHub"
             isOptional
             defaultExpanded={false}
           >
@@ -674,25 +780,25 @@ export function SetupWizard() {
               <FormControl.Label>
                 <input
                   type="checkbox"
-                  checked={githubAppEnabled}
-                  onChange={(e) => setGithubAppEnabled(e.target.checked)}
+                  checked={destGithubAppEnabled}
+                  onChange={(e) => setDestGithubAppEnabled(e.target.checked)}
                   className="mr-2"
                 />
-                Enable GitHub App Authentication
+                Enable GitHub App for Destination Discovery
               </FormControl.Label>
               <FormControl.Caption>
-                Use a GitHub App instead of PAT for discovery operations. This is separate from user authentication.
+                Use a GitHub App instead of PAT for destination discovery operations. This is separate from user authentication.
               </FormControl.Caption>
             </FormControl>
 
-            {githubAppEnabled && (
+            {destGithubAppEnabled && (
               <>
                 <FormControl className="mb-4">
                   <FormControl.Label>GitHub App ID</FormControl.Label>
                   <TextInput
                     type="number"
-                    value={githubAppID}
-                    onChange={(e) => setGithubAppID(e.target.value)}
+                    value={destGithubAppID}
+                    onChange={(e) => setDestGithubAppID(e.target.value)}
                     placeholder="123456"
                     block
                   />
@@ -703,19 +809,19 @@ export function SetupWizard() {
                   <FormControl.Label>Installation ID</FormControl.Label>
                   <TextInput
                     type="number"
-                    value={githubAppInstallationID}
-                    onChange={(e) => setGithubAppInstallationID(e.target.value)}
+                    value={destGithubAppInstallationID}
+                    onChange={(e) => setDestGithubAppInstallationID(e.target.value)}
                     placeholder="12345678"
                     block
                   />
-                  <FormControl.Caption>Installation ID for your organization</FormControl.Caption>
+                  <FormControl.Caption>The installation ID for this app in the destination organization. Leave blank for Enterprise GitHub Apps.</FormControl.Caption>
                 </FormControl>
 
                 <FormControl>
                   <FormControl.Label>Private Key (PEM)</FormControl.Label>
                   <textarea
-                    value={githubAppPrivateKey}
-                    onChange={(e) => setGithubAppPrivateKey(e.target.value)}
+                    value={destGithubAppPrivateKey}
+                    onChange={(e) => setDestGithubAppPrivateKey(e.target.value)}
                     placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
                     rows={6}
                     className="form-control"
@@ -841,7 +947,7 @@ export function SetupWizard() {
                   <TextInput
                     value={callbackURL}
                     onChange={(e) => setCallbackURL(e.target.value)}
-                    placeholder="http://localhost:8080/auth/callback"
+                    placeholder="http://localhost:8080/api/v1/auth/callback"
                     block
                   />
                   <FormControl.Caption>OAuth callback URL (must match registration)</FormControl.Caption>
@@ -880,6 +986,88 @@ export function SetupWizard() {
                   />
                   <FormControl.Caption>Default: 24 hours</FormControl.Caption>
                 </FormControl>
+
+                {/* Authorization Rules */}
+                <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+                  <Heading as="h4" className="text-base mb-3">
+                    Authorization Rules (Optional)
+                  </Heading>
+                  <Text className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+                    Restrict access to specific organizations, teams, or enterprise members
+                  </Text>
+
+                  <FormControl className="mb-4">
+                    <FormControl.Label>Required Organization Membership</FormControl.Label>
+                    <TextInput
+                      value={requireOrgMembership}
+                      onChange={(e) => setRequireOrgMembership(e.target.value)}
+                      placeholder="org1,org2"
+                      block
+                    />
+                    <FormControl.Caption>Comma-separated list of organization names (e.g., "acme-corp,platform-team")</FormControl.Caption>
+                  </FormControl>
+
+                  <FormControl className="mb-4">
+                    <FormControl.Label>Required Team Membership</FormControl.Label>
+                    <TextInput
+                      value={requireTeamMembership}
+                      onChange={(e) => setRequireTeamMembership(e.target.value)}
+                      placeholder="org1/team-slug,org2/migration-team"
+                      block
+                    />
+                    <FormControl.Caption>Comma-separated list in "org/team-slug" format (e.g., "acme-corp/admins,platform/migration")</FormControl.Caption>
+                  </FormControl>
+
+                  <FormControl className="mb-4">
+                    <FormControl.Label>
+                      <input
+                        type="checkbox"
+                        checked={requireEnterpriseAdmin}
+                        onChange={(e) => setRequireEnterpriseAdmin(e.target.checked)}
+                        className="mr-2"
+                      />
+                      Require GitHub Enterprise Admin Role
+                    </FormControl.Label>
+                    <FormControl.Caption>Only allow users with GitHub Enterprise admin privileges</FormControl.Caption>
+                  </FormControl>
+
+                  <FormControl className="mb-4">
+                    <FormControl.Label>
+                      <input
+                        type="checkbox"
+                        checked={requireEnterpriseMembership}
+                        onChange={(e) => setRequireEnterpriseMembership(e.target.checked)}
+                        className="mr-2"
+                      />
+                      Require Enterprise Membership
+                    </FormControl.Label>
+                    <FormControl.Caption>Only allow users who are members of the specified enterprise</FormControl.Caption>
+                  </FormControl>
+
+                  {(requireEnterpriseAdmin || requireEnterpriseMembership) && (
+                    <FormControl className="mb-4">
+                      <FormControl.Label>Enterprise Slug</FormControl.Label>
+                      <TextInput
+                        value={enterpriseSlug}
+                        onChange={(e) => setEnterpriseSlug(e.target.value)}
+                        placeholder="your-enterprise"
+                        block
+                      />
+                      <FormControl.Caption>The slug of your GitHub Enterprise (required when using enterprise rules)</FormControl.Caption>
+                    </FormControl>
+                  )}
+
+                  <FormControl>
+                    <FormControl.Label>Privileged Teams (Full Access)</FormControl.Label>
+                    <TextInput
+                      value={privilegedTeams}
+                      onChange={(e) => setPrivilegedTeams(e.target.value)}
+                      placeholder="platform-eng/migration-admins"
+                      block
+                    />
+                    <FormControl.Caption>Comma-separated list in "org/team-slug" format for teams with full migration access</FormControl.Caption>
+                  </FormControl>
+                </div>
               </>
             )}
           </CollapsibleSection>

@@ -1,5 +1,5 @@
 import { useAuth } from '../../contexts/AuthContext';
-import { Button, Flash } from '@primer/react';
+import { Button, Heading, Text } from '@primer/react';
 import { MarkGithubIcon } from '@primer/octicons-react';
 
 export function Login() {
@@ -12,52 +12,83 @@ export function Login() {
   const requiresEnterpriseMembership = hasRules?.requires_enterprise_membership;
 
   return (
-    <div className="min-h-screen bg-gh-canvas-inset flex items-center justify-center px-4">
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ backgroundColor: 'var(--bgColor-inset)' }}
+    >
       <div className="max-w-md w-full">
-        <div className="bg-white border border-gh-border-default rounded-lg p-8 shadow-lg">
+        <div
+          className="rounded-lg border p-8 shadow-lg"
+          style={{
+            backgroundColor: 'var(--bgColor-default)',
+            borderColor: 'var(--borderColor-default)',
+          }}
+        >
           {/* GitHub Logo */}
           <div className="flex justify-center mb-6">
             <MarkGithubIcon size={64} />
           </div>
 
-          {/* Title - Using standard h1 with Primer-aligned classes (semibold for headings) */}
-          <h1 className="text-2xl font-semibold text-center mb-2">
-            GitHub Migration Server
-          </h1>
-          {/* Description - Using standard p with normal weight (no font-weight class = 400) */}
-          <p className="text-base text-center mb-8" style={{ color: 'var(--fgColor-muted)' }}>
+          {/* Title */}
+          <Heading
+            as="h1"
+            className="text-2xl font-semibold text-center mb-2"
+          >
+            GitHub Migrator
+          </Heading>
+
+          {/* Description */}
+          <Text
+            as="p"
+            className="text-base text-center mb-6"
+            style={{ color: 'var(--fgColor-muted)' }}
+          >
             Sign in to continue
-          </p>
+          </Text>
 
           {/* Authorization Requirements */}
           {hasRules && (
-            <Flash variant="default" className="mb-4">
-              {/* Use semibold only for the label/heading */}
-              <p className="text-sm font-semibold mb-2">Access Requirements</p>
-              {/* List items use normal weight (400) - no font-weight class */}
-              <ul className="text-xs pl-4 space-y-1 list-disc" style={{ color: 'var(--fgColor-muted)' }}>
+            <div
+              className="mb-6 p-4 rounded-lg border"
+              style={{
+                backgroundColor: 'var(--bgColor-neutral-muted)',
+                borderColor: 'var(--borderColor-muted)',
+                opacity: 0.85,
+              }}
+            >
+              <Text
+                as="p"
+                className="text-sm font-semibold mb-2"
+                style={{ color: 'var(--fgColor-default)' }}
+              >
+                Access Requirements
+              </Text>
+              <ul
+                className="text-xs pl-4 m-0 list-disc"
+                style={{ color: 'var(--fgColor-default)' }}
+              >
                 {requiresOrg && (
-                  <li>
-                    Organization member: {hasRules.required_orgs?.join(', ')}
+                  <li className="mb-1">
+                    Enterprise member: {hasRules.required_orgs?.join(', ')}
                   </li>
                 )}
                 {requiresTeam && (
-                  <li>
+                  <li className="mb-1">
                     Team member: {hasRules.required_teams?.join(', ')}
                   </li>
                 )}
                 {requiresEnterpriseAdmin && (
-                  <li>
+                  <li className="mb-1">
                     Enterprise admin: {hasRules.enterprise}
                   </li>
                 )}
                 {requiresEnterpriseMembership && !requiresEnterpriseAdmin && (
-                  <li>
+                  <li className="mb-1">
                     Enterprise member: {hasRules.enterprise}
                   </li>
                 )}
               </ul>
-            </Flash>
+            </div>
           )}
 
           {/* Login Button */}
@@ -70,10 +101,14 @@ export function Login() {
             Sign in with GitHub
           </Button>
 
-          {/* Info Text - caption size with normal weight */}
-          <p className="mt-6 text-xs text-center" style={{ color: 'var(--fgColor-muted)' }}>
+          {/* Info Text */}
+          <Text
+            as="p"
+            className="mt-6 text-xs text-center"
+            style={{ color: 'var(--fgColor-muted)' }}
+          >
             You will be redirected to GitHub to authenticate
-          </p>
+          </Text>
         </div>
       </div>
     </div>

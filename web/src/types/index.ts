@@ -602,6 +602,10 @@ export interface SetupConfig {
     base_url: string;
     token: string;
     organization?: string; // For Azure DevOps
+    // GitHub App for enhanced discovery (optional, only when source is GitHub)
+    app_id?: number;
+    app_private_key?: string;
+    app_installation_id?: number;
   };
   destination: {
     base_url: string;
@@ -647,6 +651,15 @@ export interface SetupConfig {
     frontend_url?: string;
     session_secret?: string;
     session_duration_hours?: number;
+    // Authorization rules (optional)
+    authorization_rules?: {
+      require_org_membership?: string[]; // List of org names
+      require_team_membership?: string[]; // List of "org/team-slug"
+      require_enterprise_admin?: boolean;
+      require_enterprise_membership?: boolean;
+      enterprise_slug?: string;
+      privileged_teams?: string[]; // List of "org/team-slug"
+    };
   };
 }
 

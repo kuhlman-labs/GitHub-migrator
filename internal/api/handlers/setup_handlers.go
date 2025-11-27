@@ -19,17 +19,19 @@ import (
 
 // SetupHandler handles setup wizard API requests
 type SetupHandler struct {
-	db     *storage.Database
-	logger *slog.Logger
-	cfg    *config.Config
+	db           *storage.Database
+	logger       *slog.Logger
+	cfg          *config.Config
+	shutdownChan chan struct{}
 }
 
 // NewSetupHandler creates a new SetupHandler
-func NewSetupHandler(db *storage.Database, logger *slog.Logger, cfg *config.Config) *SetupHandler {
+func NewSetupHandler(db *storage.Database, logger *slog.Logger, cfg *config.Config, shutdownChan chan struct{}) *SetupHandler {
 	return &SetupHandler{
-		db:     db,
-		logger: logger,
-		cfg:    cfg,
+		db:           db,
+		logger:       logger,
+		cfg:          cfg,
+		shutdownChan: shutdownChan,
 	}
 }
 
@@ -90,6 +92,10 @@ type SourceConfigData struct {
 	BaseURL      string `json:"base_url"`
 	Token        string `json:"token"`
 	Organization string `json:"organization,omitempty"`
+	// GitHub App for source discovery (optional, only when source type is github)
+	AppID             int64  `json:"app_id,omitempty"`
+	AppPrivateKey     string `json:"app_private_key,omitempty"`
+	AppInstallationID int64  `json:"app_installation_id,omitempty"`
 }
 
 type DestinationConfigData struct {
@@ -137,6 +143,17 @@ type AuthConfigData struct {
 	FrontendURL          string `json:"frontend_url,omitempty"`
 	SessionSecret        string `json:"session_secret,omitempty"`
 	SessionDurationHours int    `json:"session_duration_hours,omitempty"`
+	// Authorization rules (optional)
+	AuthorizationRules *AuthorizationRulesData `json:"authorization_rules,omitempty"`
+}
+
+type AuthorizationRulesData struct {
+	RequireOrgMembership        []string `json:"require_org_membership,omitempty"`        // List of org names
+	RequireTeamMembership       []string `json:"require_team_membership,omitempty"`       // List of "org/team-slug"
+	RequireEnterpriseAdmin      bool     `json:"require_enterprise_admin,omitempty"`      // Require GitHub Enterprise admin role
+	RequireEnterpriseMembership bool     `json:"require_enterprise_membership,omitempty"` // Require enterprise membership
+	EnterpriseSlug              string   `json:"enterprise_slug,omitempty"`               // Enterprise slug
+	PrivilegedTeams             []string `json:"privileged_teams,omitempty"`              // Privileged teams with full access
 }
 
 type LoggingConfigData struct {
@@ -188,9 +205,9 @@ func (h *SetupHandler) ValidateSource(w http.ResponseWriter, r *http.Request) {
 	response := ValidationResponse{Details: make(map[string]interface{})}
 
 	switch strings.ToLower(req.Type) {
-	case "github":
+	case sourceTypeGitHub:
 		response = h.validateGitHub(ctx, req.BaseURL, req.Token)
-	case "azuredevops":
+	case sourceTypeAzureDevOps:
 		response = h.validateAzureDevOps(ctx, req.BaseURL, req.Token, req.Organization)
 	default:
 		response.Valid = false
@@ -266,14 +283,22 @@ func (h *SetupHandler) ApplySetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("Setup completed successfully")
-	h.logger.Info("Configuration has been saved. Please restart the server to apply changes.")
+	h.logger.Info("Configuration has been saved. Server will shutdown to apply changes.")
 
 	// Send success response
 	h.sendJSON(w, http.StatusOK, map[string]interface{}{
 		"success":        true,
-		"message":        "Configuration applied successfully.",
+		"message":        "Configuration applied successfully. Server will restart.",
 		"restart_needed": true,
 	})
+
+	// Trigger graceful shutdown after response is sent
+	// Use a goroutine with a small delay to ensure the response reaches the client
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		h.logger.Info("Triggering server shutdown for configuration reload...")
+		close(h.shutdownChan)
+	}()
 }
 
 // validateGitHub validates a GitHub connection
@@ -465,6 +490,18 @@ func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigDa
 	if src.Organization != "" {
 		sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_ORGANIZATION=%s\n", src.Organization))
 	}
+
+	// GitHub App for source (only when source is GitHub)
+	if src.Type == sourceTypeGitHub && src.AppID > 0 {
+		sb.WriteString("\n# GitHub App Configuration for Source (Optional)\n")
+		sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_APP_ID=%d\n", src.AppID))
+		if src.AppPrivateKey != "" {
+			sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(src.AppPrivateKey)))
+		}
+		if src.AppInstallationID > 0 {
+			sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_APP_INSTALLATION_ID=%d\n", src.AppInstallationID))
+		}
+	}
 	sb.WriteString("\n")
 }
 
@@ -475,31 +512,26 @@ func (h *SetupHandler) writeDestinationConfig(sb *strings.Builder, dest Destinat
 	sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_BASE_URL=%s\n", dest.BaseURL))
 	sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_TOKEN=%s\n", dest.Token))
 
-	h.writeGitHubAppConfig(sb, dest)
+	// GitHub App for destination (always available since destination is GitHub)
+	if dest.AppID > 0 {
+		sb.WriteString("\n# GitHub App Configuration for Destination (Optional)\n")
+		sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_ID=%d\n", dest.AppID))
+		if dest.AppPrivateKey != "" {
+			sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(dest.AppPrivateKey)))
+		}
+		if dest.AppInstallationID > 0 {
+			sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_INSTALLATION_ID=%d\n", dest.AppInstallationID))
+		}
+	}
 	sb.WriteString("\n")
-}
-
-// writeGitHubAppConfig writes optional GitHub App configuration
-func (h *SetupHandler) writeGitHubAppConfig(sb *strings.Builder, dest DestinationConfigData) {
-	if dest.AppID <= 0 {
-		return
-	}
-
-	sb.WriteString("\n# GitHub App Configuration (Optional - for enhanced discovery)\n")
-	sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_ID=%d\n", dest.AppID))
-	if dest.AppPrivateKey != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_PRIVATE_KEY=%s\n", dest.AppPrivateKey))
-	}
-	if dest.AppInstallationID > 0 {
-		sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_INSTALLATION_ID=%d\n", dest.AppInstallationID))
-	}
 }
 
 // writeDatabaseConfig writes database configuration to the env file
 func (h *SetupHandler) writeDatabaseConfig(sb *strings.Builder, db DatabaseConfigData) {
 	sb.WriteString("# Database Configuration\n")
 	sb.WriteString(fmt.Sprintf("GHMIG_DATABASE_TYPE=%s\n", db.Type))
-	sb.WriteString(fmt.Sprintf("GHMIG_DATABASE_DSN=%s\n", db.DSN))
+	// Quote DSN as it often contains special characters
+	sb.WriteString(fmt.Sprintf("GHMIG_DATABASE_DSN=\"%s\"\n", escapeEnvValue(db.DSN)))
 	sb.WriteString("\n")
 }
 
@@ -585,9 +617,59 @@ func (h *SetupHandler) writeCommonAuthConfig(sb *strings.Builder, auth *AuthConf
 	if auth.SessionDurationHours > 0 {
 		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_SESSION_DURATION_HOURS=%d\n", auth.SessionDurationHours))
 	}
+
+	// Write authorization rules if present
+	h.writeAuthorizationRules(sb, auth.AuthorizationRules)
+}
+
+// writeAuthorizationRules writes authorization rules configuration
+func (h *SetupHandler) writeAuthorizationRules(sb *strings.Builder, rules *AuthorizationRulesData) {
+	if rules == nil {
+		return
+	}
+
+	sb.WriteString("\n# Authorization Rules (Optional)\n")
+
+	if len(rules.RequireOrgMembership) > 0 {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP=%s\n",
+			strings.Join(rules.RequireOrgMembership, ",")))
+	}
+
+	if len(rules.RequireTeamMembership) > 0 {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP=%s\n",
+			strings.Join(rules.RequireTeamMembership, ",")))
+	}
+
+	if rules.RequireEnterpriseAdmin {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN=%t\n", rules.RequireEnterpriseAdmin))
+	}
+
+	if rules.RequireEnterpriseMembership {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_MEMBERSHIP=%t\n", rules.RequireEnterpriseMembership))
+	}
+
+	if rules.EnterpriseSlug != "" {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG=%s\n", rules.EnterpriseSlug))
+	}
+
+	if len(rules.PrivilegedTeams) > 0 {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS=%s\n",
+			strings.Join(rules.PrivilegedTeams, ",")))
+	}
 }
 
 // writeEnvFile writes the .env file atomically
+// escapeEnvValue escapes a value for use in a .env file
+// It replaces newlines with the literal string \n and escapes quotes and backslashes
+func escapeEnvValue(value string) string {
+	// Replace actual newlines with the literal string \n
+	value = strings.ReplaceAll(value, "\n", "\\n")
+	// Escape double quotes
+	value = strings.ReplaceAll(value, "\"", "\\\"")
+	// Note: backslashes are already handled by the \n replacement above
+	return value
+}
+
 func (h *SetupHandler) writeEnvFile(content string) error {
 	envPath := ".env"
 	tempPath := ".env.tmp"

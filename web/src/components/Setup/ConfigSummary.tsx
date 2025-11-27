@@ -55,6 +55,22 @@ export function ConfigSummary({ config }: ConfigSummaryProps) {
           {config.source.organization && (
             <SummaryRow label="Organization" value={config.source.organization} />
           )}
+          {config.source.app_id && (
+            <>
+              <div className="py-2 mt-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+                <Text className="text-xs font-semibold" style={{ color: 'var(--fgColor-muted)' }}>
+                  GitHub App (Source)
+                </Text>
+              </div>
+              <SummaryRow label="App ID" value={config.source.app_id.toString()} />
+              {config.source.app_installation_id && (
+                <SummaryRow label="Installation ID" value={config.source.app_installation_id.toString()} />
+              )}
+              {config.source.app_private_key && (
+                <SummaryRow label="Private Key" value="Configured ✓" />
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -74,7 +90,12 @@ export function ConfigSummary({ config }: ConfigSummaryProps) {
           <SummaryRow label="Token" value={maskToken(config.destination.token)} />
           {config.destination.app_id && (
             <>
-              <SummaryRow label="GitHub App ID" value={config.destination.app_id.toString()} />
+              <div className="py-2 mt-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+                <Text className="text-xs font-semibold" style={{ color: 'var(--fgColor-muted)' }}>
+                  GitHub App (Destination)
+                </Text>
+              </div>
+              <SummaryRow label="App ID" value={config.destination.app_id.toString()} />
               {config.destination.app_installation_id && (
                 <SummaryRow label="Installation ID" value={config.destination.app_installation_id.toString()} />
               )}
@@ -188,6 +209,44 @@ export function ConfigSummary({ config }: ConfigSummaryProps) {
             )}
             {config.auth.session_duration_hours && (
               <SummaryRow label="Session Duration" value={`${config.auth.session_duration_hours} hours`} />
+            )}
+            
+            {/* Authorization Rules */}
+            {config.auth.authorization_rules && (
+              <>
+                <div className="py-3 mt-3" style={{ borderTop: '2px solid var(--borderColor-default)' }}>
+                  <Text className="font-bold" style={{ color: 'var(--fgColor-default)' }}>
+                    Authorization Rules
+                  </Text>
+                </div>
+                {config.auth.authorization_rules.require_org_membership && config.auth.authorization_rules.require_org_membership.length > 0 && (
+                  <SummaryRow 
+                    label="Required Orgs" 
+                    value={config.auth.authorization_rules.require_org_membership.join(', ')} 
+                  />
+                )}
+                {config.auth.authorization_rules.require_team_membership && config.auth.authorization_rules.require_team_membership.length > 0 && (
+                  <SummaryRow 
+                    label="Required Teams" 
+                    value={config.auth.authorization_rules.require_team_membership.join(', ')} 
+                  />
+                )}
+                {config.auth.authorization_rules.require_enterprise_admin && (
+                  <SummaryRow label="Require Enterprise Admin" value="Yes" />
+                )}
+                {config.auth.authorization_rules.require_enterprise_membership && (
+                  <SummaryRow label="Require Enterprise Membership" value="Yes" />
+                )}
+                {config.auth.authorization_rules.enterprise_slug && (
+                  <SummaryRow label="Enterprise Slug" value={config.auth.authorization_rules.enterprise_slug} />
+                )}
+                {config.auth.authorization_rules.privileged_teams && config.auth.authorization_rules.privileged_teams.length > 0 && (
+                  <SummaryRow 
+                    label="Privileged Teams" 
+                    value={config.auth.authorization_rules.privileged_teams.join(', ')} 
+                  />
+                )}
+              </>
             )}
           </div>
         </div>

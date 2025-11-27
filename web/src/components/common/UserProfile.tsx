@@ -124,7 +124,7 @@ export function UserProfile() {
               {getThemeLabel()}
             </ActionList.Item>
             
-            <ActionList.Item variant="danger" onSelect={handleLogout}>
+            <ActionList.Item onSelect={handleLogout}>
               <ActionList.LeadingVisual>
                 <SignOutIcon size={16} />
               </ActionList.LeadingVisual>
