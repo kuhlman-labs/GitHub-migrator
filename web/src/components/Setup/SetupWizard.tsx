@@ -326,7 +326,7 @@ export function SetupWizard() {
                 setSourceToken(e.target.value);
                 setSourceValidated(false);
               }}
-              placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              placeholder="ghp_xxx"
               block
             />
             <FormControl.Caption>
@@ -410,7 +410,7 @@ export function SetupWizard() {
                 setDestToken(e.target.value);
                 setDestValidated(false);
               }}
-              placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              placeholder="ghp_xxx"
               block
             />
             <FormControl.Caption>Required scopes: repo, admin:org, workflow</FormControl.Caption>
@@ -887,7 +887,7 @@ export function SetupWizard() {
                         type="password"
                         value={oauthClientSecret}
                         onChange={(e) => setOauthClientSecret(e.target.value)}
-                        placeholder="gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        placeholder=""
                         block
                       />
                       <FormControl.Caption>OAuth App Client Secret</FormControl.Caption>
