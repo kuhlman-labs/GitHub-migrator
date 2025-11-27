@@ -18,6 +18,13 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
+// Database driver name constants
+const (
+	driverSQLite    = "sqlite3"
+	driverPostgres  = "postgres"
+	driverSQLServer = "sqlserver"
+)
+
 // SetupHandler handles setup wizard API requests
 type SetupHandler struct {
 	db           *storage.Database
@@ -383,6 +390,53 @@ func (h *SetupHandler) validateAzureDevOps(ctx context.Context, orgURL, token, o
 	return response
 }
 
+// validateSQLitePath validates that a SQLite database path is secure
+func (h *SetupHandler) validateSQLitePath(dsn string) ValidationResponse {
+	response := ValidationResponse{Details: make(map[string]interface{})}
+	const safeBaseDir = "./data"
+
+	// Extract directory from DSN
+	var dir string
+	if strings.Contains(dsn, "/") {
+		lastSlash := strings.LastIndex(dsn, "/")
+		dir = dsn[:lastSlash]
+	} else {
+		dir = "."
+	}
+
+	// Validate directory against safe base dir to prevent path traversal
+	absSafeBaseDir, err := filepath.Abs(safeBaseDir)
+	if err != nil {
+		response.Valid = false
+		response.Error = "Server misconfiguration: unable to resolve base directory"
+		return response
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		response.Valid = false
+		response.Error = fmt.Sprintf("Invalid directory: %v", err)
+		return response
+	}
+	// Ensure absDir is strictly within absSafeBaseDir using filepath.Rel
+	// This is more robust than HasPrefix and handles symlinks better
+	rel, err := filepath.Rel(absSafeBaseDir, absDir)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".") {
+		response.Valid = false
+		response.Error = fmt.Sprintf("Database directory must be inside %s", safeBaseDir)
+		return response
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(absDir); os.IsNotExist(err) {
+		response.Valid = false
+		response.Error = fmt.Sprintf("Directory does not exist: %s", dir)
+		return response
+	}
+
+	response.Valid = true
+	return response
+}
+
 // validateDatabaseConnection validates a database connection
 func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) ValidationResponse {
 	response := ValidationResponse{Details: make(map[string]interface{})}
@@ -390,83 +444,26 @@ func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) Validation
 	var driverName string
 	switch strings.ToLower(dbType) {
 	case "sqlite":
-		driverName = "sqlite3"
+		driverName = driverSQLite
 	case "postgres", "postgresql":
-		driverName = "postgres"
+		driverName = driverPostgres
 	case "sqlserver":
-		driverName = "sqlserver"
+		driverName = driverSQLServer
 	default:
 		response.Valid = false
 		response.Error = fmt.Sprintf("Unsupported database type: %s", dbType)
 		return response
 	}
 
-	// For SQLite, check if directory exists and is writable
-	if driverName == "sqlite3" {
-		// Restrict SQLite DB storage to a safe base directory
-		const safeBaseDir = "./data"
-
-		// Extract directory from DSN
-		var dir string
-		if strings.Contains(dsn, "/") {
-			lastSlash := strings.LastIndex(dsn, "/")
-			dir = dsn[:lastSlash]
-		} else {
-			dir = "."
+	// For SQLite, validate path security first
+	if driverName == driverSQLite {
+		pathValidation := h.validateSQLitePath(dsn)
+		if !pathValidation.Valid {
+			return pathValidation
 		}
-
-		// Validate directory against safe base dir to prevent path traversal
-		absSafeBaseDir, err := filepath.Abs(safeBaseDir)
-		if err != nil {
-			response.Valid = false
-			response.Error = "Server misconfiguration: unable to resolve base directory"
-			return response
-		}
-		absDir, err := filepath.Abs(dir)
-		if err != nil {
-			response.Valid = false
-			response.Error = fmt.Sprintf("Invalid directory: %v", err)
-			return response
-		}
-		// Ensure absDir is strictly within absSafeBaseDir using filepath.Rel
-		// This is more robust than HasPrefix and handles symlinks better
-		rel, err := filepath.Rel(absSafeBaseDir, absDir)
-		if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".") {
-			response.Valid = false
-			response.Error = fmt.Sprintf("Database directory must be inside %s", safeBaseDir)
-			return response
-		}
-
-		// Check if directory exists
-		if _, err := os.Stat(absDir); os.IsNotExist(err) {
-			response.Valid = false
-			response.Error = fmt.Sprintf("Directory does not exist: %s", dir)
-			return response
-		}
-
-		// Try to open or create the database file
-		db, err := sql.Open(driverName, dsn)
-		if err != nil {
-			response.Valid = false
-			response.Error = fmt.Sprintf("Failed to open SQLite database: %v", err)
-			return response
-		}
-		defer db.Close()
-
-		// Test the connection
-		if err := db.Ping(); err != nil {
-			response.Valid = false
-			response.Error = fmt.Sprintf("Failed to ping SQLite database: %v", err)
-			return response
-		}
-
-		response.Valid = true
-		response.Details["type"] = "sqlite"
-		response.Details["path"] = dsn
-		return response
 	}
 
-	// For PostgreSQL and SQL Server, test the connection
+	// Test database connection for all types
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		response.Valid = false
@@ -485,6 +482,9 @@ func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) Validation
 	response.Valid = true
 	response.Details["type"] = dbType
 	response.Details["connected"] = true
+	if driverName == driverSQLite {
+		response.Details["path"] = dsn
+	}
 
 	return response
 }
