@@ -30,7 +30,7 @@ export function RestartMonitor({ onServerOnline }: RestartMonitorProps) {
 
   const checkHealth = async () => {
     let attempts = 0;
-    const maxAttempts = 30; // 30 attempts * 2 seconds = 60 seconds max
+    const maxAttempts = 300 // 300 attempts * 2 seconds = 600 seconds (10 minutes) max
 
     const interval = setInterval(async () => {
       try {
