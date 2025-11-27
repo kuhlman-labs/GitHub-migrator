@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -402,6 +403,9 @@ func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) Validation
 
 	// For SQLite, check if directory exists and is writable
 	if driverName == "sqlite3" {
+		// Restrict SQLite DB storage to a safe base directory
+		const safeBaseDir = "./data"
+
 		// Extract directory from DSN
 		var dir string
 		if strings.Contains(dsn, "/") {
@@ -411,8 +415,31 @@ func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) Validation
 			dir = "."
 		}
 
+		// Validate directory against safe base dir to prevent path traversal
+		absSafeBaseDir, err := filepath.Abs(safeBaseDir)
+		if err != nil {
+			response.Valid = false
+			response.Error = "Server misconfiguration: unable to resolve base directory"
+			return response
+		}
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			response.Valid = false
+			response.Error = fmt.Sprintf("Invalid directory: %v", err)
+			return response
+		}
+		// Ensure absDir is within absSafeBaseDir
+		// Clean the paths to resolve any .. or . components
+		cleanSafeDir := filepath.Clean(absSafeBaseDir) + string(filepath.Separator)
+		cleanAbsDir := filepath.Clean(absDir) + string(filepath.Separator)
+		if !strings.HasPrefix(cleanAbsDir, cleanSafeDir) {
+			response.Valid = false
+			response.Error = fmt.Sprintf("Database directory must be inside %s", safeBaseDir)
+			return response
+		}
+
 		// Check if directory exists
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
+		if _, err := os.Stat(absDir); os.IsNotExist(err) {
 			response.Valid = false
 			response.Error = fmt.Sprintf("Directory does not exist: %s", dir)
 			return response
