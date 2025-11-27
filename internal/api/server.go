@@ -26,6 +26,7 @@ type Server struct {
 	authHandler         *handlers.AuthHandler
 	adoHandler          *handlers.ADOHandler
 	entraIDOAuthHandler *auth.EntraIDOAuthHandler
+	shutdownChan        chan struct{}
 }
 
 func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient) *Server {
@@ -113,7 +114,13 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		authHandler:         authHandler,
 		adoHandler:          adoHandler,
 		entraIDOAuthHandler: entraIDOAuthHandler,
+		shutdownChan:        make(chan struct{}),
 	}
+}
+
+// ShutdownChan returns the shutdown channel for graceful server shutdown
+func (s *Server) ShutdownChan() chan struct{} {
+	return s.shutdownChan
 }
 
 func (s *Server) Router() http.Handler {
@@ -157,6 +164,14 @@ func (s *Server) Router() http.Handler {
 
 	// Application config endpoint (always public)
 	mux.HandleFunc("GET /api/v1/config", s.handler.GetConfig)
+
+	// Setup endpoints (public for initial configuration)
+	setupHandler := handlers.NewSetupHandler(s.db, s.logger, s.config, s.shutdownChan)
+	mux.HandleFunc("GET /api/v1/setup/status", setupHandler.GetSetupStatus)
+	mux.HandleFunc("POST /api/v1/setup/validate-source", setupHandler.ValidateSource)
+	mux.HandleFunc("POST /api/v1/setup/validate-destination", setupHandler.ValidateDestination)
+	mux.HandleFunc("POST /api/v1/setup/validate-database", setupHandler.ValidateDatabase)
+	mux.HandleFunc("POST /api/v1/setup/apply", setupHandler.ApplySetup)
 
 	// Helper to conditionally wrap with auth
 	protect := func(pattern string, handler http.HandlerFunc) {

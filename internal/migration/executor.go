@@ -68,7 +68,7 @@ type Executor struct {
 	destClient           *github.Client // GHEC client
 	storage              *storage.Database
 	orgIDCache           map[string]string // Cache of org name -> org ID
-	migSourceID          string            // Cached migration source ID for GitHub (created on first use)
+	migSourceCache       map[string]string // Cache of owner ID -> migration source ID for GitHub (supports multiple dest orgs)
 	adoMigSourceCache    map[string]string // Cache of ADO org URL -> migration source ID (supports multiple ADO orgs)
 	logger               *slog.Logger
 	postMigrationMode    PostMigrationMode           // When to run post-migration tasks
@@ -137,6 +137,7 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 		destClient:           cfg.DestClient,
 		storage:              cfg.Storage,
 		orgIDCache:           make(map[string]string),
+		migSourceCache:       make(map[string]string), // Initialize cache for multiple dest orgs
 		adoMigSourceCache:    make(map[string]string), // Initialize cache for multiple ADO orgs
 		logger:               cfg.Logger,
 		postMigrationMode:    postMigMode,
@@ -299,11 +300,13 @@ func (e *Executor) getOrFetchDestOrgID(ctx context.Context, orgName string) (str
 
 // getOrCreateMigrationSource returns the migration source ID, creating it if not cached
 func (e *Executor) getOrCreateMigrationSource(ctx context.Context, ownerID string) (string, error) {
-	if e.migSourceID != "" {
-		return e.migSourceID, nil
+	// Check if we already have a migration source for this owner
+	if migSourceID, exists := e.migSourceCache[ownerID]; exists {
+		e.logger.Debug("Using cached migration source", "owner_id", ownerID, "source_id", migSourceID)
+		return migSourceID, nil
 	}
 
-	e.logger.Info("Creating migration source")
+	e.logger.Info("Creating migration source for destination organization", "owner_id", ownerID)
 
 	// Get the source URL from the source client
 	sourceURL := e.sourceClient.BaseURL()
@@ -338,14 +341,19 @@ func (e *Executor) getOrCreateMigrationSource(ctx context.Context, ownerID strin
 		return "", fmt.Errorf("failed to create migration source: %w", err)
 	}
 
-	e.migSourceID = string(mutation.CreateMigrationSource.MigrationSource.ID)
+	migSourceID := string(mutation.CreateMigrationSource.MigrationSource.ID)
+
+	// Cache it for this owner
+	e.migSourceCache[ownerID] = migSourceID
+
 	e.logger.Info("Created migration source",
-		"source_id", e.migSourceID,
+		"owner_id", ownerID,
+		"source_id", migSourceID,
 		"source_url", sourceURL,
 		"name", string(mutation.CreateMigrationSource.MigrationSource.Name),
 		"type", string(mutation.CreateMigrationSource.MigrationSource.Type))
 
-	return e.migSourceID, nil
+	return migSourceID, nil
 }
 
 // ExecuteMigration performs a full repository migration

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { TextInput } from '@primer/react';
+import { SearchIcon } from '@primer/octicons-react';
 import type { RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { FilterSection } from './FilterSection';
@@ -132,13 +134,19 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
 
   if (isCollapsed) {
     return (
-      <div className="w-12 border-r border-gray-200 bg-white flex flex-col items-center py-4 flex-shrink-0">
+      <div 
+        className="w-12 flex flex-col items-center py-4 flex-shrink-0"
+        style={{ 
+          borderRight: '1px solid var(--borderColor-default)',
+          backgroundColor: 'var(--bgColor-default)' 
+        }}
+      >
         <button
           onClick={onToggleCollapse}
-          className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors group"
+          className="relative p-2 rounded-lg transition-opacity hover:opacity-80 group"
           title="Expand filters"
         >
-          <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -147,7 +155,13 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
             />
           </svg>
           {filterCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
+            <span 
+              className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full"
+              style={{ 
+                color: 'var(--fgColor-onEmphasis)',
+                backgroundColor: 'var(--accent-emphasis)' 
+              }}
+            >
               {filterCount}
             </span>
           )}
@@ -157,23 +171,38 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
   }
 
   return (
-    <div className="w-[280px] border-r border-gray-200 bg-white flex flex-col transition-all duration-300 flex-shrink-0">
+    <div 
+      className="w-[280px] flex flex-col transition-all duration-300 flex-shrink-0"
+      style={{ 
+        borderRight: '1px solid var(--borderColor-default)',
+        backgroundColor: 'var(--bgColor-default)' 
+      }}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div 
+        className="flex items-center justify-between p-4"
+        style={{ borderBottom: '1px solid var(--borderColor-default)' }}
+      >
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900">Filters</h3>
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Filters</h3>
           {filterCount > 0 && (
-            <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-blue-600 rounded-full">
+            <span 
+              className="flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold rounded-full"
+              style={{ 
+                color: 'var(--fgColor-onEmphasis)',
+                backgroundColor: 'var(--accent-emphasis)' 
+              }}
+            >
               {filterCount}
             </span>
           )}
         </div>
         <button
           onClick={onToggleCollapse}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          className="p-1 rounded transition-opacity hover:opacity-80"
           title="Collapse filters"
         >
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
@@ -182,14 +211,14 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
       {/* Scrollable Filter Content */}
       <div className="flex-1 overflow-y-auto">
         {/* Search */}
-        <div className="p-4 border-b border-gray-200">
-          <label className="block text-xs font-medium text-gray-700 mb-2">Search</label>
-          <input
-            type="text"
-            value={filters.search || ''}
-            onChange={(e) => onChange({ ...filters, search: e.target.value || undefined })}
+        <div className="p-4" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
+          <label className="block text-xs font-medium mb-2" style={{ color: 'var(--fgColor-default)' }}>Search</label>
+          <TextInput
+            leadingVisual={SearchIcon}
+            value={filters.search ?? ''}
+            onChange={(e) => onChange({ ...filters, search: e.target.value.trim() || undefined })}
             placeholder="Repository name..."
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            block
           />
         </div>
 
@@ -244,9 +273,10 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                       complexity: updated.length > 0 ? updated : undefined,
                     });
                   }}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                  style={{ borderColor: 'var(--borderColor-default)' }}
                 />
-                <span className="text-sm text-gray-700 capitalize">
+                <span className="text-sm capitalize" style={{ color: 'var(--fgColor-default)' }}>
                   {complexity.replace('_', ' ')}
                 </span>
               </label>
@@ -259,7 +289,7 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
           <div className="space-y-3">
             {/* Size Category */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-2">Category</label>
+              <label className="block text-xs font-medium mb-2" style={{ color: 'var(--fgColor-default)' }}>Category</label>
               <div className="space-y-2">
                 {[
                   { value: 'small', label: 'Small (<100MB)' },
@@ -289,9 +319,10 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                           size_category: updated.length > 0 ? updated : undefined,
                         });
                       }}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                      style={{ borderColor: 'var(--borderColor-default)' }}
                     />
-                    <span className="text-sm text-gray-700">{category.label}</span>
+                    <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>{category.label}</span>
                   </label>
                 ))}
               </div>
@@ -299,31 +330,41 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
 
             {/* Size Range */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-2">Range (MB)</label>
+              <label className="block text-xs font-medium mb-2" style={{ color: 'var(--fgColor-default)' }}>Range (MB)</label>
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="number"
                   placeholder="Min"
-                  value={filters.min_size ? Math.round(filters.min_size / 1024 / 1024) : ''}
+                  value={filters.min_size ? Math.round(filters.min_size / 1024 / 1024).toString() : ''}
                   onChange={(e) =>
                     onChange({
                       ...filters,
                       min_size: e.target.value ? parseInt(e.target.value) * 1024 * 1024 : undefined,
                     })
                   }
-                  className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-2 py-1.5 text-sm rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  style={{
+                    border: '1px solid var(--borderColor-default)',
+                    backgroundColor: 'var(--control-bgColor-rest)',
+                    color: 'var(--fgColor-default)'
+                  }}
                 />
                 <input
                   type="number"
                   placeholder="Max"
-                  value={filters.max_size ? Math.round(filters.max_size / 1024 / 1024) : ''}
+                  value={filters.max_size ? Math.round(filters.max_size / 1024 / 1024).toString() : ''}
                   onChange={(e) =>
                     onChange({
                       ...filters,
                       max_size: e.target.value ? parseInt(e.target.value) * 1024 * 1024 : undefined,
                     })
                   }
-                  className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-2 py-1.5 text-sm rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  style={{
+                    border: '1px solid var(--borderColor-default)',
+                    backgroundColor: 'var(--control-bgColor-rest)',
+                    color: 'var(--fgColor-default)'
+                  }}
                 />
               </div>
             </div>
@@ -364,9 +405,10 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                   onChange={(e) =>
                     onChange({ ...filters, [feature.key]: e.target.checked ? true : undefined })
                   }
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                  style={{ borderColor: 'var(--borderColor-default)' }}
                 />
-                <span className="text-sm text-gray-700">{feature.label}</span>
+                <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>{feature.label}</span>
               </label>
               ))
             ) : (
@@ -407,7 +449,12 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                 visibility: e.target.value || undefined,
               })
             }
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            style={{
+              border: '1px solid var(--borderColor-default)',
+              backgroundColor: 'var(--control-bgColor-rest)',
+              color: 'var(--fgColor-default)'
+            }}
           >
             <option value="">All</option>
             <option value="public">Public</option>
@@ -426,7 +473,12 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
                 sort_by: (e.target.value as any) || undefined,
               })
             }
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            style={{
+              border: '1px solid var(--borderColor-default)',
+              backgroundColor: 'var(--control-bgColor-rest)',
+              color: 'var(--fgColor-default)'
+            }}
           >
             <option value="name">Name</option>
             <option value="size">Size</option>

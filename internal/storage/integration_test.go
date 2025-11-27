@@ -47,7 +47,7 @@ func TestIntegrationPostgreSQL(t *testing.T) {
 	}
 
 	cfg := config.DatabaseConfig{
-		Type:                   "postgres",
+		Type:                   DBTypePostgres,
 		DSN:                    dsn,
 		MaxOpenConns:           25,
 		MaxIdleConns:           5,

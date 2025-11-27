@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import type { DependenciesResponse, RepositoryDependency } from '../../types';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { Pagination } from '../common/Pagination';
 
 interface DependenciesTabProps {
   fullName: string;
@@ -13,11 +14,18 @@ interface MergedDependency extends RepositoryDependency {
   all_metadata: any[];
 }
 
+type ScopeFilter = 'all' | 'local' | 'external';
+
 export function DependenciesTab({ fullName }: DependenciesTabProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DependenciesResponse | null>(null);
   const [deduplicatedDeps, setDeduplicatedDeps] = useState<MergedDependency[]>([]);
+  
+  // Filter and pagination state
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Deduplicate dependencies by dependency_full_name
   const deduplicateDependencies = (dependencies: RepositoryDependency[]): MergedDependency[] => {
@@ -90,6 +98,11 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
     fetchDependencies();
   }, [fullName]);
 
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [scopeFilter]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -100,18 +113,30 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <h4 className="font-medium text-red-800 mb-2">Error loading dependencies</h4>
-        <p className="text-sm text-red-700">{error}</p>
+      <div 
+        className="rounded-lg p-4"
+        style={{
+          backgroundColor: 'var(--danger-subtle)',
+          border: '1px solid var(--borderColor-danger)'
+        }}
+      >
+        <h4 className="font-medium mb-2" style={{ color: 'var(--fgColor-danger)' }}>Error loading dependencies</h4>
+        <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>{error}</p>
       </div>
     );
   }
 
   if (!data || !data.dependencies || data.dependencies.length === 0) {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-medium text-blue-800 mb-2">No dependencies found</h4>
-        <p className="text-sm text-blue-700">
+      <div 
+        className="rounded-lg p-4"
+        style={{
+          backgroundColor: 'var(--accent-subtle)',
+          border: '1px solid var(--borderColor-accent-muted)'
+        }}
+      >
+        <h4 className="font-medium mb-2" style={{ color: 'var(--fgColor-accent)' }}>No dependencies found</h4>
+        <p className="text-sm" style={{ color: 'var(--fgColor-accent)' }}>
           This repository has no detected dependencies (submodules, workflow references, or dependency graph relationships).
         </p>
       </div>
@@ -131,44 +156,69 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
     }, {} as Record<string, number>)
   };
 
+  // Filter dependencies by scope
+  const filteredDeps = deduplicatedDeps.filter(dep => {
+    if (scopeFilter === 'local') return dep.is_local;
+    if (scopeFilter === 'external') return !dep.is_local;
+    return true; // 'all'
+  });
+
+  // Paginate filtered dependencies
+  const totalItems = filteredDeps.length;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedDeps = filteredDeps.slice(startIndex, endIndex);
+
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow-sm p-4">
-          <div className="text-sm text-gray-500">Total Dependencies</div>
-          <div className="text-2xl font-bold mt-1">{deduplicatedSummary.total}</div>
+        <div 
+          className="rounded-lg shadow-sm p-4"
+          style={{ backgroundColor: 'var(--bgColor-default)' }}
+        >
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Dependencies</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: 'var(--fgColor-default)' }}>{deduplicatedSummary.total}</div>
           {data.summary.total > deduplicatedSummary.total && (
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
               ({data.summary.total} raw detections)
             </div>
           )}
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4">
-          <div className="text-sm text-gray-500">Local Dependencies</div>
-          <div className="text-2xl font-bold mt-1 text-green-600">
+        <div 
+          className="rounded-lg shadow-sm p-4"
+          style={{ backgroundColor: 'var(--bgColor-default)' }}
+        >
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Local Dependencies</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: 'var(--fgColor-success)' }}>
             {deduplicatedSummary.local}
           </div>
-          <div className="text-xs text-gray-500 mt-1">
+          <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
             Within enterprise
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4">
-          <div className="text-sm text-gray-500">External Dependencies</div>
-          <div className="text-2xl font-bold mt-1 text-amber-600">
+        <div 
+          className="rounded-lg shadow-sm p-4"
+          style={{ backgroundColor: 'var(--bgColor-default)' }}
+        >
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>External Dependencies</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: 'var(--fgColor-attention)' }}>
             {deduplicatedSummary.external}
           </div>
-          <div className="text-xs text-gray-500 mt-1">
+          <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
             Outside enterprise
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4">
-          <div className="text-sm text-gray-500">Detection Methods</div>
+        <div 
+          className="rounded-lg shadow-sm p-4"
+          style={{ backgroundColor: 'var(--bgColor-default)' }}
+        >
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Detection Methods</div>
           <div className="mt-2 space-y-1">
             {Object.entries(deduplicatedSummary.by_type).map(([type, count]) => (
               <div key={type} className="text-sm flex justify-between">
-                <span className="capitalize">{type.replace('_', ' ')}</span>
-                <span className="font-semibold">{count}</span>
+                <span className="capitalize" style={{ color: 'var(--fgColor-default)' }}>{type.replace('_', ' ')}</span>
+                <span className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{count}</span>
               </div>
             ))}
           </div>
@@ -177,9 +227,15 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
 
       {/* Warning for local dependencies */}
       {deduplicatedSummary.local > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h4 className="font-medium text-yellow-800 mb-2">Local Dependencies Detected</h4>
-          <p className="text-sm text-yellow-700">
+        <div 
+          className="rounded-lg p-4"
+          style={{
+            backgroundColor: 'var(--attention-subtle)',
+            border: '1px solid var(--borderColor-attention)'
+          }}
+        >
+          <h4 className="font-medium mb-2" style={{ color: 'var(--fgColor-attention)' }}>Local Dependencies Detected</h4>
+          <p className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
             This repository depends on {deduplicatedSummary.local} other repository/repositories in your enterprise. 
             Consider migrating these dependencies in the same batch to maintain functionality.
           </p>
@@ -187,34 +243,114 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
       )}
 
       {/* Dependencies List */}
-      <div className="bg-white rounded-lg shadow-sm">
+      <div 
+        className="rounded-lg shadow-sm"
+        style={{ backgroundColor: 'var(--bgColor-default)' }}
+      >
         <div className="p-6">
-          <h3 className="text-lg font-semibold mb-4">All Dependencies ({deduplicatedSummary.total})</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Repository
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Detection Methods
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Scope
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Details
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {deduplicatedDeps.map((dep) => (
-                  <MergedDependencyRow key={dep.id} dependency={dep} />
-                ))}
-              </tbody>
-            </table>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+              All Dependencies ({deduplicatedSummary.total})
+            </h3>
+            
+            {/* Scope Filter */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setScopeFilter('all')}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+                style={{
+                  backgroundColor: scopeFilter === 'all' ? '#2da44e' : 'var(--control-bgColor-rest)',
+                  color: scopeFilter === 'all' ? '#ffffff' : 'var(--fgColor-default)'
+                }}
+              >
+                All ({deduplicatedSummary.total})
+              </button>
+              <button
+                onClick={() => setScopeFilter('local')}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+                style={{
+                  backgroundColor: scopeFilter === 'local' ? '#2da44e' : 'var(--control-bgColor-rest)',
+                  color: scopeFilter === 'local' ? '#ffffff' : 'var(--fgColor-default)'
+                }}
+              >
+                Local ({deduplicatedSummary.local})
+              </button>
+              <button
+                onClick={() => setScopeFilter('external')}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+                style={{
+                  backgroundColor: scopeFilter === 'external' ? '#fb8500' : 'var(--control-bgColor-rest)',
+                  color: scopeFilter === 'external' ? '#ffffff' : 'var(--fgColor-default)'
+                }}
+              >
+                External ({deduplicatedSummary.external})
+              </button>
+            </div>
           </div>
+          
+          {filteredDeps.length === 0 ? (
+            <div className="text-center py-8" style={{ color: 'var(--fgColor-muted)' }}>
+              No {scopeFilter === 'all' ? '' : scopeFilter} dependencies found
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table 
+                  className="min-w-full divide-y"
+                  style={{ borderColor: 'var(--borderColor-muted)' }}
+                >
+                  <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+                    <tr>
+                      <th 
+                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                        style={{ color: 'var(--fgColor-muted)' }}
+                      >
+                        Repository
+                      </th>
+                      <th 
+                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                        style={{ color: 'var(--fgColor-muted)' }}
+                      >
+                        Detection Methods
+                      </th>
+                      <th 
+                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                        style={{ color: 'var(--fgColor-muted)' }}
+                      >
+                        Scope
+                      </th>
+                      <th 
+                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                        style={{ color: 'var(--fgColor-muted)' }}
+                      >
+                        Details
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody 
+                    className="divide-y"
+                    style={{ borderColor: 'var(--borderColor-muted)' }}
+                  >
+                    {paginatedDeps.map((dep) => (
+                      <MergedDependencyRow key={dep.id} dependency={dep} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Pagination */}
+              {totalItems > pageSize && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalItems={totalItems}
+                    pageSize={pageSize}
+                    onPageChange={setCurrentPage}
+                  />
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -246,20 +382,21 @@ function MergedDependencyRow({ dependency }: MergedDependencyRowProps) {
   };
 
   return (
-    <tr className="hover:bg-gray-50">
+    <tr className="hover:opacity-80 transition-opacity">
       <td className="px-4 py-4 whitespace-nowrap">
-        <div className="text-sm font-medium text-gray-900">
+        <div className="text-sm font-medium">
           <a
             href={dependency.dependency_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-blue-600"
+            className="hover:underline"
+            style={{ color: 'var(--fgColor-accent)' }}
           >
             {dependency.dependency_full_name}
           </a>
         </div>
         {dependency.dependency_url && (
-          <div className="text-xs text-gray-500 truncate max-w-md">
+          <div className="text-xs truncate max-w-md" style={{ color: 'var(--fgColor-muted)' }}>
             {dependency.dependency_url}
           </div>
         )}
@@ -281,51 +418,51 @@ function MergedDependencyRow({ dependency }: MergedDependencyRowProps) {
         )}
       </td>
       <td className="px-4 py-4">
-        <div className="text-sm text-gray-500">
+        <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
           {dependency.all_metadata.length > 0 ? (
             <div className="space-y-2">
               {dependency.all_metadata.map((meta, idx) => (
                 <div key={idx} className="space-y-1">
                   {meta.type && dependency.all_metadata.length > 1 && (
-                    <div className="text-xs font-semibold text-gray-600 capitalize">
+                    <div className="text-xs font-semibold capitalize" style={{ color: 'var(--fgColor-default)' }}>
                       {meta.type.replace('_', ' ')}:
                     </div>
                   )}
                   {meta.path && (
                     <div>
-                      <span className="font-medium">Path:</span> {meta.path}
+                      <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Path:</span> {meta.path}
                     </div>
                   )}
                   {meta.branch && (
                     <div>
-                      <span className="font-medium">Branch:</span> {meta.branch}
+                      <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Branch:</span> {meta.branch}
                     </div>
                   )}
                   {meta.workflow_file && (
                     <div>
-                      <span className="font-medium">Workflow:</span> {meta.workflow_file}
+                      <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Workflow:</span> {meta.workflow_file}
                     </div>
                   )}
                   {meta.ref && (
                     <div>
-                      <span className="font-medium">Ref:</span> {meta.ref}
+                      <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Ref:</span> {meta.ref}
                     </div>
                   )}
                   {meta.manifest && (
                     <div>
-                      <span className="font-medium">Manifest:</span> {meta.manifest}
+                      <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Manifest:</span> {meta.manifest}
                     </div>
                   )}
                   {meta.package_manager && (
                     <div>
-                      <span className="font-medium">Manager:</span> {meta.package_manager}
+                      <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Manager:</span> {meta.package_manager}
                     </div>
                   )}
                 </div>
               ))}
             </div>
           ) : (
-            <span className="text-gray-400">—</span>
+            <span style={{ color: 'var(--fgColor-muted)' }}>—</span>
           )}
         </div>
       </td>

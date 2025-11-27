@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Button, TextInput, Flash, Label, FormControl } from '@primer/react';
+import { Blankslate } from '@primer/react/experimental';
+import { SearchIcon, XIcon, RepoIcon } from '@primer/octicons-react';
 import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -124,28 +127,30 @@ export function Dashboard() {
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold text-gh-text-primary">Organizations</h1>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowDiscoveryModal(true)}
-            className="px-4 py-1.5 bg-gh-success text-white text-sm font-medium rounded-md hover:bg-gh-success-hover transition-colors"
-          >
-            Start Discovery
-          </button>
-          <input
-            type="text"
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+          {sourceType === 'azuredevops' ? 'Azure DevOps Organizations' : 'Organizations'}
+        </h1>
+        <div className="flex items-center gap-4">
+          <TextInput
+            leadingVisual={SearchIcon}
             placeholder="Search organizations..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gh-border-default rounded-md"
+            style={{ width: 300 }}
           />
+          <Button
+            variant="primary"
+            onClick={() => setShowDiscoveryModal(true)}
+          >
+            Start Discovery
+          </Button>
         </div>
       </div>
 
       {discoverySuccess && (
-        <div className="mb-4 bg-gh-success-bg border border-gh-success text-gh-success px-4 py-3 rounded-md text-sm">
+        <Flash variant="success" className="mb-3">
           {discoverySuccess}
-        </div>
+        </Flash>
       )}
 
       <div className="mb-4 text-sm text-gh-text-secondary">
@@ -161,9 +166,26 @@ export function Dashboard() {
       {isLoading ? (
         <LoadingSpinner />
       ) : filteredOrgs.length === 0 ? (
-        <div className="text-center py-12 text-gh-text-secondary">
-          No organizations found
-        </div>
+        <Blankslate>
+          <Blankslate.Visual>
+            <RepoIcon size={48} />
+          </Blankslate.Visual>
+          <Blankslate.Heading>
+            {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
+          </Blankslate.Heading>
+          <Blankslate.Description>
+            {searchTerm 
+              ? 'No organizations match your search. Try a different search term.'
+              : sourceType === 'azuredevops'
+                ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
+                : 'Get started by discovering repositories from your GitHub organizations.'}
+          </Blankslate.Description>
+          {!searchTerm && (
+            <Blankslate.PrimaryAction onClick={() => setShowDiscoveryModal(true)}>
+              Start Discovery
+            </Blankslate.PrimaryAction>
+          )}
+        </Blankslate>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
@@ -182,65 +204,73 @@ export function Dashboard() {
         </>
       )}
 
-      {showDiscoveryModal && (
-        <DiscoveryModal
-          sourceType={sourceType}
-          discoveryType={discoveryType}
-          setDiscoveryType={setDiscoveryType}
-          organization={organization}
-          setOrganization={setOrganization}
-          enterpriseSlug={enterpriseSlug}
-          setEnterpriseSlug={setEnterpriseSlug}
-          adoOrganization={adoOrganization}
-          setAdoOrganization={setAdoOrganization}
-          adoProject={adoProject}
-          setAdoProject={setAdoProject}
-          loading={startDiscoveryMutation.isPending || startADODiscoveryMutation.isPending}
-          error={discoveryError}
-          onStart={handleStartDiscovery}
-          onClose={() => {
-            setShowDiscoveryModal(false);
-            setDiscoveryError(null);
-            setOrganization('');
-            setEnterpriseSlug('');
-            setAdoOrganization('');
-            setAdoProject('');
-          }}
-        />
-      )}
+      <DiscoveryModal
+        isOpen={showDiscoveryModal}
+        sourceType={sourceType}
+        discoveryType={discoveryType}
+        setDiscoveryType={setDiscoveryType}
+        organization={organization}
+        setOrganization={setOrganization}
+        enterpriseSlug={enterpriseSlug}
+        setEnterpriseSlug={setEnterpriseSlug}
+        adoOrganization={adoOrganization}
+        setAdoOrganization={setAdoOrganization}
+        adoProject={adoProject}
+        setAdoProject={setAdoProject}
+        loading={startDiscoveryMutation.isPending || startADODiscoveryMutation.isPending}
+        error={discoveryError}
+        onStart={handleStartDiscovery}
+        onClose={() => {
+          setShowDiscoveryModal(false);
+          setDiscoveryError(null);
+          setOrganization('');
+          setEnterpriseSlug('');
+          setAdoOrganization('');
+          setAdoProject('');
+        }}
+      />
     </div>
   );
 }
 
 function OrganizationCard({ organization }: { organization: Organization }) {
-  const getStatusColor = (status: string) => {
-    // Map all backend statuses to GitHub color scheme
-    const colors: Record<string, string> = {
-      // Pending
-      pending: 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default',
+  const getStatusVariant = (status: string): 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors' => {
+    const statusMap: Record<string, 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors'> = {
+      // Pending / Ready (neutral gray)
+      pending: 'default',
+      ready: 'default',
       
       // In Progress (blue)
-      dry_run_queued: 'bg-gh-blue text-white',
-      dry_run_in_progress: 'bg-gh-blue text-white',
-      pre_migration: 'bg-gh-blue text-white',
-      archive_generating: 'bg-gh-blue text-white',
-      queued_for_migration: 'bg-gh-blue text-white',
-      migrating_content: 'bg-gh-blue text-white',
-      post_migration: 'bg-gh-blue text-white',
+      dry_run_queued: 'accent',
+      dry_run_in_progress: 'accent',
+      pre_migration: 'accent',
+      archive_generating: 'accent',
+      queued_for_migration: 'accent',
+      migrating_content: 'accent',
+      post_migration: 'accent',
+      in_progress: 'accent',
       
-      // Complete (green)
-      dry_run_complete: 'bg-gh-success text-white',
-      migration_complete: 'bg-gh-success text-white',
-      complete: 'bg-gh-success text-white',
+      // Complete/Success (green)
+      dry_run_complete: 'success',
+      migration_complete: 'success',
+      complete: 'success',
+      completed: 'success',
       
-      // Failed (red)
-      dry_run_failed: 'bg-gh-danger text-white',
-      migration_failed: 'bg-gh-danger text-white',
+      // Failures (red)
+      dry_run_failed: 'danger',
+      migration_failed: 'danger',
+      failed: 'danger',
       
-      // Rolled Back (yellow/orange)
-      rolled_back: 'bg-gh-warning text-white',
+      // Warnings (yellow/orange)
+      completed_with_errors: 'attention',
+      rolled_back: 'attention',
+      remediation_required: 'attention',
+      
+      // Cancelled (secondary/muted)
+      cancelled: 'secondary',
+      wont_migrate: 'secondary',
     };
-    return colors[status] || 'bg-gh-neutral-bg text-gh-text-secondary border border-gh-border-default';
+    return statusMap[status] || 'default';
   };
 
   const totalRepos = organization.total_repos;
@@ -250,58 +280,57 @@ function OrganizationCard({ organization }: { organization: Organization }) {
   return (
     <Link
       to={`/org/${encodeURIComponent(organization.organization)}`}
-      className="bg-white rounded-lg border border-gh-border-default hover:border-gh-border-hover transition-colors p-6 block shadow-gh-card"
+      className="block rounded-lg border transition-colors p-6"
+      style={{
+        backgroundColor: 'var(--bgColor-default)',
+        borderColor: 'var(--borderColor-default)',
+        boxShadow: 'var(--shadow-resting-small)'
+      }}
     >
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gh-text-primary mb-2">
+        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>
           {organization.organization}
         </h3>
-        {/* Show hierarchy badge */}
         {organization.ado_organization && (
-          <div className="flex items-center gap-2 text-xs">
-            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md font-medium">
-              ADO Org: {organization.ado_organization}
-            </span>
-          </div>
+          <Label variant="accent" size="small">
+            ADO Org: {organization.ado_organization}
+          </Label>
         )}
         {organization.enterprise && (
-          <div className="flex items-center gap-2 text-xs">
-            <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-md font-medium">
-              GitHub Enterprise: {organization.enterprise}
-            </span>
-          </div>
+          <Label variant="sponsors" size="small" className="ml-1">
+            GitHub Enterprise: {organization.enterprise}
+          </Label>
         )}
       </div>
       
       <div className="mb-4 space-y-3">
         <div>
-          <div className="text-3xl font-semibold text-gh-blue mb-1">{totalRepos}</div>
-          <div className="text-sm text-gh-text-secondary">Total Repositories</div>
+          <div className="text-3xl font-semibold mb-1" style={{ color: 'var(--fgColor-accent)' }}>{totalRepos}</div>
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Repositories</div>
         </div>
         
         {totalProjects !== undefined && (
           <div>
-            <div className="text-2xl font-semibold text-gh-text-primary mb-1">{totalProjects}</div>
-            <div className="text-sm text-gh-text-secondary">Total Projects</div>
+            <div className="text-2xl font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>{totalProjects}</div>
+            <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Projects</div>
           </div>
         )}
       </div>
 
-      <div className="space-y-2">
-        <div className="text-xs font-semibold text-gh-text-secondary mb-2 uppercase tracking-wide">Status Breakdown</div>
-        <div className="flex flex-wrap gap-2">
+      <div className="mb-3">
+        <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--fgColor-muted)' }}>
+          Status Breakdown
+        </div>
+        <div className="flex flex-wrap gap-1">
           {Object.entries(statusCounts).map(([status, count]) => (
-            <span
-              key={status}
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}
-            >
+            <Label key={status} variant={getStatusVariant(status)} size="small">
               {status.replace(/_/g, ' ')}: {count}
-            </span>
+            </Label>
           ))}
         </div>
       </div>
 
-      <div className="mt-4 text-sm text-gh-blue hover:underline font-medium">
+      <div className="text-sm hover:underline font-medium" style={{ color: 'var(--fgColor-accent)' }}>
         View repositories →
       </div>
     </Link>
@@ -309,6 +338,7 @@ function OrganizationCard({ organization }: { organization: Organization }) {
 }
 
 interface DiscoveryModalProps {
+  isOpen: boolean;
   sourceType: 'github' | 'azuredevops';
   discoveryType: 'organization' | 'enterprise' | 'ado-org' | 'ado-project';
   setDiscoveryType: (type: 'organization' | 'enterprise' | 'ado-org' | 'ado-project') => void;
@@ -327,6 +357,7 @@ interface DiscoveryModalProps {
 }
 
 function DiscoveryModal({ 
+  isOpen,
   sourceType,
   discoveryType,
   setDiscoveryType,
@@ -354,225 +385,220 @@ function DiscoveryModal({
     (discoveryType === 'ado-org' && adoOrganization.trim()) ||
     (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim());
 
+  if (!isOpen) return null;
+  
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 border border-gh-border-default">
-        <div className="flex justify-between items-center p-4 border-b border-gh-border-default">
-          <h2 className="text-base font-semibold text-gh-text-primary">Start Repository Discovery</h2>
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="text-gh-text-secondary hover:text-gh-text-primary transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="p-4">
-          {/* Discovery Type Selector */}
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-gh-text-primary mb-2">
-              Discovery Type
-            </label>
+    <>
+      {/* Backdrop overlay */}
+      <div 
+        className="fixed inset-0 bg-black/50 z-40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <div className="rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+          <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <h2 id="discovery-modal-title" className="text-xl font-semibold">
+              Start Repository Discovery
+            </h2>
+            <button
+              onClick={onClose}
+              className="text-gh-text-secondary hover:text-gh-text-primary"
+              aria-label="Close"
+            >
+              <XIcon size={20} />
+            </button>
+          </div>
+      <form onSubmit={handleSubmit} className="p-4">
+        <FormControl className="mb-3">
+          <FormControl.Label>Discovery Type</FormControl.Label>
+          <div className="flex gap-2">
             {sourceType === 'github' ? (
-              <div className="flex gap-2">
-                <button
+              <>
+                <Button
                   type="button"
+                  variant={discoveryType === 'organization' ? 'primary' : 'default'}
                   onClick={() => setDiscoveryType('organization')}
                   disabled={loading}
-                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    discoveryType === 'organization'
-                      ? 'bg-gh-blue text-white'
-                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  style={{ flex: 1 }}
                 >
                   Organization
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant={discoveryType === 'enterprise' ? 'primary' : 'default'}
                   onClick={() => setDiscoveryType('enterprise')}
                   disabled={loading}
-                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    discoveryType === 'enterprise'
-                      ? 'bg-gh-blue text-white'
-                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  style={{ flex: 1 }}
                 >
                   Enterprise
-                </button>
-              </div>
+                </Button>
+              </>
             ) : (
-              <div className="flex gap-2">
-                <button
+              <>
+                <Button
                   type="button"
+                  variant={discoveryType === 'ado-org' ? 'primary' : 'default'}
                   onClick={() => setDiscoveryType('ado-org')}
                   disabled={loading}
-                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    discoveryType === 'ado-org'
-                      ? 'bg-gh-blue text-white'
-                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  style={{ flex: 1 }}
                 >
                   Organization
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant={discoveryType === 'ado-project' ? 'primary' : 'default'}
                   onClick={() => setDiscoveryType('ado-project')}
                   disabled={loading}
-                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    discoveryType === 'ado-project'
-                      ? 'bg-gh-blue text-white'
-                      : 'bg-gh-neutral-bg text-gh-text-primary hover:bg-gh-canvas-inset border border-gh-border-default'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  style={{ flex: 1 }}
                 >
                   Project
-                </button>
-              </div>
+                </Button>
+              </>
             )}
           </div>
+        </FormControl>
 
-          {/* Organization Input */}
-          {discoveryType === 'organization' && (
-            <div className="mb-4">
-              <label htmlFor="organization" className="block text-sm font-semibold text-gh-text-primary mb-2">
-                Organization Name
-              </label>
-              <input
-                id="organization"
-                type="text"
-                value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
-                placeholder="e.g., your-github-org"
-                disabled={loading}
-                className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
-                autoFocus
-              />
-              <p className="mt-2 text-xs text-gh-text-secondary">
+        {discoveryType === 'organization' && (
+          <FormControl className="mb-3" required>
+            <FormControl.Label>Organization Name</FormControl.Label>
+            <TextInput
+              value={organization}
+              onChange={(e) => setOrganization(e.target.value)}
+              placeholder="e.g., your-github-org"
+              disabled={loading}
+              autoFocus
+              required
+              aria-invalid={error && !organization.trim() ? true : undefined}
+              aria-describedby={error && !organization.trim() ? "org-error" : undefined}
+            />
+            {error && !organization.trim() ? (
+              <FormControl.Validation variant="error" id="org-error">
+                Organization name is required
+              </FormControl.Validation>
+            ) : (
+              <FormControl.Caption>
                 Enter the GitHub organization name to discover all repositories.
-              </p>
-            </div>
-          )}
+              </FormControl.Caption>
+            )}
+          </FormControl>
+        )}
 
-          {/* Enterprise Input */}
-          {discoveryType === 'enterprise' && (
-            <div className="mb-4">
-              <label htmlFor="enterprise" className="block text-sm font-semibold text-gh-text-primary mb-2">
-                Enterprise Slug
-              </label>
-              <input
-                id="enterprise"
-                type="text"
-                value={enterpriseSlug}
-                onChange={(e) => setEnterpriseSlug(e.target.value)}
-                placeholder="e.g., your-enterprise-slug"
-                disabled={loading}
-                className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
-                autoFocus
-              />
-              <p className="mt-2 text-xs text-gh-text-secondary">
+        {discoveryType === 'enterprise' && (
+          <FormControl className="mb-3" required>
+            <FormControl.Label>Enterprise Slug</FormControl.Label>
+            <TextInput
+              value={enterpriseSlug}
+              onChange={(e) => setEnterpriseSlug(e.target.value)}
+              placeholder="e.g., your-enterprise-slug"
+              disabled={loading}
+              autoFocus
+              required
+              aria-invalid={error && !enterpriseSlug.trim() ? true : undefined}
+              aria-describedby={error && !enterpriseSlug.trim() ? "enterprise-error" : undefined}
+            />
+            {error && !enterpriseSlug.trim() ? (
+              <FormControl.Validation variant="error" id="enterprise-error">
+                Enterprise slug is required
+              </FormControl.Validation>
+            ) : (
+              <FormControl.Caption>
                 Enter the GitHub Enterprise slug to discover repositories across all organizations.
-              </p>
-            </div>
-          )}
+              </FormControl.Caption>
+            )}
+          </FormControl>
+        )}
 
-          {/* ADO Organization Input */}
-          {discoveryType === 'ado-org' && (
-            <div className="mb-4">
-              <label htmlFor="ado-organization" className="block text-sm font-semibold text-gh-text-primary mb-2">
-                Azure DevOps Organization
-              </label>
-              <input
-                id="ado-organization"
-                type="text"
+        {discoveryType === 'ado-org' && (
+          <FormControl className="mb-3" required>
+            <FormControl.Label>Azure DevOps Organization</FormControl.Label>
+            <TextInput
+              value={adoOrganization}
+              onChange={(e) => setAdoOrganization(e.target.value)}
+              placeholder="e.g., your-ado-org"
+              disabled={loading}
+              autoFocus
+              required
+              aria-invalid={error && !adoOrganization.trim() ? true : undefined}
+              aria-describedby={error && !adoOrganization.trim() ? "ado-org-error" : undefined}
+            />
+            {error && !adoOrganization.trim() ? (
+              <FormControl.Validation variant="error" id="ado-org-error">
+                Azure DevOps organization name is required
+              </FormControl.Validation>
+            ) : (
+              <FormControl.Caption>
+                Discover all projects and repositories in this Azure DevOps organization.
+              </FormControl.Caption>
+            )}
+          </FormControl>
+        )}
+
+        {discoveryType === 'ado-project' && (
+          <div className="space-y-3 mb-3">
+            <FormControl required>
+              <FormControl.Label>Azure DevOps Organization</FormControl.Label>
+              <TextInput
                 value={adoOrganization}
                 onChange={(e) => setAdoOrganization(e.target.value)}
                 placeholder="e.g., your-ado-org"
                 disabled={loading}
-                className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
-                autoFocus
+                required
+                aria-invalid={error && !adoOrganization.trim() ? true : undefined}
+                aria-describedby={error && !adoOrganization.trim() ? "ado-proj-org-error" : undefined}
               />
-              <p className="mt-2 text-xs text-gh-text-secondary">
-                Discover all projects and repositories in this Azure DevOps organization.
-              </p>
-            </div>
-          )}
-
-          {/* ADO Project Input */}
-          {discoveryType === 'ado-project' && (
-            <div className="space-y-4 mb-4">
-              <div>
-                <label htmlFor="ado-org-project" className="block text-sm font-semibold text-gh-text-primary mb-2">
-                  Azure DevOps Organization
-                </label>
-                <input
-                  id="ado-org-project"
-                  type="text"
-                  value={adoOrganization}
-                  onChange={(e) => setAdoOrganization(e.target.value)}
-                  placeholder="e.g., your-ado-org"
-                  disabled={loading}
-                  className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label htmlFor="ado-project-name" className="block text-sm font-semibold text-gh-text-primary mb-2">
-                  Project Name
-                </label>
-                <input
-                  id="ado-project-name"
-                  type="text"
-                  value={adoProject}
-                  onChange={(e) => setAdoProject(e.target.value)}
-                  placeholder="e.g., your-project"
-                  disabled={loading}
-                  className="w-full px-3 py-1.5 text-sm border border-gh-border-default rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
-                  autoFocus
-                />
-                <p className="mt-2 text-xs text-gh-text-secondary">
-                  Discover repositories in a specific Azure DevOps project.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-4 bg-gh-danger-bg border border-gh-danger text-gh-danger px-3 py-2 rounded-md text-xs">
-              {error}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-3 py-1.5 text-sm border border-gh-border-default text-gh-text-primary rounded-md hover:bg-gh-neutral-bg disabled:bg-gh-neutral-bg disabled:cursor-not-allowed transition-colors font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !isFormValid}
-              className="px-3 py-1.5 text-sm bg-gh-success text-white rounded-md hover:bg-gh-success-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 font-medium"
-            >
-              {loading ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Starting...
-                </>
-              ) : (
-                'Start Discovery'
+              {error && !adoOrganization.trim() && (
+                <FormControl.Validation variant="error" id="ado-proj-org-error">
+                  Azure DevOps organization name is required
+                </FormControl.Validation>
               )}
-            </button>
+            </FormControl>
+            <FormControl required>
+              <FormControl.Label>Project Name</FormControl.Label>
+              <TextInput
+                value={adoProject}
+                onChange={(e) => setAdoProject(e.target.value)}
+                placeholder="e.g., your-project"
+                disabled={loading}
+                autoFocus
+                required
+                aria-invalid={error && !adoProject.trim() ? true : undefined}
+                aria-describedby={error && !adoProject.trim() ? "ado-proj-error" : undefined}
+              />
+              {error && !adoProject.trim() ? (
+                <FormControl.Validation variant="error" id="ado-proj-error">
+                  Project name is required
+                </FormControl.Validation>
+              ) : (
+                <FormControl.Caption>
+                  Discover repositories in a specific Azure DevOps project.
+                </FormControl.Caption>
+              )}
+            </FormControl>
           </div>
-        </form>
+        )}
+
+        <div className="flex justify-end gap-2 pt-4 border-t border-gh-border-default">
+          <Button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={loading || !isFormValid}
+          >
+            {loading ? 'Starting...' : 'Start Discovery'}
+          </Button>
+        </div>
+      </form>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
-

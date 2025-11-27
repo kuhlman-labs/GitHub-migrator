@@ -89,10 +89,16 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal
+	// Wait for interrupt signal or shutdown request from setup
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	select {
+	case <-quit:
+		slog.Info("Received interrupt signal")
+	case <-server.ShutdownChan():
+		slog.Info("Received shutdown request from setup configuration")
+	}
 
 	slog.Info("Shutting down server...")
 

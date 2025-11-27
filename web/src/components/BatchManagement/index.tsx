@@ -1,38 +1,86 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { TextInput, Button, UnderlineNav, ProgressBar, Dialog } from '@primer/react';
+import { Blankslate } from '@primer/react/experimental';
+import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon, SyncIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
+import { formatBatchDuration } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Pagination } from '../common/Pagination';
 import { formatBytes, formatDate } from '../../utils/format';
+import { useToast } from '../../contexts/ToastContext';
 
 type BatchTab = 'active' | 'completed';
 
 export function BatchManagement() {
   const navigate = useNavigate();
   const location = useLocation();
-  const locationState = location.state as { selectedBatchId?: number } | null;
+  const locationState = location.state as { selectedBatchId?: number; refreshData?: boolean } | null;
+  const { showSuccess, showError, showWarning } = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [batchRepositories, setBatchRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<BatchTab>('active');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+  
+  // Ref for dialog focus management
+  const dryRunButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Pagination for repository groups in batch detail
+  const repoPageSize = 20;
+  const [pendingPage, setPendingPage] = useState(1);
+  const [inProgressPage, setInProgressPage] = useState(1);
+  const [failedPage, setFailedPage] = useState(1);
+  const [completePage, setCompletePage] = useState(1);
+  const [dryRunCompletePage, setDryRunCompletePage] = useState(1);
+
+  // Delete confirmation dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<Batch | null>(null);
+
+  // Dry run confirmation dialog state
+  const [showDryRunDialog, setShowDryRunDialog] = useState(false);
+  const [dryRunBatchId, setDryRunBatchId] = useState<number | null>(null);
+  const [dryRunOnlyPending, setDryRunOnlyPending] = useState(false);
+
+  // Start migration confirmation dialog state
+  const [showStartDialog, setShowStartDialog] = useState(false);
+  const [startBatchId, setStartBatchId] = useState<number | null>(null);
+  const [startSkipDryRun, setStartSkipDryRun] = useState(false);
+  const [startDialogMessage, setStartDialogMessage] = useState('');
+
+  // Retry migration confirmation dialog state
+  const [showRetryDialog, setShowRetryDialog] = useState(false);
+  const [retryMessage, setRetryMessage] = useState('');
 
   useEffect(() => {
     loadBatches();
 
     // Poll for batch list updates every 30 seconds to catch scheduled batches starting
     const batchListInterval = setInterval(() => {
-      loadBatches();
+      loadBatches(true); // Pass true to indicate this is a background refresh
     }, 30000);
 
     return () => clearInterval(batchListInterval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Handle immediate refresh when navigating back from create/edit
+  useEffect(() => {
+    if (locationState?.refreshData) {
+      loadBatches();
+      // Clear the state to prevent refresh on subsequent renders
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationState?.refreshData]);
 
   // Handle location state to auto-select batch when navigating from repository detail
   useEffect(() => {
@@ -48,6 +96,13 @@ export function BatchManagement() {
     if (selectedBatch) {
       loadBatchRepositories(selectedBatch.id);
       
+      // Reset pagination when switching batches
+      setPendingPage(1);
+      setInProgressPage(1);
+      setFailedPage(1);
+      setCompletePage(1);
+      setDryRunCompletePage(1);
+      
       // Poll for updates more frequently if batch is in progress or scheduled/ready
       const shouldPoll = 
         selectedBatch.status === 'in_progress' || 
@@ -55,9 +110,10 @@ export function BatchManagement() {
         (selectedBatch.scheduled_at && new Date(selectedBatch.scheduled_at) > new Date());
 
       if (shouldPoll) {
-        const pollInterval = selectedBatch.status === 'in_progress' ? 10000 : 30000;
+        // More aggressive polling for in-progress batches (5s), moderate for ready (15s)
+        const pollInterval = selectedBatch.status === 'in_progress' ? 5000 : 15000;
         const interval = setInterval(() => {
-          loadBatches();
+          loadBatches(true);
           loadBatchRepositories(selectedBatch.id);
         }, pollInterval);
         return () => clearInterval(interval);
@@ -65,8 +121,15 @@ export function BatchManagement() {
     }
   }, [selectedBatch]);
 
-  const loadBatches = async () => {
+  const loadBatches = async (isBackgroundRefresh = false) => {
     try {
+      // Only show refreshing indicator for manual/foreground refreshes
+      if (!isBackgroundRefresh) {
+        if (!loading) {
+          setRefreshing(true);
+        }
+      }
+
       const data = await api.listBatches();
       setBatches(data);
       
@@ -79,72 +142,87 @@ export function BatchManagement() {
       }
     } catch (error) {
       console.error('Failed to load batches:', error);
+      if (!isBackgroundRefresh) {
+        showError('Failed to refresh batches');
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   const loadBatchRepositories = async (batchId: number) => {
     try {
-      const response = await api.listRepositories({ batch_id: batchId });
+      // Fetch all repositories for this batch (without pagination)
+      // Don't set limit/offset to get all repos in the batch
+      const response = await api.listRepositories({ 
+        batch_id: batchId
+      });
       const repos = response.repositories || response as any;
+      console.log(`Loaded ${repos.length} repositories for batch ${batchId}`);
       setBatchRepositories(repos);
     } catch (error) {
       console.error('Failed to load batch repositories:', error);
     }
   };
 
-  const handleDryRunBatch = async (batchId: number, onlyPending = false) => {
-    const actionType = onlyPending ? 'pending repositories' : 'all repositories';
-    if (!confirm(`Run dry run for ${actionType}? This will validate repositories before migration.`)) {
-      return;
-    }
+  const handleDryRunBatch = (batchId: number, onlyPending = false) => {
+    setDryRunBatchId(batchId);
+    setDryRunOnlyPending(onlyPending);
+    setShowDryRunDialog(true);
+  };
+
+  const confirmDryRunBatch = async () => {
+    if (!dryRunBatchId) return;
 
     try {
-      await api.dryRunBatch(batchId, onlyPending);
-      alert('Dry run started successfully. Batch will move to "ready" status when all dry runs complete.');
+      await api.dryRunBatch(dryRunBatchId, dryRunOnlyPending);
+      showSuccess('Dry run started successfully. Batch will move to "ready" status when all dry runs complete.');
       await loadBatches();
-      if (selectedBatch?.id === batchId) {
-        await loadBatchRepositories(batchId);
+      if (selectedBatch?.id === dryRunBatchId) {
+        await loadBatchRepositories(dryRunBatchId);
       }
+      setShowDryRunDialog(false);
     } catch (error: any) {
       console.error('Failed to start dry run:', error);
-      alert(error.response?.data?.error || 'Failed to start dry run');
+      showError(error.response?.data?.error || 'Failed to start dry run');
+      setShowDryRunDialog(false);
     }
   };
 
-  const handleStartBatch = async (batchId: number, skipDryRun = false) => {
+  const handleStartBatch = (batchId: number, skipDryRun = false) => {
     const batch = batches.find(b => b.id === batchId);
     
+    let message = 'Are you sure you want to start migration for this entire batch?';
     if (batch?.status === 'pending' && !skipDryRun) {
-      const shouldSkip = confirm(
-        'This batch has not completed a dry run. Do you want to start migration anyway? ' +
-        '(Recommended: Cancel and run dry run first)'
-      );
-      
-      if (!shouldSkip) {
-        return;
-      }
+      message = 'This batch has not completed a dry run. Do you want to start migration anyway? (Recommended: Cancel and run dry run first)';
     }
+    
+    setStartBatchId(batchId);
+    setStartSkipDryRun(skipDryRun);
+    setStartDialogMessage(message);
+    setShowStartDialog(true);
+  };
 
-    if (!confirm('Are you sure you want to start migration for this entire batch?')) {
-      return;
-    }
+  const confirmStartBatch = async () => {
+    if (!startBatchId) return;
 
     try {
-      await api.startBatch(batchId, skipDryRun);
-      alert('Batch migration started successfully');
+      await api.startBatch(startBatchId, startSkipDryRun);
+      showSuccess('Batch migration started successfully');
       await loadBatches();
-      if (selectedBatch?.id === batchId) {
-        await loadBatchRepositories(batchId);
+      if (selectedBatch?.id === startBatchId) {
+        await loadBatchRepositories(startBatchId);
       }
+      setShowStartDialog(false);
     } catch (error: any) {
       console.error('Failed to start batch:', error);
-      alert(error.response?.data?.error || 'Failed to start batch migration');
+      showError(error.response?.data?.error || 'Failed to start batch migration');
+      setShowStartDialog(false);
     }
   };
 
-  const handleRetryFailed = async () => {
+  const handleRetryFailed = () => {
     if (!selectedBatch) return;
 
     const failedRepos = batchRepositories.filter(
@@ -156,18 +234,25 @@ export function BatchManagement() {
     const dryRunFailedCount = failedRepos.filter(r => r.status === 'dry_run_failed').length;
     const migrationFailedCount = failedRepos.filter(r => r.status === 'migration_failed').length;
     
-    let confirmMessage = '';
+    let message = '';
     if (dryRunFailedCount > 0 && migrationFailedCount > 0) {
-      confirmMessage = `Retry ${dryRunFailedCount} failed dry run(s) and ${migrationFailedCount} failed migration(s)?`;
+      message = `Retry ${dryRunFailedCount} failed dry run(s) and ${migrationFailedCount} failed migration(s)?`;
     } else if (dryRunFailedCount > 0) {
-      confirmMessage = `Re-run dry run for ${dryRunFailedCount} failed repositories?`;
+      message = `Re-run dry run for ${dryRunFailedCount} failed repositories?`;
     } else {
-      confirmMessage = `Retry migration for ${migrationFailedCount} failed repositories?`;
+      message = `Retry migration for ${migrationFailedCount} failed repositories?`;
     }
 
-    if (!confirm(confirmMessage)) {
-      return;
-    }
+    setRetryMessage(message);
+    setShowRetryDialog(true);
+  };
+
+  const confirmRetryFailed = async () => {
+    if (!selectedBatch) return;
+
+    const failedRepos = batchRepositories.filter(
+      (r) => r.status === 'migration_failed' || r.status === 'dry_run_failed'
+    );
 
     try {
       // Retry each repository individually with the correct dry_run flag
@@ -175,12 +260,17 @@ export function BatchManagement() {
         const isDryRunFailed = repo.status === 'dry_run_failed';
         await api.retryRepository(repo.id, isDryRunFailed);
       }
-      alert(`Queued ${failedRepos.length} repositories for retry`);
-      await loadBatchRepositories(selectedBatch.id);
+      showSuccess(`Queued ${failedRepos.length} repositories for retry`);
+      await Promise.all([
+        loadBatches(),
+        loadBatchRepositories(selectedBatch.id)
+      ]);
+      setShowRetryDialog(false);
     } catch (error: any) {
       console.error('Failed to retry batch failures:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to retry failed repositories';
-      alert(errorMessage);
+      showError(errorMessage);
+      setShowRetryDialog(false);
     }
   };
 
@@ -190,14 +280,24 @@ export function BatchManagement() {
     
     try {
       await api.retryRepository(repo.id, isDryRunFailed);
-      alert(`Repository queued for ${actionType} retry`);
+      showSuccess(`Repository queued for ${actionType} retry`);
       if (selectedBatch) {
-        await loadBatchRepositories(selectedBatch.id);
+        await Promise.all([
+          loadBatches(),
+          loadBatchRepositories(selectedBatch.id)
+        ]);
       }
     } catch (error: any) {
       console.error('Failed to retry repository:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to retry repository';
-      alert(errorMessage);
+      showError(errorMessage);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    await loadBatches();
+    if (selectedBatch) {
+      await loadBatchRepositories(selectedBatch.id);
     }
   };
 
@@ -209,31 +309,32 @@ export function BatchManagement() {
     navigate(`/batches/${batch.id}/edit`);
   };
 
-  const handleDeleteBatch = async (batch: Batch) => {
+  const handleDeleteBatch = (batch: Batch) => {
     if (batch.status === 'in_progress') {
-      alert('Cannot delete a batch that is currently in progress.');
+      showWarning('Cannot delete a batch that is currently in progress.');
       return;
     }
 
-    const confirmMessage = batch.repository_count > 0
-      ? `Delete batch "${batch.name}"? This will remove ${batch.repository_count} repositories from the batch, making them available for other batches.`
-      : `Delete batch "${batch.name}"?`;
+    setBatchToDelete(batch);
+    setShowDeleteDialog(true);
+  };
 
-    if (!confirm(confirmMessage)) {
-      return;
-    }
+  const confirmDeleteBatch = async () => {
+    if (!batchToDelete) return;
 
     try {
-      await api.deleteBatch(batch.id);
-      alert('Batch deleted successfully');
+      await api.deleteBatch(batchToDelete.id);
+      showSuccess('Batch deleted successfully');
       // Clear selection if we deleted the selected batch
-      if (selectedBatch?.id === batch.id) {
+      if (selectedBatch?.id === batchToDelete.id) {
         setSelectedBatch(null);
       }
       await loadBatches();
+      setShowDeleteDialog(false);
+      setBatchToDelete(null);
     } catch (error: any) {
       console.error('Failed to delete batch:', error);
-      alert(error.response?.data?.error || 'Failed to delete batch');
+      showError(error.response?.data?.error || 'Failed to delete batch');
     }
   };
 
@@ -243,8 +344,38 @@ export function BatchManagement() {
     const completed = repos.filter((r) => r.status === 'complete').length;
     const total = repos.length;
     const percentage = Math.round((completed / total) * 100);
-    
+
     return { completed, total, percentage };
+  };
+
+  // Calculate dry run duration from repository timestamps
+  const getDryRunDuration = (batch: Batch, repos: Repository[]): string | null => {
+    if (!batch.last_dry_run_at || repos.length === 0) return null;
+
+    // Filter repos that have completed dry runs
+    const reposWithDryRun = repos.filter((r) => r.last_dry_run_at);
+    if (reposWithDryRun.length === 0) return null;
+
+    // Find the earliest and latest dry run timestamps
+    const timestamps = reposWithDryRun.map((r) => new Date(r.last_dry_run_at!).getTime());
+    const earliest = Math.min(...timestamps);
+    const latest = Math.max(...timestamps);
+
+    // Calculate duration in seconds
+    const durationSeconds = (latest - earliest) / 1000;
+
+    // Format duration
+    if (durationSeconds < 60) {
+      return `${Math.round(durationSeconds)}s`;
+    } else if (durationSeconds < 3600) {
+      const minutes = Math.floor(durationSeconds / 60);
+      const seconds = Math.round(durationSeconds % 60);
+      return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+    } else {
+      const hours = Math.floor(durationSeconds / 3600);
+      const minutes = Math.round((durationSeconds % 3600) / 60);
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
   };
 
   const groupReposByStatus = (repos: Repository[]) => {
@@ -292,12 +423,19 @@ export function BatchManagement() {
     return groups;
   };
 
+  // Helper to paginate an array
+  const paginateArray = <T,>(items: T[], page: number, pageSize: number) => {
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return items.slice(startIndex, endIndex);
+  };
+
   const progress = selectedBatch ? getBatchProgress(selectedBatch, batchRepositories) : null;
   const groupedRepos = groupReposByStatus(batchRepositories);
 
   // Filter batches by tab (active vs completed)
-  const activeStatuses = ['pending', 'ready', 'in_progress'];
-  const completedStatuses = ['completed', 'completed_with_errors', 'failed', 'cancelled'];
+  const activeStatuses = ['pending', 'ready', 'in_progress', 'completed_with_errors', 'failed'];
+  const completedStatuses = ['completed', 'cancelled'];
   
   const filteredByTab = batches.filter((batch) =>
     activeTab === 'active'
@@ -326,79 +464,90 @@ export function BatchManagement() {
   }, [activeTab, searchTerm]);
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="relative">
+      <RefreshIndicator isRefreshing={refreshing && !loading} />
+      
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gh-text-primary">Batch Management</h1>
-        <button
-          onClick={handleCreateBatch}
-          className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
-        >
-          Create New Batch
-        </button>
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Batch Management</h1>
+        <div className="flex items-center gap-4">
+          <TextInput
+            leadingVisual={SearchIcon}
+            placeholder="Search batches..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ width: 300 }}
+          />
+          <Button
+            onClick={handleManualRefresh}
+            disabled={refreshing || loading}
+            leadingVisual={SyncIcon}
+            aria-label="Refresh batches"
+            variant="invisible"
+          >
+            Refresh
+          </Button>
+          <Button
+            onClick={handleCreateBatch}
+            variant="primary"
+            leadingVisual={PlusIcon}
+          >
+            Create New Batch
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Batch List */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card">
-            {/* Header with Search */}
-            <div className="p-4 border-b border-gh-border-default">
-              <h2 className="text-base font-semibold text-gh-text-primary mb-3">Batches</h2>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search batches..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-3 py-2 pr-8 text-sm border border-gh-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-gh-blue"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gh-text-secondary hover:text-gh-text-primary"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            </div>
-
+          <div 
+            className="rounded-lg border"
+            style={{
+              backgroundColor: 'var(--bgColor-default)',
+              borderColor: 'var(--borderColor-default)',
+              boxShadow: 'var(--shadow-resting-small)'
+            }}
+          >
             {/* Tabs */}
-            <div className="border-b border-gh-border-default">
-              <div className="flex">
-                <button
-                  onClick={() => setActiveTab('active')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'active'
-                      ? 'border-gh-blue text-gh-blue'
-                      : 'border-transparent text-gh-text-secondary hover:text-gh-text-primary hover:border-gh-border-default'
-                  }`}
-                >
-                  Active ({activeBatchCount})
-                </button>
-                <button
-                  onClick={() => setActiveTab('completed')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'completed'
-                      ? 'border-gh-blue text-gh-blue'
-                      : 'border-transparent text-gh-text-secondary hover:text-gh-text-primary hover:border-gh-border-default'
-                  }`}
-                >
-                  Completed ({completedBatchCount})
-                </button>
-              </div>
-            </div>
+            <UnderlineNav aria-label="Batch tabs">
+              <UnderlineNav.Item
+                aria-current={activeTab === 'active' ? 'page' : undefined}
+                onSelect={() => setActiveTab('active')}
+              >
+                Active ({activeBatchCount})
+              </UnderlineNav.Item>
+              <UnderlineNav.Item
+                aria-current={activeTab === 'completed' ? 'page' : undefined}
+                onSelect={() => setActiveTab('completed')}
+              >
+                Completed ({completedBatchCount})
+              </UnderlineNav.Item>
+            </UnderlineNav>
 
             {/* Batch List */}
             <div className="p-4">
               {loading ? (
                 <LoadingSpinner />
               ) : paginatedBatches.length === 0 ? (
-                <div className="text-center py-8 text-gh-text-secondary">
-                  {searchTerm ? 'No batches match your search' : 'No batches found'}
-                </div>
+                <Blankslate>
+                  <Blankslate.Visual>
+                    <PackageIcon size={48} />
+                  </Blankslate.Visual>
+                  <Blankslate.Heading>
+                    {searchTerm ? 'No batches match your search' : `No ${activeTab} batches`}
+                  </Blankslate.Heading>
+                  <Blankslate.Description>
+                    {searchTerm 
+                      ? 'Try a different search term to find batches.'
+                      : activeTab === 'active'
+                      ? 'Create a batch to group repositories for migration.'
+                      : 'Completed batches will appear here once migrations finish.'}
+                  </Blankslate.Description>
+                  {!searchTerm && activeTab === 'active' && (
+                    <Blankslate.PrimaryAction onClick={() => navigate('/batches/new')}>
+                      Create New Batch
+                    </Blankslate.PrimaryAction>
+                  )}
+                </Blankslate>
               ) : (
                 <>
                   <div className="space-y-2 mb-4">
@@ -429,22 +578,29 @@ export function BatchManagement() {
         {/* Batch Detail */}
         <div className="lg:col-span-2">
           {selectedBatch ? (
-            <div className="bg-white rounded-lg border border-gh-border-default shadow-gh-card p-6">
+            <div 
+              className="rounded-lg border p-6"
+              style={{
+                backgroundColor: 'var(--bgColor-default)',
+                borderColor: 'var(--borderColor-default)',
+                boxShadow: 'var(--shadow-resting-small)'
+              }}
+            >
               <div className="flex justify-between items-start mb-6">
                 <div className="flex-1">
-                  <h2 className="text-xl font-semibold text-gh-text-primary">{selectedBatch.name}</h2>
+                  <h2 className="text-xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>{selectedBatch.name}</h2>
                   {selectedBatch.description && (
-                    <p className="text-gh-text-secondary mt-1">{selectedBatch.description}</p>
+                    <p className="mt-1" style={{ color: 'var(--fgColor-muted)' }}>{selectedBatch.description}</p>
                   )}
                   <div className="flex items-center gap-3 mt-3">
                     <StatusBadge status={selectedBatch.status} />
-                    <span className="text-sm text-gh-text-secondary">
+                    <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                       {selectedBatch.repository_count} repositories
                     </span>
                     {selectedBatch.created_at && (
                       <>
-                        <span className="text-gray-300">•</span>
-                        <span className="text-xs text-gray-400">
+                        <span style={{ color: 'var(--fgColor-muted)' }}>•</span>
+                        <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
                           Created {formatDate(selectedBatch.created_at)}
                         </span>
                       </>
@@ -457,33 +613,32 @@ export function BatchManagement() {
                     {(selectedBatch.destination_org || selectedBatch.exclude_releases || selectedBatch.migration_api !== 'GEI') && (
                       <div>
                         <div className="flex items-center gap-2 mb-2">
-                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          <span className="text-sm font-semibold text-gh-text-primary">Migration Settings</span>
+                          <span style={{ color: 'var(--fgColor-muted)' }}>
+                            <GearIcon size={16} />
+                          </span>
+                          <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration Settings</span>
                         </div>
                         <div className="space-y-2 pl-6">
                           {selectedBatch.destination_org && (
                             <div className="text-sm">
-                              <span className="text-gh-text-secondary">Default Destination:</span>
-                              <div className="font-medium text-blue-700 mt-0.5">{selectedBatch.destination_org}</div>
-                              <div className="text-xs text-gray-500 italic mt-0.5">For repos without specific destination</div>
+                              <span style={{ color: 'var(--fgColor-muted)' }}>Default Destination:</span>
+                              <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-accent)' }}>{selectedBatch.destination_org}</div>
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>For repos without specific destination</div>
                             </div>
                           )}
                           {selectedBatch.migration_api && selectedBatch.migration_api !== 'GEI' && (
                             <div className="text-sm">
-                              <span className="text-gh-text-secondary">Migration API:</span>
-                              <div className="font-medium text-gh-text-primary mt-0.5">
+                              <span style={{ color: 'var(--fgColor-muted)' }}>Migration API:</span>
+                              <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                                 {selectedBatch.migration_api === 'ELM' ? 'ELM (Enterprise Live Migrator)' : selectedBatch.migration_api}
                               </div>
                             </div>
                           )}
                           {selectedBatch.exclude_releases && (
                             <div className="text-sm">
-                              <span className="text-gh-text-secondary">Exclude Releases:</span>
-                              <div className="font-medium text-orange-700 mt-0.5">Yes</div>
-                              <div className="text-xs text-gray-500 italic mt-0.5">Repo settings can override</div>
+                              <span style={{ color: 'var(--fgColor-muted)' }}>Exclude Releases:</span>
+                              <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-attention)' }}>Yes</div>
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>Repo settings can override</div>
                             </div>
                           )}
                         </div>
@@ -493,37 +648,50 @@ export function BatchManagement() {
                     {/* Right Column: Schedule & Timestamps */}
                     <div>
                       <div className="flex items-center gap-2 mb-2">
-                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="text-sm font-semibold text-gh-text-primary">Schedule & Timeline</span>
+                        <span style={{ color: 'var(--fgColor-muted)' }}>
+                          <ClockIcon size={16} />
+                        </span>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Schedule & Timeline</span>
                       </div>
                       <div className="space-y-2 pl-6">
                         {selectedBatch.scheduled_at && (
                           <div className="text-sm">
-                            <span className="text-gh-text-secondary">Scheduled:</span>
-                            <div className="font-medium text-blue-900 mt-0.5">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Scheduled:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.scheduled_at)}
                             </div>
                             {new Date(selectedBatch.scheduled_at) > new Date() && (
-                              <div className="text-xs text-blue-600 italic mt-0.5">Auto-start when ready</div>
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-accent)' }}>Auto-start when ready</div>
                             )}
                           </div>
                         )}
                         {selectedBatch.last_dry_run_at && (
                           <div className="text-sm">
-                            <span className="text-gh-text-secondary">Last Dry Run:</span>
-                            <div className="font-medium text-gh-text-primary mt-0.5">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Last Dry Run:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.last_dry_run_at)}
                             </div>
+                            {(() => {
+                              const duration = getDryRunDuration(selectedBatch, batchRepositories);
+                              return duration ? (
+                                <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+                                  Completed in {duration}
+                                </div>
+                              ) : null;
+                            })()}
                           </div>
                         )}
                         {selectedBatch.last_migration_attempt_at && (
                           <div className="text-sm">
-                            <span className="text-gh-text-secondary">Last Migration:</span>
-                            <div className="font-medium text-gh-text-primary mt-0.5">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Last Migration:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
                               {formatDate(selectedBatch.last_migration_attempt_at)}
                             </div>
+                            {selectedBatch.started_at && selectedBatch.completed_at && (
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+                                Completed in {formatBatchDuration(selectedBatch)}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -534,34 +702,46 @@ export function BatchManagement() {
                 <div className="flex gap-2">
                   {(selectedBatch.status === 'pending' || selectedBatch.status === 'ready') && (
                     <>
-                      <button
+                      <Button
                         onClick={() => handleEditBatch(selectedBatch)}
-                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        variant="default"
                       >
                         Edit Batch
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={() => handleDeleteBatch(selectedBatch)}
-                        className="px-4 py-1.5 border border-red-600 text-red-600 rounded-md text-sm font-medium hover:bg-red-50"
+                        variant="danger"
                       >
                         Delete
-                      </button>
+                      </Button>
                     </>
                   )}
                   
                   {selectedBatch.status === 'pending' && (
                     <>
                       {groupedRepos.needs_dry_run.length > 0 && (
-                        <button
+                        <Button
+                          ref={dryRunButtonRef}
                           onClick={() => handleDryRunBatch(selectedBatch.id, true)}
-                          className="px-4 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                          variant="primary"
                         >
                           Run Dry Run ({groupedRepos.needs_dry_run.length} repos)
-                        </button>
+                        </Button>
                       )}
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id, true)}
-                        className="px-4 py-1.5 border border-gh-border-default text-gh-text-primary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        className="px-4 py-1.5 rounded-md text-sm font-medium border-0 transition-all cursor-pointer"
+                        style={{ 
+                          backgroundColor: '#2da44e',
+                          color: '#ffffff',
+                          fontWeight: 500
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2c974b';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2da44e';
+                        }}
                       >
                         Skip & Migrate
                       </button>
@@ -572,26 +752,37 @@ export function BatchManagement() {
                     <>
                       <button
                         onClick={() => handleStartBatch(selectedBatch.id)}
-                        className="px-4 py-1.5 bg-gh-success text-white rounded-md text-sm font-medium hover:bg-gh-success-hover"
+                        className="px-4 py-1.5 rounded-md text-sm font-medium border-0 transition-all cursor-pointer"
+                        style={{ 
+                          backgroundColor: '#2da44e',
+                          color: '#ffffff',
+                          fontWeight: 500
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2c974b';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2da44e';
+                        }}
                       >
                         Start Migration
                       </button>
                       {groupedRepos.needs_dry_run.length > 0 ? (
-                        <button
+                        <Button
                           onClick={() => handleDryRunBatch(selectedBatch.id, true)}
-                          className="px-3 py-1.5 border border-blue-600 text-blue-600 rounded-md text-sm font-medium hover:bg-blue-50"
+                          variant="primary"
                           title="Run dry run only for repositories that need it"
                         >
                           Dry Run Pending ({groupedRepos.needs_dry_run.length})
-                        </button>
+                        </Button>
                       ) : null}
-                      <button
+                      <Button
                         onClick={() => handleDryRunBatch(selectedBatch.id, false)}
-                        className="px-3 py-1.5 border border-gh-border-default text-gh-text-secondary rounded-md text-sm font-medium hover:bg-gh-neutral-bg"
+                        variant="primary"
                         title="Re-run dry run for all repositories"
                       >
                         Re-run All Dry Runs
-                      </button>
+                      </Button>
                     </>
                   )}
                   
@@ -609,12 +800,13 @@ export function BatchManagement() {
                     }
                     
                     return (
-                      <button
+                      <Button
                         onClick={handleRetryFailed}
-                        className="px-4 py-1.5 bg-gh-warning text-white rounded-md text-sm font-medium hover:bg-gh-warning-emphasis whitespace-nowrap"
+                        variant="danger"
+                        style={{ whiteSpace: 'nowrap' }}
                       >
                         {buttonText}
-                      </button>
+                      </Button>
                     );
                   })()}
                 </div>
@@ -622,19 +814,26 @@ export function BatchManagement() {
 
               {/* Progress Bar */}
               {progress && progress.total > 0 && (
-                <div className="mb-6 bg-gh-neutral-bg p-4 rounded-lg">
-                  <div className="flex justify-between text-sm text-gh-text-secondary mb-2">
-                    <span>Progress</span>
+                <div 
+                  className="mb-6 p-4 rounded-lg"
+                  style={{ backgroundColor: 'var(--bgColor-muted)' }}
+                >
+                  <div className="flex justify-between text-sm mb-2" style={{ color: 'var(--fgColor-muted)' }}>
+                    <span className="font-medium" style={{ color: 'var(--fgColor-default)' }}>Progress</span>
                     <span>
-                      {progress.completed} / {progress.total} ({progress.percentage}%)
+                      <span className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                        {progress.completed}
+                      </span>
+                      {' '}/{' '}
+                      {progress.total}
+                      {' '}({progress.percentage}%)
                     </span>
                   </div>
-                  <div className="w-full bg-gh-border-default rounded-full h-2">
-                    <div
-                      className="bg-gh-success h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${progress.percentage}%` }}
-                    />
-                  </div>
+                  <ProgressBar 
+                    progress={progress.percentage} 
+                    aria-label={`${progress.completed} of ${progress.total} repositories completed`}
+                    bg="success.emphasis"
+                  />
                 </div>
               )}
 
@@ -647,7 +846,7 @@ export function BatchManagement() {
                       Failed ({groupedRepos.failed.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.failed.map((repo) => (
+                      {paginateArray(groupedRepos.failed, failedPage, repoPageSize).map((repo) => (
                         <RepositoryItem
                           key={repo.id}
                           repository={repo}
@@ -658,17 +857,27 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.failed.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={failedPage}
+                          totalItems={groupedRepos.failed.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setFailedPage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* In Progress Repositories */}
                 {groupedRepos.in_progress.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-blue-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-accent)' }}>
                       In Progress ({groupedRepos.in_progress.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.in_progress.map((repo) => (
+                      {paginateArray(groupedRepos.in_progress, inProgressPage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -678,17 +887,27 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.in_progress.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={inProgressPage}
+                          totalItems={groupedRepos.in_progress.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setInProgressPage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Completed Repositories */}
                 {groupedRepos.complete.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-green-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-success)' }}>
                       Completed ({groupedRepos.complete.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.complete.map((repo) => (
+                      {paginateArray(groupedRepos.complete, completePage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -698,17 +917,27 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.complete.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={completePage}
+                          totalItems={groupedRepos.complete.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setCompletePage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Dry Run Complete (Ready for Migration) */}
                 {groupedRepos.dry_run_complete.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-blue-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-accent)' }}>
                       Ready for Migration ({groupedRepos.dry_run_complete.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.dry_run_complete.map((repo) => (
+                      {paginateArray(groupedRepos.dry_run_complete, dryRunCompletePage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -718,17 +947,27 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.dry_run_complete.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={dryRunCompletePage}
+                          totalItems={groupedRepos.dry_run_complete.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setDryRunCompletePage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Pending Repositories */}
                 {groupedRepos.pending.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-medium text-gray-800 mb-3">
+                    <h3 className="text-lg font-medium mb-3" style={{ color: 'var(--fgColor-default)' }}>
                       Pending ({groupedRepos.pending.length})
                     </h3>
                     <div className="space-y-2">
-                      {groupedRepos.pending.map((repo) => (
+                      {paginateArray(groupedRepos.pending, pendingPage, repoPageSize).map((repo) => (
                         <RepositoryItem 
                           key={repo.id} 
                           repository={repo}
@@ -738,6 +977,16 @@ export function BatchManagement() {
                         />
                       ))}
                     </div>
+                    {groupedRepos.pending.length > repoPageSize && (
+                      <div className="mt-4">
+                        <Pagination
+                          currentPage={pendingPage}
+                          totalItems={groupedRepos.pending.length}
+                          pageSize={repoPageSize}
+                          onPageChange={setPendingPage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -749,12 +998,182 @@ export function BatchManagement() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow-sm p-6 text-center text-gray-500">
+            <div className="rounded-lg shadow-sm p-6 text-center" style={{ backgroundColor: 'var(--bgColor-default)', color: 'var(--fgColor-muted)' }}>
               Select a batch to view details
             </div>
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteDialog && batchToDelete && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={() => {
+              setShowDeleteDialog(false);
+              setBatchToDelete(null);
+            }}
+          />
+          
+          {/* Dialog */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div 
+              className="rounded-lg shadow-xl max-w-md w-full"
+              style={{ backgroundColor: 'var(--bgColor-default)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 border-b border-gh-border-default">
+                <h3 className="text-base font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                  Delete Batch
+                </h3>
+              </div>
+              
+              <div className="p-4">
+                <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
+                  {batchToDelete.repository_count > 0 ? (
+                    <>
+                      Are you sure you want to delete batch <strong>"{batchToDelete.name}"</strong>?
+                      <br /><br />
+                      This will remove <strong>{batchToDelete.repository_count} {batchToDelete.repository_count === 1 ? 'repository' : 'repositories'}</strong> from the batch, making them available for other batches.
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to delete batch <strong>"{batchToDelete.name}"</strong>?
+                    </>
+                  )}
+                </p>
+                <p className="text-sm text-gh-text-muted">
+                  This action cannot be undone.
+                </p>
+              </div>
+              
+              <div className="px-4 py-3 border-t border-gh-border-default flex justify-end gap-2">
+                <Button
+                  onClick={() => {
+                    setShowDeleteDialog(false);
+                    setBatchToDelete(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmDeleteBatch}
+                  variant="danger"
+                >
+                  Delete Batch
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Dry Run Confirmation Dialog */}
+      {showDryRunDialog && (
+        <Dialog
+          returnFocusRef={dryRunButtonRef as React.RefObject<HTMLElement>}
+          onClose={() => setShowDryRunDialog(false)}
+          aria-labelledby="dry-run-dialog-header"
+        >
+          <Dialog.Header id="dry-run-dialog-header">
+            Run Dry Run
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              {dryRunOnlyPending ? (
+                <>
+                  Run dry run for <strong>pending repositories</strong>?
+                </>
+              ) : (
+                <>
+                  Run dry run for <strong>all repositories</strong>?
+                </>
+              )}
+            </p>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)' }}>
+              This will validate repositories before migration.
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowDryRunDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmDryRunBatch}>
+              OK
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Start Migration Confirmation Dialog */}
+      {showStartDialog && (
+        <Dialog
+          onClose={() => setShowStartDialog(false)}
+          aria-labelledby="start-dialog-header"
+        >
+          <Dialog.Header id="start-dialog-header">
+            Start Migration
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              {startDialogMessage}
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowStartDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmStartBatch}>
+              Start Migration
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Retry Confirmation Dialog */}
+      {showRetryDialog && (
+        <Dialog
+          onClose={() => setShowRetryDialog(false)}
+          aria-labelledby="retry-dialog-header"
+        >
+          <Dialog.Header id="retry-dialog-header">
+            Retry Failed Repositories
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
+              {retryMessage}
+            </p>
+          </div>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button onClick={() => setShowRetryDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmRetryFailed}>
+              Retry
+            </Button>
+          </div>
+        </Dialog>
+      )}
 
     </div>
   );
@@ -770,23 +1189,24 @@ interface BatchCardProps {
 function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
   return (
     <div
-      className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-        isSelected
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-200 hover:border-gray-300'
-      }`}
+      className="p-4 rounded-lg border-2 cursor-pointer transition-all"
+      style={isSelected
+        ? { borderColor: 'var(--accent-emphasis)', backgroundColor: 'var(--accent-subtle)' }
+        : { borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }
+      }
       onClick={onClick}
     >
       <div className="flex justify-between items-start">
         <div className="flex-1">
-          <h3 className="font-medium text-gray-900">{batch.name}</h3>
+          <h3 className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{batch.name}</h3>
           <div className="flex gap-2 mt-2">
-            <StatusBadge status={batch.status} size="sm" />
-            <span className="text-xs text-gray-600">{batch.repository_count} repos</span>
+            <StatusBadge status={batch.status} size="small" />
+            <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>{batch.repository_count} repos</span>
           </div>
           {batch.scheduled_at && (
-            <div className="mt-1.5 text-xs text-blue-700 flex items-center gap-1">
-              🗓️ {formatDate(batch.scheduled_at)}
+            <div className="mt-1.5 text-xs flex items-center gap-1" style={{ color: 'var(--fgColor-accent)' }}>
+              <CalendarIcon size={12} />
+              {formatDate(batch.scheduled_at)}
             </div>
           )}
         </div>
@@ -796,7 +1216,18 @@ function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProps) {
               e.stopPropagation();
               onStart();
             }}
-            className="text-sm px-3 py-1 bg-gh-success text-white rounded hover:bg-gh-success-hover"
+            className="text-sm px-3 py-1 rounded border-0 transition-all cursor-pointer"
+            style={{ 
+              backgroundColor: '#2da44e',
+              color: '#ffffff',
+              fontWeight: 500
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#2c974b';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#2da44e';
+            }}
           >
             Start
           </button>
@@ -825,16 +1256,31 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
   
   // Determine destination with batch-level fallback
   let destination = repository.destination_full_name || repository.full_name;
-  let destinationLabel = 'Destination';
-  let isCustomDestination = repository.destination_full_name && repository.destination_full_name !== repository.full_name;
+  let isCustomDestination = false;
   let isBatchDestination = false;
+  let isDefaultDestination = false;
   
-  // If repo doesn't have custom destination but batch has destination_org, show that
-  if (!repository.destination_full_name && batch?.destination_org) {
+  // Calculate what the batch default destination would be for this repository
     const sourceRepoName = repository.full_name.split('/')[1];
-    destination = `${batch.destination_org}/${sourceRepoName}`;
+  const batchDefaultDestination = batch?.destination_org ? `${batch.destination_org}/${sourceRepoName}` : null;
+  
+  // Check if repo has a custom destination
+  if (repository.destination_full_name && repository.destination_full_name !== repository.full_name) {
+    // Check if the destination matches the batch default
+    if (batchDefaultDestination && repository.destination_full_name === batchDefaultDestination) {
+      // Destination matches batch default - show as batch destination
     isBatchDestination = true;
-    destinationLabel = 'Destination (from batch)';
+    } else {
+      // Destination is truly custom (different from both source and batch default)
+      isCustomDestination = true;
+    }
+  } else if (!repository.destination_full_name && batchDefaultDestination) {
+    // If repo doesn't have custom destination but batch has destination_org, show that
+    destination = batchDefaultDestination;
+    isBatchDestination = true;
+  } else if (!repository.destination_full_name) {
+    // No custom destination and no batch destination - using default (same as source)
+    isDefaultDestination = true;
   }
 
   return (
@@ -844,40 +1290,74 @@ function RepositoryItem({ repository, onRetry, batchId, batchName, batch }: Repo
         state={{ fromBatch: true, batchId, batchName }}
         className="flex-1 min-w-0"
       >
-        <div className="font-semibold text-gh-text-primary group-hover:text-gh-blue transition-colors">
+        <div className="font-semibold transition-colors" style={{ color: 'var(--fgColor-default)' }}>
           {repository.full_name}
         </div>
-        <div className="text-sm text-gh-text-secondary mt-1 space-y-0.5">
+        <div className="text-sm mt-1 space-y-0.5" style={{ color: 'var(--fgColor-muted)' }}>
           <div>
             {formatBytes(repository.total_size || 0)} • {repository.branch_count} branches
           </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs">→ {destinationLabel}:</span>
-            <span className={`text-xs font-medium ${isCustomDestination ? 'text-blue-600' : isBatchDestination ? 'text-purple-600' : 'text-gray-600'}`}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs">→ Destination:</span>
+            <span 
+              className="text-xs font-medium"
+              style={{ color: isCustomDestination ? 'var(--fgColor-accent)' : isBatchDestination ? 'var(--fgColor-attention)' : 'var(--fgColor-muted)' }}
+            >
               {destination}
             </span>
             {isCustomDestination && (
-              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">custom</span>
+              <span 
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide"
+                style={{ 
+                  backgroundColor: '#0969da', 
+                  color: '#ffffff',
+                  border: '1px solid #0969da'
+                }}
+              >
+                Custom
+              </span>
             )}
             {isBatchDestination && (
-              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">batch default</span>
+              <span 
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide"
+                style={{ 
+                  backgroundColor: '#FB8500', 
+                  color: '#ffffff',
+                  border: '1px solid #FB8500'
+                }}
+              >
+                Batch Default
+              </span>
+            )}
+            {isDefaultDestination && (
+              <span 
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide"
+                style={{ 
+                  backgroundColor: '#6e7781', 
+                  color: '#ffffff',
+                  border: '1px solid #6e7781'
+                }}
+              >
+                Default
+              </span>
             )}
           </div>
         </div>
       </Link>
       <div className="flex items-center gap-3">
-        <StatusBadge status={repository.status} size="sm" />
+        <StatusBadge status={repository.status} size="small" />
         {isFailed && onRetry && (
-          <button
+          <Button
             onClick={(e) => {
               e.preventDefault();
               onRetry();
             }}
-            className="text-sm px-3 py-1.5 bg-gh-warning text-white rounded-md font-medium hover:bg-gh-warning-emphasis whitespace-nowrap"
+            variant="danger"
+            size="small"
             title={isDryRunFailed ? 'Re-run the dry run for this repository' : 'Retry the production migration'}
           >
             {isDryRunFailed ? 'Re-run Dry Run' : 'Retry Migration'}
-          </button>
+          </Button>
         )}
       </div>
     </div>

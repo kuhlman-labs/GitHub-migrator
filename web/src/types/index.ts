@@ -215,6 +215,36 @@ export interface Batch {
   exclude_releases?: boolean;
 }
 
+// Helper function to calculate batch duration in seconds
+export function getBatchDuration(batch: Batch): number | null {
+  if (!batch.started_at || !batch.completed_at) {
+    return null;
+  }
+  const startTime = new Date(batch.started_at).getTime();
+  const endTime = new Date(batch.completed_at).getTime();
+  return (endTime - startTime) / 1000; // Duration in seconds
+}
+
+// Helper function to format batch duration as human-readable string
+export function formatBatchDuration(batch: Batch): string | null {
+  const durationSeconds = getBatchDuration(batch);
+  if (durationSeconds === null) {
+    return null;
+  }
+
+  const hours = Math.floor(durationSeconds / 3600);
+  const minutes = Math.floor((durationSeconds % 3600) / 60);
+  const seconds = Math.floor(durationSeconds % 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
+
 export interface Organization {
   organization: string;
   total_repos: number;
@@ -339,6 +369,7 @@ export interface Analytics {
   pending_count: number;
   success_rate?: number;
   average_migration_time?: number;
+  median_migration_time?: number;
   status_breakdown: Record<string, number>;
   complexity_distribution?: ComplexityDistribution[];
   migration_velocity?: MigrationVelocity;
@@ -545,5 +576,97 @@ export interface DependencySummary {
 export interface DependenciesResponse {
   dependencies: RepositoryDependency[];
   summary: DependencySummary;
+}
+
+// Setup wizard types
+export interface SetupStatus {
+  setup_completed: boolean;
+  completed_at?: string;
+  current_config?: MaskedConfigData;
+}
+
+export interface MaskedConfigData {
+  source_type: string;
+  source_base_url: string;
+  source_token: string; // masked
+  dest_base_url: string;
+  dest_token: string; // masked
+  database_type: string;
+  database_dsn: string; // masked
+  server_port: number;
+}
+
+export interface SetupConfig {
+  source: {
+    type: 'github' | 'azuredevops';
+    base_url: string;
+    token: string;
+    organization?: string; // For Azure DevOps
+    // GitHub App for enhanced discovery (optional, only when source is GitHub)
+    app_id?: number;
+    app_private_key?: string;
+    app_installation_id?: number;
+  };
+  destination: {
+    base_url: string;
+    token: string;
+    // GitHub App for enhanced discovery (optional, always available since destination is GitHub)
+    app_id?: number;
+    app_private_key?: string;
+    app_installation_id?: number;
+  };
+  database: {
+    type: 'sqlite' | 'postgres' | 'sqlserver';
+    dsn: string;
+  };
+  server: {
+    port: number;
+  };
+  migration: {
+    workers: number;
+    poll_interval_seconds: number;
+    dest_repo_exists_action: 'fail' | 'skip' | 'delete';
+    visibility_handling: {
+      public_repos: 'public' | 'internal' | 'private';
+      internal_repos: 'internal' | 'private';
+    };
+  };
+  logging: {
+    level: 'debug' | 'info' | 'warn' | 'error';
+    format: 'json' | 'text';
+    output_file: string;
+  };
+  auth?: {
+    enabled: boolean;
+    // GitHub OAuth (only when source or destination is GitHub)
+    github_oauth_client_id?: string;
+    github_oauth_client_secret?: string;
+    github_oauth_base_url?: string;
+    // Azure AD (only when source is Azure DevOps)
+    azure_ad_tenant_id?: string;
+    azure_ad_client_id?: string;
+    azure_ad_client_secret?: string;
+    // Common auth settings
+    callback_url?: string;
+    frontend_url?: string;
+    session_secret?: string;
+    session_duration_hours?: number;
+    // Authorization rules (optional)
+    authorization_rules?: {
+      require_org_membership?: string[]; // List of org names
+      require_team_membership?: string[]; // List of "org/team-slug"
+      require_enterprise_admin?: boolean;
+      require_enterprise_membership?: boolean;
+      enterprise_slug?: string;
+      privileged_teams?: string[]; // List of "org/team-slug"
+    };
+  };
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
+  warnings?: string[];
+  details?: Record<string, any>;
 }
 

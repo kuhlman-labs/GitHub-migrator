@@ -178,7 +178,7 @@ func (d *Database) Migrate() error {
 func (d *Database) getDialectFolder() string {
 	switch d.cfg.Type {
 	case DBTypePostgres, DBTypePostgreSQL:
-		return "postgres"
+		return DBTypePostgres
 	case DBTypeSQLServer, DBTypeMSSQL:
 		return "sqlserver"
 	case DBTypeSQLite, "sqlite3":

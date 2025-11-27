@@ -23,7 +23,7 @@ func NewDialectDialer(cfg config.DatabaseConfig) (DialectDialer, error) {
 	switch cfg.Type {
 	case "sqlite":
 		return &SQLiteDialect{cfg: cfg}, nil
-	case "postgres", "postgresql":
+	case DBTypePostgres, DBTypePostgreSQL:
 		return &PostgresDialect{cfg: cfg}, nil
 	case "sqlserver", "mssql":
 		return &SQLServerDialect{cfg: cfg}, nil

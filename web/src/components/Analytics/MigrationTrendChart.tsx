@@ -8,10 +8,10 @@ interface MigrationTrendChartProps {
 export function MigrationTrendChart({ data }: MigrationTrendChartProps) {
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Migration Trend (Last 30 Days)</h2>
-        <p className="text-sm text-gray-600 mb-4">Daily migration activity showing velocity trends and patterns to forecast completion timelines.</p>
-        <div className="h-[300px] flex items-center justify-center text-gray-500">
+      <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+        <h2 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Migration Trend (Last 30 Days)</h2>
+        <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>Daily migration activity showing velocity trends and patterns to forecast completion timelines.</p>
+        <div className="h-[300px] flex items-center justify-center" style={{ color: 'var(--fgColor-muted)' }}>
           No migration data available for the selected period
         </div>
       </div>
@@ -25,9 +25,9 @@ export function MigrationTrendChart({ data }: MigrationTrendChartProps) {
   }));
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6">
-      <h2 className="text-lg font-medium text-gray-900 mb-4">Migration Trend (Last 30 Days)</h2>
-      <p className="text-sm text-gray-600 mb-4">Daily migration activity showing velocity trends and patterns to forecast completion timelines.</p>
+    <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+      <h2 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Migration Trend (Last 30 Days)</h2>
+      <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>Daily migration activity showing velocity trends and patterns to forecast completion timelines.</p>
       <ResponsiveContainer width="100%" height={300}>
         <AreaChart data={chartData}>
           <defs>
@@ -48,6 +48,15 @@ export function MigrationTrendChart({ data }: MigrationTrendChartProps) {
           <Tooltip 
             labelFormatter={(label) => `Date: ${label}`}
             formatter={(value: number) => [`${value} repos`, 'Migrations']}
+            contentStyle={{
+              backgroundColor: 'rgba(27, 31, 36, 0.95)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              color: '#ffffff',
+              padding: '8px 12px'
+            }}
+            labelStyle={{ color: '#ffffff', fontWeight: 600 }}
+            itemStyle={{ color: '#ffffff' }}
           />
           <Area 
             type="monotone" 
