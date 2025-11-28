@@ -179,6 +179,25 @@ func (h *SetupHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If setup is not marked complete in DB, check if config exists via environment variables
+	// This handles container deployments where config is provided via env vars
+	if !status.SetupCompleted && h.cfg != nil && h.hasRequiredConfig() {
+		h.logger.Info("Configuration detected via environment variables, marking setup as complete")
+		if err := h.db.MarkSetupComplete(); err != nil {
+			h.logger.Error("Failed to mark setup complete", "error", err)
+			// Don't fail the request, just log the error
+		} else {
+			// Re-fetch status to get the updated values
+			updatedStatus, err := h.db.GetSetupStatus()
+			if err != nil {
+				h.logger.Error("Failed to get updated setup status", "error", err)
+				// Continue with original status if re-fetch fails
+			} else {
+				status = updatedStatus
+			}
+		}
+	}
+
 	response := SetupStatusResponse{
 		SetupCompleted: status.SetupCompleted,
 		CompletedAt:    status.CompletedAt,
@@ -717,6 +736,26 @@ func (h *SetupHandler) writeEnvFile(content string) error {
 }
 
 // Helper functions
+
+// hasRequiredConfig checks if all critical configuration exists
+// This is used to detect container deployments with env vars
+func (h *SetupHandler) hasRequiredConfig() bool {
+	if h.cfg == nil {
+		return false
+	}
+
+	// Check critical source configuration
+	// Source.Type is required per ApplySetup validation (line 279)
+	hasSource := h.cfg.Source.Type != "" && h.cfg.Source.Token != "" && h.cfg.Source.BaseURL != ""
+
+	// Check critical destination configuration
+	hasDestination := h.cfg.Destination.Token != "" && h.cfg.Destination.BaseURL != ""
+
+	// Check critical database configuration
+	hasDatabase := h.cfg.Database.DSN != ""
+
+	return hasSource && hasDestination && hasDatabase
+}
 
 func (h *SetupHandler) sendJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
