@@ -18,7 +18,7 @@
     "@primer/react": "^38.2.0",
     "@primer/react-brand": "^0.59.2",
     "@tanstack/react-query": "^5.90.10",
-    "@tanstack/react-query-devtools": "^5.90.2",
+    "@tanstack/react-query-devtools": "^5.91.1",
     "axios": "^1.13.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
