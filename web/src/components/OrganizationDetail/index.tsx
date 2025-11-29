@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link as RouterLink } from 'react-router-dom';
-import { TextInput, Button, Token, Checkbox, FormControl, Link } from '@primer/react';
-import { SearchIcon, FilterIcon } from '@primer/octicons-react';
+import { useParams, Link as RouterLink, useSearchParams } from 'react-router-dom';
+import { Button, Token, Checkbox, FormControl, Link } from '@primer/react';
+import { FilterIcon } from '@primer/octicons-react';
 import type { Repository, ADOProject, Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -75,8 +75,9 @@ const STATUS_MAP: Record<string, string[]> = {
 
 export function OrganizationDetail() {
   const { orgName, projectName } = useParams<{ orgName: string; projectName?: string }>();
+  const [searchParams] = useSearchParams();
   const [filter, setFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const searchTerm = searchParams.get('search') || '';
   const [selectedFeatures, setSelectedFeatures] = useState<Set<keyof Repository>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -84,7 +85,7 @@ export function OrganizationDetail() {
   const [isADOOrg, setIsADOOrg] = useState(false);
   const [adoProjects, setAdoProjects] = useState<ADOProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
-  const [projectSearchTerm, setProjectSearchTerm] = useState('');
+  const projectSearchTerm = searchParams.get('search') || ''; // Projects also use the same search param
   const [projectCurrentPage, setProjectCurrentPage] = useState(1);
   const projectPageSize = 12;
 
@@ -179,7 +180,7 @@ export function OrganizationDetail() {
   const clearAllFilters = () => {
     setSelectedFeatures(new Set());
     setFilter('all');
-    setSearchTerm('');
+    // Search is now handled by global header
   };
 
   // Calculate dynamic feature counts based on currently filtered repos
@@ -316,27 +317,9 @@ export function OrganizationDetail() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>{projectName || orgName || ''}</h1>
         
-        {/* Search for projects when viewing ADO org */}
-        {isADOOrg && (
-          <TextInput
-            leadingVisual={SearchIcon}
-            placeholder="Search projects..."
-            value={projectSearchTerm}
-            onChange={(e) => setProjectSearchTerm(e.target.value)}
-            style={{ width: 300 }}
-          />
-        )}
-        
-        {/* Only show search and filters when NOT viewing an ADO org (i.e., viewing repos) */}
+        {/* Only show filters when NOT viewing an ADO org (i.e., viewing repos) */}
         {!isADOOrg && (
           <div className="flex gap-3">
-            <TextInput
-              leadingVisual={SearchIcon}
-              placeholder="Search repositories..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ width: 300 }}
-            />
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}

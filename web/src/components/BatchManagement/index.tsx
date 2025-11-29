@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { TextInput, Button, UnderlineNav, ProgressBar, Dialog } from '@primer/react';
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Button, UnderlineNav, ProgressBar, Dialog } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { SearchIcon, PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon, SyncIcon } from '@primer/octicons-react';
+import { PlusIcon, CalendarIcon, GearIcon, ClockIcon, PackageIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Batch, Repository } from '../../types';
 import { formatBatchDuration } from '../../types';
@@ -20,13 +20,14 @@ export function BatchManagement() {
   const location = useLocation();
   const locationState = location.state as { selectedBatchId?: number; refreshData?: boolean } | null;
   const { showSuccess, showError, showWarning } = useToast();
+  const [searchParams] = useSearchParams();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [batchRepositories, setBatchRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<BatchTab>('active');
-  const [searchTerm, setSearchTerm] = useState('');
+  const searchTerm = searchParams.get('search') || '';
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
   
@@ -294,13 +295,6 @@ export function BatchManagement() {
     }
   };
 
-  const handleManualRefresh = async () => {
-    await loadBatches();
-    if (selectedBatch) {
-      await loadBatchRepositories(selectedBatch.id);
-    }
-  };
-
   const handleCreateBatch = () => {
     navigate('/batches/new');
   };
@@ -470,22 +464,6 @@ export function BatchManagement() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Batch Management</h1>
         <div className="flex items-center gap-4">
-          <TextInput
-            leadingVisual={SearchIcon}
-            placeholder="Search batches..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: 300 }}
-          />
-          <Button
-            onClick={handleManualRefresh}
-            disabled={refreshing || loading}
-            leadingVisual={SyncIcon}
-            aria-label="Refresh batches"
-            variant="invisible"
-          >
-            Refresh
-          </Button>
           <Button
             onClick={handleCreateBatch}
             variant="primary"

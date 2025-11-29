@@ -32,6 +32,13 @@ const (
 
 	sourceTypeGitHub      = "github"
 	sourceTypeAzureDevOps = "azuredevops"
+
+	// Complexity categories
+	categoryComplex     = "complex"
+	categoryVeryComplex = "very_complex"
+
+	// Size categories
+	categorySizeVeryLarge = "very_large"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -2820,14 +2827,18 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	// Calculate risk metrics
 	highComplexityPending := 0
+	veryComplexCount := 0
 	veryLargePending := 0
 	for _, dist := range complexityDistribution {
-		if dist.Category == "complex" || dist.Category == "very_complex" {
+		if dist.Category == categoryComplex || dist.Category == categoryVeryComplex {
 			highComplexityPending += dist.Count
+		}
+		if dist.Category == categoryVeryComplex {
+			veryComplexCount += dist.Count
 		}
 	}
 	for _, dist := range sizeDistribution {
-		if dist.Category == "very_large" {
+		if dist.Category == categorySizeVeryLarge {
 			veryLargePending += dist.Count
 		}
 	}
@@ -2865,75 +2876,107 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		completionRate = float64(migrated) / float64(total) * 100
 	}
 
-	// Build executive report
+	// Build executive report with two main sections
 	report := map[string]interface{}{
 		// Source type identifier
 		"source_type": h.sourceType,
 
-		// Executive Summary
-		"executive_summary": map[string]interface{}{
-			"total_repositories":        total,
-			"completion_percentage":     completionRate,
-			"migrated_count":            migrated,
-			"in_progress_count":         inProgress,
-			"pending_count":             pending,
-			"failed_count":              failed,
-			"success_rate":              successRate,
-			"estimated_completion_date": estimatedCompletionDate,
-			"days_remaining":            daysRemaining,
-			"first_migration_date":      firstMigrationDate,
-			"report_generated_at":       time.Now().Format(time.RFC3339),
+		// Report metadata
+		"report_metadata": map[string]interface{}{
+			"generated_at": time.Now().Format(time.RFC3339),
+			"filters": map[string]interface{}{
+				"organization": orgFilter,
+				"project":      projectFilter,
+				"batch_id":     batchFilter,
+			},
 		},
 
-		// Migration Velocity & Timeline
-		"velocity_metrics": map[string]interface{}{
-			"repos_per_day":        migrationVelocity.ReposPerDay,
-			"repos_per_week":       migrationVelocity.ReposPerWeek,
-			"average_duration_sec": avgMigrationTime,
-			"median_duration_sec":  medianMigrationTime,
-			"migration_trend":      migrationTimeSeries,
+		// SECTION 1: DISCOVERY DATA
+		// Repository characteristics discovered from source systems
+		"discovery_data": map[string]interface{}{
+			"overview": map[string]interface{}{
+				"total_repositories": total,
+				"source_type":        h.sourceType,
+			},
+
+			// Feature statistics from discovery
+			"features": featureStats,
+
+			// Repository complexity analysis
+			"complexity": map[string]interface{}{
+				"distribution":          complexityDistribution,
+				"high_complexity_count": highComplexityPending,
+				"very_complex_count":    veryComplexCount,
+			},
+
+			// Repository size analysis
+			"size": map[string]interface{}{
+				"distribution":     sizeDistribution,
+				"very_large_count": veryLargePending,
+			},
+
+			// Organization/Project breakdown
+			"organizational_breakdown": migrationCompletionStats,
 		},
 
-		// Organization Progress (or Project Progress for ADO)
-		"organization_progress": migrationCompletionStats,
+		// SECTION 2: MIGRATION PROGRESS & ANALYTICS
+		// Migration execution status, velocity, and performance
+		"migration_analytics": map[string]interface{}{
+			// Overall migration status summary
+			"summary": map[string]interface{}{
+				"total_repositories":        total,
+				"migrated_count":            migrated,
+				"in_progress_count":         inProgress,
+				"pending_count":             pending,
+				"failed_count":              failed,
+				"completion_percentage":     completionRate,
+				"success_rate":              successRate,
+				"estimated_completion_date": estimatedCompletionDate,
+				"days_remaining":            daysRemaining,
+				"first_migration_date":      firstMigrationDate,
+			},
 
-		// Risk & Complexity Analysis
-		"risk_analysis": map[string]interface{}{
-			"high_complexity_pending": highComplexityPending,
-			"very_large_pending":      veryLargePending,
-			"failed_migrations":       failed,
-			"complexity_distribution": complexityDistribution,
-			"size_distribution":       sizeDistribution,
+			// Detailed status breakdown by state
+			"status_breakdown": stats,
+
+			// Migration velocity and performance
+			"velocity": map[string]interface{}{
+				"repos_per_day":        migrationVelocity.ReposPerDay,
+				"repos_per_week":       migrationVelocity.ReposPerWeek,
+				"average_duration_sec": avgMigrationTime,
+				"median_duration_sec":  medianMigrationTime,
+				"trend":                migrationTimeSeries,
+			},
+
+			// Batch execution performance
+			"batches": map[string]interface{}{
+				"total":       len(batches),
+				"completed":   completedBatches,
+				"in_progress": inProgressBatches,
+				"pending":     pendingBatches,
+			},
+
+			// Risk factors affecting migration
+			"risk_factors": map[string]interface{}{
+				"high_complexity_pending": highComplexityPending,
+				"very_large_pending":      veryLargePending,
+				"failed_migrations":       failed,
+			},
 		},
-
-		// Batch Performance
-		"batch_performance": map[string]interface{}{
-			"total_batches":       len(batches),
-			"completed_batches":   completedBatches,
-			"in_progress_batches": inProgressBatches,
-			"pending_batches":     pendingBatches,
-		},
-
-		// Feature Migration Status
-		"feature_migration_status": featureStats,
-
-		// Detailed Status Breakdown
-		"status_breakdown": stats,
 	}
 
-	// Add ADO-specific data if source is Azure DevOps
+	// Add ADO-specific discovery data if source is Azure DevOps
 	if h.sourceType == sourceTypeAzureDevOps {
-		// Add project progress separately for clarity
-		report["project_progress"] = migrationCompletionStats
-
-		// Add ADO-specific risk analysis
-		report["ado_risk_analysis"] = map[string]interface{}{
-			"tfvc_repos":                   featureStats.ADOTFVCCount,
-			"classic_pipelines":            featureStats.ADOHasClassicPipelines,
-			"repos_with_active_work_items": featureStats.ADOHasWorkItems,
-			"repos_with_wikis":             featureStats.ADOHasWiki,
-			"repos_with_test_plans":        featureStats.ADOHasTestPlans,
-			"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+		// Enhance discovery data with ADO-specific risk factors
+		if discoveryData, ok := report["discovery_data"].(map[string]interface{}); ok {
+			discoveryData["ado_specific_risks"] = map[string]interface{}{
+				"tfvc_repos":                   featureStats.ADOTFVCCount,
+				"classic_pipelines":            featureStats.ADOHasClassicPipelines,
+				"repos_with_active_work_items": featureStats.ADOHasWorkItems,
+				"repos_with_wikis":             featureStats.ADOHasWiki,
+				"repos_with_test_plans":        featureStats.ADOHasTestPlans,
+				"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+			}
 		}
 	}
 
@@ -3094,83 +3137,54 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 
 	var output strings.Builder
 
-	// Section 1: Executive Summary
-	output.WriteString("EXECUTIVE MIGRATION PROGRESS REPORT\n")
-	output.WriteString(fmt.Sprintf("Source: %s\n", strings.ToUpper(sourceType)))
+	// Report Header
+	output.WriteString("EXECUTIVE MIGRATION REPORT\n")
+	output.WriteString(fmt.Sprintf("Source Platform: %s\n", strings.ToUpper(sourceType)))
 	output.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
 	output.WriteString("\n")
 
-	output.WriteString("=== EXECUTIVE SUMMARY ===\n")
+	// ========================================
+	// SECTION 1: DISCOVERY DATA
+	// ========================================
+	output.WriteString("================================================================================\n")
+	output.WriteString("SECTION 1: DISCOVERY DATA\n")
+	output.WriteString("Repository characteristics discovered from source platform\n")
+	output.WriteString("================================================================================\n")
+	output.WriteString("\n")
+
+	// 1.1 Discovery Overview
+	output.WriteString("--- DISCOVERY OVERVIEW ---\n")
 	output.WriteString("Metric,Value\n")
-	output.WriteString(fmt.Sprintf("Total Repositories,%d\n", total))
-	output.WriteString(fmt.Sprintf("Completion Percentage,%.1f%%\n", completionRate))
-	output.WriteString(fmt.Sprintf("Successfully Migrated,%d\n", migrated))
-	output.WriteString(fmt.Sprintf("In Progress,%d\n", inProgress))
-	output.WriteString(fmt.Sprintf("Pending,%d\n", pending))
-	output.WriteString(fmt.Sprintf("Failed,%d\n", failed))
-	output.WriteString(fmt.Sprintf("Success Rate,%.1f%%\n", successRate))
-	if estimatedCompletionDate != "" {
-		output.WriteString(fmt.Sprintf("Estimated Completion,%s\n", estimatedCompletionDate))
-		output.WriteString(fmt.Sprintf("Days Remaining,%d\n", daysRemaining))
-	}
+	output.WriteString(fmt.Sprintf("Total Repositories Discovered,%d\n", total))
+	output.WriteString(fmt.Sprintf("Source Platform,%s\n", strings.ToUpper(sourceType)))
 	output.WriteString("\n")
 
-	// Section 2: Velocity Metrics
-	output.WriteString("=== MIGRATION VELOCITY ===\n")
-	output.WriteString("Metric,Value\n")
-	output.WriteString(fmt.Sprintf("Repos Per Day,%.1f\n", velocity.ReposPerDay))
-	output.WriteString(fmt.Sprintf("Repos Per Week,%.1f\n", velocity.ReposPerWeek))
-	if avgMigrationTime > 0 {
-		avgMinutes := avgMigrationTime / 60
-		output.WriteString(fmt.Sprintf("Average Migration Time,%d minutes\n", avgMinutes))
-	}
-	output.WriteString("\n")
-
-	// Section 3: Organization/Project Progress
-	if sourceType == sourceTypeAzureDevOps {
-		output.WriteString("=== PROJECT PROGRESS ===\n")
-	} else {
-		output.WriteString("=== ORGANIZATION PROGRESS ===\n")
-	}
-	if sourceType == sourceTypeAzureDevOps {
-		output.WriteString("Project,Total,Completed,In Progress,Pending,Failed,Completion %\n")
-	} else {
-		output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
-	}
-	for _, org := range orgStats {
-		completionPct := 0.0
-		if org.TotalRepos > 0 {
-			completionPct = float64(org.CompletedCount) / float64(org.TotalRepos) * 100
-		}
-		output.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d,%d,%.1f%%\n",
-			escapesCSV(org.Organization),
-			org.TotalRepos,
-			org.CompletedCount,
-			org.InProgressCount,
-			org.PendingCount,
-			org.FailedCount,
-			completionPct))
-	}
-	output.WriteString("\n")
-
-	// Section 4: Risk Analysis - Complexity
-	output.WriteString("=== RISK ANALYSIS - COMPLEXITY ===\n")
-	output.WriteString("Complexity Category,Repository Count\n")
+	// 1.2 Repository Complexity Analysis
+	output.WriteString("--- REPOSITORY COMPLEXITY ---\n")
+	output.WriteString("Complexity Category,Repository Count,Percentage\n")
 	for _, dist := range complexityDist {
-		output.WriteString(fmt.Sprintf("%s,%d\n", escapesCSV(dist.Category), dist.Count))
+		pct := 0.0
+		if total > 0 {
+			pct = float64(dist.Count) / float64(total) * 100
+		}
+		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapesCSV(dist.Category), dist.Count, pct))
 	}
 	output.WriteString("\n")
 
-	// Section 5: Risk Analysis - Size
-	output.WriteString("=== RISK ANALYSIS - SIZE ===\n")
-	output.WriteString("Size Category,Repository Count\n")
+	// 1.3 Repository Size Distribution
+	output.WriteString("--- REPOSITORY SIZE DISTRIBUTION ---\n")
+	output.WriteString("Size Category,Repository Count,Percentage\n")
 	for _, dist := range sizeDist {
-		output.WriteString(fmt.Sprintf("%s,%d\n", escapesCSV(dist.Category), dist.Count))
+		pct := 0.0
+		if total > 0 {
+			pct = float64(dist.Count) / float64(total) * 100
+		}
+		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapesCSV(dist.Category), dist.Count, pct))
 	}
 	output.WriteString("\n")
 
-	// Section 6: Feature Migration Status
-	output.WriteString("=== FEATURE MIGRATION STATUS ===\n")
+	// 1.4 Feature Discovery
+	output.WriteString("--- FEATURE DISCOVERY ---\n")
 	output.WriteString("Feature,Repository Count,Percentage\n")
 	totalRepos := featureStats.TotalRepositories
 	if totalRepos > 0 {
@@ -3190,22 +3204,106 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 			output.WriteString(fmt.Sprintf("Service Hooks,%d,%.1f%%\n", featureStats.ADOHasServiceHooks, float64(featureStats.ADOHasServiceHooks)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("GHAS (Azure DevOps),%d,%.1f%%\n", featureStats.ADOHasGHAS, float64(featureStats.ADOHasGHAS)/float64(totalRepos)*100))
 		} else {
-			// GitHub features
+			// GitHub-specific features
 			output.WriteString(fmt.Sprintf("Archived,%d,%.1f%%\n", featureStats.IsArchived, float64(featureStats.IsArchived)/float64(totalRepos)*100))
-			output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
-			output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
-			output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, float64(featureStats.HasLargeFiles)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Forked Repositories,%d,%.1f%%\n", featureStats.IsFork, float64(featureStats.IsFork)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, float64(featureStats.HasActions)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, float64(featureStats.HasWiki)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, float64(featureStats.HasPages)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Discussions,%d,%.1f%%\n", featureStats.HasDiscussions, float64(featureStats.HasDiscussions)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Projects,%d,%.1f%%\n", featureStats.HasProjects, float64(featureStats.HasProjects)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Packages,%d,%.1f%%\n", featureStats.HasPackages, float64(featureStats.HasPackages)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Branch Protections,%d,%.1f%%\n", featureStats.HasBranchProtections, float64(featureStats.HasBranchProtections)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Rulesets,%d,%.1f%%\n", featureStats.HasRulesets, float64(featureStats.HasRulesets)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Code Scanning,%d,%.1f%%\n", featureStats.HasCodeScanning, float64(featureStats.HasCodeScanning)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Dependabot,%d,%.1f%%\n", featureStats.HasDependabot, float64(featureStats.HasDependabot)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Secret Scanning,%d,%.1f%%\n", featureStats.HasSecretScanning, float64(featureStats.HasSecretScanning)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("CODEOWNERS,%d,%.1f%%\n", featureStats.HasCodeowners, float64(featureStats.HasCodeowners)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Self-Hosted Runners,%d,%.1f%%\n", featureStats.HasSelfHostedRunners, float64(featureStats.HasSelfHostedRunners)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Release Assets,%d,%.1f%%\n", featureStats.HasReleaseAssets, float64(featureStats.HasReleaseAssets)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Webhooks,%d,%.1f%%\n", featureStats.HasWebhooks, float64(featureStats.HasWebhooks)/float64(totalRepos)*100))
 		}
-		// Common features
+		// Common features (applicable to both GitHub and Azure DevOps)
 		output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
 		output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
 		output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, float64(featureStats.HasLargeFiles)/float64(totalRepos)*100))
+	}
+	output.WriteString("\n")
+
+	// 1.5 Organizational Breakdown
+	if sourceType == sourceTypeAzureDevOps {
+		output.WriteString("--- PROJECT BREAKDOWN ---\n")
+		output.WriteString("Project,Total Repositories\n")
+	} else {
+		output.WriteString("--- ORGANIZATION BREAKDOWN ---\n")
+		output.WriteString("Organization,Total Repositories\n")
+	}
+	for _, org := range orgStats {
+		output.WriteString(fmt.Sprintf("%s,%d\n", escapesCSV(org.Organization), org.TotalRepos))
+	}
+	output.WriteString("\n")
+
+	// ========================================
+	// SECTION 2: MIGRATION PROGRESS & ANALYTICS
+	// ========================================
+	output.WriteString("================================================================================\n")
+	output.WriteString("SECTION 2: MIGRATION PROGRESS & ANALYTICS\n")
+	output.WriteString("Migration execution status, velocity, and performance\n")
+	output.WriteString("================================================================================\n")
+	output.WriteString("\n")
+
+	// 2.1 Migration Summary
+	output.WriteString("--- MIGRATION SUMMARY ---\n")
+	output.WriteString("Metric,Value\n")
+	output.WriteString(fmt.Sprintf("Total Repositories,%d\n", total))
+	output.WriteString(fmt.Sprintf("Completion Percentage,%.1f%%\n", completionRate))
+	output.WriteString(fmt.Sprintf("Successfully Migrated,%d\n", migrated))
+	output.WriteString(fmt.Sprintf("In Progress,%d\n", inProgress))
+	output.WriteString(fmt.Sprintf("Pending,%d\n", pending))
+	output.WriteString(fmt.Sprintf("Failed,%d\n", failed))
+	output.WriteString(fmt.Sprintf("Success Rate,%.1f%%\n", successRate))
+	if estimatedCompletionDate != "" {
+		output.WriteString(fmt.Sprintf("Estimated Completion,%s\n", estimatedCompletionDate))
+		output.WriteString(fmt.Sprintf("Days Remaining,%d\n", daysRemaining))
+	}
+	output.WriteString("\n")
+
+	// 2.2 Migration Velocity
+	output.WriteString("--- MIGRATION VELOCITY ---\n")
+	output.WriteString("Metric,Value\n")
+	output.WriteString(fmt.Sprintf("Repos Per Day,%.1f\n", velocity.ReposPerDay))
+	output.WriteString(fmt.Sprintf("Repos Per Week,%.1f\n", velocity.ReposPerWeek))
+	if avgMigrationTime > 0 {
+		avgMinutes := avgMigrationTime / 60
+		output.WriteString(fmt.Sprintf("Average Migration Time,%d minutes\n", avgMinutes))
+	}
+	if medianMigrationTime > 0 {
+		medianMinutes := medianMigrationTime / 60
+		output.WriteString(fmt.Sprintf("Median Migration Time,%d minutes\n", medianMinutes))
+	}
+	output.WriteString("\n")
+
+	// 2.3 Organization/Project Migration Progress
+	if sourceType == sourceTypeAzureDevOps {
+		output.WriteString("--- PROJECT MIGRATION PROGRESS ---\n")
+		output.WriteString("Project,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	} else {
+		output.WriteString("--- ORGANIZATION MIGRATION PROGRESS ---\n")
+		output.WriteString("Organization,Total,Completed,In Progress,Pending,Failed,Completion %\n")
+	}
+	for _, org := range orgStats {
+		completionPct := 0.0
+		if org.TotalRepos > 0 {
+			completionPct = float64(org.CompletedCount) / float64(org.TotalRepos) * 100
+		}
+		output.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d,%d,%.1f%%\n",
+			escapesCSV(org.Organization),
+			org.TotalRepos,
+			org.CompletedCount,
+			org.InProgressCount,
+			org.PendingCount,
+			org.FailedCount,
+			completionPct))
 	}
 	output.WriteString("\n")
 
@@ -3224,16 +3322,37 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 		output.WriteString("\n")
 	}
 
-	// Section 7: Batch Performance
-	output.WriteString("=== BATCH PERFORMANCE ===\n")
+	// 2.4 Batch Execution Performance
+	output.WriteString("--- BATCH EXECUTION PERFORMANCE ---\n")
 	output.WriteString("Status,Count\n")
 	output.WriteString(fmt.Sprintf("Completed,%d\n", completedBatches))
 	output.WriteString(fmt.Sprintf("In Progress,%d\n", inProgressBatches))
 	output.WriteString(fmt.Sprintf("Pending,%d\n", pendingBatches))
+	output.WriteString(fmt.Sprintf("Total Batches,%d\n", completedBatches+inProgressBatches+pendingBatches))
 	output.WriteString("\n")
 
-	// Section 8: Detailed Status Breakdown
-	output.WriteString("=== DETAILED STATUS BREAKDOWN ===\n")
+	// 2.5 Risk Factors
+	output.WriteString("--- MIGRATION RISK FACTORS ---\n")
+	output.WriteString("Risk Factor,Count\n")
+	highComplexity := 0
+	for _, dist := range complexityDist {
+		if dist.Category == categoryComplex || dist.Category == categoryVeryComplex {
+			highComplexity += dist.Count
+		}
+	}
+	veryLarge := 0
+	for _, dist := range sizeDist {
+		if dist.Category == categorySizeVeryLarge {
+			veryLarge += dist.Count
+		}
+	}
+	output.WriteString(fmt.Sprintf("High Complexity Repositories Pending,%d\n", highComplexity))
+	output.WriteString(fmt.Sprintf("Very Large Repositories Pending,%d\n", veryLarge))
+	output.WriteString(fmt.Sprintf("Failed Migrations,%d\n", failed))
+	output.WriteString("\n")
+
+	// 2.6 Detailed Status Breakdown
+	output.WriteString("--- DETAILED STATUS BREAKDOWN ---\n")
 	output.WriteString("Status,Repository Count,Percentage\n")
 	for status, count := range statusBreakdown {
 		pct := 0.0
@@ -3258,52 +3377,86 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=executive_migration_report.json")
 
+	// Calculate risk metrics
+	highComplexity := 0
+	for _, dist := range complexityDist {
+		if dist.Category == categoryComplex || dist.Category == categoryVeryComplex {
+			highComplexity += dist.Count
+		}
+	}
+	veryLarge := 0
+	for _, dist := range sizeDist {
+		if dist.Category == categorySizeVeryLarge {
+			veryLarge += dist.Count
+		}
+	}
+
 	report := map[string]interface{}{
 		"source_type": sourceType,
 		"report_metadata": map[string]interface{}{
 			"generated_at": time.Now().Format(time.RFC3339),
-			"report_type":  "Executive Migration Progress Report",
-			"version":      "1.0",
+			"report_type":  "Executive Migration Report",
+			"version":      "2.0",
 		},
-		"executive_summary": map[string]interface{}{
-			"total_repositories":        total,
-			"completion_percentage":     completionRate,
-			"migrated_count":            migrated,
-			"in_progress_count":         inProgress,
-			"pending_count":             pending,
-			"failed_count":              failed,
-			"success_rate":              successRate,
-			"estimated_completion_date": estimatedCompletionDate,
-			"days_remaining":            daysRemaining,
+
+		// SECTION 1: DISCOVERY DATA
+		"discovery_data": map[string]interface{}{
+			"overview": map[string]interface{}{
+				"total_repositories": total,
+				"source_type":        sourceType,
+			},
+			"features":                 featureStats,
+			"complexity_distribution":  complexityDist,
+			"size_distribution":        sizeDist,
+			"organizational_breakdown": orgStats,
 		},
-		"velocity_metrics": map[string]interface{}{
-			"repos_per_day":        velocity.ReposPerDay,
-			"repos_per_week":       velocity.ReposPerWeek,
-			"average_duration_sec": avgMigrationTime,
-			"median_duration_sec":  medianMigrationTime,
+
+		// SECTION 2: MIGRATION PROGRESS & ANALYTICS
+		"migration_analytics": map[string]interface{}{
+			"summary": map[string]interface{}{
+				"total_repositories":        total,
+				"migrated_count":            migrated,
+				"in_progress_count":         inProgress,
+				"pending_count":             pending,
+				"failed_count":              failed,
+				"completion_percentage":     completionRate,
+				"success_rate":              successRate,
+				"estimated_completion_date": estimatedCompletionDate,
+				"days_remaining":            daysRemaining,
+			},
+			"status_breakdown": statusBreakdown,
+			"velocity": map[string]interface{}{
+				"repos_per_day":        velocity.ReposPerDay,
+				"repos_per_week":       velocity.ReposPerWeek,
+				"average_duration_sec": avgMigrationTime,
+				"median_duration_sec":  medianMigrationTime,
+			},
+			"batches": map[string]interface{}{
+				"total":       completedBatches + inProgressBatches + pendingBatches,
+				"completed":   completedBatches,
+				"in_progress": inProgressBatches,
+				"pending":     pendingBatches,
+			},
+			"risk_factors": map[string]interface{}{
+				"high_complexity_pending": highComplexity,
+				"very_large_pending":      veryLarge,
+				"failed_migrations":       failed,
+			},
+			"organization_progress": orgStats,
 		},
-		"organization_progress":    orgStats,
-		"complexity_distribution":  complexityDist,
-		"size_distribution":        sizeDist,
-		"feature_migration_status": featureStats,
-		"batch_performance": map[string]interface{}{
-			"completed_batches":   completedBatches,
-			"in_progress_batches": inProgressBatches,
-			"pending_batches":     pendingBatches,
-		},
-		"status_breakdown": statusBreakdown,
 	}
 
-	// Add ADO-specific data if source is Azure DevOps
+	// Add ADO-specific discovery data if source is Azure DevOps
 	if sourceType == sourceTypeAzureDevOps {
-		report["project_progress"] = orgStats
-		report["ado_risk_analysis"] = map[string]interface{}{
-			"tfvc_repos":                   featureStats.ADOTFVCCount,
-			"classic_pipelines":            featureStats.ADOHasClassicPipelines,
-			"repos_with_active_work_items": featureStats.ADOHasWorkItems,
-			"repos_with_wikis":             featureStats.ADOHasWiki,
-			"repos_with_test_plans":        featureStats.ADOHasTestPlans,
-			"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+		if discoveryData, ok := report["discovery_data"].(map[string]interface{}); ok {
+			discoveryData["ado_specific_risks"] = map[string]interface{}{
+				"tfvc_repos":                   featureStats.ADOTFVCCount,
+				"classic_pipelines":            featureStats.ADOHasClassicPipelines,
+				"repos_with_active_work_items": featureStats.ADOHasWorkItems,
+				"repos_with_wikis":             featureStats.ADOHasWiki,
+				"repos_with_test_plans":        featureStats.ADOHasTestPlans,
+				"repos_with_package_feeds":     featureStats.ADOHasPackageFeeds,
+			}
 		}
 	}
 
