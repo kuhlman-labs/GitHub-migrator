@@ -1,9 +1,11 @@
-import { Link, useLocation } from 'react-router-dom';
-import { MarkGithubIcon } from '@primer/octicons-react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { TextInput } from '@primer/react';
+import { MarkGithubIcon, SearchIcon } from '@primer/octicons-react';
 import { UserProfile } from './UserProfile';
 
 export function Navigation() {
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   const isActive = (path: string) => location.pathname === path;
   
@@ -13,6 +15,66 @@ export function Navigation() {
         ? ''
         : 'hover:bg-[var(--control-bgColor-hover)]'
     }`;
+  
+  // Get context-aware search placeholder and current value
+  const getSearchContext = () => {
+    const path = location.pathname;
+    
+    if (path === '/') {
+      return {
+        placeholder: 'Search organizations...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
+    } else if (path === '/repositories') {
+      return {
+        placeholder: 'Search repositories...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
+    } else if (path === '/batches') {
+      return {
+        placeholder: 'Search batches...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
+    } else if (path === '/history') {
+      return {
+        placeholder: 'Search migration history...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
+    } else if (path.startsWith('/org/')) {
+      // For organization detail pages
+      // Note: This could be repositories OR Azure DevOps projects depending on the org type
+      // "Search repositories..." works as a reasonable default for both contexts
+      return {
+        placeholder: 'Search repositories...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
+    }
+    
+    // For pages without search (Analytics, Setup, etc.)
+    return {
+      placeholder: '',
+      searchParam: '',
+      isSearchable: false,
+    };
+  };
+  
+  const searchContext = getSearchContext();
+  const currentSearch = searchParams.get(searchContext.searchParam) || '';
+  
+  const handleSearchChange = (value: string) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (value.trim()) {
+      newParams.set(searchContext.searchParam, value.trim());
+    } else {
+      newParams.delete(searchContext.searchParam);
+    }
+    setSearchParams(newParams);
+  };
   
   return (
     <>
@@ -75,6 +137,16 @@ export function Navigation() {
                 Analytics
               </Link>
                 <Link 
+                  to="/repositories" 
+                  className={linkClass('/repositories')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/repositories') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                >
+                Repositories
+              </Link>
+                <Link 
                   to="/batches" 
                   className={linkClass('/batches')}
                   style={{ 
@@ -98,7 +170,17 @@ export function Navigation() {
           </div>
           
             {/* Navigation End */}
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
+            {/* Context-Aware Global Search */}
+            {searchContext.isSearchable && (
+              <TextInput
+                leadingVisual={SearchIcon}
+                placeholder={searchContext.placeholder}
+                value={currentSearch}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                style={{ width: 300 }}
+              />
+            )}
             <UserProfile />
           </div>
         </div>

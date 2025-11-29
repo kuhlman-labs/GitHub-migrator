@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@primer/react';
-import { ChevronDownIcon } from '@primer/octicons-react';
+import { ChevronDownIcon, UploadIcon } from '@primer/octicons-react';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { FilterSidebar } from './FilterSidebar';
@@ -9,6 +9,9 @@ import { RepositoryListItem } from './RepositoryListItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pagination } from '../common/Pagination';
 import { formatBytes, formatDateForInput } from '../../utils/format';
+import { ImportDialog } from './ImportDialog';
+import { ImportPreview, type ValidationGroup } from './ImportPreview';
+import type { ImportParseResult } from '../../utils/import';
 
 interface BatchBuilderProps {
   batch?: Batch; // If provided, we're editing; otherwise creating
@@ -54,6 +57,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   // UI state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showMigrationSettings, setShowMigrationSettings] = useState(false);
+  
+  // Import state
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showImportPreview, setShowImportPreview] = useState(false);
+  const [importValidation, setImportValidation] = useState<ValidationGroup | null>(null);
   
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -367,6 +375,69 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     });
   };
 
+  // Import handlers
+  const handleImportClick = () => {
+    setShowImportDialog(true);
+  };
+
+  const handleImportParsed = async (parseResult: ImportParseResult) => {
+    setShowImportDialog(false);
+
+    // Validate repositories against API
+    try {
+      // Fetch all repositories to validate
+      const response = await api.listRepositories({});
+      const allRepos = response.repositories || response;
+      
+      // Create lookup map
+      const repoMap = new Map<string, Repository>();
+      allRepos.forEach((repo: Repository) => {
+        repoMap.set(repo.full_name.toLowerCase(), repo);
+      });
+
+      // Already in batch
+      const alreadyInBatchIds = new Set(currentBatchRepos.map(r => r.id));
+
+      // Categorize repositories
+      const valid: Repository[] = [];
+      const alreadyInBatch: Repository[] = [];
+      const notFound: { full_name: string }[] = [];
+
+      parseResult.rows.forEach((row) => {
+        const repo = repoMap.get(row.full_name.toLowerCase());
+        
+        if (!repo) {
+          notFound.push({ full_name: row.full_name });
+        } else if (alreadyInBatchIds.has(repo.id)) {
+          alreadyInBatch.push(repo);
+        } else {
+          // Add repository (migration settings will come from batch configuration)
+          valid.push(repo);
+        }
+      });
+
+      setImportValidation({ valid, alreadyInBatch, notFound });
+      setShowImportPreview(true);
+    } catch (err) {
+      console.error('Failed to validate imported repositories:', err);
+      setError('Failed to validate imported repositories');
+    }
+  };
+
+  const handleImportConfirm = (selectedRepos: Repository[]) => {
+    // Add imported repositories to the batch (they will use batch-level migration settings)
+    const newBatchRepos = [...currentBatchRepos, ...selectedRepos];
+    setCurrentBatchRepos(newBatchRepos);
+    setShowImportPreview(false);
+    setImportValidation(null);
+  };
+
+  const handleImportCancel = () => {
+    setShowImportDialog(false);
+    setShowImportPreview(false);
+    setImportValidation(null);
+  };
+
   const handleSubmit = async (startImmediately: boolean) => {
     if (!batchName.trim()) {
       setError('Batch name is required');
@@ -543,6 +614,20 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               </p>
             </div>
               <div className="flex items-center gap-2">
+              <button
+                onClick={handleImportClick}
+                disabled={loading}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                style={{
+                  borderColor: 'var(--borderColor-default)',
+                  color: 'var(--fgColor-default)',
+                  backgroundColor: 'var(--control-bgColor-rest)'
+                }}
+                title="Import repositories from file"
+              >
+                <UploadIcon size={16} />
+                Import from File
+              </button>
               {selectedRepoIds.size > 0 && (
                 <span 
                   className="px-3 py-1.5 rounded-full text-sm font-semibold"
@@ -1188,6 +1273,23 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Import Dialog */}
+      {showImportDialog && (
+        <ImportDialog
+          onImport={handleImportParsed}
+          onCancel={handleImportCancel}
+        />
+      )}
+
+      {/* Import Preview Dialog */}
+      {showImportPreview && importValidation && (
+        <ImportPreview
+          validationResult={importValidation}
+          onConfirm={handleImportConfirm}
+          onCancel={handleImportCancel}
+        />
       )}
     </div>
   );

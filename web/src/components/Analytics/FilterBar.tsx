@@ -1,5 +1,4 @@
 import { useOrganizations, useBatches, useProjects } from '../../hooks/useQueries';
-import { api } from '../../services/api';
 
 interface FilterBarProps {
   selectedOrganization: string;
@@ -24,47 +23,6 @@ export function FilterBar({
   const { data: projects } = useProjects();
   const { data: batches } = useBatches();
 
-  const handleExecutiveReportExport = async (format: 'csv' | 'json') => {
-    try {
-      const filters = {
-        organization: selectedOrganization || undefined,
-        project: selectedProject || undefined,
-        batch_id: selectedBatch || undefined,
-      };
-      const blob = await api.exportExecutiveReport(format, filters);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `executive-migration-report.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('Failed to export executive report:', error);
-    }
-  };
-
-  const handleDetailedReportExport = async (format: 'csv' | 'json') => {
-    try {
-      const filters = {
-        organization: selectedOrganization || undefined,
-        project: selectedProject || undefined,
-        batch_id: selectedBatch || undefined,
-      };
-      const blob = await api.exportDetailedDiscoveryReport(format, filters);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `detailed-discovery-report.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('Failed to export detailed discovery report:', error);
-    }
-  };
 
   return (
     <div 
@@ -154,101 +112,6 @@ export function FilterBar({
           </select>
         </div>
 
-        <div className="flex-shrink-0">
-          <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
-            Export Reports
-          </label>
-          <div className="flex items-center gap-3 h-[34px]">
-            {/* Executive Report */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap" style={{ color: 'var(--fgColor-muted)' }}>Executive:</span>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => handleExecutiveReportExport('csv')}
-                  className="px-3 py-1.5 text-sm font-medium border rounded-md transition-colors cursor-pointer"
-                  style={{
-                    backgroundColor: 'var(--control-bgColor-rest)',
-                    borderColor: 'var(--borderColor-default)',
-                    color: 'var(--fgColor-default)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
-                  }}
-                  title="Export executive report as CSV"
-                >
-                  CSV
-                </button>
-                <button
-                  onClick={() => handleExecutiveReportExport('json')}
-                  className="px-3 py-1.5 text-sm font-medium border rounded-md transition-colors cursor-pointer"
-                  style={{
-                    backgroundColor: 'var(--control-bgColor-rest)',
-                    borderColor: 'var(--borderColor-default)',
-                    color: 'var(--fgColor-default)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
-                  }}
-                  title="Export executive report as JSON"
-                >
-                  JSON
-                </button>
-              </div>
-            </div>
-            
-            {/* Separator */}
-            <div className="h-6 w-px" style={{ backgroundColor: 'var(--borderColor-default)' }}></div>
-            
-            {/* Discovery Report */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap" style={{ color: 'var(--fgColor-muted)' }}>Discovery:</span>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => handleDetailedReportExport('csv')}
-                  className="px-3 py-1.5 text-sm font-medium border rounded-md transition-colors cursor-pointer"
-                  style={{
-                    backgroundColor: 'var(--control-bgColor-rest)',
-                    borderColor: 'var(--borderColor-default)',
-                    color: 'var(--fgColor-default)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
-                  }}
-                  title="Export detailed discovery report as CSV"
-                >
-                  CSV
-                </button>
-                <button
-                  onClick={() => handleDetailedReportExport('json')}
-                  className="px-3 py-1.5 text-sm font-medium border rounded-md transition-colors cursor-pointer"
-                  style={{
-                    backgroundColor: 'var(--control-bgColor-rest)',
-                    borderColor: 'var(--borderColor-default)',
-                    color: 'var(--fgColor-default)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
-                  }}
-                  title="Export detailed discovery report as JSON"
-                >
-                  JSON
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

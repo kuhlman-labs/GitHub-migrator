@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { TextInput } from '@primer/react';
+import { useSearchParams } from 'react-router-dom';
+import { Button } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { SearchIcon, HistoryIcon } from '@primer/octicons-react';
+import { HistoryIcon, DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { MigrationHistoryEntry } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -15,13 +16,16 @@ export function MigrationHistory() {
   const { data, isLoading, isFetching } = useMigrationHistory();
   const migrations = data?.migrations || [];
   const { showError } = useToast();
+  const [searchParams] = useSearchParams();
   
-  const [searchTerm, setSearchTerm] = useState('');
+  const searchTerm = searchParams.get('search') || '';
   const [exporting, setExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
 
   const handleExport = async (format: 'csv' | 'json') => {
+    setShowExportMenu(false);
     setExporting(true);
     try {
       const blob = await api.exportMigrationHistory(format);
@@ -67,63 +71,52 @@ export function MigrationHistory() {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration History</h1>
         <div className="flex items-center gap-4">
-          <TextInput
-            leadingVisual={SearchIcon}
-            placeholder="Search repositories..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: 300 }}
-          />
-          <div className="flex items-center gap-2">
-            <span className="text-sm whitespace-nowrap" style={{ color: 'var(--fgColor-muted)' }}>Export:</span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => handleExport('csv')}
-                disabled={exporting}
-                className="px-3 py-1.5 text-sm font-medium border rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--control-bgColor-rest)',
-                  borderColor: 'var(--borderColor-default)',
-                  color: 'var(--fgColor-default)'
-                }}
-                onMouseEnter={(e) => {
-                  if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
-                  }
-                }}
-                title="Export migration history as CSV"
-              >
-                CSV
-              </button>
-              <button
-                onClick={() => handleExport('json')}
-                disabled={exporting}
-                className="px-3 py-1.5 text-sm font-medium border rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--control-bgColor-rest)',
-                  borderColor: 'var(--borderColor-default)',
-                  color: 'var(--fgColor-default)'
-                }}
-                onMouseEnter={(e) => {
-                  if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.backgroundColor = 'var(--control-bgColor-rest)';
-                  }
-                }}
-                title="Export migration history as JSON"
-              >
-                JSON
-              </button>
-            </div>
+          {/* Export Button with Dropdown */}
+          <div className="relative">
+            <Button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={exporting || migrations.length === 0}
+              leadingVisual={DownloadIcon}
+              trailingVisual={ChevronDownIcon}
+              variant="primary"
+            >
+              Export
+            </Button>
+            {showExportMenu && (
+              <>
+                {/* Backdrop to close menu when clicking outside */}
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowExportMenu(false)}
+                />
+                {/* Dropdown menu */}
+                <div 
+                  className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20"
+                  style={{
+                    backgroundColor: 'var(--bgColor-default)',
+                    border: '1px solid var(--borderColor-default)',
+                    boxShadow: 'var(--shadow-floating-large)'
+                  }}
+                >
+                  <div className="py-1">
+                    <button
+                      onClick={() => handleExport('csv')}
+                      className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                      style={{ color: 'var(--fgColor-default)' }}
+                    >
+                      Export as CSV
+                    </button>
+                    <button
+                      onClick={() => handleExport('json')}
+                      className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                      style={{ color: 'var(--fgColor-default)' }}
+                    >
+                      Export as JSON
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

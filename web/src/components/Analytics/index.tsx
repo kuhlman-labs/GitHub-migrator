@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { UnderlineNav, ProgressBar } from '@primer/react';
-import { ChevronRightIcon } from '@primer/octicons-react';
+import { UnderlineNav, ProgressBar, Button } from '@primer/react';
+import { ChevronRightIcon, DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDuration } from '../../utils/format';
@@ -36,6 +36,7 @@ export function Analytics() {
   const [selectedBatch, setSelectedBatch] = useState('');
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
   const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const { data: analytics, isLoading, isFetching } = useAnalytics({
     organization: selectedOrganization || undefined,
@@ -106,10 +107,127 @@ export function Analytics() {
     ?.filter(d => d.category === 'complex' || d.category === 'very_complex')
     .reduce((sum, d) => sum + d.count, 0) || 0;
 
+  // Export functions
+  const handleExport = async (reportType: 'executive' | 'discovery', format: 'csv' | 'json') => {
+    setShowExportMenu(false);
+
+    if (!analytics) {
+      alert('No analytics data to export');
+      return;
+    }
+
+    try {
+      const filters = {
+        organization: selectedOrganization || undefined,
+        project: selectedProject || undefined,
+        batch_id: selectedBatch || undefined,
+      };
+
+      let blob: Blob;
+      let filename: string;
+
+      if (reportType === 'executive') {
+        blob = await api.exportExecutiveReport(format, filters);
+        filename = `executive-migration-report.${format}`;
+      } else {
+        blob = await api.exportDetailedDiscoveryReport(format, filters);
+        filename = `detailed-discovery-report.${format}`;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export report. Please try again.');
+    }
+  };
+
   return (
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
-      <h1 className="text-2xl font-semibold mb-8" style={{ color: 'var(--fgColor-default)' }}>Analytics Dashboard</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Analytics Dashboard</h1>
+        
+        {/* Export Button with Dropdown */}
+        <div className="relative">
+          <Button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            disabled={!analytics}
+            leadingVisual={DownloadIcon}
+            trailingVisual={ChevronDownIcon}
+            variant="primary"
+          >
+            Export
+          </Button>
+          {showExportMenu && (
+            <>
+              {/* Backdrop to close menu when clicking outside */}
+              <div 
+                className="fixed inset-0 z-10" 
+                onClick={() => setShowExportMenu(false)}
+              />
+              {/* Dropdown menu */}
+              <div 
+                className="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-20"
+                style={{
+                  backgroundColor: 'var(--bgColor-default)',
+                  border: '1px solid var(--borderColor-default)',
+                  boxShadow: 'var(--shadow-floating-large)'
+                }}
+              >
+                <div className="py-1">
+                  {/* Executive Reports */}
+                  <div className="px-3 py-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--fgColor-muted)' }}>
+                    Executive Report
+                  </div>
+                  <button
+                    onClick={() => handleExport('executive', 'csv')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('executive', 'json')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export as JSON
+                  </button>
+                  
+                  {/* Divider */}
+                  <div className="my-1 border-t" style={{ borderColor: 'var(--borderColor-default)' }}></div>
+                  
+                  {/* Discovery Reports */}
+                  <div className="px-3 py-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--fgColor-muted)' }}>
+                    Discovery Report
+                  </div>
+                  <button
+                    onClick={() => handleExport('discovery', 'csv')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('discovery', 'json')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export as JSON
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Filter Bar */}
       <FilterBar

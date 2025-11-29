@@ -670,3 +670,20 @@ export interface ValidationResult {
   details?: Record<string, any>;
 }
 
+// Migration settings that can be imported from files
+export interface ImportedMigrationSettings {
+  destination_org?: string;
+  destination_repo_name?: string;
+  migration_api?: 'GEI' | 'ELM';
+  exclude_releases?: boolean;
+  exclude_attachments?: boolean;
+  exclude_metadata?: boolean;
+  exclude_git_data?: boolean;
+  exclude_owner_projects?: boolean;
+}
+
+// Repository with imported migration settings
+export interface ImportedRepository extends Repository {
+  importedSettings?: ImportedMigrationSettings;
+}
+

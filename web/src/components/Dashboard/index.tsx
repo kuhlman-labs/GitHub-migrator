@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, TextInput, Flash, Label, FormControl } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { SearchIcon, XIcon, RepoIcon } from '@primer/octicons-react';
+import { XIcon, RepoIcon } from '@primer/octicons-react';
 import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -15,8 +15,9 @@ export function Dashboard() {
   const { data: organizations = [], isLoading, isFetching } = useOrganizations();
   const startDiscoveryMutation = useStartDiscovery();
   const startADODiscoveryMutation = useStartADODiscovery();
+  const [searchParams] = useSearchParams();
   
-  const [searchTerm, setSearchTerm] = useState('');
+  const searchTerm = searchParams.get('search') || '';
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
@@ -131,13 +132,6 @@ export function Dashboard() {
           {sourceType === 'azuredevops' ? 'Azure DevOps Organizations' : 'Organizations'}
         </h1>
         <div className="flex items-center gap-4">
-          <TextInput
-            leadingVisual={SearchIcon}
-            placeholder="Search organizations..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: 300 }}
-          />
           <Button
             variant="primary"
             onClick={() => setShowDiscoveryModal(true)}
