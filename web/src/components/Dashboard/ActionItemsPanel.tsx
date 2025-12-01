@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Label } from '@primer/react';
-import { AlertIcon, XCircleIcon, CheckCircleIcon, ClockIcon, ChevronDownIcon, ChevronRightIcon } from '@primer/octicons-react';
+import { AlertIcon, XCircleIcon, ClockIcon, ChevronDownIcon, ChevronRightIcon } from '@primer/octicons-react';
 import { DashboardActionItems } from '../../types';
 import { Link } from 'react-router-dom';
 import { formatDate } from '../../utils/format';
@@ -39,29 +39,9 @@ export function ActionItemsPanel({ actionItems, isLoading }: ActionItemsPanelPro
 
   const totalActionItems = failedMigrationsCount + failedDryRunsCount + readyBatchesCount + blockedReposCount;
 
+  // Hide the panel completely when there are no action items
   if (totalActionItems === 0) {
-    return (
-      <div className="mb-8">
-        <div 
-          className="rounded-lg border p-6 text-center"
-          style={{
-            backgroundColor: 'var(--bgColor-default)',
-            borderColor: 'var(--borderColor-success-emphasis)',
-            borderLeftWidth: '4px',
-          }}
-        >
-          <span style={{ color: 'var(--fgColor-success)' }} className="mx-auto mb-3 block">
-            <CheckCircleIcon size={48} />
-          </span>
-          <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--fgColor-success)' }}>
-            All Clear!
-          </h3>
-          <p style={{ color: 'var(--fgColor-muted)' }}>
-            No action items requiring attention. All systems running smoothly.
-          </p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
