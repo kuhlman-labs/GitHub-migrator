@@ -1,18 +1,28 @@
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Button, TextInput, Flash, Label, FormControl } from '@primer/react';
+import { useSearchParams } from 'react-router-dom';
+import { Button, TextInput, Flash, FormControl } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { XIcon, RepoIcon } from '@primer/octicons-react';
-import type { Organization } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
-import { useOrganizations } from '../../hooks/useQueries';
+import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems } from '../../hooks/useQueries';
 import { useStartDiscovery, useStartADODiscovery } from '../../hooks/useMutations';
 import { api } from '../../services/api';
+import { KPISection } from './KPISection';
+import { ActionItemsPanel } from './ActionItemsPanel';
+// import { OrganizationProgressCard } from './OrganizationProgressCard';
+import { GitHubOrganizationCard } from './GitHubOrganizationCard';
+import { ADOOrganizationCard } from './ADOOrganizationCard';
+import { UpcomingBatchesTimeline } from './UpcomingBatchesTimeline';
 
 export function Dashboard() {
-  const { data: organizations = [], isLoading, isFetching } = useOrganizations();
+  // Fetch all dashboard data with polling
+  const { data: organizations = [], isLoading: orgsLoading, isFetching: orgsFetching, refetch: refetchOrgs } = useOrganizations();
+  const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching, refetch: refetchAnalytics } = useAnalytics();
+  const { data: batches = [], isLoading: batchesLoading, isFetching: batchesFetching, refetch: refetchBatches } = useBatches();
+  const { data: actionItems, isLoading: actionItemsLoading, isFetching: actionItemsFetching, refetch: refetchActionItems } = useDashboardActionItems();
+  
   const startDiscoveryMutation = useStartDiscovery();
   const startADODiscoveryMutation = useStartADODiscovery();
   const [searchParams] = useSearchParams();
@@ -46,6 +56,47 @@ export function Dashboard() {
     };
     fetchConfig();
   }, []);
+
+  // Polling strategy based on activity
+  useEffect(() => {
+    const hasActiveMigrations = analytics && analytics.in_progress_count > 0;
+
+    let analyticsInterval: NodeJS.Timeout | null = null;
+    let actionItemsInterval: NodeJS.Timeout | null = null;
+    let orgsInterval: NodeJS.Timeout | null = null;
+    let batchesInterval: NodeJS.Timeout | null = null;
+
+    // KPIs: Poll every 30s if migrations active, else 2min
+    const analyticsDelay = hasActiveMigrations ? 30000 : 120000;
+    analyticsInterval = setInterval(() => {
+      refetchAnalytics();
+    }, analyticsDelay);
+
+    // Action Items: Poll every 15s (critical for admin attention)
+    actionItemsInterval = setInterval(() => {
+      refetchActionItems();
+    }, 15000);
+
+    // Org Progress: Poll every 1min
+    orgsInterval = setInterval(() => {
+      refetchOrgs();
+    }, 60000);
+
+    // Upcoming Batches: Poll every 1min if any in-progress, else 5min
+    const batchesDelay = hasActiveMigrations ? 60000 : 300000;
+    batchesInterval = setInterval(() => {
+      refetchBatches();
+    }, batchesDelay);
+
+    return () => {
+      if (analyticsInterval) clearInterval(analyticsInterval);
+      if (actionItemsInterval) clearInterval(actionItemsInterval);
+      if (orgsInterval) clearInterval(orgsInterval);
+      if (batchesInterval) clearInterval(batchesInterval);
+    };
+    // Only depend on in_progress_count to avoid recreating intervals on data changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analytics?.in_progress_count]);
 
   const handleStartDiscovery = async () => {
     // Validate input based on discovery type
@@ -123,13 +174,28 @@ export function Dashboard() {
     setCurrentPage(1);
   }, [searchTerm]);
 
+  const isLoading = orgsLoading || analyticsLoading || batchesLoading || actionItemsLoading;
+  const isFetching = orgsFetching || analyticsFetching || batchesFetching || actionItemsFetching;
+
+  // Group ADO projects by organization
+  const groupedADOOrgs = sourceType === 'azuredevops' 
+    ? filteredOrgs.reduce((acc, org) => {
+        const adoOrgName = org.ado_organization || 'Unknown';
+        if (!acc[adoOrgName]) {
+          acc[adoOrgName] = [];
+        }
+        acc[adoOrgName].push(org);
+        return acc;
+      }, {} as Record<string, typeof filteredOrgs>)
+    : {};
+
   return (
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-          {sourceType === 'azuredevops' ? 'Azure DevOps Organizations' : 'Organizations'}
+          Dashboard
         </h1>
         <div className="flex items-center gap-4">
           <Button
@@ -147,57 +213,95 @@ export function Dashboard() {
         </Flash>
       )}
 
-      <div className="mb-4 text-sm text-gh-text-secondary">
-        {totalItems > 0 ? (
-          <>
-            Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {totalItems === 1 ? 'organization' : 'organizations'} with {totalRepos} total repositories
-          </>
+      {/* KPI Section */}
+      <KPISection analytics={analytics} isLoading={analyticsLoading} />
+
+      {/* Action Items Panel */}
+      <ActionItemsPanel actionItems={actionItems} isLoading={actionItemsLoading} />
+
+      {/* Upcoming Batches Timeline */}
+      <UpcomingBatchesTimeline batches={batches} isLoading={batchesLoading} />
+
+      {/* Organizations Section */}
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>
+          {sourceType === 'azuredevops' ? 'Azure DevOps Organizations' : 'GitHub Organizations'}
+        </h2>
+        <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+          {sourceType === 'azuredevops' ? (
+            totalItems > 0 ? (
+              <>
+                Showing {Object.keys(groupedADOOrgs).length} {Object.keys(groupedADOOrgs).length === 1 ? 'organization' : 'organizations'} with {totalItems} {totalItems === 1 ? 'project' : 'projects'} and {totalRepos} total repositories
+              </>
+            ) : (
+              'No organizations found'
+            )
+          ) : (
+            totalItems > 0 ? (
+              <>
+                Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {totalItems === 1 ? 'organization' : 'organizations'} with {totalRepos} total repositories
+              </>
+            ) : (
+              'No organizations found'
+            )
+          )}
+        </div>
+
+        {orgsLoading ? (
+          <LoadingSpinner />
+        ) : filteredOrgs.length === 0 ? (
+          <Blankslate>
+            <Blankslate.Visual>
+              <RepoIcon size={48} />
+            </Blankslate.Visual>
+            <Blankslate.Heading>
+              {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
+            </Blankslate.Heading>
+            <Blankslate.Description>
+              {searchTerm 
+                ? 'No organizations match your search. Try a different search term.'
+                : sourceType === 'azuredevops'
+                  ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
+                  : 'Get started by discovering repositories from your GitHub organizations.'}
+            </Blankslate.Description>
+            {!searchTerm && (
+              <Blankslate.PrimaryAction onClick={() => setShowDiscoveryModal(true)}>
+                Start Discovery
+              </Blankslate.PrimaryAction>
+            )}
+          </Blankslate>
+        ) : sourceType === 'azuredevops' ? (
+          // Azure DevOps: Show organizations containing projects
+          <div className="space-y-6">
+            {Object.entries(groupedADOOrgs).map(([adoOrgName, projects]) => (
+              <ADOOrganizationCard 
+                key={adoOrgName} 
+                adoOrgName={adoOrgName} 
+                projects={projects} 
+              />
+            ))}
+          </div>
         ) : (
-          'No organizations found'
+          // GitHub: Show organizations with pagination
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              {paginatedOrgs.map((org) => (
+                <GitHubOrganizationCard key={org.organization} organization={org} />
+              ))}
+            </div>
+            {totalItems > pageSize && (
+              <Pagination
+                currentPage={currentPage}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+              />
+            )}
+          </>
         )}
       </div>
 
-      {isLoading ? (
-        <LoadingSpinner />
-      ) : filteredOrgs.length === 0 ? (
-        <Blankslate>
-          <Blankslate.Visual>
-            <RepoIcon size={48} />
-          </Blankslate.Visual>
-          <Blankslate.Heading>
-            {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
-          </Blankslate.Heading>
-          <Blankslate.Description>
-            {searchTerm 
-              ? 'No organizations match your search. Try a different search term.'
-              : sourceType === 'azuredevops'
-                ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
-                : 'Get started by discovering repositories from your GitHub organizations.'}
-          </Blankslate.Description>
-          {!searchTerm && (
-            <Blankslate.PrimaryAction onClick={() => setShowDiscoveryModal(true)}>
-              Start Discovery
-            </Blankslate.PrimaryAction>
-          )}
-        </Blankslate>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-            {paginatedOrgs.map((org) => (
-              <OrganizationCard key={org.organization} organization={org} />
-            ))}
-          </div>
-          {totalItems > pageSize && (
-            <Pagination
-              currentPage={currentPage}
-              totalItems={totalItems}
-              pageSize={pageSize}
-              onPageChange={setCurrentPage}
-            />
-          )}
-        </>
-      )}
-
+      {/* Discovery Modal - reuse existing modal from original Dashboard */}
       <DiscoveryModal
         isOpen={showDiscoveryModal}
         sourceType={sourceType}
@@ -224,110 +328,6 @@ export function Dashboard() {
         }}
       />
     </div>
-  );
-}
-
-function OrganizationCard({ organization }: { organization: Organization }) {
-  const getStatusVariant = (status: string): 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors' => {
-    const statusMap: Record<string, 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors'> = {
-      // Pending / Ready (neutral gray)
-      pending: 'default',
-      ready: 'default',
-      
-      // In Progress (blue)
-      dry_run_queued: 'accent',
-      dry_run_in_progress: 'accent',
-      pre_migration: 'accent',
-      archive_generating: 'accent',
-      queued_for_migration: 'accent',
-      migrating_content: 'accent',
-      post_migration: 'accent',
-      in_progress: 'accent',
-      
-      // Complete/Success (green)
-      dry_run_complete: 'success',
-      migration_complete: 'success',
-      complete: 'success',
-      completed: 'success',
-      
-      // Failures (red)
-      dry_run_failed: 'danger',
-      migration_failed: 'danger',
-      failed: 'danger',
-      
-      // Warnings (yellow/orange)
-      completed_with_errors: 'attention',
-      rolled_back: 'attention',
-      remediation_required: 'attention',
-      
-      // Cancelled (secondary/muted)
-      cancelled: 'secondary',
-      wont_migrate: 'secondary',
-    };
-    return statusMap[status] || 'default';
-  };
-
-  const totalRepos = organization.total_repos;
-  const totalProjects = organization.total_projects;
-  const statusCounts = organization.status_counts;
-
-  return (
-    <Link
-      to={`/org/${encodeURIComponent(organization.organization)}`}
-      className="block rounded-lg border transition-colors p-6"
-      style={{
-        backgroundColor: 'var(--bgColor-default)',
-        borderColor: 'var(--borderColor-default)',
-        boxShadow: 'var(--shadow-resting-small)'
-      }}
-    >
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>
-          {organization.organization}
-        </h3>
-        {organization.ado_organization && (
-          <Label variant="accent" size="small">
-            ADO Org: {organization.ado_organization}
-          </Label>
-        )}
-        {organization.enterprise && (
-          <Label variant="sponsors" size="small" className="ml-1">
-            GitHub Enterprise: {organization.enterprise}
-          </Label>
-        )}
-      </div>
-      
-      <div className="mb-4 space-y-3">
-        <div>
-          <div className="text-3xl font-semibold mb-1" style={{ color: 'var(--fgColor-accent)' }}>{totalRepos}</div>
-          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Repositories</div>
-        </div>
-        
-        {totalProjects !== undefined && (
-          <div>
-            <div className="text-2xl font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>{totalProjects}</div>
-            <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Projects</div>
-          </div>
-        )}
-      </div>
-
-      <div className="mb-3">
-        <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--fgColor-muted)' }}>
-          Status Breakdown
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {Object.entries(statusCounts).map(([status, count]) => (
-            <Label key={status} variant={getStatusVariant(status)} size="small">
-              {status.replace(/_/g, ' ')}: {count}
-            </Label>
-          ))}
-        </div>
-      </div>
-
-      <div className="text-sm hover:underline font-medium" style={{ color: 'var(--fgColor-accent)' }}>
-        View repositories →
-      </div>
-    </Link>
   );
 }
 
@@ -364,7 +364,7 @@ function DiscoveryModal({
   adoProject,
   setAdoProject,
   loading, 
-  error, 
+  error: _error, 
   onStart, 
   onClose 
 }: DiscoveryModalProps) {
@@ -465,18 +465,10 @@ function DiscoveryModal({
               disabled={loading}
               autoFocus
               required
-              aria-invalid={error && !organization.trim() ? true : undefined}
-              aria-describedby={error && !organization.trim() ? "org-error" : undefined}
             />
-            {error && !organization.trim() ? (
-              <FormControl.Validation variant="error" id="org-error">
-                Organization name is required
-              </FormControl.Validation>
-            ) : (
-              <FormControl.Caption>
-                Enter the GitHub organization name to discover all repositories.
-              </FormControl.Caption>
-            )}
+            <FormControl.Caption>
+              Enter the GitHub organization name to discover all repositories.
+            </FormControl.Caption>
           </FormControl>
         )}
 
@@ -490,18 +482,10 @@ function DiscoveryModal({
               disabled={loading}
               autoFocus
               required
-              aria-invalid={error && !enterpriseSlug.trim() ? true : undefined}
-              aria-describedby={error && !enterpriseSlug.trim() ? "enterprise-error" : undefined}
             />
-            {error && !enterpriseSlug.trim() ? (
-              <FormControl.Validation variant="error" id="enterprise-error">
-                Enterprise slug is required
-              </FormControl.Validation>
-            ) : (
-              <FormControl.Caption>
-                Enter the GitHub Enterprise slug to discover repositories across all organizations.
-              </FormControl.Caption>
-            )}
+            <FormControl.Caption>
+              Enter the GitHub Enterprise slug to discover repositories across all organizations.
+            </FormControl.Caption>
           </FormControl>
         )}
 
@@ -515,18 +499,10 @@ function DiscoveryModal({
               disabled={loading}
               autoFocus
               required
-              aria-invalid={error && !adoOrganization.trim() ? true : undefined}
-              aria-describedby={error && !adoOrganization.trim() ? "ado-org-error" : undefined}
             />
-            {error && !adoOrganization.trim() ? (
-              <FormControl.Validation variant="error" id="ado-org-error">
-                Azure DevOps organization name is required
-              </FormControl.Validation>
-            ) : (
-              <FormControl.Caption>
-                Discover all projects and repositories in this Azure DevOps organization.
-              </FormControl.Caption>
-            )}
+            <FormControl.Caption>
+              Discover all projects and repositories in this Azure DevOps organization.
+            </FormControl.Caption>
           </FormControl>
         )}
 
@@ -540,14 +516,7 @@ function DiscoveryModal({
                 placeholder="e.g., your-ado-org"
                 disabled={loading}
                 required
-                aria-invalid={error && !adoOrganization.trim() ? true : undefined}
-                aria-describedby={error && !adoOrganization.trim() ? "ado-proj-org-error" : undefined}
               />
-              {error && !adoOrganization.trim() && (
-                <FormControl.Validation variant="error" id="ado-proj-org-error">
-                  Azure DevOps organization name is required
-                </FormControl.Validation>
-              )}
             </FormControl>
             <FormControl required>
               <FormControl.Label>Project Name</FormControl.Label>
@@ -558,18 +527,10 @@ function DiscoveryModal({
                 disabled={loading}
                 autoFocus
                 required
-                aria-invalid={error && !adoProject.trim() ? true : undefined}
-                aria-describedby={error && !adoProject.trim() ? "ado-proj-error" : undefined}
               />
-              {error && !adoProject.trim() ? (
-                <FormControl.Validation variant="error" id="ado-proj-error">
-                  Project name is required
-                </FormControl.Validation>
-              ) : (
-                <FormControl.Caption>
-                  Discover repositories in a specific Azure DevOps project.
-                </FormControl.Caption>
-              )}
+              <FormControl.Caption>
+                Discover repositories in a specific Azure DevOps project.
+              </FormControl.Caption>
             </FormControl>
           </div>
         )}

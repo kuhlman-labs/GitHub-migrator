@@ -1,19 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { RepoIcon, DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
-import type { Repository, RepositoryFilters } from '../../types';
+import { RepoIcon, DownloadIcon, ChevronDownIcon, SquareIcon, XIcon } from '@primer/octicons-react';
+import type { RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
-import { StatusBadge } from '../common/StatusBadge';
-import { Badge } from '../common/Badge';
-import { TimestampDisplay } from '../common/TimestampDisplay';
 import { Pagination } from '../common/Pagination';
-import { formatBytes } from '../../utils/format';
 import { useRepositories } from '../../hooks/useQueries';
 import { searchParamsToFilters, filtersToSearchParams } from '../../utils/filters';
 import { RepositoryFilterSidebar } from './RepositoryFilterSidebar';
+import { RepositoryCard } from './RepositoryCard';
+import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { exportToCSV, exportToExcel, exportToJSON, getTimestampedFilename } from '../../utils/export';
 
 export function Repositories() {
@@ -25,11 +23,47 @@ export function Repositories() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<Set<number>>(new Set());
   const pageSize = 12;
   
   // Fetch repositories with filters
   const { data, isLoading, isFetching} = useRepositories(urlFilters);
   const repositories = data?.repositories || [];
+
+  // Selection helpers
+  const toggleRepositorySelection = (id: number) => {
+    setSelectedRepositoryIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllOnPage = () => {
+    const pageIds = paginatedRepos.map(r => r.id);
+    setSelectedRepositoryIds(prev => {
+      const newSet = new Set(prev);
+      pageIds.forEach(id => newSet.add(id));
+      return newSet;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedRepositoryIds(new Set());
+    setSelectionMode(false);
+  };
+
+  const toggleSelectionMode = () => {
+    setSelectionMode(!selectionMode);
+    if (selectionMode) {
+      setSelectedRepositoryIds(new Set());
+    }
+  };
 
   // Update filters and URL
   const updateFilters = (newFilters: Partial<RepositoryFilters>) => {
@@ -91,9 +125,10 @@ export function Repositories() {
   const endIndex = startIndex + pageSize;
   const paginatedRepos = repositories.slice(startIndex, endIndex);
 
-  // Reset page when filters change
+  // Reset page and selection when filters change
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedRepositoryIds(new Set());
   }, [searchParams]);
 
   // Export functions
@@ -143,21 +178,64 @@ export function Repositories() {
           {/* Header */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
-              <div>
-                <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Repositories</h1>
-                <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-                  {totalItems > 0 ? (
-                    <>
-                      Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} repositories
-                      {activeFilterCount > 0 && ` with ${activeFilterCount} active filter${activeFilterCount > 1 ? 's' : ''}`}
-                    </>
-                  ) : (
-                    'No repositories found'
-                  )}
-                </p>
-              </div>
               <div className="flex items-center gap-3">
-                {activeFilterCount > 0 && (
+                {/* Selection Mode Toggle - Left Side */}
+                <button
+                  onClick={toggleSelectionMode}
+                  className="p-2 rounded transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                  style={{
+                    backgroundColor: selectionMode ? 'var(--control-bgColor-rest)' : 'transparent',
+                    border: selectionMode ? '1px solid var(--borderColor-default)' : 'none',
+                  }}
+                  aria-label={selectionMode ? "Exit selection mode" : "Enter selection mode"}
+                  title={selectionMode ? "Exit selection mode" : "Select repositories for batch operations"}
+                >
+                  {selectionMode ? (
+                    <span style={{ color: 'var(--fgColor-default)' }}>
+                      <XIcon size={24} />
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--fgColor-muted)' }}>
+                      <SquareIcon size={24} />
+                    </span>
+                  )}
+                </button>
+
+                {/* Title and Info */}
+                <div>
+                  <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Repositories</h1>
+                  <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+                    {totalItems > 0 ? (
+                      <>
+                        Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} repositories
+                        {activeFilterCount > 0 && ` with ${activeFilterCount} active filter${activeFilterCount > 1 ? 's' : ''}`}
+                        {selectionMode && selectedRepositoryIds.size > 0 && ` · ${selectedRepositoryIds.size} selected`}
+                      </>
+                    ) : (
+                      'No repositories found'
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right Side Actions */}
+              <div className="flex items-center gap-3">
+                {/* Select All / Clear Selection (when in selection mode) */}
+                {selectionMode && (
+                  <>
+                    {selectedRepositoryIds.size > 0 ? (
+                      <Button onClick={clearSelection} variant="invisible">
+                        Clear Selection
+                      </Button>
+                    ) : (
+                      <Button onClick={selectAllOnPage} variant="invisible">
+                        Select All on Page
+                      </Button>
+                    )}
+                  </>
+                )}
+
+                {activeFilterCount > 0 && !selectionMode && (
                   <Button
                     onClick={clearAllFilters}
                     variant="invisible"
@@ -247,7 +325,13 @@ export function Repositories() {
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                 {paginatedRepos.map((repo) => (
-                  <RepositoryCard key={repo.id} repository={repo} />
+                  <RepositoryCard 
+                    key={repo.id} 
+                    repository={repo}
+                    selectionMode={selectionMode}
+                    selected={selectedRepositoryIds.has(repo.id)}
+                    onToggleSelect={toggleRepositorySelection}
+                  />
                 ))}
               </div>
               {totalItems > pageSize && (
@@ -262,76 +346,15 @@ export function Repositories() {
           )}
         </div>
       </div>
+
+      {/* Bulk Actions Toolbar */}
+      {selectionMode && selectedRepositoryIds.size > 0 && (
+        <BulkActionsToolbar
+          selectedCount={selectedRepositoryIds.size}
+          selectedIds={Array.from(selectedRepositoryIds)}
+          onClearSelection={clearSelection}
+        />
+      )}
     </div>
-  );
-}
-
-function RepositoryCard({ repository }: { repository: Repository }) {
-  return (
-    <Link
-      to={`/repository/${encodeURIComponent(repository.full_name)}`}
-      className="rounded-lg border transition-opacity hover:opacity-80 p-6 block"
-      style={{
-        backgroundColor: 'var(--bgColor-default)',
-        borderColor: 'var(--borderColor-default)',
-        boxShadow: 'var(--shadow-resting-small)'
-      }}
-    >
-      <h3 className="text-base font-semibold mb-3 truncate" style={{ color: 'var(--fgColor-default)' }}>
-        {repository.full_name}
-      </h3>
-      <div className="mb-3 flex items-center justify-between">
-        <StatusBadge status={repository.status} size="small" />
-      </div>
-      <div className="space-y-1.5 text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
-        <div>Size: {formatBytes(repository.total_size)}</div>
-        <div>Branches: {repository.branch_count}</div>
-      </div>
-      
-      {/* Timestamps */}
-      <div 
-        className="space-y-1 mb-3 pt-3"
-        style={{ borderTop: '1px solid var(--borderColor-default)' }}
-      >
-        {repository.last_discovery_at && (
-          <TimestampDisplay 
-            timestamp={repository.last_discovery_at} 
-            label="Discovered"
-            size="sm"
-          />
-        )}
-        {repository.last_dry_run_at && (
-          <TimestampDisplay 
-            timestamp={repository.last_dry_run_at} 
-            label="Dry run"
-            size="sm"
-          />
-        )}
-      </div>
-
-      <div className="flex gap-1.5 flex-wrap">
-        {repository.is_archived && <Badge color="gray">Archived</Badge>}
-        {repository.is_fork && <Badge color="purple">Fork</Badge>}
-        {repository.has_lfs && <Badge color="blue">LFS</Badge>}
-        {repository.has_submodules && <Badge color="purple">Submodules</Badge>}
-        {repository.has_large_files && <Badge color="orange">Large Files</Badge>}
-        {repository.has_actions && <Badge color="green">Actions</Badge>}
-        {repository.has_packages && <Badge color="orange">Packages</Badge>}
-        {repository.has_wiki && <Badge color="yellow">Wiki</Badge>}
-        {repository.has_pages && <Badge color="pink">Pages</Badge>}
-        {repository.has_discussions && <Badge color="indigo">Discussions</Badge>}
-        {repository.has_projects && <Badge color="teal">Projects</Badge>}
-        {repository.branch_protections > 0 && <Badge color="red">Protected</Badge>}
-        {repository.has_rulesets && <Badge color="red">Rulesets</Badge>}
-        {repository.has_code_scanning && <Badge color="green">Code Scanning</Badge>}
-        {repository.has_dependabot && <Badge color="green">Dependabot</Badge>}
-        {repository.has_secret_scanning && <Badge color="green">Secret Scanning</Badge>}
-        {repository.has_codeowners && <Badge color="blue">CODEOWNERS</Badge>}
-        {repository.has_self_hosted_runners && <Badge color="purple">Self-Hosted</Badge>}
-        {repository.visibility === 'public' && <Badge color="blue">Public</Badge>}
-        {repository.visibility === 'internal' && <Badge color="yellow">Internal</Badge>}
-        {repository.has_release_assets && <Badge color="pink">Releases</Badge>}
-      </div>
-    </Link>
   );
 }

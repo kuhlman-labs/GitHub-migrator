@@ -180,3 +180,25 @@ export function useMarkRepositoryWontMigrate() {
   });
 }
 
+export function useBatchUpdateRepositoryStatus() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ 
+      repositoryIds, 
+      action,
+      reason
+    }: { 
+      repositoryIds: number[]; 
+      action: 'mark_migrated' | 'mark_wont_migrate' | 'unmark_wont_migrate' | 'rollback';
+      reason?: string;
+    }) => api.batchUpdateRepositoryStatus(repositoryIds, action, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+    },
+  });
+}
+

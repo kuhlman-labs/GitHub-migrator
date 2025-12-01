@@ -14,7 +14,8 @@ import type {
   DependenciesResponse,
   SetupStatus,
   SetupConfig,
-  ValidationResult
+  ValidationResult,
+  DashboardActionItems
 } from '../types';
 
 const client = axios.create({
@@ -150,6 +151,19 @@ export const api = {
     return data.repository;
   },
 
+  async batchUpdateRepositoryStatus(
+    repositoryIds: number[], 
+    action: 'mark_migrated' | 'mark_wont_migrate' | 'unmark_wont_migrate' | 'rollback',
+    reason?: string
+  ) {
+    const { data } = await client.post('/repositories/batch-update', {
+      repository_ids: repositoryIds,
+      action,
+      reason: reason || '',
+    });
+    return data;
+  },
+
   // Organizations
   async listOrganizations(): Promise<Organization[]> {
     const { data } = await client.get('/organizations');
@@ -163,6 +177,12 @@ export const api = {
 
   async getOrganizationList(): Promise<string[]> {
     const { data } = await client.get('/organizations/list');
+    return data;
+  },
+
+  // Dashboard
+  async getDashboardActionItems(): Promise<DashboardActionItems> {
+    const { data } = await client.get('/dashboard/action-items');
     return data;
   },
 

@@ -9,6 +9,8 @@ interface RepositoryFilterSidebarProps {
   onChange: (filters: RepositoryFilters) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  hideOrganization?: boolean;  // Hide organization selector
+  hideProject?: boolean;       // Hide project selector
 }
 
 // Categorized status groups matching organization detail view
@@ -56,7 +58,14 @@ const STATUS_CATEGORIES = [
   },
 ];
 
-export function RepositoryFilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse }: RepositoryFilterSidebarProps) {
+export function RepositoryFilterSidebar({ 
+  filters, 
+  onChange, 
+  isCollapsed, 
+  onToggleCollapse,
+  hideOrganization = false,
+  hideProject = false 
+}: RepositoryFilterSidebarProps) {
   const [organizations, setOrganizations] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
@@ -149,8 +158,8 @@ export function RepositoryFilterSidebar({ filters, onChange, isCollapsed, onTogg
 
   const activeFilterCount = () => {
     let count = 0;
-    if (filters.organization) count++;
-    if (filters.project) count++;
+    if (!hideOrganization && filters.organization) count++;
+    if (!hideProject && filters.project) count++;
     if (filters.status) count++;
     // Note: search is now in the page header, not counted here
     if (filters.min_size || filters.max_size) count++;
@@ -300,17 +309,19 @@ export function RepositoryFilterSidebar({ filters, onChange, isCollapsed, onTogg
         </FilterSection>
 
         {/* Organization */}
-        <FilterSection title="Organization" defaultExpanded={true}>
-          <OrganizationSelector
-            organizations={organizations}
-            selectedOrganizations={getSelectedOrganizations()}
-            onChange={handleOrganizationChange}
-            loading={loadingOrgs}
-          />
-        </FilterSection>
+        {!hideOrganization && (
+          <FilterSection title="Organization" defaultExpanded={true}>
+            <OrganizationSelector
+              organizations={organizations}
+              selectedOrganizations={getSelectedOrganizations()}
+              onChange={handleOrganizationChange}
+              loading={loadingOrgs}
+            />
+          </FilterSection>
+        )}
 
         {/* Project (for Azure DevOps only) */}
-        {sourceType === 'azuredevops' && (
+        {!hideProject && sourceType === 'azuredevops' && (
           <FilterSection title="Project" defaultExpanded={true}>
             <OrganizationSelector
               organizations={projects}
