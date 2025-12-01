@@ -539,7 +539,7 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 		action = "unlock"
 		fullName = strings.TrimSuffix(fullPath, "/unlock")
 	} else if strings.HasSuffix(fullPath, "/rollback") {
-		action = "rollback"
+		action = "rollback" //nolint:goconst // action strings are contextual to routing
 		fullName = strings.TrimSuffix(fullPath, "/rollback")
 	} else if strings.HasSuffix(fullPath, "/mark-wont-migrate") {
 		action = "mark-wont-migrate"
@@ -2386,6 +2386,341 @@ func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusAccepted, response)
 }
 
+// BatchUpdateRepositoryStatusRequest defines the request for batch repository status updates
+type BatchUpdateRepositoryStatusRequest struct {
+	RepositoryIDs []int64  `json:"repository_ids,omitempty"`
+	FullNames     []string `json:"full_names,omitempty"`
+	Action        string   `json:"action"`           // "mark_migrated" | "mark_wont_migrate" | "unmark_wont_migrate" | "rollback"
+	Reason        string   `json:"reason,omitempty"` // Optional reason for rollback
+}
+
+// BatchUpdateRepositoryStatusResponse defines the response for batch updates
+type BatchUpdateRepositoryStatusResponse struct {
+	UpdatedIDs   []int64  `json:"updated_ids"`
+	FailedIDs    []int64  `json:"failed_ids,omitempty"`
+	UpdatedCount int      `json:"updated_count"`
+	FailedCount  int      `json:"failed_count"`
+	Message      string   `json:"message"`
+	Errors       []string `json:"errors,omitempty"`
+}
+
+// BatchUpdateRepositoryStatus handles POST /api/v1/repositories/batch-update
+func (h *Handler) BatchUpdateRepositoryStatus(w http.ResponseWriter, r *http.Request) {
+	var req BatchUpdateRepositoryStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := validateBatchAction(req.Action); err != nil {
+		h.sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	ctx := r.Context()
+	repos, err := h.fetchRepositoriesForBatchUpdate(ctx, req)
+	if err != nil {
+		h.handleBatchUpdateError(w, err)
+		return
+	}
+
+	if err := h.checkBatchUpdatePermissions(ctx, repos); err != nil {
+		h.logger.Warn("Batch update access denied", "error", err)
+		h.sendError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	response := h.executeBatchUpdate(ctx, repos, req.Action, req.Reason)
+	statusCode := determineBatchUpdateStatusCode(response)
+	h.sendJSON(w, statusCode, response)
+}
+
+// validateBatchAction validates the requested action
+func validateBatchAction(action string) error {
+	validActions := map[string]bool{
+		"mark_migrated":       true,
+		"mark_wont_migrate":   true,
+		"unmark_wont_migrate": true,
+		"rollback":            true,
+	}
+	if !validActions[action] {
+		return fmt.Errorf("invalid action. Must be 'mark_migrated', 'mark_wont_migrate', 'unmark_wont_migrate', or 'rollback'")
+	}
+	return nil
+}
+
+// fetchRepositoriesForBatchUpdate fetches repositories by IDs or names
+func (h *Handler) fetchRepositoriesForBatchUpdate(ctx context.Context, req BatchUpdateRepositoryStatusRequest) ([]*models.Repository, error) {
+	var repos []*models.Repository
+	var err error
+
+	if len(req.RepositoryIDs) > 0 {
+		repos, err = h.db.GetRepositoriesByIDs(ctx, req.RepositoryIDs)
+	} else if len(req.FullNames) > 0 {
+		repos, err = h.db.GetRepositoriesByNames(ctx, req.FullNames)
+	} else {
+		return nil, fmt.Errorf("must provide repository_ids or full_names")
+	}
+
+	if err != nil {
+		h.logger.Error("Failed to fetch repositories", "error", err)
+		return nil, fmt.Errorf("failed to fetch repositories: %w", err)
+	}
+
+	if len(repos) == 0 {
+		return nil, fmt.Errorf("no repositories found")
+	}
+
+	return repos, nil
+}
+
+// handleBatchUpdateError handles errors from fetching repositories
+func (h *Handler) handleBatchUpdateError(w http.ResponseWriter, err error) {
+	if err.Error() == "no repositories found" {
+		h.sendError(w, http.StatusNotFound, err.Error())
+	} else if err.Error() == "must provide repository_ids or full_names" {
+		h.sendError(w, http.StatusBadRequest, err.Error())
+	} else {
+		h.sendError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+// checkBatchUpdatePermissions checks user permissions for all repositories
+func (h *Handler) checkBatchUpdatePermissions(ctx context.Context, repos []*models.Repository) error {
+	repoFullNames := make([]string, len(repos))
+	for i, repo := range repos {
+		repoFullNames[i] = repo.FullName
+	}
+	return h.checkRepositoriesAccess(ctx, repoFullNames)
+}
+
+// executeBatchUpdate processes the batch update for all repositories
+func (h *Handler) executeBatchUpdate(ctx context.Context, repos []*models.Repository, action string, reason string) BatchUpdateRepositoryStatusResponse {
+	updatedIDs := make([]int64, 0, len(repos))
+	failedIDs := make([]int64, 0)
+	errors := make([]string, 0)
+	initiatingUser := getInitiatingUser(ctx)
+
+	for _, repo := range repos {
+		if err := h.processBatchUpdate(ctx, repo, action, initiatingUser, reason); err != nil {
+			failedIDs = append(failedIDs, repo.ID)
+			errors = append(errors, fmt.Sprintf("%s: %s", repo.FullName, err.Error()))
+			h.logger.Warn("Failed to update repository",
+				"repo", repo.FullName,
+				"action", action,
+				"error", err)
+			continue
+		}
+		updatedIDs = append(updatedIDs, repo.ID)
+	}
+
+	return BatchUpdateRepositoryStatusResponse{
+		UpdatedIDs:   updatedIDs,
+		FailedIDs:    failedIDs,
+		UpdatedCount: len(updatedIDs),
+		FailedCount:  len(failedIDs),
+		Message:      buildBatchUpdateMessage(len(updatedIDs), len(failedIDs), len(repos)),
+		Errors:       errors,
+	}
+}
+
+// buildBatchUpdateMessage builds a human-readable message for the batch update result
+func buildBatchUpdateMessage(updatedCount, failedCount, totalCount int) string {
+	if failedCount == 0 {
+		return fmt.Sprintf("Successfully updated %d repositories", updatedCount)
+	} else if updatedCount == 0 {
+		return fmt.Sprintf("Failed to update all %d repositories", failedCount)
+	}
+	return fmt.Sprintf("Updated %d of %d repositories (%d failed)", updatedCount, totalCount, failedCount)
+}
+
+// determineBatchUpdateStatusCode determines the HTTP status code based on results
+func determineBatchUpdateStatusCode(response BatchUpdateRepositoryStatusResponse) int {
+	if response.FailedCount > 0 && response.UpdatedCount == 0 {
+		return http.StatusBadRequest
+	} else if response.FailedCount > 0 {
+		return http.StatusMultiStatus
+	}
+	return http.StatusOK
+}
+
+// processBatchUpdate processes a single repository update for batch operations
+func (h *Handler) processBatchUpdate(ctx context.Context, repo *models.Repository, action string, initiatingUser *string, reason string) error {
+	switch action {
+	case "mark_migrated":
+		return h.markRepositoryMigrated(ctx, repo, initiatingUser)
+	case "mark_wont_migrate":
+		return h.markRepositoryWontMigrateBatch(ctx, repo, false, initiatingUser)
+	case "unmark_wont_migrate":
+		return h.markRepositoryWontMigrateBatch(ctx, repo, true, initiatingUser)
+	case "rollback":
+		return h.rollbackRepositoryBatch(ctx, repo, reason, initiatingUser)
+	default:
+		return fmt.Errorf("invalid action: %s", action)
+	}
+}
+
+// markRepositoryMigrated marks a repository as migrated (for external migrations)
+func (h *Handler) markRepositoryMigrated(ctx context.Context, repo *models.Repository, initiatingUser *string) error {
+	// Only allow marking from certain statuses
+	allowedStatuses := map[string]bool{
+		string(models.StatusPending):         true,
+		string(models.StatusDryRunComplete):  true,
+		string(models.StatusDryRunFailed):    true,
+		string(models.StatusMigrationFailed): true,
+		string(models.StatusRolledBack):      true,
+	}
+
+	if !allowedStatuses[repo.Status] {
+		return fmt.Errorf("cannot mark repository with status '%s' as migrated", repo.Status)
+	}
+
+	// Update status to complete
+	repo.Status = string(models.StatusComplete)
+	now := time.Now()
+	repo.MigratedAt = &now
+	repo.UpdatedAt = now
+
+	// Clear batch assignment (migrated outside the system)
+	repo.BatchID = nil
+
+	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+		return fmt.Errorf("failed to update repository: %w", err)
+	}
+
+	// Create migration history entry (shows in Migration History tab)
+	message := "Repository marked as migrated (external migration)"
+	if initiatingUser != nil {
+		message = fmt.Sprintf("Repository marked as migrated by %s (external migration)", *initiatingUser)
+	}
+
+	history := &models.MigrationHistory{
+		RepositoryID: repo.ID,
+		Status:       "completed",
+		Phase:        "migration",
+		Message:      &message,
+		StartedAt:    now,
+		CompletedAt:  &now,
+	}
+
+	if _, err := h.db.CreateMigrationHistory(ctx, history); err != nil {
+		h.logger.Warn("Failed to create migration history", "error", err)
+	}
+
+	// Create migration log entry (shows in Detailed Logs tab)
+	logEntry := &models.MigrationLog{
+		RepositoryID: repo.ID,
+		Level:        "INFO",
+		Phase:        "migration",
+		Operation:    "mark_migrated",
+		Message:      "Repository marked as migrated (external migration)",
+		InitiatedBy:  initiatingUser,
+	}
+	if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+		h.logger.Warn("Failed to create migration log", "error", err)
+	}
+
+	return nil
+}
+
+// markRepositoryWontMigrateBatch marks/unmarks a repository as won't migrate (batch version)
+func (h *Handler) markRepositoryWontMigrateBatch(ctx context.Context, repo *models.Repository, unmark bool, initiatingUser *string) error {
+	var newStatus string
+	var message string
+	var operation string
+
+	if unmark {
+		// Unmark: change from wont_migrate back to pending
+		if repo.Status != string(models.StatusWontMigrate) {
+			return fmt.Errorf("repository is not marked as won't migrate")
+		}
+		newStatus = string(models.StatusPending)
+		message = "Repository unmarked - changed to pending status"
+		operation = "unmark_wont_migrate"
+	} else {
+		// Mark: only allow marking from certain statuses
+		allowedStatuses := map[string]bool{
+			string(models.StatusPending):         true,
+			string(models.StatusDryRunComplete):  true,
+			string(models.StatusDryRunFailed):    true,
+			string(models.StatusMigrationFailed): true,
+			string(models.StatusRolledBack):      true,
+		}
+
+		if !allowedStatuses[repo.Status] {
+			return fmt.Errorf("cannot mark repository with status '%s' as won't migrate", repo.Status)
+		}
+
+		newStatus = string(models.StatusWontMigrate)
+		message = "Repository marked as won't migrate"
+		operation = "mark_wont_migrate"
+	}
+
+	// Remove from batch if assigned and marking (not unmarking)
+	if repo.BatchID != nil && !unmark {
+		repo.BatchID = nil
+	}
+
+	// Update status
+	repo.Status = newStatus
+	repo.UpdatedAt = time.Now()
+	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+		return fmt.Errorf("failed to update repository: %w", err)
+	}
+
+	// Create migration log entry
+	logEntry := &models.MigrationLog{
+		RepositoryID: repo.ID,
+		Level:        "INFO",
+		Phase:        "status_update",
+		Operation:    operation,
+		Message:      message,
+		InitiatedBy:  initiatingUser,
+	}
+	if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+		h.logger.Warn("Failed to create migration log", "error", err)
+	}
+
+	return nil
+}
+
+// rollbackRepositoryBatch rolls back a repository (batch version)
+func (h *Handler) rollbackRepositoryBatch(ctx context.Context, repo *models.Repository, reason string, initiatingUser *string) error {
+	// Validate repository status is complete
+	if repo.Status != string(models.StatusComplete) {
+		return fmt.Errorf("only completed migrations can be rolled back (current status: %s)", repo.Status)
+	}
+
+	// Build reason message with user attribution
+	reasonMessage := reason
+	if reasonMessage == "" {
+		reasonMessage = "Repository rolled back via batch operation"
+	}
+	if initiatingUser != nil {
+		reasonMessage = fmt.Sprintf("%s (by %s)", reasonMessage, *initiatingUser)
+	}
+
+	// Perform rollback using existing database method (this creates migration history)
+	if err := h.db.RollbackRepository(ctx, repo.FullName, reasonMessage); err != nil {
+		return fmt.Errorf("failed to rollback: %w", err)
+	}
+
+	// Create additional detailed log entry (always log for audit trail)
+	logEntry := &models.MigrationLog{
+		RepositoryID: repo.ID,
+		Level:        "INFO",
+		Phase:        "rollback",
+		Operation:    "batch_rollback",
+		Message:      fmt.Sprintf("Repository rolled back via batch operation. Reason: %s", reasonMessage),
+		InitiatedBy:  initiatingUser,
+	}
+	if err := h.db.CreateMigrationLog(ctx, logEntry); err != nil {
+		h.logger.Warn("Failed to create migration log", "error", err)
+	}
+
+	return nil
+}
+
 // GetMigrationStatus handles GET /api/v1/migrations/{id}
 func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
@@ -4216,6 +4551,24 @@ func (h *Handler) GetOrganizationList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, orgs)
+}
+
+// GetDashboardActionItems handles GET /api/v1/dashboard/action-items
+// Returns all items requiring admin attention: failed migrations, failed dry runs, ready batches, blocked repositories
+func (h *Handler) GetDashboardActionItems(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	actionItems, err := h.db.GetDashboardActionItems(ctx)
+	if err != nil {
+		if h.handleContextError(ctx, err, "get dashboard action items", r) {
+			return
+		}
+		h.logger.Error("Failed to get dashboard action items", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch dashboard action items")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, actionItems)
 }
 
 // GetMigrationHistoryList handles GET /api/v1/migrations/history

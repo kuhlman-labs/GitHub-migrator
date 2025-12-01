@@ -1027,9 +1027,16 @@ func calculateBatchReadiness(repos []*models.Repository) string {
 
 // OrganizationStats represents statistics for a single organization
 type OrganizationStats struct {
-	Organization string         `json:"organization"`
-	TotalRepos   int            `json:"total_repos"`
-	StatusCounts map[string]int `json:"status_counts"`
+	Organization             string         `json:"organization"`
+	TotalRepos               int            `json:"total_repos"`
+	StatusCounts             map[string]int `json:"status_counts"`
+	MigratedCount            int            `json:"migrated_count"`
+	InProgressCount          int            `json:"in_progress_count"`
+	FailedCount              int            `json:"failed_count"`
+	PendingCount             int            `json:"pending_count"`
+	MigrationProgressPercent int            `json:"migration_progress_percentage"`
+	Enterprise               *string        `json:"enterprise,omitempty"`       // GitHub Enterprise name
+	ADOOrganization          *string        `json:"ado_organization,omitempty"` // Azure DevOps organization
 }
 
 // GetOrganizationStats returns repository counts grouped by organization
@@ -1105,11 +1112,29 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 
 		orgMap[result.Org].StatusCounts[result.Status] = result.StatusCount
 		orgMap[result.Org].TotalRepos += result.StatusCount
+
+		// Calculate progress metrics
+		switch result.Status {
+		case "complete", "migration_complete":
+			orgMap[result.Org].MigratedCount += result.StatusCount
+		case "migration_failed", "dry_run_failed", "rolled_back":
+			orgMap[result.Org].FailedCount += result.StatusCount
+		case "queued_for_migration", "migrating_content", "dry_run_in_progress",
+			"dry_run_queued", "pre_migration", "archive_generating", "post_migration":
+			orgMap[result.Org].InProgressCount += result.StatusCount
+		default:
+			// pending, dry_run_complete, remediation_required
+			orgMap[result.Org].PendingCount += result.StatusCount
+		}
 	}
 
-	// Convert map to slice
+	// Convert map to slice and calculate percentages
 	stats := make([]*OrganizationStats, 0, len(orgMap))
 	for _, stat := range orgMap {
+		// Calculate migration progress percentage
+		if stat.TotalRepos > 0 {
+			stat.MigrationProgressPercent = (stat.MigratedCount * 100) / stat.TotalRepos
+		}
 		stats = append(stats, stat)
 	}
 
@@ -2341,4 +2366,134 @@ func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Cont
 	}
 
 	return stats, nil
+}
+
+// DashboardActionItems contains all action items requiring admin attention
+type DashboardActionItems struct {
+	FailedMigrations    []*FailedRepository  `json:"failed_migrations"`
+	FailedDryRuns       []*FailedRepository  `json:"failed_dry_runs"`
+	ReadyBatches        []*models.Batch      `json:"ready_batches"`
+	BlockedRepositories []*models.Repository `json:"blocked_repositories"`
+}
+
+// FailedRepository represents a repository that needs attention
+type FailedRepository struct {
+	ID           int64      `json:"id"`
+	FullName     string     `json:"full_name"`
+	Organization string     `json:"organization"`
+	Status       string     `json:"status"`
+	ErrorSummary *string    `json:"error_summary,omitempty"`
+	FailedAt     *time.Time `json:"failed_at,omitempty"`
+	BatchID      *int64     `json:"batch_id,omitempty"`
+	BatchName    *string    `json:"batch_name,omitempty"`
+}
+
+// GetDashboardActionItems retrieves all action items requiring admin attention
+func (d *Database) GetDashboardActionItems(ctx context.Context) (*DashboardActionItems, error) {
+	actionItems := &DashboardActionItems{
+		FailedMigrations:    make([]*FailedRepository, 0),
+		FailedDryRuns:       make([]*FailedRepository, 0),
+		ReadyBatches:        make([]*models.Batch, 0),
+		BlockedRepositories: make([]*models.Repository, 0),
+	}
+
+	// Get failed migrations
+	failedMigrationQuery := `
+		SELECT 
+			r.id,
+			r.full_name,
+			r.status,
+			r.batch_id,
+			b.name as batch_name,
+			r.migrated_at as failed_at
+		FROM repositories r
+		LEFT JOIN batches b ON r.batch_id = b.id
+		WHERE r.status = 'migration_failed'
+		ORDER BY r.migrated_at DESC
+		LIMIT 50
+	`
+
+	err := d.db.WithContext(ctx).Raw(failedMigrationQuery).Scan(&actionItems.FailedMigrations).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get failed migrations: %w", err)
+	}
+
+	// Extract organization from full_name for each failed migration
+	for _, repo := range actionItems.FailedMigrations {
+		slashIdx := -1
+		for idx := 0; idx < len(repo.FullName); idx++ {
+			if repo.FullName[idx] == '/' {
+				slashIdx = idx
+				break
+			}
+		}
+		if slashIdx > 0 {
+			repo.Organization = repo.FullName[:slashIdx]
+		} else {
+			// Defensive: use entire name if no slash found
+			repo.Organization = repo.FullName
+		}
+	}
+
+	// Get failed dry runs
+	failedDryRunQuery := `
+		SELECT 
+			r.id,
+			r.full_name,
+			r.status,
+			r.batch_id,
+			b.name as batch_name,
+			r.last_dry_run_at as failed_at
+		FROM repositories r
+		LEFT JOIN batches b ON r.batch_id = b.id
+		WHERE r.status = 'dry_run_failed'
+		ORDER BY r.last_dry_run_at DESC
+		LIMIT 50
+	`
+
+	err = d.db.WithContext(ctx).Raw(failedDryRunQuery).Scan(&actionItems.FailedDryRuns).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get failed dry runs: %w", err)
+	}
+
+	// Extract organization from full_name for each failed dry run
+	for _, repo := range actionItems.FailedDryRuns {
+		slashIdx := -1
+		for idx := 0; idx < len(repo.FullName); idx++ {
+			if repo.FullName[idx] == '/' {
+				slashIdx = idx
+				break
+			}
+		}
+		if slashIdx > 0 {
+			repo.Organization = repo.FullName[:slashIdx]
+		} else {
+			// Defensive: use entire name if no slash found
+			repo.Organization = repo.FullName
+		}
+	}
+
+	// Get ready batches (status = ready OR scheduled in the past)
+	now := time.Now()
+	err = d.db.WithContext(ctx).
+		Where("status = ? OR (scheduled_at IS NOT NULL AND scheduled_at <= ?)", "ready", now).
+		Order("scheduled_at ASC NULLS LAST, created_at ASC").
+		Limit(10).
+		Find(&actionItems.ReadyBatches).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ready batches: %w", err)
+	}
+
+	// Get blocked repositories (remediation_required or oversized)
+	err = d.db.WithContext(ctx).
+		Where("status = ? OR has_oversized_repository = ? OR has_blocking_files = ?",
+			"remediation_required", true, true).
+		Order("discovered_at DESC").
+		Limit(50).
+		Find(&actionItems.BlockedRepositories).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blocked repositories: %w", err)
+	}
+
+	return actionItems, nil
 }

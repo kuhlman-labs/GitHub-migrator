@@ -252,6 +252,11 @@ export interface Organization {
   status_counts: Record<string, number>;
   ado_organization?: string; // For ADO projects, the parent organization name
   enterprise?: string; // For GitHub orgs, the parent enterprise name (future enhancement)
+  migrated_count: number;
+  in_progress_count: number;
+  failed_count: number;
+  pending_count: number;
+  migration_progress_percentage: number;
 }
 
 export interface Project {
@@ -685,5 +690,24 @@ export interface ImportedMigrationSettings {
 // Repository with imported migration settings
 export interface ImportedRepository extends Repository {
   importedSettings?: ImportedMigrationSettings;
+}
+
+// Dashboard action items
+export interface FailedRepository {
+  id: number;
+  full_name: string;
+  organization: string;
+  status: string;
+  error_summary?: string;
+  failed_at?: string;
+  batch_id?: number;
+  batch_name?: string;
+}
+
+export interface DashboardActionItems {
+  failed_migrations: FailedRepository[];
+  failed_dry_runs: FailedRepository[];
+  ready_batches: Batch[];
+  blocked_repositories: Repository[];
 }
 

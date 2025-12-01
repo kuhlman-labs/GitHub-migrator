@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { Organization, Project, Repository, Analytics, Batch, MigrationHistoryEntry, RepositoryFilters } from '../types';
+import { Organization, Project, Repository, Analytics, Batch, MigrationHistoryEntry, RepositoryFilters, DashboardActionItems } from '../types';
 
 // Organization queries
 export function useOrganizations() {
@@ -80,6 +80,14 @@ export function useDiscoveryStatus() {
   return useQuery<{ status: string; discovered_count: number; is_running: boolean }, Error>({
     queryKey: ['discoveryStatus'],
     queryFn: () => api.getDiscoveryStatus(),
+  });
+}
+
+// Dashboard queries
+export function useDashboardActionItems() {
+  return useQuery<DashboardActionItems, Error>({
+    queryKey: ['dashboardActionItems'],
+    queryFn: () => api.getDashboardActionItems(),
   });
 }
 

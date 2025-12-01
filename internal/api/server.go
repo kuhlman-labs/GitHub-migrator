@@ -189,6 +189,7 @@ func (s *Server) Router() http.Handler {
 	// Repository endpoints
 	// Note: Using {fullName...} trailing wildcard to capture full repo name including slashes (e.g., "org/repo")
 	protect("GET /api/v1/repositories", s.handler.ListRepositories)
+	protect("POST /api/v1/repositories/batch-update", s.handler.BatchUpdateRepositoryStatus)
 	// Repository GET route handles both repo details and dependencies via suffix detection
 	protect("GET /api/v1/repositories/{fullName...}", s.handler.GetRepositoryOrDependencies)
 	protect("PATCH /api/v1/repositories/{fullName...}", s.handler.UpdateRepository)
@@ -199,6 +200,9 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/organizations", s.handler.ListOrganizations)
 	protect("GET /api/v1/organizations/list", s.handler.GetOrganizationList)
 	protect("GET /api/v1/projects", s.handler.ListProjects)
+
+	// Dashboard endpoints
+	protect("GET /api/v1/dashboard/action-items", s.handler.GetDashboardActionItems)
 
 	// Batch endpoints
 	protect("GET /api/v1/batches", s.handler.ListBatches)

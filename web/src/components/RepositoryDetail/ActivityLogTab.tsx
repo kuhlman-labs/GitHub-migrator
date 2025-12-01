@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { UnderlineNav } from '@primer/react';
 import type { Repository, MigrationHistory, MigrationLog } from '../../types';
 import { api } from '../../services/api';
 import { formatDate } from '../../utils/format';
@@ -71,31 +72,20 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
   return (
     <div className="space-y-4">
       {/* View Mode Toggle */}
-      <div 
-        className="flex items-center gap-2 pb-4"
-        style={{ borderBottom: '1px solid var(--borderColor-default)' }}
-      >
-        <button
-          onClick={() => setViewMode('history')}
-          className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-          style={{
-            backgroundColor: viewMode === 'history' ? 'var(--accent-emphasis)' : 'var(--control-bgColor-rest)',
-            color: viewMode === 'history' ? '#ffffff' : 'var(--fgColor-default)'
-          }}
+      <UnderlineNav aria-label="Activity view mode">
+        <UnderlineNav.Item
+          aria-current={viewMode === 'history' ? 'page' : undefined}
+          onSelect={() => setViewMode('history')}
         >
           Migration History
-        </button>
-        <button
-          onClick={() => setViewMode('logs')}
-          className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-          style={{
-            backgroundColor: viewMode === 'logs' ? 'var(--accent-emphasis)' : 'var(--control-bgColor-rest)',
-            color: viewMode === 'logs' ? '#ffffff' : 'var(--fgColor-default)'
-          }}
+        </UnderlineNav.Item>
+        <UnderlineNav.Item
+          aria-current={viewMode === 'logs' ? 'page' : undefined}
+          onSelect={() => setViewMode('logs')}
         >
           Detailed Logs
-        </button>
-      </div>
+        </UnderlineNav.Item>
+      </UnderlineNav>
 
       {/* Migration History View */}
       {viewMode === 'history' && (

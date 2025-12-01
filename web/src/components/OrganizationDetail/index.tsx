@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link as RouterLink, useSearchParams } from 'react-router-dom';
-import { Button, Token, Checkbox, FormControl, Link } from '@primer/react';
-import { FilterIcon } from '@primer/octicons-react';
-import type { Repository, ADOProject, Organization } from '../../types';
+import { Link } from '@primer/react';
+import type { Repository, ADOProject, Organization, RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
@@ -12,74 +11,15 @@ import { Pagination } from '../common/Pagination';
 import { formatBytes } from '../../utils/format';
 import { useRepositories, useOrganizations } from '../../hooks/useQueries';
 import { api } from '../../services/api';
+import { RepositoryFilterSidebar } from '../Repositories/RepositoryFilterSidebar';
 
-type FeatureFilter = {
-  key: keyof Repository;
-  label: string;
-  color: string;
-};
-
-// Azure DevOps specific features
-const ADO_FEATURE_FILTERS: FeatureFilter[] = [
-  { key: 'ado_has_boards', label: 'Azure Boards', color: 'purple' },
-  { key: 'ado_has_pipelines', label: 'Azure Pipelines', color: 'green' },
-  { key: 'ado_has_ghas', label: 'GHAS (ADO)', color: 'green' },
-  { key: 'ado_pull_request_count', label: 'Has Pull Requests', color: 'indigo' },
-  { key: 'ado_work_item_count', label: 'Has Work Items', color: 'purple' },
-  { key: 'ado_branch_policy_count', label: 'Has Branch Policies', color: 'red' },
-];
-
-// GitHub specific features
-const GITHUB_FEATURE_FILTERS: FeatureFilter[] = [
-  { key: 'is_archived', label: 'Archived', color: 'gray' },
-  { key: 'is_fork', label: 'Fork', color: 'purple' },
-  { key: 'has_lfs', label: 'LFS', color: 'blue' },
-  { key: 'has_submodules', label: 'Submodules', color: 'purple' },
-  { key: 'has_large_files', label: 'Large Files (>100MB)', color: 'orange' },
-  { key: 'has_actions', label: 'GitHub Actions', color: 'green' },
-  { key: 'has_wiki', label: 'Wiki', color: 'yellow' },
-  { key: 'has_pages', label: 'Pages', color: 'pink' },
-  { key: 'has_discussions', label: 'Discussions', color: 'indigo' },
-  { key: 'has_projects', label: 'Projects', color: 'teal' },
-  { key: 'has_packages', label: 'Packages', color: 'orange' },
-  { key: 'branch_protections', label: 'Branch Protections', color: 'red' },
-  { key: 'has_rulesets', label: 'Rulesets', color: 'red' },
-  { key: 'has_code_scanning', label: 'Code Scanning', color: 'green' },
-  { key: 'has_dependabot', label: 'Dependabot', color: 'green' },
-  { key: 'has_secret_scanning', label: 'Secret Scanning', color: 'green' },
-  { key: 'has_codeowners', label: 'CODEOWNERS', color: 'blue' },
-  { key: 'has_self_hosted_runners', label: 'Self-Hosted Runners', color: 'purple' },
-  { key: 'has_release_assets', label: 'Release Assets', color: 'pink' },
-  { key: 'webhook_count', label: 'Webhooks', color: 'indigo' },
-];
-
-// Map simplified filter values to actual backend statuses
-const STATUS_MAP: Record<string, string[]> = {
-  all: [],
-  pending: ['pending'],
-  remediation_required: ['remediation_required'],
-  in_progress: [
-    'dry_run_queued',
-    'dry_run_in_progress',
-    'pre_migration',
-    'archive_generating',
-    'queued_for_migration',
-    'migrating_content',
-    'post_migration',
-  ],
-  complete: ['dry_run_complete', 'migration_complete', 'complete'],
-  failed: ['dry_run_failed', 'migration_failed'],
-  rolled_back: ['rolled_back'],
-  wont_migrate: ['wont_migrate'],
-};
 
 export function OrganizationDetail() {
   const { orgName, projectName } = useParams<{ orgName: string; projectName?: string }>();
   const [searchParams] = useSearchParams();
-  const [filter, setFilter] = useState<string>('all');
   const searchTerm = searchParams.get('search') || '';
-  const [selectedFeatures, setSelectedFeatures] = useState<Set<keyof Repository>>(new Set());
-  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<RepositoryFilters>({});
+  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
   const [isADOOrg, setIsADOOrg] = useState(false);
@@ -89,8 +29,19 @@ export function OrganizationDetail() {
   const [projectCurrentPage, setProjectCurrentPage] = useState(1);
   const projectPageSize = 12;
 
-  const { data, isLoading, isFetching } = useRepositories({});
+  const { data, isLoading, isFetching } = useRepositories(filters);
   const { data: orgsData } = useOrganizations();
+
+  // Set filters to lock organization/project when component loads
+  useEffect(() => {
+    if (orgName) {
+      setFilters(prev => ({
+        ...prev,
+        organization: [orgName],
+        project: projectName ? [projectName] : undefined,
+      }));
+    }
+  }, [orgName, projectName]);
 
   // Reset pagination when organization or project changes
   useEffect(() => {
@@ -101,7 +52,7 @@ export function OrganizationDetail() {
   // Reset repository pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, searchTerm, selectedFeatures]);
+  }, [filters, searchTerm]);
 
   // Reset project pagination when project search changes
   useEffect(() => {
@@ -150,129 +101,22 @@ export function OrganizationDetail() {
     }
   }, [orgName, projectName, orgsData]);
 
-  // Filter repositories for this organization/project (client-side)
-  const repositories = (data?.repositories || []).filter((repo: Repository) => {
-    // If viewing an ADO project, filter by project name
-    if (projectName) {
-      return repo.ado_project === projectName;
-    }
-    
-    // For ADO repos without a specific project, check the ado_project field
-    if (repo.ado_project) {
-      return repo.ado_project === orgName;
-    }
-    
-    // For GitHub repos, extract org from full_name
-    const org = repo.full_name.split('/')[0];
-    return org === orgName;
-  });
+  // Filter repositories - API already handles filtering based on the filters object
+  const repositories = data?.repositories || [];
 
-  const toggleFeature = (feature: keyof Repository) => {
-    const newSelected = new Set(selectedFeatures);
-    if (newSelected.has(feature)) {
-      newSelected.delete(feature);
-    } else {
-      newSelected.add(feature);
-    }
-    setSelectedFeatures(newSelected);
-  };
-
-  const clearAllFilters = () => {
-    setSelectedFeatures(new Set());
-    setFilter('all');
-    // Search is now handled by global header
-  };
-
-  // Calculate dynamic feature counts based on currently filtered repos
-  const getFeatureCount = (feature: keyof Repository) => {
-    // Get repos that match status and search filters
-    let baseRepos = repositories.filter((repo: Repository) => {
-      // Status filter
-      if (filter !== 'all') {
-        const allowedStatuses = STATUS_MAP[filter] || [];
-        if (!allowedStatuses.includes(repo.status)) {
-          return false;
-        }
-      }
-
-      // Search filter
-      if (searchTerm && !repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())) {
-        return false;
-      }
-
-      return true;
-    });
-
-    // Apply all OTHER selected features (not the current one)
-    if (selectedFeatures.size > 0) {
-      baseRepos = baseRepos.filter((repo: Repository) => {
-        for (const selectedFeature of selectedFeatures) {
-          // Skip the feature we're counting
-          if (selectedFeature === feature) continue;
-          
-          const value = repo[selectedFeature];
-          const hasFeature = typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
-          if (!hasFeature) {
-            return false;
-          }
-        }
-        return true;
-      });
-    }
-
-    // Count how many of these repos have the target feature
-    return baseRepos.filter((repo: Repository) => {
-      const value = repo[feature];
-      return typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
-    }).length;
-  };
-
+  // Apply search term from header (client-side since it's in URL params)
   const filteredRepos = repositories.filter((repo: Repository) => {
-    // Status filter - check if repo status matches any of the mapped backend statuses
-    if (filter !== 'all') {
-      const allowedStatuses = STATUS_MAP[filter] || [];
-      if (!allowedStatuses.includes(repo.status)) {
-        return false;
-      }
-    }
-
-    // Search filter
     if (searchTerm && !repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
-
-    // Feature filters (AND logic - repo must have ALL selected features)
-    if (selectedFeatures.size > 0) {
-      for (const feature of selectedFeatures) {
-        const value = repo[feature];
-        const hasFeature = typeof value === 'boolean' ? value : (typeof value === 'number' && value > 0);
-        if (!hasFeature) {
-          return false;
-        }
-      }
-    }
-
     return true;
   });
-
-  const statuses = ['all', 'pending', 'remediation_required', 'in_progress', 'complete', 'failed', 'rolled_back', 'wont_migrate'];
-  const hasActiveFilters = selectedFeatures.size > 0 || filter !== 'all' || searchTerm !== '';
 
   // Paginate
   const totalItems = filteredRepos.length;
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
   const paginatedRepos = filteredRepos.slice(startIndex, endIndex);
-
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filter, searchTerm, selectedFeatures.size]);
-
-  // Reset project page when search changes
-  useEffect(() => {
-    setProjectCurrentPage(1);
-  }, [projectSearchTerm]);
 
   // Filter and paginate projects
   const filteredProjects = adoProjects.filter((project) => {
@@ -287,275 +131,141 @@ export function OrganizationDetail() {
   const paginatedProjects = filteredProjects.slice(projectStartIndex, projectEndIndex);
   const totalProjects = filteredProjects.length;
 
+  const handleFilterChange = (newFilters: RepositoryFilters) => {
+    // Always lock the organization/project to the current view
+    setFilters({
+      ...newFilters,
+      organization: [orgName!],
+      project: projectName ? [projectName] : undefined,
+    });
+  };
+
   return (
-    <div className="relative">
-      <RefreshIndicator isRefreshing={isFetching && !isLoading} />
+    <div className="flex h-screen" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+      {/* Filter Sidebar - only for repository view */}
+      {!isADOOrg && (
+        <RepositoryFilterSidebar
+          filters={filters}
+          onChange={handleFilterChange}
+          isCollapsed={isFiltersCollapsed}
+          onToggleCollapse={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
+          hideOrganization={true}
+          hideProject={true}
+        />
+      )}
       
-      {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="mb-6">
-        <ol className="flex items-center text-sm">
-          <li>
-            <Link as={RouterLink} to="/" muted>Dashboard</Link>
-          </li>
-          <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
-          {projectName ? (
-            <>
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-8 relative">
+          <RefreshIndicator isRefreshing={isFetching && !isLoading} />
+          
+          {/* Breadcrumbs */}
+          <nav aria-label="Breadcrumb" className="mb-6">
+            <ol className="flex items-center text-sm">
               <li>
-                <Link as={RouterLink} to={`/org/${encodeURIComponent(orgName || '')}`} muted>
-                  {orgName}
-                </Link>
+                <Link as={RouterLink} to="/" muted>Dashboard</Link>
               </li>
               <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
-              <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{projectName}</li>
-            </>
-          ) : (
-            <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{orgName}</li>
-          )}
-        </ol>
-      </nav>
+              {projectName ? (
+                <>
+                  <li>
+                    <Link as={RouterLink} to={`/org/${encodeURIComponent(orgName || '')}`} muted>
+                      {orgName}
+                    </Link>
+                  </li>
+                  <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
+                  <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{projectName}</li>
+                </>
+              ) : (
+                <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{orgName}</li>
+              )}
+            </ol>
+          </nav>
 
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>{projectName || orgName || ''}</h1>
-        
-        {/* Only show filters when NOT viewing an ADO org (i.e., viewing repos) */}
-        {!isADOOrg && (
-          <div className="flex gap-3">
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-md"
-              style={{
-                border: '1px solid var(--borderColor-default)',
-                backgroundColor: 'var(--control-bgColor-rest)',
-                color: 'var(--fgColor-default)'
-              }}
-            >
-              {statuses.map((status) => {
-                let label = '';
-                if (status === 'all') {
-                  label = 'All Status';
-                } else if (status === 'wont_migrate') {
-                  label = "Won't Migrate";
-                } else if (status === 'remediation_required') {
-                  label = "Needs Remediation";
-                } else {
-                  label = status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
-                }
-                return (
-                  <option key={status} value={status}>
-                    {label}
-                  </option>
-                );
-              })}
-            </select>
-            <Button
-              onClick={() => setShowFilters(!showFilters)}
-              variant={selectedFeatures.size > 0 ? 'primary' : 'invisible'}
-              leadingVisual={FilterIcon}
-            >
-                Features
-              {selectedFeatures.size > 0 && ` (${selectedFeatures.size})`}
-            </Button>
-            {hasActiveFilters && (
-              <Button
-                onClick={clearAllFilters}
-                variant="invisible"
-              >
-                Clear All
-              </Button>
-            )}
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>{projectName || orgName || ''}</h1>
           </div>
-        )}
-      </div>
 
-      {/* Feature Filters Panel - only for repository view */}
-      {!isADOOrg && showFilters && (() => {
-        // Determine the source type from the repositories
-        const sourceType = repositories.length > 0 ? repositories[0].source : null;
-        const isADOSource = sourceType === 'azuredevops';
-        
-        // Select the appropriate feature filters based on source
-        const featureFilters = isADOSource ? ADO_FEATURE_FILTERS : GITHUB_FEATURE_FILTERS;
-        
-        return (
-          <div 
-            className="rounded-lg border p-6 mb-6"
-            style={{
-              backgroundColor: 'var(--bgColor-default)',
-              borderColor: 'var(--borderColor-default)',
-              boxShadow: 'var(--shadow-resting-small)'
-            }}
-          >
-            <h3 className="text-base font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>
-              Filter by Features
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {featureFilters.map((featureFilter) => {
-                const count = getFeatureCount(featureFilter.key);
-                const isSelected = selectedFeatures.has(featureFilter.key);
-                const isDisabled = count === 0 && !isSelected;
-                
-                return (
-                  <FormControl key={featureFilter.key} disabled={isDisabled}>
-                    <div 
-                      className={`flex items-center gap-2 p-2 rounded transition-all ${
-                        !isDisabled ? 'cursor-pointer' : ''
-                      }`}
-                      style={{
-                        backgroundColor: isSelected ? 'var(--accent-subtle)' : 'transparent'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isDisabled && !isSelected) {
-                          e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isDisabled && !isSelected) {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }
-                      }}
-                      onClick={() => !isDisabled && toggleFeature(featureFilter.key)}
-                  >
-                      <Checkbox
-                        checked={isSelected}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          toggleFeature(featureFilter.key);
-                        }}
-                        disabled={isDisabled}
-                        value={featureFilter.key}
-                      />
-                      <FormControl.Label className="flex-1 select-none">
-                        <div className="flex items-center justify-between">
-                          <span 
-                            className="text-sm font-medium"
-                            style={{ 
-                              color: isDisabled ? 'var(--fgColor-disabled)' : 'var(--fgColor-default)' 
-                            }}
-                          >
-                        {featureFilter.label}
-                          </span>
-                          <span 
-                            className={`ml-2 text-xs ${isSelected ? 'font-semibold' : ''}`}
-                            style={{ 
-                              color: isSelected 
-                                ? 'var(--fgColor-accent)' 
-                                : isDisabled 
-                                  ? 'var(--fgColor-disabled)' 
-                                  : 'var(--fgColor-muted)' 
-                            }}
-                          >
-                            ({count})
-                          </span>
-                      </div>
-                      </FormControl.Label>
-                    </div>
-                  </FormControl>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Repository count - only for repository view */}
-      {!isADOOrg && (
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-sm text-gh-text-secondary">
-            {totalItems > 0 ? (
-              <>
-                Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {repositories.length} repositories
-                {hasActiveFilters && ` (${totalItems} match filters)`}
-              </>
-            ) : (
-              'No repositories found'
-            )}
-          </div>
-          {selectedFeatures.size > 0 && (
-            <div className="flex gap-2 flex-wrap">
-              {Array.from(selectedFeatures).map((feature) => {
-                // Look in both filter arrays for the feature config
-                const featureConfig = ADO_FEATURE_FILTERS.find(f => f.key === feature) || 
-                                     GITHUB_FEATURE_FILTERS.find(f => f.key === feature);
-                return (
-                  <Token
-                    key={feature}
-                    text={featureConfig?.label || String(feature)}
-                    onRemove={() => toggleFeature(feature)}
-                    leadingVisual={FilterIcon}
-                  />
-                );
-              })}
+          {/* Repository count - only for repository view */}
+          {!isADOOrg && (
+            <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+              {totalItems > 0 ? (
+                <>
+                  Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {filteredRepos.length} repositories
+                </>
+              ) : (
+                'No repositories found'
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Show projects for ADO organizations, repositories for everything else */}
-      {isADOOrg ? (
-        // ADO Organization view - show projects
-        <>
-          {/* Project count */}
-          <div className="mb-4 text-sm text-gh-text-secondary">
-            {totalProjects > 0 ? (
-              <>
-                Showing {projectStartIndex + 1}-{Math.min(projectEndIndex, totalProjects)} of {totalProjects} {totalProjects === 1 ? 'project' : 'projects'}
-              </>
-            ) : (
-              'No projects found'
-            )}
-          </div>
-
-          {projectsLoading ? (
-            <LoadingSpinner />
-          ) : filteredProjects.length === 0 ? (
-            <div className="text-center py-12 text-gh-text-secondary">
-              No projects found in this organization
-            </div>
-          ) : (
+          {/* Show projects for ADO organizations, repositories for everything else */}
+          {isADOOrg ? (
+            // ADO Organization view - show projects
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-                {paginatedProjects.map((project) => (
-                  <ProjectCard key={project.id} project={project} />
-                ))}
+              {/* Project count */}
+              <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                {totalProjects > 0 ? (
+                  <>
+                    Showing {projectStartIndex + 1}-{Math.min(projectEndIndex, totalProjects)} of {totalProjects} {totalProjects === 1 ? 'project' : 'projects'}
+                  </>
+                ) : (
+                  'No projects found'
+                )}
               </div>
-              {totalProjects > projectPageSize && (
-                <Pagination
-                  currentPage={projectCurrentPage}
-                  totalItems={totalProjects}
-                  pageSize={projectPageSize}
-                  onPageChange={setProjectCurrentPage}
-                />
+
+              {projectsLoading ? (
+                <LoadingSpinner />
+              ) : filteredProjects.length === 0 ? (
+                <div className="text-center py-12" style={{ color: 'var(--fgColor-muted)' }}>
+                  No projects found in this organization
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                    {paginatedProjects.map((project) => (
+                      <ProjectCard key={project.id} project={project} />
+                    ))}
+                  </div>
+                  {totalProjects > projectPageSize && (
+                    <Pagination
+                      currentPage={projectCurrentPage}
+                      totalItems={totalProjects}
+                      pageSize={projectPageSize}
+                      onPageChange={setProjectCurrentPage}
+                    />
+                  )}
+                </>
               )}
             </>
+          ) : (
+            // GitHub Organization or ADO Project view - show repositories
+            isLoading ? (
+              <LoadingSpinner />
+            ) : filteredRepos.length === 0 ? (
+              <div className="text-center py-12" style={{ color: 'var(--fgColor-muted)' }}>
+                No repositories found
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                  {paginatedRepos.map((repo) => (
+                    <RepositoryCard key={repo.id} repository={repo} />
+                  ))}
+                </div>
+                {totalItems > pageSize && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalItems={totalItems}
+                    pageSize={pageSize}
+                    onPageChange={setCurrentPage}
+                  />
+                )}
+              </>
+            )
           )}
-        </>
-      ) : (
-        // GitHub Organization or ADO Project view - show repositories
-        isLoading ? (
-          <LoadingSpinner />
-        ) : filteredRepos.length === 0 ? (
-          <div className="text-center py-12 text-gh-text-secondary">
-            No repositories found
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-              {paginatedRepos.map((repo) => (
-                <RepositoryCard key={repo.id} repository={repo} />
-              ))}
-            </div>
-            {totalItems > pageSize && (
-              <Pagination
-                currentPage={currentPage}
-                totalItems={totalItems}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
-              />
-            )}
-          </>
-        )
-      )}
+        </div>
+      </div>
     </div>
   );
 }
