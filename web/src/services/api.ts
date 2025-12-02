@@ -86,6 +86,10 @@ export const api = {
       params.organization = filters.organization.join(',');
     }
     
+    if (filters?.ado_organization && Array.isArray(filters.ado_organization)) {
+      params.ado_organization = filters.ado_organization.join(',');
+    }
+    
     if (filters?.project && Array.isArray(filters.project)) {
       params.project = filters.project.join(',');
     }

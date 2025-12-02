@@ -312,6 +312,16 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// ADO Organization filter (for Azure DevOps - can be comma-separated list)
+	// This filters by ado_projects.organization rather than the full_name prefix
+	if adoOrg := r.URL.Query().Get("ado_organization"); adoOrg != "" {
+		if strings.Contains(adoOrg, ",") {
+			filters["ado_organization"] = strings.Split(adoOrg, ",")
+		} else {
+			filters["ado_organization"] = adoOrg
+		}
+	}
+
 	// Project filter (for Azure DevOps - can be comma-separated list)
 	if project := r.URL.Query().Get("project"); project != "" {
 		if strings.Contains(project, ",") {
@@ -4375,14 +4385,88 @@ func (h *Handler) checkRepositoriesAccess(ctx context.Context, repoFullNames []s
 	return checker.ValidateRepositoryAccess(ctx, user, token, repoFullNames)
 }
 
+// adoProjectStats holds the computed statistics for an ADO project
+type adoProjectStats struct {
+	statusCounts                map[string]int
+	migratedCount               int
+	inProgressCount             int
+	failedCount                 int
+	pendingCount                int
+	migrationProgressPercentage int
+}
+
+// getADOProjectStats queries and calculates status distribution and progress metrics for an ADO project
+//
+//nolint:dupl // Intentionally extracted to avoid duplication in ListOrganizations and ListProjects
+func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organization string, repoCount int) adoProjectStats {
+	stats := adoProjectStats{
+		statusCounts: make(map[string]int),
+	}
+
+	if repoCount == 0 {
+		return stats
+	}
+
+	// Query actual status distribution using SQL for efficiency
+	// Filter by both ado_project AND organization (via full_name prefix) to handle
+	// duplicate project names across different ADO organizations
+	var results []struct {
+		Status string
+		Count  int
+	}
+	err := h.db.DB().WithContext(ctx).
+		Raw(`
+			SELECT status, COUNT(*) as count
+			FROM repositories
+			WHERE ado_project = ?
+			AND full_name LIKE ?
+			AND status != 'wont_migrate'
+			GROUP BY status
+		`, projectName, organization+"/%").
+		Scan(&results).Error
+
+	if err != nil {
+		h.logger.Warn("Failed to get status counts for project", "project", projectName, "org", organization, "error", err)
+		// Fallback: assume all pending
+		stats.statusCounts["pending"] = repoCount
+		stats.pendingCount = repoCount
+	} else {
+		for _, result := range results {
+			stats.statusCounts[result.Status] = result.Count
+
+			// Calculate progress metrics
+			switch result.Status {
+			case "complete", "migration_complete":
+				stats.migratedCount += result.Count
+			case "migration_failed", "dry_run_failed", "rolled_back":
+				stats.failedCount += result.Count
+			case "queued_for_migration", "migrating_content", "dry_run_in_progress",
+				"dry_run_queued", "pre_migration", "archive_generating", "post_migration":
+				stats.inProgressCount += result.Count
+			default:
+				// pending, dry_run_complete, remediation_required
+				stats.pendingCount += result.Count
+			}
+		}
+	}
+
+	// Calculate migration progress percentage
+	if repoCount > 0 {
+		stats.migrationProgressPercentage = (stats.migratedCount * 100) / repoCount
+	}
+
+	return stats
+}
+
 // ListOrganizations handles GET /api/v1/organizations
 // Returns GitHub organizations or ADO projects depending on source type
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// For Azure DevOps sources, return aggregated organizations (not individual projects)
+	// For Azure DevOps sources, return project-level data (not aggregated orgs)
+	// The frontend will group projects by their ado_organization field
 	if h.sourceType == sourceTypeAzureDevOps {
-		// Get all ADO projects to aggregate by organization
+		// Get all ADO projects
 		projects, err := h.db.GetADOProjects(ctx, "")
 		if err != nil {
 			if h.handleContextError(ctx, err, "get ADO projects", r) {
@@ -4393,71 +4477,33 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Aggregate projects by organization
-		orgMap := make(map[string]struct {
-			projectCount int
-			repoCount    int
-			projects     []string
-		})
-
+		// Build project stats with repository counts and status distribution
+		projectStats := make([]interface{}, 0, len(projects))
 		for _, project := range projects {
-			orgData := orgMap[project.Organization]
-			orgData.projectCount++
-			orgData.projects = append(orgData.projects, project.Name)
-
 			// Count repositories for this project
 			repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
 			if err != nil {
 				h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
-			}
-			orgData.repoCount += repoCount
-
-			orgMap[project.Organization] = orgData
-		}
-
-		// Transform into organization stats
-		orgStats := make([]interface{}, 0, len(orgMap))
-		for orgName, orgData := range orgMap {
-			// Get actual status distribution for all repos in this organization
-			statusCounts := make(map[string]int)
-			if orgData.repoCount > 0 {
-				// Query actual repository statuses grouped by organization
-				var results []struct {
-					Status string
-					Count  int
-				}
-				err := h.db.DB().WithContext(ctx).
-					Raw(`
-						SELECT status, COUNT(*) as count
-						FROM repositories
-						WHERE ado_project IN (
-							SELECT name FROM ado_projects WHERE organization = ?
-						)
-						AND status != 'wont_migrate'
-						GROUP BY status
-					`, orgName).
-					Scan(&results).Error
-
-				if err != nil {
-					h.logger.Warn("Failed to get status counts for organization", "org", orgName, "error", err)
-					// Fall back to assuming pending if query fails
-					statusCounts["pending"] = orgData.repoCount
-				} else {
-					for _, result := range results {
-						statusCounts[result.Status] = result.Count
-					}
-				}
+				repoCount = 0
 			}
 
-			orgStats = append(orgStats, map[string]interface{}{
-				"organization":   orgName,
-				"total_repos":    orgData.repoCount,
-				"total_projects": orgData.projectCount,
-				"status_counts":  statusCounts,
+			// Get status distribution and progress metrics for this project
+			stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
+
+			projectStats = append(projectStats, map[string]interface{}{
+				"organization":                  project.Name,         // Project name (frontend expects this field)
+				"ado_organization":              project.Organization, // Parent ADO organization name
+				"total_repos":                   repoCount,
+				"status_counts":                 stats.statusCounts,
+				"migrated_count":                stats.migratedCount,
+				"in_progress_count":             stats.inProgressCount,
+				"failed_count":                  stats.failedCount,
+				"pending_count":                 stats.pendingCount,
+				"migration_progress_percentage": stats.migrationProgressPercentage,
 			})
 		}
 
-		h.sendJSON(w, http.StatusOK, orgStats)
+		h.sendJSON(w, http.StatusOK, projectStats)
 		return
 	}
 
@@ -4508,39 +4554,20 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 			repoCount = 0
 		}
 
-		// Get status distribution for repos in this project
-		statusCounts := make(map[string]int)
-		if repoCount > 0 {
-			// Query actual status distribution using SQL for efficiency
-			var results []struct {
-				Status string
-				Count  int
-			}
-			err := h.db.DB().WithContext(ctx).
-				Raw(`
-					SELECT status, COUNT(*) as count
-					FROM repositories
-					WHERE ado_project = ?
-					AND status != 'wont_migrate'
-					GROUP BY status
-				`, project.Name).
-				Scan(&results).Error
-
-			if err != nil {
-				h.logger.Warn("Failed to get status counts for project", "project", project.Name, "error", err)
-				// Fallback: assume all pending
-				statusCounts["pending"] = repoCount
-			} else {
-				for _, result := range results {
-					statusCounts[result.Status] = result.Count
-				}
-			}
-		}
+		// Get status distribution and progress metrics for this project
+		stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
 
 		projectStats = append(projectStats, map[string]interface{}{
-			"project":       project.Name,
-			"total_repos":   repoCount,
-			"status_counts": statusCounts,
+			"organization":                  project.Name,         // This is actually the project name but kept for compatibility with frontend
+			"ado_organization":              project.Organization, // The actual ADO organization
+			"project":                       project.Name,
+			"total_repos":                   repoCount,
+			"status_counts":                 stats.statusCounts,
+			"migrated_count":                stats.migratedCount,
+			"in_progress_count":             stats.inProgressCount,
+			"failed_count":                  stats.failedCount,
+			"pending_count":                 stats.pendingCount,
+			"migration_progress_percentage": stats.migrationProgressPercentage,
 		})
 	}
 

@@ -505,6 +505,7 @@ export interface RepositoryFilters {
   batch_id?: number;
   source?: string;
   organization?: string | string[];
+  ado_organization?: string | string[]; // For Azure DevOps organizations (filters by ado_projects table)
   project?: string | string[]; // For Azure DevOps projects
   min_size?: number;
   max_size?: number;

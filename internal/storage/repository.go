@@ -390,6 +390,11 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 		query = query.Scopes(WithOrganization(org))
 	}
 
+	// Apply ADO organization filter (filters by ado_projects table)
+	if adoOrg, ok := filters["ado_organization"]; ok {
+		query = query.Scopes(WithADOOrganization(adoOrg))
+	}
+
 	// Apply ADO project filter
 	if project, ok := filters["ado_project"]; ok {
 		query = query.Scopes(WithADOProject(project))

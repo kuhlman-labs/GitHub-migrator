@@ -26,6 +26,15 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
     }
   }
 
+  // Handle ADO organization (can be string or array)
+  if (filters.ado_organization) {
+    if (Array.isArray(filters.ado_organization)) {
+      params.set('ado_organization', filters.ado_organization.join(','));
+    } else {
+      params.set('ado_organization', filters.ado_organization);
+    }
+  }
+
   // Handle project (can be string or array)
   if (filters.project) {
     if (Array.isArray(filters.project)) {
@@ -256,6 +265,11 @@ export function searchParamsToFilters(searchParams: URLSearchParams): Repository
   const organization = searchParams.get('organization');
   if (organization) {
     filters.organization = organization.includes(',') ? organization.split(',') : organization;
+  }
+  
+  const adoOrganization = searchParams.get('ado_organization');
+  if (adoOrganization) {
+    filters.ado_organization = adoOrganization.includes(',') ? adoOrganization.split(',') : adoOrganization;
   }
   
   const project = searchParams.get('project');
