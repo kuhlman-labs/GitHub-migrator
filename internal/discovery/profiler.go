@@ -68,6 +68,8 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	p.profileBranchProtections(ctx, org, name, repo)
 	p.profileRulesets(ctx, org, name, repo)
 	p.profileEnvironments(ctx, org, name, repo)
+	p.profileSecrets(ctx, org, name, repo)
+	p.profileVariables(ctx, org, name, repo)
 	p.profileWebhooks(ctx, org, name, repo)
 	p.profileContributors(ctx, org, name, repo)
 	p.profileTags(ctx, org, name, repo)
@@ -106,6 +108,9 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 		"has_discussions", repo.HasDiscussions,
 		"has_packages", repo.HasPackages,
 		"has_rulesets", repo.HasRulesets,
+		"environment_count", repo.EnvironmentCount,
+		"secret_count", repo.SecretCount,
+		"variable_count", repo.VariableCount,
 		"has_code_scanning", repo.HasCodeScanning,
 		"has_dependabot", repo.HasDependabot,
 		"has_secret_scanning", repo.HasSecretScanning,
@@ -162,6 +167,28 @@ func (p *Profiler) profileEnvironments(ctx context.Context, org, name string, re
 		repo.EnvironmentCount = environments.GetTotalCount()
 	} else {
 		p.logger.Debug("Failed to get environments", "error", err)
+	}
+}
+
+// profileSecrets counts repository secrets (Actions secrets)
+func (p *Profiler) profileSecrets(ctx context.Context, org, name string, repo *models.Repository) {
+	secrets, _, err := p.client.REST().Actions.ListRepoSecrets(ctx, org, name, nil)
+	if err == nil && secrets != nil {
+		// Secrets type has TotalCount field
+		repo.SecretCount = secrets.TotalCount
+	} else {
+		p.logger.Debug("Failed to get secrets", "error", err)
+	}
+}
+
+// profileVariables counts repository variables (Actions variables)
+func (p *Profiler) profileVariables(ctx context.Context, org, name string, repo *models.Repository) {
+	variables, _, err := p.client.REST().Actions.ListRepoVariables(ctx, org, name, nil)
+	if err == nil && variables != nil {
+		// ActionsVariables type has TotalCount field
+		repo.VariableCount = variables.TotalCount
+	} else {
+		p.logger.Debug("Failed to get variables", "error", err)
 	}
 }
 

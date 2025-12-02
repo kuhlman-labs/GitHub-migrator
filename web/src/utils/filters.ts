@@ -60,6 +60,9 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
   if (filters.has_self_hosted_runners !== undefined) params.set('has_self_hosted_runners', filters.has_self_hosted_runners.toString());
   if (filters.has_release_assets !== undefined) params.set('has_release_assets', filters.has_release_assets.toString());
   if (filters.has_webhooks !== undefined) params.set('has_webhooks', filters.has_webhooks.toString());
+  if (filters.has_environments !== undefined) params.set('has_environments', filters.has_environments.toString());
+  if (filters.has_secrets !== undefined) params.set('has_secrets', filters.has_secrets.toString());
+  if (filters.has_variables !== undefined) params.set('has_variables', filters.has_variables.toString());
   if (filters.visibility) params.set('visibility', filters.visibility);
 
   // Handle Azure DevOps feature filters
@@ -192,6 +195,15 @@ export function searchParamsToFilters(searchParams: URLSearchParams): Repository
 
   const hasWebhooks = searchParams.get('has_webhooks');
   if (hasWebhooks) filters.has_webhooks = hasWebhooks === 'true';
+
+  const hasEnvironments = searchParams.get('has_environments');
+  if (hasEnvironments) filters.has_environments = hasEnvironments === 'true';
+
+  const hasSecrets = searchParams.get('has_secrets');
+  if (hasSecrets) filters.has_secrets = hasSecrets === 'true';
+
+  const hasVariables = searchParams.get('has_variables');
+  if (hasVariables) filters.has_variables = hasVariables === 'true';
 
   const availableForBatch = searchParams.get('available_for_batch');
   if (availableForBatch) filters.available_for_batch = availableForBatch === 'true';

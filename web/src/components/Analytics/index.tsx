@@ -480,6 +480,9 @@ export function Analytics() {
               { label: "Self-Hosted Runners", count: featureStats.has_self_hosted_runners, filter: { has_self_hosted_runners: true } },
               { label: "Release Assets", count: featureStats.has_release_assets, filter: { has_release_assets: true } },
               { label: "Webhooks", count: featureStats.has_webhooks, filter: { has_webhooks: true } },
+              { label: "Environments", count: featureStats.has_environments, filter: { has_environments: true } },
+              { label: "Secrets", count: featureStats.has_secrets, filter: { has_secrets: true } },
+              { label: "Variables", count: featureStats.has_variables, filter: { has_variables: true } },
             ];
             
             // Select features based on source type

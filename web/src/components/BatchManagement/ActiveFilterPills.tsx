@@ -77,6 +77,9 @@ export function ActiveFilterPills({ filters, onRemoveFilter, onClearAll }: Activ
     ['has_projects', 'Projects'],
     ['has_branch_protections', 'Branch Protections'],
     ['is_archived', 'Archived'],
+    ['has_environments', 'Environments'],
+    ['has_secrets', 'Secrets'],
+    ['has_variables', 'Variables'],
   ];
 
   featureLabels.forEach(([key, label]) => {

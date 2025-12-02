@@ -187,6 +187,9 @@ export function RepositoryFilterSidebar({
     if (filters.has_self_hosted_runners) count++;
     if (filters.has_release_assets) count++;
     if (filters.has_webhooks) count++;
+    if (filters.has_environments) count++;
+    if (filters.has_secrets) count++;
+    if (filters.has_variables) count++;
     // ADO features
     if (filters.ado_is_git !== undefined) count++;
     if (filters.ado_has_boards) count++;
@@ -485,6 +488,9 @@ export function RepositoryFilterSidebar({
               { key: 'has_self_hosted_runners' as const, label: 'Self-Hosted Runners' },
               { key: 'has_release_assets' as const, label: 'Release Assets' },
               { key: 'has_webhooks' as const, label: 'Webhooks' },
+              { key: 'has_environments' as const, label: 'Environments' },
+              { key: 'has_secrets' as const, label: 'Secrets' },
+              { key: 'has_variables' as const, label: 'Variables' },
             ].map((feature) => (
               <label key={feature.key} className="flex items-center gap-2 cursor-pointer">
                 <input

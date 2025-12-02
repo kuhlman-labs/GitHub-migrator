@@ -323,6 +323,9 @@ export interface FeatureStats {
   has_self_hosted_runners: number;
   has_release_assets: number;
   has_webhooks: number;
+  has_environments: number;
+  has_secrets: number;
+  has_variables: number;
   
   // Azure DevOps features
   ado_tfvc_count: number;
@@ -528,6 +531,9 @@ export interface RepositoryFilters {
   has_self_hosted_runners?: boolean;
   has_release_assets?: boolean;
   has_webhooks?: boolean;
+  has_environments?: boolean;
+  has_secrets?: boolean;
+  has_variables?: boolean;
   
   // Azure DevOps features
   ado_is_git?: boolean;

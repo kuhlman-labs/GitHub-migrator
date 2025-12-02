@@ -176,6 +176,33 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			}
 		}
 
+		// Special handling for environments (checking if count > 0)
+		if value, ok := filters["has_environments"]; ok {
+			if value {
+				db = db.Where("environment_count > 0")
+			} else {
+				db = db.Where("(environment_count = 0 OR environment_count IS NULL)")
+			}
+		}
+
+		// Special handling for secrets (checking if count > 0)
+		if value, ok := filters["has_secrets"]; ok {
+			if value {
+				db = db.Where("secret_count > 0")
+			} else {
+				db = db.Where("(secret_count = 0 OR secret_count IS NULL)")
+			}
+		}
+
+		// Special handling for variables (checking if count > 0)
+		if value, ok := filters["has_variables"]; ok {
+			if value {
+				db = db.Where("variable_count > 0")
+			} else {
+				db = db.Where("(variable_count = 0 OR variable_count IS NULL)")
+			}
+		}
+
 		return db
 	}
 }

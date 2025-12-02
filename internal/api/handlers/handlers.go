@@ -388,6 +388,15 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	if hasWebhooks := r.URL.Query().Get("has_webhooks"); hasWebhooks != "" {
 		filters["has_webhooks"] = hasWebhooks == boolTrue
 	}
+	if hasEnvironments := r.URL.Query().Get("has_environments"); hasEnvironments != "" {
+		filters["has_environments"] = hasEnvironments == boolTrue
+	}
+	if hasSecrets := r.URL.Query().Get("has_secrets"); hasSecrets != "" {
+		filters["has_secrets"] = hasSecrets == boolTrue
+	}
+	if hasVariables := r.URL.Query().Get("has_variables"); hasVariables != "" {
+		filters["has_variables"] = hasVariables == boolTrue
+	}
 
 	// Azure DevOps feature filters
 	if adoIsGit := r.URL.Query().Get("ado_is_git"); adoIsGit != "" {
@@ -3557,6 +3566,9 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 			output.WriteString(fmt.Sprintf("Self-Hosted Runners,%d,%.1f%%\n", featureStats.HasSelfHostedRunners, float64(featureStats.HasSelfHostedRunners)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Release Assets,%d,%.1f%%\n", featureStats.HasReleaseAssets, float64(featureStats.HasReleaseAssets)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Webhooks,%d,%.1f%%\n", featureStats.HasWebhooks, float64(featureStats.HasWebhooks)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Environments,%d,%.1f%%\n", featureStats.HasEnvironments, float64(featureStats.HasEnvironments)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Secrets,%d,%.1f%%\n", featureStats.HasSecrets, float64(featureStats.HasSecrets)/float64(totalRepos)*100))
+			output.WriteString(fmt.Sprintf("Variables,%d,%.1f%%\n", featureStats.HasVariables, float64(featureStats.HasVariables)/float64(totalRepos)*100))
 		}
 		// Common features (applicable to both GitHub and Azure DevOps)
 		output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))

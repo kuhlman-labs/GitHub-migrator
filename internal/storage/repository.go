@@ -408,7 +408,7 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 		"has_pages", "has_discussions", "has_projects", "has_packages", "has_rulesets",
 		"is_archived", "is_fork", "has_code_scanning", "has_dependabot", "has_secret_scanning",
 		"has_codeowners", "has_self_hosted_runners", "has_release_assets", "has_branch_protections",
-		"has_webhooks",
+		"has_webhooks", "has_environments", "has_secrets", "has_variables",
 		// Azure DevOps features
 		"ado_is_git", "ado_has_boards", "ado_has_pipelines", "ado_has_ghas", "ado_has_wiki",
 	}
@@ -1218,6 +1218,9 @@ type FeatureStats struct {
 	HasSelfHostedRunners int `json:"has_self_hosted_runners" gorm:"column:self_hosted_runners_count"`
 	HasReleaseAssets     int `json:"has_release_assets" gorm:"column:release_assets_count"`
 	HasWebhooks          int `json:"has_webhooks" gorm:"column:webhooks_count"`
+	HasEnvironments      int `json:"has_environments" gorm:"column:environments_count"`
+	HasSecrets           int `json:"has_secrets" gorm:"column:secrets_count"`
+	HasVariables         int `json:"has_variables" gorm:"column:variables_count"`
 
 	// Azure DevOps features
 	ADOTFVCCount           int `json:"ado_tfvc_count" gorm:"column:ado_tfvc_count"`
@@ -1262,6 +1265,9 @@ func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
 		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+		SUM(CASE WHEN environment_count > 0 THEN 1 ELSE 0 END) as environments_count,
+		SUM(CASE WHEN secret_count > 0 THEN 1 ELSE 0 END) as secrets_count,
+		SUM(CASE WHEN variable_count > 0 THEN 1 ELSE 0 END) as variables_count,
 			
 		-- Azure DevOps features (only count for ADO sources)
 		SUM(CASE WHEN source = 'azuredevops' AND ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
@@ -2006,6 +2012,9 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
 		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
 		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+		SUM(CASE WHEN environment_count > 0 THEN 1 ELSE 0 END) as environments_count,
+		SUM(CASE WHEN secret_count > 0 THEN 1 ELSE 0 END) as secrets_count,
+		SUM(CASE WHEN variable_count > 0 THEN 1 ELSE 0 END) as variables_count,
 			
 		-- Azure DevOps features (only count for ADO sources)
 		SUM(CASE WHEN source = 'azuredevops' AND ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,

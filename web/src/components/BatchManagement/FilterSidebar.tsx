@@ -397,6 +397,9 @@ export function FilterSidebar({ filters, onChange, isCollapsed, onToggleCollapse
               { key: 'has_self_hosted_runners' as const, label: 'Self-Hosted Runners' },
               { key: 'has_release_assets' as const, label: 'Release Assets' },
               { key: 'has_webhooks' as const, label: 'Webhooks' },
+              { key: 'has_environments' as const, label: 'Environments' },
+              { key: 'has_secrets' as const, label: 'Secrets' },
+              { key: 'has_variables' as const, label: 'Variables' },
             ].map((feature) => (
               <label key={feature.key} className="flex items-center gap-2 cursor-pointer">
                 <input
