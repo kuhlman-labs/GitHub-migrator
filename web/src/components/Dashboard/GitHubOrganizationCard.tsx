@@ -19,7 +19,7 @@ export function GitHubOrganizationCard({ organization }: GitHubOrganizationCardP
 
   return (
     <Link
-      to={`/org/${encodeURIComponent(organization.organization)}`}
+      to={`/repositories?organization=${encodeURIComponent(organization.organization)}`}
       className="block rounded-lg border transition-all hover:shadow-lg p-6"
       style={{
         backgroundColor: 'var(--bgColor-default)',
