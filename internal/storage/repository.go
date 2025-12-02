@@ -1891,15 +1891,6 @@ func (d *Database) buildProjectFilter(projectFilter string) (string, []interface
 	return " AND r.ado_project = ?", []interface{}{projectFilter}
 }
 
-// buildADOOrgFilter builds SQL filter for ADO organization (filters by ado_projects table)
-// Returns repositories where ado_project IN (SELECT name FROM ado_projects WHERE organization = ?)
-func (d *Database) buildADOOrgFilter(adoOrgFilter string) (string, []interface{}) {
-	if adoOrgFilter == "" {
-		return "", nil
-	}
-	return " AND r.ado_project IN (SELECT name FROM ado_projects WHERE organization = ?)", []interface{}{adoOrgFilter}
-}
-
 // GetRepositoryStatsByStatusFiltered returns repository counts by status with filters
 func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) (map[string]int, error) {
 	// Build filter clauses and collect arguments

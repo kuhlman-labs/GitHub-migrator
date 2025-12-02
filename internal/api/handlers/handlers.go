@@ -4385,6 +4385,79 @@ func (h *Handler) checkRepositoriesAccess(ctx context.Context, repoFullNames []s
 	return checker.ValidateRepositoryAccess(ctx, user, token, repoFullNames)
 }
 
+// adoProjectStats holds the computed statistics for an ADO project
+type adoProjectStats struct {
+	statusCounts                map[string]int
+	migratedCount               int
+	inProgressCount             int
+	failedCount                 int
+	pendingCount                int
+	migrationProgressPercentage int
+}
+
+// getADOProjectStats queries and calculates status distribution and progress metrics for an ADO project
+//
+//nolint:dupl // Intentionally extracted to avoid duplication in ListOrganizations and ListProjects
+func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organization string, repoCount int) adoProjectStats {
+	stats := adoProjectStats{
+		statusCounts: make(map[string]int),
+	}
+
+	if repoCount == 0 {
+		return stats
+	}
+
+	// Query actual status distribution using SQL for efficiency
+	// Filter by both ado_project AND organization (via full_name prefix) to handle
+	// duplicate project names across different ADO organizations
+	var results []struct {
+		Status string
+		Count  int
+	}
+	err := h.db.DB().WithContext(ctx).
+		Raw(`
+			SELECT status, COUNT(*) as count
+			FROM repositories
+			WHERE ado_project = ?
+			AND full_name LIKE ?
+			AND status != 'wont_migrate'
+			GROUP BY status
+		`, projectName, organization+"/%").
+		Scan(&results).Error
+
+	if err != nil {
+		h.logger.Warn("Failed to get status counts for project", "project", projectName, "org", organization, "error", err)
+		// Fallback: assume all pending
+		stats.statusCounts["pending"] = repoCount
+		stats.pendingCount = repoCount
+	} else {
+		for _, result := range results {
+			stats.statusCounts[result.Status] = result.Count
+
+			// Calculate progress metrics
+			switch result.Status {
+			case "complete", "migration_complete":
+				stats.migratedCount += result.Count
+			case "migration_failed", "dry_run_failed", "rolled_back":
+				stats.failedCount += result.Count
+			case "queued_for_migration", "migrating_content", "dry_run_in_progress",
+				"dry_run_queued", "pre_migration", "archive_generating", "post_migration":
+				stats.inProgressCount += result.Count
+			default:
+				// pending, dry_run_complete, remediation_required
+				stats.pendingCount += result.Count
+			}
+		}
+	}
+
+	// Calculate migration progress percentage
+	if repoCount > 0 {
+		stats.migrationProgressPercentage = (stats.migratedCount * 100) / repoCount
+	}
+
+	return stats
+}
+
 // ListOrganizations handles GET /api/v1/organizations
 // Returns GitHub organizations or ADO projects depending on source type
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
@@ -4414,74 +4487,19 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 				repoCount = 0
 			}
 
-			// Get status distribution for repos in this project
-			statusCounts := make(map[string]int)
-			migratedCount := 0
-			inProgressCount := 0
-			failedCount := 0
-			pendingCount := 0
-			
-			if repoCount > 0 {
-				// Query actual status distribution using SQL for efficiency
-				// Filter by both ado_project AND organization (via full_name prefix) to handle
-				// duplicate project names across different ADO organizations
-				var results []struct {
-					Status string
-					Count  int
-				}
-				err := h.db.DB().WithContext(ctx).
-					Raw(`
-						SELECT status, COUNT(*) as count
-						FROM repositories
-						WHERE ado_project = ?
-						AND full_name LIKE ?
-						AND status != 'wont_migrate'
-						GROUP BY status
-					`, project.Name, project.Organization+"/%").
-					Scan(&results).Error
-
-				if err != nil {
-					h.logger.Warn("Failed to get status counts for project", "project", project.Name, "org", project.Organization, "error", err)
-					// Fallback: assume all pending
-					statusCounts["pending"] = repoCount
-					pendingCount = repoCount
-				} else {
-					for _, result := range results {
-						statusCounts[result.Status] = result.Count
-						
-						// Calculate progress metrics
-						switch result.Status {
-						case "complete", "migration_complete":
-							migratedCount += result.Count
-						case "migration_failed", "dry_run_failed", "rolled_back":
-							failedCount += result.Count
-						case "queued_for_migration", "migrating_content", "dry_run_in_progress",
-							"dry_run_queued", "pre_migration", "archive_generating", "post_migration":
-							inProgressCount += result.Count
-						default:
-							// pending, dry_run_complete, remediation_required
-							pendingCount += result.Count
-						}
-					}
-				}
-			}
-			
-			// Calculate migration progress percentage
-			migrationProgressPercentage := 0
-			if repoCount > 0 {
-				migrationProgressPercentage = (migratedCount * 100) / repoCount
-			}
+			// Get status distribution and progress metrics for this project
+			stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
 
 			projectStats = append(projectStats, map[string]interface{}{
-				"organization":                  project.Name, // Project name (frontend expects this field)
+				"organization":                  project.Name,         // Project name (frontend expects this field)
 				"ado_organization":              project.Organization, // Parent ADO organization name
 				"total_repos":                   repoCount,
-				"status_counts":                 statusCounts,
-				"migrated_count":                migratedCount,
-				"in_progress_count":             inProgressCount,
-				"failed_count":                  failedCount,
-				"pending_count":                 pendingCount,
-				"migration_progress_percentage": migrationProgressPercentage,
+				"status_counts":                 stats.statusCounts,
+				"migrated_count":                stats.migratedCount,
+				"in_progress_count":             stats.inProgressCount,
+				"failed_count":                  stats.failedCount,
+				"pending_count":                 stats.pendingCount,
+				"migration_progress_percentage": stats.migrationProgressPercentage,
 			})
 		}
 
@@ -4536,75 +4554,20 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 			repoCount = 0
 		}
 
-		// Get status distribution for repos in this project
-		statusCounts := make(map[string]int)
-		migratedCount := 0
-		inProgressCount := 0
-		failedCount := 0
-		pendingCount := 0
-		
-		if repoCount > 0 {
-			// Query actual status distribution using SQL for efficiency
-			// Filter by both ado_project AND organization (via full_name prefix) to handle
-			// duplicate project names across different ADO organizations
-			var results []struct {
-				Status string
-				Count  int
-			}
-			err := h.db.DB().WithContext(ctx).
-				Raw(`
-					SELECT status, COUNT(*) as count
-					FROM repositories
-					WHERE ado_project = ?
-					AND full_name LIKE ?
-					AND status != 'wont_migrate'
-					GROUP BY status
-				`, project.Name, project.Organization+"/%").
-				Scan(&results).Error
-
-			if err != nil {
-				h.logger.Warn("Failed to get status counts for project", "project", project.Name, "org", project.Organization, "error", err)
-				// Fallback: assume all pending
-				statusCounts["pending"] = repoCount
-				pendingCount = repoCount
-			} else {
-				for _, result := range results {
-					statusCounts[result.Status] = result.Count
-					
-					// Calculate progress metrics
-					switch result.Status {
-					case "complete", "migration_complete":
-						migratedCount += result.Count
-					case "migration_failed", "dry_run_failed", "rolled_back":
-						failedCount += result.Count
-					case "queued_for_migration", "migrating_content", "dry_run_in_progress",
-						"dry_run_queued", "pre_migration", "archive_generating", "post_migration":
-						inProgressCount += result.Count
-					default:
-						// pending, dry_run_complete, remediation_required
-						pendingCount += result.Count
-					}
-				}
-			}
-		}
-		
-		// Calculate migration progress percentage
-		migrationProgressPercentage := 0
-		if repoCount > 0 {
-			migrationProgressPercentage = (migratedCount * 100) / repoCount
-		}
+		// Get status distribution and progress metrics for this project
+		stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
 
 		projectStats = append(projectStats, map[string]interface{}{
-			"organization":                  project.Name, // This is actually the project name but kept for compatibility with frontend
+			"organization":                  project.Name,         // This is actually the project name but kept for compatibility with frontend
 			"ado_organization":              project.Organization, // The actual ADO organization
 			"project":                       project.Name,
 			"total_repos":                   repoCount,
-			"status_counts":                 statusCounts,
-			"migrated_count":                migratedCount,
-			"in_progress_count":             inProgressCount,
-			"failed_count":                  failedCount,
-			"pending_count":                 pendingCount,
-			"migration_progress_percentage": migrationProgressPercentage,
+			"status_counts":                 stats.statusCounts,
+			"migrated_count":                stats.migratedCount,
+			"in_progress_count":             stats.inProgressCount,
+			"failed_count":                  stats.failedCount,
+			"pending_count":                 stats.pendingCount,
+			"migration_progress_percentage": stats.migrationProgressPercentage,
 		})
 	}
 
