@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { ThemeProvider, BaseStyles } from '@primer/react';
 import { Dashboard } from './components/Dashboard';
-import { OrganizationDetail } from './components/OrganizationDetail';
 import { RepositoryDetail } from './components/RepositoryDetail';
 import { Repositories } from './components/Repositories';
 import { Analytics } from './components/Analytics';
@@ -118,6 +117,21 @@ function SetupCheck({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Redirect component for /org/:orgName to /repositories?organization=:orgName
+function OrgRedirect() {
+  const { orgName } = useParams<{ orgName: string }>();
+  const encodedOrg = encodeURIComponent(orgName || '');
+  return <Navigate to={`/repositories?organization=${encodedOrg}`} replace />;
+}
+
+// Redirect component for /org/:orgName/project/:projectName
+function OrgProjectRedirect() {
+  const { orgName, projectName } = useParams<{ orgName: string; projectName: string }>();
+  const encodedOrg = encodeURIComponent(orgName || '');
+  const encodedProject = encodeURIComponent(projectName || '');
+  return <Navigate to={`/repositories?organization=${encodedOrg}&project=${encodedProject}`} replace />;
+}
+
 function ProtectedRoutes() {
   return (
     <Routes>
@@ -131,16 +145,9 @@ function ProtectedRoutes() {
               <Dashboard />
             </main>
           } />
-          <Route path="/org/:orgName" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <OrganizationDetail />
-            </main>
-          } />
-          <Route path="/org/:orgName/project/:projectName" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <OrganizationDetail />
-            </main>
-          } />
+          {/* Redirect old organization detail routes to repositories view with filters */}
+          <Route path="/org/:orgName" element={<OrgRedirect />} />
+          <Route path="/org/:orgName/project/:projectName" element={<OrgProjectRedirect />} />
           <Route path="/repository/:fullName" element={
             <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <RepositoryDetail />
