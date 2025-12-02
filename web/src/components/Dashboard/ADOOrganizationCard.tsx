@@ -36,10 +36,11 @@ export function ADOOrganizationCard({ adoOrgName, projects }: ADOOrganizationCar
       }}
     >
       {/* ADO Organization Header */}
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 w-full text-left hover:opacity-80 transition-opacity"
+          className="flex items-center hover:opacity-80 transition-opacity"
+          aria-label={isExpanded ? 'Collapse projects' : 'Expand projects'}
         >
           {isExpanded ? (
             <span style={{ color: 'var(--fgColor-muted)' }}>
@@ -50,10 +51,18 @@ export function ADOOrganizationCard({ adoOrgName, projects }: ADOOrganizationCar
               <ChevronRightIcon size={20} />
             </span>
           )}
-          <h3 className="text-xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+        </button>
+        <Link
+          to={`/repositories?ado_organization=${encodeURIComponent(adoOrgName)}`}
+          className="flex-1"
+        >
+          <h3 
+            className="text-xl font-semibold hover:underline cursor-pointer transition-colors" 
+            style={{ color: 'var(--fgColor-accent)' }}
+          >
             {adoOrgName}
           </h3>
-        </button>
+        </Link>
       </div>
 
       {/* Aggregate Progress Bar */}
@@ -146,9 +155,14 @@ function ProjectItem({ project }: ProjectItemProps) {
     return 'default';
   };
 
+  // Build link with both project and ado_organization to uniquely identify the project
+  const projectLink = project.ado_organization 
+    ? `/repositories?project=${encodeURIComponent(project.organization)}&ado_organization=${encodeURIComponent(project.ado_organization)}`
+    : `/repositories?project=${encodeURIComponent(project.organization)}`;
+
   return (
     <Link
-      to={`/repositories?organization=${encodeURIComponent(project.organization)}`}
+      to={projectLink}
       className="block rounded-md border p-4 hover:shadow-md transition-all"
       style={{
         backgroundColor: 'var(--bgColor-inset)',

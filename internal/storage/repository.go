@@ -390,6 +390,11 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 		query = query.Scopes(WithOrganization(org))
 	}
 
+	// Apply ADO organization filter (filters by ado_projects table)
+	if adoOrg, ok := filters["ado_organization"]; ok {
+		query = query.Scopes(WithADOOrganization(adoOrg))
+	}
+
 	// Apply ADO project filter
 	if project, ok := filters["ado_project"]; ok {
 		query = query.Scopes(WithADOProject(project))
@@ -1884,6 +1889,15 @@ func (d *Database) buildProjectFilter(projectFilter string) (string, []interface
 		return "", nil
 	}
 	return " AND r.ado_project = ?", []interface{}{projectFilter}
+}
+
+// buildADOOrgFilter builds SQL filter for ADO organization (filters by ado_projects table)
+// Returns repositories where ado_project IN (SELECT name FROM ado_projects WHERE organization = ?)
+func (d *Database) buildADOOrgFilter(adoOrgFilter string) (string, []interface{}) {
+	if adoOrgFilter == "" {
+		return "", nil
+	}
+	return " AND r.ado_project IN (SELECT name FROM ado_projects WHERE organization = ?)", []interface{}{adoOrgFilter}
 }
 
 // GetRepositoryStatsByStatusFiltered returns repository counts by status with filters

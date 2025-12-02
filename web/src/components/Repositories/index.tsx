@@ -87,6 +87,7 @@ export function Repositories() {
     let count = 0;
     if (urlFilters.status) count++;
     if (urlFilters.organization) count++;
+    if (urlFilters.ado_organization) count++;
     if (urlFilters.project) count++;
     if (urlFilters.search) count++;
     if (urlFilters.complexity) count++;
@@ -118,6 +119,15 @@ export function Repositories() {
   };
 
   const activeFilterCount = getActiveFilterCount();
+
+  // Helper function to format filter values (handles both strings and arrays)
+  const formatFilterValue = (value: string | string[] | undefined): string => {
+    if (!value) return '';
+    if (Array.isArray(value)) {
+      return value.join(', ');
+    }
+    return value;
+  };
 
   // Paginate
   const totalItems = repositories.length;
@@ -205,7 +215,17 @@ export function Repositories() {
 
                 {/* Title and Info */}
                 <div>
-                  <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Repositories</h1>
+                  <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                    {urlFilters.ado_organization ? (
+                      <>Repositories in Organization <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.ado_organization)}</span></>
+                    ) : urlFilters.project ? (
+                      <>Repositories in Project <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.project)}</span></>
+                    ) : urlFilters.organization ? (
+                      <>Repositories in Organization <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.organization)}</span></>
+                    ) : (
+                      'Repositories'
+                    )}
+                  </h1>
                   <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
                     {totalItems > 0 ? (
                       <>

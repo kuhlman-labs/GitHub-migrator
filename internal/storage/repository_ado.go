@@ -54,14 +54,21 @@ func (db *Database) GetRepositoriesByADOProject(ctx context.Context, organizatio
 	return repos, nil
 }
 
-// CountRepositoriesByADOProject counts repositories for a specific ADO project
+// CountRepositoriesByADOProject counts repositories for a specific ADO project within an organization
+// Filters by both ado_project AND organization (via full_name prefix) to handle
+// duplicate project names across different ADO organizations
 func (db *Database) CountRepositoriesByADOProject(ctx context.Context, organization, projectName string) (int, error) {
 	var count int64
-	err := db.db.WithContext(ctx).
+	query := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("ado_project = ?", projectName).
-		Count(&count).Error
-
+		Where("ado_project = ?", projectName)
+	
+	// Also filter by organization to handle duplicate project names across different ADO orgs
+	if organization != "" {
+		query = query.Where("full_name LIKE ?", organization+"/%")
+	}
+	
+	err := query.Count(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to count repositories by ADO project: %w", err)
 	}
