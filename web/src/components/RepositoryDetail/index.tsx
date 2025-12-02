@@ -215,7 +215,7 @@ export function RepositoryDetail() {
                 <li>
                   <Link 
                     as={RouterLink}
-                    to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
+                    to={`/repositories?organization=${encodeURIComponent(repository.full_name.split('/')[0])}`}
                     muted
                   >
                     {repository.full_name.split('/')[0]}
@@ -225,7 +225,7 @@ export function RepositoryDetail() {
                 <li>
                   <Link 
                     as={RouterLink}
-                    to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}/project/${encodeURIComponent(repository.ado_project)}`}
+                    to={`/repositories?organization=${encodeURIComponent(repository.full_name.split('/')[0])}&project=${encodeURIComponent(repository.ado_project)}`}
                     muted
                   >
                     {repository.ado_project}
@@ -241,7 +241,7 @@ export function RepositoryDetail() {
                 <li>
                   <Link 
                     as={RouterLink}
-                    to={`/org/${encodeURIComponent(repository.full_name.split('/')[0])}`}
+                    to={`/repositories?organization=${encodeURIComponent(repository.full_name.split('/')[0])}`}
                     muted
                   >
                     {repository.full_name.split('/')[0]}

@@ -9,7 +9,7 @@ import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
 import { useRepositories } from '../../hooks/useQueries';
 import { searchParamsToFilters, filtersToSearchParams } from '../../utils/filters';
-import { RepositoryFilterSidebar } from './RepositoryFilterSidebar';
+import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
 import { RepositoryCard } from './RepositoryCard';
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { exportToCSV, exportToExcel, exportToJSON, getTimestampedFilename } from '../../utils/export';
@@ -163,11 +163,13 @@ export function Repositories() {
   return (
     <div className="h-full flex" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
       {/* Filter Sidebar */}
-      <RepositoryFilterSidebar
+      <UnifiedFilterSidebar
         filters={urlFilters}
         onChange={updateFilters}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        showStatus={true}
+        showSearch={true}
       />
 
       {/* Main Content */}

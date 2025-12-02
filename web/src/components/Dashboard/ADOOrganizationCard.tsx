@@ -148,7 +148,7 @@ function ProjectItem({ project }: ProjectItemProps) {
 
   return (
     <Link
-      to={`/org/${encodeURIComponent(project.organization)}`}
+      to={`/repositories?organization=${encodeURIComponent(project.organization)}`}
       className="block rounded-md border p-4 hover:shadow-md transition-all"
       style={{
         backgroundColor: 'var(--bgColor-inset)',

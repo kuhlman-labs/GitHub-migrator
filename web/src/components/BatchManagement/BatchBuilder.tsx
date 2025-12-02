@@ -3,7 +3,7 @@ import { Button } from '@primer/react';
 import { ChevronDownIcon, UploadIcon } from '@primer/octicons-react';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
-import { FilterSidebar } from './FilterSidebar';
+import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
 import { ActiveFilterPills } from './ActiveFilterPills';
 import { RepositoryListItem } from './RepositoryListItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -590,11 +590,13 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   return (
     <div className="h-full flex" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
       {/* Filter Sidebar */}
-      <FilterSidebar
+      <UnifiedFilterSidebar
         filters={filters}
         onChange={handleFilterChange}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        showStatus={false}
+        showSearch={true}
       />
 
       {/* Middle Panel - Available Repositories */}

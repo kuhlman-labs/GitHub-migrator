@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
+import { TextInput } from '@primer/react';
+import { SearchIcon } from '@primer/octicons-react';
 import type { RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { FilterSection } from '../BatchManagement/FilterSection';
 import { OrganizationSelector } from '../BatchManagement/OrganizationSelector';
 
-interface RepositoryFilterSidebarProps {
+interface UnifiedFilterSidebarProps {
   filters: RepositoryFilters;
   onChange: (filters: RepositoryFilters) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-  hideOrganization?: boolean;  // Hide organization selector
-  hideProject?: boolean;       // Hide project selector
+  showStatus?: boolean;
+  showSearch?: boolean;
+  hideOrganization?: boolean;
+  hideProject?: boolean;
 }
 
-// Categorized status groups matching organization detail view
+// Categorized status groups
 const STATUS_CATEGORIES = [
   {
     group: 'Pending',
@@ -58,14 +62,16 @@ const STATUS_CATEGORIES = [
   },
 ];
 
-export function RepositoryFilterSidebar({ 
+export function UnifiedFilterSidebar({ 
   filters, 
   onChange, 
   isCollapsed, 
   onToggleCollapse,
+  showStatus = true,
+  showSearch = true,
   hideOrganization = false,
   hideProject = false 
-}: RepositoryFilterSidebarProps) {
+}: UnifiedFilterSidebarProps) {
   const [organizations, setOrganizations] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
@@ -77,13 +83,18 @@ export function RepositoryFilterSidebar({
     loadOrganizations();
   }, []);
 
+  // Reload projects when organization filter changes (for Azure DevOps)
+  useEffect(() => {
+    if (sourceType === 'azuredevops') {
+      loadProjects();
+    }
+  }, [sourceType, filters.organization]);
+
   const loadConfig = async () => {
     try {
       const config = await api.getConfig();
       setSourceType(config.source_type);
-      if (config.source_type === 'azuredevops') {
-        loadProjects();
-      }
+      // Projects will be loaded by the useEffect watching sourceType and filters.organization
     } catch (error) {
       console.error('Failed to load config:', error);
     }
@@ -105,9 +116,36 @@ export function RepositoryFilterSidebar({
   const loadProjects = async () => {
     setLoadingProjects(true);
     try {
-      const projectList = await api.listADOProjects();
-      const projectNames = projectList.map((p: any) => p.name || p.project_name);
-      setProjects(projectNames || []);
+      const selectedOrgs = getSelectedOrganizations();
+      
+      // If specific organization(s) are selected, load projects for them
+      if (selectedOrgs.length > 0) {
+        // Load projects for each selected organization and combine them
+        const allProjects: string[] = [];
+        const uniqueProjects = new Set<string>();
+        
+        for (const org of selectedOrgs) {
+          try {
+            const projectList = await api.listADOProjects(org);
+            const projectNames = projectList.map((p: any) => p.name || p.project_name);
+            projectNames.forEach((name: string) => {
+              if (!uniqueProjects.has(name)) {
+                uniqueProjects.add(name);
+                allProjects.push(name);
+              }
+            });
+          } catch (error) {
+            console.error(`Failed to load projects for organization ${org}:`, error);
+          }
+        }
+        
+        setProjects(allProjects);
+      } else {
+        // No organization selected, load all projects
+        const projectList = await api.listADOProjects();
+        const projectNames = projectList.map((p: any) => p.name || p.project_name);
+        setProjects(projectNames || []);
+      }
     } catch (error) {
       console.error('Failed to load projects:', error);
       setProjects([]);
@@ -160,8 +198,8 @@ export function RepositoryFilterSidebar({
     let count = 0;
     if (!hideOrganization && filters.organization) count++;
     if (!hideProject && filters.project) count++;
-    if (filters.status) count++;
-    // Note: search is now in the page header, not counted here
+    if (showStatus && filters.status) count++;
+    if (showSearch && filters.search) count++;
     if (filters.min_size || filters.max_size) count++;
     if (filters.size_category) count++;
     if (filters.complexity) count++;
@@ -282,34 +320,50 @@ export function RepositoryFilterSidebar({
 
       {/* Scrollable Filter Content */}
       <div className="flex-1 overflow-y-auto">
-        {/* Status */}
-        <FilterSection title="Status" defaultExpanded={true}>
-          <div className="space-y-3 max-h-80 overflow-y-auto">
-            {STATUS_CATEGORIES.map((category) => (
-              <div key={category.group} className="space-y-2">
-                <div className="text-xs font-semibold uppercase" style={{ color: 'var(--fgColor-muted)' }}>
-                  {category.group}
-                </div>
-                <div className="space-y-2 pl-2">
-                  {category.statuses.map((status) => (
-                    <label key={status.value} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={getSelectedStatuses().includes(status.value)}
-                        onChange={(e) => handleStatusChange(status.value, e.target.checked)}
-                        className="rounded text-blue-600 focus:ring-blue-500"
-                        style={{ borderColor: 'var(--borderColor-default)' }}
-                      />
-                      <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>
-                        {status.label}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ))}
+        {/* Search */}
+        {showSearch && (
+          <div className="p-4" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
+            <label className="block text-xs font-medium mb-2" style={{ color: 'var(--fgColor-default)' }}>Search</label>
+            <TextInput
+              leadingVisual={SearchIcon}
+              value={filters.search ?? ''}
+              onChange={(e) => onChange({ ...filters, search: e.target.value.trim() || undefined })}
+              placeholder="Repository name..."
+              block
+            />
           </div>
-        </FilterSection>
+        )}
+
+        {/* Status */}
+        {showStatus && (
+          <FilterSection title="Status" defaultExpanded={true}>
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {STATUS_CATEGORIES.map((category) => (
+                <div key={category.group} className="space-y-2">
+                  <div className="text-xs font-semibold uppercase" style={{ color: 'var(--fgColor-muted)' }}>
+                    {category.group}
+                  </div>
+                  <div className="space-y-2 pl-2">
+                    {category.statuses.map((status) => (
+                      <label key={status.value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={getSelectedStatuses().includes(status.value)}
+                          onChange={(e) => handleStatusChange(status.value, e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                          style={{ borderColor: 'var(--borderColor-default)' }}
+                        />
+                        <span className="text-sm" style={{ color: 'var(--fgColor-default)' }}>
+                          {status.label}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </FilterSection>
+        )}
 
         {/* Organization */}
         {!hideOrganization && (
@@ -585,4 +639,3 @@ export function RepositoryFilterSidebar({
     </div>
   );
 }
-
