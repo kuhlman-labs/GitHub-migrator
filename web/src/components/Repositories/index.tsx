@@ -216,10 +216,11 @@ export function Repositories() {
                 {/* Title and Info */}
                 <div>
                   <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-                    {urlFilters.ado_organization ? (
-                      <>Repositories in Organization <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.ado_organization)}</span></>
-                    ) : urlFilters.project ? (
+                    {urlFilters.project ? (
+                      // Project filter takes precedence (more specific than org)
                       <>Repositories in Project <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.project)}</span></>
+                    ) : urlFilters.ado_organization ? (
+                      <>Repositories in Organization <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.ado_organization)}</span></>
                     ) : urlFilters.organization ? (
                       <>Repositories in Organization <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.organization)}</span></>
                     ) : (

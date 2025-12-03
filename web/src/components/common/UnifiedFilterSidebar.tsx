@@ -88,7 +88,7 @@ export function UnifiedFilterSidebar({
     if (sourceType === 'azuredevops') {
       loadProjects();
     }
-  }, [sourceType, filters.organization]);
+  }, [sourceType, filters.ado_organization]);
 
   const loadConfig = async () => {
     try {
@@ -155,15 +155,25 @@ export function UnifiedFilterSidebar({
   };
 
   const getSelectedOrganizations = (): string[] => {
-    if (!filters.organization) return [];
-    return Array.isArray(filters.organization) ? filters.organization : [filters.organization];
+    // For ADO sources, use ado_organization; for GitHub, use organization
+    const orgFilter = sourceType === 'azuredevops' ? filters.ado_organization : filters.organization;
+    if (!orgFilter) return [];
+    return Array.isArray(orgFilter) ? orgFilter : [orgFilter];
   };
 
   const handleOrganizationChange = (selected: string[]) => {
-    onChange({
-      ...filters,
-      organization: selected.length > 0 ? selected : undefined,
-    });
+    // For ADO sources, set ado_organization; for GitHub, set organization
+    if (sourceType === 'azuredevops') {
+      onChange({
+        ...filters,
+        ado_organization: selected.length > 0 ? selected : undefined,
+      });
+    } else {
+      onChange({
+        ...filters,
+        organization: selected.length > 0 ? selected : undefined,
+      });
+    }
   };
 
   const getSelectedProjects = (): string[] => {
@@ -196,7 +206,11 @@ export function UnifiedFilterSidebar({
 
   const activeFilterCount = () => {
     let count = 0;
-    if (!hideOrganization && filters.organization) count++;
+    // For organization filter, check the appropriate field based on source type
+    if (!hideOrganization) {
+      if (sourceType === 'azuredevops' && filters.ado_organization) count++;
+      else if (sourceType !== 'azuredevops' && filters.organization) count++;
+    }
     if (!hideProject && filters.project) count++;
     if (showStatus && filters.status) count++;
     if (showSearch && filters.search) count++;
