@@ -19,6 +19,31 @@ export function RepositoryCard({
   selected = false,
   onToggleSelect 
 }: RepositoryCardProps) {
+  // For ADO repos, parse the full_name (org/project/repo) to show project/repo as title
+  const getDisplayInfo = () => {
+    if (repository.ado_project) {
+      // ADO full_name format: organization/project/reponame
+      const parts = repository.full_name.split('/');
+      if (parts.length >= 3) {
+        const adoOrg = parts[0];
+        // Join remaining parts as project/repo (handles repos with slashes in name)
+        const projectAndRepo = parts.slice(1).join('/');
+        return {
+          title: projectAndRepo,
+          subtitle: adoOrg,
+          isAdo: true
+        };
+      }
+    }
+    return {
+      title: repository.full_name,
+      subtitle: null,
+      isAdo: false
+    };
+  };
+
+  const displayInfo = getDisplayInfo();
+
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -49,8 +74,14 @@ export function RepositoryCard({
         </div>
       )}
       
+      {/* For ADO: show org as subtitle above the title */}
+      {displayInfo.subtitle && (
+        <div className="text-xs mb-1 truncate" style={{ color: 'var(--fgColor-muted)' }}>
+          {displayInfo.subtitle}
+        </div>
+      )}
       <h3 className="text-base font-semibold mb-3 truncate pr-8" style={{ color: 'var(--fgColor-default)' }}>
-        {repository.full_name}
+        {displayInfo.title}
       </h3>
       <div className="mb-3 flex items-center justify-between">
         <StatusBadge status={repository.status} size="small" />
