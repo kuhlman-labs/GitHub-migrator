@@ -2,8 +2,8 @@
 # Azure DevOps to GitHub Migration - YAML Configuration
 # =============================================================================
 # This configuration is specifically for:
-#   SOURCE: Azure DevOps (Cloud or Server)
-#   DESTINATION: GitHub (Cloud or Enterprise Server)
+#   SOURCE: Azure DevOps Services
+#   DESTINATION: GitHub (Enterprise Cloud, EMU, or Data Residency)
 #
 # For GitHub sources, use: config.github.yml
 #
@@ -91,7 +91,7 @@ destination:
   # Required scopes: repo, admin:org, workflow
   token: ghp_YourDestinationGitHubPATHere
   
-  # GitHub App authentication (Optional)
+  # GitHub App authentication (For Discovery and Profiling)
   # Uncomment if using GitHub App
   # app_id: 234567
   # app_private_key: |

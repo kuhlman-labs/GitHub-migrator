@@ -3,7 +3,7 @@
 # =============================================================================
 # This configuration is specifically for:
 #   SOURCE: GitHub (Cloud or Enterprise Server)
-#   DESTINATION: GitHub (Cloud or Enterprise Server)
+#   DESTINATION: GitHub (Enterprise Cloud, EMU, or Data Residency)
 #
 # For Azure DevOps sources, use: config.azuredevops.yml
 #
@@ -51,7 +51,7 @@ source:
   # Required scopes: repo, admin:org
   token: ghp_YourSourceGitHubPATHere
   
-  # Authentication Method 2: GitHub App (Optional - for better rate limits)
+  # Authentication Method 2: GitHub App (Optional - For Discovery and Profiling)
   # Uncomment if using GitHub App authentication
   # app_id: 123456
   # app_private_key: |
@@ -76,7 +76,7 @@ destination:
   # Required scopes: repo, admin:org, workflow
   token: ghp_YourDestinationGitHubPATHere
   
-  # Authentication Method 2: GitHub App (Optional)
+  # Authentication Method 2: GitHub App (Optional - For Discovery and Profiling)
   # Uncomment if using GitHub App authentication
   # app_id: 234567
   # app_private_key: |
