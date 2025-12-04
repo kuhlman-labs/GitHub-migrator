@@ -308,7 +308,7 @@ auth:
 # =============================================================================
 # Additional Resources
 # =============================================================================
-# - Setup Guide: docs/ADO_SETUP_GUIDE.md
-# - GitHub Environments: docs/GITHUB_ENVIRONMENTS_SETUP.md
+# - Operations Guide: docs/OPERATIONS.md (includes ADO setup)
+# - Deployment Guide: docs/deployment/
 # - ADO PAT Scopes: https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate
 

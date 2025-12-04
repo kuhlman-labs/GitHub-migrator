@@ -1,162 +1,92 @@
 # Documentation
 
-Complete documentation for GitHub Migrator deployment and operations.
+Welcome to the GitHub Migrator documentation. This guide will help you deploy, operate, and extend the migration platform.
 
-## 📚 Quick Links
+## Quick Navigation
 
-### Getting Started
-- **[Terraform Deployment Quick Start](./TERRAFORM_DEPLOYMENT_QUICKSTART.md)** ⭐ START HERE
-  - 30-minute guide to deploy everything
-  - Step-by-step with commands
-  - Checklist format
+| Document | Description |
+|----------|-------------|
+| [Deployment Guide](./deployment/) | Docker, Azure, and Kubernetes deployment |
+| [API Reference](./API.md) | REST API documentation and examples |
+| [Operations Guide](./OPERATIONS.md) | Authentication, workflows, monitoring, troubleshooting |
+| [Contributing Guide](./CONTRIBUTING.md) | Development setup, testing, and code standards |
+| [OpenAPI Specification](./openapi.json) | Machine-readable API specification |
 
-### Deployment
-- **[GitHub Environments Setup](./GITHUB_ENVIRONMENTS_SETUP.md)** ⭐ RECOMMENDED
-  - Use GitHub Environments for better organization
-  - Separate dev and production configurations
-  - Protection rules and security
+## Getting Started
 
-- **[GitHub Secrets Setup](./GITHUB_SECRETS_SETUP.md)** (Alternative)
-  - Repository-level secrets approach
-  - Complete list of required secrets
-  - Security best practices
+### For Operators
 
-- **[Environments vs Secrets Comparison](./ENVIRONMENTS_VS_SECRETS.md)**
-  - Compare both approaches
-  - Decision matrix
-  - Migration guide
+1. **Deploy the Application** - Start with the [Deployment Guide](./deployment/)
+   - [Docker Quick Start](./deployment/README.md) - Fastest way to get running
+   - [Azure Deployment](./deployment/AZURE.md) - Azure App Service with Terraform
+   - [Kubernetes Deployment](./deployment/KUBERNETES.md) - Production K8s setup
 
-- **[GitHub App Setup](./GITHUB_APP_SETUP.md)** 📱 OPTIONAL
-  - Enhanced discovery and profiling
-  - Higher rate limits
-  - Multi-organization support
-  - Only needed for enterprise-scale
+2. **Configure Authentication** - See [OPERATIONS.md](./OPERATIONS.md#authentication-setup)
+   - GitHub App setup for enhanced rate limits
+   - OAuth configuration for user access control
+   - Azure DevOps setup for ADO migrations
 
-- **[Azure Deployment Guide](./AZURE_DEPLOYMENT.md)**
-  - Comprehensive deployment documentation
-  - Architecture details
-  - Monitoring and operations
-  - Troubleshooting guide
+3. **Run Your First Migration** - Follow the workflow in [OPERATIONS.md](./OPERATIONS.md#migration-workflows)
 
-### Infrastructure
-- **[Terraform README](../terraform/README.md)**
-  - Terraform module documentation
-  - Environment configurations
-  - State management
-  - Best practices
+### For Developers
 
-### CI/CD
-- **[GitHub Actions Workflows](../.github/workflows/README.md)**
-  - Workflow documentation
-  - How to use each workflow
-  - Branch protection setup
-  - Troubleshooting
+1. **Set Up Development Environment** - See [CONTRIBUTING.md](./CONTRIBUTING.md#development-environment)
+2. **Understand the API** - Review [API.md](./API.md)
+3. **Submit Changes** - Follow [CONTRIBUTING.md](./CONTRIBUTING.md#making-changes)
 
-### Application
-- **[Operations Guide](./OPERATIONS.md)**
-  - Day-to-day operations
-  - Monitoring
-  - Backup and recovery
-  - Common tasks
-
-- **[API Documentation](./API.md)**
-  - API endpoints
-  - Request/response formats
-  - Authentication
-
-## 🚀 Deployment Flow
-
-```mermaid
-graph LR
-    A[1. Setup GitHub Secrets] --> B[2. Run Terraform]
-    B --> C[3. Build Container]
-    C --> D[4. Deploy App]
-    D --> E[✅ Live!]
-```
-
-1. **Setup GitHub Secrets** (10 min)
-   - Follow [GITHUB_SECRETS_SETUP.md](./GITHUB_SECRETS_SETUP.md)
-
-2. **Run Terraform** (5 min)
-   - Follow [TERRAFORM_DEPLOYMENT_QUICKSTART.md](./TERRAFORM_DEPLOYMENT_QUICKSTART.md)
-
-3. **Build Container** (auto)
-   - Triggers automatically on push
-
-4. **Deploy App** (auto)
-   - Dev deploys automatically
-   - Prod requires manual trigger
-
-## 📖 Documentation Structure
+## Documentation Structure
 
 ```
 docs/
-├── README.md (this file)
-├── TERRAFORM_DEPLOYMENT_QUICKSTART.md   ⭐ Start here
-├── GITHUB_ENVIRONMENTS_SETUP.md         GitHub Environments guide
-├── GITHUB_SECRETS_SETUP.md              Required secrets reference
-├── GITHUB_APP_SETUP.md                  📱 GitHub App setup (optional)
-├── ENVIRONMENTS_VS_SECRETS.md           Compare approaches
-├── AZURE_DEPLOYMENT.md                  Comprehensive deployment guide
-├── OPERATIONS.md                        Day-to-day operations
-├── API.md                               API documentation
-├── CONTRIBUTING.md                      How to contribute
-├── DEPLOYMENT.md                        Deployment strategies
-└── IMPLEMENTATION_GUIDE.md              Implementation details
-
-terraform/
-└── README.md                            Terraform documentation
-
-.github/workflows/
-└── README.md                            CI/CD workflow docs
+├── README.md              # This file - documentation index
+├── deployment/            # Deployment guides
+│   ├── README.md          # Docker and common setup
+│   ├── AZURE.md           # Azure App Service deployment
+│   └── KUBERNETES.md      # Kubernetes deployment
+├── API.md                 # REST API reference
+├── openapi.json           # OpenAPI 3.0 specification
+├── OPERATIONS.md          # Operations runbook
+└── CONTRIBUTING.md        # Development guide
 ```
 
-## 🎯 Common Tasks
+## Key Topics by Role
 
-### First-Time Deployment
-1. Read [TERRAFORM_DEPLOYMENT_QUICKSTART.md](./TERRAFORM_DEPLOYMENT_QUICKSTART.md)
-2. Follow step-by-step
-3. Verify deployment
+### Migration Administrators
 
-### Update Configuration
-1. Update GitHub Secrets
-2. Run Terraform workflow
-3. Restart app service
+- [Authentication Setup](./OPERATIONS.md#authentication-setup) - Configure access control
+- [Migration Workflows](./OPERATIONS.md#migration-workflows) - Step-by-step migration process
+- [Monitoring & Alerts](./OPERATIONS.md#monitoring--alerts) - Set up observability
+- [Troubleshooting Guide](./OPERATIONS.md#troubleshooting-guide) - Common issues and solutions
 
-### Update Application Code
-1. Commit and push changes
-2. Build workflow runs automatically
-3. Deploy workflow runs (dev auto, prod manual)
+### Platform Engineers
 
-### Troubleshooting
-1. Check [AZURE_DEPLOYMENT.md](./AZURE_DEPLOYMENT.md#troubleshooting)
-2. Review workflow logs
-3. Check Azure App Service logs
+- [Azure Deployment](./deployment/AZURE.md) - Terraform and CI/CD setup
+- [Kubernetes Deployment](./deployment/KUBERNETES.md) - Production configuration
+- [Database Setup](./OPERATIONS.md#database-setup) - SQLite vs PostgreSQL
+- [Maintenance Tasks](./OPERATIONS.md#maintenance-tasks) - Ongoing operations
 
-## 🔐 Security
+### Developers
 
-All sensitive values are stored as **GitHub Secrets**, never in code:
-- Azure credentials
-- GitHub tokens
-- OAuth secrets
-- Session secrets
-- Database credentials
+- [API Reference](./API.md) - Complete endpoint documentation
+- [OpenAPI Spec](./openapi.json) - Generate clients in any language
+- [Development Setup](./CONTRIBUTING.md#development-environment) - Local development
+- [Code Standards](./CONTRIBUTING.md#code-standards) - Coding guidelines
 
-See [GITHUB_SECRETS_SETUP.md](./GITHUB_SECRETS_SETUP.md) for complete security guide.
+### Application Integrators
 
-## 🆘 Support
+- [API Reference](./API.md) - REST endpoints and examples
+- [Self-Service Migration](./API.md#selfservice) - Programmatic migrations
+- [Webhooks](./OPERATIONS.md#monitoring--alerts) - Event notifications
 
-- **Deployment Issues**: [AZURE_DEPLOYMENT.md](./AZURE_DEPLOYMENT.md#troubleshooting)
-- **Workflow Issues**: [GitHub Actions Workflows](../.github/workflows/README.md#troubleshooting)
-- **Application Issues**: [OPERATIONS.md](./OPERATIONS.md)
+## External Resources
 
-## 🎉 Quick Win
+- [GitHub Migrations API](https://docs.github.com/en/rest/migrations)
+- [GitHub Enterprise Importer](https://docs.github.com/en/migrations)
+- [GitHub App Authentication](https://docs.github.com/en/apps)
+- [GitHub Actions Importer](https://docs.github.com/en/actions/migrating-to-github-actions)
 
-Follow these files in order for fastest deployment:
+## Need Help?
 
-1. **[GITHUB_SECRETS_SETUP.md](./GITHUB_SECRETS_SETUP.md)** - 10 minutes
-2. **[TERRAFORM_DEPLOYMENT_QUICKSTART.md](./TERRAFORM_DEPLOYMENT_QUICKSTART.md)** - 20 minutes
-3. ✅ **Done!** Your app is live
-
-Total time: ~30 minutes from zero to deployed application! 🚀
-
+1. Check the [Troubleshooting Guide](./OPERATIONS.md#troubleshooting-guide)
+2. Review [API Error Handling](./API.md#error-handling)
+3. Open an issue on GitHub

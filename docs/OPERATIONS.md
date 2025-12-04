@@ -3,12 +3,17 @@
 ## Table of Contents
 
 - [Authentication Setup](#authentication-setup)
+  - [GitHub App Authentication](#github-app-authentication)
+  - [GitHub OAuth](#github-oauth-user-authentication)
+  - [Azure DevOps Setup](#azure-devops-setup)
 - [Visibility Handling Configuration](#visibility-handling-configuration)
+- [GEI Limitations](#github-enterprise-importer-limitations)
 - [Daily Operations](#daily-operations)
 - [Migration Workflows](#migration-workflows)
 - [Monitoring & Alerts](#monitoring--alerts)
 - [Incident Response](#incident-response)
 - [Maintenance Tasks](#maintenance-tasks)
+- [Database Setup](#database-setup)
 - [Troubleshooting Guide](#troubleshooting-guide)
 - [Runbooks](#runbooks)
 
@@ -517,6 +522,143 @@ docker logs github-migrator | grep "authorization"
 5. **Principle of Least Privilege**: Only grant access to users who need it
 6. **Team-Based Access**: Use team membership for fine-grained access control
 7. **Session Duration**: Set appropriate session duration based on security requirements
+
+---
+
+### Azure DevOps Setup
+
+For migrating from Azure DevOps to GitHub Enterprise Cloud, additional configuration is required.
+
+#### Prerequisites
+
+1. **Azure DevOps Requirements**
+   - Access to an Azure DevOps organization
+   - Azure DevOps PAT with scopes:
+     - **Code (Read)**: Access repository data
+     - **Build (Read)**: Access pipeline information
+     - **Work Items (Read)**: Access work item data
+     - **Project and Team (Read)**: Access project information
+     - **Graph (Read)**: Access organizational structure
+
+2. **GitHub Enterprise Cloud Requirements**
+   - GitHub Personal Access Token with: `repo`, `workflow`, `admin:org`
+   - Organization admin access
+
+#### Microsoft Entra ID OAuth App (Optional)
+
+For user authentication via Microsoft Entra ID:
+
+1. Sign in to the [Azure Portal](https://portal.azure.com)
+2. Navigate to **Microsoft Entra ID** → **App registrations** → **New registration**
+3. Configure:
+   - **Name**: GitHub Migrator (ADO)
+   - **Supported account types**: Accounts in this organizational directory only
+   - **Redirect URI**: `https://your-migrator-domain.com/api/v1/auth/entraid/callback`
+4. Note the **Application (client) ID** and **Directory (tenant) ID**
+5. Create a client secret under **Certificates & secrets**
+6. Configure API permissions:
+   - Add **Azure DevOps** → **user_impersonation**
+   - Grant admin consent
+
+#### Configuration
+
+```yaml
+# Source Configuration (Azure DevOps)
+source:
+  type: azuredevops
+  organization: your-ado-org-name
+  base_url: https://dev.azure.com/your-ado-org-name
+  token: ${SOURCE_ADO_TOKEN}
+
+# Destination Configuration (GitHub)
+destination:
+  type: github
+  base_url: https://api.github.com
+  token: ${DEST_GITHUB_TOKEN}
+
+# Authentication Configuration (optional)
+auth:
+  enabled: true
+  entraid_enabled: true
+  entraid_tenant_id: ${ENTRAID_TENANT_ID}
+  entraid_client_id: ${ENTRAID_CLIENT_ID}
+  entraid_client_secret: ${ENTRAID_CLIENT_SECRET}
+  entraid_callback_url: https://your-migrator-domain.com/api/v1/auth/entraid/callback
+  ado_organization_url: https://dev.azure.com/your-ado-org-name
+```
+
+#### Environment Variables
+
+```bash
+# Azure DevOps Source
+export GHMIG_SOURCE_TYPE=azuredevops
+export GHMIG_SOURCE_ORGANIZATION=your-ado-org
+export GHMIG_SOURCE_BASE_URL=https://dev.azure.com/your-ado-org
+export SOURCE_ADO_TOKEN=your-ado-pat
+
+# GitHub Destination
+export GITHUB_DEST_TOKEN=ghp_xxxxxxxxxxxx
+
+# Entra ID (optional)
+export GHMIG_AUTH_ENTRAID_ENABLED=true
+export ENTRAID_TENANT_ID=your-tenant-id
+export ENTRAID_CLIENT_ID=your-client-id
+export ENTRAID_CLIENT_SECRET=your-client-secret
+```
+
+#### ADO Feature Migration Support
+
+When migrating from Azure DevOps, the following features are supported:
+
+| Feature | Migrates? | Notes |
+|---------|-----------|-------|
+| Git repositories | ✅ Yes | Full commit history |
+| Pull requests | ✅ Yes | Including comments and reviewers |
+| PR attachments | ✅ Yes | File attachments migrate |
+| Work item links on PRs | ✅ Yes | Links preserved as references |
+| Branch policies | ✅ Yes | Basic policies migrate |
+| TFVC repositories | ❌ No | Must convert to Git first |
+| Work items | ❌ No | Use Azure DevOps Migration Tools |
+| Pipelines | ⚠️ Partial | Files migrate, not workflows |
+| Wiki | ❌ No | Manual migration required |
+
+**For detailed feature migration information**, including complexity scoring and recommended migration tools, see the Azure DevOps Migration Tools documentation.
+
+---
+
+## GitHub Enterprise Importer Limitations
+
+The GitHub Enterprise Importer (GEI) has certain limitations to be aware of:
+
+### Size Limits
+
+| Limit | Value | Notes |
+|-------|-------|-------|
+| Archive size | 10 GB | Single repository archive limit |
+| Repository size | No hard limit | But large repos may time out |
+| File size | 100 MB | Individual file limit |
+| Git LFS | Supported | LFS objects migrate |
+
+### Rate Limits
+
+| Operation | Limit | Notes |
+|-----------|-------|-------|
+| Migrations per org | 5 concurrent | Start more queued |
+| Archive downloads | 100/hour | Per organization |
+| API requests | 5000/hour | Standard GitHub limit |
+
+### Known Issues
+
+1. **Large repositories** may time out during archive creation
+2. **Deep fork networks** may cause circular reference errors
+3. **Special characters** in branch names may cause issues
+4. **Binary files** over 100MB must use Git LFS
+
+### Workarounds
+
+- **Large repos**: Split using `git filter-repo` or archive old history
+- **Deep forks**: Migrate source repository first
+- **Special characters**: Rename branches before migration
 
 ---
 
@@ -1582,6 +1724,97 @@ PROJECTED_REPOS=1000  # Your target
 STORAGE_NEEDED=$(echo "$PROJECTED_REPOS * $AVG_SIZE / 1024" | bc)
 echo "Estimated storage needed: ${STORAGE_NEEDED} GB"
 ```
+
+---
+
+## Database Setup
+
+### SQLite (Default)
+
+SQLite is the default database, suitable for development and small deployments (<10,000 repositories).
+
+```yaml
+database:
+  type: sqlite
+  dsn: ./data/migrator.db
+```
+
+**Features:**
+- Zero configuration required
+- Embedded database
+- Single file storage
+- Automatic WAL mode for better concurrency
+
+### PostgreSQL (Production)
+
+For production deployments, PostgreSQL is recommended.
+
+#### Installation
+
+```bash
+# Docker
+docker run -d \
+  --name postgres \
+  -e POSTGRES_USER=migrator \
+  -e POSTGRES_PASSWORD=your-secure-password \
+  -e POSTGRES_DB=migrator \
+  -p 5432:5432 \
+  postgres:15
+
+# Or using docker-compose.postgres.yml
+docker-compose -f docker-compose.postgres.yml up -d
+```
+
+#### Configuration
+
+```yaml
+database:
+  type: postgresql
+  dsn: "host=localhost port=5432 user=migrator password=your-secure-password dbname=migrator sslmode=disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+```
+
+Or via environment variables:
+
+```bash
+export GHMIG_DATABASE_TYPE=postgresql
+export GHMIG_DATABASE_DSN="host=localhost port=5432 user=migrator password=secret dbname=migrator sslmode=disable"
+```
+
+#### Connection Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `host` | PostgreSQL server hostname | localhost |
+| `port` | PostgreSQL server port | 5432 |
+| `user` | Database username | - |
+| `password` | Database password | - |
+| `dbname` | Database name | - |
+| `sslmode` | SSL mode (disable, require, verify-full) | disable |
+
+### Migrating SQLite to PostgreSQL
+
+1. **Export data from SQLite:**
+   ```bash
+   sqlite3 data/migrator.db ".dump" > dump.sql
+   ```
+
+2. **Set up PostgreSQL database:**
+   ```bash
+   createdb -U postgres migrator
+   ```
+
+3. **Update configuration and restart:**
+   ```bash
+   # Update config.yaml or environment variables
+   export GHMIG_DATABASE_TYPE=postgresql
+   
+   # Restart server (migrations run automatically)
+   make docker-run
+   ```
+
+Note: The application runs database migrations automatically on startup.
 
 ---
 
