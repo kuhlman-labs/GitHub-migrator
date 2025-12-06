@@ -37,7 +37,7 @@ export function Dashboard() {
   const [enterpriseSlug, setEnterpriseSlug] = useState('');
   const [adoOrganization, setAdoOrganization] = useState('');
   const [adoProject, setAdoProject] = useState('');
-  const [, setDiscoveryError] = useState<string | null>(null);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
 
   // Fetch source type on mount
@@ -316,6 +316,7 @@ export function Dashboard() {
         adoProject={adoProject}
         setAdoProject={setAdoProject}
         loading={startDiscoveryMutation.isPending || startADODiscoveryMutation.isPending}
+        error={discoveryError}
         onStart={handleStartDiscovery}
         onClose={() => {
           setShowDiscoveryModal(false);
@@ -344,6 +345,7 @@ interface DiscoveryModalProps {
   adoProject: string;
   setAdoProject: (project: string) => void;
   loading: boolean;
+  error: string | null;
   onStart: () => void;
   onClose: () => void;
 }
@@ -362,6 +364,7 @@ function DiscoveryModal({
   adoProject,
   setAdoProject,
   loading,
+  error,
   onStart, 
   onClose 
 }: DiscoveryModalProps) {
@@ -403,6 +406,11 @@ function DiscoveryModal({
             </button>
           </div>
       <form onSubmit={handleSubmit} className="p-4">
+        {error && (
+          <Flash variant="danger" className="mb-3">
+            {error}
+          </Flash>
+        )}
         <FormControl className="mb-3">
           <FormControl.Label>Discovery Type</FormControl.Label>
           <div className="flex gap-2">
