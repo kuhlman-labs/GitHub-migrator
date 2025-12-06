@@ -75,9 +75,10 @@ export function RepositoryDetail() {
       
       // Show success message
       showSuccess(`${pendingDryRun ? 'Dry run' : 'Migration'} started successfully!`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to start migration:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to start migration. Please try again.';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to start migration. Please try again.';
       showError(errorMessage);
     } finally {
       setMigrating(false);
@@ -96,9 +97,10 @@ export function RepositoryDetail() {
     try {
       await rediscoverMutation.mutateAsync(decodeURIComponent(fullName));
       showSuccess('Re-discovery started! Repository data will be updated shortly.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to start re-discovery:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to start re-discovery. Please try again.';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to start re-discovery. Please try again.';
       showError(errorMessage);
     }
   };
@@ -115,9 +117,10 @@ export function RepositoryDetail() {
     try {
       await unlockMutation.mutateAsync(decodeURIComponent(fullName));
       showSuccess('Repository unlocked successfully!');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to unlock repository:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to unlock repository. Please try again.';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to unlock repository. Please try again.';
       showError(errorMessage);
     }
   };
@@ -133,9 +136,10 @@ export function RepositoryDetail() {
       setShowRollbackDialog(false);
       setRollbackReason('');
       showSuccess('Repository rolled back successfully! It can now be migrated again.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to rollback repository:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to rollback repository. Please try again.';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to rollback repository. Please try again.';
       showError(errorMessage);
     }
   };
@@ -158,9 +162,10 @@ export function RepositoryDetail() {
         unmark: isWontMigrate 
       });
       showSuccess(`Repository ${action}ed successfully!`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`Failed to ${action} repository:`, error);
-      const errorMsg = error.response?.data?.error || `Failed to ${action} repository. Please try again.`;
+      const err = error as { response?: { data?: { error?: string } } };
+      const errorMsg = err.response?.data?.error || `Failed to ${action} repository. Please try again.`;
       showError(errorMsg);
     }
   };

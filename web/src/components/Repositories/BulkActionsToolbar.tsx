@@ -93,10 +93,11 @@ export function BulkActionsToolbar({ selectedCount, selectedIds, onClearSelectio
       } else {
         showToast(`Failed to update repositories: ${result.errors?.[0] || 'Unknown error'}`, 'danger');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setConfirmDialog(null);
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
       showToast(
-        `Failed to update repositories: ${error.response?.data?.error || error.message || 'Unknown error'}`,
+        `Failed to update repositories: ${err.response?.data?.error || err.message || 'Unknown error'}`,
         'danger'
       );
     }

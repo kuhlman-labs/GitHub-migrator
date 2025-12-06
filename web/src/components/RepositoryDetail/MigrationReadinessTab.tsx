@@ -74,6 +74,7 @@ export function MigrationReadinessTab({
   // Sync destinationFullName with repository data when it changes
   useEffect(() => {
       setDestinationFullName(getDefaultDestination());
+      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repository.destination_full_name, repository.full_name, repository.ado_project]);
 
   // Migration options state
@@ -128,9 +129,10 @@ export function MigrationReadinessTab({
       });
       
       showSuccess('Destination saved successfully!');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save destination:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to save destination. Please try again.';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to save destination. Please try again.';
       showError(errorMessage);
     }
   };
@@ -148,9 +150,10 @@ export function MigrationReadinessTab({
       
       showSuccess('Repository assigned to batch successfully!');
       setSelectedBatchId(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to assign to batch:', error);
-      const errorMsg = error.response?.data?.error || 'Failed to assign to batch. Please try again.';
+      const err = error as { response?: { data?: { error?: string } } };
+      const errorMsg = err.response?.data?.error || 'Failed to assign to batch. Please try again.';
       showError(errorMsg);
     } finally {
       setAssigningBatch(false);
@@ -175,9 +178,10 @@ export function MigrationReadinessTab({
       await queryClient.invalidateQueries({ queryKey: ['batches'] });
       
       showSuccess('Repository removed from batch successfully!');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to remove from batch:', error);
-      const errorMsg = error.response?.data?.error || 'Failed to remove from batch. Please try again.';
+      const err = error as { response?: { data?: { error?: string } } };
+      const errorMsg = err.response?.data?.error || 'Failed to remove from batch. Please try again.';
       showError(errorMsg);
     } finally {
       setAssigningBatch(false);
@@ -195,9 +199,10 @@ export function MigrationReadinessTab({
       await queryClient.invalidateQueries({ queryKey: ['repository', repository.full_name] });
       
       showSuccess('Migration options saved successfully!');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save migration options:', error);
-      const errorMsg = error.response?.data?.error || 'Failed to save migration options. Please try again.';
+      const err = error as { response?: { data?: { error?: string } } };
+      const errorMsg = err.response?.data?.error || 'Failed to save migration options. Please try again.';
       showError(errorMsg);
     } finally {
       setSavingOptions(false);

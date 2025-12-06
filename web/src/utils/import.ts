@@ -20,7 +20,7 @@ export async function parseCSV(file: File): Promise<ImportParseResult> {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const { rows, errors } = processRows(results.data as Record<string, any>[]);
+        const { rows, errors } = processRows(results.data as Record<string, unknown>[]);
         resolve({
           success: errors.length === 0,
           rows,
@@ -59,7 +59,7 @@ export async function parseExcel(file: File): Promise<ImportParseResult> {
     }
 
     // Convert to JSON
-    const jsonData: Record<string, any>[] = [];
+    const jsonData: Record<string, unknown>[] = [];
     const headers: string[] = [];
 
     // Get headers from first row
@@ -71,7 +71,7 @@ export async function parseExcel(file: File): Promise<ImportParseResult> {
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return; // Skip header row
 
-      const rowData: Record<string, any> = {};
+      const rowData: Record<string, unknown> = {};
       row.eachCell((cell, colNumber) => {
         const header = headers[colNumber - 1];
         if (header) {
@@ -90,11 +90,11 @@ export async function parseExcel(file: File): Promise<ImportParseResult> {
       rows,
       errors,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
       rows: [],
-      errors: [`Failed to parse Excel: ${error.message}`],
+      errors: [`Failed to parse Excel: ${error instanceof Error ? error.message : 'Unknown error'}`],
     };
   }
 }
@@ -125,11 +125,11 @@ export async function parseJSON(file: File): Promise<ImportParseResult> {
           rows,
           errors,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         resolve({
           success: false,
           rows: [],
-          errors: [`Failed to parse JSON: ${error.message}`],
+          errors: [`Failed to parse JSON: ${error instanceof Error ? error.message : 'Unknown error'}`],
         });
       }
     };
@@ -150,7 +150,7 @@ export async function parseJSON(file: File): Promise<ImportParseResult> {
  * Process rows from parsed file data
  * Only extracts repository names - migration settings come from batch configuration
  */
-function processRows(data: Record<string, any>[]): { rows: ParsedImportRow[]; errors: string[] } {
+function processRows(data: Record<string, unknown>[]): { rows: ParsedImportRow[]; errors: string[] } {
   const rows: ParsedImportRow[] = [];
   const errors: string[] = [];
 

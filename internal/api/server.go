@@ -196,6 +196,10 @@ func (s *Server) Router() http.Handler {
 	// For action routes, we need to parse the action from the fullName in the handler
 	protect("POST /api/v1/repositories/{fullName...}", s.handler.HandleRepositoryAction)
 
+	// Dependency graph endpoints
+	protect("GET /api/v1/dependencies/graph", s.handler.GetDependencyGraph)
+	protect("GET /api/v1/dependencies/export", s.handler.ExportDependencies)
+
 	// Organization endpoints
 	protect("GET /api/v1/organizations", s.handler.ListOrganizations)
 	protect("GET /api/v1/organizations/list", s.handler.GetOrganizationList)

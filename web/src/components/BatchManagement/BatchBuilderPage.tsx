@@ -19,6 +19,7 @@ export function BatchBuilderPage() {
     if (batchId) {
       loadBatch();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId]);
 
   const loadBatch = async () => {
@@ -30,7 +31,7 @@ export function BatchBuilderPage() {
     try {
       const batchData = await api.getBatch(parseInt(batchId, 10));
       console.log('Raw batch data from API:', batchData);
-      console.log('Batch structure check - has batch property?', 'batch' in (batchData as any));
+      console.log('Batch structure check - has batch property?', 'batch' in (batchData as object));
       setBatch(batchData);
     } catch (err) {
       console.error('Failed to load batch:', err);

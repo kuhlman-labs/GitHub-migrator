@@ -164,8 +164,9 @@ export function MigrationReadinessSection({
       await api.updateRepository(repository.full_name, flags);
       showSuccess('Migration options saved successfully!');
       onUpdate();
-    } catch (error: any) {
-      showError(`Failed to save migration options: ${error.response?.data?.error || error.message}`);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      showError(`Failed to save migration options: ${err.response?.data?.error || err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -194,8 +195,9 @@ export function MigrationReadinessSection({
       await api.markRepositoryRemediated(repository.full_name);
       showSuccess('Re-validation started. The repository will be re-analyzed for migration limits.');
       onRevalidate();
-    } catch (error: any) {
-      showError(`Failed to start re-validation: ${error.response?.data?.error || error.message}`);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      showError(`Failed to start re-validation: ${err.response?.data?.error || err.message}`);
     } finally {
       setIsRemediating(false);
     }

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api } from '../services/api';
 
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userData = await api.getCurrentUser();
       setUser(userData);
-    } catch (error) {
+    } catch {
       // Not authenticated or session expired
       setUser(null);
     } finally {

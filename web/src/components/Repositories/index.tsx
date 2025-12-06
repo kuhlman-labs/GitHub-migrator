@@ -137,10 +137,14 @@ export function Repositories() {
   const paginatedRepos = repositories.slice(startIndex, endIndex);
 
   // Reset page and selection when filters change
+  // This is a valid use case: resetting derived state when URL params change
+  const searchParamsKey = searchParams.toString();
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setCurrentPage(1);
     setSelectedRepositoryIds(new Set());
-  }, [searchParams]);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [searchParamsKey]);
 
   // Export functions
   const handleExport = async (format: 'csv' | 'excel' | 'json') => {

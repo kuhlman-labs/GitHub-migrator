@@ -602,6 +602,58 @@ export interface DependenciesResponse {
   summary: DependencySummary;
 }
 
+// Dependent repository (repos that depend on a target repo)
+export interface DependentRepository {
+  id: number;
+  full_name: string;
+  source_url: string;
+  status: string;
+  dependency_types: string[]; // How this repo depends on target
+}
+
+export interface DependentsResponse {
+  dependents: DependentRepository[];
+  total: number;
+  target: string;
+}
+
+// Dependency graph types for enterprise-wide visualization
+export interface DependencyGraphNode {
+  id: string;
+  full_name: string;
+  organization: string;
+  status: string;
+  depends_on_count: number;
+  depended_by_count: number;
+}
+
+export interface DependencyGraphEdge {
+  source: string;
+  target: string;
+  dependency_type: string;
+}
+
+export interface DependencyGraphStats {
+  total_repos_with_dependencies: number;
+  total_local_dependencies: number;
+  circular_dependency_count: number;
+}
+
+export interface DependencyGraphResponse {
+  nodes: DependencyGraphNode[];
+  edges: DependencyGraphEdge[];
+  stats: DependencyGraphStats;
+}
+
+// Dependency export row
+export interface DependencyExportRow {
+  repository: string;
+  dependency_full_name: string;
+  direction: 'depends_on' | 'depended_by';
+  dependency_type: string;
+  dependency_url: string;
+}
+
 // Setup wizard types
 export interface SetupStatus {
   setup_completed: boolean;
@@ -691,7 +743,7 @@ export interface ValidationResult {
   valid: boolean;
   error?: string;
   warnings?: string[];
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 // Migration settings that can be imported from files

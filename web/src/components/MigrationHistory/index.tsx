@@ -39,9 +39,10 @@ export function MigrationHistory() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to export migration history:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to export migration history. Please try again.';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to export migration history. Please try again.';
       showError(errorMessage);
     } finally {
       setExporting(false);

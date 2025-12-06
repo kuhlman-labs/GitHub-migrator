@@ -23,7 +23,10 @@ export const RefreshIndicator: React.FC<RefreshIndicatorProps> = ({
         setShowIndicator(true);
       }, delay);
     } else {
-      setShowIndicator(false);
+      // Using timeout to batch with React's state updates
+      timer = setTimeout(() => {
+        setShowIndicator(false);
+      }, 0);
     }
 
     return () => {

@@ -669,11 +669,27 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName
 
 // GetRepositoryOrDependencies routes GET requests to either repository details or dependencies
 // Pattern: GET /api/v1/repositories/{fullName...}
-// Routes to dependencies if path ends with "/dependencies", otherwise to repository details
+// Routes based on path suffix:
+// - /dependencies -> get dependencies
+// - /dependents -> get repos that depend on this one
+// - /dependencies/export -> export dependencies
+// - otherwise -> repository details
 func (h *Handler) GetRepositoryOrDependencies(w http.ResponseWriter, r *http.Request) {
 	fullPath := r.PathValue("fullName")
 	if fullPath == "" {
 		h.sendError(w, http.StatusBadRequest, "Repository path is required")
+		return
+	}
+
+	// Check for dependencies/export first (more specific)
+	if strings.HasSuffix(fullPath, "/dependencies/export") {
+		h.ExportRepositoryDependencies(w, r)
+		return
+	}
+
+	// Check if this is a dependents request
+	if strings.HasSuffix(fullPath, "/dependents") {
+		h.GetRepositoryDependents(w, r)
 		return
 	}
 
@@ -682,10 +698,11 @@ func (h *Handler) GetRepositoryOrDependencies(w http.ResponseWriter, r *http.Req
 		// Strip /dependencies and call the dependencies handler
 		fullName := strings.TrimSuffix(fullPath, "/dependencies")
 		h.getRepositoryDependencies(w, r, fullName)
-	} else {
-		// Regular repository details request
-		h.getRepository(w, r, fullPath)
+		return
 	}
+
+	// Regular repository details request
+	h.getRepository(w, r, fullPath)
 }
 
 // GetRepositoryDependencies returns all dependencies for a repository
@@ -5097,4 +5114,422 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		"dry_run", req.DryRun)
 
 	h.sendJSON(w, http.StatusAccepted, response)
+}
+
+// ========================================
+// Dependency Graph Handlers
+// ========================================
+
+// GetRepositoryDependents returns repositories that depend on the specified repository
+// GET /api/v1/repositories/{fullName}/dependents
+func (h *Handler) GetRepositoryDependents(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	// URL decode the fullName and strip /dependents suffix
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
+		decodedFullName = fullName
+	}
+
+	// Strip /dependents suffix if present
+	decodedFullName = strings.TrimSuffix(decodedFullName, "/dependents")
+
+	// Get repositories that depend on this one
+	dependents, err := h.db.GetDependentRepositories(r.Context(), decodedFullName)
+	if err != nil {
+		h.logger.Error("Failed to get dependent repositories",
+			"repo", decodedFullName,
+			"error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependent repositories")
+		return
+	}
+
+	// Get the dependency types for each dependent
+	type DependentRepo struct {
+		ID              int64    `json:"id"`
+		FullName        string   `json:"full_name"`
+		SourceURL       string   `json:"source_url"`
+		Status          string   `json:"status"`
+		DependencyTypes []string `json:"dependency_types"`
+	}
+
+	result := make([]DependentRepo, 0, len(dependents))
+	for _, repo := range dependents {
+		// Get the dependency details for this repo -> target relationship
+		deps, err := h.db.GetRepositoryDependencies(r.Context(), repo.ID)
+		if err != nil {
+			h.logger.Warn("Failed to get dependencies for repo", "repo", repo.FullName, "error", err)
+			continue
+		}
+
+		// Find dependency types for the target repo
+		depTypes := make([]string, 0)
+		seen := make(map[string]bool)
+		for _, dep := range deps {
+			if dep.DependencyFullName == decodedFullName && !seen[dep.DependencyType] {
+				depTypes = append(depTypes, dep.DependencyType)
+				seen[dep.DependencyType] = true
+			}
+		}
+
+		result = append(result, DependentRepo{
+			ID:              repo.ID,
+			FullName:        repo.FullName,
+			SourceURL:       repo.SourceURL,
+			Status:          repo.Status,
+			DependencyTypes: depTypes,
+		})
+	}
+
+	response := map[string]interface{}{
+		"dependents": result,
+		"total":      len(result),
+		"target":     decodedFullName,
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
+}
+
+// GetDependencyGraph returns enterprise-wide local dependency graph data
+// GET /api/v1/dependencies/graph
+func (h *Handler) GetDependencyGraph(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse query parameters for filtering
+	dependencyTypeFilter := r.URL.Query().Get("dependency_type")
+	var dependencyTypes []string
+	if dependencyTypeFilter != "" {
+		dependencyTypes = strings.Split(dependencyTypeFilter, ",")
+	}
+
+	// Get all local dependency pairs from the database
+	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes)
+	if err != nil {
+		h.logger.Error("Failed to get dependency graph", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependency graph")
+		return
+	}
+
+	// Build node set from edges
+	nodeMap := make(map[string]bool)
+	for _, edge := range edges {
+		nodeMap[edge.SourceRepo] = true
+		nodeMap[edge.TargetRepo] = true
+	}
+
+	// Get repository details for all nodes
+	type GraphNode struct {
+		ID              string `json:"id"`
+		FullName        string `json:"full_name"`
+		Organization    string `json:"organization"`
+		Status          string `json:"status"`
+		DependsOnCount  int    `json:"depends_on_count"`
+		DependedByCount int    `json:"depended_by_count"`
+	}
+
+	type GraphEdge struct {
+		Source         string `json:"source"`
+		Target         string `json:"target"`
+		DependencyType string `json:"dependency_type"`
+	}
+
+	// Count dependencies for each node
+	dependsOnCount := make(map[string]int)
+	dependedByCount := make(map[string]int)
+	for _, edge := range edges {
+		dependsOnCount[edge.SourceRepo]++
+		dependedByCount[edge.TargetRepo]++
+	}
+
+	// Build nodes with repository info
+	nodes := make([]GraphNode, 0, len(nodeMap))
+	for fullName := range nodeMap {
+		repo, err := h.db.GetRepository(ctx, fullName)
+		status := "unknown"
+		org := ""
+		if err == nil && repo != nil {
+			status = repo.Status
+			parts := strings.Split(repo.FullName, "/")
+			if len(parts) > 0 {
+				org = parts[0]
+			}
+		} else {
+			parts := strings.Split(fullName, "/")
+			if len(parts) > 0 {
+				org = parts[0]
+			}
+		}
+
+		nodes = append(nodes, GraphNode{
+			ID:              fullName,
+			FullName:        fullName,
+			Organization:    org,
+			Status:          status,
+			DependsOnCount:  dependsOnCount[fullName],
+			DependedByCount: dependedByCount[fullName],
+		})
+	}
+
+	// Convert edges to response format
+	graphEdges := make([]GraphEdge, 0, len(edges))
+	for _, edge := range edges {
+		graphEdges = append(graphEdges, GraphEdge{
+			Source:         edge.SourceRepo,
+			Target:         edge.TargetRepo,
+			DependencyType: edge.DependencyType,
+		})
+	}
+
+	// Calculate stats
+	stats := map[string]interface{}{
+		"total_repos_with_dependencies": len(nodeMap),
+		"total_local_dependencies":      len(edges),
+	}
+
+	// Detect circular dependencies (simple detection: A->B and B->A)
+	circularCount := 0
+	edgeSet := make(map[string]bool)
+	for _, edge := range edges {
+		key := edge.SourceRepo + "->" + edge.TargetRepo
+		reverseKey := edge.TargetRepo + "->" + edge.SourceRepo
+		if edgeSet[reverseKey] {
+			circularCount++
+		}
+		edgeSet[key] = true
+	}
+	stats["circular_dependency_count"] = circularCount
+
+	response := map[string]interface{}{
+		"nodes": nodes,
+		"edges": graphEdges,
+		"stats": stats,
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
+}
+
+// ExportDependencies exports local dependency data in CSV or JSON format
+// GET /api/v1/dependencies/export
+func (h *Handler) ExportDependencies(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = formatCSV
+	}
+
+	// Parse dependency type filter
+	dependencyTypeFilter := r.URL.Query().Get("dependency_type")
+	var dependencyTypes []string
+	if dependencyTypeFilter != "" {
+		dependencyTypes = strings.Split(dependencyTypeFilter, ",")
+	}
+
+	// Get all local dependency pairs
+	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes)
+	if err != nil {
+		h.logger.Error("Failed to get dependencies for export", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependencies")
+		return
+	}
+
+	// Build export data with both directions
+	type ExportRow struct {
+		Repository     string `json:"repository"`
+		DependencyName string `json:"dependency_full_name"`
+		Direction      string `json:"direction"`
+		DependencyType string `json:"dependency_type"`
+		DependencyURL  string `json:"dependency_url"`
+	}
+
+	exportData := make([]ExportRow, 0, len(edges)*2)
+
+	// Add "depends_on" rows
+	for _, edge := range edges {
+		exportData = append(exportData, ExportRow{
+			Repository:     edge.SourceRepo,
+			DependencyName: edge.TargetRepo,
+			Direction:      "depends_on",
+			DependencyType: edge.DependencyType,
+			DependencyURL:  edge.DependencyURL,
+		})
+	}
+
+	// Add "depended_by" rows (reverse direction)
+	for _, edge := range edges {
+		exportData = append(exportData, ExportRow{
+			Repository:     edge.TargetRepo,
+			DependencyName: edge.SourceRepo,
+			Direction:      "depended_by",
+			DependencyType: edge.DependencyType,
+			DependencyURL:  edge.DependencyURL,
+		})
+	}
+
+	if format == formatJSON {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", "attachment; filename=dependencies.json")
+		if err := json.NewEncoder(w).Encode(exportData); err != nil {
+			h.logger.Error("Failed to encode JSON", "error", err)
+		}
+		return
+	}
+
+	// CSV format
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=dependencies.csv")
+
+	// Write CSV header
+	fmt.Fprintln(w, "repository,dependency_full_name,direction,dependency_type,dependency_url")
+
+	// Write data rows
+	for _, row := range exportData {
+		fmt.Fprintf(w, "%s,%s,%s,%s,%s\n",
+			escapeCSV(row.Repository),
+			escapeCSV(row.DependencyName),
+			escapeCSV(row.Direction),
+			escapeCSV(row.DependencyType),
+			escapeCSV(row.DependencyURL),
+		)
+	}
+}
+
+// repoDependencyExportRow represents a row in the repository dependency export
+type repoDependencyExportRow struct {
+	Repository     string `json:"repository"`
+	DependencyName string `json:"dependency_full_name"`
+	Direction      string `json:"direction"`
+	DependencyType string `json:"dependency_type"`
+	DependencyURL  string `json:"dependency_url"`
+}
+
+// collectRepoDependsOn collects dependencies that this repo depends on (local only)
+func (h *Handler) collectRepoDependsOn(ctx context.Context, repoID int64, repoFullName string) []repoDependencyExportRow {
+	rows := make([]repoDependencyExportRow, 0)
+	deps, err := h.db.GetRepositoryDependencies(ctx, repoID)
+	if err != nil {
+		h.logger.Error("Failed to get dependencies", "repo", repoFullName, "error", err)
+		return rows
+	}
+
+	for _, dep := range deps {
+		if dep.IsLocal {
+			rows = append(rows, repoDependencyExportRow{
+				Repository:     repoFullName,
+				DependencyName: dep.DependencyFullName,
+				Direction:      "depends_on",
+				DependencyType: dep.DependencyType,
+				DependencyURL:  dep.DependencyURL,
+			})
+		}
+	}
+	return rows
+}
+
+// collectRepoDependedBy collects repositories that depend on this repo (local only)
+func (h *Handler) collectRepoDependedBy(ctx context.Context, repoFullName string) []repoDependencyExportRow {
+	rows := make([]repoDependencyExportRow, 0)
+	dependents, err := h.db.GetDependentRepositories(ctx, repoFullName)
+	if err != nil {
+		h.logger.Error("Failed to get dependents", "repo", repoFullName, "error", err)
+		return rows
+	}
+
+	for _, dependent := range dependents {
+		depDeps, err := h.db.GetRepositoryDependencies(ctx, dependent.ID)
+		if err != nil {
+			continue
+		}
+		for _, dep := range depDeps {
+			if dep.DependencyFullName == repoFullName && dep.IsLocal {
+				rows = append(rows, repoDependencyExportRow{
+					Repository:     repoFullName,
+					DependencyName: dependent.FullName,
+					Direction:      "depended_by",
+					DependencyType: dep.DependencyType,
+					DependencyURL:  dependent.SourceURL,
+				})
+			}
+		}
+	}
+	return rows
+}
+
+// writeRepoDependencyExport writes the export data in the specified format
+func (h *Handler) writeRepoDependencyExport(w http.ResponseWriter, format, repoFullName string, data []repoDependencyExportRow) {
+	filename := strings.ReplaceAll(repoFullName, "/", "-")
+
+	if format == formatJSON {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-dependencies.json", filename))
+		if err := json.NewEncoder(w).Encode(data); err != nil {
+			h.logger.Error("Failed to encode JSON", "error", err)
+		}
+		return
+	}
+
+	// CSV format
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-dependencies.csv", filename))
+
+	fmt.Fprintln(w, "repository,dependency_full_name,direction,dependency_type,dependency_url")
+	for _, row := range data {
+		fmt.Fprintf(w, "%s,%s,%s,%s,%s\n",
+			escapeCSV(row.Repository),
+			escapeCSV(row.DependencyName),
+			escapeCSV(row.Direction),
+			escapeCSV(row.DependencyType),
+			escapeCSV(row.DependencyURL),
+		)
+	}
+}
+
+// ExportRepositoryDependencies exports dependencies for a single repository
+// GET /api/v1/repositories/{fullName}/dependencies/export
+func (h *Handler) ExportRepositoryDependencies(w http.ResponseWriter, r *http.Request) {
+	fullName := r.PathValue("fullName")
+	if fullName == "" {
+		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	// URL decode and clean up the fullName
+	decodedFullName, err := url.QueryUnescape(fullName)
+	if err != nil {
+		decodedFullName = fullName
+	}
+	decodedFullName = strings.TrimSuffix(decodedFullName, "/dependencies/export")
+
+	ctx := r.Context()
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = formatCSV
+	}
+
+	// Get the repository first
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
+	if err != nil || repo == nil {
+		h.sendError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Collect export data
+	exportData := h.collectRepoDependsOn(ctx, repo.ID, decodedFullName)
+	exportData = append(exportData, h.collectRepoDependedBy(ctx, decodedFullName)...)
+
+	// Write output
+	h.writeRepoDependencyExport(w, format, decodedFullName, exportData)
+}
+
+// escapeCSV escapes a string for CSV output
+func escapeCSV(s string) string {
+	if strings.ContainsAny(s, ",\"\n\r") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
 }

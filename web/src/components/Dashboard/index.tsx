@@ -37,7 +37,7 @@ export function Dashboard() {
   const [enterpriseSlug, setEnterpriseSlug] = useState('');
   const [adoOrganization, setAdoOrganization] = useState('');
   const [adoProject, setAdoProject] = useState('');
-  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [, setDiscoveryError] = useState<string | null>(null);
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
 
   // Fetch source type on mount
@@ -316,7 +316,6 @@ export function Dashboard() {
         adoProject={adoProject}
         setAdoProject={setAdoProject}
         loading={startDiscoveryMutation.isPending || startADODiscoveryMutation.isPending}
-        error={discoveryError}
         onStart={handleStartDiscovery}
         onClose={() => {
           setShowDiscoveryModal(false);
@@ -345,7 +344,6 @@ interface DiscoveryModalProps {
   adoProject: string;
   setAdoProject: (project: string) => void;
   loading: boolean;
-  error: string | null;
   onStart: () => void;
   onClose: () => void;
 }
@@ -363,8 +361,7 @@ function DiscoveryModal({
   setAdoOrganization,
   adoProject,
   setAdoProject,
-  loading, 
-  error: _error, 
+  loading,
   onStart, 
   onClose 
 }: DiscoveryModalProps) {

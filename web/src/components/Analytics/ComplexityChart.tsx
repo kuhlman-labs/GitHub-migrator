@@ -37,6 +37,7 @@ export function ComplexityChart({ data, source = 'all' }: ComplexityChartProps) 
     fill: COMPLEXITY_COLORS[category] || '#9CA3AF',
   }));
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleBarClick = (entry: any) => {
     if (entry && entry.category) {
       const url = getRepositoriesUrl({ complexity: [entry.category] });

@@ -120,6 +120,7 @@ export function BatchManagement() {
         return () => clearInterval(interval);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatch]);
 
   const loadBatches = async (isBackgroundRefresh = false) => {
@@ -159,7 +160,7 @@ export function BatchManagement() {
       const response = await api.listRepositories({ 
         batch_id: batchId
       });
-      const repos = response.repositories || response as any;
+      const repos = response.repositories || [];
       console.log(`Loaded ${repos.length} repositories for batch ${batchId}`);
       setBatchRepositories(repos);
     } catch (error) {
@@ -184,9 +185,10 @@ export function BatchManagement() {
         await loadBatchRepositories(dryRunBatchId);
       }
       setShowDryRunDialog(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to start dry run:', error);
-      showError(error.response?.data?.error || 'Failed to start dry run');
+      const err = error as { response?: { data?: { error?: string } } };
+      showError(err.response?.data?.error || 'Failed to start dry run');
       setShowDryRunDialog(false);
     }
   };
@@ -216,9 +218,10 @@ export function BatchManagement() {
         await loadBatchRepositories(startBatchId);
       }
       setShowStartDialog(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to start batch:', error);
-      showError(error.response?.data?.error || 'Failed to start batch migration');
+      const err = error as { response?: { data?: { error?: string } } };
+      showError(err.response?.data?.error || 'Failed to start batch migration');
       setShowStartDialog(false);
     }
   };
@@ -267,9 +270,10 @@ export function BatchManagement() {
         loadBatchRepositories(selectedBatch.id)
       ]);
       setShowRetryDialog(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to retry batch failures:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to retry failed repositories';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to retry failed repositories';
       showError(errorMessage);
       setShowRetryDialog(false);
     }
@@ -288,9 +292,10 @@ export function BatchManagement() {
           loadBatchRepositories(selectedBatch.id)
         ]);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to retry repository:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to retry repository';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to retry repository';
       showError(errorMessage);
     }
   };
@@ -326,9 +331,10 @@ export function BatchManagement() {
       await loadBatches();
       setShowDeleteDialog(false);
       setBatchToDelete(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to delete batch:', error);
-      showError(error.response?.data?.error || 'Failed to delete batch');
+      const err = error as { response?: { data?: { error?: string } } };
+      showError(err.response?.data?.error || 'Failed to delete batch');
     }
   };
 
