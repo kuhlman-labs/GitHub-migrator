@@ -44,6 +44,13 @@ export function Navigation() {
         searchParam: 'search',
         isSearchable: true,
       };
+    } else if (path === '/dependencies') {
+      // Dependencies page has its own in-page search
+      return {
+        placeholder: '',
+        searchParam: '',
+        isSearchable: false,
+      };
     } else if (path.startsWith('/org/')) {
       // For organization detail pages
       // Note: This could be repositories OR Azure DevOps projects depending on the org type
@@ -145,6 +152,16 @@ export function Navigation() {
                   }}
                 >
                 Repositories
+              </Link>
+                <Link 
+                  to="/dependencies" 
+                  className={linkClass('/dependencies')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/dependencies') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                >
+                Dependencies
               </Link>
                 <Link 
                   to="/batches" 

@@ -256,7 +256,7 @@ export function SetupWizard() {
 
           <FormControl required className="mb-6">
             <FormControl.Label>Select your migration source</FormControl.Label>
-            <RadioGroup name="source-type" onChange={(value) => handleSourceTypeChange(value as any)}>
+            <RadioGroup name="source-type" onChange={(value) => handleSourceTypeChange(value as 'github' | 'azuredevops')}>
               <label className="flex items-start cursor-pointer">
                 <Radio value="github" checked={sourceType === 'github'} />
                 <div className="ml-3 flex-1">
@@ -449,7 +449,7 @@ export function SetupWizard() {
 
           <FormControl required className="mb-4">
             <FormControl.Label>Database Type</FormControl.Label>
-            <Select value={dbType} onChange={(e) => handleDbTypeChange(e.target.value as any)} block>
+            <Select value={dbType} onChange={(e) => handleDbTypeChange(e.target.value as 'sqlite' | 'postgres' | 'sqlserver')} block>
               <Select.Option value="sqlite">SQLite</Select.Option>
               <Select.Option value="postgres">PostgreSQL</Select.Option>
               <Select.Option value="sqlserver">SQL Server</Select.Option>
@@ -572,7 +572,7 @@ export function SetupWizard() {
             isOptional
             defaultExpanded
           >
-            <RadioGroup name="dest-repo-action" onChange={(value) => setDestRepoExistsAction(value as any)}>
+            <RadioGroup name="dest-repo-action" onChange={(value) => setDestRepoExistsAction(value as 'fail' | 'skip' | 'delete')}>
               <label className="flex items-start cursor-pointer">
                 <Radio value="fail" checked={destRepoExistsAction === 'fail'} />
                 <div className="ml-3 flex-1">
@@ -613,7 +613,7 @@ export function SetupWizard() {
           >
             <FormControl className="mb-4">
               <FormControl.Label>Public Repositories</FormControl.Label>
-              <Select value={publicReposVisibility} onChange={(e) => setPublicReposVisibility(e.target.value as any)} block>
+              <Select value={publicReposVisibility} onChange={(e) => setPublicReposVisibility(e.target.value as 'public' | 'internal' | 'private')} block>
                 <Select.Option value="public">Keep Public</Select.Option>
                 <Select.Option value="internal">Convert to Internal</Select.Option>
                 <Select.Option value="private">Convert to Private (Default)</Select.Option>
@@ -625,7 +625,7 @@ export function SetupWizard() {
 
             <FormControl>
               <FormControl.Label>Internal Repositories</FormControl.Label>
-              <Select value={internalReposVisibility} onChange={(e) => setInternalReposVisibility(e.target.value as any)} block>
+              <Select value={internalReposVisibility} onChange={(e) => setInternalReposVisibility(e.target.value as 'internal' | 'private')} block>
                 <Select.Option value="internal">Keep Internal</Select.Option>
                 <Select.Option value="private">Convert to Private (Default)</Select.Option>
               </Select>
@@ -654,7 +654,7 @@ export function SetupWizard() {
           >
             <FormControl className="mb-4">
               <FormControl.Label>Log Level</FormControl.Label>
-              <Select value={logLevel} onChange={(e) => setLogLevel(e.target.value as any)} block>
+              <Select value={logLevel} onChange={(e) => setLogLevel(e.target.value as 'debug' | 'info' | 'warn' | 'error')} block>
                 <Select.Option value="debug">Debug (Verbose)</Select.Option>
                 <Select.Option value="info">Info (Recommended)</Select.Option>
                 <Select.Option value="warn">Warn (Warnings & Errors only)</Select.Option>
@@ -665,7 +665,7 @@ export function SetupWizard() {
 
             <FormControl className="mb-4">
               <FormControl.Label>Log Format</FormControl.Label>
-              <RadioGroup name="log-format" onChange={(value) => setLogFormat(value as any)}>
+              <RadioGroup name="log-format" onChange={(value) => setLogFormat(value as 'json' | 'text')}>
                 <label className="flex items-start cursor-pointer">
                   <Radio value="json" checked={logFormat === 'json'} />
                   <div className="ml-3 flex-1">

@@ -363,8 +363,8 @@ function DiscoveryModal({
   setAdoOrganization,
   adoProject,
   setAdoProject,
-  loading, 
-  error: _error, 
+  loading,
+  error,
   onStart, 
   onClose 
 }: DiscoveryModalProps) {
@@ -406,6 +406,11 @@ function DiscoveryModal({
             </button>
           </div>
       <form onSubmit={handleSubmit} className="p-4">
+        {error && (
+          <Flash variant="danger" className="mb-3">
+            {error}
+          </Flash>
+        )}
         <FormControl className="mb-3">
           <FormControl.Label>Discovery Type</FormControl.Label>
           <div className="flex gap-2">

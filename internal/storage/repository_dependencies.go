@@ -190,3 +190,37 @@ func (d *Database) UpdateLocalDependencyFlags(ctx context.Context) error {
 
 	return nil
 }
+
+// DependencyPair represents a local dependency relationship between two repositories
+type DependencyPair struct {
+	SourceRepo     string
+	TargetRepo     string
+	DependencyType string
+	DependencyURL  string // URL of the target repo (the dependency)
+	SourceRepoURL  string // URL of the source repo (the repo that has the dependency)
+}
+
+// GetAllLocalDependencyPairs returns all local dependency relationships for the dependency graph
+// It returns pairs where both the source and target repositories exist in the database
+// Optionally filters by dependency types
+func (d *Database) GetAllLocalDependencyPairs(ctx context.Context, dependencyTypes []string) ([]DependencyPair, error) {
+	query := d.db.WithContext(ctx).
+		Model(&models.RepositoryDependency{}).
+		Select("r.full_name as source_repo, rd.dependency_full_name as target_repo, rd.dependency_type, rd.dependency_url, r.source_url as source_repo_url").
+		Joins("JOIN repositories r ON rd.repository_id = r.id").
+		Table("repository_dependencies rd").
+		Where("rd.is_local = ?", true)
+
+	// Add dependency type filter if specified
+	if len(dependencyTypes) > 0 {
+		query = query.Where("rd.dependency_type IN ?", dependencyTypes)
+	}
+
+	var results []DependencyPair
+	err := query.Order("r.full_name, rd.dependency_full_name").Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local dependency pairs: %w", err)
+	}
+
+	return results, nil
+}

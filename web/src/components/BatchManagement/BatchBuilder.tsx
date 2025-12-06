@@ -19,6 +19,12 @@ interface BatchBuilderProps {
   onSuccess: () => void;
 }
 
+// Type for API response that may have nested batch structure
+interface BatchResponse extends Batch {
+  batch?: Batch;
+  repositories?: Repository[];
+}
+
 export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const isEditMode = !!batch;
 
@@ -95,10 +101,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       console.log('Populating form with batch data:', batch);
       console.log('batch.name:', batch.name);
       console.log('batch.id:', batch.id);
-      console.log('Has nested batch property?', 'batch' in (batch as any));
+      const batchResp = batch as BatchResponse;
+      console.log('Has nested batch property?', 'batch' in batchResp);
       
       // Handle nested batch structure from API
-      const batchData = (batch as any).batch || batch;
+      const batchData = batchResp.batch || batch;
       console.log('Using batch data:', batchData);
       console.log('batchData.name:', batchData.name);
       
@@ -115,7 +122,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   useEffect(() => {
     if (isEditMode && batch) {
       // Handle nested batch structure
-      const batchData = (batch as any).batch || batch;
+      const batchResp = batch as BatchResponse;
+      const batchData = batchResp.batch || batch;
       const batchId = batchData?.id || batch.id;
       
       console.log('Edit mode: batch object:', batch);
@@ -123,11 +131,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       
       if (batchId) {
         // Check if repositories are already included in the batch response
-        const repos = (batch as any).repositories;
+        const repos = batchResp.repositories;
         if (repos && Array.isArray(repos)) {
           console.log('✓ Using repositories from batch response:', repos.length);
           setCurrentBatchRepos(repos);
-          const repoIds = repos.map((r: any) => r.id);
+          const repoIds = repos.map((r: Repository) => r.id);
           setSelectedRepoIds(new Set(repoIds));
           console.log('✓ Auto-selected', repoIds.length, 'repository IDs:', repoIds);
         } else {
@@ -138,16 +146,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     } else if (isEditMode && !batch) {
       console.log('Edit mode: Waiting for batch to load...');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, batch]);
 
   // Load available repositories
   useEffect(() => {
     loadAvailableRepos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   const loadCurrentBatchRepos = async () => {
     // Handle nested batch structure
-    const batchData = (batch as any)?.batch || batch;
+    const batchResp = batch as BatchResponse | undefined;
+    const batchData = batchResp?.batch || batch;
     const batchId = batchData?.id || batch?.id;
     
     if (!batchId) {
@@ -476,7 +487,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
       if (isEditMode && batch) {
         // Handle nested batch structure
-        const batchData = (batch as any).batch || batch;
+        const batchResp = batch as BatchResponse;
+        const batchData = batchResp.batch || batch;
         const existingBatchId = batchData?.id || batch.id;
         
         if (!existingBatchId) {
@@ -498,7 +510,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         // Update repositories - add new ones, remove old ones
         const currentIds = new Set(currentBatchRepos.map((r) => r.id));
         const originalResponse = await api.listRepositories({ batch_id: existingBatchId });
-        const originalRepos = originalResponse.repositories || originalResponse as any;
+        const originalRepos = originalResponse.repositories || [];
         const originalIds = new Set(originalRepos.map((r: Repository) => r.id));
         
         const toAdd = Array.from(currentIds).filter((id) => !originalIds.has(id));
@@ -540,16 +552,17 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       }
 
       onSuccess();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Extract error message from axios error response
       let errorMessage = 'Failed to save batch';
       
-      if (err.response?.data?.error) {
+      const axiosError = err as { response?: { data?: { error?: string } }; message?: string };
+      if (axiosError.response?.data?.error) {
         // Backend returned a structured error message
-        errorMessage = err.response.data.error;
-      } else if (err.message) {
+        errorMessage = axiosError.response.data.error;
+      } else if (axiosError.message) {
         // Use the error message from the Error object
-        errorMessage = err.message;
+        errorMessage = axiosError.message;
       }
       
       setError(errorMessage);

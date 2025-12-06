@@ -90,6 +90,7 @@ export function UnifiedFilterSidebar({
     if (sourceType === 'azuredevops') {
       loadProjects();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceType, filters.ado_organization]);
 
   // Reload teams when organization filter changes (for GitHub)
@@ -97,6 +98,7 @@ export function UnifiedFilterSidebar({
     if (sourceType === 'github') {
       loadTeams();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceType, filters.organization]);
 
   const loadConfig = async () => {
@@ -136,7 +138,7 @@ export function UnifiedFilterSidebar({
         for (const org of selectedOrgs) {
           try {
             const projectList = await api.listADOProjects(org);
-            const projectNames = projectList.map((p: any) => p.name || p.project_name);
+            const projectNames = projectList.map((p: { name?: string; project_name?: string }) => p.name || p.project_name || '');
             projectNames.forEach((name: string) => {
               if (!uniqueProjects.has(name)) {
                 uniqueProjects.add(name);
@@ -152,7 +154,7 @@ export function UnifiedFilterSidebar({
       } else {
         // No organization selected, load all projects
         const projectList = await api.listADOProjects();
-        const projectNames = projectList.map((p: any) => p.name || p.project_name);
+        const projectNames = projectList.map((p: { name?: string; project_name?: string }) => p.name || p.project_name || '');
         setProjects(projectNames || []);
       }
     } catch (error) {
@@ -710,6 +712,7 @@ export function UnifiedFilterSidebar({
             onChange={(e) =>
               onChange({
                 ...filters,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 sort_by: (e.target.value as any) || undefined,
               })
             }

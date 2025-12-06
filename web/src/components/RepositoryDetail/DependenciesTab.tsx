@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { UnderlineNav, Button } from '@primer/react';
+import { DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
-import type { DependenciesResponse, RepositoryDependency } from '../../types';
+import type { DependenciesResponse, RepositoryDependency, DependentsResponse, DependentRepository } from '../../types';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pagination } from '../common/Pagination';
@@ -9,23 +12,43 @@ interface DependenciesTabProps {
   fullName: string;
 }
 
+interface DependencyMetadata {
+  type: string;
+  path?: string;
+  branch?: string;
+  workflow_file?: string;
+  ref?: string;
+  manifest?: string;
+  package_manager?: string;
+  [key: string]: string | undefined;
+}
+
 interface MergedDependency extends RepositoryDependency {
   detection_methods: string[];
-  all_metadata: any[];
+  all_metadata: DependencyMetadata[];
 }
 
 type ScopeFilter = 'all' | 'local' | 'external';
+type ViewTab = 'depends_on' | 'depended_by';
 
 export function DependenciesTab({ fullName }: DependenciesTabProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DependenciesResponse | null>(null);
+  const [dependentsData, setDependentsData] = useState<DependentsResponse | null>(null);
   const [deduplicatedDeps, setDeduplicatedDeps] = useState<MergedDependency[]>([]);
+  
+  // View tab state
+  const [viewTab, setViewTab] = useState<ViewTab>('depends_on');
   
   // Filter and pagination state
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
+  
+  // Export state
+  const [exporting, setExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // Deduplicate dependencies by dependency_full_name
   const deduplicateDependencies = (dependencies: RepositoryDependency[]): MergedDependency[] => {
@@ -45,7 +68,7 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
           try {
             const parsed = JSON.parse(dep.metadata);
             existing.all_metadata.push({ type: dep.dependency_type, ...parsed });
-          } catch (e) {
+          } catch {
             // Skip invalid metadata
           }
         }
@@ -55,12 +78,12 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
         }
       } else {
         // First occurrence of this dependency
-        const metadata = [];
+        const metadata: DependencyMetadata[] = [];
         if (dep.metadata) {
           try {
             const parsed = JSON.parse(dep.metadata);
             metadata.push({ type: dep.dependency_type, ...parsed });
-          } catch (e) {
+          } catch {
             // Skip invalid metadata
           }
         }
@@ -77,31 +100,58 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
   };
 
   useEffect(() => {
-    const fetchDependencies = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
         setError(null);
-        const response = await api.getRepositoryDependencies(fullName);
+        
+        // Fetch both dependencies and dependents in parallel
+        const [depsResponse, dependentsResponse] = await Promise.all([
+          api.getRepositoryDependencies(fullName),
+          api.getRepositoryDependents(fullName)
+        ]);
         
         // Deduplicate dependencies
-        const deduplicated = deduplicateDependencies(response.dependencies);
+        const deduplicated = deduplicateDependencies(depsResponse.dependencies);
         setDeduplicatedDeps(deduplicated);
-        setData(response);
-      } catch (err: any) {
+        setData(depsResponse);
+        setDependentsData(dependentsResponse);
+      } catch (err: unknown) {
         console.error('Failed to fetch dependencies:', err);
-        setError(err?.response?.data?.message || 'Failed to load dependencies');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load dependencies';
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchDependencies();
+    fetchData();
   }, [fullName]);
 
-  // Reset page when filter changes
+  // Reset page when filter or view changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [scopeFilter]);
+  }, [scopeFilter, viewTab]);
+
+  const handleExport = async (format: 'csv' | 'json') => {
+    setShowExportMenu(false);
+    try {
+      setExporting(true);
+      const blob = await api.exportRepositoryDependencies(fullName, format);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fullName.replace('/', '-')}-dependencies.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export dependencies:', err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -126,23 +176,6 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
     );
   }
 
-  if (!data || !data.dependencies || data.dependencies.length === 0) {
-    return (
-      <div 
-        className="rounded-lg p-4"
-        style={{
-          backgroundColor: 'var(--accent-subtle)',
-          border: '1px solid var(--borderColor-accent-muted)'
-        }}
-      >
-        <h4 className="font-medium mb-2" style={{ color: 'var(--fgColor-accent)' }}>No dependencies found</h4>
-        <p className="text-sm" style={{ color: 'var(--fgColor-accent)' }}>
-          This repository has no detected dependencies (submodules, workflow references, or dependency graph relationships).
-        </p>
-      </div>
-    );
-  }
-
   // Calculate deduplicated summary
   const deduplicatedSummary = {
     total: deduplicatedDeps.length,
@@ -156,6 +189,26 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
     }, {} as Record<string, number>)
   };
 
+  const dependentsCount = dependentsData?.total || 0;
+  const hasAnyRelationships = deduplicatedSummary.total > 0 || dependentsCount > 0;
+
+  if (!hasAnyRelationships) {
+    return (
+      <div 
+        className="rounded-lg p-4"
+        style={{
+          backgroundColor: 'var(--accent-subtle)',
+          border: '1px solid var(--borderColor-accent-muted)'
+        }}
+      >
+        <h4 className="font-medium mb-2" style={{ color: 'var(--fgColor-accent)' }}>No dependencies found</h4>
+        <p className="text-sm" style={{ color: 'var(--fgColor-accent)' }}>
+          This repository has no detected dependencies or dependents (submodules, workflow references, or dependency graph relationships).
+        </p>
+      </div>
+    );
+  }
+
   // Filter dependencies by scope
   const filteredDeps = deduplicatedDeps.filter(dep => {
     if (scopeFilter === 'local') return dep.is_local;
@@ -163,27 +216,48 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
     return true; // 'all'
   });
 
-  // Paginate filtered dependencies
-  const totalItems = filteredDeps.length;
+  // Paginate based on current view
+  const getCurrentItems = () => {
+    if (viewTab === 'depends_on') {
+      return filteredDeps;
+    } else {
+      return dependentsData?.dependents || [];
+    }
+  };
+
+  const currentItems = getCurrentItems();
+  const totalItems = currentItems.length;
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
-  const paginatedDeps = filteredDeps.slice(startIndex, endIndex);
+  const paginatedItems = currentItems.slice(startIndex, endIndex);
 
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div 
           className="rounded-lg shadow-sm p-4"
           style={{ backgroundColor: 'var(--bgColor-default)' }}
         >
-          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Total Dependencies</div>
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Depends On</div>
           <div className="text-2xl font-bold mt-1" style={{ color: 'var(--fgColor-default)' }}>{deduplicatedSummary.total}</div>
-          {data.summary.total > deduplicatedSummary.total && (
+          {data && data.summary.total > deduplicatedSummary.total && (
             <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
               ({data.summary.total} raw detections)
             </div>
           )}
+        </div>
+        <div 
+          className="rounded-lg shadow-sm p-4"
+          style={{ backgroundColor: 'var(--bgColor-default)' }}
+        >
+          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Depended By</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: 'var(--fgColor-default)' }}>
+            {dependentsCount}
+          </div>
+          <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Repos that use this
+          </div>
         </div>
         <div 
           className="rounded-lg shadow-sm p-4"
@@ -221,12 +295,15 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
                 <span className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{count}</span>
               </div>
             ))}
+            {Object.keys(deduplicatedSummary.by_type).length === 0 && (
+              <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>None</div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Warning for local dependencies */}
-      {deduplicatedSummary.local > 0 && (
+      {(deduplicatedSummary.local > 0 || dependentsCount > 0) && (
         <div 
           className="rounded-lg p-4"
           style={{
@@ -236,118 +313,262 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
         >
           <h4 className="font-medium mb-2" style={{ color: 'var(--fgColor-attention)' }}>Local Dependencies Detected</h4>
           <p className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
-            This repository depends on {deduplicatedSummary.local} other repository/repositories in your enterprise. 
-            Consider migrating these dependencies in the same batch to maintain functionality.
+            {deduplicatedSummary.local > 0 && (
+              <>This repository depends on {deduplicatedSummary.local} other repository/repositories in your enterprise. </>
+            )}
+            {dependentsCount > 0 && (
+              <>{dependentsCount} other repository/repositories depend on this one. </>
+            )}
+            Consider migrating related repositories in the same batch to maintain functionality.
           </p>
         </div>
       )}
 
-      {/* Dependencies List */}
+      {/* Export Button with Dropdown */}
+      <div className="flex justify-end">
+        <div className="relative">
+          <Button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            disabled={exporting}
+            leadingVisual={DownloadIcon}
+            trailingVisual={ChevronDownIcon}
+            variant="primary"
+          >
+            Export
+          </Button>
+          {showExportMenu && (
+            <>
+              {/* Backdrop to close menu when clicking outside */}
+              <div 
+                className="fixed inset-0 z-10" 
+                onClick={() => setShowExportMenu(false)}
+              />
+              {/* Dropdown menu */}
+              <div 
+                className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20"
+                style={{
+                  backgroundColor: 'var(--bgColor-default)',
+                  border: '1px solid var(--borderColor-default)',
+                  boxShadow: 'var(--shadow-floating-large)'
+                }}
+              >
+                <div className="py-1">
+                  <button
+                    onClick={() => handleExport('csv')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('json')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export as JSON
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* View Tabs */}
       <div 
         className="rounded-lg shadow-sm"
         style={{ backgroundColor: 'var(--bgColor-default)' }}
       >
+        <UnderlineNav aria-label="Dependency view">
+          <UnderlineNav.Item
+            aria-current={viewTab === 'depends_on' ? 'page' : undefined}
+            onSelect={() => setViewTab('depends_on')}
+            counter={deduplicatedSummary.total}
+          >
+            Depends On
+          </UnderlineNav.Item>
+          <UnderlineNav.Item
+            aria-current={viewTab === 'depended_by' ? 'page' : undefined}
+            onSelect={() => setViewTab('depended_by')}
+            counter={dependentsCount}
+          >
+            Depended By
+          </UnderlineNav.Item>
+        </UnderlineNav>
+
         <div className="p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-              All Dependencies ({deduplicatedSummary.total})
-            </h3>
-            
-            {/* Scope Filter */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setScopeFilter('all')}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-                style={{
-                  backgroundColor: scopeFilter === 'all' ? '#2da44e' : 'var(--control-bgColor-rest)',
-                  color: scopeFilter === 'all' ? '#ffffff' : 'var(--fgColor-default)'
-                }}
-              >
-                All ({deduplicatedSummary.total})
-              </button>
-              <button
-                onClick={() => setScopeFilter('local')}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-                style={{
-                  backgroundColor: scopeFilter === 'local' ? '#2da44e' : 'var(--control-bgColor-rest)',
-                  color: scopeFilter === 'local' ? '#ffffff' : 'var(--fgColor-default)'
-                }}
-              >
-                Local ({deduplicatedSummary.local})
-              </button>
-              <button
-                onClick={() => setScopeFilter('external')}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-                style={{
-                  backgroundColor: scopeFilter === 'external' ? '#fb8500' : 'var(--control-bgColor-rest)',
-                  color: scopeFilter === 'external' ? '#ffffff' : 'var(--fgColor-default)'
-                }}
-              >
-                External ({deduplicatedSummary.external})
-              </button>
-            </div>
-          </div>
-          
-          {filteredDeps.length === 0 ? (
-            <div className="text-center py-8" style={{ color: 'var(--fgColor-muted)' }}>
-              No {scopeFilter === 'all' ? '' : scopeFilter} dependencies found
-            </div>
-          ) : (
+          {viewTab === 'depends_on' ? (
             <>
-              <div className="overflow-x-auto">
-                <table 
-                  className="min-w-full divide-y"
-                  style={{ borderColor: 'var(--borderColor-muted)' }}
-                >
-                  <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
-                    <tr>
-                      <th 
-                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: 'var(--fgColor-muted)' }}
-                      >
-                        Repository
-                      </th>
-                      <th 
-                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: 'var(--fgColor-muted)' }}
-                      >
-                        Detection Methods
-                      </th>
-                      <th 
-                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: 'var(--fgColor-muted)' }}
-                      >
-                        Scope
-                      </th>
-                      <th 
-                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: 'var(--fgColor-muted)' }}
-                      >
-                        Details
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody 
-                    className="divide-y"
-                    style={{ borderColor: 'var(--borderColor-muted)' }}
+              {/* Scope Filter for Depends On view */}
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                  Dependencies ({deduplicatedSummary.total})
+                </h3>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setScopeFilter('all')}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+                    style={{
+                      backgroundColor: scopeFilter === 'all' ? '#2da44e' : 'var(--control-bgColor-rest)',
+                      color: scopeFilter === 'all' ? '#ffffff' : 'var(--fgColor-default)'
+                    }}
                   >
-                    {paginatedDeps.map((dep) => (
-                      <MergedDependencyRow key={dep.id} dependency={dep} />
-                    ))}
-                  </tbody>
-                </table>
+                    All ({deduplicatedSummary.total})
+                  </button>
+                  <button
+                    onClick={() => setScopeFilter('local')}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+                    style={{
+                      backgroundColor: scopeFilter === 'local' ? '#2da44e' : 'var(--control-bgColor-rest)',
+                      color: scopeFilter === 'local' ? '#ffffff' : 'var(--fgColor-default)'
+                    }}
+                  >
+                    Local ({deduplicatedSummary.local})
+                  </button>
+                  <button
+                    onClick={() => setScopeFilter('external')}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
+                    style={{
+                      backgroundColor: scopeFilter === 'external' ? '#fb8500' : 'var(--control-bgColor-rest)',
+                      color: scopeFilter === 'external' ? '#ffffff' : 'var(--fgColor-default)'
+                    }}
+                  >
+                    External ({deduplicatedSummary.external})
+                  </button>
+                </div>
               </div>
               
-              {/* Pagination */}
-              {totalItems > pageSize && (
-                <div className="mt-4">
-                  <Pagination
-                    currentPage={currentPage}
-                    totalItems={totalItems}
-                    pageSize={pageSize}
-                    onPageChange={setCurrentPage}
-                  />
+              {filteredDeps.length === 0 ? (
+                <div className="text-center py-8" style={{ color: 'var(--fgColor-muted)' }}>
+                  No {scopeFilter === 'all' ? '' : scopeFilter} dependencies found
                 </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table 
+                      className="min-w-full divide-y"
+                      style={{ borderColor: 'var(--borderColor-muted)' }}
+                    >
+                      <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+                        <tr>
+                          <th 
+                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--fgColor-muted)' }}
+                          >
+                            Repository
+                          </th>
+                          <th 
+                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--fgColor-muted)' }}
+                          >
+                            Detection Methods
+                          </th>
+                          <th 
+                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--fgColor-muted)' }}
+                          >
+                            Scope
+                          </th>
+                          <th 
+                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--fgColor-muted)' }}
+                          >
+                            Details
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody 
+                        className="divide-y"
+                        style={{ borderColor: 'var(--borderColor-muted)' }}
+                      >
+                        {(paginatedItems as MergedDependency[]).map((dep) => (
+                          <MergedDependencyRow key={dep.id} dependency={dep} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {totalItems > pageSize && (
+                    <div className="mt-4">
+                      <Pagination
+                        currentPage={currentPage}
+                        totalItems={totalItems}
+                        pageSize={pageSize}
+                        onPageChange={setCurrentPage}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Depended By view */}
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                  Repositories that depend on this one ({dependentsCount})
+                </h3>
+                <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+                  These repositories have local dependencies on {fullName}
+                </p>
+              </div>
+              
+              {dependentsCount === 0 ? (
+                <div className="text-center py-8" style={{ color: 'var(--fgColor-muted)' }}>
+                  No repositories depend on this one
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table 
+                      className="min-w-full divide-y"
+                      style={{ borderColor: 'var(--borderColor-muted)' }}
+                    >
+                      <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+                        <tr>
+                          <th 
+                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--fgColor-muted)' }}
+                          >
+                            Repository
+                          </th>
+                          <th 
+                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--fgColor-muted)' }}
+                          >
+                            Status
+                          </th>
+                          <th 
+                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--fgColor-muted)' }}
+                          >
+                            Dependency Types
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody 
+                        className="divide-y"
+                        style={{ borderColor: 'var(--borderColor-muted)' }}
+                      >
+                        {(paginatedItems as DependentRepository[]).map((dep) => (
+                          <DependentRow key={dep.id} dependent={dep} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {totalItems > pageSize && (
+                    <div className="mt-4">
+                      <Pagination
+                        currentPage={currentPage}
+                        totalItems={totalItems}
+                        pageSize={pageSize}
+                        onPageChange={setCurrentPage}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -385,15 +606,25 @@ function MergedDependencyRow({ dependency }: MergedDependencyRowProps) {
     <tr className="hover:opacity-80 transition-opacity">
       <td className="px-4 py-4 whitespace-nowrap">
         <div className="text-sm font-medium">
-          <a
-            href={dependency.dependency_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline"
-            style={{ color: 'var(--fgColor-accent)' }}
-          >
-            {dependency.dependency_full_name}
-          </a>
+          {dependency.is_local ? (
+            <Link
+              to={`/repository/${encodeURIComponent(dependency.dependency_full_name)}`}
+              className="hover:underline"
+              style={{ color: 'var(--fgColor-accent)' }}
+            >
+              {dependency.dependency_full_name}
+            </Link>
+          ) : (
+            <a
+              href={dependency.dependency_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+              style={{ color: 'var(--fgColor-accent)' }}
+            >
+              {dependency.dependency_full_name}
+            </a>
+          )}
         </div>
         {dependency.dependency_url && (
           <div className="text-xs truncate max-w-md" style={{ color: 'var(--fgColor-muted)' }}>
@@ -470,3 +701,70 @@ function MergedDependencyRow({ dependency }: MergedDependencyRowProps) {
   );
 }
 
+interface DependentRowProps {
+  dependent: DependentRepository;
+}
+
+function DependentRow({ dependent }: DependentRowProps) {
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'submodule':
+        return 'blue';
+      case 'workflow':
+        return 'purple';
+      case 'dependency_graph':
+        return 'green';
+      case 'package':
+        return 'gray';
+      default:
+        return 'gray';
+    }
+  };
+
+  const getTypeLabel = (type: string) => {
+    return type.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  };
+
+  const getStatusColor = (status: string) => {
+    if (status === 'complete' || status === 'migration_complete') return 'green';
+    if (status === 'pending') return 'gray';
+    if (status.includes('failed')) return 'red';
+    if (status.includes('progress') || status.includes('queued')) return 'blue';
+    return 'gray';
+  };
+
+  return (
+    <tr className="hover:opacity-80 transition-opacity">
+      <td className="px-4 py-4 whitespace-nowrap">
+        <div className="text-sm font-medium">
+          <Link
+            to={`/repository/${encodeURIComponent(dependent.full_name)}`}
+            className="hover:underline"
+            style={{ color: 'var(--fgColor-accent)' }}
+          >
+            {dependent.full_name}
+          </Link>
+        </div>
+        {dependent.source_url && (
+          <div className="text-xs truncate max-w-md" style={{ color: 'var(--fgColor-muted)' }}>
+            {dependent.source_url}
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-4 whitespace-nowrap">
+        <Badge color={getStatusColor(dependent.status)}>
+          {dependent.status.replace(/_/g, ' ')}
+        </Badge>
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex flex-wrap gap-1">
+          {dependent.dependency_types.map((type) => (
+            <Badge key={type} color={getTypeColor(type)}>
+              {getTypeLabel(type)}
+            </Badge>
+          ))}
+        </div>
+      </td>
+    </tr>
+  );
+}

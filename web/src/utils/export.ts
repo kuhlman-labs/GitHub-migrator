@@ -241,3 +241,62 @@ export function getTimestampedFilename(baseName: string, extension: string): str
   return `${baseName}_${timestamp}.${extension}`;
 }
 
+/**
+ * Dependency export row interface
+ */
+export interface DependencyExportRow {
+  repository: string;
+  dependency_full_name: string;
+  direction: 'depends_on' | 'depended_by';
+  dependency_type: string;
+  dependency_url: string;
+}
+
+/**
+ * Download a blob as a file with proper cleanup
+ */
+export function downloadBlobAsFile(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Export dependency data to CSV format (client-side)
+ * Used when you have the data in memory and want to export without an API call
+ */
+export function exportDependenciesToCSV(dependencies: DependencyExportRow[], filename: string = 'dependencies.csv'): void {
+  const headers = ['repository', 'dependency_full_name', 'direction', 'dependency_type', 'dependency_url'];
+  
+  const csvContent = [
+    headers.join(','),
+    ...dependencies.map(row => 
+      headers.map(header => {
+        const value = row[header as keyof DependencyExportRow] || '';
+        // Escape commas and quotes in values
+        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      }).join(',')
+    )
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  downloadBlobAsFile(blob, filename);
+}
+
+/**
+ * Export dependency data to JSON format (client-side)
+ */
+export function exportDependenciesToJSON(dependencies: DependencyExportRow[], filename: string = 'dependencies.json'): void {
+  const json = JSON.stringify(dependencies, null, 2);
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8;' });
+  downloadBlobAsFile(blob, filename);
+}
+

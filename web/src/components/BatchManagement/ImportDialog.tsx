@@ -66,8 +66,8 @@ export function ImportDialog({ onImport, onCancel }: ImportDialogProps) {
 
       // Pass the result to parent for validation
       onImport(result);
-    } catch (err: any) {
-      setError(err.message || 'Failed to parse file');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to parse file');
       setParsing(false);
     }
   };

@@ -8,6 +8,7 @@ import { Analytics } from './components/Analytics';
 import { BatchManagement } from './components/BatchManagement';
 import { BatchBuilderPage } from './components/BatchManagement/BatchBuilderPage';
 import { MigrationHistory } from './components/MigrationHistory';
+import { Dependencies } from './components/Dependencies';
 import { Navigation } from './components/common/Navigation';
 import { Login } from './components/Auth/Login';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
@@ -161,6 +162,11 @@ function ProtectedRoutes() {
           <Route path="/repositories" element={
             <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <Repositories />
+            </main>
+          } />
+          <Route path="/dependencies" element={
+            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              <Dependencies />
             </main>
           } />
           <Route path="/batches" element={

@@ -325,6 +325,7 @@ export function Analytics() {
                     label={false}
                     outerRadius={80}
                     dataKey="value"
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     onClick={(data: any) => {
                       if (data && data.payload && data.payload.category) {
                         navigate(getRepositoriesUrl({ size_category: [data.payload.category] }));
@@ -337,9 +338,10 @@ export function Analytics() {
                     ))}
                   </Pie>
                   <Tooltip 
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     formatter={(value: number, _name: string, props: any) => [
                       `${value} repositories`,
-                      props.payload.name
+                      props.payload?.name || ''
                     ]}
                     contentStyle={{
                       backgroundColor: 'rgba(27, 31, 36, 0.95)',
@@ -575,6 +577,7 @@ export function Analytics() {
                   label={false}
                   outerRadius={80}
                   dataKey="value"
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   onClick={(data: any) => {
                     if (data && data.payload && data.payload.name) {
                       const statusMap: Record<string, string[]> = {

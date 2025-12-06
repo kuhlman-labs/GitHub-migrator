@@ -26,6 +26,7 @@ export function RestartMonitor({ onServerOnline }: RestartMonitorProps) {
       clearInterval(dotsInterval);
       clearTimeout(initialDelay);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkHealth = async () => {
@@ -42,7 +43,7 @@ export function RestartMonitor({ onServerOnline }: RestartMonitorProps) {
             onServerOnline();
           }, 1500);
         }
-      } catch (error) {
+      } catch {
         // Server not ready yet, keep trying
       }
 

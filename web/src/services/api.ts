@@ -13,6 +13,8 @@ import type {
   RepositoryFilters,
   RepositoryListResponse,
   DependenciesResponse,
+  DependentsResponse,
+  DependencyGraphResponse,
   SetupStatus,
   SetupConfig,
   ValidationResult,
@@ -77,6 +79,7 @@ export const api = {
   // Repositories
   async listRepositories(filters?: RepositoryFilters): Promise<RepositoryListResponse> {
     // Convert array filters to comma-separated strings for API
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params: Record<string, any> = { ...filters };
     
     if (filters?.status && Array.isArray(filters.status)) {
@@ -145,6 +148,32 @@ export const api = {
 
   async getRepositoryDependencies(fullName: string): Promise<DependenciesResponse> {
     const { data } = await client.get(`/repositories/${encodeURIComponent(fullName)}/dependencies`);
+    return data;
+  },
+
+  async getRepositoryDependents(fullName: string): Promise<DependentsResponse> {
+    const { data } = await client.get(`/repositories/${encodeURIComponent(fullName)}/dependents`);
+    return data;
+  },
+
+  async getDependencyGraph(params?: { dependency_type?: string }): Promise<DependencyGraphResponse> {
+    const { data } = await client.get('/dependencies/graph', { params });
+    return data;
+  },
+
+  async exportDependencies(format: 'csv' | 'json', params?: { dependency_type?: string }): Promise<Blob> {
+    const { data } = await client.get('/dependencies/export', {
+      params: { format, ...params },
+      responseType: 'blob',
+    });
+    return data;
+  },
+
+  async exportRepositoryDependencies(fullName: string, format: 'csv' | 'json'): Promise<Blob> {
+    const { data } = await client.get(`/repositories/${encodeURIComponent(fullName)}/dependencies/export`, {
+      params: { format },
+      responseType: 'blob',
+    });
     return data;
   },
 
