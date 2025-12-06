@@ -169,7 +169,12 @@ export function Dependencies() {
     circular_dependency_count: 0
   };
 
-  const hasData = stats.total_repos_with_dependencies > 0;
+  // hasData indicates if the current filter has data
+  const hasFilteredData = stats.total_repos_with_dependencies > 0;
+  
+  // Check if there's any dependency data at all (used to show the global empty state)
+  // We consider data exists if we have nodes or edges, or if we're filtering (meaning unfiltered might have data)
+  const hasAnyData = hasFilteredData || typeFilter !== 'all';
 
   return (
     <div className="relative space-y-6">
@@ -190,7 +195,7 @@ export function Dependencies() {
         <div className="relative">
           <Button
             onClick={() => setShowExportMenu(!showExportMenu)}
-            disabled={exporting || !hasData}
+            disabled={exporting || !hasFilteredData}
             leadingVisual={DownloadIcon}
             trailingVisual={ChevronDownIcon}
             variant="primary"
@@ -347,7 +352,8 @@ export function Dependencies() {
         </div>
       )}
 
-      {!hasData ? (
+      {/* Show global empty state only when there's no data at all */}
+      {!hasAnyData ? (
         <div 
           className="rounded-lg p-6"
           style={{
@@ -363,7 +369,7 @@ export function Dependencies() {
         </div>
       ) : (
         <>
-          {/* Filters and Search */}
+          {/* Filters and Search - Always show when there's any data */}
           <div className="flex flex-wrap gap-4 items-center justify-between">
             <div className="flex gap-2">
               <button
@@ -448,7 +454,18 @@ export function Dependencies() {
             </UnderlineNav>
 
             <div className="p-6">
-              {viewMode === 'list' ? (
+              {/* Show filter-specific empty state when current filter has no results */}
+              {!hasFilteredData ? (
+                <div className="text-center py-8">
+                  <p className="text-lg mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                    No {typeFilter === 'dependency_graph' ? 'Dependency Graph' : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)} Dependencies Found
+                  </p>
+                  <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                    No local dependencies of type "{typeFilter.replace('_', ' ')}" have been detected.
+                    Try selecting a different dependency type or click "All Types" to see all dependencies.
+                  </p>
+                </div>
+              ) : viewMode === 'list' ? (
                 <DependencyListView 
                   nodes={paginatedNodes}
                   edges={filteredEdges}
