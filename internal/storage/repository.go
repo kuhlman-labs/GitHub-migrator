@@ -457,6 +457,11 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 		query = query.Scopes(WithAvailableForBatch())
 	}
 
+	// Apply team filter
+	if team, ok := filters["team"]; ok {
+		query = query.Scopes(WithTeam(team))
+	}
+
 	// Apply ordering
 	sortBy := "name" // default
 	if sort, ok := filters["sort_by"].(string); ok {

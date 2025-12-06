@@ -441,3 +441,40 @@ const (
 	DependencyTypeDependencyGraph = "dependency_graph"
 	DependencyTypePackage         = "package"
 )
+
+// GitHubTeam represents a GitHub team for filtering repositories by team membership
+// Teams are org-scoped, so the same team name can exist in different organizations
+type GitHubTeam struct {
+	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	Organization string    `json:"organization" db:"organization" gorm:"column:organization;not null;uniqueIndex:idx_github_teams_org_slug"`
+	Slug         string    `json:"slug" db:"slug" gorm:"column:slug;not null;uniqueIndex:idx_github_teams_org_slug"`
+	Name         string    `json:"name" db:"name" gorm:"column:name;not null"`
+	Description  *string   `json:"description,omitempty" db:"description" gorm:"column:description;type:text"`
+	Privacy      string    `json:"privacy" db:"privacy" gorm:"column:privacy;not null;default:closed"`
+	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+}
+
+// TableName specifies the table name for GitHubTeam model
+func (GitHubTeam) TableName() string {
+	return "github_teams"
+}
+
+// FullSlug returns the unique identifier for the team in "org/team-slug" format
+func (t *GitHubTeam) FullSlug() string {
+	return t.Organization + "/" + t.Slug
+}
+
+// GitHubTeamRepository represents the many-to-many relationship between teams and repositories
+type GitHubTeamRepository struct {
+	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	TeamID       int64     `json:"team_id" db:"team_id" gorm:"column:team_id;not null;uniqueIndex:idx_github_team_repo"`
+	RepositoryID int64     `json:"repository_id" db:"repository_id" gorm:"column:repository_id;not null;uniqueIndex:idx_github_team_repo;index"`
+	Permission   string    `json:"permission" db:"permission" gorm:"column:permission;not null;default:pull"` // pull, push, admin, maintain, triage
+	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+}
+
+// TableName specifies the table name for GitHubTeamRepository model
+func (GitHubTeamRepository) TableName() string {
+	return "github_team_repositories"
+}

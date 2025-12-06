@@ -201,6 +201,9 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/organizations/list", s.handler.GetOrganizationList)
 	protect("GET /api/v1/projects", s.handler.ListProjects)
 
+	// Team endpoints (GitHub only)
+	protect("GET /api/v1/teams", s.handler.ListTeams)
+
 	// Dashboard endpoints
 	protect("GET /api/v1/dashboard/action-items", s.handler.GetDashboardActionItems)
 

@@ -331,6 +331,16 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Team filter (for GitHub - can be comma-separated list)
+	// Format: "org/team-slug" to uniquely identify teams across organizations
+	if team := r.URL.Query().Get("team"); team != "" {
+		if strings.Contains(team, ",") {
+			filters["team"] = strings.Split(team, ",")
+		} else {
+			filters["team"] = team
+		}
+	}
+
 	// Size range filters (in bytes)
 	if minSizeStr := r.URL.Query().Get("min_size"); minSizeStr != "" {
 		if minSize, err := strconv.ParseInt(minSizeStr, 10, 64); err == nil {
@@ -4456,6 +4466,58 @@ func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organizat
 	}
 
 	return stats
+}
+
+// ListTeams handles GET /api/v1/teams
+// Returns GitHub teams with optional organization filter
+// Teams are only available for GitHub sources, not Azure DevOps
+func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Teams are only available for GitHub sources
+	if h.sourceType == sourceTypeAzureDevOps {
+		h.sendJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	// Get optional organization filter
+	orgFilter := r.URL.Query().Get("organization")
+
+	teams, err := h.db.ListTeams(ctx, orgFilter)
+	if err != nil {
+		if h.handleContextError(ctx, err, "list teams", r) {
+			return
+		}
+		h.logger.Error("Failed to list teams", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch teams")
+		return
+	}
+
+	// Convert to response format with full_slug for unique identification
+	type TeamResponse struct {
+		ID           int64   `json:"id"`
+		Organization string  `json:"organization"`
+		Slug         string  `json:"slug"`
+		Name         string  `json:"name"`
+		Description  *string `json:"description,omitempty"`
+		Privacy      string  `json:"privacy"`
+		FullSlug     string  `json:"full_slug"` // "org/team-slug" format
+	}
+
+	response := make([]TeamResponse, len(teams))
+	for i, team := range teams {
+		response[i] = TeamResponse{
+			ID:           team.ID,
+			Organization: team.Organization,
+			Slug:         team.Slug,
+			Name:         team.Name,
+			Description:  team.Description,
+			Privacy:      team.Privacy,
+			FullSlug:     team.FullSlug(),
+		}
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // ListOrganizations handles GET /api/v1/organizations

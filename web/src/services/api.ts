@@ -8,6 +8,7 @@ import type {
   MigrationLogsResponse,
   Organization,
   Project,
+  GitHubTeam,
   MigrationHistoryEntry,
   RepositoryFilters,
   RepositoryListResponse,
@@ -92,6 +93,10 @@ export const api = {
     
     if (filters?.project && Array.isArray(filters.project)) {
       params.project = filters.project.join(',');
+    }
+    
+    if (filters?.team && Array.isArray(filters.team)) {
+      params.team = filters.team.join(',');
     }
     
     if (filters?.complexity && Array.isArray(filters.complexity)) {
@@ -181,6 +186,12 @@ export const api = {
 
   async getOrganizationList(): Promise<string[]> {
     const { data } = await client.get('/organizations/list');
+    return data;
+  },
+
+  // Teams (GitHub only)
+  async listTeams(organization?: string): Promise<GitHubTeam[]> {
+    const { data } = await client.get('/teams', { params: { organization } });
     return data;
   },
 

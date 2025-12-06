@@ -124,6 +124,13 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 		// Don't fail the whole discovery if this fails
 	}
 
+	// Discover teams and their repository associations
+	c.logger.Info("Discovering teams", "organization", org)
+	if err := c.discoverTeams(ctx, org, orgClient); err != nil {
+		c.logger.Warn("Failed to discover teams", "organization", org, "error", err)
+		// Don't fail the whole discovery if team discovery fails
+	}
+
 	return nil
 }
 
@@ -360,6 +367,16 @@ func (c *Collector) processOrganizationsInParallel(ctx context.Context, enterpri
 						"enterprise", enterpriseSlug,
 						"organization", org,
 						"repo_count", len(repos))
+				}
+
+				// Discover teams and their repository associations for this org
+				if err := c.discoverTeams(ctx, org, orgClient); err != nil {
+					c.logger.Warn("Failed to discover teams for organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"organization", org,
+						"error", err)
+					// Don't fail if team discovery fails
 				}
 			}
 		}(i)
@@ -854,4 +871,70 @@ func (c *Collector) cloneRepositoryBare(ctx context.Context, cloneURL, fullName 
 	}
 
 	return tempDir, nil
+}
+
+// discoverTeams discovers all teams for an organization and their repository associations
+// This enables filtering repositories by team membership in the UI
+func (c *Collector) discoverTeams(ctx context.Context, org string, client *github.Client) error {
+	c.logger.Info("Discovering teams for organization", "organization", org)
+
+	// List all teams in the organization
+	teams, err := client.ListOrganizationTeams(ctx, org)
+	if err != nil {
+		return fmt.Errorf("failed to list teams: %w", err)
+	}
+
+	c.logger.Info("Found teams", "organization", org, "count", len(teams))
+
+	// Process each team
+	for _, teamInfo := range teams {
+		// Save the team to the database
+		team := &models.GitHubTeam{
+			Organization: org,
+			Slug:         teamInfo.Slug,
+			Name:         teamInfo.Name,
+			Privacy:      teamInfo.Privacy,
+		}
+		if teamInfo.Description != "" {
+			team.Description = &teamInfo.Description
+		}
+
+		if err := c.storage.SaveTeam(ctx, team); err != nil {
+			c.logger.Warn("Failed to save team",
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			continue
+		}
+
+		// List repositories for this team
+		teamRepos, err := client.ListTeamRepositories(ctx, org, teamInfo.Slug)
+		if err != nil {
+			c.logger.Warn("Failed to list repositories for team",
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			continue
+		}
+
+		c.logger.Debug("Found repositories for team",
+			"organization", org,
+			"team", teamInfo.Slug,
+			"count", len(teamRepos))
+
+		// Save team-repository associations
+		for _, teamRepo := range teamRepos {
+			if err := c.storage.SaveTeamRepository(ctx, team.ID, teamRepo.FullName, teamRepo.Permission); err != nil {
+				c.logger.Warn("Failed to save team-repository association",
+					"organization", org,
+					"team", teamInfo.Slug,
+					"repo", teamRepo.FullName,
+					"error", err)
+				// Continue with other repos even if one fails
+			}
+		}
+	}
+
+	c.logger.Info("Team discovery complete", "organization", org, "teams_found", len(teams))
+	return nil
 }

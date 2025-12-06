@@ -424,6 +424,62 @@ func WithPagination(limit, offset int) func(db *gorm.DB) *gorm.DB {
 	}
 }
 
+// WithTeam filters repositories by team membership
+// teamFilter accepts values in "org/team-slug" format to uniquely identify teams across organizations
+// Supports single value or slice of values
+func WithTeam(teamFilter interface{}) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		var teamSpecs []string
+		switch v := teamFilter.(type) {
+		case string:
+			if v == "" {
+				return db
+			}
+			teamSpecs = []string{v}
+		case []string:
+			if len(v) == 0 {
+				return db
+			}
+			teamSpecs = v
+		default:
+			return db
+		}
+
+		// Parse team specs into org/slug pairs and build conditions
+		var conditions []string
+		var args []interface{}
+
+		for _, spec := range teamSpecs {
+			parts := strings.SplitN(spec, "/", 2)
+			if len(parts) != 2 {
+				// Invalid format, skip
+				continue
+			}
+			org := parts[0]
+			slug := parts[1]
+			conditions = append(conditions, "(gt.organization = ? AND gt.slug = ?)")
+			args = append(args, org, slug)
+		}
+
+		if len(conditions) == 0 {
+			return db
+		}
+
+		// Join with team tables and filter
+		// Use EXISTS subquery for better performance with multiple team filters
+		subquery := fmt.Sprintf(`
+			EXISTS (
+				SELECT 1 FROM github_team_repositories gtr
+				JOIN github_teams gt ON gtr.team_id = gt.id
+				WHERE gtr.repository_id = repositories.id
+				AND (%s)
+			)
+		`, strings.Join(conditions, " OR "))
+
+		return db.Where(subquery, args...)
+	}
+}
+
 // parseFilterValue safely parses a filter value like "> 0", ">=5", "= 0" into operator and numeric value
 // Returns the operator, numeric value, and any error
 func parseFilterValue(value string) (string, int, error) {

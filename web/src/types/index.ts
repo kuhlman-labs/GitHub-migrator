@@ -265,6 +265,17 @@ export interface Project {
   status_counts: Record<string, number>;
 }
 
+// GitHub Team type - teams are org-scoped
+export interface GitHubTeam {
+  id: number;
+  organization: string;
+  slug: string;
+  name: string;
+  description?: string;
+  privacy: string;
+  full_slug: string; // "org/team-slug" format for unique identification
+}
+
 // Azure DevOps Project type
 export interface ADOProject {
   id: string;
@@ -507,6 +518,7 @@ export interface RepositoryFilters {
   organization?: string | string[];
   ado_organization?: string | string[]; // For Azure DevOps organizations (filters by ado_projects table)
   project?: string | string[]; // For Azure DevOps projects
+  team?: string | string[]; // For GitHub teams (format: "org/team-slug")
   min_size?: number;
   max_size?: number;
   
