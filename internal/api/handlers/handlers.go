@@ -5452,7 +5452,7 @@ func (h *Handler) collectRepoDependedBy(ctx context.Context, repoFullName string
 					DependencyName: dependent.FullName,
 					Direction:      "depended_by",
 					DependencyType: dep.DependencyType,
-					DependencyURL:  dependent.SourceURL,
+					DependencyURL:  dep.DependencyURL,
 				})
 			}
 		}
