@@ -44,6 +44,15 @@ export function filtersToSearchParams(filters: RepositoryFilters): URLSearchPara
     }
   }
 
+  // Handle team (can be string or array) - GitHub teams in "org/team-slug" format
+  if (filters.team) {
+    if (Array.isArray(filters.team)) {
+      params.set('team', filters.team.join(','));
+    } else {
+      params.set('team', filters.team);
+    }
+  }
+
   // Handle size filters
   if (filters.min_size !== undefined) params.set('min_size', filters.min_size.toString());
   if (filters.max_size !== undefined) params.set('max_size', filters.max_size.toString());
@@ -275,6 +284,12 @@ export function searchParamsToFilters(searchParams: URLSearchParams): Repository
   const project = searchParams.get('project');
   if (project) {
     filters.project = project.includes(',') ? project.split(',') : project;
+  }
+
+  // Team filter (GitHub teams in "org/team-slug" format)
+  const team = searchParams.get('team');
+  if (team) {
+    filters.team = team.includes(',') ? team.split(',') : team;
   }
 
   const complexity = searchParams.get('complexity');

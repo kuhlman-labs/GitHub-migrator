@@ -1088,3 +1088,147 @@ func (c *Client) GetDependencyGraph(ctx context.Context, owner, repo string) ([]
 
 	return manifests, nil
 }
+
+// TeamInfo represents basic team information returned from discovery
+type TeamInfo struct {
+	ID          int64
+	Slug        string
+	Name        string
+	Description string
+	Privacy     string
+}
+
+// TeamRepository represents a repository associated with a team
+type TeamRepository struct {
+	FullName   string // org/repo format
+	Permission string // pull, push, admin, maintain, triage
+}
+
+// ListOrganizationTeams lists all teams for an organization using REST API with pagination
+func (c *Client) ListOrganizationTeams(ctx context.Context, org string) ([]*TeamInfo, error) {
+	c.logger.Info("Listing teams for organization", "org", org)
+
+	var allTeams []*TeamInfo
+	opts := &github.ListOptions{PerPage: 100}
+
+	for {
+		var teams []*github.Team
+		var resp *github.Response
+
+		err := c.retryer.Do(ctx, "ListOrganizationTeams", func(ctx context.Context) error {
+			var err error
+			teams, resp, err = c.rest.Teams.ListTeams(ctx, org, opts)
+			if err != nil {
+				return WrapError(err, "ListTeams", c.baseURL)
+			}
+
+			// Update rate limits
+			if resp != nil && resp.Rate.Limit > 0 {
+				c.rateLimiter.UpdateLimits(
+					resp.Rate.Remaining,
+					resp.Rate.Limit,
+					resp.Rate.Reset.Time,
+				)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, team := range teams {
+			info := &TeamInfo{
+				ID:      team.GetID(),
+				Slug:    team.GetSlug(),
+				Name:    team.GetName(),
+				Privacy: team.GetPrivacy(),
+			}
+			if team.Description != nil {
+				info.Description = *team.Description
+			}
+			allTeams = append(allTeams, info)
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	c.logger.Info("Team listing complete",
+		"org", org,
+		"total_teams", len(allTeams))
+
+	return allTeams, nil
+}
+
+// ListTeamRepositories lists all repositories that a team has access to
+func (c *Client) ListTeamRepositories(ctx context.Context, org, teamSlug string) ([]*TeamRepository, error) {
+	c.logger.Debug("Listing repositories for team", "org", org, "team", teamSlug)
+
+	var allRepos []*TeamRepository
+	opts := &github.ListOptions{PerPage: 100}
+
+	for {
+		var repos []*github.Repository
+		var resp *github.Response
+
+		err := c.retryer.Do(ctx, "ListTeamRepositories", func(ctx context.Context) error {
+			var err error
+			repos, resp, err = c.rest.Teams.ListTeamReposBySlug(ctx, org, teamSlug, opts)
+			if err != nil {
+				return WrapError(err, "ListTeamReposBySlug", c.baseURL)
+			}
+
+			// Update rate limits
+			if resp != nil && resp.Rate.Limit > 0 {
+				c.rateLimiter.UpdateLimits(
+					resp.Rate.Remaining,
+					resp.Rate.Limit,
+					resp.Rate.Reset.Time,
+				)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, repo := range repos {
+			teamRepo := &TeamRepository{
+				FullName: repo.GetFullName(),
+			}
+			// Extract permission from the repo's permissions map
+			if repo.Permissions != nil {
+				if repo.Permissions["admin"] {
+					teamRepo.Permission = "admin"
+				} else if repo.Permissions["maintain"] {
+					teamRepo.Permission = "maintain"
+				} else if repo.Permissions["push"] {
+					teamRepo.Permission = "push"
+				} else if repo.Permissions["triage"] {
+					teamRepo.Permission = "triage"
+				} else {
+					teamRepo.Permission = "pull"
+				}
+			} else {
+				teamRepo.Permission = "pull"
+			}
+			allRepos = append(allRepos, teamRepo)
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	c.logger.Debug("Team repository listing complete",
+		"org", org,
+		"team", teamSlug,
+		"total_repos", len(allRepos))
+
+	return allRepos, nil
+}

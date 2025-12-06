@@ -89,6 +89,7 @@ export function Repositories() {
     if (urlFilters.organization) count++;
     if (urlFilters.ado_organization) count++;
     if (urlFilters.project) count++;
+    if (urlFilters.team) count++;
     if (urlFilters.search) count++;
     if (urlFilters.complexity) count++;
     if (urlFilters.size_category) count++;
@@ -216,8 +217,11 @@ export function Repositories() {
                 {/* Title and Info */}
                 <div>
                   <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-                    {urlFilters.project ? (
-                      // Project filter takes precedence (more specific than org)
+                    {urlFilters.team ? (
+                      // Team filter takes precedence (most specific)
+                      <>Repositories in Team <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.team)}</span></>
+                    ) : urlFilters.project ? (
+                      // Project filter (more specific than org)
                       <>Repositories in Project <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.project)}</span></>
                     ) : urlFilters.ado_organization ? (
                       <>Repositories in Organization <span style={{ color: 'var(--fgColor-accent)' }}>{formatFilterValue(urlFilters.ado_organization)}</span></>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TextInput } from '@primer/react';
 import { SearchIcon } from '@primer/octicons-react';
-import type { RepositoryFilters } from '../../types';
+import type { RepositoryFilters, GitHubTeam } from '../../types';
 import { api } from '../../services/api';
 import { FilterSection } from '../BatchManagement/FilterSection';
 import { OrganizationSelector } from '../BatchManagement/OrganizationSelector';
@@ -74,8 +74,10 @@ export function UnifiedFilterSidebar({
 }: UnifiedFilterSidebarProps) {
   const [organizations, setOrganizations] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
+  const [teams, setTeams] = useState<GitHubTeam[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingTeams, setLoadingTeams] = useState(false);
   const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
 
   useEffect(() => {
@@ -89,6 +91,13 @@ export function UnifiedFilterSidebar({
       loadProjects();
     }
   }, [sourceType, filters.ado_organization]);
+
+  // Reload teams when organization filter changes (for GitHub)
+  useEffect(() => {
+    if (sourceType === 'github') {
+      loadTeams();
+    }
+  }, [sourceType, filters.organization]);
 
   const loadConfig = async () => {
     try {
@@ -154,6 +163,45 @@ export function UnifiedFilterSidebar({
     }
   };
 
+  const loadTeams = async () => {
+    setLoadingTeams(true);
+    try {
+      const selectedOrgs = getSelectedOrganizations();
+      
+      // If specific organization(s) are selected, load teams for them
+      if (selectedOrgs.length > 0) {
+        // Load teams for each selected organization
+        const allTeams: GitHubTeam[] = [];
+        const seenTeams = new Set<string>();
+        
+        for (const org of selectedOrgs) {
+          try {
+            const orgTeams = await api.listTeams(org);
+            orgTeams.forEach((team: GitHubTeam) => {
+              if (!seenTeams.has(team.full_slug)) {
+                seenTeams.add(team.full_slug);
+                allTeams.push(team);
+              }
+            });
+          } catch (error) {
+            console.error(`Failed to load teams for organization ${org}:`, error);
+          }
+        }
+        
+        setTeams(allTeams);
+      } else {
+        // No organization selected, load all teams
+        const allTeams = await api.listTeams();
+        setTeams(allTeams || []);
+      }
+    } catch (error) {
+      console.error('Failed to load teams:', error);
+      setTeams([]);
+    } finally {
+      setLoadingTeams(false);
+    }
+  };
+
   const getSelectedOrganizations = (): string[] => {
     // For ADO sources, use ado_organization; for GitHub, use organization
     const orgFilter = sourceType === 'azuredevops' ? filters.ado_organization : filters.organization;
@@ -188,6 +236,18 @@ export function UnifiedFilterSidebar({
     });
   };
 
+  const getSelectedTeams = (): string[] => {
+    if (!filters.team) return [];
+    return Array.isArray(filters.team) ? filters.team : [filters.team];
+  };
+
+  const handleTeamChange = (selected: string[]) => {
+    onChange({
+      ...filters,
+      team: selected.length > 0 ? selected : undefined,
+    });
+  };
+
   const getSelectedStatuses = (): string[] => {
     if (!filters.status) return [];
     return Array.isArray(filters.status) ? filters.status : [filters.status];
@@ -212,6 +272,7 @@ export function UnifiedFilterSidebar({
       else if (sourceType !== 'azuredevops' && filters.organization) count++;
     }
     if (!hideProject && filters.project) count++;
+    if (sourceType === 'github' && filters.team) count++;
     if (showStatus && filters.status) count++;
     if (showSearch && filters.search) count++;
     if (filters.min_size || filters.max_size) count++;
@@ -402,6 +463,22 @@ export function UnifiedFilterSidebar({
               placeholder="All Projects"
               searchPlaceholder="Search projects..."
               emptyMessage="No projects found"
+            />
+          </FilterSection>
+        )}
+
+        {/* Team (for GitHub only) */}
+        {sourceType === 'github' && (
+          <FilterSection title="Team" defaultExpanded={false}>
+            <OrganizationSelector
+              organizations={teams.map(t => t.full_slug)}
+              selectedOrganizations={getSelectedTeams()}
+              onChange={handleTeamChange}
+              loading={loadingTeams}
+              placeholder="All Teams"
+              searchPlaceholder="Search teams..."
+              emptyMessage="No teams found"
+              useFixedPosition={true}
             />
           </FilterSection>
         )}
