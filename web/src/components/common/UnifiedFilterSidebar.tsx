@@ -177,7 +177,7 @@ export function UnifiedFilterSidebar({
         for (const org of selectedOrgs) {
           try {
             const orgTeams = await api.listTeams(org);
-            orgTeams.forEach((team: GitHubTeam) => {
+            (orgTeams || []).forEach((team: GitHubTeam) => {
               if (!seenTeams.has(team.full_slug)) {
                 seenTeams.add(team.full_slug);
                 allTeams.push(team);
