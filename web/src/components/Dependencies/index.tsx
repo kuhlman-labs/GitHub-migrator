@@ -665,9 +665,12 @@ interface DependencyGraphViewProps {
 }
 
 function DependencyGraphView({ nodes, edges }: DependencyGraphViewProps) {
-  // Convert to Sankey format
-  const sankeyData = useMemo(() => {
-    if (nodes.length === 0 || edges.length === 0) return null;
+  // Convert to Sankey format, filtering out circular dependencies
+  // Sankey diagrams are DAGs and cannot render cycles
+  const { sankeyData, circularEdgesFiltered } = useMemo(() => {
+    if (nodes.length === 0 || edges.length === 0) {
+      return { sankeyData: null, circularEdgesFiltered: 0 };
+    }
 
     // Create node index map
     const nodeIndexMap = new Map<string, number>();
@@ -676,8 +679,30 @@ function DependencyGraphView({ nodes, edges }: DependencyGraphViewProps) {
       return { name: node.full_name };
     });
 
-    // Create links with proper indices
-    const sankeyLinks = edges
+    // Build a set of edge keys to detect bidirectional/circular dependencies
+    const edgeSet = new Set<string>();
+    edges.forEach(edge => {
+      edgeSet.add(`${edge.source}|${edge.target}`);
+    });
+
+    // Filter out edges that would create cycles (keep one direction, remove the reverse)
+    // We keep the edge with the lexicographically smaller source to be deterministic
+    let circularCount = 0;
+    const acyclicEdges = edges.filter(edge => {
+      const reverseKey = `${edge.target}|${edge.source}`;
+      if (edgeSet.has(reverseKey)) {
+        // Bidirectional dependency detected - only keep one direction
+        // Keep the one where source < target (lexicographically) to be deterministic
+        if (edge.source > edge.target) {
+          circularCount++;
+          return false; // Filter out this edge
+        }
+      }
+      return true;
+    });
+
+    // Create links with proper indices from acyclic edges
+    const sankeyLinks = acyclicEdges
       .filter(edge => nodeIndexMap.has(edge.source) && nodeIndexMap.has(edge.target))
       .map(edge => ({
         source: nodeIndexMap.get(edge.source)!,
@@ -687,9 +712,14 @@ function DependencyGraphView({ nodes, edges }: DependencyGraphViewProps) {
       }));
 
     // Only return if we have valid links
-    if (sankeyLinks.length === 0) return null;
+    if (sankeyLinks.length === 0) {
+      return { sankeyData: null, circularEdgesFiltered: circularCount };
+    }
 
-    return { nodes: sankeyNodes, links: sankeyLinks };
+    return { 
+      sankeyData: { nodes: sankeyNodes, links: sankeyLinks },
+      circularEdgesFiltered: circularCount
+    };
   }, [nodes, edges]);
 
   if (!sankeyData) {
@@ -722,6 +752,24 @@ function DependencyGraphView({ nodes, edges }: DependencyGraphViewProps) {
           Visualizing how repositories depend on each other (source → target)
         </p>
       </div>
+
+      {circularEdgesFiltered > 0 && (
+        <div 
+          className="mb-4 rounded-lg p-3 flex gap-2 items-center"
+          style={{
+            backgroundColor: 'var(--attention-subtle)',
+            border: '1px solid var(--borderColor-attention)'
+          }}
+        >
+          <span style={{ color: 'var(--fgColor-attention)' }}>
+            <AlertIcon size={16} />
+          </span>
+          <p className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
+            {circularEdgesFiltered} circular {circularEdgesFiltered === 1 ? 'dependency' : 'dependencies'} simplified for visualization. 
+            Sankey diagrams cannot display bidirectional relationships. See the List View for full details.
+          </p>
+        </div>
+      )}
 
       <div style={{ width: '100%', height: 500 }}>
         <ResponsiveContainer>

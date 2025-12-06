@@ -5361,13 +5361,14 @@ func (h *Handler) ExportDependencies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add "depended_by" rows (reverse direction)
+	// For depended_by rows, DependencyName is the source repo, so DependencyURL should be the source repo's URL
 	for _, edge := range edges {
 		exportData = append(exportData, ExportRow{
 			Repository:     edge.TargetRepo,
 			DependencyName: edge.SourceRepo,
 			Direction:      "depended_by",
 			DependencyType: edge.DependencyType,
-			DependencyURL:  edge.DependencyURL,
+			DependencyURL:  edge.SourceRepoURL,
 		})
 	}
 
@@ -5447,12 +5448,14 @@ func (h *Handler) collectRepoDependedBy(ctx context.Context, repoFullName string
 		}
 		for _, dep := range depDeps {
 			if dep.DependencyFullName == repoFullName && dep.IsLocal {
+				// For depended_by rows, DependencyName is the dependent repo,
+				// so DependencyURL should be the dependent's source URL
 				rows = append(rows, repoDependencyExportRow{
 					Repository:     repoFullName,
 					DependencyName: dependent.FullName,
 					Direction:      "depended_by",
 					DependencyType: dep.DependencyType,
-					DependencyURL:  dep.DependencyURL,
+					DependencyURL:  dependent.SourceURL,
 				})
 			}
 		}

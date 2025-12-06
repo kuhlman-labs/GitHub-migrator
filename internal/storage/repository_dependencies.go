@@ -196,7 +196,8 @@ type DependencyPair struct {
 	SourceRepo     string
 	TargetRepo     string
 	DependencyType string
-	DependencyURL  string
+	DependencyURL  string // URL of the target repo (the dependency)
+	SourceRepoURL  string // URL of the source repo (the repo that has the dependency)
 }
 
 // GetAllLocalDependencyPairs returns all local dependency relationships for the dependency graph
@@ -205,7 +206,7 @@ type DependencyPair struct {
 func (d *Database) GetAllLocalDependencyPairs(ctx context.Context, dependencyTypes []string) ([]DependencyPair, error) {
 	query := d.db.WithContext(ctx).
 		Model(&models.RepositoryDependency{}).
-		Select("r.full_name as source_repo, rd.dependency_full_name as target_repo, rd.dependency_type, rd.dependency_url").
+		Select("r.full_name as source_repo, rd.dependency_full_name as target_repo, rd.dependency_type, rd.dependency_url, r.source_url as source_repo_url").
 		Joins("JOIN repositories r ON rd.repository_id = r.id").
 		Table("repository_dependencies rd").
 		Where("rd.is_local = ?", true)
