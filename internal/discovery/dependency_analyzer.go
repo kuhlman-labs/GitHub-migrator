@@ -330,11 +330,30 @@ func (da *DependencyAnalyzer) parseUsesString(uses, workflowFile string) *Workfl
 
 // AnalyzeDependencies performs complete dependency analysis on a repository
 // Returns a list of RepositoryDependency objects ready to be saved
+//
+// Detection priority (all file-based, source-agnostic):
+// 1. Package manager files (PRIMARY) - npm, Go, Python, Maven, Gradle, .NET, Ruby, Rust, PHP, Terraform, Helm, Docker
+// 2. Git submodules (.gitmodules)
+// 3. GitHub Actions workflows (.github/workflows/)
 func (da *DependencyAnalyzer) AnalyzeDependencies(ctx context.Context, repoPath, repoFullName string, repoID int64) ([]*models.RepositoryDependency, error) {
 	var dependencies []*models.RepositoryDependency
 	now := time.Now()
 
-	// Extract submodules
+	// 1. PRIMARY: Scan package manager files (source-agnostic)
+	// This is the main dependency detection mechanism that works consistently
+	// across all source systems (GitHub, Azure DevOps, GitLab, etc.)
+	packageScanner := NewPackageScanner(da.logger)
+	packageDeps, err := packageScanner.ScanPackageManagers(ctx, repoPath, repoID)
+	if err != nil {
+		da.logger.Warn("Failed to scan package managers", "repo", repoFullName, "error", err)
+	} else {
+		dependencies = append(dependencies, packageDeps...)
+		da.logger.Debug("Package scan complete",
+			"repo", repoFullName,
+			"package_manifests", len(packageDeps))
+	}
+
+	// 2. Extract submodules
 	submodules, err := da.ExtractSubmodules(ctx, repoPath)
 	if err != nil {
 		da.logger.Warn("Failed to extract submodules", "repo", repoFullName, "error", err)
@@ -370,7 +389,7 @@ func (da *DependencyAnalyzer) AnalyzeDependencies(ctx context.Context, repoPath,
 		}
 	}
 
-	// Extract workflow dependencies
+	// 3. Extract workflow dependencies (GitHub Actions specific, but works from cloned files)
 	workflowDeps, err := da.ExtractWorkflowDependencies(ctx, repoPath)
 	if err != nil {
 		da.logger.Warn("Failed to extract workflow dependencies", "repo", repoFullName, "error", err)
