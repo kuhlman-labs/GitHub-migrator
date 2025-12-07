@@ -92,20 +92,25 @@ func (c *Collector) shouldFetchDependencyGraph(repo *models.Repository, existing
 }
 
 // mergeDependencies merges dependency graph dependencies with existing file-scanned dependencies
-// It avoids duplicates by checking the dependency full name
+// It avoids duplicates by checking both dependency full name AND dependency type.
+// This allows the same repository to appear multiple times with different dependency types
+// (e.g., as both a workflow dependency and a submodule).
 func (c *Collector) mergeDependencies(existing, graphDeps []*models.RepositoryDependency) []*models.RepositoryDependency {
-	// Build a set of existing dependency identifiers
+	// Build a set of existing dependency identifiers using composite key (name + type)
 	seen := make(map[string]bool)
 	for _, dep := range existing {
-		// Use full name as key for repository dependencies
-		seen[dep.DependencyFullName] = true
+		// Use composite key: full name + dependency type
+		// This preserves entries where the same repo is referenced through different mechanisms
+		key := dep.DependencyFullName + ":" + dep.DependencyType
+		seen[key] = true
 	}
 
-	// Add graph dependencies that don't already exist
+	// Add graph dependencies that don't already exist (same name AND same type)
 	for _, dep := range graphDeps {
-		if !seen[dep.DependencyFullName] {
+		key := dep.DependencyFullName + ":" + dep.DependencyType
+		if !seen[key] {
 			existing = append(existing, dep)
-			seen[dep.DependencyFullName] = true
+			seen[key] = true
 		}
 	}
 
