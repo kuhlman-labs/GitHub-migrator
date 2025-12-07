@@ -193,8 +193,17 @@ git+ssh://git@github.com/owner/lib.utils.js.git#egg=lib
 	}`
 	writeTestFile(t, dir, "package.json", packageJSON)
 
+	// Test Gemfile with dotted repo names from enterprise hosts
+	gemfile := `source 'https://rubygems.org'
+
+gem 'rails'
+gem 'dotted-gem', git: 'https://github.example.com/owner/gem.backup.git'
+gem 'another-dotted', git: 'git@github.example.com:owner/lib.core.utils.git'
+`
+	writeTestFile(t, dir, "Gemfile", gemfile)
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	scanner := NewPackageScanner(logger)
+	scanner := NewPackageScanner(logger).WithSourceURL("https://github.example.com")
 
 	deps, err := scanner.ScanPackageManagers(context.Background(), dir, 1)
 	if err != nil {
@@ -203,11 +212,13 @@ git+ssh://git@github.com/owner/lib.utils.js.git#egg=lib
 
 	// These repo names should NOT be truncated at dots
 	expectedDeps := map[string]bool{
-		"owner/my-lib.backup": false,
-		"owner/package.core":  false,
-		"owner/lib.utils.js":  false,
-		"owner/my.dotted.lib": false,
-		"owner/backup.lib":    false,
+		"owner/my-lib.backup":  false,
+		"owner/package.core":   false,
+		"owner/lib.utils.js":   false,
+		"owner/my.dotted.lib":  false,
+		"owner/backup.lib":     false,
+		"owner/gem.backup":     false, // Gemfile https pattern
+		"owner/lib.core.utils": false, // Gemfile ssh pattern
 	}
 
 	for _, dep := range deps {
@@ -1060,7 +1071,7 @@ func TestPackageScanner_ScanElixirMixWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
 	defer os.RemoveAll(dir)
 
-	// Create mix.exs with GitHub dependencies
+	// Create mix.exs with GitHub dependencies - both github: shorthand AND git: URL formats
 	mixExs := `defmodule MyApp.MixProject do
   use Mix.Project
 
@@ -1076,9 +1087,13 @@ func TestPackageScanner_ScanElixirMixWithGitHubDeps(t *testing.T) {
     [
       {:phoenix, "~> 1.7"},
       {:ecto, "~> 3.10"},
+      # github: shorthand format
       {:custom_lib, github: "myorg/custom-lib"},
       {:forked_dep, github: "myorg/forked-dep", branch: "fix"},
       {:private_lib, github: "internal/private-lib"},
+      # git: URL format for github.com (must also be detected!)
+      {:git_url_dep, git: "https://github.com/another/git-url-repo.git"},
+      {:git_url_no_suffix, git: "https://github.com/org/no-git-suffix"},
     ]
   end
 end
@@ -1094,9 +1109,13 @@ end
 	}
 
 	expectedDeps := map[string]bool{
+		// github: shorthand format
 		"myorg/custom-lib":     false,
 		"myorg/forked-dep":     false,
 		"internal/private-lib": false,
+		// git: URL format for github.com
+		"another/git-url-repo": false,
+		"org/no-git-suffix":    false,
 	}
 
 	for _, dep := range deps {

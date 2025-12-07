@@ -800,7 +800,8 @@ func (ps *PackageScanner) parseGemfile(gemPath, manifestPath string) []Extracted
 			escapedHost := regexp.QuoteMeta(host)
 
 			// Pattern: git: 'https://host/owner/repo.git'
-			httpsPattern := regexp.MustCompile(`git:\s*['"]https://` + escapedHost + `/([^/]+)/([^/'".]+)`)
+			// Note: Allow dots in repo names (e.g., my-lib.backup), trim .git suffix separately
+			httpsPattern := regexp.MustCompile(`git:\s*['"]https://` + escapedHost + `/([^/]+)/([^/'"]+)`)
 			if matches := httpsPattern.FindStringSubmatch(line); len(matches) == 3 {
 				isLocal := ps.sourceHost != "" && host == ps.sourceHost
 				deps = append(deps, ExtractedDependency{
@@ -818,7 +819,8 @@ func (ps *PackageScanner) parseGemfile(gemPath, manifestPath string) []Extracted
 			}
 
 			// Pattern: git: 'git@host:owner/repo.git'
-			sshPattern := regexp.MustCompile(`git:\s*['"]git@` + escapedHost + `:([^/]+)/([^/'".]+)`)
+			// Note: Allow dots in repo names (e.g., my-lib.backup), trim .git suffix separately
+			sshPattern := regexp.MustCompile(`git:\s*['"]git@` + escapedHost + `:([^/]+)/([^/'"]+)`)
 			if matches := sshPattern.FindStringSubmatch(line); len(matches) == 3 {
 				isLocal := ps.sourceHost != "" && host == ps.sourceHost
 				deps = append(deps, ExtractedDependency{
@@ -1303,10 +1305,10 @@ func (ps *PackageScanner) parseMixExs(mixPath, manifestPath string) []ExtractedD
 	deps = append(deps, adoDeps...)
 
 	// Pattern for git: with tracked hosts
+	// Note: github.com is NOT skipped here because the github: shorthand pattern above
+	// only matches `github: "owner/repo"` syntax, not `git: "https://github.com/owner/repo.git"` URLs.
+	// Both formats are valid and need to be handled.
 	for _, host := range ps.additionalHosts {
-		if host == hostGitHubCom {
-			continue // Already handled by github: pattern above
-		}
 		escapedHost := regexp.QuoteMeta(host)
 
 		gitPattern := regexp.MustCompile(`git:\s*"https://` + escapedHost + `/([^/]+)/([^"]+)"`)
