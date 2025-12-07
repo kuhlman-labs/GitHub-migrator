@@ -499,8 +499,10 @@ func (ps *PackageScanner) parsePackageJSON(pkgPath, manifestPath string) []Extra
 // Supports: github:owner/repo, git+https://github.com/owner/repo, git+https://host/owner/repo, owner/repo
 func (ps *PackageScanner) extractGitHubFromNpmVersion(version string) (owner, repo, host string, isLocal bool) {
 	// Pattern: github:owner/repo or github:owner/repo#tag
+	// Shorthand always implies github.com - check if that's the source instance
 	if owner, repo := ps.extractNpmGitHubShorthand(version); owner != "" {
-		return owner, repo, hostGitHubCom, false
+		isLocal := ps.sourceHost != "" && ps.sourceHost == hostGitHubCom
+		return owner, repo, hostGitHubCom, isLocal
 	}
 
 	// Check for git+https:// or https:// patterns with any tracked host
@@ -509,8 +511,10 @@ func (ps *PackageScanner) extractGitHubFromNpmVersion(version string) (owner, re
 	}
 
 	// Pattern: owner/repo (shorthand) - assume github.com for shorthand
+	// Shorthand always implies github.com - check if that's the source instance
 	if owner, repo := ps.extractNpmOwnerRepoShorthand(version); owner != "" {
-		return owner, repo, hostGitHubCom, false
+		isLocal := ps.sourceHost != "" && ps.sourceHost == hostGitHubCom
+		return owner, repo, hostGitHubCom, isLocal
 	}
 
 	return "", "", "", false
@@ -760,86 +764,97 @@ func (ps *PackageScanner) parseGemfile(gemPath, manifestPath string) []Extracted
 		}
 		gemName := gemNameMatch[1]
 
-		// Check for github: shorthand (always github.com)
-		if matches := githubShortPattern.FindStringSubmatch(line); len(matches) == 3 {
-			deps = append(deps, ExtractedDependency{
+		if dep := ps.parseGemfileLine(line, gemName, manifestPath, githubShortPattern); dep != nil {
+			deps = append(deps, *dep)
+		}
+	}
+
+	return deps
+}
+
+// parseGemfileLine parses a single Gemfile line and returns an ExtractedDependency if a git dependency is found
+func (ps *PackageScanner) parseGemfileLine(line, gemName, manifestPath string, githubShortPattern *regexp.Regexp) *ExtractedDependency {
+	// Check for github: shorthand (always github.com)
+	// Shorthand always implies github.com - check if that's the source instance
+	if matches := githubShortPattern.FindStringSubmatch(line); len(matches) == 3 {
+		isLocal := ps.sourceHost != "" && ps.sourceHost == hostGitHubCom
+		return &ExtractedDependency{
+			Name:         gemName,
+			Version:      line,
+			Ecosystem:    EcosystemRuby,
+			Manifest:     manifestPath,
+			IsGitHubRepo: true,
+			GitHubOwner:  matches[1],
+			GitHubRepo:   matches[2],
+			IsLocal:      isLocal,
+			SourceHost:   hostGitHubCom,
+		}
+	}
+
+	// Check for Azure DevOps URLs
+	if isADOURL(line) {
+		org, project, repo, host, isLocal := ps.extractADOReference(line)
+		if org != "" && repo != "" {
+			return &ExtractedDependency{
+				Name:         gemName,
+				Version:      line,
+				Ecosystem:    EcosystemRuby,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  org + "/" + project,
+				GitHubRepo:   repo,
+				IsLocal:      isLocal,
+				SourceHost:   host,
+			}
+		}
+	}
+
+	// Check for git: with tracked hosts
+	return ps.parseGemfileGitURL(line, gemName, manifestPath)
+}
+
+// parseGemfileGitURL extracts git dependencies from Gemfile lines with explicit git URLs
+func (ps *PackageScanner) parseGemfileGitURL(line, gemName, manifestPath string) *ExtractedDependency {
+	for _, host := range ps.additionalHosts {
+		escapedHost := regexp.QuoteMeta(host)
+
+		// Pattern: git: 'https://host/owner/repo.git'
+		// Note: Allow dots in repo names (e.g., my-lib.backup), trim .git suffix separately
+		httpsPattern := regexp.MustCompile(`git:\s*['"]https://` + escapedHost + `/([^/]+)/([^/'"]+)`)
+		if matches := httpsPattern.FindStringSubmatch(line); len(matches) == 3 {
+			isLocal := ps.sourceHost != "" && host == ps.sourceHost
+			return &ExtractedDependency{
 				Name:         gemName,
 				Version:      line,
 				Ecosystem:    EcosystemRuby,
 				Manifest:     manifestPath,
 				IsGitHubRepo: true,
 				GitHubOwner:  matches[1],
-				GitHubRepo:   matches[2],
-				IsLocal:      false,
-				SourceHost:   hostGitHubCom,
-			})
-			continue
-		}
-
-		// Check for Azure DevOps URLs
-		if isADOURL(line) {
-			org, project, repo, host, isLocal := ps.extractADOReference(line)
-			if org != "" && repo != "" {
-				deps = append(deps, ExtractedDependency{
-					Name:         gemName,
-					Version:      line,
-					Ecosystem:    EcosystemRuby,
-					Manifest:     manifestPath,
-					IsGitHubRepo: true,
-					GitHubOwner:  org + "/" + project,
-					GitHubRepo:   repo,
-					IsLocal:      isLocal,
-					SourceHost:   host,
-				})
-				continue
+				GitHubRepo:   strings.TrimSuffix(matches[2], ".git"),
+				IsLocal:      isLocal,
+				SourceHost:   host,
 			}
 		}
 
-		// Check for git: with tracked hosts
-		for _, host := range ps.additionalHosts {
-			escapedHost := regexp.QuoteMeta(host)
-
-			// Pattern: git: 'https://host/owner/repo.git'
-			// Note: Allow dots in repo names (e.g., my-lib.backup), trim .git suffix separately
-			httpsPattern := regexp.MustCompile(`git:\s*['"]https://` + escapedHost + `/([^/]+)/([^/'"]+)`)
-			if matches := httpsPattern.FindStringSubmatch(line); len(matches) == 3 {
-				isLocal := ps.sourceHost != "" && host == ps.sourceHost
-				deps = append(deps, ExtractedDependency{
-					Name:         gemName,
-					Version:      line,
-					Ecosystem:    EcosystemRuby,
-					Manifest:     manifestPath,
-					IsGitHubRepo: true,
-					GitHubOwner:  matches[1],
-					GitHubRepo:   strings.TrimSuffix(matches[2], ".git"),
-					IsLocal:      isLocal,
-					SourceHost:   host,
-				})
-				break
-			}
-
-			// Pattern: git: 'git@host:owner/repo.git'
-			// Note: Allow dots in repo names (e.g., my-lib.backup), trim .git suffix separately
-			sshPattern := regexp.MustCompile(`git:\s*['"]git@` + escapedHost + `:([^/]+)/([^/'"]+)`)
-			if matches := sshPattern.FindStringSubmatch(line); len(matches) == 3 {
-				isLocal := ps.sourceHost != "" && host == ps.sourceHost
-				deps = append(deps, ExtractedDependency{
-					Name:         gemName,
-					Version:      line,
-					Ecosystem:    EcosystemRuby,
-					Manifest:     manifestPath,
-					IsGitHubRepo: true,
-					GitHubOwner:  matches[1],
-					GitHubRepo:   strings.TrimSuffix(matches[2], ".git"),
-					IsLocal:      isLocal,
-					SourceHost:   host,
-				})
-				break
+		// Pattern: git: 'git@host:owner/repo.git'
+		// Note: Allow dots in repo names (e.g., my-lib.backup), trim .git suffix separately
+		sshPattern := regexp.MustCompile(`git:\s*['"]git@` + escapedHost + `:([^/]+)/([^/'"]+)`)
+		if matches := sshPattern.FindStringSubmatch(line); len(matches) == 3 {
+			isLocal := ps.sourceHost != "" && host == ps.sourceHost
+			return &ExtractedDependency{
+				Name:         gemName,
+				Version:      line,
+				Ecosystem:    EcosystemRuby,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  matches[1],
+				GitHubRepo:   strings.TrimSuffix(matches[2], ".git"),
+				IsLocal:      isLocal,
+				SourceHost:   host,
 			}
 		}
 	}
-
-	return deps
+	return nil
 }
 
 // extractTerraformGitHubDependencies extracts GitHub references from Terraform module sources
@@ -1039,6 +1054,15 @@ func isADOURL(gitURL string) bool {
 		strings.Contains(gitURL, "ssh.dev.azure.com")
 }
 
+// isADOHost checks if a host is an Azure DevOps host
+// This is used to skip ADO hosts when iterating over additionalHosts for GitHub-style pattern matching,
+// since ADO URLs have a different format (org/project/_git/repo) that doesn't match the host/owner/repo pattern
+func isADOHost(host string) bool {
+	return host == hostAzureDevOps ||
+		host == hostAzureDevSSH ||
+		strings.HasSuffix(host, suffixVisualStudio)
+}
+
 // extractRustGitHubDependencies extracts GitHub references from Cargo.toml
 func (ps *PackageScanner) extractRustGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
 	var deps []ExtractedDependency
@@ -1183,6 +1207,9 @@ func (ps *PackageScanner) extractSwiftGitHubDependencies(ctx context.Context, re
 
 // parseFileWithURLPattern is a generic parser for files containing GitHub URL references
 // It takes a pattern prefix (before the host) and suffix (after the host) to match URLs
+// Note: This function uses GitHub-style URL patterns (host/owner/repo) and should NOT be used
+// for ADO URLs which have a different format (org/project/_git/repo). ADO URLs are handled
+// separately by parseFileForADOURLs.
 func (ps *PackageScanner) parseFileWithURLPattern(filePath, manifestPath string, ecosystem PackageEcosystem, patternPrefix, patternSuffix string) []ExtractedDependency {
 	var deps []ExtractedDependency
 
@@ -1193,6 +1220,12 @@ func (ps *PackageScanner) parseFileWithURLPattern(filePath, manifestPath string,
 	}
 
 	for _, host := range ps.additionalHosts {
+		// Skip ADO hosts - they don't follow the host/owner/repo pattern
+		// and are handled separately by parseFileForADOURLs
+		if isADOHost(host) {
+			continue
+		}
+
 		escapedHost := regexp.QuoteMeta(host)
 		pattern := regexp.MustCompile(patternPrefix + escapedHost + patternSuffix)
 		matches := pattern.FindAllStringSubmatch(string(content), -1)
@@ -1282,8 +1315,10 @@ func (ps *PackageScanner) parseMixExs(mixPath, manifestPath string) []ExtractedD
 	}
 
 	// Pattern for github: shorthand (always github.com)
+	// Shorthand always implies github.com - check if that's the source instance
 	githubPattern := regexp.MustCompile(`github:\s*"([^/]+)/([^"]+)"`)
 	githubMatches := githubPattern.FindAllStringSubmatch(string(content), -1)
+	isLocalGitHub := ps.sourceHost != "" && ps.sourceHost == hostGitHubCom
 	for _, match := range githubMatches {
 		if len(match) == 3 {
 			deps = append(deps, ExtractedDependency{
@@ -1294,7 +1329,7 @@ func (ps *PackageScanner) parseMixExs(mixPath, manifestPath string) []ExtractedD
 				IsGitHubRepo: true,
 				GitHubOwner:  match[1],
 				GitHubRepo:   match[2],
-				IsLocal:      false,
+				IsLocal:      isLocalGitHub,
 				SourceHost:   hostGitHubCom,
 			})
 		}
@@ -1304,11 +1339,19 @@ func (ps *PackageScanner) parseMixExs(mixPath, manifestPath string) []ExtractedD
 	adoDeps := ps.parseFileForADOURLs(mixPath, manifestPath, EcosystemElixir)
 	deps = append(deps, adoDeps...)
 
-	// Pattern for git: with tracked hosts
+	// Pattern for git: with tracked hosts (GitHub-style: host/owner/repo)
 	// Note: github.com is NOT skipped here because the github: shorthand pattern above
 	// only matches `github: "owner/repo"` syntax, not `git: "https://github.com/owner/repo.git"` URLs.
 	// Both formats are valid and need to be handled.
+	// Note: ADO hosts are skipped because they use a different URL format (org/project/_git/repo)
+	// and are already handled by parseFileForADOURLs above.
 	for _, host := range ps.additionalHosts {
+		// Skip ADO hosts - they don't follow the host/owner/repo pattern
+		// and are already handled by parseFileForADOURLs above
+		if isADOHost(host) {
+			continue
+		}
+
 		escapedHost := regexp.QuoteMeta(host)
 
 		gitPattern := regexp.MustCompile(`git:\s*"https://` + escapedHost + `/([^/]+)/([^"]+)"`)
@@ -1372,8 +1415,10 @@ func (ps *PackageScanner) parseBuildGradle(gradlePath, manifestPath string) []Ex
 	// Pattern for JitPack dependencies: com.github.Owner:Repo:Tag
 	// Matches: implementation 'com.github.Owner:Repo:v1.0'
 	// Matches: implementation "com.github.Owner:Repo:v1.0"
+	// JitPack always uses github.com - check if that's the source instance
 	jitpackPattern := regexp.MustCompile(`['"]com\.github\.([^:]+):([^:'"]+)(?::[^'"]+)?['"]`)
 	matches := jitpackPattern.FindAllStringSubmatch(string(content), -1)
+	isLocalJitPack := ps.sourceHost != "" && ps.sourceHost == hostGitHubCom
 	for _, match := range matches {
 		if len(match) == 3 {
 			deps = append(deps, ExtractedDependency{
@@ -1384,7 +1429,7 @@ func (ps *PackageScanner) parseBuildGradle(gradlePath, manifestPath string) []Ex
 				IsGitHubRepo: true,
 				GitHubOwner:  match[1],
 				GitHubRepo:   match[2],
-				IsLocal:      false,
+				IsLocal:      isLocalJitPack,
 				SourceHost:   hostGitHubCom,
 			})
 		}

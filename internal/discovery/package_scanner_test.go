@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 // setupTestDir creates a temporary directory with test files
@@ -1604,5 +1606,305 @@ gem 'internal-gem', git: 'https://dev.azure.com/myorg/myproject/_git/internal-ge
 	}
 	if localCount != 1 {
 		t.Errorf("Expected 1 local ADO dependency, got %d", localCount)
+	}
+}
+
+// TestPackageScanner_ADOURLNoDuplicates verifies that ADO URLs don't create duplicate
+// dependencies when the scanner iterates over additionalHosts with GitHub-style patterns.
+// This tests the fix for: when dev.azure.com is in additionalHosts, the GitHub-style pattern
+// incorrectly matches ADO URLs like https://dev.azure.com/org/project/_git/repo
+// capturing "org" as owner and "project/_git/repo" as repo name.
+func TestPackageScanner_ADOURLNoDuplicates(t *testing.T) {
+	tests := []struct {
+		name         string
+		filename     string
+		content      string
+		expectedDeps int
+		expectedName string
+	}{
+		{
+			name:     "mix.exs with ADO git URL",
+			filename: "mix.exs",
+			content: `defmodule MyProject.MixProject do
+  use Mix.Project
+
+  def project do
+    [
+      app: :my_project,
+      version: "0.1.0",
+      deps: deps()
+    ]
+  end
+
+  defp deps do
+    [
+      {:ecto, "~> 3.10"},
+      {:phoenix, "~> 1.7"},
+      {:internal_lib, git: "https://dev.azure.com/myorg/myproject/_git/internal-lib.git"}
+    ]
+  end
+end
+`,
+			expectedDeps: 1,
+			expectedName: "myorg/myproject/internal-lib",
+		},
+		{
+			name:     "Chart.yaml with ADO repository URL",
+			filename: "Chart.yaml",
+			content: `apiVersion: v2
+name: my-chart
+version: 1.0.0
+
+dependencies:
+  - name: internal-chart
+    version: "1.2.3"
+    repository: "https://dev.azure.com/myorg/myproject/_git/helm-charts"
+`,
+			expectedDeps: 1,
+			expectedName: "myorg/myproject/helm-charts",
+		},
+		{
+			name:     "Package.swift with ADO package URL",
+			filename: "Package.swift",
+			content: `// swift-tools-version:5.5
+import PackageDescription
+
+let package = Package(
+    name: "MyPackage",
+    dependencies: [
+        .package(url: "https://dev.azure.com/myorg/myproject/_git/swift-lib", from: "1.0.0"),
+    ],
+    targets: [
+        .target(name: "MyPackage", dependencies: []),
+    ]
+)
+`,
+			expectedDeps: 1,
+			expectedName: "myorg/myproject/swift-lib",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := setupTestDir(t)
+			defer os.RemoveAll(dir)
+
+			writeTestFile(t, dir, tt.filename, tt.content)
+
+			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			// Configure with ADO source URL - this adds dev.azure.com to additionalHosts
+			scanner := NewPackageScanner(logger).WithSourceURL("https://dev.azure.com/myorg/myproject/_git/myrepo")
+
+			deps, err := scanner.ScanPackageManagers(context.Background(), dir, 1)
+			if err != nil {
+				t.Fatalf("ScanPackageManagers failed: %v", err)
+			}
+
+			// Should find exactly the expected number of dependencies (no duplicates)
+			if len(deps) != tt.expectedDeps {
+				t.Errorf("Expected %d dependency, got %d", tt.expectedDeps, len(deps))
+				for _, dep := range deps {
+					t.Logf("Found: %s (host: %s)", dep.DependencyFullName, getDependencyHost(dep))
+				}
+			}
+
+			// Verify the dependency has the correct name
+			if len(deps) > 0 && deps[0].DependencyFullName != tt.expectedName {
+				t.Errorf("Expected dependency name %q, got %q", tt.expectedName, deps[0].DependencyFullName)
+			}
+
+			// Verify there are no duplicate names
+			seen := make(map[string]int)
+			for _, dep := range deps {
+				seen[dep.DependencyFullName]++
+			}
+			for name, count := range seen {
+				if count > 1 {
+					t.Errorf("Found duplicate dependency %q (%d times)", name, count)
+				}
+			}
+		})
+	}
+}
+
+// getDependencyHost extracts the source host from dependency metadata for test logging
+func getDependencyHost(dep *models.RepositoryDependency) string {
+	if dep.Metadata == nil {
+		return "unknown"
+	}
+	// Simple extraction - in real code this would parse JSON
+	if strings.Contains(*dep.Metadata, "dev.azure.com") {
+		return "dev.azure.com"
+	}
+	return "github.com"
+}
+
+// TestPackageScanner_ShorthandLocalDependenciesGitHubCom tests that shorthand format
+// dependencies (npm github:, owner/repo, Ruby github:, Elixir github:, Gradle JitPack)
+// are correctly marked as local when the source is github.com (GHEC scenario)
+func TestPackageScanner_ShorthandLocalDependenciesGitHubCom(t *testing.T) {
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+
+	// NPM package.json with github: shorthand and owner/repo shorthand
+	packageJSON := `{
+  "name": "test-project",
+  "dependencies": {
+    "dep1": "github:myorg/npm-lib",
+    "dep2": "myorg/another-lib",
+    "dep3": "git+https://github.com/myorg/explicit-url"
+  }
+}`
+	writeTestFile(t, dir, "package.json", packageJSON)
+
+	// Ruby Gemfile with github: shorthand
+	gemfile := `source 'https://rubygems.org'
+gem 'internal-gem', github: 'myorg/ruby-lib'
+gem 'explicit-gem', git: 'https://github.com/myorg/explicit-ruby'
+`
+	writeTestFile(t, dir, "Gemfile", gemfile)
+
+	// Elixir mix.exs with github: shorthand
+	mixExs := `defmodule MyProject.MixProject do
+  use Mix.Project
+  
+  defp deps do
+    [
+      {:phoenix, github: "myorg/phoenix-fork"},
+      {:explicit_dep, git: "https://github.com/myorg/explicit-elixir.git"}
+    ]
+  end
+end
+`
+	writeTestFile(t, dir, "mix.exs", mixExs)
+
+	// Gradle build.gradle with JitPack (com.github.)
+	buildGradle := `plugins {
+    id 'java'
+}
+
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.myorg:gradle-lib:v1.0'
+}
+`
+	writeTestFile(t, dir, "build.gradle", buildGradle)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	// Source URL is github.com - simulating GHEC migration
+	scanner := NewPackageScanner(logger).WithSourceURL("https://github.com")
+
+	deps, err := scanner.ScanPackageManagers(context.Background(), dir, 1)
+	if err != nil {
+		t.Fatalf("ScanPackageManagers failed: %v", err)
+	}
+
+	// Should find all dependencies
+	// NPM: 3 (github:, owner/repo, explicit URL)
+	// Ruby: 2 (github: shorthand, explicit git:)
+	// Elixir: 2 (github: shorthand, explicit git:)
+	// Gradle: 1 (JitPack)
+	expectedTotal := 8
+	if len(deps) != expectedTotal {
+		t.Errorf("Expected %d dependencies, got %d", expectedTotal, len(deps))
+		for _, dep := range deps {
+			t.Logf("Found: %s (local: %v)", dep.DependencyFullName, dep.IsLocal)
+		}
+	}
+
+	// All dependencies should be marked as local since source is github.com
+	for _, dep := range deps {
+		if !dep.IsLocal {
+			t.Errorf("Expected dependency %q to be marked as local (source is github.com)", dep.DependencyFullName)
+		}
+	}
+}
+
+// TestPackageScanner_ShorthandExternalDependenciesGHES tests that shorthand format
+// dependencies are NOT marked as local when the source is a different host (GHES scenario)
+func TestPackageScanner_ShorthandExternalDependenciesGHES(t *testing.T) {
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+
+	// NPM package.json with github: shorthand (these reference github.com)
+	packageJSON := `{
+  "name": "test-project",
+  "dependencies": {
+    "external-dep": "github:someorg/external-lib",
+    "local-dep": "git+https://github.example.com/myorg/local-lib"
+  }
+}`
+	writeTestFile(t, dir, "package.json", packageJSON)
+
+	// Ruby Gemfile with github: shorthand
+	gemfile := `source 'https://rubygems.org'
+gem 'external-gem', github: 'someorg/external-ruby'
+gem 'local-gem', git: 'https://github.example.com/myorg/local-ruby'
+`
+	writeTestFile(t, dir, "Gemfile", gemfile)
+
+	// Elixir mix.exs with github: shorthand
+	mixExs := `defmodule MyProject.MixProject do
+  use Mix.Project
+  
+  defp deps do
+    [
+      {:external_phoenix, github: "someorg/external-phoenix"},
+      {:local_dep, git: "https://github.example.com/myorg/local-elixir.git"}
+    ]
+  end
+end
+`
+	writeTestFile(t, dir, "mix.exs", mixExs)
+
+	// Gradle build.gradle with JitPack
+	buildGradle := `dependencies {
+    implementation 'com.github.someorg:external-gradle:v1.0'
+}
+`
+	writeTestFile(t, dir, "build.gradle", buildGradle)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	// Source URL is GHES - github: shorthand deps should be external
+	scanner := NewPackageScanner(logger).WithSourceURL("https://github.example.com")
+
+	deps, err := scanner.ScanPackageManagers(context.Background(), dir, 1)
+	if err != nil {
+		t.Fatalf("ScanPackageManagers failed: %v", err)
+	}
+
+	// Should find all dependencies
+	// NPM: 2 (github: shorthand, explicit URL)
+	// Ruby: 2 (github: shorthand, explicit git:)
+	// Elixir: 2 (github: shorthand, explicit git:)
+	// Gradle: 1 (JitPack)
+	expectedTotal := 7
+	if len(deps) != expectedTotal {
+		t.Errorf("Expected %d dependencies, got %d", expectedTotal, len(deps))
+		for _, dep := range deps {
+			t.Logf("Found: %s (local: %v)", dep.DependencyFullName, dep.IsLocal)
+		}
+	}
+
+	// Count local and external
+	localCount := 0
+	externalCount := 0
+	for _, dep := range deps {
+		if dep.IsLocal {
+			localCount++
+		} else {
+			externalCount++
+		}
+	}
+
+	// Should have 3 local (explicit URL deps to github.example.com) and 4 external (shorthand deps to github.com)
+	if localCount != 3 {
+		t.Errorf("Expected 3 local dependencies, got %d", localCount)
+	}
+	if externalCount != 4 {
+		t.Errorf("Expected 4 external dependencies (github: shorthand), got %d", externalCount)
 	}
 }
