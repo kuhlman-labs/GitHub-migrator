@@ -204,7 +204,7 @@ func (p *ADOProfiler) analyzeDependencies(ctx context.Context, repo *models.Repo
 
 	// Analyze dependencies from cloned repo (submodules, workflows, etc.)
 	// Note: Workflow dependencies are GitHub Actions specific, but submodules work for any Git repo
-	dependencies, err := depAnalyzer.AnalyzeDependencies(ctx, repoPath, repo.FullName, repo.ID)
+	dependencies, err := depAnalyzer.AnalyzeDependencies(ctx, repoPath, repo.FullName, repo.ID, repo.SourceURL)
 	if err != nil {
 		return fmt.Errorf("failed to analyze dependencies from repo: %w", err)
 	}

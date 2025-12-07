@@ -335,14 +335,16 @@ func (da *DependencyAnalyzer) parseUsesString(uses, workflowFile string) *Workfl
 // 1. Package manager files (PRIMARY) - npm, Go, Python, Maven, Gradle, .NET, Ruby, Rust, PHP, Terraform, Helm, Docker
 // 2. Git submodules (.gitmodules)
 // 3. GitHub Actions workflows (.github/workflows/)
-func (da *DependencyAnalyzer) AnalyzeDependencies(ctx context.Context, repoPath, repoFullName string, repoID int64) ([]*models.RepositoryDependency, error) {
+//
+// The sourceURL parameter is used to identify local dependencies (dependencies hosted on the source instance)
+func (da *DependencyAnalyzer) AnalyzeDependencies(ctx context.Context, repoPath, repoFullName string, repoID int64, sourceURL string) ([]*models.RepositoryDependency, error) {
 	var dependencies []*models.RepositoryDependency
 	now := time.Now()
 
 	// 1. PRIMARY: Scan package manager files (source-agnostic)
 	// This is the main dependency detection mechanism that works consistently
 	// across all source systems (GitHub, Azure DevOps, GitLab, etc.)
-	packageScanner := NewPackageScanner(da.logger)
+	packageScanner := NewPackageScanner(da.logger).WithSourceURL(sourceURL)
 	packageDeps, err := packageScanner.ScanPackageManagers(ctx, repoPath, repoID)
 	if err != nil {
 		da.logger.Warn("Failed to scan package managers", "repo", repoFullName, "error", err)

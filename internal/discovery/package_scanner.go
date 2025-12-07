@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,15 +24,21 @@ const (
 	EcosystemNodeJS    PackageEcosystem = "npm"
 	EcosystemGo        PackageEcosystem = "go"
 	EcosystemPython    PackageEcosystem = "python"
-	EcosystemJava      PackageEcosystem = "maven"
-	EcosystemGradle    PackageEcosystem = "gradle"
-	EcosystemDotNet    PackageEcosystem = "nuget"
 	EcosystemRuby      PackageEcosystem = "rubygems"
-	EcosystemRust      PackageEcosystem = "cargo"
-	EcosystemPHP       PackageEcosystem = "composer"
 	EcosystemTerraform PackageEcosystem = "terraform"
+	EcosystemRust      PackageEcosystem = "cargo"
 	EcosystemHelm      PackageEcosystem = "helm"
-	EcosystemDocker    PackageEcosystem = "docker"
+	EcosystemSwift     PackageEcosystem = "swift"
+	EcosystemElixir    PackageEcosystem = "mix"
+	EcosystemGradle    PackageEcosystem = "gradle"
+)
+
+// Common host names
+const (
+	hostGitHubCom      = "github.com"
+	hostAzureDevOps    = "dev.azure.com"
+	hostAzureDevSSH    = "ssh.dev.azure.com"
+	suffixVisualStudio = ".visualstudio.com"
 )
 
 // Directories to skip during file scanning
@@ -47,28 +54,100 @@ const (
 	dirPackages    = "packages"
 )
 
-// PackageManifest represents a detected package manifest file
-type PackageManifest struct {
-	Ecosystem       PackageEcosystem
-	ManifestPath    string
-	DependencyCount int
-	HasLockFile     bool
-	Metadata        map[string]interface{}
+// ExtractedDependency represents a dependency extracted from a manifest file
+type ExtractedDependency struct {
+	Name         string           // Package name or GitHub repo (owner/repo)
+	Version      string           // Version constraint
+	Ecosystem    PackageEcosystem // Which ecosystem this is from
+	Manifest     string           // Path to manifest file
+	IsGitHubRepo bool             // Whether this is a GitHub/Git host repository reference
+	GitHubOwner  string           // GitHub owner (if IsGitHubRepo)
+	GitHubRepo   string           // GitHub repo name (if IsGitHubRepo)
+	IsLocal      bool             // Whether this dependency is local to the source instance
+	SourceHost   string           // The host this dependency is from (e.g., "github.com" or "github.example.com")
 }
 
-// PackageScanner scans repositories for package manager files
+// PackageScanner scans repositories for package manager files and extracts GitHub/Git dependencies
 type PackageScanner struct {
-	logger *slog.Logger
+	logger          *slog.Logger
+	sourceHost      string   // The hostname of the source instance (e.g., "github.example.com" or "dev.azure.com")
+	sourceOrg       string   // For ADO sources, the organization name
+	isADOSource     bool     // Whether the source is Azure DevOps
+	additionalHosts []string // Additional hosts to scan for (always includes github.com)
 }
 
 // NewPackageScanner creates a new package scanner
 func NewPackageScanner(logger *slog.Logger) *PackageScanner {
 	return &PackageScanner{
-		logger: logger,
+		logger:          logger,
+		sourceHost:      "",
+		additionalHosts: []string{hostGitHubCom},
 	}
 }
 
-// ScanPackageManagers scans a repository for package manager files and returns dependencies
+// WithSourceURL configures the scanner with the source instance URL
+// This allows detection of local dependencies (dependencies hosted on the source instance)
+// Supports both GitHub (github.com, GitHub Enterprise) and Azure DevOps sources
+func (ps *PackageScanner) WithSourceURL(sourceURL string) *PackageScanner {
+	if sourceURL == "" {
+		return ps
+	}
+
+	// Parse the URL to extract the hostname
+	parsed, err := url.Parse(sourceURL)
+	if err != nil {
+		ps.logger.Debug("Failed to parse source URL", "url", sourceURL, "error", err)
+		return ps
+	}
+
+	host := parsed.Host
+	// Remove port if present
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	ps.sourceHost = host
+
+	// Check if this is an Azure DevOps source
+	if host == hostAzureDevOps || strings.HasSuffix(host, suffixVisualStudio) {
+		ps.isADOSource = true
+		// Extract ADO organization from URL path
+		// Format: https://dev.azure.com/{org}/... or https://{org}.visualstudio.com/...
+		if host == hostAzureDevOps {
+			// dev.azure.com/{org}/project/_git/repo
+			pathParts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+			if len(pathParts) > 0 {
+				ps.sourceOrg = pathParts[0]
+			}
+		} else if strings.HasSuffix(host, suffixVisualStudio) {
+			// {org}.visualstudio.com - org is in the hostname
+			ps.sourceOrg = strings.TrimSuffix(host, suffixVisualStudio)
+		}
+
+		// Add ADO hosts for scanning
+		ps.additionalHosts = append(ps.additionalHosts, hostAzureDevOps)
+
+		ps.logger.Debug("Package scanner configured for Azure DevOps source",
+			"source_host", ps.sourceHost,
+			"source_org", ps.sourceOrg,
+			"scan_hosts", ps.additionalHosts)
+	} else {
+		// GitHub source (github.com or GitHub Enterprise)
+		// Add source host to additional hosts if it's not already github.com
+		if host != "" && host != hostGitHubCom {
+			ps.additionalHosts = append(ps.additionalHosts, host)
+		}
+
+		ps.logger.Debug("Package scanner configured with source host",
+			"source_host", ps.sourceHost,
+			"scan_hosts", ps.additionalHosts)
+	}
+
+	return ps
+}
+
+// ScanPackageManagers scans a repository for package manager files and extracts actual dependencies
+// It focuses on extracting dependencies that are GitHub repositories, which are relevant for migration planning
 func (ps *PackageScanner) ScanPackageManagers(ctx context.Context, repoPath string, repoID int64) ([]*models.RepositoryDependency, error) {
 	// Validate repository path
 	if err := source.ValidateRepoPath(repoPath); err != nil {
@@ -76,207 +155,175 @@ func (ps *PackageScanner) ScanPackageManagers(ctx context.Context, repoPath stri
 	}
 
 	now := time.Now()
+	var allDeps []ExtractedDependency
 
-	// Scan for each ecosystem
-	manifests := ps.scanAllEcosystems(ctx, repoPath)
+	// Extract Go module dependencies (these directly reference GitHub repos)
+	goDeps := ps.extractGoModuleDependencies(ctx, repoPath)
+	allDeps = append(allDeps, goDeps...)
 
-	// Pre-allocate dependencies slice
-	dependencies := make([]*models.RepositoryDependency, 0, len(manifests))
+	// Extract npm dependencies that have GitHub repository references
+	npmDeps := ps.extractNpmGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, npmDeps...)
 
-	ps.logger.Debug("Package scan complete",
+	// Extract Python dependencies that reference GitHub repos
+	pythonDeps := ps.extractPythonGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, pythonDeps...)
+
+	// Extract Ruby Gemfile dependencies that reference GitHub repos
+	rubyDeps := ps.extractRubyGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, rubyDeps...)
+
+	// Extract Terraform module dependencies that reference GitHub repos
+	terraformDeps := ps.extractTerraformGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, terraformDeps...)
+
+	// Extract Rust Cargo dependencies that reference GitHub repos
+	rustDeps := ps.extractRustGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, rustDeps...)
+
+	// Extract Helm chart dependencies that reference GitHub repos
+	helmDeps := ps.extractHelmGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, helmDeps...)
+
+	// Extract Swift Package Manager dependencies
+	swiftDeps := ps.extractSwiftGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, swiftDeps...)
+
+	// Extract Elixir Mix dependencies that reference GitHub repos
+	elixirDeps := ps.extractElixirGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, elixirDeps...)
+
+	// Extract Gradle JitPack dependencies that reference GitHub repos
+	gradleDeps := ps.extractGradleGitHubDependencies(ctx, repoPath)
+	allDeps = append(allDeps, gradleDeps...)
+
+	// Convert extracted dependencies to RepositoryDependency objects
+	dependencies := ps.convertToRepositoryDependencies(allDeps, repoID, now)
+
+	// Deduplicate dependencies (same repo might be referenced from multiple manifests)
+	dependencies = ps.deduplicateDependencies(dependencies)
+
+	ps.logger.Debug("Package dependency extraction complete",
 		"repo_path", repoPath,
-		"manifests_found", len(manifests))
-
-	// Convert manifests to dependencies
-	for _, manifest := range manifests {
-		metadata := map[string]interface{}{
-			"source":           "file_scan",
-			"ecosystem":        string(manifest.Ecosystem),
-			"manifest":         manifest.ManifestPath,
-			"dependency_count": manifest.DependencyCount,
-			"has_lock_file":    manifest.HasLockFile,
-		}
-
-		// Merge any additional metadata
-		for k, v := range manifest.Metadata {
-			metadata[k] = v
-		}
-
-		metadataJSON, _ := json.Marshal(metadata)
-		metadataStr := string(metadataJSON)
-
-		dep := &models.RepositoryDependency{
-			RepositoryID:       repoID,
-			DependencyFullName: fmt.Sprintf("%s:%s", manifest.Ecosystem, manifest.ManifestPath),
-			DependencyType:     models.DependencyTypePackage,
-			DependencyURL:      "", // Package manifests don't have URLs
-			IsLocal:            true,
-			DiscoveredAt:       now,
-			Metadata:           &metadataStr,
-		}
-		dependencies = append(dependencies, dep)
-	}
+		"github_dependencies", len(dependencies))
 
 	return dependencies, nil
 }
 
-// scanAllEcosystems scans for all supported package ecosystems
-func (ps *PackageScanner) scanAllEcosystems(ctx context.Context, repoPath string) []PackageManifest {
-	var manifests []PackageManifest
+// convertToRepositoryDependencies converts extracted dependencies to RepositoryDependency objects
+func (ps *PackageScanner) convertToRepositoryDependencies(deps []ExtractedDependency, repoID int64, now time.Time) []*models.RepositoryDependency {
+	result := make([]*models.RepositoryDependency, 0, len(deps))
 
-	// Node.js (npm, yarn, pnpm)
-	manifests = append(manifests, ps.scanNodeJS(ctx, repoPath)...)
-
-	// Go
-	manifests = append(manifests, ps.scanGo(ctx, repoPath)...)
-
-	// Python
-	manifests = append(manifests, ps.scanPython(ctx, repoPath)...)
-
-	// Java (Maven)
-	manifests = append(manifests, ps.scanMaven(ctx, repoPath)...)
-
-	// Java/Kotlin (Gradle)
-	manifests = append(manifests, ps.scanGradle(ctx, repoPath)...)
-
-	// .NET
-	manifests = append(manifests, ps.scanDotNet(ctx, repoPath)...)
-
-	// Ruby
-	manifests = append(manifests, ps.scanRuby(ctx, repoPath)...)
-
-	// Rust
-	manifests = append(manifests, ps.scanRust(ctx, repoPath)...)
-
-	// PHP (Composer)
-	manifests = append(manifests, ps.scanPHP(ctx, repoPath)...)
-
-	// Terraform
-	manifests = append(manifests, ps.scanTerraform(ctx, repoPath)...)
-
-	// Helm
-	manifests = append(manifests, ps.scanHelm(ctx, repoPath)...)
-
-	// Docker
-	manifests = append(manifests, ps.scanDocker(ctx, repoPath)...)
-
-	return manifests
-}
-
-// scanNodeJS scans for Node.js package files
-func (ps *PackageScanner) scanNodeJS(ctx context.Context, repoPath string) []PackageManifest {
-	// Find all package.json files
-	packageJSONFiles := ps.findFiles(repoPath, "package.json")
-
-	// Pre-allocate manifests slice
-	manifests := make([]PackageManifest, 0, len(packageJSONFiles))
-
-	for _, pkgPath := range packageJSONFiles {
-		relPath, _ := filepath.Rel(repoPath, pkgPath)
-
-		manifest := PackageManifest{
-			Ecosystem:    EcosystemNodeJS,
-			ManifestPath: relPath,
-			Metadata:     make(map[string]interface{}),
+	for _, dep := range deps {
+		if !dep.IsGitHubRepo {
+			continue
 		}
 
-		// Count dependencies from package.json
-		depCount, devDepCount := ps.countNodeJSDependencies(pkgPath)
-		manifest.DependencyCount = depCount + devDepCount
-		manifest.Metadata["dev_dependencies"] = devDepCount
+		repoFullName := fmt.Sprintf("%s/%s", dep.GitHubOwner, dep.GitHubRepo)
 
-		// Check for lock files in the same directory
-		dir := filepath.Dir(pkgPath)
-		if ps.fileExists(filepath.Join(dir, "package-lock.json")) {
-			manifest.HasLockFile = true
-			manifest.Metadata["lock_file"] = "package-lock.json"
-		} else if ps.fileExists(filepath.Join(dir, "yarn.lock")) {
-			manifest.HasLockFile = true
-			manifest.Metadata["lock_file"] = "yarn.lock"
-		} else if ps.fileExists(filepath.Join(dir, "pnpm-lock.yaml")) {
-			manifest.HasLockFile = true
-			manifest.Metadata["lock_file"] = "pnpm-lock.yaml"
+		// Determine package manager name for metadata
+		packageManager := string(dep.Ecosystem)
+		switch dep.Ecosystem {
+		case EcosystemGo:
+			packageManager = "GO"
+		case EcosystemNodeJS:
+			packageManager = "NPM"
+		case EcosystemPython:
+			packageManager = "PIP"
+		case EcosystemRuby:
+			packageManager = "RUBYGEMS"
+		case EcosystemTerraform:
+			packageManager = "TERRAFORM"
+		case EcosystemRust:
+			packageManager = "CARGO"
+		case EcosystemHelm:
+			packageManager = "HELM"
+		case EcosystemSwift:
+			packageManager = "SWIFT"
+		case EcosystemElixir:
+			packageManager = "MIX"
+		case EcosystemGradle:
+			packageManager = "GRADLE"
 		}
 
-		manifests = append(manifests, manifest)
+		// Determine the dependency URL based on the source host
+		depURL := fmt.Sprintf("https://%s/%s", dep.SourceHost, repoFullName)
+
+		metadata := map[string]interface{}{
+			"source":          "file_scan",
+			"ecosystem":       string(dep.Ecosystem),
+			"manifest":        dep.Manifest,
+			"package_name":    dep.Name,
+			"version":         dep.Version,
+			"package_manager": packageManager,
+			"source_host":     dep.SourceHost,
+			"is_local":        dep.IsLocal,
+		}
+		metadataJSON, _ := json.Marshal(metadata)
+		metadataStr := string(metadataJSON)
+
+		result = append(result, &models.RepositoryDependency{
+			RepositoryID:       repoID,
+			DependencyFullName: repoFullName,
+			DependencyType:     models.DependencyTypePackage,
+			DependencyURL:      depURL,
+			IsLocal:            dep.IsLocal,
+			DiscoveredAt:       now,
+			Metadata:           &metadataStr,
+		})
 	}
 
-	return manifests
+	return result
 }
 
-// countNodeJSDependencies counts dependencies in a package.json file
-func (ps *PackageScanner) countNodeJSDependencies(pkgPath string) (deps int, devDeps int) {
-	// #nosec G304 -- pkgPath is validated via findFiles which uses validated repoPath
-	content, err := os.ReadFile(pkgPath)
-	if err != nil {
-		return 0, 0
+// deduplicateDependencies removes duplicate dependencies, keeping the first occurrence
+func (ps *PackageScanner) deduplicateDependencies(deps []*models.RepositoryDependency) []*models.RepositoryDependency {
+	seen := make(map[string]bool)
+	result := make([]*models.RepositoryDependency, 0, len(deps))
+
+	for _, dep := range deps {
+		if !seen[dep.DependencyFullName] {
+			seen[dep.DependencyFullName] = true
+			result = append(result, dep)
+		}
 	}
 
-	var pkg struct {
-		Dependencies    map[string]string `json:"dependencies"`
-		DevDependencies map[string]string `json:"devDependencies"`
-	}
-
-	if err := json.Unmarshal(content, &pkg); err != nil {
-		return 0, 0
-	}
-
-	return len(pkg.Dependencies), len(pkg.DevDependencies)
+	return result
 }
 
-// scanGo scans for Go module files
-func (ps *PackageScanner) scanGo(ctx context.Context, repoPath string) []PackageManifest {
+// extractGoModuleDependencies extracts dependencies from go.mod files
+// Go modules directly reference GitHub repos (e.g., github.com/gin-gonic/gin)
+func (ps *PackageScanner) extractGoModuleDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
 	goModFiles := ps.findFiles(repoPath, "go.mod")
-
-	// Pre-allocate manifests slice
-	manifests := make([]PackageManifest, 0, len(goModFiles))
 
 	for _, modPath := range goModFiles {
 		relPath, _ := filepath.Rel(repoPath, modPath)
-
-		manifest := PackageManifest{
-			Ecosystem:    EcosystemGo,
-			ManifestPath: relPath,
-			Metadata:     make(map[string]interface{}),
-		}
-
-		// Count require statements
-		manifest.DependencyCount = ps.countGoModDependencies(modPath)
-
-		// Check for go.sum
-		dir := filepath.Dir(modPath)
-		if ps.fileExists(filepath.Join(dir, "go.sum")) {
-			manifest.HasLockFile = true
-			manifest.Metadata["lock_file"] = "go.sum"
-		}
-
-		// Extract module name
-		if moduleName := ps.extractGoModuleName(modPath); moduleName != "" {
-			manifest.Metadata["module_name"] = moduleName
-		}
-
-		manifests = append(manifests, manifest)
+		extracted := ps.parseGoMod(modPath, relPath)
+		deps = append(deps, extracted...)
 	}
 
-	return manifests
+	return deps
 }
 
-// countGoModDependencies counts require statements in go.mod
-func (ps *PackageScanner) countGoModDependencies(modPath string) int {
+// parseGoMod parses a go.mod file and extracts GitHub dependencies
+func (ps *PackageScanner) parseGoMod(modPath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
 	// #nosec G304 -- modPath is validated via findFiles
 	file, err := os.Open(modPath)
 	if err != nil {
-		return 0
+		return deps
 	}
 	defer file.Close()
 
-	count := 0
 	inRequireBlock := false
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
+		// Track require block
 		if strings.HasPrefix(line, "require (") {
 			inRequireBlock = true
 			continue
@@ -285,709 +332,1064 @@ func (ps *PackageScanner) countGoModDependencies(modPath string) int {
 			inRequireBlock = false
 			continue
 		}
-		if inRequireBlock && line != "" && !strings.HasPrefix(line, "//") {
-			count++
-		}
-		if strings.HasPrefix(line, "require ") && !strings.HasPrefix(line, "require (") {
-			count++
+
+		// Parse require lines
+		dep := ps.parseGoModRequireLine(line, inRequireBlock, manifestPath)
+		if dep != nil {
+			deps = append(deps, *dep)
 		}
 	}
 
-	return count
+	return deps
 }
 
-// extractGoModuleName extracts the module name from go.mod
-func (ps *PackageScanner) extractGoModuleName(modPath string) string {
-	// #nosec G304 -- modPath is validated via findFiles
-	file, err := os.Open(modPath)
-	if err != nil {
-		return ""
+// parseGoModRequireLine parses a single line from go.mod and returns a dependency if it's from a tracked host
+func (ps *PackageScanner) parseGoModRequireLine(line string, inRequireBlock bool, manifestPath string) *ExtractedDependency {
+	modulePath, version := ps.extractGoModulePath(line, inRequireBlock)
+	if modulePath == "" {
+		return nil
 	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimPrefix(line, "module ")
-		}
+	// Check if this module is from any of the tracked hosts (GitHub/GitHub Enterprise)
+	if dep := ps.matchGoModuleToHost(modulePath, version, manifestPath); dep != nil {
+		return dep
 	}
-	return ""
+
+	// Check for Azure DevOps module paths
+	return ps.matchGoModuleToADO(modulePath, version, manifestPath)
 }
 
-// scanPython scans for Python dependency files
-func (ps *PackageScanner) scanPython(ctx context.Context, repoPath string) []PackageManifest {
-	// Pre-allocate with estimated capacity (will grow if needed)
-	manifests := make([]PackageManifest, 0, 4)
-
-	// requirements.txt
-	reqFiles := ps.findFiles(repoPath, "requirements.txt")
-	for _, reqPath := range reqFiles {
-		relPath, _ := filepath.Rel(repoPath, reqPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemPython,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countRequirementsTxtDeps(reqPath),
-			Metadata:        map[string]interface{}{"format": "requirements.txt"},
+// extractGoModulePath extracts module path and version from a go.mod line
+func (ps *PackageScanner) extractGoModulePath(line string, inRequireBlock bool) (modulePath, version string) {
+	if inRequireBlock && line != "" && !strings.HasPrefix(line, "//") {
+		// Format: module/path v1.2.3
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			return parts[0], parts[1]
 		}
-		manifests = append(manifests, manifest)
+	} else if strings.HasPrefix(line, "require ") && !strings.HasPrefix(line, "require (") {
+		// Single require: require module/path v1.2.3
+		parts := strings.Fields(line)
+		if len(parts) >= 3 {
+			return parts[1], parts[2]
+		}
 	}
-
-	// Also check for requirements*.txt variants
-	reqVariants := ps.findFilesWithPattern(repoPath, "requirements*.txt")
-	for _, reqPath := range reqVariants {
-		relPath, _ := filepath.Rel(repoPath, reqPath)
-		// Skip if already processed as requirements.txt
-		if filepath.Base(reqPath) == "requirements.txt" {
-			continue
-		}
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemPython,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countRequirementsTxtDeps(reqPath),
-			Metadata:        map[string]interface{}{"format": "requirements.txt"},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	// Pipfile
-	pipfiles := ps.findFiles(repoPath, "Pipfile")
-	for _, pipPath := range pipfiles {
-		relPath, _ := filepath.Rel(repoPath, pipPath)
-		dir := filepath.Dir(pipPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemPython,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countPipfileDeps(pipPath),
-			HasLockFile:     ps.fileExists(filepath.Join(dir, "Pipfile.lock")),
-			Metadata:        map[string]interface{}{"format": "pipenv"},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	// pyproject.toml (Poetry, PEP 517/518)
-	pyprojects := ps.findFiles(repoPath, "pyproject.toml")
-	for _, ppPath := range pyprojects {
-		relPath, _ := filepath.Rel(repoPath, ppPath)
-		dir := filepath.Dir(ppPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemPython,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countPyProjectDeps(ppPath),
-			HasLockFile:     ps.fileExists(filepath.Join(dir, "poetry.lock")),
-			Metadata:        map[string]interface{}{"format": "pyproject.toml"},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	// setup.py
-	setupPyFiles := ps.findFiles(repoPath, "setup.py")
-	for _, setupPath := range setupPyFiles {
-		relPath, _ := filepath.Rel(repoPath, setupPath)
-		manifest := PackageManifest{
-			Ecosystem:    EcosystemPython,
-			ManifestPath: relPath,
-			Metadata:     map[string]interface{}{"format": "setup.py"},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	return manifests
+	return "", ""
 }
 
-// countRequirementsTxtDeps counts dependencies in requirements.txt
-func (ps *PackageScanner) countRequirementsTxtDeps(reqPath string) int {
-	// #nosec G304 -- reqPath is validated via findFiles
-	file, err := os.Open(reqPath)
-	if err != nil {
-		return 0
-	}
-	defer file.Close()
-
-	count := 0
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		// Skip empty lines, comments, and -r includes
-		if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "-") {
-			count++
-		}
-	}
-	return count
-}
-
-// countPipfileDeps counts dependencies in a Pipfile (simplified)
-func (ps *PackageScanner) countPipfileDeps(pipPath string) int {
-	// #nosec G304 -- pipPath is validated via findFiles
-	content, err := os.ReadFile(pipPath)
-	if err != nil {
-		return 0
-	}
-
-	// Simple heuristic: count lines that look like package definitions
-	// This is a simplified parser - actual TOML parsing would be more accurate
-	count := 0
-	inPackages := false
-	lines := strings.Split(string(content), "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "[packages]" || line == "[dev-packages]" {
-			inPackages = true
-			continue
-		}
-		if strings.HasPrefix(line, "[") && inPackages {
-			inPackages = false
-			continue
-		}
-		if inPackages && line != "" && !strings.HasPrefix(line, "#") && strings.Contains(line, "=") {
-			count++
-		}
-	}
-	return count
-}
-
-// countPyProjectDeps counts dependencies in pyproject.toml (simplified)
-func (ps *PackageScanner) countPyProjectDeps(ppPath string) int {
-	// #nosec G304 -- ppPath is validated via findFiles
-	content, err := os.ReadFile(ppPath)
-	if err != nil {
-		return 0
-	}
-
-	// Simple heuristic: count lines in dependencies sections
-	count := 0
-	inDeps := false
-	lines := strings.Split(string(content), "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "dependencies") && strings.Contains(line, "[") {
-			inDeps = true
-			continue
-		}
-		if strings.HasPrefix(line, "[") && inDeps {
-			inDeps = false
-			continue
-		}
-		if inDeps && line != "" && !strings.HasPrefix(line, "#") {
-			// Check if it looks like a dependency line
-			if strings.Contains(line, "=") || strings.Contains(line, "\"") {
-				count++
+// matchGoModuleToHost checks if a module path matches any tracked GitHub host
+func (ps *PackageScanner) matchGoModuleToHost(modulePath, version, manifestPath string) *ExtractedDependency {
+	for _, host := range ps.additionalHosts {
+		prefix := host + "/"
+		if strings.HasPrefix(modulePath, prefix) {
+			parts := strings.Split(modulePath, "/")
+			if len(parts) >= 3 {
+				isLocal := ps.sourceHost != "" && host == ps.sourceHost
+				return &ExtractedDependency{
+					Name:         modulePath,
+					Version:      version,
+					Ecosystem:    EcosystemGo,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  parts[1],
+					GitHubRepo:   parts[2],
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				}
 			}
 		}
 	}
-	return count
+	return nil
 }
 
-// scanMaven scans for Maven pom.xml files
-func (ps *PackageScanner) scanMaven(ctx context.Context, repoPath string) []PackageManifest {
-	pomFiles := ps.findFiles(repoPath, "pom.xml")
-	manifests := make([]PackageManifest, 0, len(pomFiles))
-
-	for _, pomPath := range pomFiles {
-		relPath, _ := filepath.Rel(repoPath, pomPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemJava,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countMavenDependencies(pomPath),
-			Metadata:        map[string]interface{}{"build_tool": "maven"},
-		}
-		manifests = append(manifests, manifest)
+// matchGoModuleToADO checks if a module path matches Azure DevOps format
+func (ps *PackageScanner) matchGoModuleToADO(modulePath, version, manifestPath string) *ExtractedDependency {
+	// Format: dev.azure.com/{org}/{project}/_git/{repo}.git/...
+	if !strings.HasPrefix(modulePath, hostAzureDevOps+"/") {
+		return nil
 	}
 
-	return manifests
+	parts := strings.Split(modulePath, "/")
+	// dev.azure.com / org / project / _git / repo.git / subpath...
+	if len(parts) >= 5 && parts[3] == "_git" {
+		org := parts[1]
+		project := parts[2]
+		repo := strings.TrimSuffix(parts[4], ".git")
+		isLocal := ps.isADOSource && ps.sourceOrg == org
+
+		return &ExtractedDependency{
+			Name:         modulePath,
+			Version:      version,
+			Ecosystem:    EcosystemGo,
+			Manifest:     manifestPath,
+			IsGitHubRepo: true,
+			GitHubOwner:  org + "/" + project,
+			GitHubRepo:   repo,
+			IsLocal:      isLocal,
+			SourceHost:   hostAzureDevOps,
+		}
+	}
+	return nil
 }
 
-// countMavenDependencies counts dependencies in pom.xml (simplified)
-func (ps *PackageScanner) countMavenDependencies(pomPath string) int {
-	// #nosec G304 -- pomPath is validated via findFiles
-	content, err := os.ReadFile(pomPath)
-	if err != nil {
-		return 0
-	}
+// extractNpmGitHubDependencies extracts GitHub repository references from package.json
+// This includes: git+https://github.com/..., github:owner/repo, and owner/repo shorthand
+func (ps *PackageScanner) extractNpmGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	packageJSONFiles := ps.findFiles(repoPath, "package.json")
 
-	// Simple regex to count <dependency> blocks
-	re := regexp.MustCompile(`<dependency>`)
-	matches := re.FindAllString(string(content), -1)
-	return len(matches)
-}
-
-// scanGradle scans for Gradle build files
-func (ps *PackageScanner) scanGradle(ctx context.Context, repoPath string) []PackageManifest {
-	// build.gradle (Groovy DSL)
-	gradleFiles := ps.findFiles(repoPath, "build.gradle")
-	// build.gradle.kts (Kotlin DSL)
-	ktsFiles := ps.findFiles(repoPath, "build.gradle.kts")
-
-	// Pre-allocate with combined capacity
-	manifests := make([]PackageManifest, 0, len(gradleFiles)+len(ktsFiles))
-
-	for _, gradlePath := range gradleFiles {
-		relPath, _ := filepath.Rel(repoPath, gradlePath)
-		dir := filepath.Dir(gradlePath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemGradle,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countGradleDependencies(gradlePath),
-			HasLockFile:     ps.fileExists(filepath.Join(dir, "gradle.lockfile")),
-			Metadata:        map[string]interface{}{"dsl": "groovy"},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	for _, ktsPath := range ktsFiles {
-		relPath, _ := filepath.Rel(repoPath, ktsPath)
-		dir := filepath.Dir(ktsPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemGradle,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countGradleDependencies(ktsPath),
-			HasLockFile:     ps.fileExists(filepath.Join(dir, "gradle.lockfile")),
-			Metadata:        map[string]interface{}{"dsl": "kotlin"},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	return manifests
-}
-
-// countGradleDependencies counts dependencies in Gradle files (simplified)
-func (ps *PackageScanner) countGradleDependencies(gradlePath string) int {
-	// #nosec G304 -- gradlePath is validated via findFiles
-	content, err := os.ReadFile(gradlePath)
-	if err != nil {
-		return 0
-	}
-
-	// Count implementation, api, compileOnly, testImplementation, etc.
-	re := regexp.MustCompile(`(?m)^\s*(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)\s*[\("]`)
-	matches := re.FindAllString(string(content), -1)
-	return len(matches)
-}
-
-// scanDotNet scans for .NET project files
-func (ps *PackageScanner) scanDotNet(ctx context.Context, repoPath string) []PackageManifest {
-	// .csproj files
-	csprojFiles := ps.findFilesWithPattern(repoPath, "*.csproj")
-	// .fsproj files
-	fsprojFiles := ps.findFilesWithPattern(repoPath, "*.fsproj")
-	// packages.config (legacy NuGet)
-	pkgConfigFiles := ps.findFiles(repoPath, "packages.config")
-
-	// Pre-allocate with combined capacity
-	manifests := make([]PackageManifest, 0, len(csprojFiles)+len(fsprojFiles)+len(pkgConfigFiles))
-
-	for _, csprojPath := range csprojFiles {
-		relPath, _ := filepath.Rel(repoPath, csprojPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemDotNet,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countDotNetPackageRefs(csprojPath),
-			Metadata:        map[string]interface{}{"project_type": "csharp"},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	for _, fsprojPath := range fsprojFiles {
-		relPath, _ := filepath.Rel(repoPath, fsprojPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemDotNet,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countDotNetPackageRefs(fsprojPath),
-			Metadata:        map[string]interface{}{"project_type": "fsharp"},
-		}
-		manifests = append(manifests, manifest)
-	}
-	for _, pkgPath := range pkgConfigFiles {
+	for _, pkgPath := range packageJSONFiles {
 		relPath, _ := filepath.Rel(repoPath, pkgPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemDotNet,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countPackagesConfig(pkgPath),
-			Metadata:        map[string]interface{}{"format": "packages.config"},
-		}
-		manifests = append(manifests, manifest)
+		extracted := ps.parsePackageJSON(pkgPath, relPath)
+		deps = append(deps, extracted...)
 	}
 
-	return manifests
+	return deps
 }
 
-// countDotNetPackageRefs counts PackageReference elements in project files
-func (ps *PackageScanner) countDotNetPackageRefs(projPath string) int {
-	// #nosec G304 -- projPath is validated via findFiles
-	content, err := os.ReadFile(projPath)
-	if err != nil {
-		return 0
-	}
+// parsePackageJSON parses package.json and extracts GitHub dependencies
+func (ps *PackageScanner) parsePackageJSON(pkgPath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
 
-	re := regexp.MustCompile(`<PackageReference`)
-	matches := re.FindAllString(string(content), -1)
-	return len(matches)
-}
-
-// countPackagesConfig counts package elements in packages.config
-func (ps *PackageScanner) countPackagesConfig(pkgPath string) int {
 	// #nosec G304 -- pkgPath is validated via findFiles
 	content, err := os.ReadFile(pkgPath)
 	if err != nil {
-		return 0
+		return deps
 	}
 
-	re := regexp.MustCompile(`<package\s+`)
-	matches := re.FindAllString(string(content), -1)
-	return len(matches)
-}
+	var pkg struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
 
-// scanSimpleEcosystem is a helper for ecosystems with a simple manifest + lock file pattern
-func (ps *PackageScanner) scanSimpleEcosystem(
-	repoPath string,
-	ecosystem PackageEcosystem,
-	manifestFile string,
-	lockFile string,
-	countFunc func(string) int,
-) []PackageManifest {
-	files := ps.findFiles(repoPath, manifestFile)
-	manifests := make([]PackageManifest, 0, len(files))
+	if err := json.Unmarshal(content, &pkg); err != nil {
+		return deps
+	}
 
-	for _, filePath := range files {
-		relPath, _ := filepath.Rel(repoPath, filePath)
-		dir := filepath.Dir(filePath)
-		manifest := PackageManifest{
-			Ecosystem:       ecosystem,
-			ManifestPath:    relPath,
-			DependencyCount: countFunc(filePath),
-			HasLockFile:     ps.fileExists(filepath.Join(dir, lockFile)),
-			Metadata:        make(map[string]interface{}),
+	// Check all dependencies for GitHub references
+	allDeps := make(map[string]string)
+	for k, v := range pkg.Dependencies {
+		allDeps[k] = v
+	}
+	for k, v := range pkg.DevDependencies {
+		allDeps[k] = v
+	}
+
+	for name, version := range allDeps {
+		owner, repo, host, isLocal := ps.extractGitHubFromNpmVersion(version)
+		if owner != "" && repo != "" {
+			deps = append(deps, ExtractedDependency{
+				Name:         name,
+				Version:      version,
+				Ecosystem:    EcosystemNodeJS,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  owner,
+				GitHubRepo:   repo,
+				IsLocal:      isLocal,
+				SourceHost:   host,
+			})
 		}
-		manifests = append(manifests, manifest)
 	}
 
-	return manifests
+	return deps
 }
 
-// scanRuby scans for Ruby Gemfile
-func (ps *PackageScanner) scanRuby(ctx context.Context, repoPath string) []PackageManifest {
-	return ps.scanSimpleEcosystem(repoPath, EcosystemRuby, "Gemfile", "Gemfile.lock", ps.countGemfileDeps)
+// extractGitHubFromNpmVersion extracts GitHub owner/repo and host from npm version strings
+// Supports: github:owner/repo, git+https://github.com/owner/repo, git+https://host/owner/repo, owner/repo
+func (ps *PackageScanner) extractGitHubFromNpmVersion(version string) (owner, repo, host string, isLocal bool) {
+	// Pattern: github:owner/repo or github:owner/repo#tag
+	if owner, repo := ps.extractNpmGitHubShorthand(version); owner != "" {
+		return owner, repo, hostGitHubCom, false
+	}
+
+	// Check for git+https:// or https:// patterns with any tracked host
+	if owner, repo, host, isLocal := ps.extractNpmGitURL(version); owner != "" {
+		return owner, repo, host, isLocal
+	}
+
+	// Pattern: owner/repo (shorthand) - assume github.com for shorthand
+	if owner, repo := ps.extractNpmOwnerRepoShorthand(version); owner != "" {
+		return owner, repo, hostGitHubCom, false
+	}
+
+	return "", "", "", false
 }
 
-// countGemfileDeps counts gem dependencies in Gemfile
-func (ps *PackageScanner) countGemfileDeps(gemPath string) int {
-	// #nosec G304 -- gemPath is validated via findFiles
-	content, err := os.ReadFile(gemPath)
+// extractNpmGitHubShorthand extracts owner/repo from github: shorthand
+func (ps *PackageScanner) extractNpmGitHubShorthand(version string) (owner, repo string) {
+	if !strings.HasPrefix(version, "github:") {
+		return "", ""
+	}
+	ref := strings.TrimPrefix(version, "github:")
+	ref = strings.Split(ref, "#")[0] // Remove tag/branch
+	parts := strings.Split(ref, "/")
+	if len(parts) >= 2 {
+		return parts[0], parts[1]
+	}
+	return "", ""
+}
+
+// extractNpmGitURL extracts owner/repo from git+https:// or https:// URLs
+func (ps *PackageScanner) extractNpmGitURL(version string) (owner, repo, host string, isLocal bool) {
+	for _, h := range ps.additionalHosts {
+		escapedHost := regexp.QuoteMeta(h)
+
+		// Pattern: git+https://host/owner/repo.git
+		// Note: Allow dots in repo names (e.g., my-lib.backup), trim .git suffix separately
+		gitPattern := regexp.MustCompile(`git\+https://` + escapedHost + `/([^/]+)/([^/?#]+)`)
+		if matches := gitPattern.FindStringSubmatch(version); len(matches) == 3 {
+			isLocalDep := ps.sourceHost != "" && h == ps.sourceHost
+			return matches[1], strings.TrimSuffix(matches[2], ".git"), h, isLocalDep
+		}
+
+		// Pattern: https://host/owner/repo
+		// Note: Allow dots in repo names (e.g., my-lib.backup)
+		httpsPattern := regexp.MustCompile(`https://` + escapedHost + `/([^/]+)/([^/?#]+)`)
+		if matches := httpsPattern.FindStringSubmatch(version); len(matches) == 3 {
+			isLocalDep := ps.sourceHost != "" && h == ps.sourceHost
+			return matches[1], strings.TrimSuffix(matches[2], ".git"), h, isLocalDep
+		}
+	}
+	return "", "", "", false
+}
+
+// extractNpmOwnerRepoShorthand extracts owner/repo from shorthand format
+func (ps *PackageScanner) extractNpmOwnerRepoShorthand(version string) (owner, repo string) {
+	// Must have exactly one slash, no colons, and not start with version prefixes
+	if strings.Count(version, "/") != 1 || strings.Contains(version, ":") {
+		return "", ""
+	}
+	if strings.HasPrefix(version, "^") || strings.HasPrefix(version, "~") {
+		return "", ""
+	}
+
+	parts := strings.Split(version, "/")
+	// Validate it looks like owner/repo (not a scoped package like @scope/pkg)
+	if len(parts) != 2 || strings.HasPrefix(parts[0], "@") || len(parts[0]) == 0 || len(parts[1]) == 0 {
+		return "", ""
+	}
+
+	// Additional check: version shouldn't start with numbers (semver)
+	if regexp.MustCompile(`^\d`).MatchString(version) {
+		return "", ""
+	}
+
+	return parts[0], strings.Split(parts[1], "#")[0]
+}
+
+// extractPythonGitHubDependencies extracts GitHub references from Python dependency files
+func (ps *PackageScanner) extractPythonGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// Check requirements.txt files
+	reqFiles := ps.findFiles(repoPath, "requirements.txt")
+	for _, reqPath := range reqFiles {
+		relPath, _ := filepath.Rel(repoPath, reqPath)
+		extracted := ps.parseRequirementsTxt(reqPath, relPath)
+		deps = append(deps, extracted...)
+	}
+
+	// Check requirements*.txt variants
+	reqVariants := ps.findFilesWithPattern(repoPath, "requirements*.txt")
+	for _, reqPath := range reqVariants {
+		if filepath.Base(reqPath) == "requirements.txt" {
+			continue // Already processed
+		}
+		relPath, _ := filepath.Rel(repoPath, reqPath)
+		extracted := ps.parseRequirementsTxt(reqPath, relPath)
+		deps = append(deps, extracted...)
+	}
+
+	return deps
+}
+
+// parseRequirementsTxt parses requirements.txt and extracts GitHub dependencies
+func (ps *PackageScanner) parseRequirementsTxt(reqPath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// #nosec G304 -- reqPath is validated via findFiles
+	file, err := os.Open(reqPath)
 	if err != nil {
-		return 0
+		return deps
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if dep := ps.parsePythonRequirementLine(line, manifestPath); dep != nil {
+			deps = append(deps, *dep)
+		}
 	}
 
-	re := regexp.MustCompile(`(?m)^\s*gem\s+['"]`)
-	matches := re.FindAllString(string(content), -1)
-	return len(matches)
+	return deps
 }
 
-// scanRust scans for Rust Cargo files
-func (ps *PackageScanner) scanRust(ctx context.Context, repoPath string) []PackageManifest {
-	return ps.scanSimpleEcosystem(repoPath, EcosystemRust, "Cargo.toml", "Cargo.lock", ps.countCargoDeps)
+// parsePythonRequirementLine parses a single line from requirements.txt
+func (ps *PackageScanner) parsePythonRequirementLine(line, manifestPath string) *ExtractedDependency {
+	// Pattern for GitHub references: git+https://github.com/owner/repo.git@tag
+	// Note: Allow dots in repo names (e.g., my-lib.backup), handle .git suffix via TrimSuffix
+	gitPattern := regexp.MustCompile(`git\+(?:https|ssh)://(?:git@)?github\.com/([^/]+)/([^/@#]+)`)
+	if matches := gitPattern.FindStringSubmatch(line); len(matches) == 3 {
+		repoName := strings.TrimSuffix(matches[2], ".git")
+		return &ExtractedDependency{
+			Name:         extractPythonPkgName(line, repoName),
+			Version:      line,
+			Ecosystem:    EcosystemPython,
+			Manifest:     manifestPath,
+			IsGitHubRepo: true,
+			GitHubOwner:  matches[1],
+			GitHubRepo:   repoName,
+			IsLocal:      false,
+			SourceHost:   hostGitHubCom,
+		}
+	}
+
+	// Check for Azure DevOps URLs
+	if isADOURL(line) {
+		org, project, repo, host, isLocal := ps.extractADOReference(line)
+		if org != "" && repo != "" {
+			return &ExtractedDependency{
+				Name:         extractPythonPkgName(line, repo),
+				Version:      line,
+				Ecosystem:    EcosystemPython,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  org + "/" + project,
+				GitHubRepo:   repo,
+				IsLocal:      isLocal,
+				SourceHost:   host,
+			}
+		}
+	}
+
+	// Check for tracked hosts (including source host for local dependencies)
+	return ps.parsePythonEnterpriseHost(line, manifestPath)
 }
 
-// countCargoDeps counts dependencies in Cargo.toml
-func (ps *PackageScanner) countCargoDeps(cargoPath string) int {
+// parsePythonEnterpriseHost checks for GitHub Enterprise hosts in requirements
+func (ps *PackageScanner) parsePythonEnterpriseHost(line, manifestPath string) *ExtractedDependency {
+	for _, host := range ps.additionalHosts {
+		if host == hostGitHubCom {
+			continue // Already checked
+		}
+		escapedHost := regexp.QuoteMeta(host)
+		// Note: Allow dots in repo names (e.g., my-lib.backup)
+		hostPattern := regexp.MustCompile(`git\+(?:https|ssh)://(?:git@)?` + escapedHost + `/([^/]+)/([^/@#]+)`)
+		if matches := hostPattern.FindStringSubmatch(line); len(matches) == 3 {
+			isLocal := ps.sourceHost != "" && host == ps.sourceHost
+			repoName := strings.TrimSuffix(matches[2], ".git")
+			return &ExtractedDependency{
+				Name:         extractPythonPkgName(line, repoName),
+				Version:      line,
+				Ecosystem:    EcosystemPython,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  matches[1],
+				GitHubRepo:   repoName,
+				IsLocal:      isLocal,
+				SourceHost:   host,
+			}
+		}
+	}
+	return nil
+}
+
+// extractPythonPkgName extracts package name from #egg= or uses fallback
+func extractPythonPkgName(line, fallback string) string {
+	if idx := strings.Index(line, "#egg="); idx != -1 {
+		pkgName := line[idx+5:]
+		return strings.Split(pkgName, "&")[0]
+	}
+	return fallback
+}
+
+// extractRubyGitHubDependencies extracts GitHub references from Gemfiles
+func (ps *PackageScanner) extractRubyGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// Check Gemfile
+	gemfiles := ps.findFiles(repoPath, "Gemfile")
+	for _, gemPath := range gemfiles {
+		relPath, _ := filepath.Rel(repoPath, gemPath)
+		extracted := ps.parseGemfile(gemPath, relPath)
+		deps = append(deps, extracted...)
+	}
+
+	return deps
+}
+
+// parseGemfile parses a Gemfile and extracts GitHub dependencies
+// Supports:
+//   - gem 'name', github: 'owner/repo'
+//   - gem 'name', git: 'https://github.com/owner/repo.git'
+//   - gem 'name', git: 'git@github.com:owner/repo.git'
+//   - gem 'name', git: 'https://github.example.com/owner/repo.git' (local)
+func (ps *PackageScanner) parseGemfile(gemPath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// #nosec G304 -- gemPath is validated via findFiles
+	file, err := os.Open(gemPath)
+	if err != nil {
+		return deps
+	}
+	defer file.Close()
+
+	// Pattern for gem name extraction
+	gemNamePattern := regexp.MustCompile(`gem\s+['"]([^'"]+)['"]`)
+
+	// Pattern for github: shorthand - gem 'name', github: 'owner/repo'
+	githubShortPattern := regexp.MustCompile(`github:\s*['"]([^/'"]+)/([^'"]+)['"]`)
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Extract gem name
+		gemNameMatch := gemNamePattern.FindStringSubmatch(line)
+		if len(gemNameMatch) < 2 {
+			continue
+		}
+		gemName := gemNameMatch[1]
+
+		// Check for github: shorthand (always github.com)
+		if matches := githubShortPattern.FindStringSubmatch(line); len(matches) == 3 {
+			deps = append(deps, ExtractedDependency{
+				Name:         gemName,
+				Version:      line,
+				Ecosystem:    EcosystemRuby,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  matches[1],
+				GitHubRepo:   matches[2],
+				IsLocal:      false,
+				SourceHost:   hostGitHubCom,
+			})
+			continue
+		}
+
+		// Check for Azure DevOps URLs
+		if isADOURL(line) {
+			org, project, repo, host, isLocal := ps.extractADOReference(line)
+			if org != "" && repo != "" {
+				deps = append(deps, ExtractedDependency{
+					Name:         gemName,
+					Version:      line,
+					Ecosystem:    EcosystemRuby,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  org + "/" + project,
+					GitHubRepo:   repo,
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+				continue
+			}
+		}
+
+		// Check for git: with tracked hosts
+		for _, host := range ps.additionalHosts {
+			escapedHost := regexp.QuoteMeta(host)
+
+			// Pattern: git: 'https://host/owner/repo.git'
+			httpsPattern := regexp.MustCompile(`git:\s*['"]https://` + escapedHost + `/([^/]+)/([^/'".]+)`)
+			if matches := httpsPattern.FindStringSubmatch(line); len(matches) == 3 {
+				isLocal := ps.sourceHost != "" && host == ps.sourceHost
+				deps = append(deps, ExtractedDependency{
+					Name:         gemName,
+					Version:      line,
+					Ecosystem:    EcosystemRuby,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  matches[1],
+					GitHubRepo:   strings.TrimSuffix(matches[2], ".git"),
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+				break
+			}
+
+			// Pattern: git: 'git@host:owner/repo.git'
+			sshPattern := regexp.MustCompile(`git:\s*['"]git@` + escapedHost + `:([^/]+)/([^/'".]+)`)
+			if matches := sshPattern.FindStringSubmatch(line); len(matches) == 3 {
+				isLocal := ps.sourceHost != "" && host == ps.sourceHost
+				deps = append(deps, ExtractedDependency{
+					Name:         gemName,
+					Version:      line,
+					Ecosystem:    EcosystemRuby,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  matches[1],
+					GitHubRepo:   strings.TrimSuffix(matches[2], ".git"),
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+				break
+			}
+		}
+	}
+
+	return deps
+}
+
+// extractTerraformGitHubDependencies extracts GitHub references from Terraform module sources
+func (ps *PackageScanner) extractTerraformGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// Find all .tf files
+	tfFiles := ps.findFilesWithPattern(repoPath, "*.tf")
+	for _, tfPath := range tfFiles {
+		relPath, _ := filepath.Rel(repoPath, tfPath)
+		extracted := ps.parseTerraformFile(tfPath, relPath)
+		deps = append(deps, extracted...)
+	}
+
+	return deps
+}
+
+// parseTerraformFile parses a .tf file and extracts GitHub module sources
+// Supports:
+//   - module "name" { source = "github.com/owner/repo" }
+//   - module "name" { source = "github.com/owner/repo//subdir" }
+//   - module "name" { source = "git::https://github.com/owner/repo.git" }
+//   - module "name" { source = "git::https://github.example.com/org/repo.git" }
+//   - module "name" { source = "git@github.com:owner/repo.git" }
+func (ps *PackageScanner) parseTerraformFile(tfPath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// #nosec G304 -- tfPath is validated via findFilesWithPattern
+	content, err := os.ReadFile(tfPath)
+	if err != nil {
+		return deps
+	}
+
+	// Pattern to match module blocks and extract source
+	// module "name" {
+	//   source = "..."
+	// }
+	modulePattern := regexp.MustCompile(`module\s+"[^"]+"\s*\{[^}]*source\s*=\s*"([^"]+)"`)
+	matches := modulePattern.FindAllStringSubmatch(string(content), -1)
+
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		source := match[1]
+
+		// Skip local paths
+		if strings.HasPrefix(source, "./") || strings.HasPrefix(source, "../") || strings.HasPrefix(source, "/") {
+			continue
+		}
+
+		// Skip Terraform Registry modules (format: namespace/name/provider)
+		if ps.isTerraformRegistryModule(source) {
+			continue
+		}
+
+		// Check for Azure DevOps URLs first
+		if isADOURL(source) {
+			org, project, repo, host, isLocal := ps.extractADOReference(source)
+			if org != "" && repo != "" {
+				deps = append(deps, ExtractedDependency{
+					Name:         source,
+					Version:      source,
+					Ecosystem:    EcosystemTerraform,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  org + "/" + project,
+					GitHubRepo:   repo,
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+				continue
+			}
+		}
+
+		// Try to extract GitHub reference
+		owner, repo, host, isLocal := ps.extractGitHubFromTerraformSource(source)
+		if owner != "" && repo != "" {
+			deps = append(deps, ExtractedDependency{
+				Name:         source,
+				Version:      source,
+				Ecosystem:    EcosystemTerraform,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  owner,
+				GitHubRepo:   repo,
+				IsLocal:      isLocal,
+				SourceHost:   host,
+			})
+		}
+	}
+
+	return deps
+}
+
+// isTerraformRegistryModule checks if a source string is a Terraform Registry module
+// Registry modules have format: namespace/name/provider (e.g., hashicorp/consul/aws)
+func (ps *PackageScanner) isTerraformRegistryModule(source string) bool {
+	// Skip if it contains git:: prefix or URL schemes
+	if strings.HasPrefix(source, "git::") || strings.Contains(source, "://") {
+		return false
+	}
+
+	// Registry modules have exactly 2 slashes: namespace/name/provider
+	parts := strings.Split(source, "/")
+
+	// If it has exactly 3 parts and no dots in the first part, it's likely a registry module
+	if len(parts) == 3 && !strings.Contains(parts[0], ".") {
+		return true
+	}
+
+	return false
+}
+
+// extractGitHubFromTerraformSource extracts GitHub owner/repo from Terraform module source strings
+// Supports:
+//   - github.com/owner/repo
+//   - github.com/owner/repo//subdir
+//   - git::https://github.com/owner/repo.git
+//   - git::https://github.com/owner/repo.git//subdir
+//   - git::https://github.com/owner/repo.git?ref=v1.0.0
+//   - git@github.com:owner/repo.git
+func (ps *PackageScanner) extractGitHubFromTerraformSource(source string) (owner, repo, host string, isLocal bool) {
+	// Remove git:: prefix if present
+	cleanSource := strings.TrimPrefix(source, "git::")
+
+	// Check for each tracked host
+	for _, h := range ps.additionalHosts {
+		escapedHost := regexp.QuoteMeta(h)
+
+		// Pattern: host/owner/repo or host/owner/repo//subdir or host/owner/repo?ref=xxx
+		directPattern := regexp.MustCompile(`^` + escapedHost + `/([^/]+)/([^/?#]+)`)
+		if matches := directPattern.FindStringSubmatch(cleanSource); len(matches) == 3 {
+			isLocalDep := ps.sourceHost != "" && h == ps.sourceHost
+			return matches[1], strings.TrimSuffix(matches[2], ".git"), h, isLocalDep
+		}
+
+		// Pattern: https://host/owner/repo.git or https://host/owner/repo
+		httpsPattern := regexp.MustCompile(`https://` + escapedHost + `/([^/]+)/([^/?#]+)`)
+		if matches := httpsPattern.FindStringSubmatch(cleanSource); len(matches) == 3 {
+			isLocalDep := ps.sourceHost != "" && h == ps.sourceHost
+			return matches[1], strings.TrimSuffix(matches[2], ".git"), h, isLocalDep
+		}
+
+		// Pattern: git@host:owner/repo.git
+		sshPattern := regexp.MustCompile(`git@` + escapedHost + `:([^/]+)/([^/?#]+)`)
+		if matches := sshPattern.FindStringSubmatch(cleanSource); len(matches) == 3 {
+			isLocalDep := ps.sourceHost != "" && h == ps.sourceHost
+			return matches[1], strings.TrimSuffix(matches[2], ".git"), h, isLocalDep
+		}
+	}
+
+	return "", "", "", false
+}
+
+// extractADOReference extracts Azure DevOps repository reference from a git URL
+// Returns org, project, repo, host, isLocal
+// Supports:
+//   - https://dev.azure.com/{org}/{project}/_git/{repo}
+//   - https://{org}.visualstudio.com/{project}/_git/{repo}
+//   - git@ssh.dev.azure.com:v3/{org}/{project}/{repo}
+func (ps *PackageScanner) extractADOReference(gitURL string) (org, project, repo, host string, isLocal bool) {
+	// Pattern for dev.azure.com URLs
+	// https://dev.azure.com/{org}/{project}/_git/{repo}
+	adoHTTPSPattern := regexp.MustCompile(`https://dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/?#]+)`)
+	if matches := adoHTTPSPattern.FindStringSubmatch(gitURL); len(matches) == 4 {
+		org, project, repo = matches[1], matches[2], strings.TrimSuffix(matches[3], ".git")
+		isLocal = ps.isADOSource && ps.sourceOrg == org
+		return org, project, repo, hostAzureDevOps, isLocal
+	}
+
+	// Pattern for visualstudio.com URLs
+	// https://{org}.visualstudio.com/{project}/_git/{repo}
+	vsPattern := regexp.MustCompile(`https://([^.]+)\.visualstudio\.com/([^/]+)/_git/([^/?#]+)`)
+	if matches := vsPattern.FindStringSubmatch(gitURL); len(matches) == 4 {
+		org, project, repo = matches[1], matches[2], strings.TrimSuffix(matches[3], ".git")
+		isLocal = ps.isADOSource && ps.sourceOrg == org
+		return org, project, repo, org + suffixVisualStudio, isLocal
+	}
+
+	// Pattern for SSH URLs
+	// git@ssh.dev.azure.com:v3/{org}/{project}/{repo}
+	adoSSHPattern := regexp.MustCompile(`git@ssh\.dev\.azure\.com:v3/([^/]+)/([^/]+)/([^/?#]+)`)
+	if matches := adoSSHPattern.FindStringSubmatch(gitURL); len(matches) == 4 {
+		org, project, repo = matches[1], matches[2], strings.TrimSuffix(matches[3], ".git")
+		isLocal = ps.isADOSource && ps.sourceOrg == org
+		return org, project, repo, hostAzureDevSSH, isLocal
+	}
+
+	return "", "", "", "", false
+}
+
+// isADOURL checks if a URL is an Azure DevOps URL
+func isADOURL(gitURL string) bool {
+	return strings.Contains(gitURL, "dev.azure.com") ||
+		strings.Contains(gitURL, ".visualstudio.com") ||
+		strings.Contains(gitURL, "ssh.dev.azure.com")
+}
+
+// extractRustGitHubDependencies extracts GitHub references from Cargo.toml
+func (ps *PackageScanner) extractRustGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	cargoFiles := ps.findFiles(repoPath, "Cargo.toml")
+	for _, cargoPath := range cargoFiles {
+		relPath, _ := filepath.Rel(repoPath, cargoPath)
+		extracted := ps.parseCargoToml(cargoPath, relPath)
+		deps = append(deps, extracted...)
+	}
+
+	return deps
+}
+
+// parseCargoToml parses Cargo.toml and extracts GitHub/ADO dependencies
+// Supports:
+//   - dep = { git = "https://github.com/owner/repo" }
+//   - dep = { git = "https://github.com/owner/repo", branch = "main" }
+//   - dep = { git = "git@github.com:owner/repo.git" }
+//   - dep = { git = "https://dev.azure.com/org/project/_git/repo" }
+func (ps *PackageScanner) parseCargoToml(cargoPath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
 	// #nosec G304 -- cargoPath is validated via findFiles
 	content, err := os.ReadFile(cargoPath)
 	if err != nil {
-		return 0
+		return deps
 	}
 
-	// Count lines in [dependencies], [dev-dependencies], [build-dependencies]
-	count := 0
-	inDeps := false
-	lines := strings.Split(string(content), "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "[dependencies]" || line == "[dev-dependencies]" || line == "[build-dependencies]" {
-			inDeps = true
+	// Extract all git URLs from Cargo.toml
+	gitURLPattern := regexp.MustCompile(`git\s*=\s*"([^"]+)"`)
+	matches := gitURLPattern.FindAllStringSubmatch(string(content), -1)
+	for _, match := range matches {
+		if len(match) < 2 {
 			continue
 		}
-		if strings.HasPrefix(line, "[") && inDeps {
-			inDeps = false
+		gitURL := match[1]
+
+		// Check for ADO URL first
+		if isADOURL(gitURL) {
+			org, project, repo, host, isLocal := ps.extractADOReference(gitURL)
+			if org != "" && repo != "" {
+				deps = append(deps, ExtractedDependency{
+					Name:         org + "/" + project + "/" + repo,
+					Version:      match[0],
+					Ecosystem:    EcosystemRust,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  org + "/" + project, // ADO uses org/project as "owner"
+					GitHubRepo:   repo,
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+			}
 			continue
 		}
-		if inDeps && line != "" && !strings.HasPrefix(line, "#") && strings.Contains(line, "=") {
-			count++
-		}
-	}
-	return count
-}
 
-// scanPHP scans for PHP Composer files
-func (ps *PackageScanner) scanPHP(ctx context.Context, repoPath string) []PackageManifest {
-	composerFiles := ps.findFiles(repoPath, "composer.json")
-	manifests := make([]PackageManifest, 0, len(composerFiles))
+		// Check for GitHub-style URLs
+		for _, host := range ps.additionalHosts {
+			escapedHost := regexp.QuoteMeta(host)
 
-	for _, compPath := range composerFiles {
-		relPath, _ := filepath.Rel(repoPath, compPath)
-		dir := filepath.Dir(compPath)
-
-		deps, devDeps := ps.countComposerDeps(compPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemPHP,
-			ManifestPath:    relPath,
-			DependencyCount: deps + devDeps,
-			HasLockFile:     ps.fileExists(filepath.Join(dir, "composer.lock")),
-			Metadata: map[string]interface{}{
-				"dev_dependencies": devDeps,
-			},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	return manifests
-}
-
-// countComposerDeps counts dependencies in composer.json
-func (ps *PackageScanner) countComposerDeps(compPath string) (deps int, devDeps int) {
-	// #nosec G304 -- compPath is validated via findFiles
-	content, err := os.ReadFile(compPath)
-	if err != nil {
-		return 0, 0
-	}
-
-	var composer struct {
-		Require    map[string]string `json:"require"`
-		RequireDev map[string]string `json:"require-dev"`
-	}
-
-	if err := json.Unmarshal(content, &composer); err != nil {
-		return 0, 0
-	}
-
-	return len(composer.Require), len(composer.RequireDev)
-}
-
-// scanTerraform scans for Terraform files
-func (ps *PackageScanner) scanTerraform(ctx context.Context, repoPath string) []PackageManifest {
-	// Find directories with .tf files
-	tfDirs := make(map[string]bool)
-	tfFiles := ps.findFilesWithPattern(repoPath, "*.tf")
-
-	// Pre-allocate with estimated capacity
-	manifests := make([]PackageManifest, 0, len(tfFiles))
-
-	for _, tfPath := range tfFiles {
-		dir := filepath.Dir(tfPath)
-		if !tfDirs[dir] {
-			tfDirs[dir] = true
-
-			relDir, _ := filepath.Rel(repoPath, dir)
-			if relDir == "." {
-				relDir = ""
+			// Pattern: https://host/owner/repo or https://host/owner/repo.git
+			httpsPattern := regexp.MustCompile(`https://` + escapedHost + `/([^/]+)/([^/?#]+)`)
+			if httpsMatches := httpsPattern.FindStringSubmatch(gitURL); len(httpsMatches) == 3 {
+				isLocal := ps.sourceHost != "" && host == ps.sourceHost
+				deps = append(deps, ExtractedDependency{
+					Name:         httpsMatches[1] + "/" + strings.TrimSuffix(httpsMatches[2], ".git"),
+					Version:      match[0],
+					Ecosystem:    EcosystemRust,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  httpsMatches[1],
+					GitHubRepo:   strings.TrimSuffix(httpsMatches[2], ".git"),
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+				break
 			}
 
-			providerCount := ps.countTerraformProviders(dir)
-			moduleCount := ps.countTerraformModules(dir)
-
-			manifest := PackageManifest{
-				Ecosystem:       EcosystemTerraform,
-				ManifestPath:    filepath.Join(relDir, "*.tf"),
-				HasLockFile:     ps.fileExists(filepath.Join(dir, ".terraform.lock.hcl")),
-				DependencyCount: providerCount + moduleCount,
-				Metadata: map[string]interface{}{
-					"providers": providerCount,
-					"modules":   moduleCount,
-				},
+			// Pattern: git@host:owner/repo.git
+			sshPattern := regexp.MustCompile(`git@` + escapedHost + `:([^/]+)/([^/?#]+)`)
+			if sshMatches := sshPattern.FindStringSubmatch(gitURL); len(sshMatches) == 3 {
+				isLocal := ps.sourceHost != "" && host == ps.sourceHost
+				deps = append(deps, ExtractedDependency{
+					Name:         sshMatches[1] + "/" + strings.TrimSuffix(sshMatches[2], ".git"),
+					Version:      match[0],
+					Ecosystem:    EcosystemRust,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  sshMatches[1],
+					GitHubRepo:   strings.TrimSuffix(sshMatches[2], ".git"),
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+				break
 			}
-
-			manifests = append(manifests, manifest)
 		}
 	}
 
-	return manifests
+	return deps
 }
 
-// countTerraformProviders counts provider blocks in .tf files
-func (ps *PackageScanner) countTerraformProviders(dir string) int {
-	count := 0
-	// #nosec G304 -- dir is validated via findFiles
-	files, _ := filepath.Glob(filepath.Join(dir, "*.tf"))
+// extractHelmGitHubDependencies extracts GitHub/ADO references from Helm Chart.yaml
+func (ps *PackageScanner) extractHelmGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
 
-	for _, file := range files {
-		// #nosec G304 -- file is from validated directory
-		content, err := os.ReadFile(file)
-		if err != nil {
-			continue
-		}
-		re := regexp.MustCompile(`(?m)^\s*provider\s+"`)
-		matches := re.FindAllString(string(content), -1)
-		count += len(matches)
-	}
-	return count
-}
-
-// countTerraformModules counts module blocks in .tf files
-func (ps *PackageScanner) countTerraformModules(dir string) int {
-	count := 0
-	// #nosec G304 -- dir is validated via findFiles
-	files, _ := filepath.Glob(filepath.Join(dir, "*.tf"))
-
-	for _, file := range files {
-		// #nosec G304 -- file is from validated directory
-		content, err := os.ReadFile(file)
-		if err != nil {
-			continue
-		}
-		re := regexp.MustCompile(`(?m)^\s*module\s+"`)
-		matches := re.FindAllString(string(content), -1)
-		count += len(matches)
-	}
-	return count
-}
-
-// scanHelm scans for Helm charts
-func (ps *PackageScanner) scanHelm(ctx context.Context, repoPath string) []PackageManifest {
 	chartFiles := ps.findFiles(repoPath, "Chart.yaml")
-	manifests := make([]PackageManifest, 0, len(chartFiles))
-
 	for _, chartPath := range chartFiles {
 		relPath, _ := filepath.Rel(repoPath, chartPath)
-		dir := filepath.Dir(chartPath)
+		// Pattern: repository: "https://host/owner/repo" or repository: "git+https://..."
+		extracted := ps.parseFileWithURLPattern(chartPath, relPath, EcosystemHelm,
+			`repository:\s*["']?(?:git\+)?https://`, `/([^/]+)/([^/"'\s]+)`)
+		deps = append(deps, extracted...)
 
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemHelm,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countHelmDependencies(chartPath),
-			HasLockFile:     ps.fileExists(filepath.Join(dir, "Chart.lock")),
-			Metadata:        make(map[string]interface{}),
-		}
-
-		// Extract chart name if possible
-		if chartName := ps.extractHelmChartName(chartPath); chartName != "" {
-			manifest.Metadata["chart_name"] = chartName
-		}
-
-		manifests = append(manifests, manifest)
+		// Also check for ADO URLs
+		adoDeps := ps.parseFileForADOURLs(chartPath, relPath, EcosystemHelm)
+		deps = append(deps, adoDeps...)
 	}
 
-	return manifests
+	return deps
 }
 
-// countHelmDependencies counts dependencies in Chart.yaml
-func (ps *PackageScanner) countHelmDependencies(chartPath string) int {
-	// #nosec G304 -- chartPath is validated via findFiles
-	content, err := os.ReadFile(chartPath)
+// extractSwiftGitHubDependencies extracts GitHub/ADO references from Package.swift
+func (ps *PackageScanner) extractSwiftGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	swiftFiles := ps.findFiles(repoPath, "Package.swift")
+	for _, swiftPath := range swiftFiles {
+		relPath, _ := filepath.Rel(repoPath, swiftPath)
+		// Pattern: .package(url: "https://host/owner/repo"
+		extracted := ps.parseFileWithURLPattern(swiftPath, relPath, EcosystemSwift,
+			`\.package\s*\(\s*url:\s*"https://`, `/([^/]+)/([^/"]+)"`)
+		deps = append(deps, extracted...)
+
+		// Also check for ADO URLs
+		adoDeps := ps.parseFileForADOURLs(swiftPath, relPath, EcosystemSwift)
+		deps = append(deps, adoDeps...)
+	}
+
+	return deps
+}
+
+// parseFileWithURLPattern is a generic parser for files containing GitHub URL references
+// It takes a pattern prefix (before the host) and suffix (after the host) to match URLs
+func (ps *PackageScanner) parseFileWithURLPattern(filePath, manifestPath string, ecosystem PackageEcosystem, patternPrefix, patternSuffix string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// #nosec G304 -- filePath is validated via findFiles
+	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return 0
+		return deps
 	}
 
-	// Count dependencies entries (simplified YAML parsing)
-	count := 0
-	inDeps := false
-	lines := strings.Split(string(content), "\n")
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "dependencies:" {
-			inDeps = true
-			continue
-		}
-		if inDeps && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && trimmed != "" {
-			inDeps = false
-			continue
-		}
-		if inDeps && strings.HasPrefix(trimmed, "- name:") {
-			count++
+	for _, host := range ps.additionalHosts {
+		escapedHost := regexp.QuoteMeta(host)
+		pattern := regexp.MustCompile(patternPrefix + escapedHost + patternSuffix)
+		matches := pattern.FindAllStringSubmatch(string(content), -1)
+		for _, match := range matches {
+			if len(match) == 3 {
+				isLocal := ps.sourceHost != "" && host == ps.sourceHost
+				deps = append(deps, ExtractedDependency{
+					Name:         match[1] + "/" + strings.TrimSuffix(match[2], ".git"),
+					Version:      match[0],
+					Ecosystem:    ecosystem,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  match[1],
+					GitHubRepo:   strings.TrimSuffix(match[2], ".git"),
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+			}
 		}
 	}
-	return count
+
+	return deps
 }
 
-// extractHelmChartName extracts the chart name from Chart.yaml
-func (ps *PackageScanner) extractHelmChartName(chartPath string) string {
-	// #nosec G304 -- chartPath is validated via findFiles
-	content, err := os.ReadFile(chartPath)
+// parseFileForADOURLs scans a file for Azure DevOps git URLs
+func (ps *PackageScanner) parseFileForADOURLs(filePath, manifestPath string, ecosystem PackageEcosystem) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// #nosec G304 -- filePath is validated via findFiles
+	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return ""
+		return deps
 	}
 
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "name:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+	// Find all URLs that look like ADO
+	urlPattern := regexp.MustCompile(`https?://[^\s"'<>]+`)
+	matches := urlPattern.FindAllString(string(content), -1)
+
+	for _, match := range matches {
+		if isADOURL(match) {
+			org, project, repo, host, isLocal := ps.extractADOReference(match)
+			if org != "" && repo != "" {
+				deps = append(deps, ExtractedDependency{
+					Name:         org + "/" + project + "/" + repo,
+					Version:      match,
+					Ecosystem:    ecosystem,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  org + "/" + project,
+					GitHubRepo:   repo,
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+			}
 		}
 	}
-	return ""
+
+	return deps
 }
 
-// scanDocker scans for Docker-related files
-func (ps *PackageScanner) scanDocker(ctx context.Context, repoPath string) []PackageManifest {
-	// Dockerfile
-	dockerfiles := ps.findFilesWithPattern(repoPath, "Dockerfile*")
+// extractElixirGitHubDependencies extracts GitHub references from mix.exs
+func (ps *PackageScanner) extractElixirGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
 
-	// docker-compose.yml / docker-compose.yaml
-	composeFiles := ps.findFiles(repoPath, "docker-compose.yml")
-	composeFiles = append(composeFiles, ps.findFiles(repoPath, "docker-compose.yaml")...)
-	composeFiles = append(composeFiles, ps.findFiles(repoPath, "compose.yml")...)
-	composeFiles = append(composeFiles, ps.findFiles(repoPath, "compose.yaml")...)
-
-	// Pre-allocate with combined capacity
-	manifests := make([]PackageManifest, 0, len(dockerfiles)+len(composeFiles))
-
-	for _, dockerPath := range dockerfiles {
-		relPath, _ := filepath.Rel(repoPath, dockerPath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemDocker,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countDockerBaseImages(dockerPath),
-			Metadata: map[string]interface{}{
-				"type": "dockerfile",
-			},
-		}
-		manifests = append(manifests, manifest)
+	mixFiles := ps.findFiles(repoPath, "mix.exs")
+	for _, mixPath := range mixFiles {
+		relPath, _ := filepath.Rel(repoPath, mixPath)
+		extracted := ps.parseMixExs(mixPath, relPath)
+		deps = append(deps, extracted...)
 	}
 
-	for _, composePath := range composeFiles {
-		relPath, _ := filepath.Rel(repoPath, composePath)
-		manifest := PackageManifest{
-			Ecosystem:       EcosystemDocker,
-			ManifestPath:    relPath,
-			DependencyCount: ps.countDockerComposeServices(composePath),
-			Metadata: map[string]interface{}{
-				"type": "docker-compose",
-			},
-		}
-		manifests = append(manifests, manifest)
-	}
-
-	return manifests
+	return deps
 }
 
-// countDockerBaseImages counts FROM instructions in Dockerfile
-func (ps *PackageScanner) countDockerBaseImages(dockerPath string) int {
-	// #nosec G304 -- dockerPath is validated via findFiles
-	content, err := os.ReadFile(dockerPath)
+// parseMixExs parses mix.exs and extracts GitHub dependencies
+// Supports:
+//   - {:dep, github: "owner/repo"}
+//   - {:dep, github: "owner/repo", branch: "main"}
+//   - {:dep, git: "https://github.com/owner/repo.git"}
+func (ps *PackageScanner) parseMixExs(mixPath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// #nosec G304 -- mixPath is validated via findFiles
+	content, err := os.ReadFile(mixPath)
 	if err != nil {
-		return 0
+		return deps
 	}
 
-	re := regexp.MustCompile(`(?mi)^\s*FROM\s+`)
-	matches := re.FindAllString(string(content), -1)
-	return len(matches)
+	// Pattern for github: shorthand (always github.com)
+	githubPattern := regexp.MustCompile(`github:\s*"([^/]+)/([^"]+)"`)
+	githubMatches := githubPattern.FindAllStringSubmatch(string(content), -1)
+	for _, match := range githubMatches {
+		if len(match) == 3 {
+			deps = append(deps, ExtractedDependency{
+				Name:         match[1] + "/" + match[2],
+				Version:      match[0],
+				Ecosystem:    EcosystemElixir,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  match[1],
+				GitHubRepo:   match[2],
+				IsLocal:      false,
+				SourceHost:   hostGitHubCom,
+			})
+		}
+	}
+
+	// Check for Azure DevOps URLs in git: patterns
+	adoDeps := ps.parseFileForADOURLs(mixPath, manifestPath, EcosystemElixir)
+	deps = append(deps, adoDeps...)
+
+	// Pattern for git: with tracked hosts
+	for _, host := range ps.additionalHosts {
+		if host == hostGitHubCom {
+			continue // Already handled by github: pattern above
+		}
+		escapedHost := regexp.QuoteMeta(host)
+
+		gitPattern := regexp.MustCompile(`git:\s*"https://` + escapedHost + `/([^/]+)/([^"]+)"`)
+		matches := gitPattern.FindAllStringSubmatch(string(content), -1)
+		for _, match := range matches {
+			if len(match) == 3 {
+				isLocal := ps.sourceHost != "" && host == ps.sourceHost
+				deps = append(deps, ExtractedDependency{
+					Name:         match[1] + "/" + strings.TrimSuffix(match[2], ".git"),
+					Version:      match[0],
+					Ecosystem:    EcosystemElixir,
+					Manifest:     manifestPath,
+					IsGitHubRepo: true,
+					GitHubOwner:  match[1],
+					GitHubRepo:   strings.TrimSuffix(match[2], ".git"),
+					IsLocal:      isLocal,
+					SourceHost:   host,
+				})
+			}
+		}
+	}
+
+	return deps
 }
 
-// countDockerComposeServices counts services in docker-compose files (simplified)
-func (ps *PackageScanner) countDockerComposeServices(composePath string) int {
-	// #nosec G304 -- composePath is validated via findFiles
-	content, err := os.ReadFile(composePath)
+// extractGradleGitHubDependencies extracts GitHub references from build.gradle
+// JitPack maps GitHub repos to dependencies: implementation 'com.github.Owner:Repo:Tag'
+func (ps *PackageScanner) extractGradleGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// Find build.gradle files
+	gradleFiles := ps.findFiles(repoPath, "build.gradle")
+	for _, gradlePath := range gradleFiles {
+		relPath, _ := filepath.Rel(repoPath, gradlePath)
+		extracted := ps.parseBuildGradle(gradlePath, relPath)
+		deps = append(deps, extracted...)
+	}
+
+	// Find build.gradle.kts files (Kotlin DSL)
+	gradleKtsFiles := ps.findFilesWithPattern(repoPath, "build.gradle.kts")
+	for _, gradlePath := range gradleKtsFiles {
+		relPath, _ := filepath.Rel(repoPath, gradlePath)
+		extracted := ps.parseBuildGradle(gradlePath, relPath)
+		deps = append(deps, extracted...)
+	}
+
+	return deps
+}
+
+// parseBuildGradle parses build.gradle and extracts JitPack GitHub dependencies
+// JitPack format: com.github.Owner:Repo:Tag
+func (ps *PackageScanner) parseBuildGradle(gradlePath, manifestPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+
+	// #nosec G304 -- gradlePath is validated via findFiles
+	content, err := os.ReadFile(gradlePath)
 	if err != nil {
-		return 0
+		return deps
 	}
 
-	// Count image: lines as a proxy for external service dependencies
-	re := regexp.MustCompile(`(?m)^\s+image:\s*`)
-	matches := re.FindAllString(string(content), -1)
-	return len(matches)
-}
+	// Pattern for JitPack dependencies: com.github.Owner:Repo:Tag
+	// Matches: implementation 'com.github.Owner:Repo:v1.0'
+	// Matches: implementation "com.github.Owner:Repo:v1.0"
+	jitpackPattern := regexp.MustCompile(`['"]com\.github\.([^:]+):([^:'"]+)(?::[^'"]+)?['"]`)
+	matches := jitpackPattern.FindAllStringSubmatch(string(content), -1)
+	for _, match := range matches {
+		if len(match) == 3 {
+			deps = append(deps, ExtractedDependency{
+				Name:         "com.github." + match[1] + ":" + match[2],
+				Version:      match[0],
+				Ecosystem:    EcosystemGradle,
+				Manifest:     manifestPath,
+				IsGitHubRepo: true,
+				GitHubOwner:  match[1],
+				GitHubRepo:   match[2],
+				IsLocal:      false,
+				SourceHost:   hostGitHubCom,
+			})
+		}
+	}
 
-// Helper functions
+	return deps
+}
 
 // isSkippedDir checks if a directory should be skipped during scanning
 func isSkippedDir(name string) bool {
@@ -1060,10 +1462,4 @@ func (ps *PackageScanner) findFilesWithPattern(repoPath, pattern string) []strin
 	}
 
 	return files
-}
-
-// fileExists checks if a file exists
-func (ps *PackageScanner) fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

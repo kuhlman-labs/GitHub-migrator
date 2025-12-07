@@ -28,7 +28,7 @@ func (c *Collector) analyzeDependencies(ctx context.Context, repo *models.Reposi
 
 	// 1. PRIMARY: Analyze dependencies from cloned repo (source-agnostic file scanning)
 	// This includes: package manager files, submodules, and workflow dependencies
-	dependencies, err := depAnalyzer.AnalyzeDependencies(ctx, repoPath, repo.FullName, repo.ID)
+	dependencies, err := depAnalyzer.AnalyzeDependencies(ctx, repoPath, repo.FullName, repo.ID, repo.SourceURL)
 	if err != nil {
 		return fmt.Errorf("failed to analyze dependencies from repo: %w", err)
 	}
