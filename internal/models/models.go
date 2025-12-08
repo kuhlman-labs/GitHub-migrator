@@ -60,6 +60,11 @@ type Repository struct {
 	HasSecretScanning bool `json:"has_secret_scanning" db:"has_secret_scanning" gorm:"column:has_secret_scanning;default:false"`
 	HasCodeowners     bool `json:"has_codeowners" db:"has_codeowners" gorm:"column:has_codeowners;default:false"`
 
+	// CODEOWNERS details (populated when HasCodeowners is true)
+	CodeownersContent *string `json:"codeowners_content,omitempty" db:"codeowners_content" gorm:"column:codeowners_content;type:text"` // Raw CODEOWNERS file content
+	CodeownersTeams   *string `json:"codeowners_teams,omitempty" db:"codeowners_teams" gorm:"column:codeowners_teams;type:text"`       // JSON array of team references (e.g., ["@org/team1", "@org/team2"])
+	CodeownersUsers   *string `json:"codeowners_users,omitempty" db:"codeowners_users" gorm:"column:codeowners_users;type:text"`       // JSON array of user references (e.g., ["@user1", "@user2"])
+
 	// Repository Settings
 	Visibility    string `json:"visibility" db:"visibility" gorm:"column:visibility"` // "public", "private", "internal"
 	WorkflowCount int    `json:"workflow_count" db:"workflow_count" gorm:"column:workflow_count;default:0"`
@@ -477,4 +482,119 @@ type GitHubTeamRepository struct {
 // TableName specifies the table name for GitHubTeamRepository model
 func (GitHubTeamRepository) TableName() string {
 	return "github_team_repositories"
+}
+
+// GitHubTeamMember represents a member of a GitHub team
+type GitHubTeamMember struct {
+	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	TeamID       int64     `json:"team_id" db:"team_id" gorm:"column:team_id;not null;index"`
+	Login        string    `json:"login" db:"login" gorm:"column:login;not null"`
+	Role         string    `json:"role" db:"role" gorm:"column:role;not null"` // member, maintainer
+	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+}
+
+// TableName specifies the table name for GitHubTeamMember model
+func (GitHubTeamMember) TableName() string {
+	return "github_team_members"
+}
+
+// GitHubUser represents a GitHub user discovered during profiling
+// Used for user identity mapping and mannequin reclaim
+type GitHubUser struct {
+	ID             int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	Login          string    `json:"login" db:"login" gorm:"column:login;not null;uniqueIndex"`
+	Name           *string   `json:"name,omitempty" db:"name" gorm:"column:name"`
+	Email          *string   `json:"email,omitempty" db:"email" gorm:"column:email;index"`
+	AvatarURL      *string   `json:"avatar_url,omitempty" db:"avatar_url" gorm:"column:avatar_url"`
+	SourceInstance string    `json:"source_instance" db:"source_instance" gorm:"column:source_instance;not null"` // Source GitHub URL (e.g., github.company.com)
+	DiscoveredAt   time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+
+	// Contribution stats (aggregated across all repositories)
+	CommitCount     int `json:"commit_count" db:"commit_count" gorm:"column:commit_count;default:0"`
+	IssueCount      int `json:"issue_count" db:"issue_count" gorm:"column:issue_count;default:0"`
+	PRCount         int `json:"pr_count" db:"pr_count" gorm:"column:pr_count;default:0"`
+	CommentCount    int `json:"comment_count" db:"comment_count" gorm:"column:comment_count;default:0"`
+	RepositoryCount int `json:"repository_count" db:"repository_count" gorm:"column:repository_count;default:0"`
+}
+
+// TableName specifies the table name for GitHubUser model
+func (GitHubUser) TableName() string {
+	return "github_users"
+}
+
+// UserMappingStatus represents the status of a user mapping
+type UserMappingStatus string
+
+const (
+	UserMappingStatusUnmapped  UserMappingStatus = "unmapped"
+	UserMappingStatusMapped    UserMappingStatus = "mapped"
+	UserMappingStatusReclaimed UserMappingStatus = "reclaimed"
+	UserMappingStatusSkipped   UserMappingStatus = "skipped"
+)
+
+// ReclaimStatus represents the status of mannequin reclaim
+type ReclaimStatus string
+
+const (
+	ReclaimStatusPending   ReclaimStatus = "pending"
+	ReclaimStatusInvited   ReclaimStatus = "invited"
+	ReclaimStatusCompleted ReclaimStatus = "completed"
+	ReclaimStatusFailed    ReclaimStatus = "failed"
+)
+
+// UserMapping maps a source user to a destination user for mannequin reclaim
+type UserMapping struct {
+	ID               int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceLogin      string    `json:"source_login" db:"source_login" gorm:"column:source_login;not null;uniqueIndex"`
+	SourceEmail      *string   `json:"source_email,omitempty" db:"source_email" gorm:"column:source_email;index"`
+	SourceName       *string   `json:"source_name,omitempty" db:"source_name" gorm:"column:source_name"`
+	DestinationLogin *string   `json:"destination_login,omitempty" db:"destination_login" gorm:"column:destination_login;index"`
+	DestinationEmail *string   `json:"destination_email,omitempty" db:"destination_email" gorm:"column:destination_email"`
+	MappingStatus    string    `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, reclaimed, skipped
+	MannequinID      *string   `json:"mannequin_id,omitempty" db:"mannequin_id" gorm:"column:mannequin_id"`                             // GEI mannequin ID after migration
+	MannequinLogin   *string   `json:"mannequin_login,omitempty" db:"mannequin_login" gorm:"column:mannequin_login"`                    // Mannequin login (e.g., mona-user-12345)
+	ReclaimStatus    *string   `json:"reclaim_status,omitempty" db:"reclaim_status" gorm:"column:reclaim_status"`                       // pending, invited, completed, failed
+	ReclaimError     *string   `json:"reclaim_error,omitempty" db:"reclaim_error" gorm:"column:reclaim_error;type:text"`                // Error message if reclaim failed
+	CreatedAt        time.Time `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt        time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+}
+
+// TableName specifies the table name for UserMapping model
+func (UserMapping) TableName() string {
+	return "user_mappings"
+}
+
+// TeamMapping maps a source team to a destination team
+type TeamMapping struct {
+	ID                  int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceOrg           string    `json:"source_org" db:"source_org" gorm:"column:source_org;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamSlug      string    `json:"source_team_slug" db:"source_team_slug" gorm:"column:source_team_slug;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamName      *string   `json:"source_team_name,omitempty" db:"source_team_name" gorm:"column:source_team_name"`
+	DestinationOrg      *string   `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org;index"`
+	DestinationTeamSlug *string   `json:"destination_team_slug,omitempty" db:"destination_team_slug" gorm:"column:destination_team_slug"`
+	DestinationTeamName *string   `json:"destination_team_name,omitempty" db:"destination_team_name" gorm:"column:destination_team_name"`
+	MappingStatus       string    `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, skipped
+	AutoCreated         bool      `json:"auto_created" db:"auto_created" gorm:"column:auto_created;default:false"`                         // True if team was auto-created during migration
+	CreatedAt           time.Time `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt           time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+}
+
+// TableName specifies the table name for TeamMapping model
+func (TeamMapping) TableName() string {
+	return "team_mappings"
+}
+
+// SourceFullSlug returns the source team identifier in "org/team-slug" format
+func (t *TeamMapping) SourceFullSlug() string {
+	return t.SourceOrg + "/" + t.SourceTeamSlug
+}
+
+// DestinationFullSlug returns the destination team identifier in "org/team-slug" format
+// Returns empty string if destination is not mapped
+func (t *TeamMapping) DestinationFullSlug() string {
+	if t.DestinationOrg == nil || t.DestinationTeamSlug == nil {
+		return ""
+	}
+	return *t.DestinationOrg + "/" + *t.DestinationTeamSlug
 }

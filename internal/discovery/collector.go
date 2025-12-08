@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,6 +130,13 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 	if err := c.discoverTeams(ctx, org, orgClient); err != nil {
 		c.logger.Warn("Failed to discover teams", "organization", org, "error", err)
 		// Don't fail the whole discovery if team discovery fails
+	}
+
+	// Discover organization members
+	c.logger.Info("Discovering organization members", "organization", org)
+	if err := c.discoverOrgMembers(ctx, org, orgClient); err != nil {
+		c.logger.Warn("Failed to discover org members", "organization", org, "error", err)
+		// Don't fail the whole discovery if member discovery fails
 	}
 
 	return nil
@@ -378,6 +386,16 @@ func (c *Collector) processOrganizationsInParallel(ctx context.Context, enterpri
 						"error", err)
 					// Don't fail if team discovery fails
 				}
+
+				// Discover organization members
+				if err := c.discoverOrgMembers(ctx, org, orgClient); err != nil {
+					c.logger.Warn("Failed to discover org members for organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"organization", org,
+						"error", err)
+					// Don't fail if member discovery fails
+				}
 			}
 		}(i)
 	}
@@ -551,6 +569,7 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 	}
 
 	// Profile GitHub features via API (no clone needed)
+	// Note: Don't save users for destination profiling, only source discovery
 	profiler := NewProfiler(c.client, c.logger)
 	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
 		c.logger.Warn("Failed to profile destination features",
@@ -933,8 +952,106 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 				// Continue with other repos even if one fails
 			}
 		}
+
+		// List members for this team
+		teamMembers, err := client.ListTeamMembers(ctx, org, teamInfo.Slug)
+		if err != nil {
+			c.logger.Warn("Failed to list members for team",
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			// Continue to next team - don't fail completely
+		} else {
+			c.logger.Debug("Found members for team",
+				"organization", org,
+				"team", teamInfo.Slug,
+				"count", len(teamMembers))
+
+			// Save team members
+			for _, member := range teamMembers {
+				teamMember := &models.GitHubTeamMember{
+					TeamID: team.ID,
+					Login:  member.Login,
+					Role:   member.Role,
+				}
+				if err := c.storage.SaveTeamMember(ctx, teamMember); err != nil {
+					c.logger.Warn("Failed to save team member",
+						"organization", org,
+						"team", teamInfo.Slug,
+						"member", member.Login,
+						"error", err)
+					// Continue with other members even if one fails
+				}
+			}
+		}
 	}
 
 	c.logger.Info("Team discovery complete", "organization", org, "teams_found", len(teams))
 	return nil
+}
+
+// discoverOrgMembers discovers all members of an organization and saves them as users
+func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *github.Client) error {
+	c.logger.Info("Discovering organization members", "organization", org)
+
+	members, err := client.ListOrgMembers(ctx, org)
+	if err != nil {
+		return fmt.Errorf("failed to list org members: %w", err)
+	}
+
+	c.logger.Info("Found organization members", "organization", org, "count", len(members))
+
+	sourceInstance := c.getSourceInstance()
+	savedCount := 0
+
+	for _, member := range members {
+		user := &models.GitHubUser{
+			Login:          member.Login,
+			Name:           member.Name,
+			Email:          member.Email,
+			SourceInstance: sourceInstance,
+		}
+		if member.AvatarURL != "" {
+			user.AvatarURL = &member.AvatarURL
+		}
+
+		if err := c.storage.SaveUser(ctx, user); err != nil {
+			c.logger.Warn("Failed to save organization member",
+				"organization", org,
+				"login", member.Login,
+				"error", err)
+			continue
+		}
+		savedCount++
+	}
+
+	c.logger.Info("Organization member discovery complete",
+		"organization", org,
+		"total_members", len(members),
+		"saved", savedCount)
+	return nil
+}
+
+// getSourceInstance returns the source GitHub instance hostname
+func (c *Collector) getSourceInstance() string {
+	if c.client == nil {
+		return hostGitHubCom
+	}
+
+	baseURL := c.client.BaseURL()
+	if baseURL == "" {
+		return hostGitHubCom
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return hostGitHubCom
+	}
+
+	host := parsed.Host
+	if host == "" {
+		return hostGitHubCom
+	}
+
+	return host
 }

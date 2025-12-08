@@ -1,0 +1,1 @@
+export { TeamMappingTable } from './TeamMappingTable';

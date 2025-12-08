@@ -207,6 +207,37 @@ func (s *Server) Router() http.Handler {
 
 	// Team endpoints (GitHub only)
 	protect("GET /api/v1/teams", s.handler.ListTeams)
+	protect("GET /api/v1/teams/{org}/{teamSlug}/members", s.handler.GetTeamMembers)
+
+	// Team mapping endpoints
+	protect("GET /api/v1/team-mappings", s.handler.ListTeamMappings)
+	protect("GET /api/v1/team-mappings/stats", s.handler.GetTeamMappingStats)
+	protect("POST /api/v1/team-mappings", s.handler.CreateTeamMapping)
+	protect("PATCH /api/v1/team-mappings/{sourceOrg}/{sourceTeamSlug}", s.handler.UpdateTeamMapping)
+	protect("DELETE /api/v1/team-mappings/{sourceOrg}/{sourceTeamSlug}", s.handler.DeleteTeamMapping)
+	protect("POST /api/v1/team-mappings/import", s.handler.ImportTeamMappings)
+	protect("GET /api/v1/team-mappings/export", s.handler.ExportTeamMappings)
+	protect("POST /api/v1/team-mappings/suggest", s.handler.SuggestTeamMappings)
+	protect("POST /api/v1/team-mappings/sync", s.handler.SyncTeamMappingsFromDiscovery)
+
+	// Permission audit endpoint
+	protect("GET /api/v1/analytics/permission-audit", s.handler.GetPermissionAudit)
+
+	// User discovery and mapping endpoints
+	protect("GET /api/v1/users", s.handler.ListUsers)
+	protect("GET /api/v1/users/stats", s.handler.GetUserStats)
+	protect("GET /api/v1/user-mappings", s.handler.ListUserMappings)
+	protect("GET /api/v1/user-mappings/stats", s.handler.GetUserMappingStats)
+	protect("POST /api/v1/user-mappings", s.handler.CreateUserMapping)
+	protect("PATCH /api/v1/user-mappings/{sourceLogin}", s.handler.UpdateUserMapping)
+	protect("DELETE /api/v1/user-mappings/{sourceLogin}", s.handler.DeleteUserMapping)
+	protect("POST /api/v1/user-mappings/import", s.handler.ImportUserMappings)
+	protect("GET /api/v1/user-mappings/export", s.handler.ExportUserMappings)
+	protect("GET /api/v1/user-mappings/generate-gei-csv", s.handler.GenerateGEICSV)
+	protect("POST /api/v1/user-mappings/suggest", s.handler.SuggestUserMappings)
+	protect("POST /api/v1/user-mappings/sync", s.handler.SyncUserMappingsFromDiscovery)
+	protect("POST /api/v1/user-mappings/fetch-mannequins", s.handler.FetchMannequins)
+	protect("POST /api/v1/user-mappings/reclaim-mannequins", s.handler.ReclaimMannequins)
 
 	// Dashboard endpoints
 	protect("GET /api/v1/dashboard/action-items", s.handler.GetDashboardActionItems)

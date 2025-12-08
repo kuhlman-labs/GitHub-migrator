@@ -172,9 +172,17 @@ func (d *Database) GetTeamsForRepository(ctx context.Context, repoID int64) ([]*
 func (d *Database) DeleteTeamsForOrganization(ctx context.Context, org string) error {
 	// Use transaction to ensure atomicity
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// First, delete all team-repository associations for teams in this org
-		// (using subquery to find team IDs)
+		// First, delete all team members for teams in this org
 		result := tx.Exec(`
+			DELETE FROM github_team_members 
+			WHERE team_id IN (SELECT id FROM github_teams WHERE organization = ?)
+		`, org)
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete team members: %w", result.Error)
+		}
+
+		// Then delete all team-repository associations for teams in this org
+		result = tx.Exec(`
 			DELETE FROM github_team_repositories 
 			WHERE team_id IN (SELECT id FROM github_teams WHERE organization = ?)
 		`, org)
@@ -190,4 +198,147 @@ func (d *Database) DeleteTeamsForOrganization(ctx context.Context, org string) e
 
 		return nil
 	})
+}
+
+// SaveTeamMember inserts or updates a team member
+func (d *Database) SaveTeamMember(ctx context.Context, member *models.GitHubTeamMember) error {
+	// Check if member already exists
+	var existing models.GitHubTeamMember
+	err := d.db.WithContext(ctx).
+		Where("team_id = ? AND login = ?", member.TeamID, member.Login).
+		First(&existing).Error
+
+	if err == gorm.ErrRecordNotFound {
+		// Insert new member
+		if member.DiscoveredAt.IsZero() {
+			member.DiscoveredAt = time.Now()
+		}
+
+		result := d.db.WithContext(ctx).Create(member)
+		if result.Error != nil {
+			return fmt.Errorf("failed to create team member: %w", result.Error)
+		}
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to check existing team member: %w", err)
+	}
+
+	// Member exists - update role if changed
+	if existing.Role != member.Role {
+		result := d.db.WithContext(ctx).Model(&existing).Update("role", member.Role)
+		if result.Error != nil {
+			return fmt.Errorf("failed to update team member role: %w", result.Error)
+		}
+	}
+
+	member.ID = existing.ID
+	return nil
+}
+
+// GetTeamMembers returns all members of a team
+func (d *Database) GetTeamMembers(ctx context.Context, teamID int64) ([]*models.GitHubTeamMember, error) {
+	var members []*models.GitHubTeamMember
+	err := d.db.WithContext(ctx).
+		Where("team_id = ?", teamID).
+		Order("login ASC").
+		Find(&members).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team members: %w", err)
+	}
+
+	return members, nil
+}
+
+// GetTeamMembersByOrgAndSlug returns all members of a team by organization and slug
+func (d *Database) GetTeamMembersByOrgAndSlug(ctx context.Context, org, slug string) ([]*models.GitHubTeamMember, error) {
+	team, err := d.GetTeamByOrgAndSlug(ctx, org, slug)
+	if err != nil {
+		return nil, err
+	}
+	if team == nil {
+		return []*models.GitHubTeamMember{}, nil
+	}
+
+	return d.GetTeamMembers(ctx, team.ID)
+}
+
+// GetTeamsForUser returns all teams that a user is a member of
+func (d *Database) GetTeamsForUser(ctx context.Context, login string) ([]*models.GitHubTeam, error) {
+	var teams []*models.GitHubTeam
+	err := d.db.WithContext(ctx).
+		Joins("JOIN github_team_members gtm ON gtm.team_id = github_teams.id").
+		Where("gtm.login = ?", login).
+		Order("organization ASC, name ASC").
+		Find(&teams).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get teams for user: %w", err)
+	}
+
+	return teams, nil
+}
+
+// GetTeamMemberCount returns the number of members in a team
+func (d *Database) GetTeamMemberCount(ctx context.Context, teamID int64) (int64, error) {
+	var count int64
+	err := d.db.WithContext(ctx).Model(&models.GitHubTeamMember{}).
+		Where("team_id = ?", teamID).
+		Count(&count).Error
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count team members: %w", err)
+	}
+
+	return count, nil
+}
+
+// DeleteTeamMembers removes all members from a team
+func (d *Database) DeleteTeamMembers(ctx context.Context, teamID int64) error {
+	result := d.db.WithContext(ctx).
+		Where("team_id = ?", teamID).
+		Delete(&models.GitHubTeamMember{})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete team members: %w", result.Error)
+	}
+
+	return nil
+}
+
+// BulkSaveTeamMembers saves multiple team members efficiently
+func (d *Database) BulkSaveTeamMembers(ctx context.Context, members []*models.GitHubTeamMember) error {
+	if len(members) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	for _, m := range members {
+		if m.DiscoveredAt.IsZero() {
+			m.DiscoveredAt = now
+		}
+	}
+
+	// Use upsert-style insert with conflict handling
+	for _, member := range members {
+		if err := d.SaveTeamMember(ctx, member); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetAllUniqueTeamMemberLogins returns all unique user logins from team members
+func (d *Database) GetAllUniqueTeamMemberLogins(ctx context.Context) ([]string, error) {
+	var logins []string
+	err := d.db.WithContext(ctx).Model(&models.GitHubTeamMember{}).
+		Distinct("login").
+		Pluck("login", &logins).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get unique team member logins: %w", err)
+	}
+
+	return logins, nil
 }

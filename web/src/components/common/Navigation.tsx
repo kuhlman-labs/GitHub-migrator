@@ -44,6 +44,18 @@ export function Navigation() {
         searchParam: 'search',
         isSearchable: true,
       };
+    } else if (path === '/user-mappings') {
+      return {
+        placeholder: 'Search user mappings...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
+    } else if (path === '/team-mappings') {
+      return {
+        placeholder: 'Search team mappings...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
     } else if (path === '/dependencies') {
       // Dependencies page has its own in-page search
       return {
@@ -172,6 +184,26 @@ export function Navigation() {
                   }}
                 >
                 Batches
+              </Link>
+                <Link 
+                  to="/user-mappings" 
+                  className={linkClass('/user-mappings')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/user-mappings') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                >
+                Users
+              </Link>
+                <Link 
+                  to="/team-mappings" 
+                  className={linkClass('/team-mappings')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/team-mappings') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                >
+                Teams
               </Link>
                 <Link 
                   to="/history" 

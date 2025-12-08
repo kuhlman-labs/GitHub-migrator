@@ -486,7 +486,7 @@ func (p *Profiler) profileSecurity(ctx context.Context, org, name string, repo *
 	}
 }
 
-// profileCodeowners checks for CODEOWNERS file in common locations
+// profileCodeowners checks for CODEOWNERS file in common locations and parses its content
 func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo *models.Repository) {
 	// Check common locations: .github/CODEOWNERS, docs/CODEOWNERS, CODEOWNERS
 	locations := []string{".github/CODEOWNERS", "docs/CODEOWNERS", "CODEOWNERS"}
@@ -513,6 +513,11 @@ func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo
 					"repo", repo.FullName,
 					"path", path,
 					"size", fileContent.GetSize())
+
+				// Parse CODEOWNERS content to extract team and user references
+				if content, err := fileContent.GetContent(); err == nil && content != "" {
+					p.parseCodeownersContent(repo, content)
+				}
 				return
 			} else {
 				p.logger.Debug("Path exists but is not a file",
@@ -525,6 +530,87 @@ func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo
 
 	repo.HasCodeowners = false
 	p.logger.Debug("No CODEOWNERS file found", "repo", repo.FullName)
+}
+
+// extractCodeownersReferences extracts team and user references from CODEOWNERS content
+func extractCodeownersReferences(content string) (teams, users map[string]bool) {
+	teams = make(map[string]bool)
+	users = make(map[string]bool)
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Process each owner (skip the first part which is the pattern)
+		for _, owner := range parts[1:] {
+			if strings.HasPrefix(owner, "#") {
+				break
+			}
+			classifyCodeowner(owner, teams, users)
+		}
+	}
+	return teams, users
+}
+
+// classifyCodeowner determines if an owner is a team, user, or email reference
+func classifyCodeowner(owner string, teams, users map[string]bool) {
+	if strings.HasPrefix(owner, "@") && strings.Contains(owner, "/") {
+		teams[owner] = true
+	} else if strings.HasPrefix(owner, "@") {
+		users[owner] = true
+	} else if strings.Contains(owner, "@") {
+		users[owner] = true
+	}
+}
+
+// storeCodeownersJSON stores extracted references as JSON in the repository
+func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) {
+	if len(teams) > 0 {
+		teamList := make([]string, 0, len(teams))
+		for team := range teams {
+			teamList = append(teamList, team)
+		}
+		if teamsJSON, err := json.Marshal(teamList); err == nil {
+			teamsStr := string(teamsJSON)
+			repo.CodeownersTeams = &teamsStr
+		}
+	}
+
+	if len(users) > 0 {
+		userList := make([]string, 0, len(users))
+		for user := range users {
+			userList = append(userList, user)
+		}
+		if usersJSON, err := json.Marshal(userList); err == nil {
+			usersStr := string(usersJSON)
+			repo.CodeownersUsers = &usersStr
+		}
+	}
+}
+
+// parseCodeownersContent parses CODEOWNERS file content and extracts team/user references
+func (p *Profiler) parseCodeownersContent(repo *models.Repository, content string) {
+	// Store the raw content
+	repo.CodeownersContent = &content
+
+	// Parse and extract team and user references
+	teams, users := extractCodeownersReferences(content)
+
+	// Store as JSON
+	storeCodeownersJSON(repo, teams, users)
+
+	p.logger.Debug("Parsed CODEOWNERS content",
+		"repo", repo.FullName,
+		"teams_found", len(teams),
+		"users_found", len(users))
 }
 
 // profileWorkflowCount counts GitHub Actions workflows (enhances existing workflow detection)

@@ -1232,3 +1232,297 @@ func (c *Client) ListTeamRepositories(ctx context.Context, org, teamSlug string)
 
 	return allRepos, nil
 }
+
+// TeamMember represents a member of a GitHub team
+type TeamMember struct {
+	Login string // GitHub username
+	Role  string // member or maintainer
+}
+
+// ListTeamMembers lists all members of a team
+func (c *Client) ListTeamMembers(ctx context.Context, org, teamSlug string) ([]*TeamMember, error) {
+	c.logger.Debug("Listing members for team", "org", org, "team", teamSlug)
+
+	var allMembers []*TeamMember
+	opts := &github.TeamListTeamMembersOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	for {
+		var members []*github.User
+		var resp *github.Response
+
+		err := c.retryer.Do(ctx, "ListTeamMembers", func(ctx context.Context) error {
+			var err error
+			members, resp, err = c.rest.Teams.ListTeamMembersBySlug(ctx, org, teamSlug, opts)
+			if err != nil {
+				return WrapError(err, "ListTeamMembersBySlug", c.baseURL)
+			}
+
+			// Update rate limits
+			if resp != nil && resp.Rate.Limit > 0 {
+				c.rateLimiter.UpdateLimits(
+					resp.Rate.Remaining,
+					resp.Rate.Limit,
+					resp.Rate.Reset.Time,
+				)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, member := range members {
+			// Get the member's role in the team
+			role := "member"
+			membership, _, err := c.rest.Teams.GetTeamMembershipBySlug(ctx, org, teamSlug, member.GetLogin())
+			if err == nil && membership != nil {
+				role = membership.GetRole() // "member" or "maintainer"
+			}
+
+			allMembers = append(allMembers, &TeamMember{
+				Login: member.GetLogin(),
+				Role:  role,
+			})
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	c.logger.Debug("Team member listing complete",
+		"org", org,
+		"team", teamSlug,
+		"total_members", len(allMembers))
+
+	return allMembers, nil
+}
+
+// OrgMember represents a member of an organization with full details
+type OrgMember struct {
+	Login     string  `json:"login"`
+	ID        int64   `json:"id"`
+	Name      *string `json:"name,omitempty"`
+	Email     *string `json:"email,omitempty"`
+	AvatarURL string  `json:"avatar_url"`
+	Role      string  `json:"role"` // "admin" or "member"
+}
+
+// ListOrgMembers lists all members of an organization using GraphQL to get full details
+func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, error) {
+	c.logger.Debug("Listing organization members", "org", org)
+
+	var allMembers []*OrgMember
+	var cursor *string
+
+	// GraphQL query for organization members with full details
+	var query struct {
+		Organization struct {
+			MembersWithRole struct {
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+				Edges []struct {
+					Role string
+					Node struct {
+						Login      string
+						Name       string
+						Email      string
+						AvatarUrl  string
+						DatabaseId int64
+					}
+				}
+			} `graphql:"membersWithRole(first: 100, after: $cursor)"`
+		} `graphql:"organization(login: $org)"`
+	}
+
+	variables := map[string]interface{}{
+		"org":    org,
+		"cursor": (*string)(nil),
+	}
+
+	for {
+		variables["cursor"] = cursor
+
+		err := c.retryer.Do(ctx, "ListOrgMembers", func(ctx context.Context) error {
+			return c.graphql.Query(ctx, &query, variables)
+		})
+
+		if err != nil {
+			// Fall back to REST API if GraphQL fails (e.g., on GHES without GraphQL)
+			c.logger.Debug("GraphQL query failed, falling back to REST", "error", err)
+			return c.listOrgMembersREST(ctx, org)
+		}
+
+		for _, edge := range query.Organization.MembersWithRole.Edges {
+			member := &OrgMember{
+				Login:     edge.Node.Login,
+				ID:        edge.Node.DatabaseId,
+				AvatarURL: edge.Node.AvatarUrl,
+				Role:      strings.ToLower(edge.Role), // GraphQL returns "ADMIN" or "MEMBER"
+			}
+			if edge.Node.Name != "" {
+				member.Name = &edge.Node.Name
+			}
+			if edge.Node.Email != "" {
+				member.Email = &edge.Node.Email
+			}
+			allMembers = append(allMembers, member)
+		}
+
+		if !query.Organization.MembersWithRole.PageInfo.HasNextPage {
+			break
+		}
+		cursor = &query.Organization.MembersWithRole.PageInfo.EndCursor
+	}
+
+	c.logger.Debug("Organization member listing complete",
+		"org", org,
+		"total_members", len(allMembers))
+
+	return allMembers, nil
+}
+
+// listOrgMembersREST is a fallback that uses REST API when GraphQL is unavailable
+func (c *Client) listOrgMembersREST(ctx context.Context, org string) ([]*OrgMember, error) {
+	var allMembers []*OrgMember
+	opts := &github.ListMembersOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	for {
+		var members []*github.User
+		var resp *github.Response
+
+		err := c.retryer.Do(ctx, "ListOrgMembersREST", func(ctx context.Context) error {
+			var err error
+			members, resp, err = c.rest.Organizations.ListMembers(ctx, org, opts)
+			if err != nil {
+				return WrapError(err, "ListOrgMembersREST", c.baseURL)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, member := range members {
+			m := &OrgMember{
+				Login:     member.GetLogin(),
+				ID:        member.GetID(),
+				AvatarURL: member.GetAvatarURL(),
+				Role:      "member",
+			}
+			// Get user details for name/email
+			if user, _, err := c.rest.Users.Get(ctx, member.GetLogin()); err == nil && user != nil {
+				if user.GetName() != "" {
+					name := user.GetName()
+					m.Name = &name
+				}
+				if user.GetEmail() != "" {
+					email := user.GetEmail()
+					m.Email = &email
+				}
+			}
+			allMembers = append(allMembers, m)
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return allMembers, nil
+}
+
+// Mannequin represents a mannequin user created by GEI during migration
+type Mannequin struct {
+	ID        string  `json:"id"`         // GraphQL node ID
+	Login     string  `json:"login"`      // Mannequin login (e.g., "mona-user-12345")
+	Email     string  `json:"email"`      // Original commit email
+	CreatedAt string  `json:"created_at"` // When the mannequin was created
+	Claimant  *string `json:"claimant"`   // User who claimed the mannequin (if any)
+}
+
+// ListMannequins lists all mannequins in an organization
+// This uses the GraphQL API as mannequins are only available via GraphQL
+func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, error) {
+	c.logger.Debug("Listing mannequins for organization", "org", org)
+
+	var allMannequins []*Mannequin
+	var cursor *string
+
+	// GraphQL query for listing mannequins
+	var query struct {
+		Organization struct {
+			Mannequins struct {
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+				Nodes []struct {
+					ID        string
+					Login     string
+					Email     string
+					CreatedAt string
+					Claimant  *struct {
+						Login string
+					}
+				}
+			} `graphql:"mannequins(first: 100, after: $cursor)"`
+		} `graphql:"organization(login: $org)"`
+	}
+
+	variables := map[string]interface{}{
+		"org":    org,
+		"cursor": (*string)(nil),
+	}
+
+	for {
+		variables["cursor"] = cursor
+
+		err := c.retryer.Do(ctx, "ListMannequins", func(ctx context.Context) error {
+			return c.graphql.Query(ctx, &query, variables)
+		})
+
+		if err != nil {
+			// If organization doesn't support mannequins, return empty list
+			if strings.Contains(err.Error(), "Could not resolve to an Organization") {
+				c.logger.Debug("Organization not found or doesn't have mannequins", "org", org)
+				return allMannequins, nil
+			}
+			return nil, WrapError(err, "ListMannequins", c.baseURL)
+		}
+
+		for _, m := range query.Organization.Mannequins.Nodes {
+			mannequin := &Mannequin{
+				ID:        m.ID,
+				Login:     m.Login,
+				Email:     m.Email,
+				CreatedAt: m.CreatedAt,
+			}
+			if m.Claimant != nil {
+				mannequin.Claimant = &m.Claimant.Login
+			}
+			allMannequins = append(allMannequins, mannequin)
+		}
+
+		if !query.Organization.Mannequins.PageInfo.HasNextPage {
+			break
+		}
+		cursor = &query.Organization.Mannequins.PageInfo.EndCursor
+	}
+
+	c.logger.Info("Mannequin listing complete",
+		"org", org,
+		"total_mannequins", len(allMannequins))
+
+	return allMannequins, nil
+}

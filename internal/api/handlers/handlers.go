@@ -25,6 +25,7 @@ const (
 	statusInProgress = "in_progress"
 	statusReady      = "ready"
 	statusPending    = "pending"
+	statusCompleted  = "completed"
 	boolTrue         = "true"
 
 	formatCSV  = "csv"
@@ -493,7 +494,7 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Available for batch filter
-	if availableForBatch := r.URL.Query().Get("available_for_batch"); availableForBatch == "true" {
+	if availableForBatch := r.URL.Query().Get("available_for_batch"); availableForBatch == boolTrue {
 		filters["available_for_batch"] = true
 	}
 
@@ -2642,7 +2643,7 @@ func (h *Handler) markRepositoryMigrated(ctx context.Context, repo *models.Repos
 
 	history := &models.MigrationHistory{
 		RepositoryID: repo.ID,
-		Status:       "completed",
+		Status:       statusCompleted,
 		Phase:        "migration",
 		Message:      &message,
 		StartedAt:    now,
@@ -3236,7 +3237,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	pendingBatches := 0
 	for _, batch := range batches {
 		switch batch.Status {
-		case "completed", "completed_with_errors":
+		case statusCompleted, "completed_with_errors":
 			completedBatches++
 		case statusInProgress:
 			inProgressBatches++
@@ -3479,11 +3480,11 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	pendingBatches := 0
 	for _, batch := range batches {
 		switch batch.Status {
-		case "completed", "completed_with_errors":
+		case statusCompleted, "completed_with_errors":
 			completedBatches++
-		case "in_progress":
+		case statusInProgress:
 			inProgressBatches++
-		case "pending", "ready":
+		case statusPending, statusReady:
 			pendingBatches++
 		}
 	}

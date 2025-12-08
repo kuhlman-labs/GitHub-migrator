@@ -782,3 +782,133 @@ export interface DashboardActionItems {
   blocked_repositories: Repository[];
 }
 
+// User identity mapping types
+export interface GitHubUser {
+  id: number;
+  login: string;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  source_instance: string;
+  discovered_at: string;
+  updated_at: string;
+  commit_count: number;
+  issue_count: number;
+  pr_count: number;
+  comment_count: number;
+  repository_count: number;
+}
+
+export type UserMappingStatus = 'unmapped' | 'mapped' | 'reclaimed' | 'skipped';
+export type ReclaimStatus = 'pending' | 'invited' | 'completed' | 'failed';
+
+// UserMapping now represents a discovered user with their mapping status
+// This is a unified view - no sync required
+export interface UserMapping {
+  id: number;
+  login: string;  // Source user login
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  source_instance: string;
+  // Mapping fields (from LEFT JOIN with user_mappings)
+  destination_login?: string;
+  mapping_status: UserMappingStatus;
+  mannequin_id?: string;
+  mannequin_login?: string;
+  reclaim_status?: ReclaimStatus;
+  // Legacy aliases for backwards compatibility
+  source_login?: string;  // Alias for login
+  source_email?: string;  // Alias for email
+  source_name?: string;   // Alias for name
+}
+
+export interface UserMappingStats {
+  total: number;
+  mapped: number;
+  unmapped: number;
+  skipped: number;
+  reclaimed: number;
+  pending_reclaim: number;
+}
+
+export interface UserStats {
+  total_users: number;
+  users_with_email: number;
+  total_commits: number;
+  total_prs: number;
+  total_issues: number;
+}
+
+// Team mapping types
+export interface GitHubTeam {
+  id: number;
+  organization: string;
+  slug: string;
+  name: string;
+  description?: string;
+  privacy: string;
+  full_slug: string;
+}
+
+export interface GitHubTeamMember {
+  id: number;
+  team_id: number;
+  login: string;
+  role: 'member' | 'maintainer';
+  discovered_at: string;
+}
+
+export type TeamMappingStatus = 'unmapped' | 'mapped' | 'skipped';
+
+// TeamMapping now represents a discovered team with their mapping status
+// This is a unified view - no sync required
+export interface TeamMapping {
+  id: number;
+  organization: string;  // Source organization
+  slug: string;          // Source team slug
+  name: string;          // Source team name
+  description?: string;
+  privacy: string;
+  // Mapping fields (from LEFT JOIN with team_mappings)
+  destination_org?: string;
+  destination_team_slug?: string;
+  destination_team_name?: string;
+  mapping_status: TeamMappingStatus;
+  // Legacy aliases for backwards compatibility
+  source_org?: string;        // Alias for organization
+  source_team_slug?: string;  // Alias for slug
+  source_team_name?: string;  // Alias for name
+}
+
+export interface TeamMappingStats {
+  total: number;
+  mapped: number;
+  unmapped: number;
+  skipped: number;
+}
+
+// Suggestion types
+export interface UserMappingSuggestion {
+  source_login: string;
+  suggested_login?: string;
+  suggested_email?: string;
+  match_reason: string;
+  confidence_percent: number;
+}
+
+export interface TeamMappingSuggestion {
+  source_full_slug: string;
+  destination_full_slug: string;
+  match_reason: string;
+  confidence_percent: number;
+}
+
+// Import result type
+export interface ImportResult {
+  created: number;
+  updated: number;
+  errors: number;
+  messages: string[];
+}
+

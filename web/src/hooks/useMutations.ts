@@ -202,3 +202,143 @@ export function useBatchUpdateRepositoryStatus() {
   });
 }
 
+// User Mapping mutations
+export function useCreateUserMapping() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (mapping: { source_login: string; destination_login?: string; destination_email?: string }) => 
+      api.createUserMapping(mapping),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+export function useUpdateUserMapping() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ sourceLogin, updates }: { 
+      sourceLogin: string; 
+      updates: { 
+        destination_login?: string; 
+        destination_email?: string; 
+        mapping_status?: 'unmapped' | 'mapped' | 'reclaimed' | 'skipped';
+      } 
+    }) => api.updateUserMapping(sourceLogin, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+export function useDeleteUserMapping() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (sourceLogin: string) => api.deleteUserMapping(sourceLogin),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+export function useImportUserMappings() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (file: File) => api.importUserMappings(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+export function useSyncUserMappings() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => api.syncUserMappings(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+// Team Mapping mutations
+export function useCreateTeamMapping() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (mapping: { source_org: string; source_team_slug: string; destination_org?: string; destination_team_slug?: string }) =>
+      api.createTeamMapping(mapping),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+    },
+  });
+}
+
+export function useUpdateTeamMapping() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ sourceOrg, sourceTeamSlug, updates }: { 
+      sourceOrg: string; 
+      sourceTeamSlug: string; 
+      updates: { 
+        destination_org?: string; 
+        destination_team_slug?: string; 
+        mapping_status?: 'unmapped' | 'mapped' | 'skipped';
+      } 
+    }) => api.updateTeamMapping(sourceOrg, sourceTeamSlug, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+    },
+  });
+}
+
+export function useDeleteTeamMapping() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ sourceOrg, sourceTeamSlug }: { sourceOrg: string; sourceTeamSlug: string }) =>
+      api.deleteTeamMapping(sourceOrg, sourceTeamSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+    },
+  });
+}
+
+export function useImportTeamMappings() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (file: File) => api.importTeamMappings(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+    },
+  });
+}
+
+export function useSyncTeamMappings() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => api.syncTeamMappings(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+    },
+  });
+}
+
