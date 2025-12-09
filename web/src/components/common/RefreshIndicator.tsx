@@ -23,7 +23,10 @@ export const RefreshIndicator: React.FC<RefreshIndicatorProps> = ({
         setShowIndicator(true);
       }, delay);
     } else {
-      setShowIndicator(false);
+      // Use 0ms timeout to avoid synchronous setState in effect
+      timer = setTimeout(() => {
+        setShowIndicator(false);
+      }, 0);
     }
 
     return () => {

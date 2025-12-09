@@ -29,6 +29,7 @@ func TestNewProfiler(t *testing.T) {
 
 	if profiler == nil {
 		t.Fatal("NewProfiler returned nil")
+		return
 	}
 	if profiler.client == nil {
 		t.Error("Profiler client is nil")

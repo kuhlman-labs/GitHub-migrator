@@ -123,10 +123,10 @@ func (c *Collector) mergeDependencies(existing, graphDeps []*models.RepositoryDe
 
 // DependencyGraphStats tracks statistics from processing the dependency graph
 type DependencyGraphStats struct {
-	TotalDependencies    int // Total dependencies in the graph
-	ExternalPackages     int // External packages (npm, PyPI, etc.) - filtered out
-	GitHubRepoDeps       int // Dependencies that are GitHub repositories - kept
-	DuplicatesFiltered   int // Duplicates that were filtered out
+	TotalDependencies  int // Total dependencies in the graph
+	ExternalPackages   int // External packages (npm, PyPI, etc.) - filtered out
+	GitHubRepoDeps     int // Dependencies that are GitHub repositories - kept
+	DuplicatesFiltered int // Duplicates that were filtered out
 }
 
 // processDependencyGraph processes dependency graph manifests and extracts repository dependencies
