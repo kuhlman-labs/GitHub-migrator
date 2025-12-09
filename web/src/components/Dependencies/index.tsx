@@ -1,16 +1,16 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { TextInput, UnderlineNav, Button } from '@primer/react';
 import { SearchIcon, DownloadIcon, AlertIcon, ChevronDownIcon } from '@primer/octicons-react';
-import { Sankey, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../../services/api';
 import type { DependencyGraphResponse, DependencyGraphNode, DependencyGraphEdge } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Badge } from '../common/Badge';
 import { Pagination } from '../common/Pagination';
+import { OrgAggregatedView } from './OrgAggregatedView';
 
-type ViewMode = 'list' | 'graph';
+type ViewMode = 'list' | 'org';
 type DependencyTypeFilter = 'all' | 'submodule' | 'workflow' | 'dependency_graph' | 'package';
 
 export function Dependencies() {
@@ -609,10 +609,10 @@ export function Dependencies() {
                 List View
               </UnderlineNav.Item>
               <UnderlineNav.Item
-                aria-current={viewMode === 'graph' ? 'page' : undefined}
-                onSelect={() => setViewMode('graph')}
+                aria-current={viewMode === 'org' ? 'page' : undefined}
+                onSelect={() => setViewMode('org')}
               >
-                Graph View
+                Organization View
               </UnderlineNav.Item>
             </UnderlineNav>
 
@@ -632,13 +632,14 @@ export function Dependencies() {
                 <DependencyListView 
                   nodes={paginatedNodes}
                   edges={filteredEdges}
+                  allNodes={data?.nodes || []}
                   totalNodes={filteredNodes.length}
                   currentPage={currentPage}
                   pageSize={pageSize}
                   onPageChange={setCurrentPage}
                 />
               ) : (
-                <DependencyGraphView 
+                <OrgAggregatedView 
                   nodes={filteredNodes}
                   edges={filteredEdges}
                 />
@@ -654,13 +655,18 @@ export function Dependencies() {
 interface DependencyListViewProps {
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];
+  allNodes: DependencyGraphNode[];
   totalNodes: number;
   currentPage: number;
   pageSize: number;
   onPageChange: (page: number) => void;
 }
 
-function DependencyListView({ nodes, edges, totalNodes, currentPage, pageSize, onPageChange }: DependencyListViewProps) {
+function DependencyListView({ nodes, edges, allNodes, totalNodes, currentPage, pageSize, onPageChange }: DependencyListViewProps) {
+  const [focusedRepo, setFocusedRepo] = useState<string | null>(null);
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number>(-1);
+  const tableRef = React.useRef<HTMLTableElement>(null);
+
   const getStatusColor = (status: string) => {
     if (status === 'complete' || status === 'migration_complete') return 'green';
     if (status === 'pending') return 'gray';
@@ -669,27 +675,230 @@ function DependencyListView({ nodes, edges, totalNodes, currentPage, pageSize, o
     return 'gray';
   };
 
-  // Build a map of edges for quick lookup
-  const edgeMap = useMemo(() => {
-    const map = new Map<string, DependencyGraphEdge[]>();
+  // Build maps for both directions: depends_on and depended_by
+  const { dependsOnMap, dependedByMap } = useMemo(() => {
+    const dependsOn = new Map<string, DependencyGraphEdge[]>();
+    const dependedBy = new Map<string, DependencyGraphEdge[]>();
+    
     edges.forEach(edge => {
-      const sourceEdges = map.get(edge.source) || [];
+      // Source depends on target
+      const sourceEdges = dependsOn.get(edge.source) || [];
       sourceEdges.push(edge);
-      map.set(edge.source, sourceEdges);
+      dependsOn.set(edge.source, sourceEdges);
+      
+      // Target is depended by source
+      const targetEdges = dependedBy.get(edge.target) || [];
+      targetEdges.push({ ...edge, source: edge.target, target: edge.source });
+      dependedBy.set(edge.target, targetEdges);
     });
-    return map;
+    
+    return { dependsOnMap: dependsOn, dependedByMap: dependedBy };
   }, [edges]);
+
+  // Get the focused node details
+  const focusedNodeData = useMemo(() => {
+    if (!focusedRepo) return null;
+    const node = allNodes.find(n => n.id === focusedRepo);
+    if (!node) return null;
+    
+    const dependsOn = dependsOnMap.get(focusedRepo) || [];
+    const dependedBy = dependedByMap.get(focusedRepo) || [];
+    
+    return { node, dependsOn, dependedBy };
+  }, [focusedRepo, allNodes, dependsOnMap, dependedByMap]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!tableRef.current) return;
+      
+      // Only handle if focus is within the component or there's an active selection
+      const hasFocusInTable = tableRef.current.contains(document.activeElement);
+      const hasActiveSelection = selectedRowIndex >= 0;
+      
+      if (!hasFocusInTable && !hasActiveSelection) return;
+      
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setSelectedRowIndex(prev => Math.min(prev + 1, nodes.length - 1));
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setSelectedRowIndex(prev => Math.max(prev - 1, 0));
+          break;
+        case 'Enter':
+          if (selectedRowIndex >= 0 && selectedRowIndex < nodes.length) {
+            e.preventDefault();
+            setFocusedRepo(nodes[selectedRowIndex].id);
+          }
+          break;
+        case 'Escape':
+          e.preventDefault();
+          setFocusedRepo(null);
+          setSelectedRowIndex(-1);
+          // Keep focus on table so user can continue keyboard navigation
+          tableRef.current?.focus();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [nodes, selectedRowIndex]);
+
+  // Reset selected row when nodes change (e.g., pagination)
+  useEffect(() => {
+    setSelectedRowIndex(-1);
+  }, [nodes]);
+
+  // Scroll selected row into view
+  useEffect(() => {
+    if (selectedRowIndex >= 0 && tableRef.current) {
+      const rows = tableRef.current.querySelectorAll('tbody tr');
+      rows[selectedRowIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [selectedRowIndex]);
 
   return (
     <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-          Repositories with Dependencies ({totalNodes})
-        </h3>
-        <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-          Click on a repository to see its full dependency details
-        </p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+            Repositories with Dependencies ({totalNodes})
+          </h3>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Click the focus button to explore a repository's connections. Use arrow keys to navigate, Enter to focus, Escape to clear.
+          </p>
+        </div>
+        {focusedRepo && (
+          <button
+            onClick={() => setFocusedRepo(null)}
+            className="px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            style={{ 
+              backgroundColor: 'var(--accent-subtle)',
+              color: 'var(--fgColor-accent)',
+              border: '1px solid var(--borderColor-accent-muted)'
+            }}
+          >
+            Clear Focus
+          </button>
+        )}
       </div>
+
+      {/* Focus Mode Panel */}
+      {focusedNodeData && (
+        <div 
+          className="mb-4 rounded-lg p-4"
+          style={{ 
+            backgroundColor: 'var(--accent-subtle)',
+            border: '1px solid var(--borderColor-accent-muted)'
+          }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <h4 className="text-lg font-semibold" style={{ color: 'var(--fgColor-accent)' }}>
+                {focusedNodeData.node.full_name}
+              </h4>
+              <Badge color={getStatusColor(focusedNodeData.node.status)}>
+                {focusedNodeData.node.status.replace(/_/g, ' ')}
+              </Badge>
+            </div>
+            <Link
+              to={`/repository/${encodeURIComponent(focusedNodeData.node.full_name)}`}
+              className="text-sm px-3 py-1 rounded"
+              style={{ 
+                backgroundColor: 'var(--control-bgColor-rest)',
+                color: 'var(--fgColor-accent)'
+              }}
+            >
+              View Repository →
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Depends On */}
+            <div 
+              className="rounded-lg p-3"
+              style={{ backgroundColor: 'var(--bgColor-default)' }}
+            >
+              <h5 className="text-sm font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--fgColor-default)' }}>
+                <span>Depends On</span>
+                <Badge color="blue">{focusedNodeData.dependsOn.length}</Badge>
+              </h5>
+              {focusedNodeData.dependsOn.length === 0 ? (
+                <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>No dependencies</p>
+              ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {focusedNodeData.dependsOn.map((edge, idx) => (
+                    <div 
+                      key={idx}
+                      className="flex items-center justify-between text-sm py-1 px-2 rounded hover:bg-[var(--bgColor-muted)]"
+                    >
+                      <button
+                        onClick={() => setFocusedRepo(edge.target)}
+                        className="text-left hover:underline truncate"
+                        style={{ color: 'var(--fgColor-accent)' }}
+                      >
+                        {edge.target}
+                      </button>
+                      <span 
+                        className="text-xs px-1.5 py-0.5 rounded ml-2 flex-shrink-0"
+                        style={{ 
+                          backgroundColor: 'var(--bgColor-muted)',
+                          color: 'var(--fgColor-muted)'
+                        }}
+                      >
+                        {edge.dependency_type}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Depended By */}
+            <div 
+              className="rounded-lg p-3"
+              style={{ backgroundColor: 'var(--bgColor-default)' }}
+            >
+              <h5 className="text-sm font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--fgColor-default)' }}>
+                <span>Depended By</span>
+                <Badge color="green">{focusedNodeData.dependedBy.length}</Badge>
+              </h5>
+              {focusedNodeData.dependedBy.length === 0 ? (
+                <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>No dependents</p>
+              ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {focusedNodeData.dependedBy.map((edge, idx) => (
+                    <div 
+                      key={idx}
+                      className="flex items-center justify-between text-sm py-1 px-2 rounded hover:bg-[var(--bgColor-muted)]"
+                    >
+                      <button
+                        onClick={() => setFocusedRepo(edge.target)}
+                        className="text-left hover:underline truncate"
+                        style={{ color: 'var(--fgColor-accent)' }}
+                      >
+                        {edge.target}
+                      </button>
+                      <span 
+                        className="text-xs px-1.5 py-0.5 rounded ml-2 flex-shrink-0"
+                        style={{ 
+                          backgroundColor: 'var(--bgColor-muted)',
+                          color: 'var(--fgColor-muted)'
+                        }}
+                      >
+                        {edge.dependency_type}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {nodes.length === 0 ? (
         <div className="text-center py-8" style={{ color: 'var(--fgColor-muted)' }}>
@@ -699,11 +908,19 @@ function DependencyListView({ nodes, edges, totalNodes, currentPage, pageSize, o
         <>
           <div className="overflow-x-auto">
             <table 
+              ref={tableRef}
               className="min-w-full divide-y"
               style={{ borderColor: 'var(--borderColor-muted)' }}
+              tabIndex={0}
             >
               <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                 <tr>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                    style={{ color: 'var(--fgColor-muted)', width: '40px' }}
+                  >
+                    Focus
+                  </th>
                   <th 
                     className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
                     style={{ color: 'var(--fgColor-muted)' }}
@@ -746,10 +963,44 @@ function DependencyListView({ nodes, edges, totalNodes, currentPage, pageSize, o
                 className="divide-y"
                 style={{ borderColor: 'var(--borderColor-muted)' }}
               >
-                {nodes.map((node) => {
-                  const nodeEdges = edgeMap.get(node.id) || [];
+                {nodes.map((node, index) => {
+                  const nodeEdges = dependsOnMap.get(node.id) || [];
+                  const isSelected = selectedRowIndex === index;
+                  const isFocused = focusedRepo === node.id;
+                  
                   return (
-                    <tr key={node.id} className="hover:opacity-80 transition-opacity">
+                    <tr 
+                      key={node.id} 
+                      className="transition-all"
+                      style={{
+                        backgroundColor: isFocused 
+                          ? 'var(--accent-subtle)' 
+                          : isSelected 
+                            ? 'var(--bgColor-muted)' 
+                            : undefined,
+                        outline: isSelected ? '2px solid var(--borderColor-accent-muted)' : undefined,
+                        outlineOffset: '-2px'
+                      }}
+                      onClick={() => setSelectedRowIndex(index)}
+                    >
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFocusedRepo(focusedRepo === node.id ? null : node.id);
+                          }}
+                          className="p-1 rounded transition-colors"
+                          style={{ 
+                            backgroundColor: isFocused ? 'var(--fgColor-accent)' : 'var(--control-bgColor-rest)',
+                            color: isFocused ? 'white' : 'var(--fgColor-muted)'
+                          }}
+                          title={isFocused ? 'Clear focus' : 'Focus on this repository'}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l2.817 2.817a.75.75 0 11-1.06 1.06l-2.817-2.816A6 6 0 012 8z" />
+                          </svg>
+                        </button>
+                      </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <Link
                           to={`/repository/${encodeURIComponent(node.full_name)}`}
@@ -780,9 +1031,12 @@ function DependencyListView({ nodes, edges, totalNodes, currentPage, pageSize, o
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-1 max-w-md">
                           {nodeEdges.slice(0, 3).map((edge, idx) => (
-                            <Link
+                            <button
                               key={idx}
-                              to={`/repository/${encodeURIComponent(edge.target)}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFocusedRepo(edge.target);
+                              }}
                               className="text-xs px-2 py-1 rounded hover:opacity-80"
                               style={{ 
                                 backgroundColor: 'var(--bgColor-muted)',
@@ -790,7 +1044,7 @@ function DependencyListView({ nodes, edges, totalNodes, currentPage, pageSize, o
                               }}
                             >
                               {edge.target.split('/').pop()}
-                            </Link>
+                            </button>
                           ))}
                           {nodeEdges.length > 3 && (
                             <span className="text-xs px-2 py-1" style={{ color: 'var(--fgColor-muted)' }}>
@@ -822,151 +1076,3 @@ function DependencyListView({ nodes, edges, totalNodes, currentPage, pageSize, o
   );
 }
 
-interface DependencyGraphViewProps {
-  nodes: DependencyGraphNode[];
-  edges: DependencyGraphEdge[];
-}
-
-function DependencyGraphView({ nodes, edges }: DependencyGraphViewProps) {
-  // Convert to Sankey format, filtering out circular dependencies
-  // Sankey diagrams are DAGs and cannot render cycles
-  const { sankeyData, circularEdgesFiltered } = useMemo(() => {
-    if (nodes.length === 0 || edges.length === 0) {
-      return { sankeyData: null, circularEdgesFiltered: 0 };
-    }
-
-    // Create node index map
-    const nodeIndexMap = new Map<string, number>();
-    const sankeyNodes = nodes.map((node, index) => {
-      nodeIndexMap.set(node.id, index);
-      return { name: node.full_name };
-    });
-
-    // Build a set of edge keys to detect bidirectional/circular dependencies
-    const edgeSet = new Set<string>();
-    edges.forEach(edge => {
-      edgeSet.add(`${edge.source}|${edge.target}`);
-    });
-
-    // Filter out edges that would create cycles (keep one direction, remove the reverse)
-    // We keep the edge with the lexicographically smaller source to be deterministic
-    let circularCount = 0;
-    const acyclicEdges = edges.filter(edge => {
-      const reverseKey = `${edge.target}|${edge.source}`;
-      if (edgeSet.has(reverseKey)) {
-        // Bidirectional dependency detected - only keep one direction
-        // Keep the one where source < target (lexicographically) to be deterministic
-        if (edge.source > edge.target) {
-          circularCount++;
-          return false; // Filter out this edge
-        }
-      }
-      return true;
-    });
-
-    // Create links with proper indices from acyclic edges
-    const sankeyLinks = acyclicEdges
-      .filter(edge => nodeIndexMap.has(edge.source) && nodeIndexMap.has(edge.target))
-      .map(edge => ({
-        source: nodeIndexMap.get(edge.source)!,
-        target: nodeIndexMap.get(edge.target)!,
-        value: 1,
-        type: edge.dependency_type
-      }));
-
-    // Only return if we have valid links
-    if (sankeyLinks.length === 0) {
-      return { sankeyData: null, circularEdgesFiltered: circularCount };
-    }
-
-    return { 
-      sankeyData: { nodes: sankeyNodes, links: sankeyLinks },
-      circularEdgesFiltered: circularCount
-    };
-  }, [nodes, edges]);
-
-  if (!sankeyData) {
-    return (
-      <div className="text-center py-12" style={{ color: 'var(--fgColor-muted)' }}>
-        <p className="mb-2">Not enough data to display graph visualization</p>
-        <p className="text-sm">Try the List View for a detailed breakdown of dependencies</p>
-      </div>
-    );
-  }
-
-  // For large graphs, show a message and suggest list view
-  if (nodes.length > 50) {
-    return (
-      <div className="text-center py-12" style={{ color: 'var(--fgColor-muted)' }}>
-        <p className="mb-2">Graph visualization works best with fewer repositories</p>
-        <p className="text-sm mb-4">You have {nodes.length} repositories with dependencies</p>
-        <p className="text-sm">Use the search filter to narrow down the view, or use List View for full details</p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-          Dependency Flow
-        </h3>
-        <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-          Visualizing how repositories depend on each other (source → target)
-        </p>
-      </div>
-
-      {circularEdgesFiltered > 0 && (
-        <div 
-          className="mb-4 rounded-lg p-3 flex gap-2 items-center"
-          style={{
-            backgroundColor: 'var(--attention-subtle)',
-            border: '1px solid var(--borderColor-attention)'
-          }}
-        >
-          <span style={{ color: 'var(--fgColor-attention)' }}>
-            <AlertIcon size={16} />
-          </span>
-          <p className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
-            {circularEdgesFiltered} circular {circularEdgesFiltered === 1 ? 'dependency' : 'dependencies'} simplified for visualization. 
-            Sankey diagrams cannot display bidirectional relationships. See the List View for full details.
-          </p>
-        </div>
-      )}
-
-      <div style={{ width: '100%', height: 500 }}>
-        <ResponsiveContainer>
-          <Sankey
-            data={sankeyData}
-            node={{
-              fill: '#0969DA',
-              opacity: 0.8
-            }}
-            link={{
-              stroke: '#656D76',
-              opacity: 0.3
-            }}
-            nodePadding={50}
-            margin={{ top: 20, right: 200, bottom: 20, left: 200 }}
-          >
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'rgba(27, 31, 36, 0.95)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '6px',
-                color: '#ffffff',
-                padding: '8px 12px'
-              }}
-            />
-          </Sankey>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="mt-4 text-center">
-        <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-          Tip: Use the List View for detailed information and to navigate to specific repositories
-        </p>
-      </div>
-    </div>
-  );
-}
