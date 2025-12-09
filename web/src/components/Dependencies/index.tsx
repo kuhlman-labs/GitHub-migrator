@@ -24,6 +24,7 @@ export function Dependencies() {
   const [typeFilter, setTypeFilter] = useState<DependencyTypeFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [showCircularOnly, setShowCircularOnly] = useState(false);
   const pageSize = 25;
   
   // Export state
@@ -57,12 +58,36 @@ export function Dependencies() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter]);
 
-  // Reset page when search changes
+  // Reset page when search or filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, typeFilter]);
+  }, [searchQuery, typeFilter, showCircularOnly]);
 
-  const handleExport = async (format: 'csv' | 'json') => {
+  // Compute repos that have circular dependencies (bidirectional relationships)
+  const circularDependencyRepos = useMemo(() => {
+    if (!data?.edges) return new Set<string>();
+    
+    // Build edge set for quick lookup
+    const edgeSet = new Set<string>();
+    data.edges.forEach(edge => {
+      edgeSet.add(`${edge.source}|${edge.target}`);
+    });
+    
+    // Find repos involved in circular dependencies
+    const circularRepos = new Set<string>();
+    data.edges.forEach(edge => {
+      const reverseKey = `${edge.target}|${edge.source}`;
+      if (edgeSet.has(reverseKey)) {
+        circularRepos.add(edge.source);
+        circularRepos.add(edge.target);
+      }
+    });
+    
+    return circularRepos;
+  }, [data?.edges]);
+
+  // Export full dependencies via API
+  const handleExportAll = async (format: 'csv' | 'json') => {
     setShowExportMenu(false);
     try {
       setExporting(true);
@@ -71,7 +96,7 @@ export function Dependencies() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `dependencies-export.${format}`;
+      link.download = `dependencies-all.${format}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -83,11 +108,98 @@ export function Dependencies() {
     }
   };
 
+  // Export current filtered view (client-side) - one row per repository
+  const handleExportFiltered = (format: 'csv' | 'json') => {
+    setShowExportMenu(false);
+    
+    // Build maps for dependencies (what each repo depends on) and dependents (what depends on each repo)
+    const dependsOnMap = new Map<string, string[]>();
+    const dependedByMap = new Map<string, string[]>();
+    
+    // Process all edges to build both maps
+    filteredEdges.forEach(edge => {
+      // edge.source depends on edge.target
+      const deps = dependsOnMap.get(edge.source) || [];
+      deps.push(edge.target);
+      dependsOnMap.set(edge.source, deps);
+      
+      // edge.target is depended on by edge.source
+      const dependents = dependedByMap.get(edge.target) || [];
+      dependents.push(edge.source);
+      dependedByMap.set(edge.target, dependents);
+    });
+    
+    // Create one row per repository with aggregated dependencies
+    // Use computed counts from filteredEdges to match the listed dependencies
+    const exportRows = filteredNodes.map(node => {
+      const dependencies = dependsOnMap.get(node.id) || [];
+      const dependedBy = dependedByMap.get(node.id) || [];
+      
+      return {
+        repository: node.full_name,
+        organization: node.organization,
+        status: node.status,
+        depends_on_count: dependencies.length,
+        depended_by_count: dependedBy.length,
+        dependencies: dependencies.join('; '),
+        depended_by: dependedBy.join('; ')
+      };
+    });
+
+    let content: string;
+    let mimeType: string;
+    let filename: string;
+
+    if (format === 'csv') {
+      // Helper to escape CSV fields - double quotes must be escaped as ""
+      const escapeCSV = (value: string) => `"${value.replace(/"/g, '""')}"`;
+      
+      const headers = ['repository', 'organization', 'status', 'depends_on_count', 'depended_by_count', 'dependencies', 'depended_by'];
+      const csvRows = [headers.join(',')];
+      exportRows.forEach(row => {
+        csvRows.push([
+          escapeCSV(row.repository),
+          escapeCSV(row.organization),
+          escapeCSV(row.status),
+          row.depends_on_count,
+          row.depended_by_count,
+          escapeCSV(row.dependencies),
+          escapeCSV(row.depended_by)
+        ].join(','));
+      });
+      content = csvRows.join('\n');
+      mimeType = 'text/csv';
+      filename = 'dependencies-summary.csv';
+    } else {
+      content = JSON.stringify(exportRows, null, 2);
+      mimeType = 'application/json';
+      filename = 'dependencies-summary.json';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Check if any filters are active
+  const hasActiveFilters = searchQuery !== '' || showCircularOnly || typeFilter !== 'all';
+
   // Filter and search nodes
   const filteredNodes = useMemo(() => {
     if (!data?.nodes) return [];
     
     let nodes = data.nodes;
+    
+    // Filter by circular dependencies if enabled
+    if (showCircularOnly) {
+      nodes = nodes.filter(node => circularDependencyRepos.has(node.id));
+    }
     
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -103,19 +215,22 @@ export function Dependencies() {
       const bTotal = b.depended_by_count + b.depends_on_count;
       return bTotal - aTotal;
     });
-  }, [data?.nodes, searchQuery]);
+  }, [data?.nodes, searchQuery, showCircularOnly, circularDependencyRepos]);
 
-  // Filter edges based on nodes
+  // Filter edges based on filtered nodes (respects all filters: search, circular, type)
   const filteredEdges = useMemo(() => {
     if (!data?.edges) return [];
     
-    if (!searchQuery) return data.edges;
+    // If no filters are active, return all edges
+    if (!searchQuery && !showCircularOnly) return data.edges;
     
+    // Filter edges to include those where at least one endpoint is in filtered nodes
+    // This preserves visibility of relationships to external repositories
     const nodeIds = new Set(filteredNodes.map(n => n.id));
     return data.edges.filter(edge => 
       nodeIds.has(edge.source) || nodeIds.has(edge.target)
     );
-  }, [data?.edges, filteredNodes, searchQuery]);
+  }, [data?.edges, filteredNodes, searchQuery, showCircularOnly]);
 
   // Paginate nodes for list view
   const paginatedNodes = useMemo(() => {
@@ -211,7 +326,7 @@ export function Dependencies() {
               />
               {/* Dropdown menu */}
               <div 
-                className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20"
+                className="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-20"
                 style={{
                   backgroundColor: 'var(--bgColor-default)',
                   border: '1px solid var(--borderColor-default)',
@@ -219,19 +334,45 @@ export function Dependencies() {
                 }}
               >
                 <div className="py-1">
+                  {/* Summary Export Section */}
+                  <div className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
+                    Summary {hasActiveFilters && `(${filteredNodes.length} repos)`}
+                  </div>
                   <button
-                    onClick={() => handleExport('csv')}
+                    onClick={() => handleExportFiltered('csv')}
                     className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
                     style={{ color: 'var(--fgColor-default)' }}
                   >
-                    Export as CSV
+                    Export Summary as CSV
                   </button>
                   <button
-                    onClick={() => handleExport('json')}
+                    onClick={() => handleExportFiltered('json')}
                     className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
                     style={{ color: 'var(--fgColor-default)' }}
                   >
-                    Export as JSON
+                    Export Summary as JSON
+                  </button>
+                  
+                  {/* Divider */}
+                  <div className="my-1 border-t" style={{ borderColor: 'var(--borderColor-muted)' }} />
+                  
+                  {/* Full Export Section */}
+                  <div className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
+                    All Dependencies
+                  </div>
+                  <button
+                    onClick={() => handleExportAll('csv')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export All as CSV
+                  </button>
+                  <button
+                    onClick={() => handleExportAll('json')}
+                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
+                    style={{ color: 'var(--fgColor-default)' }}
+                  >
+                    Export All as JSON
                   </button>
                 </div>
               </div>
@@ -266,18 +407,33 @@ export function Dependencies() {
             Internal relationships
           </div>
         </div>
-        <div 
-          className="rounded-lg shadow-sm p-4"
-          style={{ backgroundColor: 'var(--bgColor-default)' }}
+        <button 
+          onClick={() => circularDependencyRepos.size > 0 && setShowCircularOnly(!showCircularOnly)}
+          className={`rounded-lg shadow-sm p-4 text-left w-full transition-all ${circularDependencyRepos.size > 0 ? 'cursor-pointer hover:ring-2 hover:ring-[var(--borderColor-attention)]' : ''}`}
+          style={{ 
+            backgroundColor: showCircularOnly ? 'var(--attention-subtle)' : 'var(--bgColor-default)',
+            border: showCircularOnly ? '2px solid var(--borderColor-attention)' : '2px solid transparent'
+          }}
+          disabled={circularDependencyRepos.size === 0}
         >
-          <div className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>Circular Dependencies</div>
-          <div className="text-2xl font-bold mt-1" style={{ color: stats.circular_dependency_count > 0 ? 'var(--fgColor-attention)' : 'var(--fgColor-default)' }}>
-            {stats.circular_dependency_count}
+          <div className="text-sm flex items-center gap-2" style={{ color: 'var(--fgColor-muted)' }}>
+            Circular Dependencies
+            {circularDependencyRepos.size > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                backgroundColor: showCircularOnly ? 'var(--fgColor-attention)' : 'var(--attention-subtle)', 
+                color: showCircularOnly ? 'var(--bgColor-default)' : 'var(--fgColor-attention)' 
+              }}>
+                {showCircularOnly ? 'Filtered' : 'Click to filter'}
+              </span>
+            )}
+          </div>
+          <div className="text-2xl font-bold mt-1" style={{ color: circularDependencyRepos.size > 0 ? 'var(--fgColor-attention)' : 'var(--fgColor-default)' }}>
+            {circularDependencyRepos.size}
           </div>
           <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-            Bidirectional relationships
+            Repos in {stats.circular_dependency_count} bidirectional relationship{stats.circular_dependency_count !== 1 ? 's' : ''}
           </div>
-        </div>
+        </button>
         <div 
           className="rounded-lg shadow-sm p-4"
           style={{ backgroundColor: 'var(--bgColor-default)' }}
@@ -296,30 +452,6 @@ export function Dependencies() {
           </div>
         </div>
       </div>
-
-      {/* Circular Dependencies Warning */}
-      {stats.circular_dependency_count > 0 && (
-        <div 
-          className="rounded-lg p-4 flex gap-3"
-          style={{
-            backgroundColor: 'var(--attention-subtle)',
-            border: '1px solid var(--borderColor-attention)'
-          }}
-        >
-          <div className="flex-shrink-0 mt-0.5" style={{ color: 'var(--fgColor-attention)' }}>
-            <AlertIcon size={20} />
-          </div>
-          <div>
-            <h4 className="font-medium mb-1" style={{ color: 'var(--fgColor-attention)' }}>
-              Circular Dependencies Detected
-            </h4>
-            <p className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
-              {stats.circular_dependency_count} pair(s) of repositories have bidirectional dependencies. 
-              These should be migrated together in the same batch to avoid broken references.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Most Depended Repos */}
       {mostDependedRepos.length > 0 && (
@@ -369,6 +501,37 @@ export function Dependencies() {
         </div>
       ) : (
         <>
+          {/* Circular Dependencies Filter Indicator */}
+          {showCircularOnly && (
+            <div 
+              className="rounded-lg p-3 flex items-center justify-between"
+              style={{
+                backgroundColor: 'var(--attention-subtle)',
+                border: '1px solid var(--borderColor-attention)'
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <span style={{ color: 'var(--fgColor-attention)' }}><AlertIcon size={16} /></span>
+                <span className="text-sm font-medium" style={{ color: 'var(--fgColor-attention)' }}>
+                  Showing {circularDependencyRepos.size} repositories with circular dependencies
+                </span>
+                <span className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
+                  — These should be migrated together in the same batch to avoid broken references.
+                </span>
+              </div>
+              <button
+                onClick={() => setShowCircularOnly(false)}
+                className="px-3 py-1 rounded text-sm font-medium transition-opacity hover:opacity-80"
+                style={{
+                  backgroundColor: 'var(--fgColor-attention)',
+                  color: 'var(--bgColor-default)'
+                }}
+              >
+                Clear Filter
+              </button>
+            </div>
+          )}
+
           {/* Filters and Search - Always show when there's any data */}
           <div className="flex flex-wrap gap-4 items-center justify-between">
             <div className="flex gap-2">
