@@ -51,12 +51,16 @@ func (c *Collector) analyzeDependencies(ctx context.Context, repo *models.Reposi
 				// Not a fatal error - file scanning is primary, continue with what we have
 			} else {
 				// Process and merge dependency graph data, avoiding duplicates
-				depGraphDeps := c.processDependencyGraph(manifests, repo.ID)
+				depGraphDeps, stats := c.processDependencyGraph(manifests, repo.ID)
 				dependencies = c.mergeDependencies(dependencies, depGraphDeps)
 
-				c.logger.Debug("Dependency graph supplemented file scan",
+				c.logger.Info("Dependency graph processed",
 					"repo", repo.FullName,
-					"file_scan_count", fileScanCount,
+					"manifests_fetched", len(manifests),
+					"total_in_graph", stats.TotalDependencies,
+					"external_packages_filtered", stats.ExternalPackages,
+					"github_repo_deps", stats.GitHubRepoDeps,
+					"duplicates_filtered", stats.DuplicatesFiltered,
 					"graph_additions", len(dependencies)-fileScanCount)
 			}
 		}
@@ -117,17 +121,30 @@ func (c *Collector) mergeDependencies(existing, graphDeps []*models.RepositoryDe
 	return existing
 }
 
+// DependencyGraphStats tracks statistics from processing the dependency graph
+type DependencyGraphStats struct {
+	TotalDependencies    int // Total dependencies in the graph
+	ExternalPackages     int // External packages (npm, PyPI, etc.) - filtered out
+	GitHubRepoDeps       int // Dependencies that are GitHub repositories - kept
+	DuplicatesFiltered   int // Duplicates that were filtered out
+}
+
 // processDependencyGraph processes dependency graph manifests and extracts repository dependencies
 // This is used as a FALLBACK to supplement file-based scanning
-func (c *Collector) processDependencyGraph(manifests []*github.DependencyGraphManifest, repoID int64) []*models.RepositoryDependency {
+// Returns both the dependencies and statistics about what was processed/filtered
+func (c *Collector) processDependencyGraph(manifests []*github.DependencyGraphManifest, repoID int64) ([]*models.RepositoryDependency, DependencyGraphStats) {
 	var dependencies []*models.RepositoryDependency
 	seen := make(map[string]bool)
 	now := time.Now()
+	stats := DependencyGraphStats{}
 
 	for _, manifest := range manifests {
 		for _, dep := range manifest.Dependencies {
+			stats.TotalDependencies++
+
 			// Only include GitHub repository dependencies, not external packages
 			if dep.RepositoryOwner == nil || dep.RepositoryName == nil {
+				stats.ExternalPackages++
 				continue
 			}
 
@@ -135,9 +152,11 @@ func (c *Collector) processDependencyGraph(manifests []*github.DependencyGraphMa
 
 			// Deduplicate
 			if seen[depFullName] {
+				stats.DuplicatesFiltered++
 				continue
 			}
 			seen[depFullName] = true
+			stats.GitHubRepoDeps++
 
 			// Create metadata JSON with source marker to indicate this came from API fallback
 			metadataMap := map[string]interface{}{
@@ -163,5 +182,5 @@ func (c *Collector) processDependencyGraph(manifests []*github.DependencyGraphMa
 		}
 	}
 
-	return dependencies
+	return dependencies, stats
 }
