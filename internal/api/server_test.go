@@ -62,6 +62,7 @@ func TestNewServer(t *testing.T) {
 
 	if server == nil {
 		t.Fatal("NewServer() returned nil")
+		return
 	}
 
 	if server.config == nil {
