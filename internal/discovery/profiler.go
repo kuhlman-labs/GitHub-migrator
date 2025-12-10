@@ -598,8 +598,9 @@ func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) 
 
 // parseCodeownersContent parses CODEOWNERS file content and extracts team/user references
 func (p *Profiler) parseCodeownersContent(repo *models.Repository, content string) {
-	// Store the raw content
-	repo.CodeownersContent = &content
+	// Store the raw content - copy to avoid dangling pointer to function parameter
+	contentCopy := content
+	repo.CodeownersContent = &contentCopy
 
 	// Parse and extract team and user references
 	teams, users := extractCodeownersReferences(content)

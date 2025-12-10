@@ -196,9 +196,20 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MappingStatus != nil {
 		existing.MappingStatus = *req.MappingStatus
-	} else if existing.DestinationOrg != nil && existing.DestinationTeamSlug != nil {
+	} else if existing.DestinationOrg != nil && *existing.DestinationOrg != "" &&
+		existing.DestinationTeamSlug != nil && *existing.DestinationTeamSlug != "" {
 		existing.MappingStatus = teamMappingStatusMapped
 	}
+
+	// Validate data integrity: "mapped" status requires destination_org and destination_team_slug
+	if existing.MappingStatus == teamMappingStatusMapped {
+		if existing.DestinationOrg == nil || *existing.DestinationOrg == "" ||
+			existing.DestinationTeamSlug == nil || *existing.DestinationTeamSlug == "" {
+			h.sendError(w, http.StatusBadRequest, "Cannot set status to 'mapped' without destination_org and destination_team_slug")
+			return
+		}
+	}
+
 	existing.UpdatedAt = time.Now()
 
 	if err := h.db.SaveTeamMapping(ctx, existing); err != nil {
@@ -340,25 +351,33 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 			SourceTeamSlug: sourceTeamSlug,
 		}
 
+		// Declare variables at loop level to ensure they survive beyond the if blocks
+		// This prevents dangling pointers when mappings are processed later
+		var sourceTeamName, destOrgVal, destTeamSlugVal, destTeamName string
+
 		// Extract optional fields
 		if sourceTeamNameIdx >= 0 && sourceTeamNameIdx < len(record) {
 			if v := strings.TrimSpace(record[sourceTeamNameIdx]); v != "" {
-				mapping.SourceTeamName = &v
+				sourceTeamName = v
+				mapping.SourceTeamName = &sourceTeamName
 			}
 		}
 		if destOrgIdx >= 0 && destOrgIdx < len(record) {
 			if v := strings.TrimSpace(record[destOrgIdx]); v != "" {
-				mapping.DestinationOrg = &v
+				destOrgVal = v
+				mapping.DestinationOrg = &destOrgVal
 			}
 		}
 		if destTeamSlugIdx >= 0 && destTeamSlugIdx < len(record) {
 			if v := strings.TrimSpace(record[destTeamSlugIdx]); v != "" {
-				mapping.DestinationTeamSlug = &v
+				destTeamSlugVal = v
+				mapping.DestinationTeamSlug = &destTeamSlugVal
 			}
 		}
 		if destTeamNameIdx >= 0 && destTeamNameIdx < len(record) {
 			if v := strings.TrimSpace(record[destTeamNameIdx]); v != "" {
-				mapping.DestinationTeamName = &v
+				destTeamName = v
+				mapping.DestinationTeamName = &destTeamName
 			}
 		}
 
@@ -378,15 +397,18 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 
 		// Check if exists
 		existing, _ := h.db.GetTeamMapping(ctx, sourceOrg, sourceTeamSlug)
-		if existing != nil {
-			updated++
-		} else {
-			created++
-		}
+		isUpdate := existing != nil
 
 		if err := h.db.SaveTeamMapping(ctx, mapping); err != nil {
 			errors++
 			errorMessages = append(errorMessages, fmt.Sprintf("Failed to save %s/%s: %s", sourceOrg, sourceTeamSlug, err.Error()))
+		} else {
+			// Only increment counters after successful save
+			if isUpdate {
+				updated++
+			} else {
+				created++
+			}
 		}
 	}
 

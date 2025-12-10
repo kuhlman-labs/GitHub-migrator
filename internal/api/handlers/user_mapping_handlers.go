@@ -245,6 +245,15 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 	if req.MappingStatus != nil {
 		existing.MappingStatus = *req.MappingStatus
 	}
+
+	// Validate data integrity: "mapped" status requires a destination_login
+	if existing.MappingStatus == string(models.UserMappingStatusMapped) {
+		if existing.DestinationLogin == nil || *existing.DestinationLogin == "" {
+			h.sendError(w, http.StatusBadRequest, "Cannot set status to 'mapped' without a destination_login")
+			return
+		}
+	}
+
 	existing.UpdatedAt = time.Now()
 
 	if err := h.db.SaveUserMapping(ctx, existing); err != nil {
@@ -380,25 +389,33 @@ func (h *Handler) ImportUserMappings(w http.ResponseWriter, r *http.Request) {
 			SourceLogin: sourceLogin,
 		}
 
+		// Declare variables at loop level to ensure they survive beyond the if blocks
+		// This prevents dangling pointers when mappings are processed later
+		var sourceEmail, sourceName, destLogin, destEmail string
+
 		// Extract optional fields
 		if sourceEmailIdx >= 0 && sourceEmailIdx < len(record) {
 			if v := strings.TrimSpace(record[sourceEmailIdx]); v != "" {
-				mapping.SourceEmail = &v
+				sourceEmail = v
+				mapping.SourceEmail = &sourceEmail
 			}
 		}
 		if sourceNameIdx >= 0 && sourceNameIdx < len(record) {
 			if v := strings.TrimSpace(record[sourceNameIdx]); v != "" {
-				mapping.SourceName = &v
+				sourceName = v
+				mapping.SourceName = &sourceName
 			}
 		}
 		if destLoginIdx >= 0 && destLoginIdx < len(record) {
 			if v := strings.TrimSpace(record[destLoginIdx]); v != "" {
-				mapping.DestinationLogin = &v
+				destLogin = v
+				mapping.DestinationLogin = &destLogin
 			}
 		}
 		if destEmailIdx >= 0 && destEmailIdx < len(record) {
 			if v := strings.TrimSpace(record[destEmailIdx]); v != "" {
-				mapping.DestinationEmail = &v
+				destEmail = v
+				mapping.DestinationEmail = &destEmail
 			}
 		}
 
@@ -422,15 +439,18 @@ func (h *Handler) ImportUserMappings(w http.ResponseWriter, r *http.Request) {
 	// Save mappings
 	for _, mapping := range mappings {
 		existing, _ := h.db.GetUserMappingBySourceLogin(ctx, mapping.SourceLogin)
-		if existing != nil {
-			updated++
-		} else {
-			created++
-		}
+		isUpdate := existing != nil
 
 		if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
 			errors++
 			errorMessages = append(errorMessages, fmt.Sprintf("Failed to save %s: %s", mapping.SourceLogin, err.Error()))
+		} else {
+			// Only increment counters after successful save
+			if isUpdate {
+				updated++
+			} else {
+				created++
+			}
 		}
 	}
 
@@ -789,7 +809,7 @@ func (h *Handler) matchMannequinsToUsers(ctx context.Context, mannequins []*gith
 			} else {
 				matched++
 				if mannequin.Claimant != nil {
-					_ = h.db.UpdateReclaimStatus(ctx, foundMapping.SourceLogin, statusCompleted, nil)
+					_ = h.db.UpdateReclaimStatus(ctx, foundMapping.SourceLogin, string(models.ReclaimStatusCompleted), nil)
 				}
 			}
 		} else {

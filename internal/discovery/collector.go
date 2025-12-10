@@ -1011,8 +1011,10 @@ func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *
 			Email:          member.Email,
 			SourceInstance: sourceInstance,
 		}
+		// Copy value before taking address to avoid loop variable aliasing
 		if member.AvatarURL != "" {
-			user.AvatarURL = &member.AvatarURL
+			avatarURL := member.AvatarURL
+			user.AvatarURL = &avatarURL
 		}
 
 		if err := c.storage.SaveUser(ctx, user); err != nil {

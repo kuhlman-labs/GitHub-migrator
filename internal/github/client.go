@@ -1519,11 +1519,14 @@ func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, 
 				AvatarURL: edge.Node.AvatarUrl,
 				Role:      strings.ToLower(edge.Role), // GraphQL returns "ADMIN" or "MEMBER"
 			}
+			// Copy values before taking addresses to avoid loop variable aliasing
 			if edge.Node.Name != "" {
-				member.Name = &edge.Node.Name
+				name := edge.Node.Name
+				member.Name = &name
 			}
 			if edge.Node.Email != "" {
-				member.Email = &edge.Node.Email
+				email := edge.Node.Email
+				member.Email = &email
 			}
 			allMembers = append(allMembers, member)
 		}
@@ -1531,7 +1534,7 @@ func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, 
 		if !query.Organization.MembersWithRole.PageInfo.HasNextPage {
 			break
 		}
-		cursor = &query.Organization.MembersWithRole.PageInfo.EndCursor
+		cursor = newStr(query.Organization.MembersWithRole.PageInfo.EndCursor)
 	}
 
 	c.logger.Debug("Organization member listing complete",
@@ -1661,8 +1664,10 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 				Email:     m.Email,
 				CreatedAt: m.CreatedAt,
 			}
+			// Copy value before taking address to avoid loop variable aliasing
 			if m.Claimant != nil {
-				mannequin.Claimant = &m.Claimant.Login
+				claimantLogin := m.Claimant.Login
+				mannequin.Claimant = &claimantLogin
 			}
 			allMannequins = append(allMannequins, mannequin)
 		}
@@ -1670,7 +1675,7 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 		if !query.Organization.Mannequins.PageInfo.HasNextPage {
 			break
 		}
-		cursor = &query.Organization.Mannequins.PageInfo.EndCursor
+		cursor = newStr(query.Organization.Mannequins.PageInfo.EndCursor)
 	}
 
 	c.logger.Info("Mannequin listing complete",
