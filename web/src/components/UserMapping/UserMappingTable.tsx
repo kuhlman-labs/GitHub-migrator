@@ -6,7 +6,6 @@ import {
   ActionMenu,
   ActionList,
   Label,
-  Avatar,
   Spinner,
 } from '@primer/react';
 import {
@@ -26,6 +25,7 @@ import {
 import { UserMapping, UserMappingStatus } from '../../types';
 import { api } from '../../services/api';
 import { Pagination } from '../common/Pagination';
+import { FallbackAvatar } from '../common/FallbackAvatar';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -311,7 +311,7 @@ export function UserMappingTable() {
               >
                 <td className="p-3">
                   <div className="flex items-center gap-2">
-                    <Avatar src={mapping.avatar_url || `https://github.com/${login}.png`} size={24} />
+                    <FallbackAvatar src={mapping.avatar_url} login={login} size={24} />
                     <div>
                       <div className="font-medium">{login}</div>
                       {email && (
@@ -342,7 +342,7 @@ export function UserMappingTable() {
                     <div className="flex items-center gap-2">
                       {mapping.destination_login ? (
                         <>
-                          <Avatar src={`https://github.com/${mapping.destination_login}.png`} size={24} />
+                          <FallbackAvatar login={mapping.destination_login} size={24} />
                           <span>{mapping.destination_login}</span>
                           <span style={{ color: 'var(--fgColor-muted)' }}><LinkIcon size={16} /></span>
                         </>

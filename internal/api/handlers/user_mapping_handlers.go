@@ -806,6 +806,8 @@ func (h *Handler) matchMannequinsToUsers(ctx context.Context, mannequins []*gith
 		if foundMapping != nil {
 			if err := h.db.UpdateMannequinInfo(ctx, foundMapping.SourceLogin, mannequin.ID, mannequin.Login); err != nil {
 				h.logger.Warn("Failed to update mannequin info", "source_login", foundMapping.SourceLogin, "error", err)
+				// Count as unmatched since the update failed
+				unmatched++
 			} else {
 				matched++
 				if mannequin.Claimant != nil {

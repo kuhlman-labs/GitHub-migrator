@@ -1470,24 +1470,24 @@ func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, 
 	c.logger.Debug("Listing organization members", "org", org)
 
 	var allMembers []*OrgMember
-	var cursor *string
+	var cursor *githubv4.String
 
 	// GraphQL query for organization members with full details
 	var query struct {
 		Organization struct {
 			MembersWithRole struct {
 				PageInfo struct {
-					HasNextPage bool
-					EndCursor   string
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
 				}
 				Edges []struct {
-					Role string
+					Role githubv4.String
 					Node struct {
-						Login      string
-						Name       string
-						Email      string
-						AvatarUrl  string
-						DatabaseId int64
+						Login      githubv4.String
+						Name       githubv4.String
+						Email      githubv4.String
+						AvatarUrl  githubv4.String
+						DatabaseId githubv4.Int
 					}
 				}
 			} `graphql:"membersWithRole(first: 100, after: $cursor)"`
@@ -1495,8 +1495,8 @@ func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, 
 	}
 
 	variables := map[string]interface{}{
-		"org":    org,
-		"cursor": (*string)(nil),
+		"org":    githubv4.String(org),
+		"cursor": cursor,
 	}
 
 	for {
@@ -1514,27 +1514,27 @@ func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, 
 
 		for _, edge := range query.Organization.MembersWithRole.Edges {
 			member := &OrgMember{
-				Login:     edge.Node.Login,
-				ID:        edge.Node.DatabaseId,
-				AvatarURL: edge.Node.AvatarUrl,
-				Role:      strings.ToLower(edge.Role), // GraphQL returns "ADMIN" or "MEMBER"
+				Login:     string(edge.Node.Login),
+				ID:        int64(edge.Node.DatabaseId),
+				AvatarURL: string(edge.Node.AvatarUrl),
+				Role:      strings.ToLower(string(edge.Role)), // GraphQL returns "ADMIN" or "MEMBER"
 			}
 			// Copy values before taking addresses to avoid loop variable aliasing
 			if edge.Node.Name != "" {
-				name := edge.Node.Name
+				name := string(edge.Node.Name)
 				member.Name = &name
 			}
 			if edge.Node.Email != "" {
-				email := edge.Node.Email
+				email := string(edge.Node.Email)
 				member.Email = &email
 			}
 			allMembers = append(allMembers, member)
 		}
 
-		if !query.Organization.MembersWithRole.PageInfo.HasNextPage {
+		if !bool(query.Organization.MembersWithRole.PageInfo.HasNextPage) {
 			break
 		}
-		cursor = newStr(query.Organization.MembersWithRole.PageInfo.EndCursor)
+		cursor = newString(query.Organization.MembersWithRole.PageInfo.EndCursor)
 	}
 
 	c.logger.Debug("Organization member listing complete",
@@ -1613,23 +1613,23 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 	c.logger.Debug("Listing mannequins for organization", "org", org)
 
 	var allMannequins []*Mannequin
-	var cursor *string
+	var cursor *githubv4.String
 
 	// GraphQL query for listing mannequins
 	var query struct {
 		Organization struct {
 			Mannequins struct {
 				PageInfo struct {
-					HasNextPage bool
-					EndCursor   string
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
 				}
 				Nodes []struct {
-					ID        string
-					Login     string
-					Email     string
-					CreatedAt string
+					ID        githubv4.String
+					Login     githubv4.String
+					Email     githubv4.String
+					CreatedAt githubv4.String
 					Claimant  *struct {
-						Login string
+						Login githubv4.String
 					}
 				}
 			} `graphql:"mannequins(first: 100, after: $cursor)"`
@@ -1637,8 +1637,8 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 	}
 
 	variables := map[string]interface{}{
-		"org":    org,
-		"cursor": (*string)(nil),
+		"org":    githubv4.String(org),
+		"cursor": cursor,
 	}
 
 	for {
@@ -1659,23 +1659,23 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 
 		for _, m := range query.Organization.Mannequins.Nodes {
 			mannequin := &Mannequin{
-				ID:        m.ID,
-				Login:     m.Login,
-				Email:     m.Email,
-				CreatedAt: m.CreatedAt,
+				ID:        string(m.ID),
+				Login:     string(m.Login),
+				Email:     string(m.Email),
+				CreatedAt: string(m.CreatedAt),
 			}
 			// Copy value before taking address to avoid loop variable aliasing
 			if m.Claimant != nil {
-				claimantLogin := m.Claimant.Login
+				claimantLogin := string(m.Claimant.Login)
 				mannequin.Claimant = &claimantLogin
 			}
 			allMannequins = append(allMannequins, mannequin)
 		}
 
-		if !query.Organization.Mannequins.PageInfo.HasNextPage {
+		if !bool(query.Organization.Mannequins.PageInfo.HasNextPage) {
 			break
 		}
-		cursor = newStr(query.Organization.Mannequins.PageInfo.EndCursor)
+		cursor = newString(query.Organization.Mannequins.PageInfo.EndCursor)
 	}
 
 	c.logger.Info("Mannequin listing complete",
