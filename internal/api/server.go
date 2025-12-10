@@ -208,6 +208,7 @@ func (s *Server) Router() http.Handler {
 	// Team endpoints (GitHub only)
 	protect("GET /api/v1/teams", s.handler.ListTeams)
 	protect("GET /api/v1/teams/{org}/{teamSlug}/members", s.handler.GetTeamMembers)
+	protect("GET /api/v1/teams/{org}/{teamSlug}", s.handler.GetTeamDetail)
 
 	// Team mapping endpoints
 	// Note: Literal routes must be registered before parameterized routes
@@ -217,6 +218,10 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/team-mappings/export", s.handler.ExportTeamMappings)
 	protect("POST /api/v1/team-mappings/suggest", s.handler.SuggestTeamMappings)
 	protect("POST /api/v1/team-mappings/sync", s.handler.SyncTeamMappingsFromDiscovery)
+	protect("POST /api/v1/team-mappings/execute", s.handler.ExecuteTeamMigration)
+	protect("GET /api/v1/team-mappings/execution-status", s.handler.GetTeamMigrationStatus)
+	protect("POST /api/v1/team-mappings/cancel", s.handler.CancelTeamMigration)
+	protect("POST /api/v1/team-mappings/reset", s.handler.ResetTeamMigrationStatus)
 	protect("POST /api/v1/team-mappings", s.handler.CreateTeamMapping)
 	protect("PATCH /api/v1/team-mappings/{sourceOrg}/{sourceTeamSlug}", s.handler.UpdateTeamMapping)
 	protect("DELETE /api/v1/team-mappings/{sourceOrg}/{sourceTeamSlug}", s.handler.DeleteTeamMapping)

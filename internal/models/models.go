@@ -567,17 +567,21 @@ func (UserMapping) TableName() string {
 
 // TeamMapping maps a source team to a destination team
 type TeamMapping struct {
-	ID                  int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	SourceOrg           string    `json:"source_org" db:"source_org" gorm:"column:source_org;not null;uniqueIndex:idx_team_mapping_source"`
-	SourceTeamSlug      string    `json:"source_team_slug" db:"source_team_slug" gorm:"column:source_team_slug;not null;uniqueIndex:idx_team_mapping_source"`
-	SourceTeamName      *string   `json:"source_team_name,omitempty" db:"source_team_name" gorm:"column:source_team_name"`
-	DestinationOrg      *string   `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org;index"`
-	DestinationTeamSlug *string   `json:"destination_team_slug,omitempty" db:"destination_team_slug" gorm:"column:destination_team_slug"`
-	DestinationTeamName *string   `json:"destination_team_name,omitempty" db:"destination_team_name" gorm:"column:destination_team_name"`
-	MappingStatus       string    `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, skipped
-	AutoCreated         bool      `json:"auto_created" db:"auto_created" gorm:"column:auto_created;default:false"`                         // True if team was auto-created during migration
-	CreatedAt           time.Time `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
-	UpdatedAt           time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+	ID                  int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceOrg           string     `json:"source_org" db:"source_org" gorm:"column:source_org;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamSlug      string     `json:"source_team_slug" db:"source_team_slug" gorm:"column:source_team_slug;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamName      *string    `json:"source_team_name,omitempty" db:"source_team_name" gorm:"column:source_team_name"`
+	DestinationOrg      *string    `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org;index"`
+	DestinationTeamSlug *string    `json:"destination_team_slug,omitempty" db:"destination_team_slug" gorm:"column:destination_team_slug"`
+	DestinationTeamName *string    `json:"destination_team_name,omitempty" db:"destination_team_name" gorm:"column:destination_team_name"`
+	MappingStatus       string     `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, skipped
+	AutoCreated         bool       `json:"auto_created" db:"auto_created" gorm:"column:auto_created;default:false"`                         // True if team was auto-created during migration
+	MigrationStatus     string     `json:"migration_status" db:"migration_status" gorm:"column:migration_status;default:pending;index"`     // pending, in_progress, completed, failed
+	MigratedAt          *time.Time `json:"migrated_at,omitempty" db:"migrated_at" gorm:"column:migrated_at"`                                // When the team was created in destination
+	ErrorMessage        *string    `json:"error_message,omitempty" db:"error_message" gorm:"column:error_message"`                          // Error details if migration failed
+	ReposSynced         int        `json:"repos_synced" db:"repos_synced" gorm:"column:repos_synced;default:0"`                             // Count of repos with permissions applied
+	CreatedAt           time.Time  `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 }
 
 // TableName specifies the table name for TeamMapping model

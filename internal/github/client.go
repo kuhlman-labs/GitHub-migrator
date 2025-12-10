@@ -1519,14 +1519,12 @@ func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, 
 				AvatarURL: string(edge.Node.AvatarUrl),
 				Role:      strings.ToLower(string(edge.Role)), // GraphQL returns "ADMIN" or "MEMBER"
 			}
-			// Copy values before taking addresses to avoid loop variable aliasing
+			// Use newStr for explicit heap allocation
 			if edge.Node.Name != "" {
-				name := string(edge.Node.Name)
-				member.Name = &name
+				member.Name = newStr(string(edge.Node.Name))
 			}
 			if edge.Node.Email != "" {
-				email := string(edge.Node.Email)
-				member.Email = &email
+				member.Email = newStr(string(edge.Node.Email))
 			}
 			allMembers = append(allMembers, member)
 		}
@@ -1575,15 +1573,13 @@ func (c *Client) listOrgMembersREST(ctx context.Context, org string) ([]*OrgMemb
 				AvatarURL: member.GetAvatarURL(),
 				Role:      "member",
 			}
-			// Get user details for name/email
+			// Get user details for name/email, using newStr for explicit heap allocation
 			if user, _, err := c.rest.Users.Get(ctx, member.GetLogin()); err == nil && user != nil {
 				if user.GetName() != "" {
-					name := user.GetName()
-					m.Name = &name
+					m.Name = newStr(user.GetName())
 				}
 				if user.GetEmail() != "" {
-					email := user.GetEmail()
-					m.Email = &email
+					m.Email = newStr(user.GetEmail())
 				}
 			}
 			allMembers = append(allMembers, m)
@@ -1664,10 +1660,9 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 				Email:     string(m.Email),
 				CreatedAt: string(m.CreatedAt),
 			}
-			// Copy value before taking address to avoid loop variable aliasing
+			// Use newStr for explicit heap allocation
 			if m.Claimant != nil {
-				claimantLogin := string(m.Claimant.Login)
-				mannequin.Claimant = &claimantLogin
+				mannequin.Claimant = newStr(string(m.Claimant.Login))
 			}
 			allMannequins = append(allMannequins, mannequin)
 		}
@@ -1683,4 +1678,152 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 		"total_mannequins", len(allMannequins))
 
 	return allMannequins, nil
+}
+
+// GetTeamBySlug retrieves a team by organization and slug
+// Returns nil, nil if the team doesn't exist (404)
+func (c *Client) GetTeamBySlug(ctx context.Context, org, slug string) (*TeamInfo, error) {
+	c.logger.Debug("Getting team by slug", "org", org, "slug", slug)
+
+	var team *github.Team
+	err := c.retryer.Do(ctx, "GetTeamBySlug", func(ctx context.Context) error {
+		var err error
+		team, _, err = c.rest.Teams.GetTeamBySlug(ctx, org, slug)
+		if err != nil {
+			// Check if it's a 404 (team not found)
+			if ghErr, ok := err.(*github.ErrorResponse); ok && ghErr.Response.StatusCode == 404 {
+				return nil // Return nil error for 404, we'll check team == nil
+			}
+			return WrapError(err, "GetTeamBySlug", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if team == nil {
+		c.logger.Debug("Team not found", "org", org, "slug", slug)
+		return nil, nil
+	}
+
+	info := &TeamInfo{
+		ID:      team.GetID(),
+		Slug:    team.GetSlug(),
+		Name:    team.GetName(),
+		Privacy: team.GetPrivacy(),
+	}
+	if team.Description != nil {
+		info.Description = *team.Description
+	}
+
+	c.logger.Debug("Team found", "org", org, "slug", slug, "team_id", info.ID)
+	return info, nil
+}
+
+// CreateTeamInput contains the parameters for creating a team
+type CreateTeamInput struct {
+	Name        string  // Required: team name
+	Description *string // Optional: team description
+	Privacy     string  // "secret" or "closed" (default: "secret")
+	ParentTeam  *int64  // Optional: parent team ID for nested teams
+}
+
+// CreateTeam creates a new team in the organization
+// Teams are created WITHOUT members by default to support EMU/IdP-managed environments
+func (c *Client) CreateTeam(ctx context.Context, org string, input CreateTeamInput) (*TeamInfo, error) {
+	c.logger.Info("Creating team", "org", org, "name", input.Name)
+
+	privacy := input.Privacy
+	if privacy == "" {
+		privacy = "secret"
+	}
+
+	newTeam := &github.NewTeam{
+		Name:        input.Name,
+		Description: input.Description,
+		Privacy:     &privacy,
+	}
+
+	if input.ParentTeam != nil {
+		newTeam.ParentTeamID = input.ParentTeam
+	}
+
+	var team *github.Team
+	err := c.retryer.Do(ctx, "CreateTeam", func(ctx context.Context) error {
+		var err error
+		team, _, err = c.rest.Teams.CreateTeam(ctx, org, *newTeam)
+		if err != nil {
+			return WrapError(err, "CreateTeam", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	info := &TeamInfo{
+		ID:      team.GetID(),
+		Slug:    team.GetSlug(),
+		Name:    team.GetName(),
+		Privacy: team.GetPrivacy(),
+	}
+	if team.Description != nil {
+		info.Description = *team.Description
+	}
+
+	c.logger.Info("Team created successfully",
+		"org", org,
+		"team_slug", info.Slug,
+		"team_id", info.ID)
+
+	return info, nil
+}
+
+// AddTeamRepoPermission adds or updates a repository's permission for a team
+// Permission must be one of: pull, triage, push, maintain, admin
+func (c *Client) AddTeamRepoPermission(ctx context.Context, org, teamSlug, repoOwner, repoName, permission string) error {
+	c.logger.Debug("Adding team repo permission",
+		"org", org,
+		"team", teamSlug,
+		"repo", repoOwner+"/"+repoName,
+		"permission", permission)
+
+	// Validate permission
+	validPermissions := map[string]bool{
+		"pull":     true,
+		"triage":   true,
+		"push":     true,
+		"maintain": true,
+		"admin":    true,
+	}
+	if !validPermissions[permission] {
+		return fmt.Errorf("invalid permission %q, must be one of: pull, triage, push, maintain, admin", permission)
+	}
+
+	opts := &github.TeamAddTeamRepoOptions{
+		Permission: permission,
+	}
+
+	err := c.retryer.Do(ctx, "AddTeamRepoPermission", func(ctx context.Context) error {
+		_, err := c.rest.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, repoOwner, repoName, opts)
+		if err != nil {
+			return WrapError(err, "AddTeamRepoBySlug", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	c.logger.Debug("Team repo permission added successfully",
+		"org", org,
+		"team", teamSlug,
+		"repo", repoOwner+"/"+repoName,
+		"permission", permission)
+
+	return nil
 }

@@ -305,6 +305,4 @@ func TestADOProfiler_EstimateComplexityWithBreakdown(t *testing.T) {
 	}
 }
 
-func stringPtr(s string) *string {
-	return &s
-}
+// stringPtr is defined in profiler.go

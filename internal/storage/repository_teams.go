@@ -342,3 +342,157 @@ func (d *Database) GetAllUniqueTeamMemberLogins(ctx context.Context) ([]string, 
 
 	return logins, nil
 }
+
+// TeamDetailMember represents a team member in the team detail response
+type TeamDetailMember struct {
+	Login string `json:"login"`
+	Role  string `json:"role"`
+}
+
+// TeamDetailRepository represents a repository in the team detail response
+type TeamDetailRepository struct {
+	FullName        string  `json:"full_name"`
+	Permission      string  `json:"permission"`
+	MigrationStatus *string `json:"migration_status,omitempty"`
+}
+
+// TeamDetailMapping represents the mapping info in the team detail response
+type TeamDetailMapping struct {
+	DestinationOrg      *string    `json:"destination_org,omitempty"`
+	DestinationTeamSlug *string    `json:"destination_team_slug,omitempty"`
+	MappingStatus       string     `json:"mapping_status"`
+	MigrationStatus     string     `json:"migration_status,omitempty"`
+	MigratedAt          *time.Time `json:"migrated_at,omitempty"`
+	ReposSynced         int        `json:"repos_synced"`
+	ErrorMessage        *string    `json:"error_message,omitempty"`
+}
+
+// TeamDetail represents comprehensive team information
+type TeamDetail struct {
+	ID           int64                  `json:"id"`
+	Organization string                 `json:"organization"`
+	Slug         string                 `json:"slug"`
+	Name         string                 `json:"name"`
+	Description  *string                `json:"description,omitempty"`
+	Privacy      string                 `json:"privacy"`
+	DiscoveredAt time.Time              `json:"discovered_at"`
+	Members      []TeamDetailMember     `json:"members"`
+	Repositories []TeamDetailRepository `json:"repositories"`
+	Mapping      *TeamDetailMapping     `json:"mapping,omitempty"`
+}
+
+// GetTeamDetail retrieves comprehensive team information including members, repos, and mapping
+func (d *Database) GetTeamDetail(ctx context.Context, org, slug string) (*TeamDetail, error) {
+	// Get the team
+	team, err := d.GetTeamByOrgAndSlug(ctx, org, slug)
+	if err != nil {
+		return nil, err
+	}
+	if team == nil {
+		return nil, nil
+	}
+
+	detail := &TeamDetail{
+		ID:           team.ID,
+		Organization: team.Organization,
+		Slug:         team.Slug,
+		Name:         team.Name,
+		Description:  team.Description,
+		Privacy:      team.Privacy,
+		DiscoveredAt: team.DiscoveredAt,
+		Members:      []TeamDetailMember{},
+		Repositories: []TeamDetailRepository{},
+	}
+
+	// Get team members
+	members, err := d.GetTeamMembers(ctx, team.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team members: %w", err)
+	}
+	for _, m := range members {
+		detail.Members = append(detail.Members, TeamDetailMember{
+			Login: m.Login,
+			Role:  m.Role,
+		})
+	}
+
+	// Get team repositories with their migration status
+	var repoDetails []struct {
+		FullName        string  `gorm:"column:full_name"`
+		Permission      string  `gorm:"column:permission"`
+		MigrationStatus *string `gorm:"column:status"`
+	}
+
+	err = d.db.WithContext(ctx).
+		Table("github_team_repositories gtr").
+		Select("r.full_name, gtr.permission, r.status").
+		Joins("JOIN repositories r ON r.id = gtr.repository_id").
+		Where("gtr.team_id = ?", team.ID).
+		Order("r.full_name ASC").
+		Scan(&repoDetails).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team repositories: %w", err)
+	}
+
+	for _, r := range repoDetails {
+		detail.Repositories = append(detail.Repositories, TeamDetailRepository{
+			FullName:        r.FullName,
+			Permission:      r.Permission,
+			MigrationStatus: r.MigrationStatus,
+		})
+	}
+
+	// Get mapping info
+	var mapping models.TeamMapping
+	err = d.db.WithContext(ctx).
+		Where("source_org = ? AND source_team_slug = ?", org, slug).
+		First(&mapping).Error
+
+	if err == nil {
+		detail.Mapping = &TeamDetailMapping{
+			DestinationOrg:      mapping.DestinationOrg,
+			DestinationTeamSlug: mapping.DestinationTeamSlug,
+			MappingStatus:       mapping.MappingStatus,
+			MigrationStatus:     mapping.MigrationStatus,
+			MigratedAt:          mapping.MigratedAt,
+			ReposSynced:         mapping.ReposSynced,
+			ErrorMessage:        mapping.ErrorMessage,
+		}
+	} else if err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("failed to get team mapping: %w", err)
+	}
+
+	return detail, nil
+}
+
+// TeamRepoForMigration represents a repository to apply permissions for during team migration
+type TeamRepoForMigration struct {
+	SourceFullName string
+	DestFullName   string
+	Permission     string
+}
+
+// GetTeamRepositoriesForMigration returns repositories for a team that have been migrated
+// This is used during team migration execution to know which repos to apply permissions to
+func (d *Database) GetTeamRepositoriesForMigration(ctx context.Context, teamID int64) ([]TeamRepoForMigration, error) {
+	var results []TeamRepoForMigration
+
+	// Join team repositories with repositories table to get destination mapping
+	// Only include repos that have been successfully migrated (status = 'complete')
+	err := d.db.WithContext(ctx).
+		Table("github_team_repositories gtr").
+		Select("r.full_name as source_full_name, r.destination_full_name as dest_full_name, gtr.permission").
+		Joins("JOIN repositories r ON r.id = gtr.repository_id").
+		Where("gtr.team_id = ?", teamID).
+		Where("r.status = ?", "complete").
+		Where("r.destination_full_name IS NOT NULL AND r.destination_full_name != ''").
+		Order("r.full_name ASC").
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team repositories for migration: %w", err)
+	}
+
+	return results, nil
+}

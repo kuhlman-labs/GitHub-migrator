@@ -16,6 +16,14 @@ const (
 	teamMappingStatusSkipped  = "skipped"
 )
 
+// Team migration status constants
+const (
+	TeamMigrationStatusPending    = "pending"
+	TeamMigrationStatusInProgress = "in_progress"
+	TeamMigrationStatusCompleted  = "completed"
+	TeamMigrationStatusFailed     = "failed"
+)
+
 // SaveTeamMapping inserts or updates a team mapping in the database
 func (d *Database) SaveTeamMapping(ctx context.Context, mapping *models.TeamMapping) error {
 	// Check if mapping already exists
@@ -482,23 +490,36 @@ func (d *Database) GetTeamsWithMappingsStats(ctx context.Context) (map[string]in
 		return nil, fmt.Errorf("failed to count total teams: %w", err)
 	}
 
+	// Count mapped teams (teams with mapping status 'mapped')
+	// Uses LEFT JOIN to match teams with their mappings
 	var mapped int64
 	if err := d.db.WithContext(ctx).
-		Table("team_mappings").
-		Where("mapping_status = ?", teamMappingStatusMapped).
+		Table("github_teams").
+		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
+		Where("team_mappings.mapping_status = ?", teamMappingStatusMapped).
 		Count(&mapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mapped: %w", err)
 	}
 
+	// Count skipped teams (teams with mapping status 'skipped')
 	var skipped int64
 	if err := d.db.WithContext(ctx).
-		Table("team_mappings").
-		Where("mapping_status = ?", teamMappingStatusSkipped).
+		Table("github_teams").
+		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
+		Where("team_mappings.mapping_status = ?", teamMappingStatusSkipped).
 		Count(&skipped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
 
-	unmapped := total - mapped - skipped
+	// Count unmapped teams (teams with no mapping OR mapping status 'unmapped')
+	var unmapped int64
+	if err := d.db.WithContext(ctx).
+		Table("github_teams").
+		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
+		Where("team_mappings.id IS NULL OR team_mappings.mapping_status = ?", teamMappingStatusUnmapped).
+		Count(&unmapped).Error; err != nil {
+		return nil, fmt.Errorf("failed to count unmapped: %w", err)
+	}
 
 	return map[string]interface{}{
 		"total":    total,
@@ -506,4 +527,142 @@ func (d *Database) GetTeamsWithMappingsStats(ctx context.Context) (map[string]in
 		"mapped":   mapped,
 		"skipped":  skipped,
 	}, nil
+}
+
+// UpdateTeamMigrationStatus updates the migration execution status for a team mapping
+func (d *Database) UpdateTeamMigrationStatus(ctx context.Context, sourceOrg, sourceTeamSlug, status string, errMsg *string) error {
+	updates := map[string]interface{}{
+		"migration_status": status,
+		"updated_at":       time.Now(),
+	}
+
+	if status == TeamMigrationStatusCompleted {
+		now := time.Now()
+		updates["migrated_at"] = &now
+		updates["error_message"] = nil
+	}
+
+	if errMsg != nil {
+		updates["error_message"] = *errMsg
+	}
+
+	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
+		Updates(updates)
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update team migration status: %w", result.Error)
+	}
+
+	return nil
+}
+
+// UpdateTeamReposSynced updates the count of repos with permissions applied
+func (d *Database) UpdateTeamReposSynced(ctx context.Context, sourceOrg, sourceTeamSlug string, count int) error {
+	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
+		Updates(map[string]interface{}{
+			"repos_synced": count,
+			"updated_at":   time.Now(),
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update repos synced count: %w", result.Error)
+	}
+
+	return nil
+}
+
+// GetMappedTeamsForMigration returns all team mappings that are ready for migration
+// (mapping_status = 'mapped' and migration_status = 'pending' or 'failed')
+func (d *Database) GetMappedTeamsForMigration(ctx context.Context, sourceOrgFilter string) ([]*models.TeamMapping, error) {
+	var mappings []*models.TeamMapping
+
+	query := d.db.WithContext(ctx).
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Where("migration_status IN ?", []string{TeamMigrationStatusPending, TeamMigrationStatusFailed})
+
+	if sourceOrgFilter != "" {
+		query = query.Where("source_org = ?", sourceOrgFilter)
+	}
+
+	if err := query.Order("source_org ASC, source_team_slug ASC").Find(&mappings).Error; err != nil {
+		return nil, fmt.Errorf("failed to get mapped teams for migration: %w", err)
+	}
+
+	return mappings, nil
+}
+
+// GetTeamMigrationExecutionStats returns statistics about team migration execution
+func (d *Database) GetTeamMigrationExecutionStats(ctx context.Context) (map[string]interface{}, error) {
+	var pending, inProgress, completed, failed int64
+
+	db := d.db.WithContext(ctx).Model(&models.TeamMapping{}).Where("mapping_status = ?", teamMappingStatusMapped)
+
+	if err := db.Where("migration_status = ? OR migration_status IS NULL", TeamMigrationStatusPending).Count(&pending).Error; err != nil {
+		return nil, fmt.Errorf("failed to count pending: %w", err)
+	}
+
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Where("migration_status = ?", TeamMigrationStatusInProgress).
+		Count(&inProgress).Error; err != nil {
+		return nil, fmt.Errorf("failed to count in_progress: %w", err)
+	}
+
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Where("migration_status = ?", TeamMigrationStatusCompleted).
+		Count(&completed).Error; err != nil {
+		return nil, fmt.Errorf("failed to count completed: %w", err)
+	}
+
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Where("migration_status = ?", TeamMigrationStatusFailed).
+		Count(&failed).Error; err != nil {
+		return nil, fmt.Errorf("failed to count failed: %w", err)
+	}
+
+	// Also get total repos synced
+	var totalReposSynced int64
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Select("COALESCE(SUM(repos_synced), 0)").
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Scan(&totalReposSynced).Error; err != nil {
+		return nil, fmt.Errorf("failed to sum repos synced: %w", err)
+	}
+
+	return map[string]interface{}{
+		"pending":            pending,
+		"in_progress":        inProgress,
+		"completed":          completed,
+		"failed":             failed,
+		"total_repos_synced": totalReposSynced,
+	}, nil
+}
+
+// ResetTeamMigrationStatus resets all team migration statuses to pending
+// Useful for re-running a migration
+func (d *Database) ResetTeamMigrationStatus(ctx context.Context, sourceOrgFilter string) error {
+	query := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("mapping_status = ?", teamMappingStatusMapped)
+
+	if sourceOrgFilter != "" {
+		query = query.Where("source_org = ?", sourceOrgFilter)
+	}
+
+	result := query.Updates(map[string]interface{}{
+		"migration_status": TeamMigrationStatusPending,
+		"migrated_at":      nil,
+		"error_message":    nil,
+		"repos_synced":     0,
+		"updated_at":       time.Now(),
+	})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to reset team migration status: %w", result.Error)
+	}
+
+	return nil
 }

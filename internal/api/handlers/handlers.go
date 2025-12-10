@@ -4782,6 +4782,15 @@ func stringPtrOrEmpty(s *string) string {
 	return *s
 }
 
+// stringPtr returns a pointer to a heap-allocated copy of the string.
+// Use this when storing string pointers in structs to ensure the value
+// survives beyond the current scope.
+func stringPtr(s string) *string {
+	ptr := new(string)
+	*ptr = s
+	return ptr
+}
+
 func formatTimePtr(t *time.Time) string {
 	if t == nil {
 		return ""

@@ -442,7 +442,4 @@ func TestMigrationLogging_SystemVsUser(t *testing.T) {
 	}
 }
 
-// Helper functions
-func stringPtr(s string) *string {
-	return &s
-}
+// Helper functions - stringPtr is defined in handlers.go

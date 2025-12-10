@@ -749,7 +749,11 @@ function DependencyListView({ nodes, edges, allNodes, totalNodes, currentPage, p
 
   // Reset selected row when nodes change (e.g., pagination)
   useEffect(() => {
-    setSelectedRowIndex(-1);
+    // Use setTimeout to avoid synchronous setState in effect body
+    const timer = setTimeout(() => {
+      setSelectedRowIndex(-1);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [nodes]);
 
   // Scroll selected row into view

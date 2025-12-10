@@ -17,6 +17,8 @@ import {
   GitHubTeamMember,
   TeamMapping,
   TeamMappingStats,
+  TeamDetail,
+  TeamMigrationStatusResponse,
 } from '../types';
 
 // Organization queries
@@ -192,6 +194,31 @@ export function useTeamMappingStats() {
   return useQuery<TeamMappingStats, Error>({
     queryKey: ['teamMappingStats'],
     queryFn: () => api.getTeamMappingStats(),
+  });
+}
+
+// Team detail query
+export function useTeamDetail(org: string, teamSlug: string) {
+  return useQuery<TeamDetail, Error>({
+    queryKey: ['teamDetail', org, teamSlug],
+    queryFn: () => api.getTeamDetail(org, teamSlug),
+    enabled: !!org && !!teamSlug,
+  });
+}
+
+// Team migration status query
+export function useTeamMigrationStatus(enabled = true) {
+  return useQuery<TeamMigrationStatusResponse, Error>({
+    queryKey: ['teamMigrationStatus'],
+    queryFn: () => api.getTeamMigrationStatus(),
+    enabled,
+    refetchInterval: (query) => {
+      // Poll every 2 seconds while migration is running
+      if (query.state.data?.is_running) {
+        return 2000;
+      }
+      return false;
+    },
   });
 }
 

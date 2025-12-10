@@ -51,10 +51,11 @@ export function Navigation() {
         isSearchable: true,
       };
     } else if (path === '/team-mappings') {
+      // Team mappings page has its own in-page search
       return {
-        placeholder: 'Search team mappings...',
-        searchParam: 'search',
-        isSearchable: true,
+        placeholder: '',
+        searchParam: '',
+        isSearchable: false,
       };
     } else if (path === '/dependencies') {
       // Dependencies page has its own in-page search

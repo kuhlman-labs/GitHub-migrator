@@ -389,33 +389,26 @@ func (h *Handler) ImportUserMappings(w http.ResponseWriter, r *http.Request) {
 			SourceLogin: sourceLogin,
 		}
 
-		// Declare variables at loop level to ensure they survive beyond the if blocks
-		// This prevents dangling pointers when mappings are processed later
-		var sourceEmail, sourceName, destLogin, destEmail string
-
-		// Extract optional fields
+		// Extract optional fields using stringPtr to ensure heap-allocated copies
+		// This avoids any potential issues with loop variable scoping
 		if sourceEmailIdx >= 0 && sourceEmailIdx < len(record) {
 			if v := strings.TrimSpace(record[sourceEmailIdx]); v != "" {
-				sourceEmail = v
-				mapping.SourceEmail = &sourceEmail
+				mapping.SourceEmail = stringPtr(v)
 			}
 		}
 		if sourceNameIdx >= 0 && sourceNameIdx < len(record) {
 			if v := strings.TrimSpace(record[sourceNameIdx]); v != "" {
-				sourceName = v
-				mapping.SourceName = &sourceName
+				mapping.SourceName = stringPtr(v)
 			}
 		}
 		if destLoginIdx >= 0 && destLoginIdx < len(record) {
 			if v := strings.TrimSpace(record[destLoginIdx]); v != "" {
-				destLogin = v
-				mapping.DestinationLogin = &destLogin
+				mapping.DestinationLogin = stringPtr(v)
 			}
 		}
 		if destEmailIdx >= 0 && destEmailIdx < len(record) {
 			if v := strings.TrimSpace(record[destEmailIdx]); v != "" {
-				destEmail = v
-				mapping.DestinationEmail = &destEmail
+				mapping.DestinationEmail = stringPtr(v)
 			}
 		}
 
@@ -523,6 +516,11 @@ func (h *Handler) ExportUserMappings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writer.Flush()
+	if err := writer.Error(); err != nil {
+		// Headers already sent, can only log the error
+		h.logger.Error("Failed to flush CSV writer for user mappings export",
+			"error", err)
+	}
 }
 
 // GenerateGEICSV handles GET /api/v1/user-mappings/generate-gei-csv
@@ -583,6 +581,11 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writer.Flush()
+	if err := writer.Error(); err != nil {
+		// Headers already sent, can only log the error
+		h.logger.Error("Failed to flush CSV writer for GEI CSV export",
+			"error", err)
+	}
 }
 
 // SuggestUserMappings handles POST /api/v1/user-mappings/suggest
@@ -774,7 +777,12 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Fetched mannequins from destination", "org", req.DestinationOrg, "count", len(mannequins))
 
-	matched, unmatched := h.matchMannequinsToUsers(ctx, mannequins)
+	matched, unmatched, err := h.matchMannequinsToUsers(ctx, mannequins)
+	if err != nil {
+		h.logger.Error("Failed to match mannequins to users", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to match mannequins to existing user mappings")
+		return
+	}
 
 	h.sendJSON(w, http.StatusOK, map[string]interface{}{
 		"total_mannequins": len(mannequins),
@@ -793,8 +801,11 @@ func (h *Handler) getDestinationClient() *github.Client {
 }
 
 // matchMannequinsToUsers matches mannequins to existing user mappings by email
-func (h *Handler) matchMannequinsToUsers(ctx context.Context, mannequins []*github.Mannequin) (matched, unmatched int) {
-	allMappings, _, _ := h.db.ListUserMappings(ctx, storage.UserMappingFilters{Limit: 0})
+func (h *Handler) matchMannequinsToUsers(ctx context.Context, mannequins []*github.Mannequin) (matched, unmatched int, err error) {
+	allMappings, _, err := h.db.ListUserMappings(ctx, storage.UserMappingFilters{Limit: 0})
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to list user mappings: %w", err)
+	}
 
 	for _, mannequin := range mannequins {
 		if mannequin.Email == "" {
@@ -818,7 +829,7 @@ func (h *Handler) matchMannequinsToUsers(ctx context.Context, mannequins []*gith
 			unmatched++
 		}
 	}
-	return matched, unmatched
+	return matched, unmatched, nil
 }
 
 // findMappingByEmail finds a user mapping by source email

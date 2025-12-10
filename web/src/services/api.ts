@@ -27,6 +27,8 @@ import type {
   TeamMapping,
   TeamMappingStats,
   ImportResult,
+  TeamDetail,
+  TeamMigrationStatusResponse,
 } from '../types';
 
 const client = axios.create({
@@ -626,6 +628,35 @@ export const api = {
 
   async syncTeamMappings(): Promise<{ created: number; message: string }> {
     const { data } = await client.post('/team-mappings/sync');
+    return data;
+  },
+
+  // Team Detail
+  async getTeamDetail(org: string, teamSlug: string): Promise<TeamDetail> {
+    const { data } = await client.get(`/teams/${encodeURIComponent(org)}/${encodeURIComponent(teamSlug)}`);
+    return data;
+  },
+
+  // Team Migration Execution
+  async executeTeamMigration(options?: { source_org?: string; source_team_slug?: string; dry_run?: boolean }): Promise<{ message: string; dry_run: boolean; source_org?: string }> {
+    const { data } = await client.post('/team-mappings/execute', options);
+    return data;
+  },
+
+  async getTeamMigrationStatus(): Promise<TeamMigrationStatusResponse> {
+    const { data } = await client.get('/team-mappings/execution-status');
+    return data;
+  },
+
+  async cancelTeamMigration(): Promise<{ message: string }> {
+    const { data } = await client.post('/team-mappings/cancel');
+    return data;
+  },
+
+  async resetTeamMigrationStatus(sourceOrg?: string): Promise<{ message: string }> {
+    const { data } = await client.post('/team-mappings/reset', null, {
+      params: sourceOrg ? { source_org: sourceOrg } : undefined,
+    });
     return data;
   },
 };

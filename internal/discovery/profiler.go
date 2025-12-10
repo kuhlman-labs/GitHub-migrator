@@ -571,6 +571,13 @@ func classifyCodeowner(owner string, teams, users map[string]bool) {
 	}
 }
 
+// stringPtr returns a pointer to a heap-allocated copy of the string.
+func stringPtr(s string) *string {
+	ptr := new(string)
+	*ptr = s
+	return ptr
+}
+
 // storeCodeownersJSON stores extracted references as JSON in the repository
 func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) {
 	if len(teams) > 0 {
@@ -579,8 +586,7 @@ func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) 
 			teamList = append(teamList, team)
 		}
 		if teamsJSON, err := json.Marshal(teamList); err == nil {
-			teamsStr := string(teamsJSON)
-			repo.CodeownersTeams = &teamsStr
+			repo.CodeownersTeams = stringPtr(string(teamsJSON))
 		}
 	}
 
@@ -590,17 +596,15 @@ func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) 
 			userList = append(userList, user)
 		}
 		if usersJSON, err := json.Marshal(userList); err == nil {
-			usersStr := string(usersJSON)
-			repo.CodeownersUsers = &usersStr
+			repo.CodeownersUsers = stringPtr(string(usersJSON))
 		}
 	}
 }
 
 // parseCodeownersContent parses CODEOWNERS file content and extracts team/user references
 func (p *Profiler) parseCodeownersContent(repo *models.Repository, content string) {
-	// Store the raw content - copy to avoid dangling pointer to function parameter
-	contentCopy := content
-	repo.CodeownersContent = &contentCopy
+	// Store the raw content using stringPtr to ensure heap allocation
+	repo.CodeownersContent = stringPtr(content)
 
 	// Parse and extract team and user references
 	teams, users := extractCodeownersReferences(content)

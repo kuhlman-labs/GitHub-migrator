@@ -342,3 +342,41 @@ export function useSyncTeamMappings() {
   });
 }
 
+// Team migration execution mutations
+export function useExecuteTeamMigration() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (options?: { source_org?: string; source_team_slug?: string; dry_run?: boolean }) => api.executeTeamMigration(options),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMigrationStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+    },
+  });
+}
+
+export function useCancelTeamMigration() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => api.cancelTeamMigration(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMigrationStatus'] });
+    },
+  });
+}
+
+export function useResetTeamMigrationStatus() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (sourceOrg?: string) => api.resetTeamMigrationStatus(sourceOrg),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMigrationStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+    },
+  });
+}
+

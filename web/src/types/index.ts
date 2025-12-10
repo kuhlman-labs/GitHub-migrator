@@ -912,3 +912,70 @@ export interface ImportResult {
   messages: string[];
 }
 
+// Team migration execution types
+export type TeamMigrationStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+export interface TeamMigrationProgress {
+  total_teams: number;
+  processed_teams: number;
+  created_teams: number;
+  skipped_teams: number;
+  failed_teams: number;
+  total_repos_synced: number;
+  started_at: string;
+  completed_at?: string;
+  current_team?: string;
+  status: string;
+  errors?: string[];
+}
+
+export interface TeamMigrationExecutionStats {
+  pending: number;
+  in_progress: number;
+  completed: number;
+  failed: number;
+  total_repos_synced: number;
+}
+
+export interface TeamMigrationStatusResponse {
+  is_running: boolean;
+  progress?: TeamMigrationProgress;
+  execution_stats: TeamMigrationExecutionStats;
+  mapping_stats: TeamMappingStats;
+}
+
+// Team detail types
+export interface TeamDetailMember {
+  login: string;
+  role: 'member' | 'maintainer';
+}
+
+export interface TeamDetailRepository {
+  full_name: string;
+  permission: 'pull' | 'triage' | 'push' | 'maintain' | 'admin';
+  migration_status?: string;
+}
+
+export interface TeamDetailMapping {
+  destination_org?: string;
+  destination_team_slug?: string;
+  mapping_status: TeamMappingStatus;
+  migration_status?: TeamMigrationStatus;
+  migrated_at?: string;
+  repos_synced?: number;
+  error_message?: string;
+}
+
+export interface TeamDetail {
+  id: number;
+  organization: string;
+  slug: string;
+  name: string;
+  description?: string;
+  privacy: string;
+  discovered_at: string;
+  members: TeamDetailMember[];
+  repositories: TeamDetailRepository[];
+  mapping?: TeamDetailMapping;
+}
+

@@ -320,6 +320,7 @@ func TestSaveADOProject(t *testing.T) {
 
 	if retrieved == nil {
 		t.Fatal("GetADOProject() returned nil")
+		return
 	}
 
 	if retrieved.Name != project.Name {

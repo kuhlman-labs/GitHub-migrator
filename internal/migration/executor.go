@@ -33,6 +33,11 @@ const (
 	PostMigrationAlways PostMigrationMode = "always"
 )
 
+// Status constants
+const (
+	statusFailed = "failed"
+)
+
 // Visibility constants
 const (
 	visibilityPrivate  = "private"
@@ -405,7 +410,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	if err := e.validatePreMigration(ctx, repo, batch); err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "pre_migration", "validate", "Pre-migration validation failed", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
+		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
 
 		status := models.StatusMigrationFailed
 		if dryRun {
@@ -446,7 +451,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	if err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "archive_generation", "initiate", "Failed to generate archives", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
+		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
 
 		status := models.StatusMigrationFailed
 		if dryRun {
@@ -486,7 +491,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	if err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "archive_generation", "poll", "Archive generation failed", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
+		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
 
 		repo.Status = string(models.StatusMigrationFailed)
 
@@ -512,7 +517,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	if err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "migration_start", "initiate", "Failed to start migration", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
+		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
 
 		repo.Status = string(models.StatusMigrationFailed)
 
@@ -543,7 +548,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	if err := e.pollMigrationStatus(ctx, repo, batch, historyID, migrationID); err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "migration_progress", "poll", "Migration failed", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, "failed", &errMsg)
+		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
 
 		repo.Status = string(models.StatusMigrationFailed)
 
@@ -710,7 +715,7 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 					Metadata:  archiveURL, // In practice, these may be separate
 				}, nil
 
-			case "failed":
+			case statusFailed:
 				return nil, fmt.Errorf("archive generation failed for repository %s: %w", repo.FullName, err)
 
 			case "pending", "exporting":
@@ -1073,7 +1078,7 @@ func (e *Executor) validatePostMigration(ctx context.Context, repo *models.Repos
 	var destinationData *string
 
 	if len(mismatches) > 0 {
-		validationStatus = "failed"
+		validationStatus = statusFailed
 
 		// Log all mismatches
 		e.logger.Warn("Post-migration validation found mismatches",

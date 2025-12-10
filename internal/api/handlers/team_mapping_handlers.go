@@ -9,11 +9,19 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/kuhlman-labs/github-migrator/internal/migration"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
+
+// teamExecutorMu protects the team executor singleton
+var teamExecutorMu sync.Mutex
+
+// teamExecutor is the singleton team executor instance
+var teamExecutor *migration.TeamExecutor
 
 // Team mapping status constants
 const (
@@ -143,6 +151,8 @@ func (h *Handler) CreateTeamMapping(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTeamMapping handles PATCH /api/v1/team-mappings/{sourceOrg}/{sourceTeamSlug}
 // Updates an existing team mapping
+//
+//nolint:gocyclo // Handler with multiple field validations and update logic
 func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -184,6 +194,9 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Track if user is actively updating destination mapping fields
+	updatingDestination := req.DestinationOrg != nil || req.DestinationTeamSlug != nil
+
 	// Update fields if provided
 	if req.DestinationOrg != nil {
 		existing.DestinationOrg = req.DestinationOrg
@@ -196,8 +209,10 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MappingStatus != nil {
 		existing.MappingStatus = *req.MappingStatus
-	} else if existing.DestinationOrg != nil && *existing.DestinationOrg != "" &&
+	} else if updatingDestination &&
+		existing.DestinationOrg != nil && *existing.DestinationOrg != "" &&
 		existing.DestinationTeamSlug != nil && *existing.DestinationTeamSlug != "" {
+		// Only auto-set "mapped" when user is actively completing the destination mapping
 		existing.MappingStatus = teamMappingStatusMapped
 	}
 
@@ -351,33 +366,25 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 			SourceTeamSlug: sourceTeamSlug,
 		}
 
-		// Declare variables at loop level to ensure they survive beyond the if blocks
-		// This prevents dangling pointers when mappings are processed later
-		var sourceTeamName, destOrgVal, destTeamSlugVal, destTeamName string
-
-		// Extract optional fields
+		// Extract optional fields using stringPtr to ensure heap-allocated copies
 		if sourceTeamNameIdx >= 0 && sourceTeamNameIdx < len(record) {
 			if v := strings.TrimSpace(record[sourceTeamNameIdx]); v != "" {
-				sourceTeamName = v
-				mapping.SourceTeamName = &sourceTeamName
+				mapping.SourceTeamName = stringPtr(v)
 			}
 		}
 		if destOrgIdx >= 0 && destOrgIdx < len(record) {
 			if v := strings.TrimSpace(record[destOrgIdx]); v != "" {
-				destOrgVal = v
-				mapping.DestinationOrg = &destOrgVal
+				mapping.DestinationOrg = stringPtr(v)
 			}
 		}
 		if destTeamSlugIdx >= 0 && destTeamSlugIdx < len(record) {
 			if v := strings.TrimSpace(record[destTeamSlugIdx]); v != "" {
-				destTeamSlugVal = v
-				mapping.DestinationTeamSlug = &destTeamSlugVal
+				mapping.DestinationTeamSlug = stringPtr(v)
 			}
 		}
 		if destTeamNameIdx >= 0 && destTeamNameIdx < len(record) {
 			if v := strings.TrimSpace(record[destTeamNameIdx]); v != "" {
-				destTeamName = v
-				mapping.DestinationTeamName = &destTeamName
+				mapping.DestinationTeamName = stringPtr(v)
 			}
 		}
 
@@ -480,6 +487,11 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writer.Flush()
+	if err := writer.Error(); err != nil {
+		// Headers already sent, can only log the error
+		h.logger.Error("Failed to flush CSV writer for team mappings export",
+			"error", err)
+	}
 }
 
 // SuggestTeamMappings handles POST /api/v1/team-mappings/suggest
@@ -589,6 +601,41 @@ func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 		"members": members,
 		"total":   len(members),
 	})
+}
+
+// GetTeamDetail handles GET /api/v1/teams/{org}/{teamSlug}
+// Returns comprehensive team information including members, repos, and mapping status
+func (h *Handler) GetTeamDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Extract org and team slug from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/teams/")
+	parts := strings.SplitN(path, "/", 2)
+
+	if len(parts) != 2 {
+		h.sendError(w, http.StatusBadRequest, "org and team_slug are required")
+		return
+	}
+
+	org, _ := decodePathComponent(parts[0])
+	teamSlug, _ := decodePathComponent(parts[1])
+
+	detail, err := h.db.GetTeamDetail(ctx, org, teamSlug)
+	if err != nil {
+		if h.handleContextError(ctx, err, "get team detail", r) {
+			return
+		}
+		h.logger.Error("Failed to get team detail", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch team detail")
+		return
+	}
+
+	if detail == nil {
+		h.sendError(w, http.StatusNotFound, "Team not found")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, detail)
 }
 
 // UnmappedTeam represents a team without a destination mapping
@@ -727,4 +774,169 @@ func findUnmappedTeamRefs(teamRefs []string, mappingMap map[string]*models.TeamM
 		}
 	}
 	return unmapped
+}
+
+// getOrCreateTeamExecutor returns the singleton team executor, creating it if necessary.
+// Returns nil if the destination client is not configured.
+func (h *Handler) getOrCreateTeamExecutor() *migration.TeamExecutor {
+	teamExecutorMu.Lock()
+	defer teamExecutorMu.Unlock()
+
+	if teamExecutor == nil {
+		// Check if destination client is available
+		if h.destDualClient == nil {
+			return nil
+		}
+		// Get the destination client from the dual client
+		var destClient = h.destDualClient.APIClient()
+		teamExecutor = migration.NewTeamExecutor(h.db, destClient, h.logger)
+	}
+
+	return teamExecutor
+}
+
+// ExecuteTeamMigration handles POST /api/v1/team-mappings/execute
+// Triggers team migration for all mapped teams, or a single team if both source_org AND source_team_slug are provided
+func (h *Handler) ExecuteTeamMigration(w http.ResponseWriter, r *http.Request) {
+	// Check if destination client is available
+	if h.destDualClient == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		SourceOrg      string `json:"source_org,omitempty"`       // Required with source_team_slug for single team migration
+		SourceTeamSlug string `json:"source_team_slug,omitempty"` // Required with source_org for single team migration
+		DryRun         bool   `json:"dry_run,omitempty"`          // If true, don't actually create teams
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Also check query params for dry_run
+	if r.URL.Query().Get("dry_run") == "true" {
+		req.DryRun = true
+	}
+
+	executor := h.getOrCreateTeamExecutor()
+	if executor == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		return
+	}
+
+	// Check if already running
+	if executor.IsRunning() {
+		h.sendJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":    "Team migration is already running",
+			"progress": executor.GetProgress(),
+		})
+		return
+	}
+
+	// Start execution in background
+	go func() {
+		if err := executor.ExecuteTeamMigration(context.Background(), req.SourceOrg, req.SourceTeamSlug, req.DryRun); err != nil {
+			h.logger.Error("Team migration execution failed", "error", err)
+		}
+	}()
+
+	// Return immediately with status
+	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		"message":          "Team migration started",
+		"dry_run":          req.DryRun,
+		"source_org":       req.SourceOrg,
+		"source_team_slug": req.SourceTeamSlug,
+	})
+}
+
+// GetTeamMigrationStatus handles GET /api/v1/team-mappings/execution-status
+// Returns the current status and progress of team migration execution
+func (h *Handler) GetTeamMigrationStatus(w http.ResponseWriter, r *http.Request) {
+	executor := h.getOrCreateTeamExecutor()
+	if executor == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		return
+	}
+	ctx := r.Context()
+
+	// Get execution progress
+	progress := executor.GetProgress()
+
+	// Get database stats
+	executionStats, err := h.db.GetTeamMigrationExecutionStats(ctx)
+	if err != nil {
+		h.logger.Warn("Failed to get team migration execution stats", "error", err)
+		executionStats = map[string]interface{}{}
+	}
+
+	// Get mapping stats
+	mappingStats, err := h.db.GetTeamsWithMappingsStats(ctx)
+	if err != nil {
+		h.logger.Warn("Failed to get team mapping stats", "error", err)
+		mappingStats = map[string]interface{}{}
+	}
+
+	response := map[string]interface{}{
+		"is_running":      executor.IsRunning(),
+		"progress":        progress,
+		"execution_stats": executionStats,
+		"mapping_stats":   mappingStats,
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
+}
+
+// CancelTeamMigration handles POST /api/v1/team-mappings/cancel
+// Cancels the currently running team migration
+func (h *Handler) CancelTeamMigration(w http.ResponseWriter, r *http.Request) {
+	executor := h.getOrCreateTeamExecutor()
+	if executor == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		return
+	}
+
+	if err := executor.Cancel(); err != nil {
+		h.sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]string{
+		"message": "Team migration cancellation requested",
+	})
+}
+
+// ResetTeamMigrationStatus handles POST /api/v1/team-mappings/reset
+// Resets all team migration statuses to pending
+func (h *Handler) ResetTeamMigrationStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse optional source org filter
+	sourceOrg := r.URL.Query().Get("source_org")
+
+	// Check if migration is running
+	executor := h.getOrCreateTeamExecutor()
+	if executor == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		return
+	}
+	if executor.IsRunning() {
+		h.sendError(w, http.StatusConflict, "Cannot reset while migration is running")
+		return
+	}
+
+	if err := h.db.ResetTeamMigrationStatus(ctx, sourceOrg); err != nil {
+		if h.handleContextError(ctx, err, "reset team migration status", r) {
+			return
+		}
+		h.logger.Error("Failed to reset team migration status", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to reset team migration status")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]string{
+		"message": "Team migration status reset to pending",
+	})
 }

@@ -477,7 +477,11 @@ export function OrgAggregatedView({ nodes, edges }: OrgAggregatedViewProps) {
 
   // Reset repo page when selected org changes
   useEffect(() => {
-    setRepoPage(1);
+    // Use setTimeout to avoid synchronous setState in effect body
+    const timer = setTimeout(() => {
+      setRepoPage(1);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [selectedOrg]);
 
   return (
