@@ -449,7 +449,7 @@ export function TeamMappingTable() {
           <Button
             variant="invisible"
             onClick={() => setShowDiscoverDialog(true)}
-            leadingVisual={SyncIcon}
+            leadingVisual={PeopleIcon}
             disabled={discoverTeams.isPending}
             className="btn-bordered-invisible"
           >

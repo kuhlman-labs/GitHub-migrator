@@ -331,7 +331,7 @@ export function UserMappingTable() {
             {discoverOrgMembers.isPending ? 'Discovering...' : 'Discover Org Members'}
           </Button>
           
-          {/* Mannequin actions */}
+          {/* Mannequin fetch */}
           <Button
             variant="invisible"
             onClick={() => openDestOrgDialog('fetch')}
@@ -341,16 +341,6 @@ export function UserMappingTable() {
           >
             {fetchMannequins.isPending ? 'Fetching...' : 'Fetch Mannequins'}
           </Button>
-          {invitableCount > 0 && (
-            <Button
-              onClick={() => openDestOrgDialog('bulk_invite')}
-              leadingVisual={MailIcon}
-              variant="primary"
-              disabled={bulkSendInvitations.isPending}
-            >
-              {bulkSendInvitations.isPending ? 'Sending...' : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''}`}
-            </Button>
-          )}
           
           {/* Import/Export */}
           <input
@@ -394,6 +384,18 @@ export function UserMappingTable() {
               </ActionList>
             </ActionMenu.Overlay>
           </ActionMenu>
+          
+          {/* Primary action - Send Invitations (matches Teams page pattern) */}
+          {invitableCount > 0 && (
+            <Button
+              onClick={() => openDestOrgDialog('bulk_invite')}
+              leadingVisual={MailIcon}
+              variant="primary"
+              disabled={bulkSendInvitations.isPending}
+            >
+              {bulkSendInvitations.isPending ? 'Sending...' : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''}`}
+            </Button>
+          )}
         </div>
       </div>
 

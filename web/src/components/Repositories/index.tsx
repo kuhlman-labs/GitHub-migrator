@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, Dialog, FormControl, TextInput, Flash } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { RepoIcon, DownloadIcon, ChevronDownIcon, SquareIcon, XIcon, SyncIcon } from '@primer/octicons-react';
+import { RepoIcon, DownloadIcon, ChevronDownIcon, SquareIcon, XIcon } from '@primer/octicons-react';
 import type { RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -282,9 +282,11 @@ export function Repositories() {
                 
                 {/* Discover Repos Button */}
                 <Button
+                  variant="invisible"
                   onClick={() => setShowDiscoverDialog(true)}
-                  leadingVisual={SyncIcon}
+                  leadingVisual={RepoIcon}
                   disabled={discoverRepositories.isPending}
+                  className="btn-bordered-invisible"
                 >
                   {discoverRepositories.isPending ? 'Discovering...' : 'Discover Repos'}
                 </Button>
