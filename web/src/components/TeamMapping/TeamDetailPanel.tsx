@@ -5,6 +5,7 @@ import {
   Label,
   Spinner,
   UnderlineNav,
+  ProgressBar,
 } from '@primer/react';
 import {
   XIcon,
@@ -14,9 +15,10 @@ import {
   CheckIcon,
   AlertIcon,
   ClockIcon,
+  SyncIcon,
 } from '@primer/octicons-react';
 import { useTeamDetail } from '../../hooks/useQueries';
-import { TeamMigrationStatus } from '../../types';
+import { TeamMigrationStatus, TeamMigrationCompleteness } from '../../types';
 
 interface TeamDetailPanelProps {
   org: string;
@@ -37,6 +39,31 @@ const migrationStatusIcons: Record<TeamMigrationStatus | string, React.ReactNode
   in_progress: <Spinner size="small" />,
   completed: <CheckIcon size={12} />,
   failed: <AlertIcon size={12} />,
+};
+
+// Migration completeness colors and labels
+const completenessColors: Record<TeamMigrationCompleteness, 'default' | 'accent' | 'success' | 'attention' | 'danger'> = {
+  pending: 'default',
+  team_only: 'accent',
+  partial: 'attention',
+  complete: 'success',
+  needs_sync: 'attention',
+};
+
+const completenessLabels: Record<TeamMigrationCompleteness, string> = {
+  pending: 'Pending',
+  team_only: 'Team Only',
+  partial: 'Partial',
+  complete: 'Complete',
+  needs_sync: 'Needs Sync',
+};
+
+const completenessDescriptions: Record<TeamMigrationCompleteness, string> = {
+  pending: 'Team has not been migrated yet',
+  team_only: 'Team created, awaiting repo migrations',
+  partial: 'Some repo permissions synced',
+  complete: 'All repo permissions synced',
+  needs_sync: 'New repos available for sync',
 };
 
 const permissionColors: Record<string, 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done'> = {
@@ -150,7 +177,7 @@ export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping }: TeamD
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center flex-wrap">
                   <Label
                     variant={
                       team.mapping.mapping_status === 'mapped'
@@ -170,12 +197,52 @@ export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping }: TeamD
                       </span>
                     </Label>
                   )}
-                  {team.mapping.repos_synced !== undefined && team.mapping.repos_synced > 0 && (
-                    <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
-                      {team.mapping.repos_synced} repos synced
-                    </span>
+                  {/* Show migration completeness badge */}
+                  {team.mapping.migration_completeness && team.mapping.migration_completeness !== 'pending' && (
+                    <Label variant={completenessColors[team.mapping.migration_completeness] || 'default'}>
+                      <span className="flex items-center gap-1">
+                        {team.mapping.migration_completeness === 'needs_sync' && <SyncIcon size={12} />}
+                        {completenessLabels[team.mapping.migration_completeness]}
+                      </span>
+                    </Label>
                   )}
                 </div>
+
+                {/* Show repo sync progress */}
+                {team.mapping.team_created_in_dest && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span style={{ color: 'var(--fgColor-muted)' }}>
+                        Repo Permissions Synced
+                      </span>
+                      <span>
+                        {team.mapping.repos_synced ?? 0} / {team.mapping.repos_eligible ?? 0}
+                        {team.mapping.total_source_repos > 0 && team.mapping.repos_eligible < team.mapping.total_source_repos && (
+                          <span style={{ color: 'var(--fgColor-muted)' }}>
+                            {' '}(of {team.mapping.total_source_repos} total)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    {team.mapping.repos_eligible > 0 && (
+                      <ProgressBar
+                        progress={Math.round(((team.mapping.repos_synced ?? 0) / team.mapping.repos_eligible) * 100)}
+                        bg={(team.mapping.repos_synced ?? 0) >= team.mapping.repos_eligible ? 'success.emphasis' : 'accent.emphasis'}
+                      />
+                    )}
+                    {team.mapping.migration_completeness && (
+                      <span className="text-xs mt-1 block" style={{ color: 'var(--fgColor-muted)' }}>
+                        {completenessDescriptions[team.mapping.migration_completeness]}
+                      </span>
+                    )}
+                    {team.mapping.last_synced_at && (
+                      <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+                        Last synced: {new Date(team.mapping.last_synced_at).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {team.mapping.error_message && (
                   <Flash variant="danger" className="mt-2 text-xs">
                     {team.mapping.error_message}

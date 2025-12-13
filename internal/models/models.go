@@ -598,8 +598,36 @@ type TeamMapping struct {
 	MigratedAt          *time.Time `json:"migrated_at,omitempty" db:"migrated_at" gorm:"column:migrated_at"`                                // When the team was created in destination
 	ErrorMessage        *string    `json:"error_message,omitempty" db:"error_message" gorm:"column:error_message"`                          // Error details if migration failed
 	ReposSynced         int        `json:"repos_synced" db:"repos_synced" gorm:"column:repos_synced;default:0"`                             // Count of repos with permissions applied
-	CreatedAt           time.Time  `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
-	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+	// New fields for tracking partial vs. full migration
+	TotalSourceRepos  int        `json:"total_source_repos" db:"total_source_repos" gorm:"column:total_source_repos;default:0"`           // Total repos this team has access to in source
+	ReposEligible     int        `json:"repos_eligible" db:"repos_eligible" gorm:"column:repos_eligible;default:0"`                       // How many repos have been migrated and are available for sync
+	TeamCreatedInDest bool       `json:"team_created_in_dest" db:"team_created_in_dest" gorm:"column:team_created_in_dest;default:false"` // Whether team exists in destination
+	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty" db:"last_synced_at" gorm:"column:last_synced_at"`                       // When permissions were last synced
+	CreatedAt         time.Time  `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+}
+
+// NeedsReSync returns true if the team has been migrated but has new repos that need permission sync
+func (t *TeamMapping) NeedsReSync() bool {
+	return t.TeamCreatedInDest && t.ReposSynced < t.ReposEligible
+}
+
+// GetMigrationCompleteness returns the migration completeness state
+// Returns: "pending", "team_only", "partial", "complete", "needs_sync"
+func (t *TeamMapping) GetMigrationCompleteness() string {
+	if !t.TeamCreatedInDest {
+		return "pending"
+	}
+	if t.ReposEligible == 0 {
+		return "team_only" // Team created but no repos migrated yet
+	}
+	if t.ReposSynced == 0 {
+		return "needs_sync" // Repos available but none synced
+	}
+	if t.ReposSynced < t.ReposEligible {
+		return "partial" // Some repos synced but not all
+	}
+	return "complete" // All eligible repos have been synced
 }
 
 // TableName specifies the table name for TeamMapping model

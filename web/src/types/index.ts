@@ -946,6 +946,9 @@ export interface ImportResult {
 // Team migration execution types
 export type TeamMigrationStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
+// Migration completeness indicates whether a team is fully migrated with all repo permissions
+export type TeamMigrationCompleteness = 'pending' | 'team_only' | 'partial' | 'complete' | 'needs_sync';
+
 export interface TeamMigrationProgress {
   total_teams: number;
   processed_teams: number;
@@ -965,7 +968,11 @@ export interface TeamMigrationExecutionStats {
   in_progress: number;
   completed: number;
   failed: number;
+  needs_sync: number;      // Teams that need re-sync (new repos migrated)
+  team_only: number;       // Teams created but no repos migrated yet
+  partial: number;         // Teams with some but not all repo permissions synced
   total_repos_synced: number;
+  total_repos_eligible: number;
 }
 
 export interface TeamMigrationStatusResponse {
@@ -995,6 +1002,12 @@ export interface TeamDetailMapping {
   migrated_at?: string;
   repos_synced?: number;
   error_message?: string;
+  // New fields for tracking partial vs. full migration
+  total_source_repos: number;
+  repos_eligible: number;
+  team_created_in_dest: boolean;
+  last_synced_at?: string;
+  migration_completeness: TeamMigrationCompleteness;
 }
 
 export interface TeamDetail {

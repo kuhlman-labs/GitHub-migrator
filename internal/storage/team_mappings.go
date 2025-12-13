@@ -589,11 +589,13 @@ func (d *Database) UpdateTeamMigrationStatus(ctx context.Context, sourceOrg, sou
 
 // UpdateTeamReposSynced updates the count of repos with permissions applied
 func (d *Database) UpdateTeamReposSynced(ctx context.Context, sourceOrg, sourceTeamSlug string, count int) error {
+	now := time.Now()
 	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
 		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
 		Updates(map[string]interface{}{
-			"repos_synced": count,
-			"updated_at":   time.Now(),
+			"repos_synced":   count,
+			"last_synced_at": &now,
+			"updated_at":     now,
 		})
 
 	if result.Error != nil {
@@ -603,14 +605,120 @@ func (d *Database) UpdateTeamReposSynced(ctx context.Context, sourceOrg, sourceT
 	return nil
 }
 
+// UpdateTeamMigrationTracking updates the migration tracking fields for a team
+// This is used during team migration to track progress and state
+type TeamMigrationTrackingUpdate struct {
+	TeamCreatedInDest *bool // Set to true when team is created in destination
+	TotalSourceRepos  *int  // Total repos this team has access to in source
+	ReposEligible     *int  // How many repos have been migrated and are available for sync
+	ReposSynced       *int  // How many repos had permissions applied
+}
+
+func (d *Database) UpdateTeamMigrationTracking(ctx context.Context, sourceOrg, sourceTeamSlug string, update TeamMigrationTrackingUpdate) error {
+	updates := map[string]interface{}{
+		"updated_at": time.Now(),
+	}
+
+	if update.TeamCreatedInDest != nil {
+		updates["team_created_in_dest"] = *update.TeamCreatedInDest
+	}
+	if update.TotalSourceRepos != nil {
+		updates["total_source_repos"] = *update.TotalSourceRepos
+	}
+	if update.ReposEligible != nil {
+		updates["repos_eligible"] = *update.ReposEligible
+	}
+	if update.ReposSynced != nil {
+		updates["repos_synced"] = *update.ReposSynced
+		now := time.Now()
+		updates["last_synced_at"] = &now
+	}
+
+	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
+		Updates(updates)
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update team migration tracking: %w", result.Error)
+	}
+
+	return nil
+}
+
+// UpdateTeamReposEligible calculates and updates the repos_eligible count for a team
+// This counts migrated repos that the team has access to
+func (d *Database) UpdateTeamReposEligible(ctx context.Context, teamID int64, sourceOrg, sourceTeamSlug string) (int, error) {
+	// Count repos that are migrated (status = 'complete') and the team has access to
+	var count int64
+	err := d.db.WithContext(ctx).
+		Table("github_team_repositories gtr").
+		Joins("JOIN repositories r ON r.id = gtr.repository_id").
+		Where("gtr.team_id = ?", teamID).
+		Where("r.status = ?", "complete").
+		Count(&count).Error
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count eligible repos: %w", err)
+	}
+
+	// Update the team mapping
+	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
+		Updates(map[string]interface{}{
+			"repos_eligible": int(count),
+			"updated_at":     time.Now(),
+		})
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to update repos eligible: %w", result.Error)
+	}
+
+	return int(count), nil
+}
+
+// UpdateTeamTotalSourceRepos updates the total_source_repos count for a team
+func (d *Database) UpdateTeamTotalSourceRepos(ctx context.Context, teamID int64, sourceOrg, sourceTeamSlug string) (int, error) {
+	// Count all repos the team has access to (regardless of migration status)
+	var count int64
+	err := d.db.WithContext(ctx).
+		Table("github_team_repositories").
+		Where("team_id = ?", teamID).
+		Count(&count).Error
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count total source repos: %w", err)
+	}
+
+	// Update the team mapping
+	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
+		Updates(map[string]interface{}{
+			"total_source_repos": int(count),
+			"updated_at":         time.Now(),
+		})
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to update total source repos: %w", result.Error)
+	}
+
+	return int(count), nil
+}
+
 // GetMappedTeamsForMigration returns all team mappings that are ready for migration
-// (mapping_status = 'mapped' and migration_status = 'pending' or 'failed')
+// Includes:
+//   - Teams with migration_status = 'pending' or 'failed' (not yet migrated or failed)
+//   - Teams with migration_status = 'completed' but repos_synced < repos_eligible (need re-sync for new repos)
 func (d *Database) GetMappedTeamsForMigration(ctx context.Context, sourceOrgFilter string) ([]*models.TeamMapping, error) {
 	var mappings []*models.TeamMapping
 
+	// Base query: must be mapped
 	query := d.db.WithContext(ctx).
 		Where("mapping_status = ?", teamMappingStatusMapped).
-		Where("migration_status IN ?", []string{TeamMigrationStatusPending, TeamMigrationStatusFailed})
+		Where(
+			// Either pending/failed OR completed but needs re-sync (new repos available)
+			d.db.Where("migration_status IN ?", []string{TeamMigrationStatusPending, TeamMigrationStatusFailed}).
+				Or("migration_status = ? AND repos_synced < repos_eligible", TeamMigrationStatusCompleted),
+		)
 
 	if sourceOrgFilter != "" {
 		query = query.Where("source_org = ?", sourceOrgFilter)
@@ -625,7 +733,7 @@ func (d *Database) GetMappedTeamsForMigration(ctx context.Context, sourceOrgFilt
 
 // GetTeamMigrationExecutionStats returns statistics about team migration execution
 func (d *Database) GetTeamMigrationExecutionStats(ctx context.Context) (map[string]interface{}, error) {
-	var pending, inProgress, completed, failed int64
+	var pending, inProgress, completed, failed, needsSync, teamOnly, partial int64
 
 	db := d.db.WithContext(ctx).Model(&models.TeamMapping{}).Where("mapping_status = ?", teamMappingStatusMapped)
 
@@ -654,8 +762,37 @@ func (d *Database) GetTeamMigrationExecutionStats(ctx context.Context) (map[stri
 		return nil, fmt.Errorf("failed to count failed: %w", err)
 	}
 
-	// Also get total repos synced
-	var totalReposSynced int64
+	// Count teams that need re-sync (completed but repos_synced < repos_eligible)
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Where("migration_status = ?", TeamMigrationStatusCompleted).
+		Where("team_created_in_dest = ?", true).
+		Where("repos_synced < repos_eligible").
+		Count(&needsSync).Error; err != nil {
+		return nil, fmt.Errorf("failed to count needs_sync: %w", err)
+	}
+
+	// Count teams that are "team only" (team created but no repos eligible yet)
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Where("team_created_in_dest = ?", true).
+		Where("repos_eligible = ?", 0).
+		Count(&teamOnly).Error; err != nil {
+		return nil, fmt.Errorf("failed to count team_only: %w", err)
+	}
+
+	// Count partial migrations (some repos synced but not all)
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Where("team_created_in_dest = ?", true).
+		Where("repos_synced > 0").
+		Where("repos_synced < repos_eligible").
+		Count(&partial).Error; err != nil {
+		return nil, fmt.Errorf("failed to count partial: %w", err)
+	}
+
+	// Also get total repos synced and eligible
+	var totalReposSynced, totalReposEligible int64
 	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
 		Select("COALESCE(SUM(repos_synced), 0)").
 		Where("mapping_status = ?", teamMappingStatusMapped).
@@ -663,17 +800,28 @@ func (d *Database) GetTeamMigrationExecutionStats(ctx context.Context) (map[stri
 		return nil, fmt.Errorf("failed to sum repos synced: %w", err)
 	}
 
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Select("COALESCE(SUM(repos_eligible), 0)").
+		Where("mapping_status = ?", teamMappingStatusMapped).
+		Scan(&totalReposEligible).Error; err != nil {
+		return nil, fmt.Errorf("failed to sum repos eligible: %w", err)
+	}
+
 	return map[string]interface{}{
-		"pending":            pending,
-		"in_progress":        inProgress,
-		"completed":          completed,
-		"failed":             failed,
-		"total_repos_synced": totalReposSynced,
+		"pending":              pending,
+		"in_progress":          inProgress,
+		"completed":            completed,
+		"failed":               failed,
+		"needs_sync":           needsSync,
+		"team_only":            teamOnly,
+		"partial":              partial,
+		"total_repos_synced":   totalReposSynced,
+		"total_repos_eligible": totalReposEligible,
 	}, nil
 }
 
 // ResetTeamMigrationStatus resets all team migration statuses to pending
-// Useful for re-running a migration
+// Useful for re-running a migration from scratch
 func (d *Database) ResetTeamMigrationStatus(ctx context.Context, sourceOrgFilter string) error {
 	query := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
 		Where("mapping_status = ?", teamMappingStatusMapped)
@@ -683,11 +831,14 @@ func (d *Database) ResetTeamMigrationStatus(ctx context.Context, sourceOrgFilter
 	}
 
 	result := query.Updates(map[string]interface{}{
-		"migration_status": TeamMigrationStatusPending,
-		"migrated_at":      nil,
-		"error_message":    nil,
-		"repos_synced":     0,
-		"updated_at":       time.Now(),
+		"migration_status":     TeamMigrationStatusPending,
+		"migrated_at":          nil,
+		"error_message":        nil,
+		"repos_synced":         0,
+		"repos_eligible":       0,
+		"team_created_in_dest": false,
+		"last_synced_at":       nil,
+		"updated_at":           time.Now(),
 	})
 
 	if result.Error != nil {

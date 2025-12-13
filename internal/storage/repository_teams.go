@@ -365,6 +365,12 @@ type TeamDetailMapping struct {
 	MigratedAt          *time.Time `json:"migrated_at,omitempty"`
 	ReposSynced         int        `json:"repos_synced"`
 	ErrorMessage        *string    `json:"error_message,omitempty"`
+	// New fields for tracking partial vs. full migration
+	TotalSourceRepos      int        `json:"total_source_repos"`
+	ReposEligible         int        `json:"repos_eligible"`
+	TeamCreatedInDest     bool       `json:"team_created_in_dest"`
+	LastSyncedAt          *time.Time `json:"last_synced_at,omitempty"`
+	MigrationCompleteness string     `json:"migration_completeness"` // pending, team_only, partial, complete, needs_sync
 }
 
 // TeamDetail represents comprehensive team information
@@ -451,13 +457,18 @@ func (d *Database) GetTeamDetail(ctx context.Context, org, slug string) (*TeamDe
 
 	if err == nil {
 		detail.Mapping = &TeamDetailMapping{
-			DestinationOrg:      mapping.DestinationOrg,
-			DestinationTeamSlug: mapping.DestinationTeamSlug,
-			MappingStatus:       mapping.MappingStatus,
-			MigrationStatus:     mapping.MigrationStatus,
-			MigratedAt:          mapping.MigratedAt,
-			ReposSynced:         mapping.ReposSynced,
-			ErrorMessage:        mapping.ErrorMessage,
+			DestinationOrg:        mapping.DestinationOrg,
+			DestinationTeamSlug:   mapping.DestinationTeamSlug,
+			MappingStatus:         mapping.MappingStatus,
+			MigrationStatus:       mapping.MigrationStatus,
+			MigratedAt:            mapping.MigratedAt,
+			ReposSynced:           mapping.ReposSynced,
+			ErrorMessage:          mapping.ErrorMessage,
+			TotalSourceRepos:      mapping.TotalSourceRepos,
+			ReposEligible:         mapping.ReposEligible,
+			TeamCreatedInDest:     mapping.TeamCreatedInDest,
+			LastSyncedAt:          mapping.LastSyncedAt,
+			MigrationCompleteness: mapping.GetMigrationCompleteness(),
 		}
 	} else if err != gorm.ErrRecordNotFound {
 		return nil, fmt.Errorf("failed to get team mapping: %w", err)

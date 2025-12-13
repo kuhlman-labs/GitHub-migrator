@@ -206,6 +206,7 @@ func (e *TeamExecutor) ExecuteTeamMigration(ctx context.Context, sourceOrgFilter
 }
 
 // processTeamMapping processes a single team mapping
+// Handles both initial team creation and re-sync for newly migrated repos
 //
 //nolint:gocyclo // Complex orchestration logic with multiple API calls and error paths
 func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.TeamMapping, dryRun bool) error {
@@ -215,11 +216,14 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 
 	destOrg := *mapping.DestinationOrg
 	destTeamSlug := *mapping.DestinationTeamSlug
+	isResync := mapping.TeamCreatedInDest // Team was already created in a previous run
 
 	e.logger.Info("Processing team mapping",
 		"source", mapping.SourceFullSlug(),
 		"destination", destOrg+"/"+destTeamSlug,
-		"dry_run", dryRun)
+		"dry_run", dryRun,
+		"is_resync", isResync,
+		"previous_repos_synced", mapping.ReposSynced)
 
 	// Update status to in_progress
 	if !dryRun {
@@ -239,11 +243,16 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 	}
 
 	// Step 2: Create team if it doesn't exist
+	teamCreatedNow := false
 	if existingTeam == nil {
 		if dryRun {
 			e.logger.Info("DRY RUN: Would create team",
 				"org", destOrg,
 				"slug", destTeamSlug)
+			// Note: When using PAT auth, would also remove PAT owner from team after creation
+			if e.destClient.IsPATAuthenticated() {
+				e.logger.Info("DRY RUN: Would remove PAT owner from team after creation (PAT auth detected)")
+			}
 		} else {
 			// Get team name - use destination name if set, otherwise use source name
 			teamName := destTeamSlug
@@ -254,7 +263,7 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 			}
 
 			// Create the team (empty, without members)
-			_, err := e.destClient.CreateTeam(ctx, destOrg, github.CreateTeamInput{
+			createdTeam, err := e.destClient.CreateTeam(ctx, destOrg, github.CreateTeamInput{
 				Name:    teamName,
 				Privacy: "closed", // Default to closed
 			})
@@ -264,16 +273,60 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 				return fmt.Errorf("failed to create team: %w", err)
 			}
 
+			teamCreatedNow = true
 			e.logger.Info("Created team in destination",
 				"org", destOrg,
 				"slug", destTeamSlug,
 				"name", teamName)
+
+			// Mark team as created in destination
+			teamCreated := true
+			_ = e.storage.UpdateTeamMigrationTracking(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationTrackingUpdate{
+				TeamCreatedInDest: &teamCreated,
+			})
+
+			// When using PAT authentication, GitHub automatically adds the PAT owner as a maintainer.
+			// We need to remove them to ensure the team is created empty as intended.
+			if e.destClient.IsPATAuthenticated() {
+				patOwner, err := e.destClient.GetAuthenticatedUserLogin(ctx)
+				if err != nil {
+					e.logger.Warn("Failed to get PAT owner login, cannot remove from team",
+						"error", err,
+						"team", destOrg+"/"+createdTeam.Slug)
+				} else {
+					err = e.destClient.RemoveTeamMembership(ctx, destOrg, createdTeam.Slug, patOwner)
+					if err != nil {
+						e.logger.Warn("Failed to remove PAT owner from team",
+							"error", err,
+							"team", destOrg+"/"+createdTeam.Slug,
+							"user", patOwner)
+					} else {
+						e.logger.Info("Removed PAT owner from team to ensure empty team",
+							"team", destOrg+"/"+createdTeam.Slug,
+							"user", patOwner)
+					}
+				}
+			}
 		}
 		e.incrementCreated()
 	} else {
-		e.logger.Info("Team already exists in destination",
-			"org", destOrg,
-			"slug", destTeamSlug)
+		// Team exists - ensure we track that it exists in destination
+		if !dryRun && !mapping.TeamCreatedInDest {
+			teamCreated := true
+			_ = e.storage.UpdateTeamMigrationTracking(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationTrackingUpdate{
+				TeamCreatedInDest: &teamCreated,
+			})
+		}
+
+		if isResync {
+			e.logger.Info("Re-syncing team permissions (team already exists)",
+				"org", destOrg,
+				"slug", destTeamSlug)
+		} else {
+			e.logger.Info("Team already exists in destination",
+				"org", destOrg,
+				"slug", destTeamSlug)
+		}
 		e.incrementSkipped()
 	}
 
@@ -290,7 +343,26 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 		return nil
 	}
 
-	// Step 4: Apply repository permissions for migrated repos
+	// Step 4: Update tracking counts
+	if !dryRun {
+		// Update total source repos count
+		totalSourceRepos, err := e.storage.UpdateTeamTotalSourceRepos(ctx, sourceTeam.ID, mapping.SourceOrg, mapping.SourceTeamSlug)
+		if err != nil {
+			e.logger.Warn("Failed to update total source repos count", "error", err)
+		} else {
+			e.logger.Debug("Updated total source repos count", "count", totalSourceRepos)
+		}
+
+		// Update repos eligible count (migrated repos this team has access to)
+		reposEligible, err := e.storage.UpdateTeamReposEligible(ctx, sourceTeam.ID, mapping.SourceOrg, mapping.SourceTeamSlug)
+		if err != nil {
+			e.logger.Warn("Failed to update repos eligible count", "error", err)
+		} else {
+			e.logger.Debug("Updated repos eligible count", "count", reposEligible)
+		}
+	}
+
+	// Step 5: Apply repository permissions for migrated repos
 	repos, err := e.storage.GetTeamRepositoriesForMigration(ctx, sourceTeam.ID)
 	if err != nil {
 		e.logger.Warn("Failed to get team repositories for migration", "error", err)
@@ -321,7 +393,7 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 						"error", err)
 					continue
 				}
-				e.logger.Info("Applied repo permission",
+				e.logger.Debug("Applied repo permission",
 					"team", destOrg+"/"+destTeamSlug,
 					"repo", repo.DestFullName,
 					"permission", repo.Permission)
@@ -329,14 +401,27 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 			reposSynced++
 		}
 
-		if !dryRun && reposSynced > 0 {
+		if !dryRun {
 			_ = e.storage.UpdateTeamReposSynced(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, reposSynced)
 		}
 
 		e.addReposSynced(reposSynced)
+
+		// Log summary
+		if isResync {
+			e.logger.Info("Re-sync completed",
+				"team", mapping.SourceFullSlug(),
+				"repos_synced", reposSynced,
+				"team_created_now", teamCreatedNow)
+		} else {
+			e.logger.Info("Team migration completed",
+				"team", mapping.SourceFullSlug(),
+				"repos_synced", reposSynced,
+				"repos_eligible", len(repos))
+		}
 	}
 
-	// Step 5: Mark as completed
+	// Step 6: Mark as completed
 	if !dryRun {
 		if err := e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusCompleted, nil); err != nil {
 			e.logger.Warn("Failed to update team migration status to completed", "error", err)

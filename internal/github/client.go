@@ -16,12 +16,23 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// AuthMethod represents the authentication method used by the client
+type AuthMethod string
+
+const (
+	// AuthMethodPAT indicates Personal Access Token authentication
+	AuthMethodPAT AuthMethod = "PAT"
+	// AuthMethodGitHubApp indicates GitHub App authentication
+	AuthMethodGitHubApp AuthMethod = "GitHub App"
+)
+
 // Client wraps GitHub REST and GraphQL clients with rate limiting and retry logic
 type Client struct {
 	rest           *github.Client
 	graphql        *githubv4.Client
 	baseURL        string
 	token          string
+	authMethod     AuthMethod
 	rateLimiter    *RateLimiter
 	retryer        *Retryer
 	circuitBreaker *CircuitBreaker
@@ -320,11 +331,20 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	retryer := NewRetryer(cfg.RetryConfig, rateLimiter, cfg.Logger)
 	circuitBreaker := NewCircuitBreaker(5, 1*time.Minute, cfg.Logger)
 
+	// Determine auth method for the client
+	var clientAuthMethod AuthMethod
+	if authMethod == "PAT" {
+		clientAuthMethod = AuthMethodPAT
+	} else {
+		clientAuthMethod = AuthMethodGitHubApp
+	}
+
 	client := &Client{
 		rest:           restClient,
 		graphql:        graphqlClient,
 		baseURL:        cfg.BaseURL,
 		token:          token,
+		authMethod:     clientAuthMethod,
 		rateLimiter:    rateLimiter,
 		retryer:        retryer,
 		circuitBreaker: circuitBreaker,
@@ -361,6 +381,45 @@ func (c *Client) Token() string {
 // GraphQL returns the underlying GitHub GraphQL client
 func (c *Client) GraphQL() *githubv4.Client {
 	return c.graphql
+}
+
+// IsPATAuthenticated returns true if the client is using PAT authentication
+func (c *Client) IsPATAuthenticated() bool {
+	return c.authMethod == AuthMethodPAT
+}
+
+// GetAuthenticatedUserLogin returns the login (username) of the authenticated user
+// This is primarily useful for PAT authentication where the token owner is a user
+func (c *Client) GetAuthenticatedUserLogin(ctx context.Context) (string, error) {
+	c.logger.Debug("Getting authenticated user login")
+
+	var user *github.User
+	err := c.retryer.Do(ctx, "GetAuthenticatedUserLogin", func(ctx context.Context) error {
+		var resp *github.Response
+		var err error
+		user, resp, err = c.rest.Users.Get(ctx, "")
+		if err != nil {
+			return WrapError(err, "GetAuthenticatedUserLogin", c.baseURL)
+		}
+
+		// Update rate limits
+		if resp != nil && resp.Rate.Limit > 0 {
+			c.rateLimiter.UpdateLimits(
+				resp.Rate.Remaining,
+				resp.Rate.Limit,
+				resp.Rate.Reset.Time,
+			)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	login := user.GetLogin()
+	c.logger.Debug("Got authenticated user login", "login", login)
+	return login, nil
 }
 
 // GetOrganizationInstallationID gets the installation ID for a specific organization
@@ -691,34 +750,13 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 func (c *Client) TestAuthentication(ctx context.Context) error {
 	c.logger.Info("Testing GitHub authentication")
 
-	var user *github.User
-	err := c.retryer.Do(ctx, "TestAuthentication", func(ctx context.Context) error {
-		var resp *github.Response
-		var err error
-		user, resp, err = c.rest.Users.Get(ctx, "")
-		if err != nil {
-			return WrapError(err, "GetAuthenticatedUser", c.baseURL)
-		}
-
-		// Update rate limits
-		if resp != nil && resp.Rate.Limit > 0 {
-			c.rateLimiter.UpdateLimits(
-				resp.Rate.Remaining,
-				resp.Rate.Limit,
-				resp.Rate.Reset.Time,
-			)
-		}
-		return nil
-	})
-
+	login, err := c.GetAuthenticatedUserLogin(ctx)
 	if err != nil {
 		c.logger.Error("Authentication test failed", "error", err)
 		return err
 	}
 
-	c.logger.Info("Authentication successful",
-		"user", user.GetLogin(),
-		"type", user.GetType())
+	c.logger.Info("Authentication successful", "user", login)
 
 	return nil
 }
@@ -1836,6 +1874,35 @@ func (c *Client) AddTeamRepoPermission(ctx context.Context, org, teamSlug, repoO
 		"team", teamSlug,
 		"repo", repoOwner+"/"+repoName,
 		"permission", permission)
+
+	return nil
+}
+
+// RemoveTeamMembership removes a user from a team
+// This is used to remove the PAT owner from a team after creation when using PAT authentication,
+// since GitHub automatically adds the PAT owner as a maintainer when creating a team with a PAT.
+func (c *Client) RemoveTeamMembership(ctx context.Context, org, teamSlug, username string) error {
+	c.logger.Debug("Removing team membership",
+		"org", org,
+		"team", teamSlug,
+		"username", username)
+
+	err := c.retryer.Do(ctx, "RemoveTeamMembership", func(ctx context.Context) error {
+		_, err := c.rest.Teams.RemoveTeamMembershipBySlug(ctx, org, teamSlug, username)
+		if err != nil {
+			return WrapError(err, "RemoveTeamMembershipBySlug", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	c.logger.Debug("Team membership removed successfully",
+		"org", org,
+		"team", teamSlug,
+		"username", username)
 
 	return nil
 }

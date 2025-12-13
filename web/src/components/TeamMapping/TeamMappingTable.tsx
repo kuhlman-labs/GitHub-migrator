@@ -89,7 +89,11 @@ function MigrationProgress({
     in_progress: number;
     completed: number;
     failed: number;
+    needs_sync: number;
+    team_only: number;
+    partial: number;
     total_repos_synced: number;
+    total_repos_eligible: number;
   };
   onCancel: () => void;
   onReset: () => void;
@@ -186,7 +190,18 @@ function MigrationProgress({
             {executionStats.failed > 0 && (
               <Label variant="danger">{executionStats.failed} Failed</Label>
             )}
-            <Label variant="accent">{executionStats.total_repos_synced} Repo Permissions</Label>
+            {executionStats.needs_sync > 0 && (
+              <Label variant="attention">{executionStats.needs_sync} Need Sync</Label>
+            )}
+            {executionStats.team_only > 0 && (
+              <Label variant="accent">{executionStats.team_only} Team Only</Label>
+            )}
+            {executionStats.partial > 0 && (
+              <Label variant="attention">{executionStats.partial} Partial</Label>
+            )}
+            <Label variant="done">
+              {executionStats.total_repos_synced}/{executionStats.total_repos_eligible} Repo Permissions
+            </Label>
           </>
         )}
       </div>
