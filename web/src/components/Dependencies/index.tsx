@@ -298,10 +298,10 @@ export function Dependencies() {
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-light" style={{ color: 'var(--fgColor-default)' }}>
+          <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
             Dependency Explorer
           </h1>
-          <p className="text-sm mt-2" style={{ color: 'var(--fgColor-muted)' }}>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
             Visualize and analyze local dependencies between repositories for migration batch planning
           </p>
         </div>
@@ -309,11 +309,12 @@ export function Dependencies() {
         {/* Export Button with Dropdown */}
         <div className="relative">
           <Button
+            variant="invisible"
             onClick={() => setShowExportMenu(!showExportMenu)}
             disabled={exporting || !hasFilteredData}
             leadingVisual={DownloadIcon}
             trailingVisual={ChevronDownIcon}
-            variant="primary"
+            className="btn-bordered-invisible"
           >
             Export
           </Button>

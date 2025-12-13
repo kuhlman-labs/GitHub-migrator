@@ -22,7 +22,6 @@ import {
   AlertIcon,
   InfoIcon,
   ClockIcon,
-  SyncIcon,
   OrganizationIcon,
   FilterIcon,
   TriangleDownIcon,
@@ -430,19 +429,24 @@ export function TeamMappingTable() {
       />
 
       {/* Header with stats */}
-      <div className="flex justify-between items-center flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            <PeopleIcon size={24} />
-            Team Permission Mapping
-          </h2>
-          {stats && (
-            <div className="flex gap-2">
-              <Label variant="accent">{stats.total} Total</Label>
-              <Label variant="success">{stats.mapped} Mapped</Label>
-              <Label variant="attention">{stats.unmapped} Unmapped</Label>
-            </div>
-          )}
+      <div className="flex justify-between items-start flex-wrap gap-4">
+        <div>
+          <div className="flex items-center gap-4">
+            <h2 className="text-2xl font-semibold flex items-center gap-2" style={{ color: 'var(--fgColor-default)' }}>
+              <PeopleIcon size={24} />
+              Team Permission Mapping
+            </h2>
+            {stats && (
+              <div className="flex gap-2">
+                <Label variant="accent">{stats.total} Total</Label>
+                <Label variant="success">{stats.mapped} Mapped</Label>
+                <Label variant="attention">{stats.unmapped} Unmapped</Label>
+              </div>
+            )}
+          </div>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Map source teams to destination GitHub teams for permission sync
+          </p>
         </div>
         <div className="flex gap-2">
           {/* Discover Teams Button */}

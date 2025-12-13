@@ -151,17 +151,23 @@ export function Analytics() {
   return (
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Analytics Dashboard</h1>
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Analytics Dashboard</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Migration metrics and insights for reporting and planning
+          </p>
+        </div>
         
         {/* Export Button with Dropdown */}
         <div className="relative">
           <Button
+            variant="invisible"
             onClick={() => setShowExportMenu(!showExportMenu)}
             disabled={!analytics}
             leadingVisual={DownloadIcon}
             trailingVisual={ChevronDownIcon}
-            variant="primary"
+            className="btn-bordered-invisible"
           >
             Export
           </Button>

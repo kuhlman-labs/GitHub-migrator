@@ -294,11 +294,12 @@ export function Repositories() {
                 {/* Export Button with Dropdown */}
                 <div className="relative">
                   <Button
+                    variant="invisible"
                     onClick={() => setShowExportMenu(!showExportMenu)}
                     disabled={repositories.length === 0}
                     leadingVisual={DownloadIcon}
                     trailingVisual={ChevronDownIcon}
-                    variant="primary"
+                    className="btn-bordered-invisible"
                   >
                     Export
                   </Button>
