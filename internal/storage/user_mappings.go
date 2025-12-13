@@ -91,6 +91,7 @@ type UserMappingFilters struct {
 	HasDestination *bool  // Filter by whether destination_login is set
 	HasMannequin   *bool  // Filter by whether mannequin_id is set
 	ReclaimStatus  string // Filter by reclaim_status
+	SourceOrg      string // Filter by source_org
 	Search         string // Search in source_login, source_email, destination_login
 	Limit          int
 	Offset         int
@@ -128,6 +129,10 @@ func (d *Database) ListUserMappings(ctx context.Context, filters UserMappingFilt
 		query = query.Where("reclaim_status = ?", filters.ReclaimStatus)
 	}
 
+	if filters.SourceOrg != "" {
+		query = query.Where("source_org = ?", filters.SourceOrg)
+	}
+
 	if filters.Search != "" {
 		searchPattern := "%" + filters.Search + "%"
 		query = query.Where(
@@ -158,7 +163,8 @@ func (d *Database) ListUserMappings(ctx context.Context, filters UserMappingFilt
 }
 
 // GetUserMappingStats returns summary statistics for user mappings
-func (d *Database) GetUserMappingStats(ctx context.Context) (map[string]interface{}, error) {
+// If orgFilter is provided, stats are filtered to that organization only
+func (d *Database) GetUserMappingStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
 	var total int64
 	var mapped int64
 	var unmapped int64
@@ -167,28 +173,51 @@ func (d *Database) GetUserMappingStats(ctx context.Context) (map[string]interfac
 	var pendingReclaim int64
 
 	db := d.db.WithContext(ctx).Model(&models.UserMapping{})
+	if orgFilter != "" {
+		db = db.Where("source_org = ?", orgFilter)
+	}
 
 	if err := db.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mappings: %w", err)
 	}
 
-	if err := db.Where("mapping_status = ?", models.UserMappingStatusMapped).Count(&mapped).Error; err != nil {
+	mappedQuery := d.db.WithContext(ctx).Model(&models.UserMapping{}).Where("mapping_status = ?", models.UserMappingStatusMapped)
+	if orgFilter != "" {
+		mappedQuery = mappedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := mappedQuery.Count(&mapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mapped: %w", err)
 	}
 
-	if err := db.Where("mapping_status = ?", models.UserMappingStatusUnmapped).Count(&unmapped).Error; err != nil {
+	unmappedQuery := d.db.WithContext(ctx).Model(&models.UserMapping{}).Where("mapping_status = ?", models.UserMappingStatusUnmapped)
+	if orgFilter != "" {
+		unmappedQuery = unmappedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := unmappedQuery.Count(&unmapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count unmapped: %w", err)
 	}
 
-	if err := db.Where("mapping_status = ?", models.UserMappingStatusSkipped).Count(&skipped).Error; err != nil {
+	skippedQuery := d.db.WithContext(ctx).Model(&models.UserMapping{}).Where("mapping_status = ?", models.UserMappingStatusSkipped)
+	if orgFilter != "" {
+		skippedQuery = skippedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := skippedQuery.Count(&skipped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
 
-	if err := db.Where("mapping_status = ?", models.UserMappingStatusReclaimed).Count(&reclaimed).Error; err != nil {
+	reclaimedQuery := d.db.WithContext(ctx).Model(&models.UserMapping{}).Where("mapping_status = ?", models.UserMappingStatusReclaimed)
+	if orgFilter != "" {
+		reclaimedQuery = reclaimedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := reclaimedQuery.Count(&reclaimed).Error; err != nil {
 		return nil, fmt.Errorf("failed to count reclaimed: %w", err)
 	}
 
-	if err := db.Where("reclaim_status = ?", models.ReclaimStatusPending).Count(&pendingReclaim).Error; err != nil {
+	pendingQuery := d.db.WithContext(ctx).Model(&models.UserMapping{}).Where("reclaim_status = ?", models.ReclaimStatusPending)
+	if orgFilter != "" {
+		pendingQuery = pendingQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := pendingQuery.Count(&pendingReclaim).Error; err != nil {
 		return nil, fmt.Errorf("failed to count pending reclaim: %w", err)
 	}
 
@@ -285,6 +314,23 @@ func (d *Database) UpdateReclaimStatus(ctx context.Context, sourceLogin, reclaim
 	return nil
 }
 
+// UpdateMatchInfo updates the auto-match confidence and reason for a user mapping
+func (d *Database) UpdateMatchInfo(ctx context.Context, sourceLogin string, confidence int, reason string) error {
+	result := d.db.WithContext(ctx).Model(&models.UserMapping{}).
+		Where("source_login = ?", sourceLogin).
+		Updates(map[string]interface{}{
+			"match_confidence": confidence,
+			"match_reason":     reason,
+			"updated_at":       time.Now(),
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update match info: %w", result.Error)
+	}
+
+	return nil
+}
+
 // BulkCreateUserMappings creates multiple user mappings efficiently
 func (d *Database) BulkCreateUserMappings(ctx context.Context, mappings []*models.UserMapping) error {
 	if len(mappings) == 0 {
@@ -334,6 +380,38 @@ func (d *Database) DeleteAllUserMappings(ctx context.Context) error {
 	return nil
 }
 
+// GetUserMappingSourceOrgs returns a list of unique source organizations
+// First checks user_mappings.source_org, falls back to user_org_memberships if empty
+func (d *Database) GetUserMappingSourceOrgs(ctx context.Context) ([]string, error) {
+	var orgs []string
+
+	// First try to get from user_mappings
+	err := d.db.WithContext(ctx).
+		Model(&models.UserMapping{}).
+		Where("source_org IS NOT NULL AND source_org != ''").
+		Distinct("source_org").
+		Pluck("source_org", &orgs).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source orgs from mappings: %w", err)
+	}
+
+	// If no source orgs in mappings, fall back to user_org_memberships
+	if len(orgs) == 0 {
+		err = d.db.WithContext(ctx).
+			Model(&models.UserOrgMembership{}).
+			Distinct("organization").
+			Order("organization ASC").
+			Pluck("organization", &orgs).Error
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to get source orgs from memberships: %w", err)
+		}
+	}
+
+	return orgs, nil
+}
+
 // CreateUserMappingFromUser creates a user mapping from a discovered user
 func (d *Database) CreateUserMappingFromUser(ctx context.Context, user *models.GitHubUser) error {
 	mapping := &models.UserMapping{
@@ -349,32 +427,50 @@ func (d *Database) CreateUserMappingFromUser(ctx context.Context, user *models.G
 }
 
 // SyncUserMappingsFromUsers creates user mappings for all discovered users that don't have one
+// Also populates source_org from user_org_memberships
 func (d *Database) SyncUserMappingsFromUsers(ctx context.Context) (int64, error) {
 	// Find users without mappings and create mappings for them
-	var users []*models.GitHubUser
+	// Also get the primary org (first alphabetically) from user_org_memberships
+	type userWithOrg struct {
+		Login      string
+		Email      *string
+		Name       *string
+		PrimaryOrg *string
+	}
+
+	var usersWithOrgs []userWithOrg
 	err := d.db.WithContext(ctx).
 		Raw(`
-			SELECT u.* FROM github_users u
+			SELECT 
+				u.login,
+				u.email,
+				u.name,
+				(SELECT organization FROM user_org_memberships 
+				 WHERE user_login = u.login 
+				 ORDER BY organization ASC 
+				 LIMIT 1) as primary_org
+			FROM github_users u
 			LEFT JOIN user_mappings m ON u.login = m.source_login
 			WHERE m.id IS NULL
 		`).
-		Scan(&users).Error
+		Scan(&usersWithOrgs).Error
 
 	if err != nil {
 		return 0, fmt.Errorf("failed to find users without mappings: %w", err)
 	}
 
-	if len(users) == 0 {
+	if len(usersWithOrgs) == 0 {
 		return 0, nil
 	}
 
-	mappings := make([]*models.UserMapping, 0, len(users))
+	mappings := make([]*models.UserMapping, 0, len(usersWithOrgs))
 	now := time.Now()
-	for _, user := range users {
+	for _, user := range usersWithOrgs {
 		mappings = append(mappings, &models.UserMapping{
 			SourceLogin:   user.Login,
 			SourceEmail:   user.Email,
 			SourceName:    user.Name,
+			SourceOrg:     user.PrimaryOrg, // Set primary org from memberships
 			MappingStatus: string(models.UserMappingStatusUnmapped),
 			CreatedAt:     now,
 			UpdatedAt:     now,
@@ -386,4 +482,31 @@ func (d *Database) SyncUserMappingsFromUsers(ctx context.Context) (int64, error)
 	}
 
 	return int64(len(mappings)), nil
+}
+
+// UpdateUserMappingSourceOrgsFromMemberships updates source_org for existing mappings
+// based on data from user_org_memberships table
+func (d *Database) UpdateUserMappingSourceOrgsFromMemberships(ctx context.Context) (int64, error) {
+	// Update mappings that have NULL source_org but have org memberships
+	result := d.db.WithContext(ctx).Exec(`
+		UPDATE user_mappings 
+		SET source_org = (
+			SELECT organization 
+			FROM user_org_memberships 
+			WHERE user_login = source_login 
+			ORDER BY organization ASC 
+			LIMIT 1
+		),
+		updated_at = ?
+		WHERE source_org IS NULL 
+		AND EXISTS (
+			SELECT 1 FROM user_org_memberships WHERE user_login = source_login
+		)
+	`, time.Now())
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to update source orgs: %w", result.Error)
+	}
+
+	return result.RowsAffected, nil
 }

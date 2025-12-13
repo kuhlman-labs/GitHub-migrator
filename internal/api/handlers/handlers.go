@@ -260,6 +260,43 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DiscoverRepositories handles POST /api/v1/repositories/discover
+// Discovers repositories for a single organization (standalone, repos-only discovery)
+func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Organization string `json:"organization"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Organization == "" {
+		h.sendError(w, http.StatusBadRequest, "organization is required")
+		return
+	}
+
+	if h.collector == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "GitHub client not configured")
+		return
+	}
+
+	// Start discovery asynchronously
+	go func() {
+		ctx := context.Background()
+		if err := h.collector.DiscoverRepositories(ctx, req.Organization); err != nil {
+			h.logger.Error("Repository discovery failed", "error", err, "org", req.Organization)
+		}
+	}()
+
+	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		"message":      "Repository discovery started",
+		"organization": req.Organization,
+		"status":       statusInProgress,
+	})
+}
+
 // ListRepositories handles GET /api/v1/repositories
 //
 //nolint:gocyclo // Complexity is due to multiple query parameter handlers

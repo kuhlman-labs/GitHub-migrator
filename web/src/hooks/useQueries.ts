@@ -13,6 +13,7 @@ import {
   UserMapping,
   UserMappingStats,
   UserStats,
+  UserDetail,
   GitHubTeam,
   GitHubTeamMember,
   TeamMapping,
@@ -134,6 +135,7 @@ export function useUserStats() {
 // User mapping queries
 interface UserMappingFilters {
   status?: string;
+  source_org?: string;
   has_destination?: boolean;
   has_mannequin?: boolean;
   reclaim_status?: string;
@@ -149,10 +151,25 @@ export function useUserMappings(filters: UserMappingFilters = {}) {
   });
 }
 
-export function useUserMappingStats() {
+export function useUserMappingStats(sourceOrg?: string) {
   return useQuery<UserMappingStats, Error>({
-    queryKey: ['userMappingStats'],
-    queryFn: () => api.getUserMappingStats(),
+    queryKey: ['userMappingStats', sourceOrg || 'all'],
+    queryFn: () => api.getUserMappingStats(sourceOrg),
+  });
+}
+
+export function useUserMappingSourceOrgs() {
+  return useQuery<{ organizations: string[] }, Error>({
+    queryKey: ['userMappingSourceOrgs'],
+    queryFn: () => api.getUserMappingSourceOrgs(),
+  });
+}
+
+export function useUserDetail(login: string | null) {
+  return useQuery<UserDetail, Error>({
+    queryKey: ['userDetail', login],
+    queryFn: () => api.getUserDetail(login!),
+    enabled: !!login,
   });
 }
 
@@ -190,10 +207,18 @@ export function useTeamMappings(filters: TeamMappingFilters = {}) {
   });
 }
 
-export function useTeamMappingStats() {
+export function useTeamMappingStats(organization?: string) {
   return useQuery<TeamMappingStats, Error>({
-    queryKey: ['teamMappingStats'],
-    queryFn: () => api.getTeamMappingStats(),
+    queryKey: ['teamMappingStats', organization || 'all'],
+    queryFn: () => api.getTeamMappingStats(organization),
+  });
+}
+
+// Team source organizations for filter dropdown
+export function useTeamSourceOrgs() {
+  return useQuery<string[], Error>({
+    queryKey: ['teamSourceOrgs'],
+    queryFn: () => api.getTeamSourceOrgs(),
   });
 }
 

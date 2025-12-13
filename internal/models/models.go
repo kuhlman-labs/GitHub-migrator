@@ -523,6 +523,21 @@ func (GitHubUser) TableName() string {
 	return "github_users"
 }
 
+// UserOrgMembership tracks which organizations a user belongs to
+// This enables organizing users by source org for mannequin reclamation
+type UserOrgMembership struct {
+	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	UserLogin    string    `json:"user_login" db:"user_login" gorm:"column:user_login;not null;uniqueIndex:idx_user_org"`
+	Organization string    `json:"organization" db:"organization" gorm:"column:organization;not null;uniqueIndex:idx_user_org;index"`
+	Role         string    `json:"role" db:"role" gorm:"column:role;not null;default:member"` // member, admin
+	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+}
+
+// TableName specifies the table name for UserOrgMembership model
+func (UserOrgMembership) TableName() string {
+	return "user_org_memberships"
+}
+
 // UserMappingStatus represents the status of a user mapping
 type UserMappingStatus string
 
@@ -549,6 +564,7 @@ type UserMapping struct {
 	SourceLogin      string    `json:"source_login" db:"source_login" gorm:"column:source_login;not null;uniqueIndex"`
 	SourceEmail      *string   `json:"source_email,omitempty" db:"source_email" gorm:"column:source_email;index"`
 	SourceName       *string   `json:"source_name,omitempty" db:"source_name" gorm:"column:source_name"`
+	SourceOrg        *string   `json:"source_org,omitempty" db:"source_org" gorm:"column:source_org;index"` // Organization where user was discovered
 	DestinationLogin *string   `json:"destination_login,omitempty" db:"destination_login" gorm:"column:destination_login;index"`
 	DestinationEmail *string   `json:"destination_email,omitempty" db:"destination_email" gorm:"column:destination_email"`
 	MappingStatus    string    `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, reclaimed, skipped
@@ -556,6 +572,8 @@ type UserMapping struct {
 	MannequinLogin   *string   `json:"mannequin_login,omitempty" db:"mannequin_login" gorm:"column:mannequin_login"`                    // Mannequin login (e.g., mona-user-12345)
 	ReclaimStatus    *string   `json:"reclaim_status,omitempty" db:"reclaim_status" gorm:"column:reclaim_status"`                       // pending, invited, completed, failed
 	ReclaimError     *string   `json:"reclaim_error,omitempty" db:"reclaim_error" gorm:"column:reclaim_error;type:text"`                // Error message if reclaim failed
+	MatchConfidence  *int      `json:"match_confidence,omitempty" db:"match_confidence" gorm:"column:match_confidence"`                 // Auto-match confidence score (0-100)
+	MatchReason      *string   `json:"match_reason,omitempty" db:"match_reason" gorm:"column:match_reason"`                             // Why the match was made (email, login, name)
 	CreatedAt        time.Time `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
 	UpdatedAt        time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 }

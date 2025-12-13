@@ -218,6 +218,104 @@ func (d *Database) DeleteAllUsers(ctx context.Context) error {
 	return nil
 }
 
+// SaveUserOrgMembership saves or updates a user's organization membership
+func (d *Database) SaveUserOrgMembership(ctx context.Context, membership *models.UserOrgMembership) error {
+	// Check if membership already exists
+	var existing models.UserOrgMembership
+	err := d.db.WithContext(ctx).
+		Where("user_login = ? AND organization = ?", membership.UserLogin, membership.Organization).
+		First(&existing).Error
+
+	if err == gorm.ErrRecordNotFound {
+		// Insert new membership
+		if membership.DiscoveredAt.IsZero() {
+			membership.DiscoveredAt = time.Now()
+		}
+		result := d.db.WithContext(ctx).Create(membership)
+		if result.Error != nil {
+			return fmt.Errorf("failed to create user org membership: %w", result.Error)
+		}
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to check existing membership: %w", err)
+	}
+
+	// Membership exists - update role if changed
+	if existing.Role != membership.Role {
+		result := d.db.WithContext(ctx).Model(&existing).Updates(map[string]interface{}{
+			"role": membership.Role,
+		})
+		if result.Error != nil {
+			return fmt.Errorf("failed to update user org membership: %w", result.Error)
+		}
+	}
+
+	return nil
+}
+
+// GetUserOrgMemberships returns all organizations a user belongs to
+func (d *Database) GetUserOrgMemberships(ctx context.Context, userLogin string) ([]*models.UserOrgMembership, error) {
+	var memberships []*models.UserOrgMembership
+	err := d.db.WithContext(ctx).
+		Where("user_login = ?", userLogin).
+		Order("organization ASC").
+		Find(&memberships).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user org memberships: %w", err)
+	}
+
+	return memberships, nil
+}
+
+// GetOrgMembers returns all users in an organization
+func (d *Database) GetOrgMembers(ctx context.Context, organization string) ([]*models.UserOrgMembership, error) {
+	var memberships []*models.UserOrgMembership
+	err := d.db.WithContext(ctx).
+		Where("organization = ?", organization).
+		Order("user_login ASC").
+		Find(&memberships).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get org members: %w", err)
+	}
+
+	return memberships, nil
+}
+
+// GetDistinctUserOrgs returns a list of all unique organizations from user memberships
+func (d *Database) GetDistinctUserOrgs(ctx context.Context) ([]string, error) {
+	var orgs []string
+	err := d.db.WithContext(ctx).
+		Model(&models.UserOrgMembership{}).
+		Distinct("organization").
+		Pluck("organization", &orgs).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distinct user orgs: %w", err)
+	}
+
+	return orgs, nil
+}
+
+// GetPrimaryOrgForUser returns the "primary" org for a user (first org alphabetically, for consistency)
+func (d *Database) GetPrimaryOrgForUser(ctx context.Context, userLogin string) (string, error) {
+	var membership models.UserOrgMembership
+	err := d.db.WithContext(ctx).
+		Where("user_login = ?", userLogin).
+		Order("organization ASC").
+		First(&membership).Error
+
+	if err == gorm.ErrRecordNotFound {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get primary org: %w", err)
+	}
+
+	return membership.Organization, nil
+}
+
 // UserWithMapping represents a user with their mapping status
 type UserWithMapping struct {
 	// User fields
@@ -229,25 +327,30 @@ type UserWithMapping struct {
 	SourceInstance string  `json:"source_instance"`
 
 	// Mapping fields (nil if no mapping exists)
+	SourceOrg        *string `json:"source_org,omitempty"`
 	DestinationLogin *string `json:"destination_login,omitempty"`
 	MappingStatus    string  `json:"mapping_status"` // "unmapped", "mapped", "reclaimed", "skipped"
 	MannequinID      *string `json:"mannequin_id,omitempty"`
 	MannequinLogin   *string `json:"mannequin_login,omitempty"`
 	ReclaimStatus    *string `json:"reclaim_status,omitempty"`
+	MatchConfidence  *int    `json:"match_confidence,omitempty"`
+	MatchReason      *string `json:"match_reason,omitempty"`
 }
 
 // UserWithMappingFilters defines filters for listing users with mappings
 type UserWithMappingFilters struct {
-	Status string // Filter by mapping status (unmapped, mapped, reclaimed, skipped)
-	Search string // Search in login, email, name
-	Limit  int
-	Offset int
+	Status    string // Filter by mapping status (unmapped, mapped, reclaimed, skipped)
+	Search    string // Search in login, email, name
+	SourceOrg string // Filter by source organization
+	Limit     int
+	Offset    int
 }
 
 // ListUsersWithMappings returns discovered users with their mapping info
 // This provides a unified view without needing to sync
 func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMappingFilters) ([]UserWithMapping, int64, error) {
 	// Build the query with LEFT JOIN to get mapping info
+	// source_org comes from user_mappings first, or falls back to user_org_memberships
 	query := d.db.WithContext(ctx).
 		Table("github_users u").
 		Select(`
@@ -257,11 +360,14 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 			u.email,
 			u.avatar_url,
 			u.source_instance,
+			COALESCE(m.source_org, (SELECT organization FROM user_org_memberships WHERE user_login = u.login ORDER BY organization ASC LIMIT 1)) as source_org,
 			m.destination_login,
 			COALESCE(m.mapping_status, 'unmapped') as mapping_status,
 			m.mannequin_id,
 			m.mannequin_login,
-			m.reclaim_status
+			m.reclaim_status,
+			m.match_confidence,
+			m.match_reason
 		`).
 		Joins("LEFT JOIN user_mappings m ON u.login = m.source_login")
 
@@ -272,6 +378,13 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 		} else {
 			query = query.Where("m.mapping_status = ?", filters.Status)
 		}
+	}
+
+	// Apply source org filter - check both user_mappings and user_org_memberships
+	if filters.SourceOrg != "" {
+		query = query.Where(`(m.source_org = ? OR (m.source_org IS NULL AND EXISTS (
+			SELECT 1 FROM user_org_memberships WHERE user_login = u.login AND organization = ?
+		)))`, filters.SourceOrg, filters.SourceOrg)
 	}
 
 	// Apply search filter
@@ -293,6 +406,11 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 		} else {
 			countQuery = countQuery.Where("m.mapping_status = ?", filters.Status)
 		}
+	}
+	if filters.SourceOrg != "" {
+		countQuery = countQuery.Where(`(m.source_org = ? OR (m.source_org IS NULL AND EXISTS (
+			SELECT 1 FROM user_org_memberships WHERE user_login = u.login AND organization = ?
+		)))`, filters.SourceOrg, filters.SourceOrg)
 	}
 	if filters.Search != "" {
 		searchPattern := "%" + filters.Search + "%"
@@ -322,37 +440,66 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 }
 
 // GetUsersWithMappingsStats returns stats for users with their mapping status
-func (d *Database) GetUsersWithMappingsStats(ctx context.Context) (map[string]interface{}, error) {
+// If orgFilter is provided, stats are filtered to that organization only
+func (d *Database) GetUsersWithMappingsStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
 	var total int64
-	if err := d.db.WithContext(ctx).Model(&models.GitHubUser{}).Count(&total).Error; err != nil {
+	baseQuery := d.db.WithContext(ctx).Model(&models.UserMapping{})
+	if orgFilter != "" {
+		baseQuery = baseQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count total users: %w", err)
 	}
 
 	var mapped int64
-	if err := d.db.WithContext(ctx).
+	mappedQuery := d.db.WithContext(ctx).
 		Table("user_mappings").
-		Where("mapping_status = 'mapped'").
-		Count(&mapped).Error; err != nil {
+		Where("mapping_status = 'mapped'")
+	if orgFilter != "" {
+		mappedQuery = mappedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := mappedQuery.Count(&mapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mapped: %w", err)
 	}
 
 	var reclaimed int64
-	if err := d.db.WithContext(ctx).
+	reclaimedQuery := d.db.WithContext(ctx).
 		Table("user_mappings").
-		Where("mapping_status = 'reclaimed'").
-		Count(&reclaimed).Error; err != nil {
+		Where("mapping_status = 'reclaimed'")
+	if orgFilter != "" {
+		reclaimedQuery = reclaimedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := reclaimedQuery.Count(&reclaimed).Error; err != nil {
 		return nil, fmt.Errorf("failed to count reclaimed: %w", err)
 	}
 
 	var skipped int64
-	if err := d.db.WithContext(ctx).
+	skippedQuery := d.db.WithContext(ctx).
 		Table("user_mappings").
-		Where("mapping_status = 'skipped'").
-		Count(&skipped).Error; err != nil {
+		Where("mapping_status = 'skipped'")
+	if orgFilter != "" {
+		skippedQuery = skippedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := skippedQuery.Count(&skipped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
 
 	unmapped := total - mapped - reclaimed - skipped
+
+	// Count users who can be invited (mapped + has mannequin + has destination + not already invited/completed)
+	var invitable int64
+	invitableQuery := d.db.WithContext(ctx).
+		Table("user_mappings").
+		Where("mapping_status = 'mapped'").
+		Where("mannequin_id IS NOT NULL AND mannequin_id != ''").
+		Where("destination_login IS NOT NULL AND destination_login != ''").
+		Where("(reclaim_status IS NULL OR reclaim_status IN ('pending', 'failed'))")
+	if orgFilter != "" {
+		invitableQuery = invitableQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := invitableQuery.Count(&invitable).Error; err != nil {
+		return nil, fmt.Errorf("failed to count invitable: %w", err)
+	}
 
 	return map[string]interface{}{
 		"total":     total,
@@ -360,5 +507,6 @@ func (d *Database) GetUsersWithMappingsStats(ctx context.Context) (map[string]in
 		"mapped":    mapped,
 		"reclaimed": reclaimed,
 		"skipped":   skipped,
+		"invitable": invitable,
 	}, nil
 }

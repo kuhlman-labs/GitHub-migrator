@@ -24,6 +24,7 @@ import type {
   UserMapping,
   UserMappingStats,
   UserStats,
+  UserDetail,
   TeamMapping,
   TeamMappingStats,
   ImportResult,
@@ -33,7 +34,7 @@ import type {
 
 const client = axios.create({
   baseURL: '/api/v1',
-  timeout: 30000,
+  timeout: 120000, // 120 seconds for long operations like mannequin fetching
   withCredentials: true, // Send cookies with requests
 });
 
@@ -61,6 +62,22 @@ export const api = {
 
   async getDiscoveryStatus() {
     const { data} = await client.get('/discovery/status');
+    return data;
+  },
+
+  // Standalone Discovery (per entity type)
+  async discoverRepositories(organization: string) {
+    const { data } = await client.post('/repositories/discover', { organization });
+    return data;
+  },
+
+  async discoverOrgMembers(organization: string) {
+    const { data } = await client.post('/users/discover', { organization });
+    return data;
+  },
+
+  async discoverTeams(organization: string) {
+    const { data } = await client.post('/teams/discover', { organization });
     return data;
   },
 
@@ -497,6 +514,7 @@ export const api = {
   // User Mappings
   async listUserMappings(filters?: {
     status?: string;
+    source_org?: string;
     has_destination?: boolean;
     has_mannequin?: boolean;
     reclaim_status?: string;
@@ -508,8 +526,21 @@ export const api = {
     return data;
   },
 
-  async getUserMappingStats(): Promise<UserMappingStats> {
-    const { data } = await client.get('/user-mappings/stats');
+  async getUserMappingStats(sourceOrg?: string): Promise<UserMappingStats> {
+    const params = new URLSearchParams();
+    if (sourceOrg) params.append('source_org', sourceOrg);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const { data } = await client.get(`/user-mappings/stats${query}`);
+    return data;
+  },
+
+  async getUserDetail(login: string): Promise<UserDetail> {
+    const { data } = await client.get(`/user-mappings/${encodeURIComponent(login)}`);
+    return data;
+  },
+
+  async getUserMappingSourceOrgs(): Promise<{ organizations: string[] }> {
+    const { data } = await client.get('/user-mappings/source-orgs');
     return data;
   },
 
@@ -562,6 +593,51 @@ export const api = {
     return data;
   },
 
+  async fetchMannequins(destinationOrg: string): Promise<{
+    total_mannequins: number;
+    matched: number;
+    unmatched: number;
+    destination_org: string;
+    message: string;
+  }> {
+    const { data } = await client.post('/user-mappings/fetch-mannequins', {
+      destination_org: destinationOrg,
+    });
+    return data;
+  },
+
+  async sendAttributionInvitation(sourceLogin: string, destinationOrg: string): Promise<{
+    success: boolean;
+    source_login: string;
+    mannequin_login?: string;
+    target_user?: string;
+    message: string;
+  }> {
+    const { data } = await client.post(
+      `/user-mappings/${encodeURIComponent(sourceLogin)}/send-invitation`,
+      { destination_org: destinationOrg }
+    );
+    return data;
+  },
+
+  async bulkSendAttributionInvitations(
+    destinationOrg: string,
+    sourceLogins?: string[]
+  ): Promise<{
+    success: boolean;
+    invited: number;
+    failed: number;
+    skipped: number;
+    errors: string[];
+    message: string;
+  }> {
+    const { data } = await client.post('/user-mappings/send-invitations', {
+      destination_org: destinationOrg,
+      source_logins: sourceLogins,
+    });
+    return data;
+  },
+
   // Team Members
   async getTeamMembers(org: string, teamSlug: string): Promise<{ members: GitHubTeamMember[]; total: number }> {
     const { data } = await client.get(`/teams/${encodeURIComponent(org)}/${encodeURIComponent(teamSlug)}/members`);
@@ -582,9 +658,17 @@ export const api = {
     return data;
   },
 
-  async getTeamMappingStats(): Promise<TeamMappingStats> {
-    const { data } = await client.get('/team-mappings/stats');
+  async getTeamMappingStats(organization?: string): Promise<TeamMappingStats> {
+    const params = new URLSearchParams();
+    if (organization) params.append('organization', organization);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const { data } = await client.get(`/team-mappings/stats${query}`);
     return data;
+  },
+
+  async getTeamSourceOrgs(): Promise<string[]> {
+    const { data } = await client.get('/team-mappings/source-orgs');
+    return data.organizations || [];
   },
 
   async createTeamMapping(mapping: Partial<TeamMapping>): Promise<TeamMapping> {

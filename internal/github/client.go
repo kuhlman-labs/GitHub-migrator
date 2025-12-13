@@ -187,7 +187,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}
 
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 30 * time.Second
+		cfg.Timeout = 120 * time.Second // Increased default for large org operations
 	}
 
 	var httpClient *http.Client
@@ -1599,8 +1599,10 @@ type Mannequin struct {
 	ID        string  `json:"id"`         // GraphQL node ID
 	Login     string  `json:"login"`      // Mannequin login (e.g., "mona-user-12345")
 	Email     string  `json:"email"`      // Original commit email
+	Name      string  `json:"name"`       // Display name (may contain original username)
 	CreatedAt string  `json:"created_at"` // When the mannequin was created
 	Claimant  *string `json:"claimant"`   // User who claimed the mannequin (if any)
+	OrgID     string  `json:"org_id"`     // Organization node ID (needed for reclaim mutation)
 }
 
 // ListMannequins lists all mannequins in an organization
@@ -1610,10 +1612,12 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 
 	var allMannequins []*Mannequin
 	var cursor *githubv4.String
+	var orgID string
 
 	// GraphQL query for listing mannequins
 	var query struct {
 		Organization struct {
+			ID         githubv4.String
 			Mannequins struct {
 				PageInfo struct {
 					HasNextPage githubv4.Boolean
@@ -1623,6 +1627,7 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 					ID        githubv4.String
 					Login     githubv4.String
 					Email     githubv4.String
+					Name      githubv4.String
 					CreatedAt githubv4.String
 					Claimant  *struct {
 						Login githubv4.String
@@ -1653,12 +1658,19 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 			return nil, WrapError(err, "ListMannequins", c.baseURL)
 		}
 
+		// Capture org ID from first query
+		if orgID == "" {
+			orgID = string(query.Organization.ID)
+		}
+
 		for _, m := range query.Organization.Mannequins.Nodes {
 			mannequin := &Mannequin{
 				ID:        string(m.ID),
 				Login:     string(m.Login),
 				Email:     string(m.Email),
+				Name:      string(m.Name),
 				CreatedAt: string(m.CreatedAt),
+				OrgID:     orgID,
 			}
 			// Use newStr for explicit heap allocation
 			if m.Claimant != nil {
@@ -1826,4 +1838,139 @@ func (c *Client) AddTeamRepoPermission(ctx context.Context, org, teamSlug, repoO
 		"permission", permission)
 
 	return nil
+}
+
+// UserInfo represents basic user information from GraphQL
+type UserInfo struct {
+	ID        string `json:"id"`    // GraphQL node ID
+	Login     string `json:"login"` // GitHub username
+	Name      string `json:"name"`  // Display name
+	Email     string `json:"email"` // Public email
+	AvatarURL string `json:"avatar_url"`
+}
+
+// GetUserByLogin retrieves a user by login using GraphQL
+// Returns the user's node ID which is needed for the createAttributionInvitation mutation
+func (c *Client) GetUserByLogin(ctx context.Context, login string) (*UserInfo, error) {
+	c.logger.Debug("Getting user by login", "login", login)
+
+	var query struct {
+		User struct {
+			ID        githubv4.String
+			Login     githubv4.String
+			Name      githubv4.String
+			Email     githubv4.String
+			AvatarUrl githubv4.String
+		} `graphql:"user(login: $login)"`
+	}
+
+	variables := map[string]interface{}{
+		"login": githubv4.String(login),
+	}
+
+	err := c.retryer.Do(ctx, "GetUserByLogin", func(ctx context.Context) error {
+		return c.graphql.Query(ctx, &query, variables)
+	})
+
+	if err != nil {
+		// If user not found, return nil without error
+		if strings.Contains(err.Error(), "Could not resolve to a User") {
+			c.logger.Debug("User not found", "login", login)
+			return nil, nil
+		}
+		return nil, WrapError(err, "GetUserByLogin", c.baseURL)
+	}
+
+	user := &UserInfo{
+		ID:        string(query.User.ID),
+		Login:     string(query.User.Login),
+		Name:      string(query.User.Name),
+		Email:     string(query.User.Email),
+		AvatarURL: string(query.User.AvatarUrl),
+	}
+
+	c.logger.Debug("User found", "login", login, "id", user.ID)
+	return user, nil
+}
+
+// AttributionInvitationResult represents the result of a createAttributionInvitation mutation
+type AttributionInvitationResult struct {
+	Success         bool   `json:"success"`
+	MannequinID     string `json:"mannequin_id"`
+	MannequinLogin  string `json:"mannequin_login"`
+	TargetUserID    string `json:"target_user_id"`
+	TargetUserLogin string `json:"target_user_login"`
+}
+
+// CreateAttributionInvitation sends an invitation to reclaim a mannequin
+// This uses the createAttributionInvitation GraphQL mutation
+// See: https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/mutations#createattributioninvitation
+//
+// Parameters:
+//   - ownerID: The organization node ID (from ListMannequins)
+//   - mannequinID: The mannequin node ID to reclaim
+//   - targetUserID: The target user node ID to attribute to (from GetUserByLogin)
+func (c *Client) CreateAttributionInvitation(ctx context.Context, ownerID, mannequinID, targetUserID string) (*AttributionInvitationResult, error) {
+	c.logger.Info("Creating attribution invitation",
+		"owner_id", ownerID,
+		"mannequin_id", mannequinID,
+		"target_user_id", targetUserID)
+
+	var mutation struct {
+		CreateAttributionInvitation struct {
+			ClientMutationId githubv4.String
+			Owner            struct {
+				Login githubv4.String
+				ID    githubv4.String
+			}
+			Source struct {
+				Mannequin struct {
+					ID    githubv4.String
+					Login githubv4.String
+					Email githubv4.String
+				} `graphql:"... on Mannequin"`
+			}
+			Target struct {
+				User struct {
+					ID    githubv4.String
+					Login githubv4.String
+					Email githubv4.String
+					Name  githubv4.String
+				} `graphql:"... on User"`
+			}
+		} `graphql:"createAttributionInvitation(input: $input)"`
+	}
+
+	input := githubv4.CreateAttributionInvitationInput{
+		OwnerID:  githubv4.ID(ownerID),
+		SourceID: githubv4.ID(mannequinID),
+		TargetID: githubv4.ID(targetUserID),
+	}
+
+	err := c.retryer.Do(ctx, "CreateAttributionInvitation", func(ctx context.Context) error {
+		return c.graphql.Mutate(ctx, &mutation, input, nil)
+	})
+
+	if err != nil {
+		c.logger.Error("Failed to create attribution invitation",
+			"owner_id", ownerID,
+			"mannequin_id", mannequinID,
+			"target_user_id", targetUserID,
+			"error", err)
+		return nil, WrapError(err, "CreateAttributionInvitation", c.baseURL)
+	}
+
+	result := &AttributionInvitationResult{
+		Success:         true,
+		MannequinID:     string(mutation.CreateAttributionInvitation.Source.Mannequin.ID),
+		MannequinLogin:  string(mutation.CreateAttributionInvitation.Source.Mannequin.Login),
+		TargetUserID:    string(mutation.CreateAttributionInvitation.Target.User.ID),
+		TargetUserLogin: string(mutation.CreateAttributionInvitation.Target.User.Login),
+	}
+
+	c.logger.Info("Attribution invitation created successfully",
+		"mannequin_login", result.MannequinLogin,
+		"target_user_login", result.TargetUserLogin)
+
+	return result, nil
 }

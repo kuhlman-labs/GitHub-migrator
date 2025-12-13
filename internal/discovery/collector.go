@@ -142,6 +142,184 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 	return nil
 }
 
+// DiscoverOrgMembersOnly discovers only organization members without repository discovery
+// This is used for standalone user discovery from the Users page
+func (c *Collector) DiscoverOrgMembersOnly(ctx context.Context, org string) (int, error) {
+	c.logger.Info("Starting org members-only discovery", "organization", org)
+
+	// Check if we need to create an org-specific client (JWT-only mode)
+	var orgClient *github.Client
+	if c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0 {
+		// Get installation ID for this org
+		installationID, err := c.client.GetOrganizationInstallationID(ctx, org)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get installation for org %s: %w", org, err)
+		}
+		// Create org-specific client
+		orgConfig := *c.baseConfig
+		orgConfig.AppInstallationID = installationID
+		orgClient, err = github.NewClient(orgConfig)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create org client for %s: %w", org, err)
+		}
+	} else {
+		orgClient = c.client
+	}
+
+	members, err := orgClient.ListOrgMembers(ctx, org)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list org members: %w", err)
+	}
+
+	c.logger.Info("Found organization members", "organization", org, "count", len(members))
+
+	sourceInstance := c.getSourceInstance()
+	savedCount := 0
+
+	for _, member := range members {
+		user := &models.GitHubUser{
+			Login:          member.Login,
+			Name:           member.Name,
+			Email:          member.Email,
+			SourceInstance: sourceInstance,
+		}
+		if member.AvatarURL != "" {
+			avatarURL := member.AvatarURL
+			user.AvatarURL = &avatarURL
+		}
+
+		if err := c.storage.SaveUser(ctx, user); err != nil {
+			c.logger.Warn("Failed to save organization member",
+				"organization", org,
+				"login", member.Login,
+				"error", err)
+			continue
+		}
+		savedCount++
+
+		// Save org membership
+		membership := &models.UserOrgMembership{
+			UserLogin:    member.Login,
+			Organization: org,
+			Role:         member.Role,
+		}
+		if err := c.storage.SaveUserOrgMembership(ctx, membership); err != nil {
+			c.logger.Warn("Failed to save org membership",
+				"organization", org,
+				"login", member.Login,
+				"error", err)
+		}
+	}
+
+	c.logger.Info("Org members-only discovery complete",
+		"organization", org,
+		"total_members", len(members),
+		"users_saved", savedCount)
+
+	return savedCount, nil
+}
+
+// DiscoverTeamsOnly discovers only teams and their members without repository discovery
+// This is used for standalone team discovery from the Teams page
+func (c *Collector) DiscoverTeamsOnly(ctx context.Context, org string) (int, int, error) {
+	c.logger.Info("Starting teams-only discovery", "organization", org)
+
+	// Check if we need to create an org-specific client (JWT-only mode)
+	var orgClient *github.Client
+	if c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0 {
+		// Get installation ID for this org
+		installationID, err := c.client.GetOrganizationInstallationID(ctx, org)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to get installation for org %s: %w", org, err)
+		}
+		// Create org-specific client
+		orgConfig := *c.baseConfig
+		orgConfig.AppInstallationID = installationID
+		orgClient, err = github.NewClient(orgConfig)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to create org client for %s: %w", org, err)
+		}
+	} else {
+		orgClient = c.client
+	}
+
+	teams, err := orgClient.ListOrganizationTeams(ctx, org)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to list teams: %w", err)
+	}
+
+	c.logger.Info("Found teams", "organization", org, "count", len(teams))
+
+	teamCount := 0
+	memberCount := 0
+	sourceInstance := c.getSourceInstance()
+
+	for _, teamInfo := range teams {
+		team := &models.GitHubTeam{
+			Organization: org,
+			Slug:         teamInfo.Slug,
+			Name:         teamInfo.Name,
+			Privacy:      teamInfo.Privacy,
+		}
+		if teamInfo.Description != "" {
+			team.Description = &teamInfo.Description
+		}
+
+		if err := c.storage.SaveTeam(ctx, team); err != nil {
+			c.logger.Warn("Failed to save team",
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			continue
+		}
+		teamCount++
+
+		// List and save team members
+		teamMembers, err := orgClient.ListTeamMembers(ctx, org, teamInfo.Slug)
+		if err != nil {
+			c.logger.Warn("Failed to list members for team",
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			continue
+		}
+
+		for _, member := range teamMembers {
+			// Save team member relationship
+			teamMember := &models.GitHubTeamMember{
+				TeamID: team.ID,
+				Login:  member.Login,
+				Role:   member.Role,
+			}
+			if err := c.storage.SaveTeamMember(ctx, teamMember); err != nil {
+				c.logger.Warn("Failed to save team member",
+					"organization", org,
+					"team", teamInfo.Slug,
+					"member", member.Login,
+					"error", err)
+				continue
+			}
+			memberCount++
+
+			// Also save the user to github_users table
+			user := &models.GitHubUser{
+				Login:          member.Login,
+				SourceInstance: sourceInstance,
+			}
+			if err := c.storage.SaveUser(ctx, user); err != nil {
+				c.logger.Debug("User may already exist", "login", member.Login, "error", err)
+			}
+		}
+	}
+
+	c.logger.Info("Teams-only discovery complete",
+		"organization", org,
+		"teams_saved", teamCount,
+		"members_saved", memberCount)
+
+	return teamCount, memberCount, nil
+}
+
 // DiscoverEnterpriseRepositories discovers all repositories across all organizations in an enterprise
 // For GitHub Enterprise Apps without an installation ID, this will:
 //  1. Use JWT auth to list all app installations (discovers orgs automatically)
@@ -251,6 +429,30 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			}
 
 			allRepos = append(allRepos, repos...)
+
+			// Discover teams and their repository associations for this org
+			c.logger.Info("Discovering teams for organization",
+				"enterprise", enterpriseSlug,
+				"organization", org)
+			if err := c.discoverTeams(ctx, org, orgClient); err != nil {
+				c.logger.Warn("Failed to discover teams for organization",
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"error", err)
+				// Don't fail if team discovery fails
+			}
+
+			// Discover organization members
+			c.logger.Info("Discovering organization members",
+				"enterprise", enterpriseSlug,
+				"organization", org)
+			if err := c.discoverOrgMembers(ctx, org, orgClient); err != nil {
+				c.logger.Warn("Failed to discover org members for organization",
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"error", err)
+				// Don't fail if member discovery fails
+			}
 		}
 	}
 
@@ -991,6 +1193,7 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 }
 
 // discoverOrgMembers discovers all members of an organization and saves them as users
+// Also saves org membership to track which orgs each user belongs to
 func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *github.Client) error {
 	c.logger.Info("Discovering organization members", "organization", org)
 
@@ -1003,6 +1206,7 @@ func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *
 
 	sourceInstance := c.getSourceInstance()
 	savedCount := 0
+	membershipCount := 0
 
 	for _, member := range members {
 		user := &models.GitHubUser{
@@ -1025,12 +1229,29 @@ func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *
 			continue
 		}
 		savedCount++
+
+		// Save org membership to track which orgs this user belongs to
+		membership := &models.UserOrgMembership{
+			UserLogin:    member.Login,
+			Organization: org,
+			Role:         member.Role,
+		}
+		if err := c.storage.SaveUserOrgMembership(ctx, membership); err != nil {
+			c.logger.Warn("Failed to save org membership",
+				"organization", org,
+				"login", member.Login,
+				"error", err)
+			// Continue - user was saved, just membership tracking failed
+		} else {
+			membershipCount++
+		}
 	}
 
 	c.logger.Info("Organization member discovery complete",
 		"organization", org,
 		"total_members", len(members),
-		"saved", savedCount)
+		"users_saved", savedCount,
+		"memberships_saved", membershipCount)
 	return nil
 }
 

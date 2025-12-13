@@ -8,6 +8,7 @@ import {
   Label,
   Spinner,
   Dialog,
+  FormControl,
 } from '@primer/react';
 import {
   PeopleIcon,
@@ -21,14 +22,24 @@ import {
   AlertIcon,
   InfoIcon,
   ClockIcon,
+  SyncIcon,
+  OrganizationIcon,
+  FilterIcon,
+  TriangleDownIcon,
+  PencilIcon,
+  SkipIcon,
+  TrashIcon,
+  EyeIcon,
+  RocketIcon,
 } from '@primer/octicons-react';
-import { useTeamMappings, useTeamMappingStats, useTeamMigrationStatus } from '../../hooks/useQueries';
+import { useTeamMappings, useTeamMappingStats, useTeamMigrationStatus, useTeamSourceOrgs } from '../../hooks/useQueries';
 import {
   useUpdateTeamMapping,
   useDeleteTeamMapping,
   useExecuteTeamMigration,
   useCancelTeamMigration,
   useResetTeamMigrationStatus,
+  useDiscoverTeams,
 } from '../../hooks/useMutations';
 import { TeamMapping, TeamMappingStatus } from '../../types';
 import { api } from '../../services/api';
@@ -36,6 +47,11 @@ import { Pagination } from '../common/Pagination';
 import { TeamDetailPanel } from './TeamDetailPanel';
 
 const ITEMS_PER_PAGE = 25;
+
+// Helper to get fields from either new or legacy field names
+const getOrg = (mapping: TeamMapping) => mapping.organization || mapping.source_org || '';
+const getSlug = (mapping: TeamMapping) => mapping.slug || mapping.source_team_slug || '';
+const getName = (mapping: TeamMapping) => mapping.name || mapping.source_team_name || '';
 
 const statusColors: Record<TeamMappingStatus, 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done'> = {
   unmapped: 'attention',
@@ -202,6 +218,7 @@ export function TeamMappingTable() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [sourceOrgFilter, setSourceOrgFilter] = useState<string>('');
+  const [orgSearchFilter, setOrgSearchFilter] = useState('');
   const [page, setPage] = useState(1);
   const [editingMapping, setEditingMapping] = useState<{ org: string; slug: string } | null>(null);
   const [editDestOrg, setEditDestOrg] = useState('');
@@ -211,6 +228,9 @@ export function TeamMappingTable() {
   const [showExecuteDialog, setShowExecuteDialog] = useState(false);
   const [showSingleTeamDialog, setShowSingleTeamDialog] = useState<{ org: string; slug: string } | null>(null);
   const [dryRun, setDryRun] = useState(false);
+  const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
+  const [discoverOrg, setDiscoverOrg] = useState('');
+  const [actionResult, setActionResult] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
 
   const { data, isLoading, error, refetch } = useTeamMappings({
     search: search || undefined,
@@ -220,24 +240,19 @@ export function TeamMappingTable() {
     offset: (page - 1) * ITEMS_PER_PAGE,
   });
 
-  const { data: stats } = useTeamMappingStats();
+  const { data: stats } = useTeamMappingStats(sourceOrgFilter || undefined);
   const { data: migrationStatus } = useTeamMigrationStatus();
+  const { data: sourceOrgsData } = useTeamSourceOrgs();
+  const sourceOrgs = sourceOrgsData || [];
   const updateMapping = useUpdateTeamMapping();
   const deleteMapping = useDeleteTeamMapping();
   const executeMigration = useExecuteTeamMigration();
   const cancelMigration = useCancelTeamMigration();
   const resetMigration = useResetTeamMigrationStatus();
+  const discoverTeams = useDiscoverTeams();
 
   const mappings = data?.mappings || [];
   const total = data?.total || 0;
-
-  // Get unique source orgs from the mappings
-  const sourceOrgs = Array.from(new Set(mappings.map(t => t.organization || t.source_org || '').filter(Boolean)));
-
-  // Helper to get fields from either new or legacy field names
-  const getOrg = (mapping: TeamMapping) => mapping.organization || mapping.source_org || '';
-  const getSlug = (mapping: TeamMapping) => mapping.slug || mapping.source_team_slug || '';
-  const getName = (mapping: TeamMapping) => mapping.name || mapping.source_team_name || '';
 
   const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
@@ -430,6 +445,17 @@ export function TeamMappingTable() {
           )}
         </div>
         <div className="flex gap-2">
+          {/* Discover Teams Button */}
+          <Button
+            variant="invisible"
+            onClick={() => setShowDiscoverDialog(true)}
+            leadingVisual={SyncIcon}
+            disabled={discoverTeams.isPending}
+            className="btn-bordered-invisible"
+          >
+            {discoverTeams.isPending ? 'Discovering...' : 'Discover Teams'}
+          </Button>
+          
           <input
             type="file"
             id="import-team-csv-input"
@@ -444,37 +470,29 @@ export function TeamMappingTable() {
             className="hidden"
           />
           <Button
+            variant="invisible"
             onClick={() => document.getElementById('import-team-csv-input')?.click()}
             leadingVisual={UploadIcon}
+            className="btn-bordered-invisible"
           >
             Import
           </Button>
-          <Button onClick={handleExport} leadingVisual={DownloadIcon}>
+          <Button
+            variant="invisible"
+            onClick={handleExport}
+            leadingVisual={DownloadIcon}
+            className="btn-bordered-invisible"
+          >
             Export
           </Button>
-          <button
+          <Button
             onClick={() => setShowExecuteDialog(true)}
             disabled={!hasMappedTeams || isRunning}
-            className="px-4 py-2 rounded-md text-sm font-medium border-0 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            style={{ 
-              backgroundColor: (!hasMappedTeams || isRunning) ? '#94d3a2' : '#1a7f37',
-              color: '#ffffff',
-              fontWeight: 600
-            }}
-            onMouseEnter={(e) => {
-              if (hasMappedTeams && !isRunning) {
-                e.currentTarget.style.backgroundColor = '#2da44e';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (hasMappedTeams && !isRunning) {
-                e.currentTarget.style.backgroundColor = '#1a7f37';
-              }
-            }}
+            leadingVisual={PlayIcon}
+            variant="primary"
           >
-            <PlayIcon size={16} />
             Migrate Teams
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -485,9 +503,26 @@ export function TeamMappingTable() {
         </Flash>
       )}
 
+      {/* Action result notification */}
+      {actionResult && (
+        <Flash variant={actionResult.type}>
+          <span className="flex items-center justify-between">
+            {actionResult.message}
+            <Button
+              variant="invisible"
+              size="small"
+              onClick={() => setActionResult(null)}
+              className="ml-2"
+            >
+              Dismiss
+            </Button>
+          </span>
+        </Flash>
+      )}
+
       {/* Search and filters */}
-      <div className="flex gap-4 items-center">
-        <div className="flex-1 max-w-md">
+      <div className="flex gap-4 items-center flex-wrap">
+        <div className="flex-1 min-w-[200px] max-w-md">
           <TextInput
             leadingVisual={SearchIcon}
             placeholder="Search by team name or slug..."
@@ -496,10 +531,73 @@ export function TeamMappingTable() {
             className="w-full"
           />
         </div>
+        
+        {/* Source Org Filter - matches Users page order */}
+        {sourceOrgs.length > 0 && (
+          <ActionMenu onOpenChange={(open) => { if (!open) setOrgSearchFilter(''); }}>
+            <ActionMenu.Anchor>
+              <Button
+                variant="invisible"
+                leadingVisual={OrganizationIcon}
+                trailingAction={TriangleDownIcon}
+                className="btn-bordered-invisible"
+              >
+                Org: {sourceOrgFilter || 'All'}
+              </Button>
+            </ActionMenu.Anchor>
+            <ActionMenu.Overlay>
+              <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
+                <TextInput
+                  placeholder="Search organizations..."
+                  value={orgSearchFilter}
+                  onChange={(e) => setOrgSearchFilter(e.target.value)}
+                  leadingVisual={SearchIcon}
+                  size="small"
+                  block
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </div>
+              <ActionList selectionVariant="single" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                {!orgSearchFilter && (
+                  <>
+                    <ActionList.Item selected={!sourceOrgFilter} onSelect={() => handleSourceOrgFilter('')}>
+                      All Organizations
+                    </ActionList.Item>
+                    <ActionList.Divider />
+                  </>
+                )}
+                {sourceOrgs
+                  .filter(org => org.toLowerCase().includes(orgSearchFilter.toLowerCase()))
+                  .map(org => (
+                    <ActionList.Item
+                      key={org}
+                      selected={sourceOrgFilter === org}
+                      onSelect={() => handleSourceOrgFilter(org)}
+                    >
+                      {org}
+                    </ActionList.Item>
+                  ))}
+                {sourceOrgs.filter(org => org.toLowerCase().includes(orgSearchFilter.toLowerCase())).length === 0 && (
+                  <ActionList.Item disabled>No matching organizations</ActionList.Item>
+                )}
+              </ActionList>
+            </ActionMenu.Overlay>
+          </ActionMenu>
+        )}
+        
+        {/* Status Filter */}
         <ActionMenu>
-          <ActionMenu.Button>
-            Status: {statusFilter ? statusLabels[statusFilter as TeamMappingStatus] : 'All'}
-          </ActionMenu.Button>
+          <ActionMenu.Anchor>
+            <Button
+              variant="invisible"
+              leadingVisual={FilterIcon}
+              trailingAction={TriangleDownIcon}
+              className="btn-bordered-invisible"
+            >
+              Status: {statusFilter ? statusLabels[statusFilter as TeamMappingStatus] : 'All'}
+            </Button>
+          </ActionMenu.Anchor>
           <ActionMenu.Overlay>
             <ActionList selectionVariant="single">
               <ActionList.Item selected={!statusFilter} onSelect={() => handleStatusFilter('')}>
@@ -518,30 +616,6 @@ export function TeamMappingTable() {
             </ActionList>
           </ActionMenu.Overlay>
         </ActionMenu>
-        {sourceOrgs.length > 0 && (
-          <ActionMenu>
-            <ActionMenu.Button>
-              Organization: {sourceOrgFilter || 'All'}
-            </ActionMenu.Button>
-            <ActionMenu.Overlay>
-              <ActionList selectionVariant="single">
-                <ActionList.Item selected={!sourceOrgFilter} onSelect={() => handleSourceOrgFilter('')}>
-                  All
-                </ActionList.Item>
-                <ActionList.Divider />
-                {sourceOrgs.map(org => (
-                  <ActionList.Item
-                    key={org}
-                    selected={sourceOrgFilter === org}
-                    onSelect={() => handleSourceOrgFilter(org)}
-                  >
-                    {org}
-                  </ActionList.Item>
-                ))}
-              </ActionList>
-            </ActionMenu.Overlay>
-          </ActionMenu>
-        )}
       </div>
 
       {/* Info banner for unmapped teams */}
@@ -606,7 +680,10 @@ export function TeamMappingTable() {
                 </td>
                 <td className="p-3" onClick={(e) => e.stopPropagation()}>
                   {editingMapping?.org === org && editingMapping?.slug === slug ? (
-                    <div className="flex items-center gap-2">
+                    <div 
+                      className="flex items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <TextInput
                         value={editDestOrg}
                         onChange={(e) => setEditDestOrg(e.target.value)}
@@ -620,12 +697,48 @@ export function TeamMappingTable() {
                         placeholder="team-slug"
                         size="small"
                       />
-                      <Button size="small" onClick={handleSaveEdit}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleSaveEdit();
+                        }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '4px 8px',
+                          backgroundColor: 'var(--bgColor-success-emphasis)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                        }}
+                      >
                         <CheckIcon size={16} />
-                      </Button>
-                      <Button size="small" variant="invisible" onClick={handleCancelEdit}>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleCancelEdit();
+                        }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '4px 8px',
+                          backgroundColor: 'transparent',
+                          color: 'var(--fgColor-muted)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                        }}
+                      >
                         <XIcon size={16} />
-                      </Button>
+                      </button>
                     </div>
                   ) : (
                     <div>
@@ -660,23 +773,38 @@ export function TeamMappingTable() {
                     <ActionMenu.Overlay>
                       <ActionList>
                         <ActionList.Item onSelect={() => handleTeamClick(org, slug)}>
+                          <ActionList.LeadingVisual>
+                            <EyeIcon size={16} />
+                          </ActionList.LeadingVisual>
                           View details
                         </ActionList.Item>
                         <ActionList.Item onSelect={() => handleEdit(mapping)}>
+                          <ActionList.LeadingVisual>
+                            <PencilIcon size={16} />
+                          </ActionList.LeadingVisual>
                           Edit mapping
                         </ActionList.Item>
                         {mapping.mapping_status === 'mapped' && (
                           <ActionList.Item onSelect={() => handleMigrateSingleTeam(org, slug)}>
+                            <ActionList.LeadingVisual>
+                              <span style={{ color: 'var(--fgColor-success)' }}><RocketIcon size={16} /></span>
+                            </ActionList.LeadingVisual>
                             <span style={{ color: 'var(--fgColor-success)' }}>Migrate team</span>
                           </ActionList.Item>
                         )}
                         {mapping.mapping_status !== 'skipped' && (
                           <ActionList.Item onSelect={() => handleSkip(org, slug)}>
+                            <ActionList.LeadingVisual>
+                              <SkipIcon size={16} />
+                            </ActionList.LeadingVisual>
                             Skip team
                           </ActionList.Item>
                         )}
                         <ActionList.Divider />
                         <ActionList.Item onSelect={() => handleDelete(org, slug)}>
+                          <ActionList.LeadingVisual>
+                            <span style={{ color: 'var(--fgColor-danger)' }}><TrashIcon size={16} /></span>
+                          </ActionList.LeadingVisual>
                           <span style={{ color: 'var(--fgColor-danger)' }}>Delete mapping</span>
                         </ActionList.Item>
                       </ActionList>
@@ -823,6 +951,62 @@ export function TeamMappingTable() {
                 )}
               </Button>
             </div>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Discover Teams Dialog */}
+      {showDiscoverDialog && (
+        <Dialog
+          title="Discover Teams"
+          onClose={() => {
+            setShowDiscoverDialog(false);
+            setDiscoverOrg('');
+          }}
+        >
+          <div className="p-4">
+            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+              Discover all teams from a GitHub organization. This will fetch teams, their members, and create team mappings.
+            </p>
+            <FormControl>
+              <FormControl.Label>Source Organization</FormControl.Label>
+              <TextInput
+                value={discoverOrg}
+                onChange={(e) => setDiscoverOrg(e.target.value)}
+                placeholder="e.g., my-org"
+                block
+              />
+              <FormControl.Caption>
+                Enter the source GitHub organization name
+              </FormControl.Caption>
+            </FormControl>
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={() => {
+              setShowDiscoverDialog(false);
+              setDiscoverOrg('');
+            }}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (!discoverOrg.trim()) return;
+                discoverTeams.mutate(discoverOrg.trim(), {
+                  onSuccess: (data) => {
+                    setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
+                    setShowDiscoverDialog(false);
+                    setDiscoverOrg('');
+                  },
+                  onError: (error) => {
+                    setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
+                  },
+                });
+              }}
+              disabled={discoverTeams.isPending || !discoverOrg.trim()}
+            >
+              {discoverTeams.isPending ? 'Discovering...' : 'Discover'}
+            </Button>
           </div>
         </Dialog>
       )}

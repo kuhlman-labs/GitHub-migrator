@@ -31,6 +31,51 @@ export function useStartADODiscovery() {
   });
 }
 
+// Standalone Discovery mutations (per entity type)
+export function useDiscoverRepositories() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (organization: string) => api.discoverRepositories(organization),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+    },
+  });
+}
+
+export function useDiscoverOrgMembers() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (organization: string) => api.discoverOrgMembers(organization),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+      queryClient.invalidateQueries({ queryKey: ['userSourceOrgs'] });
+    },
+  });
+}
+
+export function useDiscoverTeams() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (organization: string) => api.discoverTeams(organization),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['teamMappingStats'] });
+      queryClient.invalidateQueries({ queryKey: ['teamSourceOrgs'] });
+      // Team discovery also creates users
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+    },
+  });
+}
+
 export function useRediscoverRepository() {
   const queryClient = useQueryClient();
   
@@ -264,6 +309,44 @@ export function useSyncUserMappings() {
   
   return useMutation({
     mutationFn: () => api.syncUserMappings(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+export function useFetchMannequins() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (destinationOrg: string) => api.fetchMannequins(destinationOrg),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+export function useSendAttributionInvitation() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ sourceLogin, destinationOrg }: { sourceLogin: string; destinationOrg: string }) =>
+      api.sendAttributionInvitation(sourceLogin, destinationOrg),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userMappings'] });
+      queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });
+    },
+  });
+}
+
+export function useBulkSendAttributionInvitations() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ destinationOrg, sourceLogins }: { destinationOrg: string; sourceLogins?: string[] }) =>
+      api.bulkSendAttributionInvitations(destinationOrg, sourceLogins),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['userMappings'] });
       queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });

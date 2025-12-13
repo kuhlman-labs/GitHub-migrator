@@ -811,12 +811,16 @@ export interface UserMapping {
   email?: string;
   avatar_url?: string;
   source_instance: string;
+  source_org?: string;  // Organization where user was discovered
   // Mapping fields (from LEFT JOIN with user_mappings)
   destination_login?: string;
   mapping_status: UserMappingStatus;
   mannequin_id?: string;
   mannequin_login?: string;
   reclaim_status?: ReclaimStatus;
+  // Auto-match info
+  match_confidence?: number;  // 0-100 confidence score
+  match_reason?: 'email_exact' | 'login_exact' | 'login_contains' | 'name_fuzzy';
   // Legacy aliases for backwards compatibility
   source_login?: string;  // Alias for login
   source_email?: string;  // Alias for email
@@ -830,6 +834,7 @@ export interface UserMappingStats {
   skipped: number;
   reclaimed: number;
   pending_reclaim: number;
+  invitable: number;
 }
 
 export interface UserStats {
@@ -838,6 +843,32 @@ export interface UserStats {
   total_commits: number;
   total_prs: number;
   total_issues: number;
+}
+
+// Invitation workflow types
+export interface SendInvitationResult {
+  success: boolean;
+  source_login: string;
+  mannequin_login?: string;
+  target_user?: string;
+  message: string;
+  error?: string;
+}
+
+export interface BulkInvitationResult {
+  success: boolean;
+  invited: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
+  message: string;
+}
+
+export interface FetchMannequinsResult {
+  total_mannequins: number;
+  matched: number;
+  unmatched: number;
+  message: string;
 }
 
 // Team mapping types
@@ -977,5 +1008,51 @@ export interface TeamDetail {
   members: TeamDetailMember[];
   repositories: TeamDetailRepository[];
   mapping?: TeamDetailMapping;
+}
+
+// User organization membership
+export interface UserOrgMembership {
+  id: number;
+  user_login: string;
+  organization: string;
+  role: 'member' | 'admin';
+  discovered_at: string;
+}
+
+// User contribution stats
+export interface UserContributionStats {
+  commit_count: number;
+  issue_count: number;
+  pr_count: number;
+  comment_count: number;
+  repository_count: number;
+}
+
+// User mapping detail for detail panel
+export interface UserMappingDetail {
+  source_org?: string;
+  destination_login?: string;
+  destination_email?: string;
+  mapping_status: UserMappingStatus;
+  mannequin_id?: string;
+  mannequin_login?: string;
+  reclaim_status?: ReclaimStatus;
+  reclaim_error?: string;
+  match_confidence?: number;
+  match_reason?: string;
+}
+
+// Complete user detail response
+export interface UserDetail {
+  login: string;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  source_instance: string;
+  discovered_at: string;
+  updated_at: string;
+  stats: UserContributionStats;
+  organizations: UserOrgMembership[];
+  mapping?: UserMappingDetail;
 }
 

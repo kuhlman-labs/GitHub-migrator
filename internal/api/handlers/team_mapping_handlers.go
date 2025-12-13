@@ -36,8 +36,13 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Parse query parameters - now queries teams with their mapping status
+	// Accept both "organization" and "source_org" for compatibility
+	org := r.URL.Query().Get("organization")
+	if org == "" {
+		org = r.URL.Query().Get("source_org")
+	}
 	filters := storage.TeamWithMappingFilters{
-		Organization: r.URL.Query().Get("organization"),
+		Organization: org,
 		Status:       r.URL.Query().Get("status"),
 		Search:       r.URL.Query().Get("search"),
 	}
@@ -74,10 +79,13 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 
 // GetTeamMappingStats handles GET /api/v1/team-mappings/stats
 // Returns summary statistics for teams with mapping status
+// Supports optional ?organization= query parameter to filter by org
 func (h *Handler) GetTeamMappingStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	stats, err := h.db.GetTeamsWithMappingsStats(ctx)
+	orgFilter := r.URL.Query().Get("organization")
+
+	stats, err := h.db.GetTeamsWithMappingsStats(ctx, orgFilter)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get team mapping stats", r) {
 			return
@@ -88,6 +96,82 @@ func (h *Handler) GetTeamMappingStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, stats)
+}
+
+// DiscoverTeams handles POST /api/v1/teams/discover
+// Discovers teams and their members for a single organization (standalone, teams-only discovery)
+func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Organization string `json:"organization"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Organization == "" {
+		h.sendError(w, http.StatusBadRequest, "organization is required")
+		return
+	}
+
+	if h.collector == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "GitHub client not configured")
+		return
+	}
+
+	// Run discovery synchronously since it provides immediate feedback
+	ctx := r.Context()
+	teamsDiscovered, membersDiscovered, err := h.collector.DiscoverTeamsOnly(ctx, req.Organization)
+	if err != nil {
+		if h.handleContextError(ctx, err, "discover teams", r) {
+			return
+		}
+		h.logger.Error("Team discovery failed", "error", err, "org", req.Organization)
+		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Discovery failed: %v", err))
+		return
+	}
+
+	// Auto-sync discovered teams to team_mappings
+	synced, err := h.db.SyncTeamMappingsFromTeams(ctx)
+	if err != nil {
+		h.logger.Warn("Failed to sync team mappings after discovery", "error", err)
+	}
+
+	// Also sync users to user_mappings since team members are discovered
+	usersSynced, err := h.db.SyncUserMappingsFromUsers(ctx)
+	if err != nil {
+		h.logger.Warn("Failed to sync user mappings after team discovery", "error", err)
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"message":              fmt.Sprintf("Discovered %d teams with %d members from '%s'", teamsDiscovered, membersDiscovered, req.Organization),
+		"organization":         req.Organization,
+		"teams_discovered":     teamsDiscovered,
+		"members_discovered":   membersDiscovered,
+		"team_mappings_synced": synced,
+		"user_mappings_synced": usersSynced,
+	})
+}
+
+// GetTeamSourceOrgs handles GET /api/v1/team-mappings/source-orgs
+// Returns all distinct source organizations that have teams
+func (h *Handler) GetTeamSourceOrgs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	orgs, err := h.db.GetTeamSourceOrgs(ctx)
+	if err != nil {
+		if h.handleContextError(ctx, err, "get team source orgs", r) {
+			return
+		}
+		h.logger.Error("Failed to get team source orgs", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch team source organizations")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		"organizations": orgs,
+	})
 }
 
 // CreateTeamMapping handles POST /api/v1/team-mappings
@@ -189,9 +273,14 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If mapping doesn't exist, create a new one (upsert behavior for unmapped teams)
 	if existing == nil {
-		h.sendError(w, http.StatusNotFound, "Team mapping not found")
-		return
+		existing = &models.TeamMapping{
+			SourceOrg:      sourceOrg,
+			SourceTeamSlug: sourceTeamSlug,
+			MappingStatus:  teamMappingStatusUnmapped,
+			CreatedAt:      time.Now(),
+		}
 	}
 
 	// Track if user is actively updating destination mapping fields
@@ -675,11 +764,11 @@ func (h *Handler) GetPermissionAudit(w http.ResponseWriter, r *http.Request) {
 	unmappedTeams := findUnmappedTeams(teams, mappingMap)
 	codeownersIssues := h.findCodeownersIssues(ctx, mappingMap)
 
-	userStats, _ := h.db.GetUserMappingStats(ctx)
+	userStats, _ := h.db.GetUserMappingStats(ctx, "")
 	if userStats == nil {
 		userStats = map[string]interface{}{}
 	}
-	teamStats, _ := h.db.GetTeamMappingStats(ctx)
+	teamStats, _ := h.db.GetTeamMappingStats(ctx, "")
 	if teamStats == nil {
 		teamStats = map[string]interface{}{}
 	}
@@ -872,8 +961,8 @@ func (h *Handler) GetTeamMigrationStatus(w http.ResponseWriter, r *http.Request)
 		executionStats = map[string]interface{}{}
 	}
 
-	// Get mapping stats
-	mappingStats, err := h.db.GetTeamsWithMappingsStats(ctx)
+	// Get mapping stats (all orgs for migration status)
+	mappingStats, err := h.db.GetTeamsWithMappingsStats(ctx, "")
 	if err != nil {
 		h.logger.Warn("Failed to get team mapping stats", "error", err)
 		mappingStats = map[string]interface{}{}

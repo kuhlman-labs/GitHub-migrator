@@ -45,7 +45,7 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	if cfg.Source.AppID > 0 && cfg.Source.AppPrivateKey != "" {
 		sourceBaseConfig = &github.ClientConfig{
 			BaseURL:           cfg.Source.BaseURL,
-			Timeout:           30 * time.Second,
+			Timeout:           120 * time.Second, // Increased for large org operations like mannequin listing
 			RetryConfig:       github.DefaultRetryConfig(),
 			Logger:            logger,
 			AppID:             cfg.Source.AppID,
@@ -189,6 +189,7 @@ func (s *Server) Router() http.Handler {
 	// Repository endpoints
 	// Note: Using {fullName...} trailing wildcard to capture full repo name including slashes (e.g., "org/repo")
 	protect("GET /api/v1/repositories", s.handler.ListRepositories)
+	protect("POST /api/v1/repositories/discover", s.handler.DiscoverRepositories)
 	protect("POST /api/v1/repositories/batch-update", s.handler.BatchUpdateRepositoryStatus)
 	// Repository GET route handles both repo details and dependencies via suffix detection
 	protect("GET /api/v1/repositories/{fullName...}", s.handler.GetRepositoryOrDependencies)
@@ -214,6 +215,8 @@ func (s *Server) Router() http.Handler {
 	// Note: Literal routes must be registered before parameterized routes
 	protect("GET /api/v1/team-mappings", s.handler.ListTeamMappings)
 	protect("GET /api/v1/team-mappings/stats", s.handler.GetTeamMappingStats)
+	protect("POST /api/v1/teams/discover", s.handler.DiscoverTeams)
+	protect("GET /api/v1/team-mappings/source-orgs", s.handler.GetTeamSourceOrgs)
 	protect("POST /api/v1/team-mappings/import", s.handler.ImportTeamMappings)
 	protect("GET /api/v1/team-mappings/export", s.handler.ExportTeamMappings)
 	protect("POST /api/v1/team-mappings/suggest", s.handler.SuggestTeamMappings)
@@ -233,8 +236,10 @@ func (s *Server) Router() http.Handler {
 	// Note: Literal routes must be registered before parameterized routes
 	protect("GET /api/v1/users", s.handler.ListUsers)
 	protect("GET /api/v1/users/stats", s.handler.GetUserStats)
+	protect("POST /api/v1/users/discover", s.handler.DiscoverOrgMembers)
 	protect("GET /api/v1/user-mappings", s.handler.ListUserMappings)
 	protect("GET /api/v1/user-mappings/stats", s.handler.GetUserMappingStats)
+	protect("GET /api/v1/user-mappings/source-orgs", s.handler.GetSourceOrgs)
 	protect("POST /api/v1/user-mappings/import", s.handler.ImportUserMappings)
 	protect("GET /api/v1/user-mappings/export", s.handler.ExportUserMappings)
 	protect("GET /api/v1/user-mappings/generate-gei-csv", s.handler.GenerateGEICSV)
@@ -242,7 +247,10 @@ func (s *Server) Router() http.Handler {
 	protect("POST /api/v1/user-mappings/sync", s.handler.SyncUserMappingsFromDiscovery)
 	protect("POST /api/v1/user-mappings/fetch-mannequins", s.handler.FetchMannequins)
 	protect("POST /api/v1/user-mappings/reclaim-mannequins", s.handler.ReclaimMannequins)
+	protect("POST /api/v1/user-mappings/send-invitations", s.handler.BulkSendAttributionInvitations)
 	protect("POST /api/v1/user-mappings", s.handler.CreateUserMapping)
+	protect("GET /api/v1/user-mappings/{login}", s.handler.GetUserDetail)
+	protect("POST /api/v1/user-mappings/{sourceLogin}/send-invitation", s.handler.SendAttributionInvitation)
 	protect("PATCH /api/v1/user-mappings/{sourceLogin}", s.handler.UpdateUserMapping)
 	protect("DELETE /api/v1/user-mappings/{sourceLogin}", s.handler.DeleteUserMapping)
 

@@ -169,27 +169,43 @@ func (d *Database) ListTeamMappings(ctx context.Context, filters TeamMappingFilt
 }
 
 // GetTeamMappingStats returns summary statistics for team mappings
-func (d *Database) GetTeamMappingStats(ctx context.Context) (map[string]interface{}, error) {
+// If orgFilter is provided, stats are filtered to that organization only
+func (d *Database) GetTeamMappingStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
 	var total int64
 	var mapped int64
 	var unmapped int64
 	var skipped int64
 
 	db := d.db.WithContext(ctx).Model(&models.TeamMapping{})
+	if orgFilter != "" {
+		db = db.Where("source_org = ?", orgFilter)
+	}
 
 	if err := db.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mappings: %w", err)
 	}
 
-	if err := db.Where("mapping_status = ?", teamMappingStatusMapped).Count(&mapped).Error; err != nil {
+	mappedQuery := d.db.WithContext(ctx).Model(&models.TeamMapping{}).Where("mapping_status = ?", teamMappingStatusMapped)
+	if orgFilter != "" {
+		mappedQuery = mappedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := mappedQuery.Count(&mapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mapped: %w", err)
 	}
 
-	if err := db.Where("mapping_status = ?", teamMappingStatusUnmapped).Count(&unmapped).Error; err != nil {
+	unmappedQuery := d.db.WithContext(ctx).Model(&models.TeamMapping{}).Where("mapping_status = ?", teamMappingStatusUnmapped)
+	if orgFilter != "" {
+		unmappedQuery = unmappedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := unmappedQuery.Count(&unmapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count unmapped: %w", err)
 	}
 
-	if err := db.Where("mapping_status = ?", teamMappingStatusSkipped).Count(&skipped).Error; err != nil {
+	skippedQuery := d.db.WithContext(ctx).Model(&models.TeamMapping{}).Where("mapping_status = ?", teamMappingStatusSkipped)
+	if orgFilter != "" {
+		skippedQuery = skippedQuery.Where("source_org = ?", orgFilter)
+	}
+	if err := skippedQuery.Count(&skipped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
 
@@ -484,40 +500,54 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 }
 
 // GetTeamsWithMappingsStats returns stats for teams with their mapping status
-func (d *Database) GetTeamsWithMappingsStats(ctx context.Context) (map[string]interface{}, error) {
+// If orgFilter is provided, stats are filtered to that organization only
+func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
 	var total int64
-	if err := d.db.WithContext(ctx).Model(&models.GitHubTeam{}).Count(&total).Error; err != nil {
+	baseQuery := d.db.WithContext(ctx).Model(&models.GitHubTeam{})
+	if orgFilter != "" {
+		baseQuery = baseQuery.Where("organization = ?", orgFilter)
+	}
+	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count total teams: %w", err)
 	}
 
 	// Count mapped teams (teams with mapping status 'mapped')
 	// Uses LEFT JOIN to match teams with their mappings
 	var mapped int64
-	if err := d.db.WithContext(ctx).
+	mappedQuery := d.db.WithContext(ctx).
 		Table("github_teams").
 		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
-		Where("team_mappings.mapping_status = ?", teamMappingStatusMapped).
-		Count(&mapped).Error; err != nil {
+		Where("team_mappings.mapping_status = ?", teamMappingStatusMapped)
+	if orgFilter != "" {
+		mappedQuery = mappedQuery.Where("github_teams.organization = ?", orgFilter)
+	}
+	if err := mappedQuery.Count(&mapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mapped: %w", err)
 	}
 
 	// Count skipped teams (teams with mapping status 'skipped')
 	var skipped int64
-	if err := d.db.WithContext(ctx).
+	skippedQuery := d.db.WithContext(ctx).
 		Table("github_teams").
 		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
-		Where("team_mappings.mapping_status = ?", teamMappingStatusSkipped).
-		Count(&skipped).Error; err != nil {
+		Where("team_mappings.mapping_status = ?", teamMappingStatusSkipped)
+	if orgFilter != "" {
+		skippedQuery = skippedQuery.Where("github_teams.organization = ?", orgFilter)
+	}
+	if err := skippedQuery.Count(&skipped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
 
 	// Count unmapped teams (teams with no mapping OR mapping status 'unmapped')
 	var unmapped int64
-	if err := d.db.WithContext(ctx).
+	unmappedQuery := d.db.WithContext(ctx).
 		Table("github_teams").
 		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
-		Where("team_mappings.id IS NULL OR team_mappings.mapping_status = ?", teamMappingStatusUnmapped).
-		Count(&unmapped).Error; err != nil {
+		Where("team_mappings.id IS NULL OR team_mappings.mapping_status = ?", teamMappingStatusUnmapped)
+	if orgFilter != "" {
+		unmappedQuery = unmappedQuery.Where("github_teams.organization = ?", orgFilter)
+	}
+	if err := unmappedQuery.Count(&unmapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count unmapped: %w", err)
 	}
 
@@ -665,4 +695,19 @@ func (d *Database) ResetTeamMigrationStatus(ctx context.Context, sourceOrgFilter
 	}
 
 	return nil
+}
+
+// GetTeamSourceOrgs returns all distinct source organizations that have teams
+func (d *Database) GetTeamSourceOrgs(ctx context.Context) ([]string, error) {
+	var orgs []string
+	err := d.db.WithContext(ctx).Model(&models.GitHubTeam{}).
+		Distinct("organization").
+		Order("organization ASC").
+		Pluck("organization", &orgs).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distinct team organizations: %w", err)
+	}
+
+	return orgs, nil
 }
