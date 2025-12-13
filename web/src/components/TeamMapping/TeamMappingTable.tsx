@@ -864,7 +864,7 @@ export function TeamMappingTable() {
           onClose={() => setShowExecuteDialog(false)}
         >
           <div className="p-4">
-            <p className="mb-4">
+            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
               This will create teams in the destination organization and apply repository permissions for all mapped teams.
             </p>
 
@@ -891,29 +891,28 @@ export function TeamMappingTable() {
             </div>
 
             {sourceOrgFilter && (
-              <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+              <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                 Only teams from <strong>{sourceOrgFilter}</strong> will be processed.
               </p>
             )}
-
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setShowExecuteDialog(false)}>Cancel</Button>
-              <Button
-                variant="primary"
-                onClick={handleExecute}
-                disabled={executeMigration.isPending}
-              >
-                {executeMigration.isPending ? (
-                  <>
-                    <Spinner size="small" /> Starting...
-                  </>
-                ) : dryRun ? (
-                  'Start Dry Run'
-                ) : (
-                  'Start Migration'
-                )}
-              </Button>
-            </div>
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={() => setShowExecuteDialog(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={handleExecute}
+              disabled={executeMigration.isPending}
+            >
+              {executeMigration.isPending ? (
+                <>
+                  <Spinner size="small" /> Starting...
+                </>
+              ) : dryRun ? (
+                'Start Dry Run'
+              ) : (
+                'Start Migration'
+              )}
+            </Button>
           </div>
         </Dialog>
       )}
@@ -925,11 +924,11 @@ export function TeamMappingTable() {
           onClose={() => setShowSingleTeamDialog(null)}
         >
           <div className="p-4">
-            <p className="mb-4">
-              This will create the team <strong>{showSingleTeamDialog.org}/{showSingleTeamDialog.slug}</strong> in the destination organization and apply repository permissions.
+            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+              This will create the team <strong style={{ color: 'var(--fgColor-default)' }}>{showSingleTeamDialog.org}/{showSingleTeamDialog.slug}</strong> in the destination organization and apply repository permissions.
             </p>
 
-            <Flash variant="warning" className="mb-4">
+            <Flash variant="warning">
               <div className="flex items-start gap-2">
                 <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
                 <div>
@@ -938,23 +937,22 @@ export function TeamMappingTable() {
                 </div>
               </div>
             </Flash>
-
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setShowSingleTeamDialog(null)}>Cancel</Button>
-              <Button
-                variant="primary"
-                onClick={handleConfirmSingleTeamMigration}
-                disabled={executeMigration.isPending}
-              >
-                {executeMigration.isPending ? (
-                  <>
-                    <Spinner size="small" /> Migrating...
-                  </>
-                ) : (
-                  'Migrate Team'
-                )}
-              </Button>
-            </div>
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={() => setShowSingleTeamDialog(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmSingleTeamMigration}
+              disabled={executeMigration.isPending}
+            >
+              {executeMigration.isPending ? (
+                <>
+                  <Spinner size="small" /> Migrating...
+                </>
+              ) : (
+                'Migrate Team'
+              )}
+            </Button>
           </div>
         </Dialog>
       )}

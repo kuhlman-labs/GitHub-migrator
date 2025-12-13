@@ -836,18 +836,18 @@ export function UserMappingTable() {
                 The GitHub organization where migrations were imported
               </FormControl.Caption>
             </FormControl>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button onClick={cancelDestOrgDialog}>Cancel</Button>
-              <Button 
-                variant="primary" 
-                onClick={handleConfirmDestOrg}
-                disabled={!destinationOrg}
-              >
-                {pendingAction === 'fetch' && 'Fetch'}
-                {pendingAction === 'invite' && 'Send Invitation'}
-                {pendingAction === 'bulk_invite' && 'Send All'}
-              </Button>
-            </div>
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={cancelDestOrgDialog}>Cancel</Button>
+            <Button 
+              variant="primary" 
+              onClick={handleConfirmDestOrg}
+              disabled={!destinationOrg}
+            >
+              {pendingAction === 'fetch' && 'Fetch'}
+              {pendingAction === 'invite' && 'Send Invitation'}
+              {pendingAction === 'bulk_invite' && 'Send All'}
+            </Button>
           </div>
         </Dialog>
       )}
