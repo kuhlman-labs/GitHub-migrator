@@ -1493,6 +1493,78 @@ func (c *Client) ListTeamMembers(ctx context.Context, org, teamSlug string) ([]*
 	return allMembers, nil
 }
 
+// ListTeamMembersGraphQL lists all members of a team using GraphQL
+// This is more efficient than the REST API as it fetches member roles in a single query
+// instead of making N+1 API calls (one per member to get their role)
+func (c *Client) ListTeamMembersGraphQL(ctx context.Context, org, teamSlug string) ([]*TeamMember, error) {
+	c.logger.Debug("Listing members for team via GraphQL", "org", org, "team", teamSlug)
+
+	var allMembers []*TeamMember
+	var cursor *githubv4.String
+
+	// GraphQL query for team members with roles
+	var query struct {
+		Organization struct {
+			Team struct {
+				Members struct {
+					PageInfo struct {
+						HasNextPage githubv4.Boolean
+						EndCursor   githubv4.String
+					}
+					Edges []struct {
+						Role githubv4.String
+						Node struct {
+							Login githubv4.String
+						}
+					}
+				} `graphql:"members(first: 100, after: $cursor)"`
+			} `graphql:"team(slug: $slug)"`
+		} `graphql:"organization(login: $org)"`
+	}
+
+	variables := map[string]interface{}{
+		"org":    githubv4.String(org),
+		"slug":   githubv4.String(teamSlug),
+		"cursor": cursor,
+	}
+
+	for {
+		variables["cursor"] = cursor
+
+		err := c.retryer.Do(ctx, "ListTeamMembersGraphQL", func(ctx context.Context) error {
+			return c.graphql.Query(ctx, &query, variables)
+		})
+
+		if err != nil {
+			// Fall back to REST API if GraphQL fails (e.g., on GHES without GraphQL team support)
+			c.logger.Debug("GraphQL query failed for team members, falling back to REST",
+				"org", org,
+				"team", teamSlug,
+				"error", err)
+			return c.ListTeamMembers(ctx, org, teamSlug)
+		}
+
+		for _, edge := range query.Organization.Team.Members.Edges {
+			allMembers = append(allMembers, &TeamMember{
+				Login: string(edge.Node.Login),
+				Role:  strings.ToLower(string(edge.Role)), // GraphQL returns "MAINTAINER" or "MEMBER"
+			})
+		}
+
+		if !bool(query.Organization.Team.Members.PageInfo.HasNextPage) {
+			break
+		}
+		cursor = newString(query.Organization.Team.Members.PageInfo.EndCursor)
+	}
+
+	c.logger.Debug("Team member listing via GraphQL complete",
+		"org", org,
+		"team", teamSlug,
+		"total_members", len(allMembers))
+
+	return allMembers, nil
+}
+
 // OrgMember represents a member of an organization with full details
 type OrgMember struct {
 	Login     string  `json:"login"`

@@ -219,8 +219,15 @@ func (c *Collector) DiscoverOrgMembersOnly(ctx context.Context, org string) (int
 	return savedCount, nil
 }
 
+// teamDiscoveryResult holds the result of processing a single team
+type teamDiscoveryResult struct {
+	teamSaved   bool
+	memberCount int
+}
+
 // DiscoverTeamsOnly discovers only teams and their members without repository discovery
 // This is used for standalone team discovery from the Teams page
+// Uses parallel processing with worker pool for improved performance
 func (c *Collector) DiscoverTeamsOnly(ctx context.Context, org string) (int, int, error) {
 	c.logger.Info("Starting teams-only discovery", "organization", org)
 
@@ -248,13 +255,65 @@ func (c *Collector) DiscoverTeamsOnly(ctx context.Context, org string) (int, int
 		return 0, 0, fmt.Errorf("failed to list teams: %w", err)
 	}
 
-	c.logger.Info("Found teams", "organization", org, "count", len(teams))
+	c.logger.Info("Found teams", "organization", org, "count", len(teams), "workers", c.workers)
 
-	teamCount := 0
-	memberCount := 0
+	if len(teams) == 0 {
+		return 0, 0, nil
+	}
+
+	// Process teams in parallel using worker pool
+	jobs := make(chan *github.TeamInfo, len(teams))
+	results := make(chan teamDiscoveryResult, len(teams))
+	var wg sync.WaitGroup
+
 	sourceInstance := c.getSourceInstance()
 
-	for _, teamInfo := range teams {
+	// Start workers
+	for i := 0; i < c.workers; i++ {
+		wg.Add(1)
+		go c.teamsOnlyWorker(ctx, &wg, i, org, orgClient, sourceInstance, jobs, results)
+	}
+
+	// Send jobs
+	for _, team := range teams {
+		jobs <- team
+	}
+	close(jobs)
+
+	// Wait for completion
+	wg.Wait()
+	close(results)
+
+	// Collect results
+	teamCount := 0
+	memberCount := 0
+	for result := range results {
+		if result.teamSaved {
+			teamCount++
+		}
+		memberCount += result.memberCount
+	}
+
+	c.logger.Info("Teams-only discovery complete",
+		"organization", org,
+		"teams_saved", teamCount,
+		"members_saved", memberCount)
+
+	return teamCount, memberCount, nil
+}
+
+// teamsOnlyWorker processes teams from the jobs channel for DiscoverTeamsOnly
+func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, workerID int, org string, client *github.Client, sourceInstance string, jobs <-chan *github.TeamInfo, results chan<- teamDiscoveryResult) {
+	defer wg.Done()
+
+	for teamInfo := range jobs {
+		result := teamDiscoveryResult{}
+
+		c.logger.Debug("Worker processing team",
+			"worker_id", workerID,
+			"organization", org,
+			"team", teamInfo.Slug)
+
 		team := &models.GitHubTeam{
 			Organization: org,
 			Slug:         teamInfo.Slug,
@@ -267,22 +326,32 @@ func (c *Collector) DiscoverTeamsOnly(ctx context.Context, org string) (int, int
 
 		if err := c.storage.SaveTeam(ctx, team); err != nil {
 			c.logger.Warn("Failed to save team",
+				"worker_id", workerID,
 				"organization", org,
 				"team", teamInfo.Slug,
 				"error", err)
+			results <- result
 			continue
 		}
-		teamCount++
+		result.teamSaved = true
 
-		// List and save team members
-		teamMembers, err := orgClient.ListTeamMembers(ctx, org, teamInfo.Slug)
+		// List and save team members using GraphQL (more efficient, no N+1 queries)
+		teamMembers, err := client.ListTeamMembersGraphQL(ctx, org, teamInfo.Slug)
 		if err != nil {
 			c.logger.Warn("Failed to list members for team",
+				"worker_id", workerID,
 				"organization", org,
 				"team", teamInfo.Slug,
 				"error", err)
+			results <- result
 			continue
 		}
+
+		c.logger.Debug("Found members for team",
+			"worker_id", workerID,
+			"organization", org,
+			"team", teamInfo.Slug,
+			"count", len(teamMembers))
 
 		for _, member := range teamMembers {
 			// Save team member relationship
@@ -293,13 +362,14 @@ func (c *Collector) DiscoverTeamsOnly(ctx context.Context, org string) (int, int
 			}
 			if err := c.storage.SaveTeamMember(ctx, teamMember); err != nil {
 				c.logger.Warn("Failed to save team member",
+					"worker_id", workerID,
 					"organization", org,
 					"team", teamInfo.Slug,
 					"member", member.Login,
 					"error", err)
 				continue
 			}
-			memberCount++
+			result.memberCount++
 
 			// Also save the user to github_users table
 			user := &models.GitHubUser{
@@ -310,14 +380,15 @@ func (c *Collector) DiscoverTeamsOnly(ctx context.Context, org string) (int, int
 				c.logger.Debug("User may already exist", "login", member.Login, "error", err)
 			}
 		}
+
+		c.logger.Debug("Worker completed team",
+			"worker_id", workerID,
+			"organization", org,
+			"team", teamInfo.Slug,
+			"members_saved", result.memberCount)
+
+		results <- result
 	}
-
-	c.logger.Info("Teams-only discovery complete",
-		"organization", org,
-		"teams_saved", teamCount,
-		"members_saved", memberCount)
-
-	return teamCount, memberCount, nil
 }
 
 // DiscoverEnterpriseRepositories discovers all repositories across all organizations in an enterprise
@@ -1094,21 +1165,67 @@ func (c *Collector) cloneRepositoryBare(ctx context.Context, cloneURL, fullName 
 	return tempDir, nil
 }
 
-// discoverTeams discovers all teams for an organization and their repository associations
-// This enables filtering repositories by team membership in the UI
-func (c *Collector) discoverTeams(ctx context.Context, org string, client *github.Client) error {
-	c.logger.Info("Discovering teams for organization", "organization", org)
-
-	// List all teams in the organization
-	teams, err := client.ListOrganizationTeams(ctx, org)
-	if err != nil {
-		return fmt.Errorf("failed to list teams: %w", err)
+// discoverTeamsInParallel processes teams in parallel using worker pool
+// This significantly improves performance for organizations with many teams
+func (c *Collector) discoverTeamsInParallel(ctx context.Context, org string, client *github.Client, teams []*github.TeamInfo) error {
+	if len(teams) == 0 {
+		return nil
 	}
 
-	c.logger.Info("Found teams", "organization", org, "count", len(teams))
+	jobs := make(chan *github.TeamInfo, len(teams))
+	errors := make(chan error, len(teams))
+	var wg sync.WaitGroup
 
-	// Process each team
-	for _, teamInfo := range teams {
+	c.logger.Info("Processing teams in parallel",
+		"organization", org,
+		"team_count", len(teams),
+		"workers", c.workers)
+
+	// Start workers
+	for i := 0; i < c.workers; i++ {
+		wg.Add(1)
+		go c.teamDiscoveryWorker(ctx, &wg, i, org, client, jobs, errors)
+	}
+
+	// Send jobs
+	for _, team := range teams {
+		jobs <- team
+	}
+	close(jobs)
+
+	// Wait for completion
+	wg.Wait()
+	close(errors)
+
+	// Collect errors
+	var errs []error
+	for err := range errors {
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		c.logger.Warn("Team discovery completed with errors",
+			"organization", org,
+			"total_teams", len(teams),
+			"error_count", len(errs))
+		return fmt.Errorf("encountered %d errors during team discovery (see logs for details)", len(errs))
+	}
+
+	return nil
+}
+
+// teamDiscoveryWorker processes teams from the jobs channel
+func (c *Collector) teamDiscoveryWorker(ctx context.Context, wg *sync.WaitGroup, workerID int, org string, client *github.Client, jobs <-chan *github.TeamInfo, errors chan<- error) {
+	defer wg.Done()
+
+	for teamInfo := range jobs {
+		c.logger.Debug("Worker processing team",
+			"worker_id", workerID,
+			"organization", org,
+			"team", teamInfo.Slug)
+
 		// Save the team to the database
 		team := &models.GitHubTeam{
 			Organization: org,
@@ -1122,9 +1239,11 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 
 		if err := c.storage.SaveTeam(ctx, team); err != nil {
 			c.logger.Warn("Failed to save team",
+				"worker_id", workerID,
 				"organization", org,
 				"team", teamInfo.Slug,
 				"error", err)
+			errors <- err
 			continue
 		}
 
@@ -1132,39 +1251,44 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 		teamRepos, err := client.ListTeamRepositories(ctx, org, teamInfo.Slug)
 		if err != nil {
 			c.logger.Warn("Failed to list repositories for team",
+				"worker_id", workerID,
 				"organization", org,
 				"team", teamInfo.Slug,
 				"error", err)
-			continue
-		}
+			// Don't send error - continue with members
+		} else {
+			c.logger.Debug("Found repositories for team",
+				"worker_id", workerID,
+				"organization", org,
+				"team", teamInfo.Slug,
+				"count", len(teamRepos))
 
-		c.logger.Debug("Found repositories for team",
-			"organization", org,
-			"team", teamInfo.Slug,
-			"count", len(teamRepos))
-
-		// Save team-repository associations
-		for _, teamRepo := range teamRepos {
-			if err := c.storage.SaveTeamRepository(ctx, team.ID, teamRepo.FullName, teamRepo.Permission); err != nil {
-				c.logger.Warn("Failed to save team-repository association",
-					"organization", org,
-					"team", teamInfo.Slug,
-					"repo", teamRepo.FullName,
-					"error", err)
-				// Continue with other repos even if one fails
+			// Save team-repository associations
+			for _, teamRepo := range teamRepos {
+				if err := c.storage.SaveTeamRepository(ctx, team.ID, teamRepo.FullName, teamRepo.Permission); err != nil {
+					c.logger.Warn("Failed to save team-repository association",
+						"worker_id", workerID,
+						"organization", org,
+						"team", teamInfo.Slug,
+						"repo", teamRepo.FullName,
+						"error", err)
+					// Continue with other repos even if one fails
+				}
 			}
 		}
 
-		// List members for this team
-		teamMembers, err := client.ListTeamMembers(ctx, org, teamInfo.Slug)
+		// List members for this team using GraphQL (more efficient, no N+1 queries)
+		teamMembers, err := client.ListTeamMembersGraphQL(ctx, org, teamInfo.Slug)
 		if err != nil {
 			c.logger.Warn("Failed to list members for team",
+				"worker_id", workerID,
 				"organization", org,
 				"team", teamInfo.Slug,
 				"error", err)
 			// Continue to next team - don't fail completely
 		} else {
 			c.logger.Debug("Found members for team",
+				"worker_id", workerID,
 				"organization", org,
 				"team", teamInfo.Slug,
 				"count", len(teamMembers))
@@ -1178,6 +1302,7 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 				}
 				if err := c.storage.SaveTeamMember(ctx, teamMember); err != nil {
 					c.logger.Warn("Failed to save team member",
+						"worker_id", workerID,
 						"organization", org,
 						"team", teamInfo.Slug,
 						"member", member.Login,
@@ -1186,6 +1311,34 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 				}
 			}
 		}
+
+		c.logger.Debug("Worker completed team",
+			"worker_id", workerID,
+			"organization", org,
+			"team", teamInfo.Slug)
+	}
+}
+
+// discoverTeams discovers all teams for an organization and their repository associations
+// This enables filtering repositories by team membership in the UI
+// Uses parallel processing with worker pool for improved performance
+func (c *Collector) discoverTeams(ctx context.Context, org string, client *github.Client) error {
+	c.logger.Info("Discovering teams for organization", "organization", org)
+
+	// List all teams in the organization
+	teams, err := client.ListOrganizationTeams(ctx, org)
+	if err != nil {
+		return fmt.Errorf("failed to list teams: %w", err)
+	}
+
+	c.logger.Info("Found teams", "organization", org, "count", len(teams), "workers", c.workers)
+
+	// Process teams in parallel using worker pool
+	if err := c.discoverTeamsInParallel(ctx, org, client, teams); err != nil {
+		c.logger.Warn("Team discovery completed with errors",
+			"organization", org,
+			"error", err)
+		// Don't return error - some teams may have been processed successfully
 	}
 
 	c.logger.Info("Team discovery complete", "organization", org, "teams_found", len(teams))
