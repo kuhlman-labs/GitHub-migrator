@@ -262,7 +262,7 @@ func (c *Collector) DiscoverTeamsOnly(ctx context.Context, org string) (int, int
 			Privacy:      teamInfo.Privacy,
 		}
 		if teamInfo.Description != "" {
-			team.Description = &teamInfo.Description
+			team.Description = stringPtr(teamInfo.Description)
 		}
 
 		if err := c.storage.SaveTeam(ctx, team); err != nil {
@@ -1117,7 +1117,7 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 			Privacy:      teamInfo.Privacy,
 		}
 		if teamInfo.Description != "" {
-			team.Description = &teamInfo.Description
+			team.Description = stringPtr(teamInfo.Description)
 		}
 
 		if err := c.storage.SaveTeam(ctx, team); err != nil {
