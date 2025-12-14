@@ -426,7 +426,16 @@ type TeamWithMappingFilters struct {
 }
 
 // ListTeamsWithMappings returns discovered teams with their mapping info
+// Uses subqueries to calculate repos_eligible and total_source_repos dynamically
 func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMappingFilters) ([]TeamWithMapping, int64, error) {
+	// Subquery to count total repos for each team
+	totalReposSubquery := `(SELECT COUNT(*) FROM github_team_repositories gtr WHERE gtr.team_id = t.id)`
+
+	// Subquery to count migrated repos (status = 'complete') for each team
+	eligibleReposSubquery := `(SELECT COUNT(*) FROM github_team_repositories gtr 
+		JOIN repositories r ON r.id = gtr.repository_id 
+		WHERE gtr.team_id = t.id AND r.status = 'complete')`
+
 	query := d.db.WithContext(ctx).
 		Table("github_teams t").
 		Select(`
@@ -442,16 +451,16 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 			COALESCE(m.mapping_status, 'unmapped') as mapping_status,
 			COALESCE(m.migration_status, 'pending') as migration_status,
 			COALESCE(m.repos_synced, 0) as repos_synced,
-			COALESCE(m.repos_eligible, 0) as repos_eligible,
-			COALESCE(m.total_source_repos, 0) as total_source_repos,
+			` + eligibleReposSubquery + ` as repos_eligible,
+			` + totalReposSubquery + ` as total_source_repos,
 			COALESCE(m.team_created_in_dest, 0) as team_created_in_dest,
 			CASE
 				WHEN m.migration_status IS NULL OR m.migration_status = 'pending' THEN 'pending'
 				WHEN m.migration_status = 'failed' THEN 'failed'
-				WHEN COALESCE(m.team_created_in_dest, 0) = 1 AND COALESCE(m.repos_eligible, 0) = 0 THEN 'team_only'
-				WHEN COALESCE(m.repos_synced, 0) = 0 AND COALESCE(m.repos_eligible, 0) > 0 THEN 'needs_sync'
-				WHEN COALESCE(m.repos_synced, 0) < COALESCE(m.repos_eligible, 0) THEN 'partial'
-				WHEN COALESCE(m.repos_synced, 0) >= COALESCE(m.repos_eligible, 0) AND COALESCE(m.repos_eligible, 0) > 0 THEN 'complete'
+				WHEN COALESCE(m.team_created_in_dest, 0) = 1 AND ` + eligibleReposSubquery + ` = 0 THEN 'team_only'
+				WHEN COALESCE(m.repos_synced, 0) = 0 AND ` + eligibleReposSubquery + ` > 0 THEN 'needs_sync'
+				WHEN COALESCE(m.repos_synced, 0) < ` + eligibleReposSubquery + ` THEN 'partial'
+				WHEN COALESCE(m.repos_synced, 0) >= ` + eligibleReposSubquery + ` AND ` + eligibleReposSubquery + ` > 0 THEN 'complete'
 				ELSE 'pending'
 			END as sync_status
 		`).
