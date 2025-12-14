@@ -1165,10 +1165,10 @@ func TestSaveRepository_PreservesBatchIDDuringRediscovery(t *testing.T) {
 	// This is what happens when ProfileRepository is called - it creates a new repo object
 	// with status "pending" and no batch_id
 	rediscoveredRepo := &models.Repository{
-		FullName:     "org/test-repo",
-		Source:       "ghes",
-		SourceURL:    "https://github.com/org/test-repo",
-		Status:       string(models.StatusPending), // Re-discovery sets status to "pending"
+		FullName:  "org/test-repo",
+		Source:    "ghes",
+		SourceURL: "https://github.com/org/test-repo",
+		Status:    string(models.StatusPending), // Re-discovery sets status to "pending"
 		// BatchID is nil - simulating what happens in ProfileRepository
 		CommitCount:  100, // Updated during re-discovery
 		DiscoveredAt: time.Now(),
