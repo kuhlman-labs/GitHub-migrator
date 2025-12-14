@@ -652,7 +652,7 @@ func (e *Executor) generateArchivesOnGHES(ctx context.Context, repo *models.Repo
 	}
 
 	if migration == nil || migration.ID == nil {
-		return 0, fmt.Errorf("invalid migration response from source: %w", err)
+		return 0, fmt.Errorf("invalid migration response from source: received nil migration or nil migration ID")
 	}
 
 	return *migration.ID, nil
@@ -716,7 +716,9 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 				}, nil
 
 			case statusFailed:
-				return nil, fmt.Errorf("archive generation failed for repository %s: %w", repo.FullName, err)
+				// Note: The GitHub API doesn't provide failure details in the Migration struct.
+				// The migration ID can be used to investigate via the GitHub API or UI.
+				return nil, fmt.Errorf("archive generation failed for repository %s (migration ID: %d) - check source org migration status for details", repo.FullName, archiveID)
 
 			case "pending", "exporting":
 				// Continue polling
