@@ -1111,6 +1111,100 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	}
 }
 
+// TestSaveRepository_PreservesBatchIDDuringRediscovery verifies that re-discovery
+// does not remove a repository from its batch when the repo status is still "pending"
+func TestSaveRepository_PreservesBatchIDDuringRediscovery(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a batch
+	batch := &models.Batch{
+		Name:            "Test Batch",
+		Type:            "pilot",
+		RepositoryCount: 0,
+		Status:          "ready",
+		CreatedAt:       time.Now(),
+	}
+	if err := db.CreateBatch(ctx, batch); err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+
+	// Create a repository in "pending" status
+	repo := createTestRepository("org/test-repo")
+	repo.Status = string(models.StatusPending)
+	if err := db.SaveRepository(ctx, repo); err != nil {
+		t.Fatalf("SaveRepository() error = %v", err)
+	}
+
+	// Get the saved repo to get its ID
+	savedRepo, err := db.GetRepository(ctx, repo.FullName)
+	if err != nil {
+		t.Fatalf("GetRepository() error = %v", err)
+	}
+
+	// Add repository to batch
+	if err := db.AddRepositoriesToBatch(ctx, batch.ID, []int64{savedRepo.ID}); err != nil {
+		t.Fatalf("AddRepositoriesToBatch() error = %v", err)
+	}
+
+	// Verify repository is in batch
+	repoInBatch, err := db.GetRepository(ctx, repo.FullName)
+	if err != nil {
+		t.Fatalf("GetRepository() error = %v", err)
+	}
+	if repoInBatch.BatchID == nil || *repoInBatch.BatchID != batch.ID {
+		t.Fatalf("Expected repository to be in batch %d, got %v", batch.ID, repoInBatch.BatchID)
+	}
+	if repoInBatch.Status != string(models.StatusPending) {
+		t.Fatalf("Expected repository status to be 'pending', got %s", repoInBatch.Status)
+	}
+
+	// Simulate a re-discovery by creating a new repo object with the same name
+	// This is what happens when ProfileRepository is called - it creates a new repo object
+	// with status "pending" and no batch_id
+	rediscoveredRepo := &models.Repository{
+		FullName:     "org/test-repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/org/test-repo",
+		Status:       string(models.StatusPending), // Re-discovery sets status to "pending"
+		// BatchID is nil - simulating what happens in ProfileRepository
+		CommitCount:  100, // Updated during re-discovery
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	// Save the "re-discovered" repository
+	if err := db.SaveRepository(ctx, rediscoveredRepo); err != nil {
+		t.Fatalf("SaveRepository() during re-discovery error = %v", err)
+	}
+
+	// Verify the batch_id was preserved!
+	afterRediscovery, err := db.GetRepository(ctx, repo.FullName)
+	if err != nil {
+		t.Fatalf("GetRepository() after re-discovery error = %v", err)
+	}
+
+	if afterRediscovery.BatchID == nil {
+		t.Errorf("REGRESSION: batch_id was cleared during re-discovery! Expected %d, got nil", batch.ID)
+	} else if *afterRediscovery.BatchID != batch.ID {
+		t.Errorf("REGRESSION: batch_id changed during re-discovery! Expected %d, got %d", batch.ID, *afterRediscovery.BatchID)
+	}
+
+	// Verify the metadata was still updated
+	if afterRediscovery.CommitCount != 100 {
+		t.Errorf("Expected commit_count to be updated to 100, got %d", afterRediscovery.CommitCount)
+	}
+
+	// Verify status is still pending
+	if afterRediscovery.Status != string(models.StatusPending) {
+		t.Errorf("Expected status to remain 'pending', got %s", afterRediscovery.Status)
+	}
+
+	t.Logf("✅ batch_id correctly preserved during re-discovery (batch_id=%d)", *afterRediscovery.BatchID)
+}
+
 func TestListRepositoriesWithSearch(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
