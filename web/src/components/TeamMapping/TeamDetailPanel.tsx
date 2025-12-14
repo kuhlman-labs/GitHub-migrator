@@ -16,8 +16,10 @@ import {
   AlertIcon,
   ClockIcon,
   SyncIcon,
+  RocketIcon,
 } from '@primer/octicons-react';
 import { useTeamDetail } from '../../hooks/useQueries';
+import { useExecuteTeamMigration } from '../../hooks/useMutations';
 import { TeamMigrationStatus, TeamMigrationCompleteness } from '../../types';
 
 interface TeamDetailPanelProps {
@@ -25,6 +27,7 @@ interface TeamDetailPanelProps {
   teamSlug: string;
   onClose: () => void;
   onEditMapping?: (org: string, slug: string) => void;
+  onMigrationStarted?: () => void;
 }
 
 const migrationStatusColors: Record<TeamMigrationStatus | string, 'default' | 'accent' | 'success' | 'attention' | 'danger'> = {
@@ -74,9 +77,46 @@ const permissionColors: Record<string, 'default' | 'accent' | 'success' | 'atten
   admin: 'danger',
 };
 
-export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping }: TeamDetailPanelProps) {
+export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping, onMigrationStarted }: TeamDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<'members' | 'repositories'>('members');
-  const { data: team, isLoading, error } = useTeamDetail(org, teamSlug);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const { data: team, isLoading, error, refetch } = useTeamDetail(org, teamSlug);
+  const executeMigration = useExecuteTeamMigration();
+
+  const handleMigrateTeam = async () => {
+    if (!team?.mapping?.destination_org || !team?.mapping?.destination_team_slug) {
+      return;
+    }
+    
+    setIsMigrating(true);
+    try {
+      await executeMigration.mutateAsync({
+        source_org: org,
+        source_team_slug: teamSlug,
+        dry_run: false,
+      });
+      onMigrationStarted?.();
+      // Refetch team details to get updated status
+      setTimeout(() => {
+        refetch();
+        setIsMigrating(false);
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to migrate team:', err);
+      setIsMigrating(false);
+    }
+  };
+
+  // Determine if team can be migrated
+  const canMigrate = team?.mapping?.mapping_status === 'mapped' && 
+    team?.mapping?.destination_org && 
+    team?.mapping?.destination_team_slug;
+  
+  // Determine if team needs sync (already created but has repos to sync)
+  const needsSync = team?.mapping?.sync_status === 'needs_sync' || 
+    team?.mapping?.sync_status === 'partial' ||
+    (team?.mapping?.team_created_in_dest && 
+     (team?.mapping?.repos_synced ?? 0) < (team?.mapping?.repos_eligible ?? 0));
 
   if (error) {
     return (
@@ -248,15 +288,27 @@ export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping }: TeamD
                     {team.mapping.error_message}
                   </Flash>
                 )}
-                {onEditMapping && (
-                  <Button
-                    size="small"
-                    className="mt-2"
-                    onClick={() => onEditMapping(org, teamSlug)}
-                  >
-                    Edit Mapping
-                  </Button>
-                )}
+                <div className="flex gap-2 mt-3">
+                  {onEditMapping && (
+                    <Button
+                      size="small"
+                      onClick={() => onEditMapping(org, teamSlug)}
+                    >
+                      Edit Mapping
+                    </Button>
+                  )}
+                  {canMigrate && (
+                    <Button
+                      size="small"
+                      variant="primary"
+                      onClick={handleMigrateTeam}
+                      disabled={isMigrating || executeMigration.isPending}
+                      leadingVisual={isMigrating ? () => <Spinner size="small" /> : needsSync ? SyncIcon : RocketIcon}
+                    >
+                      {isMigrating ? 'Migrating...' : needsSync ? 'Sync Permissions' : team.mapping.team_created_in_dest ? 'Re-sync Team' : 'Migrate Team'}
+                    </Button>
+                  )}
+                </div>
               </div>
             ) : (
               <div>

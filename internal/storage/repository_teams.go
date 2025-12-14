@@ -371,6 +371,7 @@ type TeamDetailMapping struct {
 	TeamCreatedInDest     bool       `json:"team_created_in_dest"`
 	LastSyncedAt          *time.Time `json:"last_synced_at,omitempty"`
 	MigrationCompleteness string     `json:"migration_completeness"` // pending, team_only, partial, complete, needs_sync
+	SyncStatus            string     `json:"sync_status"`            // Derived status for UI
 }
 
 // TeamDetail represents comprehensive team information
@@ -469,6 +470,7 @@ func (d *Database) GetTeamDetail(ctx context.Context, org, slug string) (*TeamDe
 			TeamCreatedInDest:     mapping.TeamCreatedInDest,
 			LastSyncedAt:          mapping.LastSyncedAt,
 			MigrationCompleteness: mapping.GetMigrationCompleteness(),
+			SyncStatus:            mapping.GetMigrationCompleteness(), // Same as completeness for consistency
 		}
 	} else if err != gorm.ErrRecordNotFound {
 		return nil, fmt.Errorf("failed to get team mapping: %w", err)

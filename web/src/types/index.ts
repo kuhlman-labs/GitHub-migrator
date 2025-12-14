@@ -1015,6 +1015,7 @@ export interface TeamDetailMapping {
   team_created_in_dest: boolean;
   last_synced_at?: string;
   migration_completeness: TeamMigrationCompleteness;
+  sync_status?: TeamMigrationCompleteness;
 }
 
 export interface TeamDetail {
