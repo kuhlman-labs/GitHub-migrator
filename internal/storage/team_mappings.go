@@ -406,6 +406,14 @@ type TeamWithMapping struct {
 	DestinationTeamSlug *string `json:"destination_team_slug,omitempty"`
 	DestinationTeamName *string `json:"destination_team_name,omitempty"`
 	MappingStatus       string  `json:"mapping_status"` // "unmapped", "mapped", "skipped"
+
+	// Migration execution fields
+	MigrationStatus   string `json:"migration_status"`   // "pending", "in_progress", "completed", "failed"
+	ReposSynced       int    `json:"repos_synced"`       // Number of repos with permissions synced
+	ReposEligible     int    `json:"repos_eligible"`     // Number of migrated repos eligible for sync
+	TotalSourceRepos  int    `json:"total_source_repos"` // Total repos in source org this team has access to
+	TeamCreatedInDest bool   `json:"team_created_in_dest"`
+	SyncStatus        string `json:"sync_status"` // Derived: "pending", "team_only", "partial", "complete", "needs_sync"
 }
 
 // TeamWithMappingFilters defines filters for listing teams with mappings
@@ -431,7 +439,21 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 			m.destination_org,
 			m.destination_team_slug,
 			m.destination_team_name,
-			COALESCE(m.mapping_status, 'unmapped') as mapping_status
+			COALESCE(m.mapping_status, 'unmapped') as mapping_status,
+			COALESCE(m.migration_status, 'pending') as migration_status,
+			COALESCE(m.repos_synced, 0) as repos_synced,
+			COALESCE(m.repos_eligible, 0) as repos_eligible,
+			COALESCE(m.total_source_repos, 0) as total_source_repos,
+			COALESCE(m.team_created_in_dest, 0) as team_created_in_dest,
+			CASE
+				WHEN m.migration_status IS NULL OR m.migration_status = 'pending' THEN 'pending'
+				WHEN m.migration_status = 'failed' THEN 'failed'
+				WHEN COALESCE(m.team_created_in_dest, 0) = 1 AND COALESCE(m.repos_eligible, 0) = 0 THEN 'team_only'
+				WHEN COALESCE(m.repos_synced, 0) = 0 AND COALESCE(m.repos_eligible, 0) > 0 THEN 'needs_sync'
+				WHEN COALESCE(m.repos_synced, 0) < COALESCE(m.repos_eligible, 0) THEN 'partial'
+				WHEN COALESCE(m.repos_synced, 0) >= COALESCE(m.repos_eligible, 0) AND COALESCE(m.repos_eligible, 0) > 0 THEN 'complete'
+				ELSE 'pending'
+			END as sync_status
 		`).
 		Joins("LEFT JOIN team_mappings m ON t.organization = m.source_org AND t.slug = m.source_team_slug")
 

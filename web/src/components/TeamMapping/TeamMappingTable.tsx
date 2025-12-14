@@ -64,6 +64,34 @@ const statusLabels: Record<TeamMappingStatus, string> = {
   skipped: 'Skipped',
 };
 
+// Sync status colors and labels
+const syncStatusColors: Record<string, 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done'> = {
+  pending: 'default',
+  team_only: 'accent',
+  needs_sync: 'attention',
+  partial: 'attention',
+  complete: 'success',
+  failed: 'danger',
+};
+
+const syncStatusLabels: Record<string, string> = {
+  pending: 'Pending',
+  team_only: 'Team Only',
+  needs_sync: 'Sync Needed',
+  partial: 'Partial',
+  complete: 'Complete',
+  failed: 'Failed',
+};
+
+const syncStatusDescriptions: Record<string, string> = {
+  pending: 'Not yet migrated',
+  team_only: 'Team created, no repos to sync',
+  needs_sync: 'Team created, repos need sync',
+  partial: 'Some repo permissions synced',
+  complete: 'All repo permissions synced',
+  failed: 'Migration failed',
+};
+
 // Migration progress component
 function MigrationProgress({
   isRunning,
@@ -675,6 +703,7 @@ export function TeamMappingTable() {
               <th className="text-center p-3 font-medium w-12"></th>
               <th className="text-left p-3 font-medium">Destination Team</th>
               <th className="text-left p-3 font-medium">Status</th>
+              <th className="text-left p-3 font-medium">Sync Status</th>
               <th className="text-right p-3 pr-4 font-medium w-24">Actions</th>
             </tr>
           </thead>
@@ -793,6 +822,21 @@ export function TeamMappingTable() {
                     {statusLabels[mapping.mapping_status as TeamMappingStatus]}
                   </Label>
                 </td>
+                <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    <Label 
+                      variant={syncStatusColors[mapping.sync_status] || 'default'}
+                      title={syncStatusDescriptions[mapping.sync_status] || ''}
+                    >
+                      {syncStatusLabels[mapping.sync_status] || 'Pending'}
+                    </Label>
+                    {mapping.repos_eligible > 0 && (
+                      <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+                        {mapping.repos_synced}/{mapping.repos_eligible}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="p-3 pr-4 text-right w-24" onClick={(e) => e.stopPropagation()}>
                   <ActionMenu>
                     <ActionMenu.Button size="small" variant="invisible">
@@ -844,7 +888,7 @@ export function TeamMappingTable() {
             })}
             {mappings.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-8 text-center">
+                <td colSpan={6} className="p-8 text-center">
                   <span style={{ color: 'var(--fgColor-muted)' }}>
                     No teams found. Run discovery to discover organization teams.
                   </span>

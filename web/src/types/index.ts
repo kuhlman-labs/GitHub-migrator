@@ -906,6 +906,13 @@ export interface TeamMapping {
   destination_team_slug?: string;
   destination_team_name?: string;
   mapping_status: TeamMappingStatus;
+  // Migration execution fields
+  migration_status: string;  // "pending", "in_progress", "completed", "failed"
+  repos_synced: number;
+  repos_eligible: number;
+  total_source_repos: number;
+  team_created_in_dest: boolean;
+  sync_status: TeamMigrationCompleteness;  // Derived: "pending", "team_only", "partial", "complete", "needs_sync"
   // Legacy aliases for backwards compatibility
   source_org?: string;        // Alias for organization
   source_team_slug?: string;  // Alias for slug
