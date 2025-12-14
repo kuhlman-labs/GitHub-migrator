@@ -458,3 +458,149 @@ func TestWrapError_HTMLErrorPage(t *testing.T) {
 		t.Error("502 Bad Gateway should be classified as server error")
 	}
 }
+
+func TestIsStreamError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "sentinel stream error",
+			err:  ErrStreamError,
+			want: true,
+		},
+		{
+			name: "HTTP/2 stream cancel from peer",
+			err:  errors.New("stream error: stream ID 3401; CANCEL; received from peer"),
+			want: true,
+		},
+		{
+			name: "HTTP/2 stream ID mention",
+			err:  errors.New("failed with stream ID 123"),
+			want: true,
+		},
+		{
+			name: "HTTP/2 RST_STREAM",
+			err:  errors.New("received RST_STREAM with error code CANCEL"),
+			want: true,
+		},
+		{
+			name: "HTTP/2 GOAWAY",
+			err:  errors.New("http2: server sent GOAWAY and closed the connection"),
+			want: true,
+		},
+		{
+			name: "HTTP/2 REFUSED_STREAM",
+			err:  errors.New("stream error: REFUSED_STREAM"),
+			want: true,
+		},
+		{
+			name: "HTTP/2 INTERNAL_ERROR",
+			err:  errors.New("stream error: INTERNAL_ERROR"),
+			want: true,
+		},
+		{
+			name: "connection reset",
+			err:  errors.New("read tcp: connection reset by peer"),
+			want: true,
+		},
+		{
+			name: "broken pipe",
+			err:  errors.New("write: broken pipe"),
+			want: true,
+		},
+		{
+			name: "use of closed connection",
+			err:  errors.New("use of closed network connection"),
+			want: true,
+		},
+		{
+			name: "http2 server sent error",
+			err:  errors.New("http2: server sent GOAWAY and closed the connection; LastStreamID=1, ErrCode=NO_ERROR"),
+			want: true,
+		},
+		{
+			name: "regular not found error - not a stream error",
+			err:  errors.New("resource not found"),
+			want: false,
+		},
+		{
+			name: "regular timeout error - not a stream error",
+			err:  errors.New("context deadline exceeded"),
+			want: false,
+		},
+		{
+			name: "rate limit error - not a stream error",
+			err:  ErrRateLimitExceeded,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsStreamError(tt.err); got != tt.want {
+				t.Errorf("IsStreamError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsRetryableError_StreamErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "HTTP/2 stream cancel is retryable",
+			err:  errors.New("stream error: stream ID 3401; CANCEL; received from peer"),
+			want: true,
+		},
+		{
+			name: "wrapped stream error with status 0 is retryable",
+			err: &APIError{
+				StatusCode: 0,
+				Message:    "stream error: stream ID 3401; CANCEL; received from peer",
+				Err:        errors.New("stream error: stream ID 3401; CANCEL; received from peer"),
+			},
+			want: true,
+		},
+		{
+			name: "connection reset is retryable",
+			err:  errors.New("read tcp: connection reset by peer"),
+			want: true,
+		},
+		{
+			name: "broken pipe is retryable",
+			err:  errors.New("write: broken pipe"),
+			want: true,
+		},
+		{
+			name: "GOAWAY is retryable",
+			err:  errors.New("http2: server sent GOAWAY"),
+			want: true,
+		},
+		{
+			name: "regular 404 error is not retryable",
+			err: &APIError{
+				StatusCode: http.StatusNotFound,
+				Message:    "Not Found",
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsRetryableError(tt.err); got != tt.want {
+				t.Errorf("IsRetryableError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
