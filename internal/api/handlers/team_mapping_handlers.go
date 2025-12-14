@@ -517,12 +517,12 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 }
 
 // ExportTeamMappings handles GET /api/v1/team-mappings/export
-// Exports team mappings to CSV
+// Exports discovered teams with their mapping info to CSV
 func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get all mappings
-	filters := storage.TeamMappingFilters{
+	// Get all discovered teams with their mapping info
+	filters := storage.TeamWithMappingFilters{
 		Limit: 0, // No limit - get all
 	}
 
@@ -531,10 +531,12 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 		filters.Status = status
 	}
 	if sourceOrg := r.URL.Query().Get("source_org"); sourceOrg != "" {
-		filters.SourceOrg = sourceOrg
+		filters.Organization = sourceOrg
 	}
 
-	mappings, _, err := h.db.ListTeamMappings(ctx, filters)
+	// Use ListTeamsWithMappings to get discovered teams (from github_teams)
+	// joined with their mapping info (from team_mappings)
+	teams, _, err := h.db.ListTeamsWithMappings(ctx, filters)
 	if err != nil {
 		if h.handleContextError(ctx, err, "export team mappings", r) {
 			return
@@ -562,15 +564,15 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Write rows
-	for _, m := range mappings {
+	for _, t := range teams {
 		row := []string{
-			m.SourceOrg,
-			m.SourceTeamSlug,
-			ptrToString(m.SourceTeamName),
-			ptrToString(m.DestinationOrg),
-			ptrToString(m.DestinationTeamSlug),
-			ptrToString(m.DestinationTeamName),
-			m.MappingStatus,
+			t.Organization,
+			t.Slug,
+			t.Name,
+			ptrToString(t.DestinationOrg),
+			ptrToString(t.DestinationTeamSlug),
+			ptrToString(t.DestinationTeamName),
+			t.MappingStatus,
 		}
 		_ = writer.Write(row)
 	}
