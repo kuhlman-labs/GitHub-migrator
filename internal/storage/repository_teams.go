@@ -388,6 +388,30 @@ type TeamDetail struct {
 	Mapping      *TeamDetailMapping     `json:"mapping,omitempty"`
 }
 
+// calculateSyncStatus determines the sync status based on current state
+// This is used to calculate the status dynamically at query time
+func calculateSyncStatus(mapping models.TeamMapping, dynamicReposEligible int) string {
+	if mapping.MigrationStatus == "" || mapping.MigrationStatus == TeamMigrationStatusPending {
+		return "pending"
+	}
+	if mapping.MigrationStatus == TeamMigrationStatusFailed {
+		return "failed"
+	}
+	if mapping.TeamCreatedInDest && dynamicReposEligible == 0 {
+		return "team_only"
+	}
+	if mapping.ReposSynced == 0 && dynamicReposEligible > 0 {
+		return "needs_sync"
+	}
+	if mapping.ReposSynced < dynamicReposEligible {
+		return "partial"
+	}
+	if mapping.ReposSynced >= dynamicReposEligible && dynamicReposEligible > 0 {
+		return "complete"
+	}
+	return "pending"
+}
+
 // GetTeamDetail retrieves comprehensive team information including members, repos, and mapping
 func (d *Database) GetTeamDetail(ctx context.Context, org, slug string) (*TeamDetail, error) {
 	// Get the team
@@ -442,12 +466,17 @@ func (d *Database) GetTeamDetail(ctx context.Context, org, slug string) (*TeamDe
 		return nil, fmt.Errorf("failed to get team repositories: %w", err)
 	}
 
+	// Count migrated repos dynamically (repos with status "complete")
+	migratedRepoCount := 0
 	for _, r := range repoDetails {
 		detail.Repositories = append(detail.Repositories, TeamDetailRepository{
 			FullName:        r.FullName,
 			Permission:      r.Permission,
 			MigrationStatus: r.MigrationStatus,
 		})
+		if r.MigrationStatus != nil && *r.MigrationStatus == "complete" {
+			migratedRepoCount++
+		}
 	}
 
 	// Get mapping info
@@ -457,21 +486,30 @@ func (d *Database) GetTeamDetail(ctx context.Context, org, slug string) (*TeamDe
 		First(&mapping).Error
 
 	if err == nil {
-		detail.Mapping = &TeamDetailMapping{
-			DestinationOrg:        mapping.DestinationOrg,
-			DestinationTeamSlug:   mapping.DestinationTeamSlug,
-			MappingStatus:         mapping.MappingStatus,
-			MigrationStatus:       mapping.MigrationStatus,
-			MigratedAt:            mapping.MigratedAt,
-			ReposSynced:           mapping.ReposSynced,
-			ErrorMessage:          mapping.ErrorMessage,
-			TotalSourceRepos:      mapping.TotalSourceRepos,
-			ReposEligible:         mapping.ReposEligible,
-			TeamCreatedInDest:     mapping.TeamCreatedInDest,
-			LastSyncedAt:          mapping.LastSyncedAt,
-			MigrationCompleteness: mapping.GetMigrationCompleteness(),
-			SyncStatus:            mapping.GetMigrationCompleteness(), // Same as completeness for consistency
+		// Calculate repos_eligible dynamically from actual migrated repos
+		// This ensures it's always up-to-date even if repos were migrated after team migration
+		dynamicReposEligible := migratedRepoCount
+
+		// Build the mapping detail
+		mappingDetail := &TeamDetailMapping{
+			DestinationOrg:      mapping.DestinationOrg,
+			DestinationTeamSlug: mapping.DestinationTeamSlug,
+			MappingStatus:       mapping.MappingStatus,
+			MigrationStatus:     mapping.MigrationStatus,
+			MigratedAt:          mapping.MigratedAt,
+			ReposSynced:         mapping.ReposSynced,
+			ErrorMessage:        mapping.ErrorMessage,
+			TotalSourceRepos:    len(repoDetails), // Use actual count
+			ReposEligible:       dynamicReposEligible,
+			TeamCreatedInDest:   mapping.TeamCreatedInDest,
+			LastSyncedAt:        mapping.LastSyncedAt,
 		}
+
+		// Calculate sync status dynamically based on current state
+		mappingDetail.MigrationCompleteness = calculateSyncStatus(mapping, dynamicReposEligible)
+		mappingDetail.SyncStatus = mappingDetail.MigrationCompleteness
+
+		detail.Mapping = mappingDetail
 	} else if err != gorm.ErrRecordNotFound {
 		return nil, fmt.Errorf("failed to get team mapping: %w", err)
 	}
