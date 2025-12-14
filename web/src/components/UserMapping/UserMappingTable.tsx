@@ -97,6 +97,9 @@ export function UserMappingTable() {
   const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
   
+  // Delete dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null);
+  
   // Action result state
   const [actionResult, setActionResult] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
 
@@ -168,15 +171,19 @@ export function UserMappingTable() {
     setEditValue('');
   }, []);
 
-  const handleDelete = useCallback(async (sourceLogin: string) => {
-    if (window.confirm(`Delete mapping for ${sourceLogin}?`)) {
-      try {
-        await deleteMapping.mutateAsync(sourceLogin);
-      } catch (err) {
-        console.error('Failed to delete mapping:', err);
-      }
+  const handleDelete = useCallback((sourceLogin: string) => {
+    setShowDeleteDialog(sourceLogin);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!showDeleteDialog) return;
+    try {
+      await deleteMapping.mutateAsync(showDeleteDialog);
+      setShowDeleteDialog(null);
+    } catch (err) {
+      console.error('Failed to delete mapping:', err);
     }
-  }, [deleteMapping]);
+  }, [deleteMapping, showDeleteDialog]);
 
   const handleSkip = useCallback(async (sourceLogin: string) => {
     try {
@@ -847,6 +854,33 @@ export function UserMappingTable() {
               {pendingAction === 'fetch' && 'Fetch'}
               {pendingAction === 'invite' && 'Send Invitation'}
               {pendingAction === 'bulk_invite' && 'Send All'}
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Delete Mapping Dialog */}
+      {showDeleteDialog && (
+        <Dialog
+          title="Delete Mapping"
+          onClose={() => setShowDeleteDialog(null)}
+        >
+          <div className="p-4">
+            <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
+              Are you sure you want to delete the mapping for <strong>{showDeleteDialog}</strong>?
+            </p>
+            <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+              This will remove the destination mapping. The source user data will be preserved.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={() => setShowDeleteDialog(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmDelete}
+              disabled={deleteMapping.isPending}
+            >
+              {deleteMapping.isPending ? 'Deleting...' : 'Delete'}
             </Button>
           </div>
         </Dialog>

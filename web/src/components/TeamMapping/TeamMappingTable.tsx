@@ -244,6 +244,8 @@ export function TeamMappingTable() {
   const [dryRun, setDryRun] = useState(false);
   const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState<{ org: string; slug: string } | null>(null);
   const [actionResult, setActionResult] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
 
   const { data, isLoading, error, refetch } = useTeamMappings({
@@ -315,15 +317,19 @@ export function TeamMappingTable() {
     setEditDestSlug('');
   }, []);
 
-  const handleDelete = useCallback(async (sourceOrg: string, sourceTeamSlug: string) => {
-    if (window.confirm(`Delete mapping for ${sourceOrg}/${sourceTeamSlug}?`)) {
-      try {
-        await deleteMapping.mutateAsync({ sourceOrg, sourceTeamSlug });
-      } catch (err) {
-        console.error('Failed to delete mapping:', err);
-      }
+  const handleDelete = useCallback((sourceOrg: string, sourceTeamSlug: string) => {
+    setShowDeleteDialog({ org: sourceOrg, slug: sourceTeamSlug });
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!showDeleteDialog) return;
+    try {
+      await deleteMapping.mutateAsync({ sourceOrg: showDeleteDialog.org, sourceTeamSlug: showDeleteDialog.slug });
+      setShowDeleteDialog(null);
+    } catch (err) {
+      console.error('Failed to delete mapping:', err);
     }
-  }, [deleteMapping]);
+  }, [deleteMapping, showDeleteDialog]);
 
   const handleSkip = useCallback(async (sourceOrg: string, sourceTeamSlug: string) => {
     try {
@@ -387,14 +393,17 @@ export function TeamMappingTable() {
     }
   }, [cancelMigration]);
 
-  const handleReset = useCallback(async () => {
-    if (window.confirm('Reset all team migration statuses to pending? This will allow you to re-run the migration.')) {
-      try {
-        await resetMigration.mutateAsync(sourceOrgFilter || undefined);
-        refetch();
-      } catch (err) {
-        console.error('Failed to reset migration status:', err);
-      }
+  const handleReset = useCallback(() => {
+    setShowResetDialog(true);
+  }, []);
+
+  const handleConfirmReset = useCallback(async () => {
+    try {
+      await resetMigration.mutateAsync(sourceOrgFilter || undefined);
+      refetch();
+      setShowResetDialog(false);
+    } catch (err) {
+      console.error('Failed to reset migration status:', err);
     }
   }, [resetMigration, sourceOrgFilter, refetch]);
 
@@ -1023,6 +1032,66 @@ export function TeamMappingTable() {
               disabled={discoverTeams.isPending || !discoverOrg.trim()}
             >
               {discoverTeams.isPending ? 'Discovering...' : 'Discover'}
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Delete Mapping Dialog */}
+      {showDeleteDialog && (
+        <Dialog
+          title="Delete Mapping"
+          onClose={() => setShowDeleteDialog(null)}
+        >
+          <div className="p-4">
+            <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
+              Are you sure you want to delete the mapping for{' '}
+              <strong>{showDeleteDialog.org}/{showDeleteDialog.slug}</strong>?
+            </p>
+            <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+              This will remove the destination mapping. The source team data will be preserved.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={() => setShowDeleteDialog(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmDelete}
+              disabled={deleteMapping.isPending}
+            >
+              {deleteMapping.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Reset Migration Status Dialog */}
+      {showResetDialog && (
+        <Dialog
+          title="Reset Migration Status"
+          onClose={() => setShowResetDialog(false)}
+        >
+          <div className="p-4">
+            <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
+              Are you sure you want to reset all team migration statuses to pending?
+            </p>
+            <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+              This will allow you to re-run the team migration. Teams that have already been created in the destination will be skipped, but repository permissions will be re-applied.
+            </p>
+            {sourceOrgFilter && (
+              <p className="text-sm mt-3" style={{ color: 'var(--fgColor-accent)' }}>
+                <strong>Note:</strong> Only teams from <strong>{sourceOrgFilter}</strong> will be reset.
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={() => setShowResetDialog(false)}>Cancel</Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmReset}
+              disabled={resetMigration.isPending}
+            >
+              {resetMigration.isPending ? 'Resetting...' : 'Reset Status'}
             </Button>
           </div>
         </Dialog>
