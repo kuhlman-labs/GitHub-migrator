@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/migration"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
@@ -878,9 +879,13 @@ func (h *Handler) getOrCreateTeamExecutor() *migration.TeamExecutor {
 		if h.destDualClient == nil {
 			return nil
 		}
-		// Get the destination client from the dual client
+		// Get the clients from the dual clients
+		var sourceClient *github.Client
+		if h.sourceDualClient != nil {
+			sourceClient = h.sourceDualClient.APIClient()
+		}
 		var destClient = h.destDualClient.APIClient()
-		teamExecutor = migration.NewTeamExecutor(h.db, destClient, h.logger)
+		teamExecutor = migration.NewTeamExecutor(h.db, sourceClient, destClient, h.logger)
 	}
 
 	return teamExecutor

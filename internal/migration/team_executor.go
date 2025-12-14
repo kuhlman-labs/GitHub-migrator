@@ -15,9 +15,10 @@ import (
 
 // TeamExecutor handles the execution of team migrations
 type TeamExecutor struct {
-	storage    *storage.Database
-	destClient *github.Client
-	logger     *slog.Logger
+	storage      *storage.Database
+	sourceClient *github.Client
+	destClient   *github.Client
+	logger       *slog.Logger
 
 	// Execution state
 	mu        sync.Mutex
@@ -42,11 +43,12 @@ type TeamMigrationProgress struct {
 }
 
 // NewTeamExecutor creates a new TeamExecutor
-func NewTeamExecutor(storage *storage.Database, destClient *github.Client, logger *slog.Logger) *TeamExecutor {
+func NewTeamExecutor(storage *storage.Database, sourceClient, destClient *github.Client, logger *slog.Logger) *TeamExecutor {
 	return &TeamExecutor{
-		storage:    storage,
-		destClient: destClient,
-		logger:     logger,
+		storage:      storage,
+		sourceClient: sourceClient,
+		destClient:   destClient,
+		logger:       logger,
 	}
 }
 
@@ -341,6 +343,41 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 			_ = e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusCompleted, nil)
 		}
 		return nil
+	}
+
+	// Step 3.5: Refresh team-repo associations from source GitHub
+	// This ensures we have up-to-date associations even if repos were discovered after team discovery
+	if !dryRun && e.sourceClient != nil {
+		e.logger.Debug("Refreshing team-repo associations from source GitHub",
+			"source_org", mapping.SourceOrg,
+			"team", mapping.SourceTeamSlug)
+
+		teamRepos, err := e.sourceClient.ListTeamRepositories(ctx, mapping.SourceOrg, mapping.SourceTeamSlug)
+		if err != nil {
+			e.logger.Warn("Failed to list team repositories from source GitHub, using cached associations",
+				"error", err,
+				"source_org", mapping.SourceOrg,
+				"team", mapping.SourceTeamSlug)
+		} else {
+			associationsUpdated := 0
+			for _, teamRepo := range teamRepos {
+				if err := e.storage.SaveTeamRepository(ctx, sourceTeam.ID, teamRepo.FullName, teamRepo.Permission); err != nil {
+					e.logger.Warn("Failed to save team-repository association",
+						"team", mapping.SourceTeamSlug,
+						"repo", teamRepo.FullName,
+						"error", err)
+				} else {
+					associationsUpdated++
+				}
+			}
+			e.logger.Debug("Refreshed team-repo associations",
+				"team", mapping.SourceTeamSlug,
+				"associations_checked", len(teamRepos),
+				"associations_updated", associationsUpdated)
+		}
+	} else if !dryRun && e.sourceClient == nil {
+		e.logger.Debug("Source client not available, using cached team-repo associations",
+			"team", mapping.SourceTeamSlug)
 	}
 
 	// Step 4: Update tracking counts

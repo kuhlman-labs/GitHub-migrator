@@ -739,17 +739,33 @@ func (d *Database) UpdateTeamTotalSourceRepos(ctx context.Context, teamID int64,
 // Includes:
 //   - Teams with migration_status = 'pending' or 'failed' (not yet migrated or failed)
 //   - Teams with migration_status = 'completed' but repos_synced < repos_eligible (need re-sync for new repos)
+//
+// Uses dynamic calculation of repos_eligible to ensure we pick up newly migrated repos
 func (d *Database) GetMappedTeamsForMigration(ctx context.Context, sourceOrgFilter string) ([]*models.TeamMapping, error) {
 	var mappings []*models.TeamMapping
 
-	// Base query: must be mapped
-	query := d.db.WithContext(ctx).
-		Where("mapping_status = ?", teamMappingStatusMapped).
-		Where(
-			// Either pending/failed OR completed but needs re-sync (new repos available)
-			d.db.Where("migration_status IN ?", []string{TeamMigrationStatusPending, TeamMigrationStatusFailed}).
-				Or("migration_status = ? AND repos_synced < repos_eligible", TeamMigrationStatusCompleted),
+	// Subquery to dynamically calculate repos_eligible (migrated repos with status 'complete')
+	// This ensures we pick up repos that were migrated after the team was initially migrated
+	eligibleReposSubquery := `(
+		SELECT COUNT(*) FROM github_team_repositories gtr 
+		JOIN github_teams gt ON gt.id = gtr.team_id
+		JOIN repositories r ON r.id = gtr.repository_id 
+		WHERE gt.organization = team_mappings.source_org 
+		AND gt.slug = team_mappings.source_team_slug 
+		AND r.status = 'complete'
+	)`
+
+	// Build the query with dynamic repos_eligible calculation
+	// Either pending/failed OR completed but needs re-sync (repos_synced < dynamically calculated repos_eligible)
+	whereClause := fmt.Sprintf(`
+		mapping_status = ? AND (
+			migration_status IN (?, ?) 
+			OR (migration_status = ? AND COALESCE(repos_synced, 0) < %s)
 		)
+	`, eligibleReposSubquery)
+
+	query := d.db.WithContext(ctx).
+		Where(whereClause, teamMappingStatusMapped, TeamMigrationStatusPending, TeamMigrationStatusFailed, TeamMigrationStatusCompleted)
 
 	if sourceOrgFilter != "" {
 		query = query.Where("source_org = ?", sourceOrgFilter)
