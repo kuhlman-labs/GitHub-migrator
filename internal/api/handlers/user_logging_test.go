@@ -330,7 +330,6 @@ func TestMigrationLogging_DifferentOperations(t *testing.T) {
 
 			if found == nil {
 				t.Fatalf("Log not found for operation=%s phase=%s", tc.operation, tc.phase)
-				return
 			}
 
 			// Verify all fields

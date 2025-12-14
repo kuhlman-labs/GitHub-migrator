@@ -169,7 +169,6 @@ func TestGetRepository(t *testing.T) {
 
 	if retrieved == nil {
 		t.Fatal("Retrieved repository is nil")
-		return
 	}
 
 	if retrieved.FullName != original.FullName {
@@ -559,7 +558,6 @@ func TestGetRepositoryByID(t *testing.T) {
 
 	if found == nil {
 		t.Fatal("GetRepositoryByID() returned nil")
-		return
 	}
 
 	if found.FullName != repo.FullName {
@@ -610,7 +608,6 @@ func TestBatchOperations(t *testing.T) {
 
 	if found == nil {
 		t.Fatal("GetBatch() returned nil")
-		return
 	}
 
 	if found.Name != batch.Name {
@@ -1474,7 +1471,6 @@ func TestGetOrganizationStats(t *testing.T) {
 
 	if org1Stats == nil {
 		t.Fatal("Expected to find org1 in stats")
-		return
 	}
 
 	if org1Stats.TotalRepos != 3 {
@@ -1799,7 +1795,6 @@ func verifyOrgStats(t *testing.T, stats []*MigrationCompletionStats, orgName str
 	orgStats := findOrgStats(stats, orgName)
 	if orgStats == nil {
 		t.Fatalf("Expected to find %s organization stats", orgName)
-		return
 	}
 	if orgStats.TotalRepos != expectedTotal {
 		t.Errorf("Expected %s to have %d total repos, got %d", orgName, expectedTotal, orgStats.TotalRepos)

@@ -77,7 +77,6 @@ func TestNewCollector(t *testing.T) {
 
 	if collector == nil {
 		t.Fatal("NewCollector returned nil")
-		return
 	}
 	if collector.client == nil {
 		t.Error("Collector client is nil")
@@ -189,7 +188,6 @@ func TestProfileRepository_SaveToDatabase(t *testing.T) {
 
 	if retrieved == nil {
 		t.Fatal("Retrieved repository is nil")
-		return
 	}
 
 	if retrieved.FullName != "test/repo" {

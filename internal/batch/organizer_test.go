@@ -247,7 +247,6 @@ func TestCreatePilotBatch(t *testing.T) {
 
 		if batch == nil {
 			t.Fatal("Expected batch to be created")
-			return
 		}
 
 		if batch.Type != "pilot" {

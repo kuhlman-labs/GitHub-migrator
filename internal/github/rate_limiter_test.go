@@ -14,7 +14,6 @@ func TestNewRateLimiter(t *testing.T) {
 
 	if rl == nil {
 		t.Fatal("NewRateLimiter() returned nil")
-		return
 	}
 
 	if rl.minInterval != 100*time.Millisecond {

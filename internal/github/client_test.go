@@ -25,7 +25,6 @@ func TestNewClient(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil client")
-		return
 	}
 
 	if client.rest == nil {
@@ -63,7 +62,6 @@ func TestNewClientWithDefaults(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil client")
-		return
 	}
 
 	// Should use default logger
@@ -89,7 +87,6 @@ func TestNewClientWithEnterpriseURL(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil client")
-		return
 	}
 
 	if client.baseURL != cfg.BaseURL {
@@ -672,7 +669,6 @@ func TestNewClientWithGHECDataResidency(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil client")
-		return
 	}
 
 	// Verify that the GraphQL client was created
@@ -703,7 +699,6 @@ func TestNewClientWithGHECAPISubdomain(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil client")
-		return
 	}
 
 	// Verify that the GraphQL client was created
