@@ -893,15 +893,16 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 }
 
 // FetchMannequins handles POST /api/v1/user-mappings/fetch-mannequins
-// Fetches mannequins from the destination organization and matches them to ALL source users
-// Mannequin matching is destination-org-centric - it matches against all discovered source users
-// regardless of which source org they came from, since a user may exist in multiple source orgs
-// but will have a single mannequin in the destination org
+// Fetches mannequins from the destination organization and matches them to destination org members.
+// The mannequin's login IS the source user's login (from the source org).
+// We match mannequins to destination org members using login, email, and name matching.
+// For EMU migrations, an optional shortcode can be provided to match "jsmith" -> "jsmith_coinbase".
 func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req struct {
 		DestinationOrg string `json:"destination_org"`
+		EMUShortcode   string `json:"emu_shortcode,omitempty"` // e.g., "coinbase" to match "jsmith" -> "jsmith_coinbase"
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -920,24 +921,8 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-sync discovered users to user_mappings before matching
-	// This ensures all discovered users are available for mannequin matching
-	synced, err := h.db.SyncUserMappingsFromUsers(ctx)
-	if err != nil {
-		h.logger.Warn("Failed to auto-sync user mappings from discovered users", "error", err)
-		// Don't fail - continue with existing mappings
-	} else if synced > 0 {
-		h.logger.Info("Auto-synced discovered users to user_mappings", "synced", synced)
-	}
-
-	// Also update source_org for existing mappings from memberships
-	orgsUpdated, err := h.db.UpdateUserMappingSourceOrgsFromMemberships(ctx)
-	if err != nil {
-		h.logger.Warn("Failed to update source orgs from memberships", "error", err)
-	} else if orgsUpdated > 0 {
-		h.logger.Info("Updated source orgs for user mappings", "updated", orgsUpdated)
-	}
-
+	// Step 1: Fetch mannequins from destination org
+	// The mannequin's login IS the source user's login
 	mannequins, err := destClient.ListMannequins(ctx, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch mannequins", "org", req.DestinationOrg, "error", err)
@@ -947,21 +932,32 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Fetched mannequins from destination", "org", req.DestinationOrg, "count", len(mannequins))
 
-	// Match mannequins against ALL source users (not filtered by source org)
-	matched, unmatched, err := h.matchMannequinsToUsers(ctx, mannequins)
+	// Step 2: Fetch destination org members to match against
+	destMembers, err := destClient.ListOrgMembers(ctx, req.DestinationOrg)
 	if err != nil {
-		h.logger.Error("Failed to match mannequins to users", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to match mannequins to existing user mappings")
+		h.logger.Error("Failed to fetch destination org members", "org", req.DestinationOrg, "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to fetch destination organization members")
+		return
+	}
+
+	h.logger.Info("Fetched destination org members", "org", req.DestinationOrg, "count", len(destMembers))
+
+	// Step 3: Match mannequins to destination members
+	matched, unmatched, err := h.matchMannequinsToDestMembers(ctx, mannequins, destMembers, req.EMUShortcode)
+	if err != nil {
+		h.logger.Error("Failed to match mannequins to destination members", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to match mannequins to destination members")
 		return
 	}
 
 	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"total_mannequins": len(mannequins),
-		"matched":          matched,
-		"unmatched":        unmatched,
-		"users_synced":     synced,
-		"destination_org":  req.DestinationOrg,
-		"message":          fmt.Sprintf("Processed %d mannequins from '%s': %d matched to source users, %d unmatched (synced %d users from discovery)", len(mannequins), req.DestinationOrg, matched, unmatched, synced),
+		"total_mannequins":      len(mannequins),
+		"total_dest_members":    len(destMembers),
+		"matched":               matched,
+		"unmatched":             unmatched,
+		"destination_org":       req.DestinationOrg,
+		"emu_shortcode_applied": req.EMUShortcode != "",
+		"message":               fmt.Sprintf("Processed %d mannequins from '%s': %d matched to destination members, %d unmatched", len(mannequins), req.DestinationOrg, matched, unmatched),
 	})
 }
 
@@ -973,20 +969,19 @@ func (h *Handler) getDestinationClient() *github.Client {
 	return h.destDualClient.APIClient()
 }
 
-// matchMannequinsToUsers matches mannequins to existing user mappings using multiple strategies
-// Matches against ALL source users regardless of their source org, since mannequins are
-// destination-org-centric and a user may exist across multiple source orgs
+// matchMannequinsToDestMembers matches mannequins to destination org members
+// The mannequin's login IS the source user's login.
+// We try to find the matching destination org member using:
+// 1. Exact login match (100% confidence)
+// 2. Login + EMU shortcode match (95% confidence)
+// 3. Email exact match (90% confidence)
+// 4. Name fuzzy match (70% confidence)
 // Returns matched count, unmatched count, and any error
-func (h *Handler) matchMannequinsToUsers(ctx context.Context, mannequins []*github.Mannequin) (matched, unmatched int, err error) {
-	// Fetch ALL user mappings - mannequin matching is global across all source orgs
-	allMappings, _, err := h.db.ListUserMappings(ctx, storage.UserMappingFilters{Limit: 0})
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list user mappings: %w", err)
-	}
-
-	h.logger.Info("Starting mannequin matching",
+func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins []*github.Mannequin, destMembers []*github.OrgMember, emuShortcode string) (matched, unmatched int, err error) {
+	h.logger.Info("Starting mannequin to destination member matching",
 		"total_mannequins", len(mannequins),
-		"total_source_users", len(allMappings))
+		"total_dest_members", len(destMembers),
+		"emu_shortcode", emuShortcode)
 
 	// Log sample of mannequin data for debugging
 	if len(mannequins) > 0 {
@@ -998,237 +993,197 @@ func (h *Handler) matchMannequinsToUsers(ctx context.Context, mannequins []*gith
 			"id", sample.ID)
 	}
 
-	// Log sample of user mapping data for debugging
-	if len(allMappings) > 0 {
-		sample := allMappings[0]
+	// Log sample of destination member data for debugging
+	if len(destMembers) > 0 {
+		sample := destMembers[0]
 		email := ""
-		if sample.SourceEmail != nil {
-			email = *sample.SourceEmail
+		if sample.Email != nil {
+			email = *sample.Email
 		}
 		name := ""
-		if sample.SourceName != nil {
-			name = *sample.SourceName
+		if sample.Name != nil {
+			name = *sample.Name
 		}
-		h.logger.Debug("Sample user mapping data",
-			"source_login", sample.SourceLogin,
-			"source_email", email,
-			"source_name", name)
+		h.logger.Debug("Sample destination member data",
+			"login", sample.Login,
+			"email", email,
+			"name", name)
 	}
 
 	for _, mannequin := range mannequins {
-		// Try to match using all strategies
-		foundMapping, confidence, reason := h.findBestMappingMatch(allMappings, mannequin)
+		// The mannequin login IS the source user login
+		sourceLogin := mannequin.Login
 
-		if foundMapping != nil {
-			// Update mannequin info and match details
-			if err := h.db.UpdateMannequinInfo(ctx, foundMapping.SourceLogin, mannequin.ID, mannequin.Login); err != nil {
-				h.logger.Warn("Failed to update mannequin info", "source_login", foundMapping.SourceLogin, "error", err)
+		// Try to find matching destination member
+		destMember, confidence, reason := h.matchMannequinToDestMember(mannequin, destMembers, emuShortcode)
+
+		if destMember != nil {
+			// Create or update user mapping with both source and destination info
+			destEmail := ""
+			if destMember.Email != nil {
+				destEmail = *destMember.Email
+			}
+
+			// Upsert user mapping: source_login = mannequin.Login, destination_login = destMember.Login
+			mapping := &models.UserMapping{
+				SourceLogin:      sourceLogin,
+				SourceEmail:      stringPtr(mannequin.Email),
+				SourceName:       stringPtr(mannequin.Name),
+				DestinationLogin: stringPtr(destMember.Login),
+				DestinationEmail: stringPtr(destEmail),
+				MannequinID:      stringPtr(mannequin.ID),
+				MannequinLogin:   stringPtr(mannequin.Login),
+				MappingStatus:    string(models.UserMappingStatusMapped),
+				MatchConfidence:  &confidence,
+				MatchReason:      stringPtr(reason),
+			}
+
+			if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
+				h.logger.Warn("Failed to save user mapping", "source_login", sourceLogin, "error", err)
 				unmatched++
 				continue
 			}
 
-			// Update match confidence and reason
-			if err := h.db.UpdateMatchInfo(ctx, foundMapping.SourceLogin, confidence, reason); err != nil {
-				h.logger.Warn("Failed to update match info", "source_login", foundMapping.SourceLogin, "error", err)
-			}
-
-			// For high-confidence matches (>=85%), auto-set destination_login if not already set
-			// This enables 1:1 mapping for users with same username in source and destination
-			if confidence >= 85 && (foundMapping.DestinationLogin == nil || *foundMapping.DestinationLogin == "") {
-				// Use the source login as the destination login (same username)
-				destLogin := foundMapping.SourceLogin
-				if err := h.db.UpdateUserMappingDestination(ctx, foundMapping.SourceLogin, destLogin, ""); err != nil {
-					h.logger.Warn("Failed to auto-set destination login", "source_login", foundMapping.SourceLogin, "error", err)
-				} else {
-					h.logger.Debug("Auto-mapped user based on high-confidence match",
-						"source_login", foundMapping.SourceLogin,
-						"destination_login", destLogin,
-						"confidence", confidence,
-						"reason", reason)
-				}
+			// Check if mannequin was already claimed
+			if mannequin.Claimant != nil {
+				_ = h.db.UpdateReclaimStatus(ctx, sourceLogin, string(models.ReclaimStatusCompleted), nil)
 			}
 
 			matched++
-			h.logger.Debug("Matched mannequin to user",
-				"mannequin_login", mannequin.Login,
-				"mannequin_email", mannequin.Email,
-				"source_login", foundMapping.SourceLogin,
+			h.logger.Debug("Matched mannequin to destination member",
+				"source_login", sourceLogin,
+				"destination_login", destMember.Login,
 				"confidence", confidence,
 				"reason", reason)
-
-			if mannequin.Claimant != nil {
-				_ = h.db.UpdateReclaimStatus(ctx, foundMapping.SourceLogin, string(models.ReclaimStatusCompleted), nil)
-			}
 		} else {
+			// No match found - create user mapping with source info only
+			mapping := &models.UserMapping{
+				SourceLogin:    sourceLogin,
+				SourceEmail:    stringPtr(mannequin.Email),
+				SourceName:     stringPtr(mannequin.Name),
+				MannequinID:    stringPtr(mannequin.ID),
+				MannequinLogin: stringPtr(mannequin.Login),
+				MappingStatus:  string(models.UserMappingStatusUnmapped),
+			}
+
+			if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
+				h.logger.Warn("Failed to save unmatched user mapping", "source_login", sourceLogin, "error", err)
+			}
+
+			// Check if mannequin was already claimed even if we didn't match
+			if mannequin.Claimant != nil {
+				_ = h.db.UpdateReclaimStatus(ctx, sourceLogin, string(models.ReclaimStatusCompleted), nil)
+			}
+
 			unmatched++
 		}
 	}
 
-	h.logger.Info("Mannequin matching complete",
+	h.logger.Info("Mannequin to destination member matching complete",
 		"matched", matched,
 		"unmatched", unmatched)
 
 	return matched, unmatched, nil
 }
 
-// findBestMappingMatch finds the best matching user mapping for a mannequin
-// Returns the mapping, confidence score (0-100), and match reason
-func (h *Handler) findBestMappingMatch(mappings []*models.UserMapping, mannequin *github.Mannequin) (*models.UserMapping, int, string) {
-	var bestMatch *models.UserMapping
-	var bestConfidence int
-	var bestReason string
+// matchMannequinToDestMember finds the best matching destination org member for a mannequin
+// The mannequin's login IS the source user's login.
+// Returns the matched member, confidence score (0-100), and match reason
+func (h *Handler) matchMannequinToDestMember(mannequin *github.Mannequin, destMembers []*github.OrgMember, emuShortcode string) (*github.OrgMember, int, string) {
+	sourceLogin := mannequin.Login
 
-	for _, m := range mappings {
-		confidence, reason := h.calculateMatchScore(m, mannequin)
-		if confidence > bestConfidence {
-			bestMatch = m
-			bestConfidence = confidence
-			bestReason = reason
+	for _, strategy := range getDestMemberMatchStrategies(emuShortcode) {
+		for _, member := range destMembers {
+			if strategy.match(sourceLogin, mannequin, member) {
+				return member, strategy.confidence, strategy.name
+			}
 		}
 	}
 
-	// Only return matches with at least 60% confidence
-	if bestConfidence >= 60 {
-		return bestMatch, bestConfidence, bestReason
-	}
 	return nil, 0, ""
 }
 
-// matchStrategy represents a single matching strategy for mannequin matching
-type matchStrategy struct {
+// destMemberMatchStrategy represents a single matching strategy for mannequin-to-destination matching
+type destMemberMatchStrategy struct {
 	name       string
 	confidence int
-	match      func(mapping *models.UserMapping, mannequin *github.Mannequin) bool
+	match      func(sourceLogin string, mannequin *github.Mannequin, member *github.OrgMember) bool
 }
 
-// getMatchStrategies returns all matching strategies in priority order
-func getMatchStrategies() []matchStrategy {
-	return []matchStrategy{
-		{name: "email_exact", confidence: 100, match: matchEmailExact},
-		{name: "login_exact", confidence: 95, match: matchLoginExact},
-		{name: "email_local_exact", confidence: 80, match: matchEmailLocalExact},
-		{name: "email_local_contains", confidence: 75, match: matchEmailLocalContains},
-		{name: "name_login_exact", confidence: 75, match: matchNameLoginExact},
-		{name: "login_contains", confidence: 70, match: matchLoginContains},
-		{name: "name_contains_login", confidence: 65, match: matchNameContainsLogin},
-		{name: "name_fuzzy", confidence: 60, match: matchNameFuzzy},
+// getDestMemberMatchStrategies returns all matching strategies in priority order
+func getDestMemberMatchStrategies(emuShortcode string) []destMemberMatchStrategy {
+	strategies := []destMemberMatchStrategy{
+		// Priority 1: Exact login match (100% confidence)
+		{name: "login_exact", confidence: 100, match: matchLoginExactDest},
+	}
+
+	// Priority 2: Login + EMU shortcode match (95% confidence)
+	// Only add if shortcode is provided
+	if emuShortcode != "" {
+		strategies = append(strategies, destMemberMatchStrategy{
+			name:       "login_emu",
+			confidence: 95,
+			match:      makeEMULoginMatcher(emuShortcode),
+		})
+	}
+
+	// Priority 3: Email exact match (90% confidence)
+	strategies = append(strategies, destMemberMatchStrategy{
+		name: "email_exact", confidence: 90, match: matchEmailExactDest,
+	})
+
+	// Priority 4: Name contains login (fuzzy, 70% confidence)
+	strategies = append(strategies, destMemberMatchStrategy{
+		name: "name_fuzzy", confidence: 70, match: matchNameFuzzyDest,
+	})
+
+	return strategies
+}
+
+// matchLoginExactDest matches when source login exactly equals destination member login
+func matchLoginExactDest(sourceLogin string, _ *github.Mannequin, member *github.OrgMember) bool {
+	return sourceLogin != "" && member.Login != "" && strings.EqualFold(sourceLogin, member.Login)
+}
+
+// makeEMULoginMatcher creates a matcher for EMU login patterns (e.g., "jsmith" -> "jsmith_coinbase")
+func makeEMULoginMatcher(emuShortcode string) func(string, *github.Mannequin, *github.OrgMember) bool {
+	return func(sourceLogin string, _ *github.Mannequin, member *github.OrgMember) bool {
+		if sourceLogin == "" || member.Login == "" {
+			return false
+		}
+		expectedLogin := sourceLogin + "_" + emuShortcode
+		return strings.EqualFold(expectedLogin, member.Login)
 	}
 }
 
-func matchEmailExact(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	return mannequin.Email != "" && mapping.SourceEmail != nil && *mapping.SourceEmail != "" &&
-		strings.EqualFold(mannequin.Email, *mapping.SourceEmail)
+// matchEmailExactDest matches when mannequin email exactly equals destination member email
+func matchEmailExactDest(_ string, mannequin *github.Mannequin, member *github.OrgMember) bool {
+	return mannequin.Email != "" && member.Email != nil && *member.Email != "" &&
+		strings.EqualFold(mannequin.Email, *member.Email)
 }
 
-func matchLoginExact(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	return mannequin.Login != "" && mapping.SourceLogin != "" &&
-		strings.EqualFold(mannequin.Login, mapping.SourceLogin)
-}
+// matchNameFuzzyDest matches when source login is contained in destination member name
+func matchNameFuzzyDest(sourceLogin string, mannequin *github.Mannequin, member *github.OrgMember) bool {
+	if member.Name == nil || *member.Name == "" || sourceLogin == "" || len(sourceLogin) < 3 {
+		return false
+	}
+	normalizedSourceLogin := strings.ToLower(sourceLogin)
+	normalizedMemberName := strings.ToLower(*member.Name)
 
-func matchEmailLocalExact(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	if mannequin.Email == "" || mapping.SourceLogin == "" {
-		return false
+	// Check if member name contains source login
+	if strings.Contains(normalizedMemberName, normalizedSourceLogin) {
+		return true
 	}
-	emailParts := strings.Split(mannequin.Email, "@")
-	if len(emailParts) < 2 {
-		return false // Email must contain @ to have a valid local part
-	}
-	return strings.EqualFold(emailParts[0], mapping.SourceLogin)
-}
-
-func matchEmailLocalContains(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	if mannequin.Email == "" || mapping.SourceLogin == "" {
-		return false
-	}
-	emailParts := strings.Split(mannequin.Email, "@")
-	if len(emailParts) < 2 {
-		return false // Email must contain @ to have a valid local part
-	}
-	emailLocalPart := strings.ToLower(emailParts[0])
-	sourceLogin := strings.ToLower(mapping.SourceLogin)
-	if len(emailLocalPart) < 3 || len(sourceLogin) < 3 {
-		return false
-	}
-	return strings.Contains(emailLocalPart, sourceLogin) || strings.Contains(sourceLogin, emailLocalPart)
-}
-
-func matchNameLoginExact(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	if mannequin.Name == "" || mapping.SourceLogin == "" {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(mannequin.Name), mapping.SourceLogin)
-}
-
-func matchLoginContains(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	if mannequin.Login == "" || mapping.SourceLogin == "" {
-		return false
-	}
-	normalizedMannequin := normalizeLogin(mannequin.Login)
-	normalizedSource := normalizeLogin(mapping.SourceLogin)
-	if len(normalizedSource) < 3 {
-		return false
-	}
-	return strings.Contains(normalizedMannequin, normalizedSource) || strings.Contains(normalizedSource, normalizedMannequin)
-}
-
-func matchNameContainsLogin(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	if mannequin.Name == "" || mapping.SourceLogin == "" {
-		return false
-	}
-	normalizedSourceLogin := strings.ToLower(mapping.SourceLogin)
-	if len(normalizedSourceLogin) < 3 {
-		return false
-	}
-	return strings.Contains(strings.ToLower(strings.TrimSpace(mannequin.Name)), normalizedSourceLogin)
-}
-
-func matchNameFuzzy(mapping *models.UserMapping, mannequin *github.Mannequin) bool {
-	if mannequin.Name == "" || mapping.SourceName == nil || *mapping.SourceName == "" {
-		return false
-	}
-	normalizedMannequinName := normalizeName(mannequin.Name)
-	normalizedSourceName := normalizeName(*mapping.SourceName)
-	if normalizedMannequinName == "" || normalizedSourceName == "" || len(normalizedSourceName) < 3 {
-		return false
-	}
-	return strings.Contains(normalizedMannequinName, normalizedSourceName) ||
-		strings.Contains(normalizedSourceName, normalizedMannequinName)
-}
-
-// calculateMatchScore calculates a confidence score for matching a user mapping to a mannequin
-// Returns confidence (0-100) and reason string
-func (h *Handler) calculateMatchScore(mapping *models.UserMapping, mannequin *github.Mannequin) (int, string) {
-	for _, strategy := range getMatchStrategies() {
-		if strategy.match(mapping, mannequin) {
-			return strategy.confidence, strategy.name
+	// Check if mannequin name matches member name
+	if mannequin.Name != "" {
+		normalizedMannequinName := normalizeName(mannequin.Name)
+		normalizedMemberNameClean := normalizeName(*member.Name)
+		if normalizedMannequinName != "" && normalizedMemberNameClean != "" && len(normalizedMemberNameClean) >= 3 {
+			return strings.Contains(normalizedMannequinName, normalizedMemberNameClean) ||
+				strings.Contains(normalizedMemberNameClean, normalizedMannequinName)
 		}
 	}
-	return 0, ""
-}
-
-// normalizeLogin normalizes a login for comparison by removing common suffixes and converting to lowercase
-func normalizeLogin(login string) string {
-	// Convert to lowercase
-	normalized := strings.ToLower(login)
-	// Remove common mannequin suffixes like "-12345"
-	if idx := strings.LastIndex(normalized, "-"); idx > 0 {
-		suffix := normalized[idx+1:]
-		// Check if suffix is numeric (mannequin ID)
-		isNumeric := true
-		for _, c := range suffix {
-			if c < '0' || c > '9' {
-				isNumeric = false
-				break
-			}
-		}
-		if isNumeric {
-			normalized = normalized[:idx]
-		}
-	}
-	// Replace common separators
-	normalized = strings.ReplaceAll(normalized, ".", "-")
-	normalized = strings.ReplaceAll(normalized, "_", "-")
-	return normalized
+	return false
 }
 
 // normalizeName normalizes a name for comparison

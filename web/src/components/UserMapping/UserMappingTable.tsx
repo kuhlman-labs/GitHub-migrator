@@ -66,14 +66,16 @@ const reclaimStatusColors: Record<ReclaimStatus, 'default' | 'accent' | 'success
 };
 
 const matchReasonLabels: Record<string, string> = {
-  email_exact: 'Email Match',
   login_exact: 'Login Match',
+  login_emu: 'EMU Login Match',
+  email_exact: 'Email Match',
+  name_fuzzy: 'Name Match',
+  // Legacy match reasons from previous implementation
   email_local_exact: 'Email Username',
   email_local_contains: 'Email Partial',
   name_login_exact: 'Name = Login',
   login_contains: 'Partial Login',
   name_contains_login: 'Name Contains Login',
-  name_fuzzy: 'Name Match',
 };
 
 export function UserMappingTable() {
@@ -92,6 +94,7 @@ export function UserMappingTable() {
   const [pendingAction, setPendingAction] = useState<'fetch' | 'invite' | 'bulk_invite' | null>(null);
   const [pendingSourceLogin, setPendingSourceLogin] = useState<string | null>(null);
   const [destinationOrg, setDestinationOrg] = useState('');
+  const [emuShortcode, setEmuShortcode] = useState('');
   
   // Discover dialog state
   const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
@@ -255,8 +258,11 @@ export function UserMappingTable() {
     
     try {
       if (pendingAction === 'fetch') {
-        // Fetch mannequins matches against ALL source users (destination-org-centric)
-        const result = await fetchMannequins.mutateAsync(destinationOrg);
+        // Fetch mannequins and match to destination org members
+        const result = await fetchMannequins.mutateAsync({
+          destinationOrg,
+          emuShortcode: emuShortcode || undefined,
+        });
         setActionResult({
           type: 'success',
           message: result.message,
@@ -288,13 +294,15 @@ export function UserMappingTable() {
     
     setPendingAction(null);
     setPendingSourceLogin(null);
+    setEmuShortcode('');
     setTimeout(() => setActionResult(null), 8000);
-  }, [destinationOrg, pendingAction, pendingSourceLogin, fetchMannequins, sendInvitation, bulkSendInvitations]);
+  }, [destinationOrg, emuShortcode, pendingAction, pendingSourceLogin, fetchMannequins, sendInvitation, bulkSendInvitations]);
 
   const cancelDestOrgDialog = useCallback(() => {
     setShowDestOrgDialog(false);
     setPendingAction(null);
     setPendingSourceLogin(null);
+    setEmuShortcode('');
   }, []);
 
   // Get invitable count from stats (not from paginated mappings)
@@ -825,7 +833,7 @@ export function UserMappingTable() {
           <div className="p-4">
             <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
               {pendingAction === 'fetch' && 
-                'Enter the destination GitHub organization to fetch mannequins from. This will match mannequins to source users using email, login, and name.'}
+                'Enter the destination GitHub organization to fetch mannequins from. Mannequins will be matched to destination org members using login, email, and name.'}
               {pendingAction === 'invite' && 
                 `Send an attribution invitation for ${pendingSourceLogin} to reclaim their mannequin.`}
               {pendingAction === 'bulk_invite' && 
@@ -843,6 +851,22 @@ export function UserMappingTable() {
                 The GitHub organization where migrations were imported
               </FormControl.Caption>
             </FormControl>
+            
+            {/* EMU Shortcode - only show for fetch action */}
+            {pendingAction === 'fetch' && (
+              <FormControl className="mt-4">
+                <FormControl.Label>EMU Shortcode (Optional)</FormControl.Label>
+                <TextInput
+                  value={emuShortcode}
+                  onChange={(e) => setEmuShortcode(e.target.value)}
+                  placeholder="e.g., coinbase"
+                  block
+                />
+                <FormControl.Caption>
+                  For EMU migrations where usernames differ. If source is "jsmith" and destination is "jsmith_coinbase", enter "coinbase".
+                </FormControl.Caption>
+              </FormControl>
+            )}
           </div>
           <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
             <Button onClick={cancelDestOrgDialog}>Cancel</Button>

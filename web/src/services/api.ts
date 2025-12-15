@@ -593,15 +593,18 @@ export const api = {
     return data;
   },
 
-  async fetchMannequins(destinationOrg: string): Promise<{
+  async fetchMannequins(destinationOrg: string, emuShortcode?: string): Promise<{
     total_mannequins: number;
+    total_dest_members: number;
     matched: number;
     unmatched: number;
     destination_org: string;
+    emu_shortcode_applied: boolean;
     message: string;
   }> {
     const { data } = await client.post('/user-mappings/fetch-mannequins', {
       destination_org: destinationOrg,
+      emu_shortcode: emuShortcode || undefined,
     });
     return data;
   },

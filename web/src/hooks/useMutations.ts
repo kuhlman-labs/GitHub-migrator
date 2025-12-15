@@ -320,7 +320,8 @@ export function useFetchMannequins() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (destinationOrg: string) => api.fetchMannequins(destinationOrg),
+    mutationFn: ({ destinationOrg, emuShortcode }: { destinationOrg: string; emuShortcode?: string }) => 
+      api.fetchMannequins(destinationOrg, emuShortcode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['userMappings'] });
       queryClient.invalidateQueries({ queryKey: ['userMappingStats'] });

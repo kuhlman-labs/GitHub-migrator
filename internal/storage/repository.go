@@ -1129,7 +1129,7 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 
 		// Calculate progress metrics
 		switch result.Status {
-		case "complete", "migration_complete":
+		case string(models.StatusComplete), string(models.StatusMigrationComplete):
 			orgMap[result.Org].MigratedCount += result.StatusCount
 		case "migration_failed", "dry_run_failed", "rolled_back":
 			orgMap[result.Org].FailedCount += result.StatusCount

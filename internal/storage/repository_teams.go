@@ -392,7 +392,7 @@ type TeamDetail struct {
 // This is used to calculate the status dynamically at query time
 func calculateSyncStatus(mapping models.TeamMapping, dynamicReposEligible int) string {
 	if mapping.MigrationStatus == "" || mapping.MigrationStatus == TeamMigrationStatusPending {
-		return "pending"
+		return TeamMigrationStatusPending
 	}
 	if mapping.MigrationStatus == TeamMigrationStatusFailed {
 		return "failed"
@@ -409,7 +409,7 @@ func calculateSyncStatus(mapping models.TeamMapping, dynamicReposEligible int) s
 	if mapping.ReposSynced >= dynamicReposEligible && dynamicReposEligible > 0 {
 		return "complete"
 	}
-	return "pending"
+	return TeamMigrationStatusPending
 }
 
 // GetTeamDetail retrieves comprehensive team information including members, repos, and mapping

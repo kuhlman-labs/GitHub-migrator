@@ -320,6 +320,7 @@ func TestSaveADOProject(t *testing.T) {
 
 	if retrieved == nil {
 		t.Fatal("GetADOProject() returned nil")
+		return // Prevent staticcheck SA5011
 	}
 
 	if retrieved.Name != project.Name {
