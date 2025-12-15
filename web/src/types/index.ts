@@ -213,6 +213,7 @@ export interface Batch {
   destination_org?: string;
   migration_api?: 'GEI' | 'ELM';
   exclude_releases?: boolean;
+  exclude_attachments?: boolean;
 }
 
 // Helper function to calculate batch duration in seconds

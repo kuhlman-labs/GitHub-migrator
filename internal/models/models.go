@@ -375,9 +375,10 @@ type Batch struct {
 	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
 
 	// Migration Settings (batch-level defaults, repository settings take precedence)
-	DestinationOrg  *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`        // Default destination org for repositories in this batch
-	MigrationAPI    string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`               // Migration API to use: "GEI" or "ELM" (default: "GEI")
-	ExcludeReleases bool    `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"` // Skip releases during migration (applies if repo doesn't override)
+	DestinationOrg     *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`                 // Default destination org for repositories in this batch
+	MigrationAPI       string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`                        // Migration API to use: "GEI" or "ELM" (default: "GEI")
+	ExcludeReleases    bool    `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"`          // Skip releases during migration (applies if repo doesn't override)
+	ExcludeAttachments bool    `json:"exclude_attachments" db:"exclude_attachments" gorm:"column:exclude_attachments;default:false"` // Skip attachments during migration (applies if repo doesn't override)
 }
 
 // TableName specifies the table name for Batch model

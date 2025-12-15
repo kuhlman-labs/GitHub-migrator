@@ -799,6 +799,72 @@ func (c *Client) RepositoryURL(fullName string) string {
 	}
 }
 
+// StartMigrationOptions contains all options for starting a migration archive generation.
+// This struct supports additional fields not available in go-github's MigrationOptions.
+type StartMigrationOptions struct {
+	Repositories       []string
+	LockRepositories   bool
+	ExcludeMetadata    bool
+	ExcludeGitData     bool
+	ExcludeAttachments bool
+	ExcludeReleases    bool
+}
+
+// startMigrationRequest is the JSON body for the start migration API.
+type startMigrationRequest struct {
+	Repositories       []string `json:"repositories"`
+	LockRepositories   *bool    `json:"lock_repositories,omitempty"`
+	ExcludeMetadata    *bool    `json:"exclude_metadata,omitempty"`
+	ExcludeGitData     *bool    `json:"exclude_git_data,omitempty"`
+	ExcludeAttachments *bool    `json:"exclude_attachments,omitempty"`
+	ExcludeReleases    *bool    `json:"exclude_releases,omitempty"`
+}
+
+// StartMigrationWithOptions starts a migration archive generation with extended options.
+// This method uses raw HTTP requests to access exclude_metadata and exclude_git_data parameters
+// that are not exposed by the go-github library.
+// See: https://docs.github.com/en/rest/migrations/orgs#start-an-organization-migration
+func (c *Client) StartMigrationWithOptions(ctx context.Context, org string, opts StartMigrationOptions) (*github.Migration, error) {
+	body := &startMigrationRequest{
+		Repositories:       opts.Repositories,
+		LockRepositories:   github.Ptr(opts.LockRepositories),
+		ExcludeMetadata:    github.Ptr(opts.ExcludeMetadata),
+		ExcludeGitData:     github.Ptr(opts.ExcludeGitData),
+		ExcludeAttachments: github.Ptr(opts.ExcludeAttachments),
+		ExcludeReleases:    github.Ptr(opts.ExcludeReleases),
+	}
+
+	var migration *github.Migration
+	_, err := c.DoWithRetry(ctx, "StartMigrationWithOptions", func(ctx context.Context) (*github.Response, error) {
+		req, err := c.rest.NewRequest("POST", fmt.Sprintf("orgs/%s/migrations", org), body)
+		if err != nil {
+			return nil, err
+		}
+
+		// Set the migrations preview header required by the API
+		req.Header.Set("Accept", "application/vnd.github.wyandotte-preview+json")
+
+		migration = &github.Migration{}
+		resp, err := c.rest.Do(ctx, req, migration)
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, WrapError(err, "StartMigrationWithOptions", c.baseURL)
+	}
+
+	c.logger.Info("Migration started successfully",
+		"org", org,
+		"repositories", opts.Repositories,
+		"exclude_metadata", opts.ExcludeMetadata,
+		"exclude_git_data", opts.ExcludeGitData,
+		"exclude_attachments", opts.ExcludeAttachments,
+		"exclude_releases", opts.ExcludeReleases,
+		"lock_repositories", opts.LockRepositories)
+
+	return migration, nil
+}
+
 // UnlockRepository unlocks a repository that was locked during a migration.
 // This is used when a migration fails and the source repository remains locked.
 // See: https://docs.github.com/en/rest/migrations/orgs#unlock-an-organization-repository
