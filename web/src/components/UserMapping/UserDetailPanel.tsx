@@ -7,11 +7,6 @@ import {
 import {
   XIcon,
   OrganizationIcon,
-  GitCommitIcon,
-  IssueOpenedIcon,
-  GitPullRequestIcon,
-  CommentIcon,
-  RepoIcon,
   PersonIcon,
   CheckIcon,
   ClockIcon,
@@ -150,21 +145,6 @@ export function UserDetailPanel({ login, onClose, onEditMapping }: UserDetailPan
                   <span style={{ color: 'var(--fgColor-muted)' }}>Discovered</span>
                   <span>{new Date(user.discovered_at).toLocaleDateString()}</span>
                 </div>
-              </div>
-            </section>
-
-            {/* Contribution Stats */}
-            <section>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <GitCommitIcon size={16} />
-                Contribution Stats
-              </h3>
-              <div className="grid grid-cols-2 gap-2">
-                <StatCard icon={<GitCommitIcon size={16} />} label="Commits" value={user.stats.commit_count} />
-                <StatCard icon={<GitPullRequestIcon size={16} />} label="Pull Requests" value={user.stats.pr_count} />
-                <StatCard icon={<IssueOpenedIcon size={16} />} label="Issues" value={user.stats.issue_count} />
-                <StatCard icon={<CommentIcon size={16} />} label="Comments" value={user.stats.comment_count} />
-                <StatCard icon={<RepoIcon size={16} />} label="Repositories" value={user.stats.repository_count} colSpan />
               </div>
             </section>
 
@@ -319,33 +299,3 @@ export function UserDetailPanel({ login, onClose, onEditMapping }: UserDetailPan
     </div>
   );
 }
-
-// Helper component for stat cards
-function StatCard({ 
-  icon, 
-  label, 
-  value, 
-  colSpan = false 
-}: { 
-  icon: React.ReactNode; 
-  label: string; 
-  value: number;
-  colSpan?: boolean;
-}) {
-  return (
-    <div
-      className={`p-3 rounded-md ${colSpan ? 'col-span-2' : ''}`}
-      style={{
-        backgroundColor: 'var(--bgColor-muted)',
-        border: '1px solid var(--borderColor-default)',
-      }}
-    >
-      <div className="flex items-center gap-2 mb-1" style={{ color: 'var(--fgColor-muted)' }}>
-        {icon}
-        <span className="text-xs">{label}</span>
-      </div>
-      <div className="text-lg font-semibold">{value.toLocaleString()}</div>
-    </div>
-  );
-}
-
