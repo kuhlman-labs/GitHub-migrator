@@ -30,6 +30,11 @@ var (
 
 	// ErrTimeout is returned when a request times out
 	ErrTimeout = errors.New("github request timeout")
+
+	// ErrStreamError is returned when an HTTP/2 stream is cancelled or reset
+	// This typically happens when the server terminates the request prematurely
+	// (e.g., due to server-side timeout, complexity limits, or transient issues)
+	ErrStreamError = errors.New("github stream error")
 )
 
 // APIError wraps GitHub API errors with additional context
@@ -175,11 +180,65 @@ func IsRetryableError(err error) bool {
 			http.StatusGatewayTimeout:
 			return true
 		}
+
+		// Check for stream errors (status code 0 with stream error patterns)
+		if apiErr.StatusCode == 0 && IsStreamError(err) {
+			return true
+		}
 	}
 
 	// Also retry on rate limit errors
 	if errors.Is(err, ErrRateLimitExceeded) {
 		return true
+	}
+
+	// Check for stream errors at the top level
+	if IsStreamError(err) {
+		return true
+	}
+
+	return false
+}
+
+// IsStreamError checks if an error is an HTTP/2 stream error
+// Stream errors occur when the HTTP/2 connection's stream is cancelled or reset,
+// typically due to server-side timeouts, complexity limits, or transient network issues.
+// These errors have no HTTP status code (status 0) but are often transient and worth retrying.
+func IsStreamError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for the sentinel error
+	if errors.Is(err, ErrStreamError) {
+		return true
+	}
+
+	errMsg := err.Error()
+
+	// HTTP/2 stream error patterns
+	// Example: "stream error: stream ID 3401; CANCEL; received from peer"
+	streamErrorPatterns := []string{
+		"stream error",            // Generic HTTP/2 stream error
+		"CANCEL",                  // Stream was cancelled (RST_STREAM with CANCEL)
+		"INTERNAL_ERROR",          // Server internal error on stream
+		"REFUSED_STREAM",          // Server refused to process the stream
+		"stream ID",               // Mentions stream ID (HTTP/2 specific)
+		"RST_STREAM",              // HTTP/2 RST_STREAM frame received
+		"GOAWAY",                  // HTTP/2 GOAWAY frame (connection being shut down)
+		"received from peer",      // Common suffix for stream errors
+		"http2: server sent",      // Go's HTTP/2 client error prefix
+		"client disconnected",     // Client-side disconnection
+		"connection reset",        // TCP reset
+		"connection was forcibly", // Windows TCP reset
+		"broken pipe",             // Unix write to closed connection
+		"use of closed network",   // Write to closed connection
+	}
+
+	for _, pattern := range streamErrorPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
 	}
 
 	return false

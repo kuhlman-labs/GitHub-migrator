@@ -44,6 +44,19 @@ export function Navigation() {
         searchParam: 'search',
         isSearchable: true,
       };
+    } else if (path === '/user-mappings') {
+      return {
+        placeholder: 'Search user mappings...',
+        searchParam: 'search',
+        isSearchable: true,
+      };
+    } else if (path === '/team-mappings') {
+      // Team mappings page has its own in-page search
+      return {
+        placeholder: '',
+        searchParam: '',
+        isSearchable: false,
+      };
     } else if (path === '/dependencies') {
       // Dependencies page has its own in-page search
       return {
@@ -121,8 +134,9 @@ export function Navigation() {
               </span>
             </Link>
               
-              {/* Main Navigation Links */}
-              <div className="flex items-center gap-2">
+              {/* Main Navigation Links - Organized by workflow phase */}
+              <div className="flex items-center">
+                {/* Overview */}
                 <Link 
                   to="/" 
                   className={linkClass('/')}
@@ -131,18 +145,13 @@ export function Navigation() {
                     backgroundColor: isActive('/') ? 'var(--bgColor-neutral-muted)' : 'transparent'
                   }}
                 >
-                Dashboard
-              </Link>
-                <Link 
-                  to="/analytics" 
-                  className={linkClass('/analytics')}
-                  style={{ 
-                    color: 'var(--fgColor-default)',
-                    backgroundColor: isActive('/analytics') ? 'var(--bgColor-neutral-muted)' : 'transparent'
-                  }}
-                >
-                Analytics
-              </Link>
+                  Dashboard
+                </Link>
+                
+                {/* Separator: Overview → Explore */}
+                <div className="w-px h-4 mx-2" style={{ backgroundColor: 'var(--borderColor-muted)' }} />
+                
+                {/* Explore Phase */}
                 <Link 
                   to="/repositories" 
                   className={linkClass('/repositories')}
@@ -151,8 +160,8 @@ export function Navigation() {
                     backgroundColor: isActive('/repositories') ? 'var(--bgColor-neutral-muted)' : 'transparent'
                   }}
                 >
-                Repositories
-              </Link>
+                  Repositories
+                </Link>
                 <Link 
                   to="/dependencies" 
                   className={linkClass('/dependencies')}
@@ -161,8 +170,38 @@ export function Navigation() {
                     backgroundColor: isActive('/dependencies') ? 'var(--bgColor-neutral-muted)' : 'transparent'
                   }}
                 >
-                Dependencies
-              </Link>
+                  Dependencies
+                </Link>
+                
+                {/* Separator: Explore → Configure */}
+                <div className="w-px h-4 mx-2" style={{ backgroundColor: 'var(--borderColor-muted)' }} />
+                
+                {/* Configure Phase */}
+                <Link 
+                  to="/user-mappings" 
+                  className={linkClass('/user-mappings')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/user-mappings') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                >
+                  Users
+                </Link>
+                <Link 
+                  to="/team-mappings" 
+                  className={linkClass('/team-mappings')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/team-mappings') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                >
+                  Teams
+                </Link>
+                
+                {/* Separator: Configure → Execute */}
+                <div className="w-px h-4 mx-2" style={{ backgroundColor: 'var(--borderColor-muted)' }} />
+                
+                {/* Execute Phase */}
                 <Link 
                   to="/batches" 
                   className={linkClass('/batches')}
@@ -171,8 +210,23 @@ export function Navigation() {
                     backgroundColor: isActive('/batches') ? 'var(--bgColor-neutral-muted)' : 'transparent'
                   }}
                 >
-                Batches
-              </Link>
+                  Batches
+                </Link>
+                
+                {/* Separator: Execute → Report */}
+                <div className="w-px h-4 mx-2" style={{ backgroundColor: 'var(--borderColor-muted)' }} />
+                
+                {/* Report Phase */}
+                <Link 
+                  to="/analytics" 
+                  className={linkClass('/analytics')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/analytics') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                >
+                  Analytics
+                </Link>
                 <Link 
                   to="/history" 
                   className={linkClass('/history')}
@@ -181,9 +235,9 @@ export function Navigation() {
                     backgroundColor: isActive('/history') ? 'var(--bgColor-neutral-muted)' : 'transparent'
                   }}
                 >
-                History
-              </Link>
-            </div>
+                  History
+                </Link>
+              </div>
           </div>
           
             {/* Navigation End */}

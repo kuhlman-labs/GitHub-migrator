@@ -10,6 +10,15 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
+        timeout: 120000, // Connection timeout: 120 seconds
+        proxyTimeout: 120000, // Proxy timeout for the entire request: 120 seconds
+        configure: (proxy) => {
+          // Increase socket timeout for long-running requests
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            req.setTimeout(120000);
+            res.setTimeout(120000);
+          });
+        },
       },
     },
   },
@@ -18,4 +27,3 @@ export default defineConfig({
     sourcemap: true,
   },
 })
-

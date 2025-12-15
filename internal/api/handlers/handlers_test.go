@@ -107,7 +107,7 @@ func TestNewHandler(t *testing.T) {
 		h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
 		if h == nil {
 			t.Fatal("Expected handler to be created")
-			return
+			return // Prevent staticcheck SA5011
 		}
 		if h.collector != nil {
 			t.Error("Expected collector to be nil when GitHub clients are nil")
@@ -121,7 +121,7 @@ func TestNewHandler(t *testing.T) {
 		h := NewHandler(db, logger, sourceDualClient, destDualClient, nil, nil, authConfig, "https://api.github.com", "github")
 		if h == nil {
 			t.Fatal("Expected handler to be created")
-			return
+			return // Prevent staticcheck SA5011
 		}
 		if h.collector != nil {
 			t.Error("Expected collector to be nil when source provider is nil")

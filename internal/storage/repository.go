@@ -84,8 +84,12 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 	// IMPORTANT: Preserve existing migration state during re-discovery
 	// Re-discovery should only update repository metadata (size, features, etc.),
 	// not reset migration progress (status, batch_id, priority, etc.)
-	// Only update status if the incoming status is not "pending" (indicating it's an intentional status change)
-	preserveMigrationState := repo.Status == string(models.StatusPending) && existing.Status != string(models.StatusPending)
+	// Preserve migration state if:
+	// 1. The incoming status is "pending" (indicating it's a re-discovery, not an intentional status change), AND
+	// 2. Either the existing status is not "pending" OR the existing repo is in a batch
+	// This ensures that repos assigned to a batch (even if still in "pending" status) don't lose their batch assignment
+	preserveMigrationState := repo.Status == string(models.StatusPending) &&
+		(existing.Status != string(models.StatusPending) || existing.BatchID != nil)
 
 	// If we're preserving migration state, restore the fields from existing repository
 	if preserveMigrationState {
@@ -1125,7 +1129,7 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 
 		// Calculate progress metrics
 		switch result.Status {
-		case "complete", "migration_complete":
+		case string(models.StatusComplete), string(models.StatusMigrationComplete):
 			orgMap[result.Org].MigratedCount += result.StatusCount
 		case "migration_failed", "dry_run_failed", "rolled_back":
 			orgMap[result.Org].FailedCount += result.StatusCount

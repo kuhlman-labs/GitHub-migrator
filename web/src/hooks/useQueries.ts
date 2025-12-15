@@ -1,6 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { Organization, Project, Repository, Analytics, Batch, MigrationHistoryEntry, RepositoryFilters, DashboardActionItems } from '../types';
+import {
+  Organization,
+  Project,
+  Repository,
+  Analytics,
+  Batch,
+  MigrationHistoryEntry,
+  RepositoryFilters,
+  DashboardActionItems,
+  GitHubUser,
+  UserMapping,
+  UserMappingStats,
+  UserStats,
+  UserDetail,
+  GitHubTeam,
+  GitHubTeamMember,
+  TeamMapping,
+  TeamMappingStats,
+  TeamDetail,
+  TeamMigrationStatusResponse,
+} from '../types';
 
 // Organization queries
 export function useOrganizations() {
@@ -88,6 +108,142 @@ export function useDashboardActionItems() {
   return useQuery<DashboardActionItems, Error>({
     queryKey: ['dashboardActionItems'],
     queryFn: () => api.getDashboardActionItems(),
+  });
+}
+
+// User queries
+interface UserFilters {
+  source_instance?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function useUsers(filters: UserFilters = {}) {
+  return useQuery<{ users: GitHubUser[]; total: number }, Error>({
+    queryKey: ['users', filters],
+    queryFn: () => api.listUsers(filters),
+  });
+}
+
+export function useUserStats() {
+  return useQuery<UserStats, Error>({
+    queryKey: ['userStats'],
+    queryFn: () => api.getUserStats(),
+  });
+}
+
+// User mapping queries
+interface UserMappingFilters {
+  status?: string;
+  source_org?: string;
+  has_destination?: boolean;
+  has_mannequin?: boolean;
+  reclaim_status?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function useUserMappings(filters: UserMappingFilters = {}) {
+  return useQuery<{ mappings: UserMapping[]; total: number }, Error>({
+    queryKey: ['userMappings', filters],
+    queryFn: () => api.listUserMappings(filters),
+  });
+}
+
+export function useUserMappingStats(sourceOrg?: string) {
+  return useQuery<UserMappingStats, Error>({
+    queryKey: ['userMappingStats', sourceOrg || 'all'],
+    queryFn: () => api.getUserMappingStats(sourceOrg),
+  });
+}
+
+export function useUserMappingSourceOrgs() {
+  return useQuery<{ organizations: string[] }, Error>({
+    queryKey: ['userMappingSourceOrgs'],
+    queryFn: () => api.getUserMappingSourceOrgs(),
+  });
+}
+
+export function useUserDetail(login: string | null) {
+  return useQuery<UserDetail, Error>({
+    queryKey: ['userDetail', login],
+    queryFn: () => api.getUserDetail(login!),
+    enabled: !!login,
+  });
+}
+
+// Team queries
+export function useTeams(organization?: string) {
+  return useQuery<GitHubTeam[], Error>({
+    queryKey: ['teams', organization],
+    queryFn: () => api.listTeams(organization),
+  });
+}
+
+export function useTeamMembers(org: string, teamSlug: string) {
+  return useQuery<{ members: GitHubTeamMember[]; total: number }, Error>({
+    queryKey: ['teamMembers', org, teamSlug],
+    queryFn: () => api.getTeamMembers(org, teamSlug),
+    enabled: !!org && !!teamSlug,
+  });
+}
+
+// Team mapping queries
+interface TeamMappingFilters {
+  source_org?: string;
+  destination_org?: string;
+  status?: string;
+  has_destination?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function useTeamMappings(filters: TeamMappingFilters = {}) {
+  return useQuery<{ mappings: TeamMapping[]; total: number }, Error>({
+    queryKey: ['teamMappings', filters],
+    queryFn: () => api.listTeamMappings(filters),
+  });
+}
+
+export function useTeamMappingStats(organization?: string) {
+  return useQuery<TeamMappingStats, Error>({
+    queryKey: ['teamMappingStats', organization || 'all'],
+    queryFn: () => api.getTeamMappingStats(organization),
+  });
+}
+
+// Team source organizations for filter dropdown
+export function useTeamSourceOrgs() {
+  return useQuery<string[], Error>({
+    queryKey: ['teamSourceOrgs'],
+    queryFn: () => api.getTeamSourceOrgs(),
+  });
+}
+
+// Team detail query
+export function useTeamDetail(org: string, teamSlug: string) {
+  return useQuery<TeamDetail, Error>({
+    queryKey: ['teamDetail', org, teamSlug],
+    queryFn: () => api.getTeamDetail(org, teamSlug),
+    enabled: !!org && !!teamSlug,
+  });
+}
+
+// Team migration status query
+export function useTeamMigrationStatus(enabled = true) {
+  return useQuery<TeamMigrationStatusResponse, Error>({
+    queryKey: ['teamMigrationStatus'],
+    queryFn: () => api.getTeamMigrationStatus(),
+    enabled,
+    refetchInterval: (query) => {
+      // Poll every 2 seconds while migration is running
+      if (query.state.data?.is_running) {
+        return 2000;
+      }
+      return false;
+    },
   });
 }
 

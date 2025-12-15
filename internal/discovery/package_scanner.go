@@ -11,11 +11,46 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/source"
 )
+
+// ManifestType represents the type of package manifest file
+type ManifestType string
+
+const (
+	ManifestGoMod            ManifestType = "go.mod"
+	ManifestPackageJSON      ManifestType = "package.json"
+	ManifestRequirements     ManifestType = "requirements.txt"
+	ManifestRequirementsStar ManifestType = "requirements*.txt"
+	ManifestGemfile          ManifestType = "Gemfile"
+	ManifestTerraform        ManifestType = "*.tf"
+	ManifestCargoToml        ManifestType = "Cargo.toml"
+	ManifestChartYaml        ManifestType = "Chart.yaml"
+	ManifestPackageSwift     ManifestType = "Package.swift"
+	ManifestMixExs           ManifestType = "mix.exs"
+	ManifestBuildGradle      ManifestType = "build.gradle"
+	ManifestBuildGradleKts   ManifestType = "build.gradle.kts"
+)
+
+// ManifestFiles holds all discovered manifest files organized by type
+type ManifestFiles struct {
+	GoMod                []string // go.mod files
+	PackageJSON          []string // package.json files
+	Requirements         []string // requirements.txt files
+	RequirementsVariants []string // requirements*.txt variants (excluding requirements.txt)
+	Gemfile              []string // Gemfile files
+	Terraform            []string // *.tf files
+	CargoToml            []string // Cargo.toml files
+	ChartYaml            []string // Chart.yaml files
+	PackageSwift         []string // Package.swift files
+	MixExs               []string // mix.exs files
+	BuildGradle          []string // build.gradle files
+	BuildGradleKts       []string // build.gradle.kts files
+}
 
 // PackageEcosystem represents a package manager ecosystem
 type PackageEcosystem string
@@ -148,6 +183,7 @@ func (ps *PackageScanner) WithSourceURL(sourceURL string) *PackageScanner {
 
 // ScanPackageManagers scans a repository for package manager files and extracts actual dependencies
 // It focuses on extracting dependencies that are GitHub repositories, which are relevant for migration planning
+// Uses a single-pass directory walk for efficiency, then parses manifests in parallel
 func (ps *PackageScanner) ScanPackageManagers(ctx context.Context, repoPath string, repoID int64) ([]*models.RepositoryDependency, error) {
 	// Validate repository path
 	if err := source.ValidateRepoPath(repoPath); err != nil {
@@ -155,47 +191,127 @@ func (ps *PackageScanner) ScanPackageManagers(ctx context.Context, repoPath stri
 	}
 
 	now := time.Now()
+
+	// Single-pass directory walk to collect all manifest files
+	manifests := ps.collectAllManifests(repoPath)
+
+	// Parse manifests in parallel using goroutines
+	var wg sync.WaitGroup
+	depsChan := make(chan []ExtractedDependency, 12) // Buffer for all manifest types
+
+	// Go modules
+	if len(manifests.GoMod) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parseGoModFiles(manifests.GoMod, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// npm/package.json
+	if len(manifests.PackageJSON) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parsePackageJSONFiles(manifests.PackageJSON, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Python requirements.txt
+	if len(manifests.Requirements) > 0 || len(manifests.RequirementsVariants) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			allReqs := append(manifests.Requirements, manifests.RequirementsVariants...)
+			deps := ps.parseRequirementsFiles(allReqs, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Ruby Gemfile
+	if len(manifests.Gemfile) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parseGemfiles(manifests.Gemfile, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Terraform *.tf
+	if len(manifests.Terraform) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parseTerraformFiles(manifests.Terraform, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Rust Cargo.toml
+	if len(manifests.CargoToml) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parseCargoFiles(manifests.CargoToml, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Helm Chart.yaml
+	if len(manifests.ChartYaml) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parseChartYamlFiles(manifests.ChartYaml, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Swift Package.swift
+	if len(manifests.PackageSwift) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parsePackageSwiftFiles(manifests.PackageSwift, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Elixir mix.exs
+	if len(manifests.MixExs) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deps := ps.parseMixExsFiles(manifests.MixExs, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Gradle build.gradle and build.gradle.kts
+	if len(manifests.BuildGradle) > 0 || len(manifests.BuildGradleKts) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			allGradle := append(manifests.BuildGradle, manifests.BuildGradleKts...)
+			deps := ps.parseBuildGradleFiles(allGradle, repoPath)
+			depsChan <- deps
+		}()
+	}
+
+	// Close channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(depsChan)
+	}()
+
+	// Collect all dependencies from channel
 	var allDeps []ExtractedDependency
-
-	// Extract Go module dependencies (these directly reference GitHub repos)
-	goDeps := ps.extractGoModuleDependencies(ctx, repoPath)
-	allDeps = append(allDeps, goDeps...)
-
-	// Extract npm dependencies that have GitHub repository references
-	npmDeps := ps.extractNpmGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, npmDeps...)
-
-	// Extract Python dependencies that reference GitHub repos
-	pythonDeps := ps.extractPythonGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, pythonDeps...)
-
-	// Extract Ruby Gemfile dependencies that reference GitHub repos
-	rubyDeps := ps.extractRubyGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, rubyDeps...)
-
-	// Extract Terraform module dependencies that reference GitHub repos
-	terraformDeps := ps.extractTerraformGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, terraformDeps...)
-
-	// Extract Rust Cargo dependencies that reference GitHub repos
-	rustDeps := ps.extractRustGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, rustDeps...)
-
-	// Extract Helm chart dependencies that reference GitHub repos
-	helmDeps := ps.extractHelmGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, helmDeps...)
-
-	// Extract Swift Package Manager dependencies
-	swiftDeps := ps.extractSwiftGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, swiftDeps...)
-
-	// Extract Elixir Mix dependencies that reference GitHub repos
-	elixirDeps := ps.extractElixirGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, elixirDeps...)
-
-	// Extract Gradle JitPack dependencies that reference GitHub repos
-	gradleDeps := ps.extractGradleGitHubDependencies(ctx, repoPath)
-	allDeps = append(allDeps, gradleDeps...)
+	for deps := range depsChan {
+		allDeps = append(allDeps, deps...)
+	}
 
 	// Convert extracted dependencies to RepositoryDependency objects
 	dependencies := ps.convertToRepositoryDependencies(allDeps, repoID, now)
@@ -289,21 +405,6 @@ func (ps *PackageScanner) deduplicateDependencies(deps []*models.RepositoryDepen
 	}
 
 	return result
-}
-
-// extractGoModuleDependencies extracts dependencies from go.mod files
-// Go modules directly reference GitHub repos (e.g., github.com/gin-gonic/gin)
-func (ps *PackageScanner) extractGoModuleDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-	goModFiles := ps.findFiles(repoPath, "go.mod")
-
-	for _, modPath := range goModFiles {
-		relPath, _ := filepath.Rel(repoPath, modPath)
-		extracted := ps.parseGoMod(modPath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	return deps
 }
 
 // parseGoMod parses a go.mod file and extracts GitHub dependencies
@@ -430,21 +531,6 @@ func (ps *PackageScanner) matchGoModuleToADO(modulePath, version, manifestPath s
 		}
 	}
 	return nil
-}
-
-// extractNpmGitHubDependencies extracts GitHub repository references from package.json
-// This includes: git+https://github.com/..., github:owner/repo, and owner/repo shorthand
-func (ps *PackageScanner) extractNpmGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-	packageJSONFiles := ps.findFiles(repoPath, "package.json")
-
-	for _, pkgPath := range packageJSONFiles {
-		relPath, _ := filepath.Rel(repoPath, pkgPath)
-		extracted := ps.parsePackageJSON(pkgPath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	return deps
 }
 
 // parsePackageJSON parses package.json and extracts GitHub dependencies
@@ -582,32 +668,6 @@ func (ps *PackageScanner) extractNpmOwnerRepoShorthand(version string) (owner, r
 	return parts[0], strings.Split(parts[1], "#")[0]
 }
 
-// extractPythonGitHubDependencies extracts GitHub references from Python dependency files
-func (ps *PackageScanner) extractPythonGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	// Check requirements.txt files
-	reqFiles := ps.findFiles(repoPath, "requirements.txt")
-	for _, reqPath := range reqFiles {
-		relPath, _ := filepath.Rel(repoPath, reqPath)
-		extracted := ps.parseRequirementsTxt(reqPath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	// Check requirements*.txt variants
-	reqVariants := ps.findFilesWithPattern(repoPath, "requirements*.txt")
-	for _, reqPath := range reqVariants {
-		if filepath.Base(reqPath) == "requirements.txt" {
-			continue // Already processed
-		}
-		relPath, _ := filepath.Rel(repoPath, reqPath)
-		extracted := ps.parseRequirementsTxt(reqPath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	return deps
-}
-
 // parseRequirementsTxt parses requirements.txt and extracts GitHub dependencies
 func (ps *PackageScanner) parseRequirementsTxt(reqPath, manifestPath string) []ExtractedDependency {
 	var deps []ExtractedDependency
@@ -711,21 +771,6 @@ func extractPythonPkgName(line, fallback string) string {
 		return strings.Split(pkgName, "&")[0]
 	}
 	return fallback
-}
-
-// extractRubyGitHubDependencies extracts GitHub references from Gemfiles
-func (ps *PackageScanner) extractRubyGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	// Check Gemfile
-	gemfiles := ps.findFiles(repoPath, "Gemfile")
-	for _, gemPath := range gemfiles {
-		relPath, _ := filepath.Rel(repoPath, gemPath)
-		extracted := ps.parseGemfile(gemPath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	return deps
 }
 
 // parseGemfile parses a Gemfile and extracts GitHub dependencies
@@ -855,21 +900,6 @@ func (ps *PackageScanner) parseGemfileGitURL(line, gemName, manifestPath string)
 		}
 	}
 	return nil
-}
-
-// extractTerraformGitHubDependencies extracts GitHub references from Terraform module sources
-func (ps *PackageScanner) extractTerraformGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	// Find all .tf files
-	tfFiles := ps.findFilesWithPattern(repoPath, "*.tf")
-	for _, tfPath := range tfFiles {
-		relPath, _ := filepath.Rel(repoPath, tfPath)
-		extracted := ps.parseTerraformFile(tfPath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	return deps
 }
 
 // parseTerraformFile parses a .tf file and extracts GitHub module sources
@@ -1063,20 +1093,6 @@ func isADOHost(host string) bool {
 		strings.HasSuffix(host, suffixVisualStudio)
 }
 
-// extractRustGitHubDependencies extracts GitHub references from Cargo.toml
-func (ps *PackageScanner) extractRustGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	cargoFiles := ps.findFiles(repoPath, "Cargo.toml")
-	for _, cargoPath := range cargoFiles {
-		relPath, _ := filepath.Rel(repoPath, cargoPath)
-		extracted := ps.parseCargoToml(cargoPath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	return deps
-}
-
 // parseCargoToml parses Cargo.toml and extracts GitHub/ADO dependencies
 // Supports:
 //   - dep = { git = "https://github.com/owner/repo" }
@@ -1165,46 +1181,6 @@ func (ps *PackageScanner) parseCargoToml(cargoPath, manifestPath string) []Extra
 	return deps
 }
 
-// extractHelmGitHubDependencies extracts GitHub/ADO references from Helm Chart.yaml
-func (ps *PackageScanner) extractHelmGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	chartFiles := ps.findFiles(repoPath, "Chart.yaml")
-	for _, chartPath := range chartFiles {
-		relPath, _ := filepath.Rel(repoPath, chartPath)
-		// Pattern: repository: "https://host/owner/repo" or repository: "git+https://..."
-		extracted := ps.parseFileWithURLPattern(chartPath, relPath, EcosystemHelm,
-			`repository:\s*["']?(?:git\+)?https://`, `/([^/]+)/([^/"'\s]+)`)
-		deps = append(deps, extracted...)
-
-		// Also check for ADO URLs
-		adoDeps := ps.parseFileForADOURLs(chartPath, relPath, EcosystemHelm)
-		deps = append(deps, adoDeps...)
-	}
-
-	return deps
-}
-
-// extractSwiftGitHubDependencies extracts GitHub/ADO references from Package.swift
-func (ps *PackageScanner) extractSwiftGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	swiftFiles := ps.findFiles(repoPath, "Package.swift")
-	for _, swiftPath := range swiftFiles {
-		relPath, _ := filepath.Rel(repoPath, swiftPath)
-		// Pattern: .package(url: "https://host/owner/repo"
-		extracted := ps.parseFileWithURLPattern(swiftPath, relPath, EcosystemSwift,
-			`\.package\s*\(\s*url:\s*"https://`, `/([^/]+)/([^/"]+)"`)
-		deps = append(deps, extracted...)
-
-		// Also check for ADO URLs
-		adoDeps := ps.parseFileForADOURLs(swiftPath, relPath, EcosystemSwift)
-		deps = append(deps, adoDeps...)
-	}
-
-	return deps
-}
-
 // parseFileWithURLPattern is a generic parser for files containing GitHub URL references
 // It takes a pattern prefix (before the host) and suffix (after the host) to match URLs
 // Note: This function uses GitHub-style URL patterns (host/owner/repo) and should NOT be used
@@ -1281,20 +1257,6 @@ func (ps *PackageScanner) parseFileForADOURLs(filePath, manifestPath string, eco
 				})
 			}
 		}
-	}
-
-	return deps
-}
-
-// extractElixirGitHubDependencies extracts GitHub references from mix.exs
-func (ps *PackageScanner) extractElixirGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	mixFiles := ps.findFiles(repoPath, "mix.exs")
-	for _, mixPath := range mixFiles {
-		relPath, _ := filepath.Rel(repoPath, mixPath)
-		extracted := ps.parseMixExs(mixPath, relPath)
-		deps = append(deps, extracted...)
 	}
 
 	return deps
@@ -1377,30 +1339,6 @@ func (ps *PackageScanner) parseMixExs(mixPath, manifestPath string) []ExtractedD
 	return deps
 }
 
-// extractGradleGitHubDependencies extracts GitHub references from build.gradle
-// JitPack maps GitHub repos to dependencies: implementation 'com.github.Owner:Repo:Tag'
-func (ps *PackageScanner) extractGradleGitHubDependencies(ctx context.Context, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
-
-	// Find build.gradle files
-	gradleFiles := ps.findFiles(repoPath, "build.gradle")
-	for _, gradlePath := range gradleFiles {
-		relPath, _ := filepath.Rel(repoPath, gradlePath)
-		extracted := ps.parseBuildGradle(gradlePath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	// Find build.gradle.kts files (Kotlin DSL)
-	gradleKtsFiles := ps.findFilesWithPattern(repoPath, "build.gradle.kts")
-	for _, gradlePath := range gradleKtsFiles {
-		relPath, _ := filepath.Rel(repoPath, gradlePath)
-		extracted := ps.parseBuildGradle(gradlePath, relPath)
-		deps = append(deps, extracted...)
-	}
-
-	return deps
-}
-
 // parseBuildGradle parses build.gradle and extracts JitPack GitHub dependencies
 // JitPack format: com.github.Owner:Repo:Tag
 func (ps *PackageScanner) parseBuildGradle(gradlePath, manifestPath string) []ExtractedDependency {
@@ -1448,9 +1386,24 @@ func isSkippedDir(name string) bool {
 	}
 }
 
-// findFiles finds all files with the exact name in the repository
-func (ps *PackageScanner) findFiles(repoPath, filename string) []string {
-	var files []string
+// Manifest file names as constants
+const (
+	fileGoMod          = "go.mod"
+	filePackageJSON    = "package.json"
+	fileRequirements   = "requirements.txt"
+	fileGemfile        = "Gemfile"
+	fileCargoToml      = "Cargo.toml"
+	fileChartYaml      = "Chart.yaml"
+	filePackageSwift   = "Package.swift"
+	fileMixExs         = "mix.exs"
+	fileBuildGradle    = "build.gradle"
+	fileBuildGradleKts = "build.gradle.kts"
+)
+
+// collectAllManifests performs a single directory walk to discover all manifest files
+// This is much more efficient than calling findFiles/findFilesWithPattern for each type
+func (ps *PackageScanner) collectAllManifests(repoPath string) *ManifestFiles {
+	manifests := &ManifestFiles{}
 
 	// #nosec G304 -- repoPath is validated before this function is called
 	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
@@ -1466,47 +1419,179 @@ func (ps *PackageScanner) findFiles(repoPath, filename string) []string {
 			return nil
 		}
 
-		if info.Name() == filename {
-			files = append(files, path)
-		}
+		// Categorize the file by name
+		ps.categorizeManifestFile(info.Name(), path, manifests)
 		return nil
 	})
 
 	if err != nil {
-		ps.logger.Debug("Error walking directory", "path", repoPath, "error", err)
+		ps.logger.Debug("Error walking directory for manifests", "path", repoPath, "error", err)
 	}
 
-	return files
+	return manifests
 }
 
-// findFilesWithPattern finds files matching a glob pattern
-func (ps *PackageScanner) findFilesWithPattern(repoPath, pattern string) []string {
-	var files []string
-
-	// #nosec G304 -- repoPath is validated before this function is called
-	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip errors
-		}
-
-		// Skip common non-source directories
-		if info.IsDir() {
-			if isSkippedDir(info.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		matched, _ := filepath.Match(pattern, info.Name())
-		if matched {
-			files = append(files, path)
-		}
-		return nil
-	})
-
-	if err != nil {
-		ps.logger.Debug("Error walking directory", "path", repoPath, "error", err)
+// categorizeManifestFile adds a file to the appropriate manifest category based on its name
+func (ps *PackageScanner) categorizeManifestFile(name, path string, manifests *ManifestFiles) {
+	// Match exact filenames using a map-like approach
+	switch name {
+	case fileGoMod:
+		manifests.GoMod = append(manifests.GoMod, path)
+	case filePackageJSON:
+		manifests.PackageJSON = append(manifests.PackageJSON, path)
+	case fileRequirements:
+		manifests.Requirements = append(manifests.Requirements, path)
+	case fileGemfile:
+		manifests.Gemfile = append(manifests.Gemfile, path)
+	case fileCargoToml:
+		manifests.CargoToml = append(manifests.CargoToml, path)
+	case fileChartYaml:
+		manifests.ChartYaml = append(manifests.ChartYaml, path)
+	case filePackageSwift:
+		manifests.PackageSwift = append(manifests.PackageSwift, path)
+	case fileMixExs:
+		manifests.MixExs = append(manifests.MixExs, path)
+	case fileBuildGradle:
+		manifests.BuildGradle = append(manifests.BuildGradle, path)
+	case fileBuildGradleKts:
+		manifests.BuildGradleKts = append(manifests.BuildGradleKts, path)
 	}
 
-	return files
+	// Match pattern-based filenames
+	ps.matchPatternManifests(name, path, manifests)
+}
+
+// matchPatternManifests matches files that require pattern matching (not exact name match)
+func (ps *PackageScanner) matchPatternManifests(name, path string, manifests *ManifestFiles) {
+	// requirements*.txt variants (excluding requirements.txt which is already matched above)
+	if strings.HasPrefix(name, "requirements") && strings.HasSuffix(name, ".txt") && name != fileRequirements {
+		manifests.RequirementsVariants = append(manifests.RequirementsVariants, path)
+	}
+
+	// *.tf files for Terraform
+	if strings.HasSuffix(name, ".tf") {
+		manifests.Terraform = append(manifests.Terraform, path)
+	}
+}
+
+// parseGoModFiles parses a list of go.mod files and extracts dependencies
+func (ps *PackageScanner) parseGoModFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, modPath := range files {
+		relPath, _ := filepath.Rel(repoPath, modPath)
+		extracted := ps.parseGoMod(modPath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
+}
+
+// parsePackageJSONFiles parses a list of package.json files and extracts dependencies
+func (ps *PackageScanner) parsePackageJSONFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, pkgPath := range files {
+		relPath, _ := filepath.Rel(repoPath, pkgPath)
+		extracted := ps.parsePackageJSON(pkgPath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
+}
+
+// parseRequirementsFiles parses a list of requirements.txt files and extracts dependencies
+func (ps *PackageScanner) parseRequirementsFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, reqPath := range files {
+		relPath, _ := filepath.Rel(repoPath, reqPath)
+		extracted := ps.parseRequirementsTxt(reqPath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
+}
+
+// parseGemfiles parses a list of Gemfile files and extracts dependencies
+func (ps *PackageScanner) parseGemfiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, gemPath := range files {
+		relPath, _ := filepath.Rel(repoPath, gemPath)
+		extracted := ps.parseGemfile(gemPath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
+}
+
+// parseTerraformFiles parses a list of .tf files and extracts dependencies
+func (ps *PackageScanner) parseTerraformFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, tfPath := range files {
+		relPath, _ := filepath.Rel(repoPath, tfPath)
+		extracted := ps.parseTerraformFile(tfPath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
+}
+
+// parseCargoFiles parses a list of Cargo.toml files and extracts dependencies
+func (ps *PackageScanner) parseCargoFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, cargoPath := range files {
+		relPath, _ := filepath.Rel(repoPath, cargoPath)
+		extracted := ps.parseCargoToml(cargoPath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
+}
+
+// parseChartYamlFiles parses a list of Chart.yaml files and extracts dependencies
+func (ps *PackageScanner) parseChartYamlFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, chartPath := range files {
+		relPath, _ := filepath.Rel(repoPath, chartPath)
+		// Pattern: repository: "https://host/owner/repo" or repository: "git+https://..."
+		extracted := ps.parseFileWithURLPattern(chartPath, relPath, EcosystemHelm,
+			`repository:\s*["']?(?:git\+)?https://`, `/([^/]+)/([^/"'\s]+)`)
+		deps = append(deps, extracted...)
+
+		// Also check for ADO URLs
+		adoDeps := ps.parseFileForADOURLs(chartPath, relPath, EcosystemHelm)
+		deps = append(deps, adoDeps...)
+	}
+	return deps
+}
+
+// parsePackageSwiftFiles parses a list of Package.swift files and extracts dependencies
+func (ps *PackageScanner) parsePackageSwiftFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, swiftPath := range files {
+		relPath, _ := filepath.Rel(repoPath, swiftPath)
+		// Pattern: .package(url: "https://host/owner/repo"
+		extracted := ps.parseFileWithURLPattern(swiftPath, relPath, EcosystemSwift,
+			`\.package\s*\(\s*url:\s*"https://`, `/([^/]+)/([^/"]+)"`)
+		deps = append(deps, extracted...)
+
+		// Also check for ADO URLs
+		adoDeps := ps.parseFileForADOURLs(swiftPath, relPath, EcosystemSwift)
+		deps = append(deps, adoDeps...)
+	}
+	return deps
+}
+
+// parseMixExsFiles parses a list of mix.exs files and extracts dependencies
+func (ps *PackageScanner) parseMixExsFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, mixPath := range files {
+		relPath, _ := filepath.Rel(repoPath, mixPath)
+		extracted := ps.parseMixExs(mixPath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
+}
+
+// parseBuildGradleFiles parses a list of build.gradle/build.gradle.kts files and extracts dependencies
+func (ps *PackageScanner) parseBuildGradleFiles(files []string, repoPath string) []ExtractedDependency {
+	var deps []ExtractedDependency
+	for _, gradlePath := range files {
+		relPath, _ := filepath.Rel(repoPath, gradlePath)
+		extracted := ps.parseBuildGradle(gradlePath, relPath)
+		deps = append(deps, extracted...)
+	}
+	return deps
 }

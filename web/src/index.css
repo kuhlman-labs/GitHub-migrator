@@ -491,3 +491,29 @@ input[type="checkbox"]:not(.custom-checkbox) {
   -webkit-appearance: auto !important;
 }
 
+/* Bordered invisible button style for filter/action buttons */
+.btn-bordered-invisible {
+  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+}
+
+.btn-bordered-invisible:hover:not(:disabled) {
+  background-color: var(--bgColor-muted, #F6F8FA) !important;
+  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+}
+
+/* Filter dropdown button with full-width content */
+.btn-filter-dropdown {
+  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+  justify-content: space-between !important;
+}
+
+.btn-filter-dropdown [data-component="text"] {
+  flex: 1 !important;
+  text-align: left !important;
+}
+
+.btn-filter-dropdown:hover:not(:disabled) {
+  background-color: var(--bgColor-muted, #F6F8FA) !important;
+  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+}
+

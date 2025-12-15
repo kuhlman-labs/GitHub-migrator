@@ -25,6 +25,7 @@ const (
 	statusInProgress = "in_progress"
 	statusReady      = "ready"
 	statusPending    = "pending"
+	statusCompleted  = "completed"
 	boolTrue         = "true"
 
 	formatCSV  = "csv"
@@ -256,6 +257,43 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 		"status":             "complete",
 		"repositories_found": count,
 		"completed_at":       time.Now().Format(time.RFC3339),
+	})
+}
+
+// DiscoverRepositories handles POST /api/v1/repositories/discover
+// Discovers repositories for a single organization (standalone, repos-only discovery)
+func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Organization string `json:"organization"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Organization == "" {
+		h.sendError(w, http.StatusBadRequest, "organization is required")
+		return
+	}
+
+	if h.collector == nil {
+		h.sendError(w, http.StatusServiceUnavailable, "GitHub client not configured")
+		return
+	}
+
+	// Start discovery asynchronously
+	go func() {
+		ctx := context.Background()
+		if err := h.collector.DiscoverRepositories(ctx, req.Organization); err != nil {
+			h.logger.Error("Repository discovery failed", "error", err, "org", req.Organization)
+		}
+	}()
+
+	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		"message":      "Repository discovery started",
+		"organization": req.Organization,
+		"status":       statusInProgress,
 	})
 }
 
@@ -493,7 +531,7 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Available for batch filter
-	if availableForBatch := r.URL.Query().Get("available_for_batch"); availableForBatch == "true" {
+	if availableForBatch := r.URL.Query().Get("available_for_batch"); availableForBatch == boolTrue {
 		filters["available_for_batch"] = true
 	}
 
@@ -2642,7 +2680,7 @@ func (h *Handler) markRepositoryMigrated(ctx context.Context, repo *models.Repos
 
 	history := &models.MigrationHistory{
 		RepositoryID: repo.ID,
-		Status:       "completed",
+		Status:       statusCompleted,
 		Phase:        "migration",
 		Message:      &message,
 		StartedAt:    now,
@@ -3236,7 +3274,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	pendingBatches := 0
 	for _, batch := range batches {
 		switch batch.Status {
-		case "completed", "completed_with_errors":
+		case statusCompleted, "completed_with_errors":
 			completedBatches++
 		case statusInProgress:
 			inProgressBatches++
@@ -3479,11 +3517,11 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	pendingBatches := 0
 	for _, batch := range batches {
 		switch batch.Status {
-		case "completed", "completed_with_errors":
+		case statusCompleted, "completed_with_errors":
 			completedBatches++
-		case "in_progress":
+		case statusInProgress:
 			inProgressBatches++
-		case "pending", "ready":
+		case statusPending, statusReady:
 			pendingBatches++
 		}
 	}
@@ -4779,6 +4817,15 @@ func stringPtrOrEmpty(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// stringPtr returns a pointer to a heap-allocated copy of the string.
+// Use this when storing string pointers in structs to ensure the value
+// survives beyond the current scope.
+func stringPtr(s string) *string {
+	ptr := new(string)
+	*ptr = s
+	return ptr
 }
 
 func formatTimePtr(t *time.Time) string {

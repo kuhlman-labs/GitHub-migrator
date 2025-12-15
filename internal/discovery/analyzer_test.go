@@ -17,7 +17,7 @@ func TestNewAnalyzer(t *testing.T) {
 
 	if analyzer == nil {
 		t.Fatal("NewAnalyzer returned nil")
-		return
+		return // Prevent staticcheck SA5011
 	}
 	if analyzer.logger == nil {
 		t.Error("Analyzer logger is nil")

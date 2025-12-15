@@ -29,7 +29,7 @@ func TestNewProfiler(t *testing.T) {
 
 	if profiler == nil {
 		t.Fatal("NewProfiler returned nil")
-		return
+		return // Prevent staticcheck SA5011
 	}
 	if profiler.client == nil {
 		t.Error("Profiler client is nil")

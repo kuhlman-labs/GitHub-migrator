@@ -72,12 +72,13 @@ func main() {
 	}
 
 	// Start HTTP server
+	// Timeouts increased for large responses (e.g., 4k+ mannequins)
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:      server.Router(),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  120 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Graceful shutdown
@@ -156,10 +157,11 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 	}
 
 	// Configure PAT client
+	// Timeout increased to 120s for large org operations like mannequin listing
 	patConfig := github.ClientConfig{
 		BaseURL:     baseURL,
 		Token:       token,
-		Timeout:     30 * time.Second,
+		Timeout:     120 * time.Second,
 		RetryConfig: github.DefaultRetryConfig(),
 		Logger:      logger,
 	}
@@ -170,7 +172,7 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 	if appID > 0 && appPrivateKey != "" {
 		appConfig = &github.ClientConfig{
 			BaseURL:           baseURL,
-			Timeout:           30 * time.Second,
+			Timeout:           120 * time.Second,
 			RetryConfig:       github.DefaultRetryConfig(),
 			Logger:            logger,
 			AppID:             appID,

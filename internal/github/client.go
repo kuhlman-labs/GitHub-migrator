@@ -16,12 +16,23 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// AuthMethod represents the authentication method used by the client
+type AuthMethod string
+
+const (
+	// AuthMethodPAT indicates Personal Access Token authentication
+	AuthMethodPAT AuthMethod = "PAT"
+	// AuthMethodGitHubApp indicates GitHub App authentication
+	AuthMethodGitHubApp AuthMethod = "GitHub App"
+)
+
 // Client wraps GitHub REST and GraphQL clients with rate limiting and retry logic
 type Client struct {
 	rest           *github.Client
 	graphql        *githubv4.Client
 	baseURL        string
 	token          string
+	authMethod     AuthMethod
 	rateLimiter    *RateLimiter
 	retryer        *Retryer
 	circuitBreaker *CircuitBreaker
@@ -187,7 +198,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}
 
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 30 * time.Second
+		cfg.Timeout = 120 * time.Second // Increased default for large org operations
 	}
 
 	var httpClient *http.Client
@@ -320,11 +331,20 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	retryer := NewRetryer(cfg.RetryConfig, rateLimiter, cfg.Logger)
 	circuitBreaker := NewCircuitBreaker(5, 1*time.Minute, cfg.Logger)
 
+	// Determine auth method for the client
+	var clientAuthMethod AuthMethod
+	if authMethod == "PAT" {
+		clientAuthMethod = AuthMethodPAT
+	} else {
+		clientAuthMethod = AuthMethodGitHubApp
+	}
+
 	client := &Client{
 		rest:           restClient,
 		graphql:        graphqlClient,
 		baseURL:        cfg.BaseURL,
 		token:          token,
+		authMethod:     clientAuthMethod,
 		rateLimiter:    rateLimiter,
 		retryer:        retryer,
 		circuitBreaker: circuitBreaker,
@@ -361,6 +381,45 @@ func (c *Client) Token() string {
 // GraphQL returns the underlying GitHub GraphQL client
 func (c *Client) GraphQL() *githubv4.Client {
 	return c.graphql
+}
+
+// IsPATAuthenticated returns true if the client is using PAT authentication
+func (c *Client) IsPATAuthenticated() bool {
+	return c.authMethod == AuthMethodPAT
+}
+
+// GetAuthenticatedUserLogin returns the login (username) of the authenticated user
+// This is primarily useful for PAT authentication where the token owner is a user
+func (c *Client) GetAuthenticatedUserLogin(ctx context.Context) (string, error) {
+	c.logger.Debug("Getting authenticated user login")
+
+	var user *github.User
+	err := c.retryer.Do(ctx, "GetAuthenticatedUserLogin", func(ctx context.Context) error {
+		var resp *github.Response
+		var err error
+		user, resp, err = c.rest.Users.Get(ctx, "")
+		if err != nil {
+			return WrapError(err, "GetAuthenticatedUserLogin", c.baseURL)
+		}
+
+		// Update rate limits
+		if resp != nil && resp.Rate.Limit > 0 {
+			c.rateLimiter.UpdateLimits(
+				resp.Rate.Remaining,
+				resp.Rate.Limit,
+				resp.Rate.Reset.Time,
+			)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	login := user.GetLogin()
+	c.logger.Debug("Got authenticated user login", "login", login)
+	return login, nil
 }
 
 // GetOrganizationInstallationID gets the installation ID for a specific organization
@@ -691,34 +750,13 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 func (c *Client) TestAuthentication(ctx context.Context) error {
 	c.logger.Info("Testing GitHub authentication")
 
-	var user *github.User
-	err := c.retryer.Do(ctx, "TestAuthentication", func(ctx context.Context) error {
-		var resp *github.Response
-		var err error
-		user, resp, err = c.rest.Users.Get(ctx, "")
-		if err != nil {
-			return WrapError(err, "GetAuthenticatedUser", c.baseURL)
-		}
-
-		// Update rate limits
-		if resp != nil && resp.Rate.Limit > 0 {
-			c.rateLimiter.UpdateLimits(
-				resp.Rate.Remaining,
-				resp.Rate.Limit,
-				resp.Rate.Reset.Time,
-			)
-		}
-		return nil
-	})
-
+	login, err := c.GetAuthenticatedUserLogin(ctx)
 	if err != nil {
 		c.logger.Error("Authentication test failed", "error", err)
 		return err
 	}
 
-	c.logger.Info("Authentication successful",
-		"user", user.GetLogin(),
-		"type", user.GetType())
+	c.logger.Info("Authentication successful", "user", login)
 
 	return nil
 }
@@ -1384,4 +1422,694 @@ func (c *Client) ListTeamRepositories(ctx context.Context, org, teamSlug string)
 		"total_repos", len(allRepos))
 
 	return allRepos, nil
+}
+
+// TeamMember represents a member of a GitHub team
+type TeamMember struct {
+	Login string // GitHub username
+	Role  string // member or maintainer
+}
+
+// ListTeamMembers lists all members of a team
+func (c *Client) ListTeamMembers(ctx context.Context, org, teamSlug string) ([]*TeamMember, error) {
+	c.logger.Debug("Listing members for team", "org", org, "team", teamSlug)
+
+	var allMembers []*TeamMember
+	opts := &github.TeamListTeamMembersOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	for {
+		var members []*github.User
+		var resp *github.Response
+
+		err := c.retryer.Do(ctx, "ListTeamMembers", func(ctx context.Context) error {
+			var err error
+			members, resp, err = c.rest.Teams.ListTeamMembersBySlug(ctx, org, teamSlug, opts)
+			if err != nil {
+				return WrapError(err, "ListTeamMembersBySlug", c.baseURL)
+			}
+
+			// Update rate limits
+			if resp != nil && resp.Rate.Limit > 0 {
+				c.rateLimiter.UpdateLimits(
+					resp.Rate.Remaining,
+					resp.Rate.Limit,
+					resp.Rate.Reset.Time,
+				)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, member := range members {
+			// Get the member's role in the team
+			role := "member"
+			membership, _, err := c.rest.Teams.GetTeamMembershipBySlug(ctx, org, teamSlug, member.GetLogin())
+			if err == nil && membership != nil {
+				role = membership.GetRole() // "member" or "maintainer"
+			}
+
+			allMembers = append(allMembers, &TeamMember{
+				Login: member.GetLogin(),
+				Role:  role,
+			})
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	c.logger.Debug("Team member listing complete",
+		"org", org,
+		"team", teamSlug,
+		"total_members", len(allMembers))
+
+	return allMembers, nil
+}
+
+// ListTeamMembersGraphQL lists all members of a team using GraphQL
+// This is more efficient than the REST API as it fetches member roles in a single query
+// instead of making N+1 API calls (one per member to get their role)
+func (c *Client) ListTeamMembersGraphQL(ctx context.Context, org, teamSlug string) ([]*TeamMember, error) {
+	c.logger.Debug("Listing members for team via GraphQL", "org", org, "team", teamSlug)
+
+	var allMembers []*TeamMember
+	var cursor *githubv4.String
+
+	// GraphQL query for team members with roles
+	var query struct {
+		Organization struct {
+			Team struct {
+				Members struct {
+					PageInfo struct {
+						HasNextPage githubv4.Boolean
+						EndCursor   githubv4.String
+					}
+					Edges []struct {
+						Role githubv4.String
+						Node struct {
+							Login githubv4.String
+						}
+					}
+				} `graphql:"members(first: 100, after: $cursor)"`
+			} `graphql:"team(slug: $slug)"`
+		} `graphql:"organization(login: $org)"`
+	}
+
+	variables := map[string]interface{}{
+		"org":    githubv4.String(org),
+		"slug":   githubv4.String(teamSlug),
+		"cursor": cursor,
+	}
+
+	for {
+		variables["cursor"] = cursor
+
+		err := c.retryer.Do(ctx, "ListTeamMembersGraphQL", func(ctx context.Context) error {
+			return c.graphql.Query(ctx, &query, variables)
+		})
+
+		if err != nil {
+			// Fall back to REST API if GraphQL fails (e.g., on GHES without GraphQL team support)
+			c.logger.Debug("GraphQL query failed for team members, falling back to REST",
+				"org", org,
+				"team", teamSlug,
+				"error", err)
+			return c.ListTeamMembers(ctx, org, teamSlug)
+		}
+
+		for _, edge := range query.Organization.Team.Members.Edges {
+			allMembers = append(allMembers, &TeamMember{
+				Login: string(edge.Node.Login),
+				Role:  strings.ToLower(string(edge.Role)), // GraphQL returns "MAINTAINER" or "MEMBER"
+			})
+		}
+
+		if !bool(query.Organization.Team.Members.PageInfo.HasNextPage) {
+			break
+		}
+		cursor = newString(query.Organization.Team.Members.PageInfo.EndCursor)
+	}
+
+	c.logger.Debug("Team member listing via GraphQL complete",
+		"org", org,
+		"team", teamSlug,
+		"total_members", len(allMembers))
+
+	return allMembers, nil
+}
+
+// OrgMember represents a member of an organization with full details
+type OrgMember struct {
+	Login     string  `json:"login"`
+	ID        int64   `json:"id"`
+	Name      *string `json:"name,omitempty"`
+	Email     *string `json:"email,omitempty"`
+	AvatarURL string  `json:"avatar_url"`
+	Role      string  `json:"role"` // "admin" or "member"
+}
+
+// ListOrgMembers lists all members of an organization using GraphQL to get full details
+func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, error) {
+	c.logger.Debug("Listing organization members", "org", org)
+
+	var allMembers []*OrgMember
+	var cursor *githubv4.String
+
+	// GraphQL query for organization members with full details
+	var query struct {
+		Organization struct {
+			MembersWithRole struct {
+				PageInfo struct {
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
+				}
+				Edges []struct {
+					Role githubv4.String
+					Node struct {
+						Login      githubv4.String
+						Name       githubv4.String
+						Email      githubv4.String
+						AvatarUrl  githubv4.String
+						DatabaseId githubv4.Int
+					}
+				}
+			} `graphql:"membersWithRole(first: 100, after: $cursor)"`
+		} `graphql:"organization(login: $org)"`
+	}
+
+	variables := map[string]interface{}{
+		"org":    githubv4.String(org),
+		"cursor": cursor,
+	}
+
+	for {
+		variables["cursor"] = cursor
+
+		err := c.retryer.Do(ctx, "ListOrgMembers", func(ctx context.Context) error {
+			return c.graphql.Query(ctx, &query, variables)
+		})
+
+		if err != nil {
+			// Fall back to REST API if GraphQL fails (e.g., on GHES without GraphQL)
+			c.logger.Debug("GraphQL query failed, falling back to REST", "error", err)
+			return c.listOrgMembersREST(ctx, org)
+		}
+
+		for _, edge := range query.Organization.MembersWithRole.Edges {
+			member := &OrgMember{
+				Login:     string(edge.Node.Login),
+				ID:        int64(edge.Node.DatabaseId),
+				AvatarURL: string(edge.Node.AvatarUrl),
+				Role:      strings.ToLower(string(edge.Role)), // GraphQL returns "ADMIN" or "MEMBER"
+			}
+			// Use newStr for explicit heap allocation
+			if edge.Node.Name != "" {
+				member.Name = newStr(string(edge.Node.Name))
+			}
+			if edge.Node.Email != "" {
+				member.Email = newStr(string(edge.Node.Email))
+			}
+			allMembers = append(allMembers, member)
+		}
+
+		if !bool(query.Organization.MembersWithRole.PageInfo.HasNextPage) {
+			break
+		}
+		cursor = newString(query.Organization.MembersWithRole.PageInfo.EndCursor)
+	}
+
+	c.logger.Debug("Organization member listing complete",
+		"org", org,
+		"total_members", len(allMembers))
+
+	return allMembers, nil
+}
+
+// listOrgMembersREST is a fallback that uses REST API when GraphQL is unavailable
+func (c *Client) listOrgMembersREST(ctx context.Context, org string) ([]*OrgMember, error) {
+	var allMembers []*OrgMember
+	opts := &github.ListMembersOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	for {
+		var members []*github.User
+		var resp *github.Response
+
+		err := c.retryer.Do(ctx, "ListOrgMembersREST", func(ctx context.Context) error {
+			var err error
+			members, resp, err = c.rest.Organizations.ListMembers(ctx, org, opts)
+			if err != nil {
+				return WrapError(err, "ListOrgMembersREST", c.baseURL)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, member := range members {
+			m := &OrgMember{
+				Login:     member.GetLogin(),
+				ID:        member.GetID(),
+				AvatarURL: member.GetAvatarURL(),
+				Role:      "member",
+			}
+			// Get user details for name/email, using newStr for explicit heap allocation
+			if user, _, err := c.rest.Users.Get(ctx, member.GetLogin()); err == nil && user != nil {
+				if user.GetName() != "" {
+					m.Name = newStr(user.GetName())
+				}
+				if user.GetEmail() != "" {
+					m.Email = newStr(user.GetEmail())
+				}
+			}
+			allMembers = append(allMembers, m)
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return allMembers, nil
+}
+
+// Mannequin represents a mannequin user created by GEI during migration
+type Mannequin struct {
+	ID        string  `json:"id"`         // GraphQL node ID
+	Login     string  `json:"login"`      // Mannequin login (e.g., "mona-user-12345")
+	Email     string  `json:"email"`      // Original commit email
+	Name      string  `json:"name"`       // Display name (may contain original username)
+	CreatedAt string  `json:"created_at"` // When the mannequin was created
+	Claimant  *string `json:"claimant"`   // User who claimed the mannequin (if any)
+	OrgID     string  `json:"org_id"`     // Organization node ID (needed for reclaim mutation)
+}
+
+// ListMannequins lists all mannequins in an organization
+// This uses the GraphQL API as mannequins are only available via GraphQL
+func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, error) {
+	c.logger.Debug("Listing mannequins for organization", "org", org)
+
+	var allMannequins []*Mannequin
+	var cursor *githubv4.String
+	var orgID string
+
+	// GraphQL query for listing mannequins
+	var query struct {
+		Organization struct {
+			ID         githubv4.String
+			Mannequins struct {
+				PageInfo struct {
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
+				}
+				Nodes []struct {
+					ID        githubv4.String
+					Login     githubv4.String
+					Email     githubv4.String
+					Name      githubv4.String
+					CreatedAt githubv4.String
+					Claimant  *struct {
+						Login githubv4.String
+					}
+				}
+			} `graphql:"mannequins(first: 100, after: $cursor)"`
+		} `graphql:"organization(login: $org)"`
+	}
+
+	variables := map[string]interface{}{
+		"org":    githubv4.String(org),
+		"cursor": cursor,
+	}
+
+	for {
+		variables["cursor"] = cursor
+
+		err := c.retryer.Do(ctx, "ListMannequins", func(ctx context.Context) error {
+			return c.graphql.Query(ctx, &query, variables)
+		})
+
+		if err != nil {
+			// If organization doesn't support mannequins, return empty list
+			if strings.Contains(err.Error(), "Could not resolve to an Organization") {
+				c.logger.Debug("Organization not found or doesn't have mannequins", "org", org)
+				return allMannequins, nil
+			}
+			return nil, WrapError(err, "ListMannequins", c.baseURL)
+		}
+
+		// Capture org ID from first query
+		if orgID == "" {
+			orgID = string(query.Organization.ID)
+		}
+
+		for _, m := range query.Organization.Mannequins.Nodes {
+			mannequin := &Mannequin{
+				ID:        string(m.ID),
+				Login:     string(m.Login),
+				Email:     string(m.Email),
+				Name:      string(m.Name),
+				CreatedAt: string(m.CreatedAt),
+				OrgID:     orgID,
+			}
+			// Use newStr for explicit heap allocation
+			if m.Claimant != nil {
+				mannequin.Claimant = newStr(string(m.Claimant.Login))
+			}
+			allMannequins = append(allMannequins, mannequin)
+		}
+
+		if !bool(query.Organization.Mannequins.PageInfo.HasNextPage) {
+			break
+		}
+		cursor = newString(query.Organization.Mannequins.PageInfo.EndCursor)
+	}
+
+	c.logger.Info("Mannequin listing complete",
+		"org", org,
+		"total_mannequins", len(allMannequins))
+
+	return allMannequins, nil
+}
+
+// GetTeamBySlug retrieves a team by organization and slug
+// Returns nil, nil if the team doesn't exist (404)
+func (c *Client) GetTeamBySlug(ctx context.Context, org, slug string) (*TeamInfo, error) {
+	c.logger.Debug("Getting team by slug", "org", org, "slug", slug)
+
+	var team *github.Team
+	err := c.retryer.Do(ctx, "GetTeamBySlug", func(ctx context.Context) error {
+		var err error
+		team, _, err = c.rest.Teams.GetTeamBySlug(ctx, org, slug)
+		if err != nil {
+			// Check if it's a 404 (team not found)
+			if ghErr, ok := err.(*github.ErrorResponse); ok && ghErr.Response.StatusCode == 404 {
+				return nil // Return nil error for 404, we'll check team == nil
+			}
+			return WrapError(err, "GetTeamBySlug", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if team == nil {
+		c.logger.Debug("Team not found", "org", org, "slug", slug)
+		return nil, nil
+	}
+
+	info := &TeamInfo{
+		ID:      team.GetID(),
+		Slug:    team.GetSlug(),
+		Name:    team.GetName(),
+		Privacy: team.GetPrivacy(),
+	}
+	if team.Description != nil {
+		info.Description = *team.Description
+	}
+
+	c.logger.Debug("Team found", "org", org, "slug", slug, "team_id", info.ID)
+	return info, nil
+}
+
+// CreateTeamInput contains the parameters for creating a team
+type CreateTeamInput struct {
+	Name        string  // Required: team name
+	Description *string // Optional: team description
+	Privacy     string  // "secret" or "closed" (default: "secret")
+	ParentTeam  *int64  // Optional: parent team ID for nested teams
+}
+
+// CreateTeam creates a new team in the organization
+// Teams are created WITHOUT members by default to support EMU/IdP-managed environments
+func (c *Client) CreateTeam(ctx context.Context, org string, input CreateTeamInput) (*TeamInfo, error) {
+	c.logger.Info("Creating team", "org", org, "name", input.Name)
+
+	privacy := input.Privacy
+	if privacy == "" {
+		privacy = "secret"
+	}
+
+	newTeam := &github.NewTeam{
+		Name:        input.Name,
+		Description: input.Description,
+		Privacy:     &privacy,
+	}
+
+	if input.ParentTeam != nil {
+		newTeam.ParentTeamID = input.ParentTeam
+	}
+
+	var team *github.Team
+	err := c.retryer.Do(ctx, "CreateTeam", func(ctx context.Context) error {
+		var err error
+		team, _, err = c.rest.Teams.CreateTeam(ctx, org, *newTeam)
+		if err != nil {
+			return WrapError(err, "CreateTeam", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	info := &TeamInfo{
+		ID:      team.GetID(),
+		Slug:    team.GetSlug(),
+		Name:    team.GetName(),
+		Privacy: team.GetPrivacy(),
+	}
+	if team.Description != nil {
+		info.Description = *team.Description
+	}
+
+	c.logger.Info("Team created successfully",
+		"org", org,
+		"team_slug", info.Slug,
+		"team_id", info.ID)
+
+	return info, nil
+}
+
+// AddTeamRepoPermission adds or updates a repository's permission for a team
+// Permission must be one of: pull, triage, push, maintain, admin
+func (c *Client) AddTeamRepoPermission(ctx context.Context, org, teamSlug, repoOwner, repoName, permission string) error {
+	c.logger.Debug("Adding team repo permission",
+		"org", org,
+		"team", teamSlug,
+		"repo", repoOwner+"/"+repoName,
+		"permission", permission)
+
+	// Validate permission
+	validPermissions := map[string]bool{
+		"pull":     true,
+		"triage":   true,
+		"push":     true,
+		"maintain": true,
+		"admin":    true,
+	}
+	if !validPermissions[permission] {
+		return fmt.Errorf("invalid permission %q, must be one of: pull, triage, push, maintain, admin", permission)
+	}
+
+	opts := &github.TeamAddTeamRepoOptions{
+		Permission: permission,
+	}
+
+	err := c.retryer.Do(ctx, "AddTeamRepoPermission", func(ctx context.Context) error {
+		_, err := c.rest.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, repoOwner, repoName, opts)
+		if err != nil {
+			return WrapError(err, "AddTeamRepoBySlug", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	c.logger.Debug("Team repo permission added successfully",
+		"org", org,
+		"team", teamSlug,
+		"repo", repoOwner+"/"+repoName,
+		"permission", permission)
+
+	return nil
+}
+
+// RemoveTeamMembership removes a user from a team
+// This is used to remove the PAT owner from a team after creation when using PAT authentication,
+// since GitHub automatically adds the PAT owner as a maintainer when creating a team with a PAT.
+func (c *Client) RemoveTeamMembership(ctx context.Context, org, teamSlug, username string) error {
+	c.logger.Debug("Removing team membership",
+		"org", org,
+		"team", teamSlug,
+		"username", username)
+
+	err := c.retryer.Do(ctx, "RemoveTeamMembership", func(ctx context.Context) error {
+		_, err := c.rest.Teams.RemoveTeamMembershipBySlug(ctx, org, teamSlug, username)
+		if err != nil {
+			return WrapError(err, "RemoveTeamMembershipBySlug", c.baseURL)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	c.logger.Debug("Team membership removed successfully",
+		"org", org,
+		"team", teamSlug,
+		"username", username)
+
+	return nil
+}
+
+// UserInfo represents basic user information from GraphQL
+type UserInfo struct {
+	ID        string `json:"id"`    // GraphQL node ID
+	Login     string `json:"login"` // GitHub username
+	Name      string `json:"name"`  // Display name
+	Email     string `json:"email"` // Public email
+	AvatarURL string `json:"avatar_url"`
+}
+
+// GetUserByLogin retrieves a user by login using GraphQL
+// Returns the user's node ID which is needed for the createAttributionInvitation mutation
+func (c *Client) GetUserByLogin(ctx context.Context, login string) (*UserInfo, error) {
+	c.logger.Debug("Getting user by login", "login", login)
+
+	var query struct {
+		User struct {
+			ID        githubv4.String
+			Login     githubv4.String
+			Name      githubv4.String
+			Email     githubv4.String
+			AvatarUrl githubv4.String
+		} `graphql:"user(login: $login)"`
+	}
+
+	variables := map[string]interface{}{
+		"login": githubv4.String(login),
+	}
+
+	err := c.retryer.Do(ctx, "GetUserByLogin", func(ctx context.Context) error {
+		return c.graphql.Query(ctx, &query, variables)
+	})
+
+	if err != nil {
+		// If user not found, return nil without error
+		if strings.Contains(err.Error(), "Could not resolve to a User") {
+			c.logger.Debug("User not found", "login", login)
+			return nil, nil
+		}
+		return nil, WrapError(err, "GetUserByLogin", c.baseURL)
+	}
+
+	user := &UserInfo{
+		ID:        string(query.User.ID),
+		Login:     string(query.User.Login),
+		Name:      string(query.User.Name),
+		Email:     string(query.User.Email),
+		AvatarURL: string(query.User.AvatarUrl),
+	}
+
+	c.logger.Debug("User found", "login", login, "id", user.ID)
+	return user, nil
+}
+
+// AttributionInvitationResult represents the result of a createAttributionInvitation mutation
+type AttributionInvitationResult struct {
+	Success         bool   `json:"success"`
+	MannequinID     string `json:"mannequin_id"`
+	MannequinLogin  string `json:"mannequin_login"`
+	TargetUserID    string `json:"target_user_id"`
+	TargetUserLogin string `json:"target_user_login"`
+}
+
+// CreateAttributionInvitation sends an invitation to reclaim a mannequin
+// This uses the createAttributionInvitation GraphQL mutation
+// See: https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/mutations#createattributioninvitation
+//
+// Parameters:
+//   - ownerID: The organization node ID (from ListMannequins)
+//   - mannequinID: The mannequin node ID to reclaim
+//   - targetUserID: The target user node ID to attribute to (from GetUserByLogin)
+func (c *Client) CreateAttributionInvitation(ctx context.Context, ownerID, mannequinID, targetUserID string) (*AttributionInvitationResult, error) {
+	c.logger.Info("Creating attribution invitation",
+		"owner_id", ownerID,
+		"mannequin_id", mannequinID,
+		"target_user_id", targetUserID)
+
+	var mutation struct {
+		CreateAttributionInvitation struct {
+			ClientMutationId githubv4.String
+			Owner            struct {
+				Login githubv4.String
+				ID    githubv4.String
+			}
+			Source struct {
+				Mannequin struct {
+					ID    githubv4.String
+					Login githubv4.String
+					Email githubv4.String
+				} `graphql:"... on Mannequin"`
+			}
+			Target struct {
+				User struct {
+					ID    githubv4.String
+					Login githubv4.String
+					Email githubv4.String
+					Name  githubv4.String
+				} `graphql:"... on User"`
+			}
+		} `graphql:"createAttributionInvitation(input: $input)"`
+	}
+
+	input := githubv4.CreateAttributionInvitationInput{
+		OwnerID:  githubv4.ID(ownerID),
+		SourceID: githubv4.ID(mannequinID),
+		TargetID: githubv4.ID(targetUserID),
+	}
+
+	err := c.retryer.Do(ctx, "CreateAttributionInvitation", func(ctx context.Context) error {
+		return c.graphql.Mutate(ctx, &mutation, input, nil)
+	})
+
+	if err != nil {
+		c.logger.Error("Failed to create attribution invitation",
+			"owner_id", ownerID,
+			"mannequin_id", mannequinID,
+			"target_user_id", targetUserID,
+			"error", err)
+		return nil, WrapError(err, "CreateAttributionInvitation", c.baseURL)
+	}
+
+	result := &AttributionInvitationResult{
+		Success:         true,
+		MannequinID:     string(mutation.CreateAttributionInvitation.Source.Mannequin.ID),
+		MannequinLogin:  string(mutation.CreateAttributionInvitation.Source.Mannequin.Login),
+		TargetUserID:    string(mutation.CreateAttributionInvitation.Target.User.ID),
+		TargetUserLogin: string(mutation.CreateAttributionInvitation.Target.User.Login),
+	}
+
+	c.logger.Info("Attribution invitation created successfully",
+		"mannequin_login", result.MannequinLogin,
+		"target_user_login", result.TargetUserLogin)
+
+	return result, nil
 }
