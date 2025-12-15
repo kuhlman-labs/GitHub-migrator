@@ -214,8 +214,12 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user mapping if exists
-	mapping, _ := h.db.GetUserMappingBySourceLogin(ctx, login)
+	// Get user mapping if exists (mapping is optional - user details can be returned without it)
+	mapping, err := h.db.GetUserMappingBySourceLogin(ctx, login)
+	if err != nil {
+		// Log the error but don't fail - mapping lookup is optional for user details
+		h.logger.Warn("Failed to get user mapping", "login", login, "error", err)
+	}
 
 	// Get org memberships
 	orgMemberships, err := h.db.GetUserOrgMemberships(ctx, login)
@@ -1126,8 +1130,8 @@ func matchEmailLocalExact(mapping *models.UserMapping, mannequin *github.Mannequ
 		return false
 	}
 	emailParts := strings.Split(mannequin.Email, "@")
-	if len(emailParts) == 0 {
-		return false
+	if len(emailParts) < 2 {
+		return false // Email must contain @ to have a valid local part
 	}
 	return strings.EqualFold(emailParts[0], mapping.SourceLogin)
 }
@@ -1137,8 +1141,8 @@ func matchEmailLocalContains(mapping *models.UserMapping, mannequin *github.Mann
 		return false
 	}
 	emailParts := strings.Split(mannequin.Email, "@")
-	if len(emailParts) == 0 {
-		return false
+	if len(emailParts) < 2 {
+		return false // Email must contain @ to have a valid local part
 	}
 	emailLocalPart := strings.ToLower(emailParts[0])
 	sourceLogin := strings.ToLower(mapping.SourceLogin)
