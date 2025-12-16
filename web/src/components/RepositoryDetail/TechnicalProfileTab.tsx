@@ -327,37 +327,33 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
             {repository.installed_apps_count > 0 && (
               <ProfileItem 
                 label="GitHub Apps" 
-                value={
-                  <div>
-                    <span className="font-medium">{repository.installed_apps_count}</span>
-                    {repository.installed_apps && (() => {
-                      try {
-                        const apps: string[] = JSON.parse(repository.installed_apps);
-                        if (apps.length > 0) {
-                          return (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {apps.map((app, idx) => (
-                                <span 
-                                  key={idx}
-                                  className="px-2 py-0.5 text-xs rounded"
-                                  style={{ 
-                                    backgroundColor: 'var(--bgColor-accent-muted)', 
-                                    color: 'var(--fgColor-accent)' 
-                                  }}
-                                >
-                                  {app}
-                                </span>
-                              ))}
-                            </div>
-                          );
-                        }
-                      } catch {
-                        // Ignore JSON parse errors
+                value={(() => {
+                  // Try to show app slugs if available
+                  if (repository.installed_apps) {
+                    try {
+                      const apps: string[] = JSON.parse(repository.installed_apps);
+                      if (apps.length > 0) {
+                        return (
+                          <div className="flex flex-wrap gap-1.5 justify-end">
+                            {apps.map((app, idx) => (
+                              <code 
+                                key={idx}
+                                className="px-2 py-0.5 text-xs rounded"
+                                style={{ backgroundColor: 'var(--bgColor-muted)' }}
+                              >
+                                {app}
+                              </code>
+                            ))}
+                          </div>
+                        );
                       }
-                      return null;
-                    })()}
-                  </div>
-                } 
+                    } catch {
+                      // Fall through to count display
+                    }
+                  }
+                  // Fallback to just showing the count
+                  return repository.installed_apps_count;
+                })()} 
               />
             )}
           </>
