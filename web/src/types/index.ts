@@ -45,6 +45,7 @@ export interface Repository {
   has_self_hosted_runners: boolean;
   collaborator_count: number;
   installed_apps_count: number;
+  installed_apps?: string; // JSON array of app names
   // Releases
   release_count: number;
   has_release_assets: boolean;

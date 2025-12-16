@@ -84,6 +84,12 @@ export function MigrationReadinessTab({
   const hasOptionsChanges = excludeReleases !== repository.exclude_releases || excludeAttachments !== repository.exclude_attachments;
   const [showMigrationOptionsInfo, setShowMigrationOptionsInfo] = useState(false);
 
+  // Sync state when repository prop changes (e.g., after save + refetch)
+  useEffect(() => {
+    setExcludeReleases(repository.exclude_releases);
+    setExcludeAttachments(repository.exclude_attachments);
+  }, [repository.exclude_releases, repository.exclude_attachments]);
+
   // Validation state
   const [expandedValidation, setExpandedValidation] = useState(false);
   const [expandedFactors, setExpandedFactors] = useState(false);

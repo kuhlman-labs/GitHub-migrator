@@ -70,9 +70,10 @@ type Repository struct {
 	WorkflowCount int    `json:"workflow_count" db:"workflow_count" gorm:"column:workflow_count;default:0"`
 
 	// Infrastructure & Access
-	HasSelfHostedRunners bool `json:"has_self_hosted_runners" db:"has_self_hosted_runners" gorm:"column:has_self_hosted_runners;default:false"`
-	CollaboratorCount    int  `json:"collaborator_count" db:"collaborator_count" gorm:"column:collaborator_count;default:0"`
-	InstalledAppsCount   int  `json:"installed_apps_count" db:"installed_apps_count" gorm:"column:installed_apps_count;default:0"`
+	HasSelfHostedRunners bool    `json:"has_self_hosted_runners" db:"has_self_hosted_runners" gorm:"column:has_self_hosted_runners;default:false"`
+	CollaboratorCount    int     `json:"collaborator_count" db:"collaborator_count" gorm:"column:collaborator_count;default:0"`
+	InstalledAppsCount   int     `json:"installed_apps_count" db:"installed_apps_count" gorm:"column:installed_apps_count;default:0"`
+	InstalledApps        *string `json:"installed_apps,omitempty" db:"installed_apps" gorm:"column:installed_apps;type:text"` // JSON array of app names
 
 	// Releases
 	ReleaseCount     int  `json:"release_count" db:"release_count" gorm:"column:release_count;default:0"`

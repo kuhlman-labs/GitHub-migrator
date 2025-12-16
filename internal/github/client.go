@@ -897,6 +897,80 @@ func (c *Client) UnlockRepository(ctx context.Context, org, repo string, migrati
 	return nil
 }
 
+// OrgAppInstallation represents a GitHub App installation with repo access info.
+type OrgAppInstallation struct {
+	ID                  int64
+	AppSlug             string
+	RepositorySelection string // "all" or "selected"
+}
+
+// ListOrgInstallations lists all GitHub App installations for an organization.
+// Returns app installations with their repository access type.
+func (c *Client) ListOrgInstallations(ctx context.Context, org string) ([]*OrgAppInstallation, error) {
+	var allInstallations []*OrgAppInstallation
+	opts := &github.ListOptions{PerPage: 100}
+
+	for {
+		result, resp, err := c.rest.Organizations.ListInstallations(ctx, org, opts)
+		if err != nil {
+			return nil, WrapError(err, "ListOrgInstallations", c.baseURL)
+		}
+
+		for _, install := range result.Installations {
+			allInstallations = append(allInstallations, &OrgAppInstallation{
+				ID:                  install.GetID(),
+				AppSlug:             install.GetAppSlug(),
+				RepositorySelection: install.GetRepositorySelection(),
+			})
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	c.logger.Debug("Listed org installations",
+		"org", org,
+		"count", len(allInstallations))
+
+	return allInstallations, nil
+}
+
+// ListInstallationRepos lists repositories accessible to a specific app installation.
+// This is used to check if a "selected" installation has access to a specific repo.
+func (c *Client) ListInstallationRepos(ctx context.Context, installationID int64) ([]string, error) {
+	var repoNames []string
+
+	// This requires authentication as the app installation
+	// For now, we use a raw request since we might be using PAT auth
+	_, err := c.DoWithRetry(ctx, "ListInstallationRepos", func(ctx context.Context) (*github.Response, error) {
+		req, err := c.rest.NewRequest("GET", fmt.Sprintf("user/installations/%d/repositories", installationID), nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var result struct {
+			Repositories []*github.Repository `json:"repositories"`
+		}
+		resp, err := c.rest.Do(ctx, req, &result)
+		if err != nil {
+			return resp, err
+		}
+
+		for _, repo := range result.Repositories {
+			repoNames = append(repoNames, repo.GetFullName())
+		}
+		return resp, nil
+	})
+
+	if err != nil {
+		return nil, WrapError(err, "ListInstallationRepos", c.baseURL)
+	}
+
+	return repoNames, nil
+}
+
 // ListEnterpriseOrganizations lists all organizations in an enterprise using GraphQL
 func (c *Client) ListEnterpriseOrganizations(ctx context.Context, enterpriseSlug string) ([]string, error) {
 	c.logger.Info("Listing organizations for enterprise", "enterprise", enterpriseSlug)

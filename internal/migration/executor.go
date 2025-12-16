@@ -533,7 +533,7 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 
 	e.logger.Info("Generating archives on source repository", "repo", repo.FullName, "mode", migrationMode)
 	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "initiate",
-		fmt.Sprintf("Initiating archive generation on %s with options: exclude_releases=%v, exclude_attachments=%v (%s)", e.sourceClient.BaseURL(), repo.ExcludeReleases, repo.ExcludeAttachments, migrationMode), nil)
+		fmt.Sprintf("Initiating archive generation on %s with options: exclude_releases=%v, exclude_attachments=%v (%s)", e.sourceClient.BaseURL(), excludeReleases, excludeAttachments, migrationMode), nil)
 
 	archiveIDs, err := e.generateArchivesOnGHES(ctx, repo, batch, lockRepos)
 	if err != nil {
