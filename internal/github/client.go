@@ -801,23 +801,26 @@ func (c *Client) RepositoryURL(fullName string) string {
 
 // StartMigrationOptions contains all options for starting a migration archive generation.
 // This struct supports additional fields not available in go-github's MigrationOptions.
+// See: https://docs.github.com/en/rest/migrations/orgs#start-an-organization-migration
 type StartMigrationOptions struct {
-	Repositories       []string
-	LockRepositories   bool
-	ExcludeMetadata    bool
-	ExcludeGitData     bool
-	ExcludeAttachments bool
-	ExcludeReleases    bool
+	Repositories         []string
+	LockRepositories     bool
+	ExcludeMetadata      bool
+	ExcludeGitData       bool
+	ExcludeAttachments   bool
+	ExcludeReleases      bool
+	ExcludeOwnerProjects bool // Exclude organization projects (recommended: true for metadata archive)
 }
 
 // startMigrationRequest is the JSON body for the start migration API.
 type startMigrationRequest struct {
-	Repositories       []string `json:"repositories"`
-	LockRepositories   *bool    `json:"lock_repositories,omitempty"`
-	ExcludeMetadata    *bool    `json:"exclude_metadata,omitempty"`
-	ExcludeGitData     *bool    `json:"exclude_git_data,omitempty"`
-	ExcludeAttachments *bool    `json:"exclude_attachments,omitempty"`
-	ExcludeReleases    *bool    `json:"exclude_releases,omitempty"`
+	Repositories         []string `json:"repositories"`
+	LockRepositories     *bool    `json:"lock_repositories,omitempty"`
+	ExcludeMetadata      *bool    `json:"exclude_metadata,omitempty"`
+	ExcludeGitData       *bool    `json:"exclude_git_data,omitempty"`
+	ExcludeAttachments   *bool    `json:"exclude_attachments,omitempty"`
+	ExcludeReleases      *bool    `json:"exclude_releases,omitempty"`
+	ExcludeOwnerProjects *bool    `json:"exclude_owner_projects,omitempty"`
 }
 
 // StartMigrationWithOptions starts a migration archive generation with extended options.
@@ -826,12 +829,13 @@ type startMigrationRequest struct {
 // See: https://docs.github.com/en/rest/migrations/orgs#start-an-organization-migration
 func (c *Client) StartMigrationWithOptions(ctx context.Context, org string, opts StartMigrationOptions) (*github.Migration, error) {
 	body := &startMigrationRequest{
-		Repositories:       opts.Repositories,
-		LockRepositories:   github.Ptr(opts.LockRepositories),
-		ExcludeMetadata:    github.Ptr(opts.ExcludeMetadata),
-		ExcludeGitData:     github.Ptr(opts.ExcludeGitData),
-		ExcludeAttachments: github.Ptr(opts.ExcludeAttachments),
-		ExcludeReleases:    github.Ptr(opts.ExcludeReleases),
+		Repositories:         opts.Repositories,
+		LockRepositories:     github.Ptr(opts.LockRepositories),
+		ExcludeMetadata:      github.Ptr(opts.ExcludeMetadata),
+		ExcludeGitData:       github.Ptr(opts.ExcludeGitData),
+		ExcludeAttachments:   github.Ptr(opts.ExcludeAttachments),
+		ExcludeReleases:      github.Ptr(opts.ExcludeReleases),
+		ExcludeOwnerProjects: github.Ptr(opts.ExcludeOwnerProjects),
 	}
 
 	var migration *github.Migration
