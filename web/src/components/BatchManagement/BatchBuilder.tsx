@@ -37,6 +37,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const [destinationOrg, setDestinationOrg] = useState('');
   const [migrationAPI, setMigrationAPI] = useState<'GEI' | 'ELM'>('GEI');
   const [excludeReleases, setExcludeReleases] = useState(false);
+  const [excludeAttachments, setExcludeAttachments] = useState(false);
   
   // Organization list for autocomplete
   const [organizations, setOrganizations] = useState<string[]>([]);
@@ -115,6 +116,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       setDestinationOrg(batchData.destination_org || '');
       setMigrationAPI(batchData.migration_api || 'GEI');
       setExcludeReleases(batchData.exclude_releases || false);
+      setExcludeAttachments(batchData.exclude_attachments || false);
     }
   }, [batch]);
 
@@ -505,6 +507,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           destination_org: destinationOrg.trim() || undefined,
           migration_api: migrationAPI,
           exclude_releases: excludeReleases,
+          exclude_attachments: excludeAttachments,
         });
         
         // Update repositories - add new ones, remove old ones
@@ -536,6 +539,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           destination_org: destinationOrg.trim() || undefined,
           migration_api: migrationAPI,
           exclude_releases: excludeReleases,
+          exclude_attachments: excludeAttachments,
         });
         
         batchId = newBatch.id;
@@ -1037,7 +1041,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 <span>Migration Settings</span>
-                {(destinationOrg || excludeReleases || migrationAPI !== 'GEI') && (
+                {(destinationOrg || excludeReleases || excludeAttachments || migrationAPI !== 'GEI') && (
                   <span 
                     className="px-1.5 py-0.5 text-xs rounded-full font-medium"
                     style={{
@@ -1045,7 +1049,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                       color: 'var(--fgColor-accent)'
                     }}
                   >
-                    {[destinationOrg ? 1 : 0, excludeReleases ? 1 : 0, migrationAPI !== 'GEI' ? 1 : 0].reduce((a, b) => a + b, 0)} configured
+                    {[destinationOrg ? 1 : 0, excludeReleases ? 1 : 0, excludeAttachments ? 1 : 0, migrationAPI !== 'GEI' ? 1 : 0].reduce((a, b) => a + b, 0)} configured
                   </span>
                 )}
               </div>
@@ -1124,6 +1128,22 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
                   <label htmlFor="exclude-releases" className="text-xs cursor-pointer" style={{ color: 'var(--fgColor-default)' }}>
                     <span className="font-semibold">Exclude Releases</span>
                     <span className="block mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>Skip releases during migration (repo settings override)</span>
+                  </label>
+                </div>
+
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="exclude-attachments"
+                    checked={excludeAttachments}
+                    onChange={(e) => setExcludeAttachments(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    style={{ borderColor: 'var(--borderColor-default)' }}
+                    disabled={loading}
+                  />
+                  <label htmlFor="exclude-attachments" className="text-xs cursor-pointer" style={{ color: 'var(--fgColor-default)' }}>
+                    <span className="font-semibold">Exclude Attachments</span>
+                    <span className="block mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>Skip file attachments (images, files attached to Issues/PRs) to reduce archive size (repo settings override)</span>
                   </label>
                 </div>
               </div>

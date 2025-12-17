@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -35,8 +36,50 @@ const (
 
 // Status constants
 const (
-	statusFailed = "failed"
+	statusFailed   = "failed"
+	statusExported = "exported"
 )
+
+// Adaptive polling configuration - preserves rate limits for long-running migrations
+const (
+	// Archive polling intervals
+	archiveInitialInterval   = 30 * time.Second // Initial polling interval
+	archiveMaxInterval       = 5 * time.Minute  // Maximum polling interval (don't poll slower than this)
+	archiveFastPhaseDuration = 10 * time.Minute // Duration of fast polling phase
+	archiveTimeout           = 24 * time.Hour   // Maximum time to wait for archive generation
+
+	// Migration status polling intervals
+	migrationInitialInterval   = 30 * time.Second // Initial polling interval
+	migrationMaxInterval       = 10 * time.Minute // Maximum polling interval
+	migrationFastPhaseDuration = 15 * time.Minute // Duration of fast polling phase
+	migrationTimeout           = 48 * time.Hour   // Maximum time to wait for migration
+
+	// Backoff multiplier (interval grows by this factor each iteration after fast phase)
+	pollingBackoffMultiplier = 1.5
+)
+
+// calculateAdaptivePollInterval returns the appropriate polling interval based on elapsed time.
+// During the fast phase, it returns the initial interval to catch quick completions.
+// After the fast phase, it applies exponential backoff up to the maximum interval.
+func calculateAdaptivePollInterval(elapsed, initial, max, fastPhaseDuration time.Duration) time.Duration {
+	// During fast phase, use initial interval for quick polling
+	if elapsed < fastPhaseDuration {
+		return initial
+	}
+
+	// Calculate how many intervals have passed since fast phase ended
+	timeSinceFastPhase := elapsed - fastPhaseDuration
+	iterationsSinceFastPhase := float64(timeSinceFastPhase) / float64(initial)
+
+	// Apply exponential backoff: initial * (multiplier ^ iterations)
+	interval := float64(initial) * math.Pow(pollingBackoffMultiplier, iterationsSinceFastPhase)
+
+	// Cap at maximum interval
+	if time.Duration(interval) > max {
+		return max
+	}
+	return time.Duration(interval)
+}
 
 // Visibility constants
 const (
@@ -226,6 +269,28 @@ func (e *Executor) shouldExcludeReleases(repo *models.Repository, batch *models.
 	return false
 }
 
+// shouldExcludeAttachments determines whether to exclude attachments during migration
+// Precedence: repo.ExcludeAttachments OR batch.ExcludeAttachments (either can enable it)
+func (e *Executor) shouldExcludeAttachments(repo *models.Repository, batch *models.Batch) bool {
+	// If repo explicitly excludes attachments, honor it
+	if repo.ExcludeAttachments {
+		return true
+	}
+
+	// Check batch-level setting if available
+	if batch != nil && batch.ExcludeAttachments {
+		return true
+	}
+
+	return false
+}
+
+// ArchiveIDs holds the migration IDs for both git and metadata archives
+type ArchiveIDs struct {
+	GitArchiveID      int64
+	MetadataArchiveID int64
+}
+
 // determineTargetVisibility determines the target visibility based on source visibility and config
 func (e *Executor) determineTargetVisibility(sourceVisibility string) string {
 	switch strings.ToLower(sourceVisibility) {
@@ -371,10 +436,28 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 		return fmt.Errorf("source client is required for GitHub-to-GitHub migrations")
 	}
 
+	// Determine effective migration flags (repo settings take precedence over batch settings)
+	excludeReleases := e.shouldExcludeReleases(repo, batch)
+	excludeAttachments := e.shouldExcludeAttachments(repo, batch)
+	lockRepositories := !dryRun
+
 	e.logger.Info("Starting migration",
 		"repo", repo.FullName,
 		"dry_run", dryRun,
 		"has_batch", batch != nil)
+
+	// Log all migration flags for observability and audit
+	e.logger.Info("Migration flags",
+		"repo", repo.FullName,
+		"dry_run", dryRun,
+		"lock_repositories", lockRepositories,
+		"exclude_releases", excludeReleases,
+		"exclude_attachments", excludeAttachments,
+		"archive_mode", "separate",
+		"repo_exclude_releases", repo.ExcludeReleases,
+		"repo_exclude_attachments", repo.ExcludeAttachments,
+		"batch_exclude_releases", batch != nil && batch.ExcludeReleases,
+		"batch_exclude_attachments", batch != nil && batch.ExcludeAttachments)
 
 	// Create migration history record
 	historyID, err := e.createMigrationHistory(ctx, repo, dryRun)
@@ -385,6 +468,11 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	// Log operation
 	e.logOperation(ctx, repo, historyID, "INFO", "migration", "start",
 		fmt.Sprintf("Starting %s for repository", map[bool]string{true: "dry run", false: "migration"}[dryRun]), nil)
+
+	// Log migration flags to history for audit trail
+	flagsDetails := fmt.Sprintf("lock_repositories=%v, exclude_releases=%v, exclude_attachments=%v, archive_mode=separate",
+		lockRepositories, excludeReleases, excludeAttachments)
+	e.logOperation(ctx, repo, historyID, "INFO", "migration", "flags", "Migration flags configured", &flagsDetails)
 
 	// Phase 1: Pre-migration validation
 	e.logger.Info("Running pre-migration validation", "repo", repo.FullName)
@@ -445,9 +533,9 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 
 	e.logger.Info("Generating archives on source repository", "repo", repo.FullName, "mode", migrationMode)
 	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "initiate",
-		fmt.Sprintf("Initiating archive generation on %s (%s)", e.sourceClient.BaseURL(), migrationMode), nil)
+		fmt.Sprintf("Initiating archive generation on %s with options: exclude_releases=%v, exclude_attachments=%v (%s)", e.sourceClient.BaseURL(), excludeReleases, excludeAttachments, migrationMode), nil)
 
-	archiveID, err := e.generateArchivesOnGHES(ctx, repo, lockRepos)
+	archiveIDs, err := e.generateArchivesOnGHES(ctx, repo, batch, lockRepos)
 	if err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "archive_generation", "initiate", "Failed to generate archives", &errMsg)
@@ -471,23 +559,25 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 		return fmt.Errorf("failed to generate archives: %w", err)
 	}
 
-	details := fmt.Sprintf("Archive ID: %d", archiveID)
+	details := fmt.Sprintf("Git Archive ID: %d, Metadata Archive ID: %d", archiveIDs.GitArchiveID, archiveIDs.MetadataArchiveID)
 	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "initiate", "Archive generation initiated successfully", &details)
 
 	repo.Status = string(models.StatusArchiveGenerating)
-	// Track migration ID and lock status for production migrations
-	migID := archiveID
+	// Track migration ID and lock status for production migrations (use git archive ID as primary)
+	migID := archiveIDs.GitArchiveID
 	repo.SourceMigrationID = &migID
 	repo.IsSourceLocked = lockRepos
 	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
 		e.logger.Error("Failed to update repository status", "error", err)
 	}
 
-	// Phase 3: Poll for archive generation completion
-	e.logger.Info("Polling archive generation status", "repo", repo.FullName, "archive_id", archiveID)
+	// Phase 3: Poll for archive generation completion (both git and metadata archives)
+	e.logger.Info("Polling archive generation status", "repo", repo.FullName,
+		"git_archive_id", archiveIDs.GitArchiveID,
+		"metadata_archive_id", archiveIDs.MetadataArchiveID)
 	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "poll", "Polling for archive generation completion", nil)
 
-	archiveURLs, err := e.pollArchiveGeneration(ctx, repo, historyID, archiveID)
+	archiveURLs, err := e.pollArchiveGeneration(ctx, repo, historyID, archiveIDs)
 	if err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, repo, historyID, "ERROR", "archive_generation", "poll", "Archive generation failed", &errMsg)
@@ -619,121 +709,245 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	return e.storage.UpdateRepository(ctx, repo)
 }
 
-// generateArchivesOnGHES creates migration archives on GHES using REST API
-func (e *Executor) generateArchivesOnGHES(ctx context.Context, repo *models.Repository, lockRepositories bool) (int64, error) {
-	opt := &ghapi.MigrationOptions{
-		LockRepositories:   lockRepositories,
-		ExcludeAttachments: false,
-		ExcludeReleases:    false,
-	}
+// generateArchivesOnGHES creates separate git and metadata migration archives on GHES using REST API.
+// This generates two archives: one for git data only (exclude_metadata=true) and one for metadata only (exclude_git_data=true).
+// This approach helps with large repositories by keeping each archive smaller and more manageable.
+func (e *Executor) generateArchivesOnGHES(ctx context.Context, repo *models.Repository, batch *models.Batch, lockRepositories bool) (*ArchiveIDs, error) {
+	// Determine exclusion flags from repo and batch settings
+	excludeReleases := e.shouldExcludeReleases(repo, batch)
+	excludeAttachments := e.shouldExcludeAttachments(repo, batch)
 
-	// Check if we need to exclude releases due to size
-	if repo.TotalSize != nil && *repo.TotalSize > 10*1024*1024*1024 { // >10GB
-		opt.ExcludeReleases = true
+	// Check if we need to exclude releases due to size (override if not already set)
+	if !excludeReleases && repo.TotalSize != nil && *repo.TotalSize > 10*1024*1024*1024 { // >10GB
+		excludeReleases = true
 		e.logger.Info("Excluding releases due to repository size", "repo", repo.FullName, "size", *repo.TotalSize)
 	}
 
-	var migration *ghapi.Migration
-	var err error
+	e.logger.Info("Generating separate git and metadata archives",
+		"repo", repo.FullName,
+		"lock_repositories", lockRepositories,
+		"exclude_releases", excludeReleases,
+		"exclude_attachments", excludeAttachments)
 
-	_, err = e.sourceClient.DoWithRetry(ctx, "StartMigration", func(ctx context.Context) (*ghapi.Response, error) {
-		var resp *ghapi.Response
-		migration, resp, err = e.sourceClient.REST().Migrations.StartMigration(
-			ctx,
-			repo.Organization(),
-			[]string{repo.Name()},
-			opt,
-		)
-		return resp, err
-	})
+	// Generate git-only archive (exclude_metadata=true, exclude_git_data=false)
+	// Per GitHub docs: { "repositories": [...], "exclude_metadata": true }
+	gitOpts := github.StartMigrationOptions{
+		Repositories:         []string{repo.Name()},
+		LockRepositories:     lockRepositories,
+		ExcludeMetadata:      true,  // Git-only archive
+		ExcludeGitData:       false, // Include git data
+		ExcludeAttachments:   false, // Attachments are metadata, not relevant for git archive
+		ExcludeReleases:      false, // Release assets are metadata, git archive only has tags
+		ExcludeOwnerProjects: true,  // Owner projects are not relevant for git archive
+	}
 
+	gitMigration, err := e.sourceClient.StartMigrationWithOptions(ctx, repo.Organization(), gitOpts)
 	if err != nil {
-		return 0, fmt.Errorf("failed to start migration for repository %s: %w", repo.FullName, err)
+		return nil, fmt.Errorf("failed to start git archive generation for repository %s: %w", repo.FullName, err)
 	}
 
-	if migration == nil || migration.ID == nil {
-		return 0, fmt.Errorf("invalid migration response from source: received nil migration or nil migration ID")
+	if gitMigration == nil || gitMigration.ID == nil {
+		return nil, fmt.Errorf("invalid git migration response from source: received nil migration or nil migration ID")
 	}
 
-	return *migration.ID, nil
+	e.logger.Info("Git archive generation started",
+		"repo", repo.FullName,
+		"git_archive_id", *gitMigration.ID)
+
+	// CRITICAL: Set SourceMigrationID immediately after git archive is created.
+	// This ensures the repository can be unlocked if metadata archive generation fails.
+	// The git archive locks the repository, so we must track the migration ID before proceeding.
+	if lockRepositories {
+		gitMigrationID := *gitMigration.ID
+		repo.SourceMigrationID = &gitMigrationID
+		repo.IsSourceLocked = true
+		if err := e.storage.UpdateRepository(ctx, repo); err != nil {
+			e.logger.Error("Failed to persist source migration ID after git archive creation",
+				"error", err,
+				"repo", repo.FullName,
+				"git_archive_id", gitMigrationID)
+			// Continue anyway - the migration ID is in memory and can be used for unlock
+		}
+	}
+
+	// Generate metadata-only archive (exclude_metadata=false, exclude_git_data=true)
+	// Per GitHub docs: { "repositories": [...], "exclude_git_data": true, "exclude_releases": false, "exclude_owner_projects": true }
+	metadataOpts := github.StartMigrationOptions{
+		Repositories:         []string{repo.Name()},
+		LockRepositories:     false, // Don't lock again for metadata archive
+		ExcludeMetadata:      false, // Include metadata
+		ExcludeGitData:       true,  // Metadata-only archive
+		ExcludeAttachments:   excludeAttachments,
+		ExcludeReleases:      excludeReleases, // User preference (docs show false as default)
+		ExcludeOwnerProjects: true,            // Per docs: exclude organization projects
+	}
+
+	metadataMigration, err := e.sourceClient.StartMigrationWithOptions(ctx, repo.Organization(), metadataOpts)
+	if err != nil {
+		// Git archive succeeded but metadata failed - repo is already locked and SourceMigrationID is set
+		// The caller's error handler will be able to unlock the repository
+		return nil, fmt.Errorf("failed to start metadata archive generation for repository %s: %w", repo.FullName, err)
+	}
+
+	if metadataMigration == nil || metadataMigration.ID == nil {
+		return nil, fmt.Errorf("invalid metadata migration response from source: received nil migration or nil migration ID")
+	}
+
+	e.logger.Info("Metadata archive generation started",
+		"repo", repo.FullName,
+		"metadata_archive_id", *metadataMigration.ID)
+
+	return &ArchiveIDs{
+		GitArchiveID:      *gitMigration.ID,
+		MetadataArchiveID: *metadataMigration.ID,
+	}, nil
 }
 
-// pollArchiveGeneration polls for archive generation completion
-func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repository, historyID *int64, archiveID int64) (*ArchiveURLs, error) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+// pollArchiveGeneration polls for both git and metadata archive generation completion
+// Uses adaptive polling: fast polling initially, then backs off to preserve rate limits
+func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repository, historyID *int64, archiveIDs *ArchiveIDs) (*ArchiveURLs, error) {
+	startTime := time.Now()
+	timeoutDeadline := startTime.Add(archiveTimeout)
 
-	timeout := time.After(24 * time.Hour)
+	var gitArchiveURL, metadataArchiveURL string
+	gitDone, metadataDone := false, false
+	lastInterval := archiveInitialInterval
+
+	// Initial poll immediately
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-timeout:
-			return nil, fmt.Errorf("archive generation timeout exceeded (24 hours)")
-		case <-ticker.C:
-			var migration *ghapi.Migration
-			var err error
-
-			_, err = e.sourceClient.DoWithRetry(ctx, "MigrationStatus", func(ctx context.Context) (*ghapi.Response, error) {
-				var resp *ghapi.Response
-				migration, resp, err = e.sourceClient.REST().Migrations.MigrationStatus(
-					ctx,
-					repo.Organization(),
-					archiveID,
-				)
-				return resp, err
-			})
-
-			if err != nil {
-				return nil, fmt.Errorf("failed to check migration status: %w", err)
+		case <-timer.C:
+			// Check timeout
+			if time.Now().After(timeoutDeadline) {
+				return nil, fmt.Errorf("archive generation timeout exceeded (24 hours)")
 			}
 
-			state := migration.GetState()
-			e.logger.Debug("Archive generation status", "repo", repo.FullName, "state", state)
-
-			switch state {
-			case "exported":
-				// Archives are ready, get download URL
-				var archiveURL string
-				var urlErr error
-				_, err = e.sourceClient.DoWithRetry(ctx, "MigrationArchiveURL", func(ctx context.Context) (*ghapi.Response, error) {
-					archiveURL, urlErr = e.sourceClient.REST().Migrations.MigrationArchiveURL(
-						ctx,
-						repo.Organization(),
-						archiveID,
-					)
-					return nil, urlErr
-				})
-
+			// Poll git archive if not done
+			if !gitDone {
+				done, url, err := e.checkArchiveStatus(ctx, repo, archiveIDs.GitArchiveID, "git")
 				if err != nil {
-					return nil, fmt.Errorf("failed to get archive URL: %w", err)
+					return nil, err
 				}
-
-				return &ArchiveURLs{
-					GitSource: archiveURL,
-					Metadata:  archiveURL, // In practice, these may be separate
-				}, nil
-
-			case statusFailed:
-				// Note: The GitHub API doesn't provide failure details in the Migration struct.
-				// The migration ID can be used to investigate via the GitHub API or UI.
-				return nil, fmt.Errorf("archive generation failed for repository %s (migration ID: %d) - check source org migration status for details", repo.FullName, archiveID)
-
-			case "pending", "exporting":
-				// Continue polling
-				if historyID != nil {
-					msg := fmt.Sprintf("Archive generation in progress (state: %s)", state)
-					e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "poll", msg, nil)
+				if done {
+					gitArchiveURL = url
+					gitDone = true
 				}
-				continue
-
-			default:
-				e.logger.Warn("Unknown archive state", "state", state)
-				continue
 			}
+
+			// Poll metadata archive if not done
+			if !metadataDone {
+				done, url, err := e.checkArchiveStatus(ctx, repo, archiveIDs.MetadataArchiveID, "metadata")
+				if err != nil {
+					return nil, err
+				}
+				if done {
+					metadataArchiveURL = url
+					metadataDone = true
+				}
+			}
+
+			// Both archives ready
+			if gitDone && metadataDone {
+				elapsed := time.Since(startTime)
+				e.logger.Info("Both archives ready",
+					"repo", repo.FullName,
+					"elapsed", elapsed.Round(time.Second))
+				return &ArchiveURLs{
+					GitSource: gitArchiveURL,
+					Metadata:  metadataArchiveURL,
+				}, nil
+			}
+
+			// Calculate next polling interval using adaptive backoff
+			elapsed := time.Since(startTime)
+			nextInterval := calculateAdaptivePollInterval(elapsed, archiveInitialInterval, archiveMaxInterval, archiveFastPhaseDuration)
+
+			// Log progress with interval info (only when interval changes significantly)
+			if historyID != nil {
+				msg := fmt.Sprintf("Archive generation in progress (git: %v, metadata: %v, next_poll: %v)", gitDone, metadataDone, nextInterval.Round(time.Second))
+				e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "poll", msg, nil)
+			}
+
+			// Log when transitioning to slower polling
+			if nextInterval > lastInterval {
+				e.logger.Info("Adjusting archive poll interval",
+					"repo", repo.FullName,
+					"previous_interval", lastInterval.Round(time.Second),
+					"new_interval", nextInterval.Round(time.Second),
+					"elapsed", elapsed.Round(time.Second))
+				lastInterval = nextInterval
+			}
+
+			// Schedule next poll
+			timer.Reset(nextInterval)
 		}
 	}
+}
+
+// checkArchiveStatus checks a single archive's status and returns (done, url, error)
+func (e *Executor) checkArchiveStatus(ctx context.Context, repo *models.Repository, archiveID int64, archiveType string) (bool, string, error) {
+	state, url, err := e.pollSingleArchive(ctx, repo, archiveID)
+	if err != nil {
+		return false, "", fmt.Errorf("%s archive generation failed: %w", archiveType, err)
+	}
+	if state == statusExported {
+		e.logger.Info(fmt.Sprintf("%s archive ready", archiveType), "repo", repo.FullName, "archive_id", archiveID)
+		return true, url, nil
+	}
+	if state == statusFailed {
+		return false, "", fmt.Errorf("%s archive generation failed for repository %s (migration ID: %d)", archiveType, repo.FullName, archiveID)
+	}
+	return false, "", nil
+}
+
+// pollSingleArchive polls a single archive and returns its state and URL (if ready)
+func (e *Executor) pollSingleArchive(ctx context.Context, repo *models.Repository, archiveID int64) (string, string, error) {
+	var migration *ghapi.Migration
+	var err error
+
+	_, err = e.sourceClient.DoWithRetry(ctx, "MigrationStatus", func(ctx context.Context) (*ghapi.Response, error) {
+		var resp *ghapi.Response
+		migration, resp, err = e.sourceClient.REST().Migrations.MigrationStatus(
+			ctx,
+			repo.Organization(),
+			archiveID,
+		)
+		return resp, err
+	})
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to check migration status: %w", err)
+	}
+
+	state := migration.GetState()
+	e.logger.Debug("Archive generation status", "repo", repo.FullName, "archive_id", archiveID, "state", state)
+
+	if state == statusExported {
+		// Archive is ready, get download URL
+		var archiveURL string
+		var urlErr error
+		_, err = e.sourceClient.DoWithRetry(ctx, "MigrationArchiveURL", func(ctx context.Context) (*ghapi.Response, error) {
+			archiveURL, urlErr = e.sourceClient.REST().Migrations.MigrationArchiveURL(
+				ctx,
+				repo.Organization(),
+				archiveID,
+			)
+			return nil, urlErr
+		})
+
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get archive URL: %w", err)
+		}
+
+		return state, archiveURL, nil
+	}
+
+	return state, "", nil
 }
 
 // startRepositoryMigration starts migration on GHEC using GraphQL
@@ -845,19 +1059,26 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 }
 
 // pollMigrationStatus polls for migration completion on GHEC
+// Uses adaptive polling: fast polling initially, then backs off to preserve rate limits
 func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Repository, batch *models.Batch, historyID *int64, migrationID string) error {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	startTime := time.Now()
+	timeoutDeadline := startTime.Add(migrationTimeout)
+	lastInterval := migrationInitialInterval
 
-	timeout := time.After(48 * time.Hour) // Migrations can take longer
+	// Initial poll immediately
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("migration timeout exceeded (48 hours)")
-		case <-ticker.C:
+		case <-timer.C:
+			// Check timeout
+			if time.Now().After(timeoutDeadline) {
+				return fmt.Errorf("migration timeout exceeded (48 hours)")
+			}
+
 			var query struct {
 				Node struct {
 					Migration struct {
@@ -886,6 +1107,10 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 
 			switch state {
 			case "SUCCEEDED":
+				elapsed := time.Since(startTime)
+				e.logger.Info("Migration completed successfully",
+					"repo", repo.FullName,
+					"elapsed", elapsed.Round(time.Second))
 				repo.Status = string(models.StatusMigrationComplete)
 				// Set destination details using the correct destination org and repo name
 				destOrg := e.getDestinationOrg(repo, batch)
@@ -914,14 +1139,35 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 					e.logger.Error("Failed to update repository status", "error", err)
 				}
 
+				// Calculate next polling interval using adaptive backoff
+				elapsed := time.Since(startTime)
+				nextInterval := calculateAdaptivePollInterval(elapsed, migrationInitialInterval, migrationMaxInterval, migrationFastPhaseDuration)
+
 				if historyID != nil {
-					msg := fmt.Sprintf("Migration in progress (state: %s)", state)
+					msg := fmt.Sprintf("Migration in progress (state: %s, next_poll: %v)", state, nextInterval.Round(time.Second))
 					e.logOperation(ctx, repo, historyID, "INFO", "migration_progress", "poll", msg, nil)
 				}
+
+				// Log when transitioning to slower polling
+				if nextInterval > lastInterval {
+					e.logger.Info("Adjusting migration poll interval",
+						"repo", repo.FullName,
+						"previous_interval", lastInterval.Round(time.Second),
+						"new_interval", nextInterval.Round(time.Second),
+						"elapsed", elapsed.Round(time.Second))
+					lastInterval = nextInterval
+				}
+
+				// Schedule next poll
+				timer.Reset(nextInterval)
 				continue
 
 			default:
 				e.logger.Warn("Unknown migration state", "state", state)
+				// Calculate next polling interval even for unknown states
+				elapsed := time.Since(startTime)
+				nextInterval := calculateAdaptivePollInterval(elapsed, migrationInitialInterval, migrationMaxInterval, migrationFastPhaseDuration)
+				timer.Reset(nextInterval)
 				continue
 			}
 		}
