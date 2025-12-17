@@ -194,6 +194,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 		"workflow_count":               repo.WorkflowCount,
 		"collaborator_count":           repo.CollaboratorCount,
 		"installed_apps_count":         repo.InstalledAppsCount,
+		"installed_apps":               repo.InstalledApps,
 		"release_count":                repo.ReleaseCount,
 		"oversized_commit_details":     repo.OversizedCommitDetails,
 		"long_ref_details":             repo.LongRefDetails,
