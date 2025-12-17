@@ -325,7 +325,36 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
               <ProfileItem label="Outside Collaborators" value={repository.collaborator_count} />
             )}
             {repository.installed_apps_count > 0 && (
-              <ProfileItem label="GitHub Apps" value={repository.installed_apps_count} />
+              <ProfileItem 
+                label="GitHub Apps" 
+                value={(() => {
+                  // Try to show app slugs if available
+                  if (repository.installed_apps) {
+                    try {
+                      const apps: string[] = JSON.parse(repository.installed_apps);
+                      if (apps.length > 0) {
+                        return (
+                          <div className="flex flex-wrap gap-1.5 justify-end">
+                            {apps.map((app, idx) => (
+                              <code 
+                                key={idx}
+                                className="px-2 py-0.5 text-xs rounded"
+                                style={{ backgroundColor: 'var(--bgColor-muted)' }}
+                              >
+                                {app}
+                              </code>
+                            ))}
+                          </div>
+                        );
+                      }
+                    } catch {
+                      // Fall through to count display
+                    }
+                  }
+                  // Fallback to just showing the count
+                  return repository.installed_apps_count;
+                })()} 
+              />
             )}
           </>
         )}

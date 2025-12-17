@@ -70,9 +70,10 @@ type Repository struct {
 	WorkflowCount int    `json:"workflow_count" db:"workflow_count" gorm:"column:workflow_count;default:0"`
 
 	// Infrastructure & Access
-	HasSelfHostedRunners bool `json:"has_self_hosted_runners" db:"has_self_hosted_runners" gorm:"column:has_self_hosted_runners;default:false"`
-	CollaboratorCount    int  `json:"collaborator_count" db:"collaborator_count" gorm:"column:collaborator_count;default:0"`
-	InstalledAppsCount   int  `json:"installed_apps_count" db:"installed_apps_count" gorm:"column:installed_apps_count;default:0"`
+	HasSelfHostedRunners bool    `json:"has_self_hosted_runners" db:"has_self_hosted_runners" gorm:"column:has_self_hosted_runners;default:false"`
+	CollaboratorCount    int     `json:"collaborator_count" db:"collaborator_count" gorm:"column:collaborator_count;default:0"`
+	InstalledAppsCount   int     `json:"installed_apps_count" db:"installed_apps_count" gorm:"column:installed_apps_count;default:0"`
+	InstalledApps        *string `json:"installed_apps,omitempty" db:"installed_apps" gorm:"column:installed_apps;type:text"` // JSON array of app names
 
 	// Releases
 	ReleaseCount     int  `json:"release_count" db:"release_count" gorm:"column:release_count;default:0"`
@@ -375,9 +376,10 @@ type Batch struct {
 	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
 
 	// Migration Settings (batch-level defaults, repository settings take precedence)
-	DestinationOrg  *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`        // Default destination org for repositories in this batch
-	MigrationAPI    string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`               // Migration API to use: "GEI" or "ELM" (default: "GEI")
-	ExcludeReleases bool    `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"` // Skip releases during migration (applies if repo doesn't override)
+	DestinationOrg     *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`                 // Default destination org for repositories in this batch
+	MigrationAPI       string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`                        // Migration API to use: "GEI" or "ELM" (default: "GEI")
+	ExcludeReleases    bool    `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"`          // Skip releases during migration (applies if repo doesn't override)
+	ExcludeAttachments bool    `json:"exclude_attachments" db:"exclude_attachments" gorm:"column:exclude_attachments;default:false"` // Skip attachments during migration (applies if repo doesn't override)
 }
 
 // TableName specifies the table name for Batch model

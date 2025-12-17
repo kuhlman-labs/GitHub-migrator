@@ -45,6 +45,7 @@ export interface Repository {
   has_self_hosted_runners: boolean;
   collaborator_count: number;
   installed_apps_count: number;
+  installed_apps?: string; // JSON array of app names
   // Releases
   release_count: number;
   has_release_assets: boolean;
@@ -213,6 +214,7 @@ export interface Batch {
   destination_org?: string;
   migration_api?: 'GEI' | 'ELM';
   exclude_releases?: boolean;
+  exclude_attachments?: boolean;
 }
 
 // Helper function to calculate batch duration in seconds
