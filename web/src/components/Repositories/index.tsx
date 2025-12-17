@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button } from '@primer/react';
+import { Button, Dialog, FormControl, TextInput, Flash } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { RepoIcon, DownloadIcon, ChevronDownIcon, SquareIcon, XIcon } from '@primer/octicons-react';
 import type { RepositoryFilters } from '../../types';
@@ -8,6 +8,7 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
 import { useRepositories } from '../../hooks/useQueries';
+import { useDiscoverRepositories } from '../../hooks/useMutations';
 import { searchParamsToFilters, filtersToSearchParams } from '../../utils/filters';
 import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
 import { RepositoryCard } from './RepositoryCard';
@@ -25,10 +26,14 @@ export function Repositories() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<Set<number>>(new Set());
+  const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
+  const [discoverOrg, setDiscoverOrg] = useState('');
+  const [discoverMessage, setDiscoverMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const pageSize = 12;
   
   // Fetch repositories with filters
   const { data, isLoading, isFetching} = useRepositories(urlFilters);
+  const discoverRepositories = useDiscoverRepositories();
   const repositories = data?.repositories || [];
 
   // Selection helpers
@@ -274,14 +279,27 @@ export function Repositories() {
                     Clear All Filters
                   </Button>
                 )}
+                
+                {/* Discover Repos Button */}
+                <Button
+                  variant="invisible"
+                  onClick={() => setShowDiscoverDialog(true)}
+                  leadingVisual={RepoIcon}
+                  disabled={discoverRepositories.isPending}
+                  className="btn-bordered-invisible"
+                >
+                  {discoverRepositories.isPending ? 'Discovering...' : 'Discover Repos'}
+                </Button>
+
                 {/* Export Button with Dropdown */}
                 <div className="relative">
                   <Button
+                    variant="invisible"
                     onClick={() => setShowExportMenu(!showExportMenu)}
                     disabled={repositories.length === 0}
                     leadingVisual={DownloadIcon}
                     trailingVisual={ChevronDownIcon}
-                    variant="primary"
+                    className="btn-bordered-invisible"
                   >
                     Export
                   </Button>
@@ -385,6 +403,72 @@ export function Repositories() {
           selectedIds={Array.from(selectedRepositoryIds)}
           onClearSelection={clearSelection}
         />
+      )}
+
+      {/* Discover Repos Dialog */}
+      {showDiscoverDialog && (
+        <Dialog
+          title="Discover Repositories"
+          onClose={() => {
+            setShowDiscoverDialog(false);
+            setDiscoverOrg('');
+            setDiscoverMessage(null);
+          }}
+        >
+          <div className="p-4">
+            {discoverMessage && (
+              <Flash variant={discoverMessage.type === 'success' ? 'success' : 'danger'} className="mb-4">
+                {discoverMessage.text}
+              </Flash>
+            )}
+            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+              Discover all repositories from a GitHub organization. This will start repository discovery and profiling.
+            </p>
+            <FormControl>
+              <FormControl.Label>Source Organization</FormControl.Label>
+              <TextInput
+                value={discoverOrg}
+                onChange={(e) => setDiscoverOrg(e.target.value)}
+                placeholder="e.g., my-org"
+                block
+              />
+              <FormControl.Caption>
+                Enter the GitHub organization to discover repositories from
+              </FormControl.Caption>
+            </FormControl>
+          </div>
+          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+            <Button onClick={() => {
+              setShowDiscoverDialog(false);
+              setDiscoverOrg('');
+              setDiscoverMessage(null);
+            }}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (!discoverOrg.trim()) return;
+                discoverRepositories.mutate(discoverOrg.trim(), {
+                  onSuccess: (data) => {
+                    setDiscoverMessage({ type: 'success', text: data.message || 'Discovery started!' });
+                    setDiscoverOrg('');
+                    setTimeout(() => {
+                      setShowDiscoverDialog(false);
+                      setDiscoverMessage(null);
+                    }, 2000);
+                  },
+                  onError: (error) => {
+                    setDiscoverMessage({ type: 'error', text: error instanceof Error ? error.message : 'Discovery failed' });
+                  },
+                });
+              }}
+              disabled={discoverRepositories.isPending || !discoverOrg.trim()}
+            >
+              {discoverRepositories.isPending ? 'Discovering...' : 'Discover'}
+            </Button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

@@ -79,12 +79,20 @@ export function MigrationReadinessTab({
 
   // Migration options state
   const [excludeReleases, setExcludeReleases] = useState(repository.exclude_releases);
+  const [excludeAttachments, setExcludeAttachments] = useState(repository.exclude_attachments);
   const [savingOptions, setSavingOptions] = useState(false);
-  const hasOptionsChanges = excludeReleases !== repository.exclude_releases;
+  const hasOptionsChanges = excludeReleases !== repository.exclude_releases || excludeAttachments !== repository.exclude_attachments;
   const [showMigrationOptionsInfo, setShowMigrationOptionsInfo] = useState(false);
+
+  // Sync state when repository prop changes (e.g., after save + refetch)
+  useEffect(() => {
+    setExcludeReleases(repository.exclude_releases);
+    setExcludeAttachments(repository.exclude_attachments);
+  }, [repository.exclude_releases, repository.exclude_attachments]);
 
   // Validation state
   const [expandedValidation, setExpandedValidation] = useState(false);
+  const [expandedFactors, setExpandedFactors] = useState(false);
   
   // Determine validation status
   const hasBlockingIssues = repository.has_oversized_repository || 
@@ -192,7 +200,8 @@ export function MigrationReadinessTab({
     setSavingOptions(true);
     try {
       await api.updateRepository(repository.full_name, {
-        exclude_releases: excludeReleases
+        exclude_releases: excludeReleases,
+        exclude_attachments: excludeAttachments
       });
       
       // Invalidate queries to refresh the data
@@ -339,7 +348,7 @@ export function MigrationReadinessTab({
             <div className="space-y-2">
               <h4 className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>Contributing Factors:</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {complexityContributors.slice(0, 8).map((contributor, idx) => (
+                {(expandedFactors ? complexityContributors : complexityContributors.slice(0, 8)).map((contributor, idx) => (
                   <div 
                     key={idx} 
                     className="flex justify-between items-center py-2 px-3 rounded"
@@ -366,9 +375,15 @@ export function MigrationReadinessTab({
                 ))}
               </div>
               {complexityContributors.length > 8 && (
-                <p className="text-xs mt-2" style={{ color: 'var(--fgColor-muted)' }}>
-                  ... and {complexityContributors.length - 8} more factors
-                </p>
+                <button 
+                  onClick={() => setExpandedFactors(!expandedFactors)}
+                  className="text-xs mt-2 hover:underline cursor-pointer"
+                  style={{ color: 'var(--fgColor-accent)' }}
+                >
+                  {expandedFactors 
+                    ? 'Show less' 
+                    : `... and ${complexityContributors.length - 8} more factors`}
+                </button>
               )}
             </div>
           )}
@@ -622,6 +637,22 @@ export function MigrationReadinessTab({
                 </div>
               </FormControl>
 
+              <FormControl>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={excludeAttachments}
+                    onChange={(e) => setExcludeAttachments(e.target.checked)}
+                    value="exclude-attachments"
+                  />
+                  <div className="flex-1">
+                    <FormControl.Label>Exclude attachments</FormControl.Label>
+                    <FormControl.Caption>
+                      Skip file attachments (images, files attached to Issues/PRs). Useful for repositories with many attachments to reduce migration archive size.
+                    </FormControl.Caption>
+                  </div>
+                </div>
+              </FormControl>
+
               {hasOptionsChanges && (
                 <div className="flex gap-2 pt-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
                   <Button
@@ -633,7 +664,10 @@ export function MigrationReadinessTab({
                     {savingOptions ? 'Saving...' : 'Save Changes'}
                   </Button>
                   <Button
-                    onClick={() => setExcludeReleases(repository.exclude_releases)}
+                    onClick={() => {
+                      setExcludeReleases(repository.exclude_releases);
+                      setExcludeAttachments(repository.exclude_attachments);
+                    }}
                     disabled={savingOptions}
                     variant="default"
                     size="small"
@@ -690,6 +724,35 @@ export function MigrationReadinessTab({
                     >
                       <p className="text-xs" style={{ color: 'var(--fgColor-accent)' }}>
                         <strong>Note:</strong> Release tags and their associated commit history will still be migrated, but release notes and assets will not be included.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div 
+                    className="pl-4 py-2 mt-4"
+                    style={{ borderLeft: '4px solid var(--accent-emphasis)' }}
+                  >
+                    <h4 className="font-semibold text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>Exclude attachments</h4>
+                    <p className="text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                      When enabled, this option skips migrating file attachments from Issues and Pull Requests during the migration process.
+                    </p>
+                    <p className="text-sm mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                      <strong>Use this option when:</strong>
+                    </p>
+                    <ul className="list-disc pl-5 text-sm space-y-1 mb-2" style={{ color: 'var(--fgColor-default)' }}>
+                      <li>Your repository has many images or files attached to Issues/PRs</li>
+                      <li>Attachments are stored elsewhere or are not critical</li>
+                      <li>You want to reduce migration archive size</li>
+                    </ul>
+                    <div 
+                      className="rounded-md p-3 mt-3"
+                      style={{
+                        backgroundColor: 'var(--accent-subtle)',
+                        border: '1px solid var(--borderColor-accent-muted)'
+                      }}
+                    >
+                      <p className="text-xs" style={{ color: 'var(--fgColor-accent)' }}>
+                        <strong>Note:</strong> Issue and PR content will still be migrated, but embedded images and attached files will not be included.
                       </p>
                     </div>
                   </div>

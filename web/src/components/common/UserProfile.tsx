@@ -1,6 +1,7 @@
 import { useAuth } from '../../contexts/AuthContext';
-import { Avatar, ActionMenu, ActionList, useTheme } from '@primer/react';
+import { ActionMenu, ActionList, useTheme } from '@primer/react';
 import { MarkGithubIcon, SignOutIcon, SunIcon, MoonIcon } from '@primer/octicons-react';
+import { FallbackAvatar } from './FallbackAvatar';
 
 const THEME_STORAGE_KEY = 'primer-theme-mode';
 
@@ -36,11 +37,7 @@ export function UserProfile() {
       <ActionMenu>
         <ActionMenu.Anchor>
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80">
-            <Avatar 
-              src="https://avatars.githubusercontent.com/u/0?v=4" 
-              size={32} 
-              alt="Guest User" 
-            />
+            <FallbackAvatar login="guest" size={32} />
             <span className="text-sm font-semibold hidden md:inline">Guest</span>
           </div>
         </ActionMenu.Anchor>
@@ -76,7 +73,7 @@ export function UserProfile() {
     <ActionMenu>
       <ActionMenu.Anchor>
         <div className="flex items-center gap-2 cursor-pointer hover:opacity-80">
-          <Avatar src={user.avatar_url} size={32} alt={user.login} />
+          <FallbackAvatar src={user.avatar_url} login={user.login} size={32} />
             <span className="text-sm font-semibold hidden md:inline" style={{ color: 'var(--fgColor-default)' }}>
           {user.login}
         </span>

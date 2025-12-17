@@ -60,14 +60,20 @@ type Repository struct {
 	HasSecretScanning bool `json:"has_secret_scanning" db:"has_secret_scanning" gorm:"column:has_secret_scanning;default:false"`
 	HasCodeowners     bool `json:"has_codeowners" db:"has_codeowners" gorm:"column:has_codeowners;default:false"`
 
+	// CODEOWNERS details (populated when HasCodeowners is true)
+	CodeownersContent *string `json:"codeowners_content,omitempty" db:"codeowners_content" gorm:"column:codeowners_content;type:text"` // Raw CODEOWNERS file content
+	CodeownersTeams   *string `json:"codeowners_teams,omitempty" db:"codeowners_teams" gorm:"column:codeowners_teams;type:text"`       // JSON array of team references (e.g., ["@org/team1", "@org/team2"])
+	CodeownersUsers   *string `json:"codeowners_users,omitempty" db:"codeowners_users" gorm:"column:codeowners_users;type:text"`       // JSON array of user references (e.g., ["@user1", "@user2"])
+
 	// Repository Settings
 	Visibility    string `json:"visibility" db:"visibility" gorm:"column:visibility"` // "public", "private", "internal"
 	WorkflowCount int    `json:"workflow_count" db:"workflow_count" gorm:"column:workflow_count;default:0"`
 
 	// Infrastructure & Access
-	HasSelfHostedRunners bool `json:"has_self_hosted_runners" db:"has_self_hosted_runners" gorm:"column:has_self_hosted_runners;default:false"`
-	CollaboratorCount    int  `json:"collaborator_count" db:"collaborator_count" gorm:"column:collaborator_count;default:0"`
-	InstalledAppsCount   int  `json:"installed_apps_count" db:"installed_apps_count" gorm:"column:installed_apps_count;default:0"`
+	HasSelfHostedRunners bool    `json:"has_self_hosted_runners" db:"has_self_hosted_runners" gorm:"column:has_self_hosted_runners;default:false"`
+	CollaboratorCount    int     `json:"collaborator_count" db:"collaborator_count" gorm:"column:collaborator_count;default:0"`
+	InstalledAppsCount   int     `json:"installed_apps_count" db:"installed_apps_count" gorm:"column:installed_apps_count;default:0"`
+	InstalledApps        *string `json:"installed_apps,omitempty" db:"installed_apps" gorm:"column:installed_apps;type:text"` // JSON array of app names
 
 	// Releases
 	ReleaseCount     int  `json:"release_count" db:"release_count" gorm:"column:release_count;default:0"`
@@ -370,9 +376,10 @@ type Batch struct {
 	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
 
 	// Migration Settings (batch-level defaults, repository settings take precedence)
-	DestinationOrg  *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`        // Default destination org for repositories in this batch
-	MigrationAPI    string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`               // Migration API to use: "GEI" or "ELM" (default: "GEI")
-	ExcludeReleases bool    `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"` // Skip releases during migration (applies if repo doesn't override)
+	DestinationOrg     *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`                 // Default destination org for repositories in this batch
+	MigrationAPI       string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`                        // Migration API to use: "GEI" or "ELM" (default: "GEI")
+	ExcludeReleases    bool    `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"`          // Skip releases during migration (applies if repo doesn't override)
+	ExcludeAttachments bool    `json:"exclude_attachments" db:"exclude_attachments" gorm:"column:exclude_attachments;default:false"` // Skip attachments during migration (applies if repo doesn't override)
 }
 
 // TableName specifies the table name for Batch model
@@ -477,4 +484,169 @@ type GitHubTeamRepository struct {
 // TableName specifies the table name for GitHubTeamRepository model
 func (GitHubTeamRepository) TableName() string {
 	return "github_team_repositories"
+}
+
+// GitHubTeamMember represents a member of a GitHub team
+type GitHubTeamMember struct {
+	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	TeamID       int64     `json:"team_id" db:"team_id" gorm:"column:team_id;not null;index"`
+	Login        string    `json:"login" db:"login" gorm:"column:login;not null"`
+	Role         string    `json:"role" db:"role" gorm:"column:role;not null"` // member, maintainer
+	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+}
+
+// TableName specifies the table name for GitHubTeamMember model
+func (GitHubTeamMember) TableName() string {
+	return "github_team_members"
+}
+
+// GitHubUser represents a GitHub user discovered during profiling
+// Used for user identity mapping and mannequin reclaim
+type GitHubUser struct {
+	ID             int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	Login          string    `json:"login" db:"login" gorm:"column:login;not null;uniqueIndex"`
+	Name           *string   `json:"name,omitempty" db:"name" gorm:"column:name"`
+	Email          *string   `json:"email,omitempty" db:"email" gorm:"column:email;index"`
+	AvatarURL      *string   `json:"avatar_url,omitempty" db:"avatar_url" gorm:"column:avatar_url"`
+	SourceInstance string    `json:"source_instance" db:"source_instance" gorm:"column:source_instance;not null"` // Source GitHub URL (e.g., github.company.com)
+	DiscoveredAt   time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+
+	// Contribution stats (aggregated across all repositories)
+	CommitCount     int `json:"commit_count" db:"commit_count" gorm:"column:commit_count;default:0"`
+	IssueCount      int `json:"issue_count" db:"issue_count" gorm:"column:issue_count;default:0"`
+	PRCount         int `json:"pr_count" db:"pr_count" gorm:"column:pr_count;default:0"`
+	CommentCount    int `json:"comment_count" db:"comment_count" gorm:"column:comment_count;default:0"`
+	RepositoryCount int `json:"repository_count" db:"repository_count" gorm:"column:repository_count;default:0"`
+}
+
+// TableName specifies the table name for GitHubUser model
+func (GitHubUser) TableName() string {
+	return "github_users"
+}
+
+// UserOrgMembership tracks which organizations a user belongs to
+// This enables organizing users by source org for mannequin reclamation
+type UserOrgMembership struct {
+	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	UserLogin    string    `json:"user_login" db:"user_login" gorm:"column:user_login;not null;uniqueIndex:idx_user_org"`
+	Organization string    `json:"organization" db:"organization" gorm:"column:organization;not null;uniqueIndex:idx_user_org;index"`
+	Role         string    `json:"role" db:"role" gorm:"column:role;not null;default:member"` // member, admin
+	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+}
+
+// TableName specifies the table name for UserOrgMembership model
+func (UserOrgMembership) TableName() string {
+	return "user_org_memberships"
+}
+
+// UserMappingStatus represents the status of a user mapping
+type UserMappingStatus string
+
+const (
+	UserMappingStatusUnmapped  UserMappingStatus = "unmapped"
+	UserMappingStatusMapped    UserMappingStatus = "mapped"
+	UserMappingStatusReclaimed UserMappingStatus = "reclaimed"
+	UserMappingStatusSkipped   UserMappingStatus = "skipped"
+)
+
+// ReclaimStatus represents the status of mannequin reclaim
+type ReclaimStatus string
+
+const (
+	ReclaimStatusPending   ReclaimStatus = "pending"
+	ReclaimStatusInvited   ReclaimStatus = "invited"
+	ReclaimStatusCompleted ReclaimStatus = "completed"
+	ReclaimStatusFailed    ReclaimStatus = "failed"
+)
+
+// UserMapping maps a source user to a destination user for mannequin reclaim
+type UserMapping struct {
+	ID               int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceLogin      string    `json:"source_login" db:"source_login" gorm:"column:source_login;not null;uniqueIndex"`
+	SourceEmail      *string   `json:"source_email,omitempty" db:"source_email" gorm:"column:source_email;index"`
+	SourceName       *string   `json:"source_name,omitempty" db:"source_name" gorm:"column:source_name"`
+	SourceOrg        *string   `json:"source_org,omitempty" db:"source_org" gorm:"column:source_org;index"` // Organization where user was discovered
+	DestinationLogin *string   `json:"destination_login,omitempty" db:"destination_login" gorm:"column:destination_login;index"`
+	DestinationEmail *string   `json:"destination_email,omitempty" db:"destination_email" gorm:"column:destination_email"`
+	MappingStatus    string    `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, reclaimed, skipped
+	MannequinID      *string   `json:"mannequin_id,omitempty" db:"mannequin_id" gorm:"column:mannequin_id"`                             // GEI mannequin ID after migration
+	MannequinLogin   *string   `json:"mannequin_login,omitempty" db:"mannequin_login" gorm:"column:mannequin_login"`                    // Mannequin login (e.g., mona-user-12345)
+	ReclaimStatus    *string   `json:"reclaim_status,omitempty" db:"reclaim_status" gorm:"column:reclaim_status"`                       // pending, invited, completed, failed
+	ReclaimError     *string   `json:"reclaim_error,omitempty" db:"reclaim_error" gorm:"column:reclaim_error;type:text"`                // Error message if reclaim failed
+	MatchConfidence  *int      `json:"match_confidence,omitempty" db:"match_confidence" gorm:"column:match_confidence"`                 // Auto-match confidence score (0-100)
+	MatchReason      *string   `json:"match_reason,omitempty" db:"match_reason" gorm:"column:match_reason"`                             // Why the match was made (email, login, name)
+	CreatedAt        time.Time `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt        time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+}
+
+// TableName specifies the table name for UserMapping model
+func (UserMapping) TableName() string {
+	return "user_mappings"
+}
+
+// TeamMapping maps a source team to a destination team
+type TeamMapping struct {
+	ID                  int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceOrg           string     `json:"source_org" db:"source_org" gorm:"column:source_org;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamSlug      string     `json:"source_team_slug" db:"source_team_slug" gorm:"column:source_team_slug;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamName      *string    `json:"source_team_name,omitempty" db:"source_team_name" gorm:"column:source_team_name"`
+	DestinationOrg      *string    `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org;index"`
+	DestinationTeamSlug *string    `json:"destination_team_slug,omitempty" db:"destination_team_slug" gorm:"column:destination_team_slug"`
+	DestinationTeamName *string    `json:"destination_team_name,omitempty" db:"destination_team_name" gorm:"column:destination_team_name"`
+	MappingStatus       string     `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, skipped
+	AutoCreated         bool       `json:"auto_created" db:"auto_created" gorm:"column:auto_created;default:false"`                         // True if team was auto-created during migration
+	MigrationStatus     string     `json:"migration_status" db:"migration_status" gorm:"column:migration_status;default:pending;index"`     // pending, in_progress, completed, failed
+	MigratedAt          *time.Time `json:"migrated_at,omitempty" db:"migrated_at" gorm:"column:migrated_at"`                                // When the team was created in destination
+	ErrorMessage        *string    `json:"error_message,omitempty" db:"error_message" gorm:"column:error_message"`                          // Error details if migration failed
+	ReposSynced         int        `json:"repos_synced" db:"repos_synced" gorm:"column:repos_synced;default:0"`                             // Count of repos with permissions applied
+	// New fields for tracking partial vs. full migration
+	TotalSourceRepos  int        `json:"total_source_repos" db:"total_source_repos" gorm:"column:total_source_repos;default:0"`           // Total repos this team has access to in source
+	ReposEligible     int        `json:"repos_eligible" db:"repos_eligible" gorm:"column:repos_eligible;default:0"`                       // How many repos have been migrated and are available for sync
+	TeamCreatedInDest bool       `json:"team_created_in_dest" db:"team_created_in_dest" gorm:"column:team_created_in_dest;default:false"` // Whether team exists in destination
+	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty" db:"last_synced_at" gorm:"column:last_synced_at"`                       // When permissions were last synced
+	CreatedAt         time.Time  `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+}
+
+// NeedsReSync returns true if the team has been migrated but has new repos that need permission sync
+func (t *TeamMapping) NeedsReSync() bool {
+	return t.TeamCreatedInDest && t.ReposSynced < t.ReposEligible
+}
+
+// GetMigrationCompleteness returns the migration completeness state
+// Returns: "pending", "team_only", "partial", "complete", "needs_sync"
+func (t *TeamMapping) GetMigrationCompleteness() string {
+	if !t.TeamCreatedInDest {
+		return "pending"
+	}
+	if t.ReposEligible == 0 {
+		return "team_only" // Team created but no repos migrated yet
+	}
+	if t.ReposSynced == 0 {
+		return "needs_sync" // Repos available but none synced
+	}
+	if t.ReposSynced < t.ReposEligible {
+		return "partial" // Some repos synced but not all
+	}
+	return "complete" // All eligible repos have been synced
+}
+
+// TableName specifies the table name for TeamMapping model
+func (TeamMapping) TableName() string {
+	return "team_mappings"
+}
+
+// SourceFullSlug returns the source team identifier in "org/team-slug" format
+func (t *TeamMapping) SourceFullSlug() string {
+	return t.SourceOrg + "/" + t.SourceTeamSlug
+}
+
+// DestinationFullSlug returns the destination team identifier in "org/team-slug" format
+// Returns empty string if destination is not mapped
+func (t *TeamMapping) DestinationFullSlug() string {
+	if t.DestinationOrg == nil || t.DestinationTeamSlug == nil {
+		return ""
+	}
+	return *t.DestinationOrg + "/" + *t.DestinationTeamSlug
 }

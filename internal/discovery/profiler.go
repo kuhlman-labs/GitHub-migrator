@@ -17,25 +17,35 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/source"
 )
 
+// OrgInstallationInfo holds cached app installation info for an org
+type OrgInstallationInfo struct {
+	AppSlug             string
+	RepositorySelection string   // "all" or "selected"
+	SelectedRepos       []string // populated only for "selected" installations
+}
+
 // Profiler profiles GitHub-specific features via API
 type Profiler struct {
-	client         *github.Client
-	logger         *slog.Logger
-	token          string          // GitHub token for authenticated git operations
-	packageCache   map[string]bool // Cache of repo names that have packages
-	packageCacheMu sync.RWMutex    // Mutex for thread-safe cache access
-	projectsMap    map[string]bool // Cache of repo names that have ProjectsV2 (org-level)
-	projectsMapMu  sync.RWMutex    // Mutex for thread-safe projects map access
+	client            *github.Client
+	logger            *slog.Logger
+	token             string                            // GitHub token for authenticated git operations
+	packageCache      map[string]bool                   // Cache of repo names that have packages
+	packageCacheMu    sync.RWMutex                      // Mutex for thread-safe cache access
+	projectsMap       map[string]bool                   // Cache of repo names that have ProjectsV2 (org-level)
+	projectsMapMu     sync.RWMutex                      // Mutex for thread-safe projects map access
+	orgInstallations  map[string][]*OrgInstallationInfo // Cache of org installations by org name
+	orgInstallationMu sync.RWMutex                      // Mutex for thread-safe installations access
 }
 
 // NewProfiler creates a new GitHub features profiler
 func NewProfiler(client *github.Client, logger *slog.Logger) *Profiler {
 	return &Profiler{
-		client:       client,
-		logger:       logger,
-		token:        client.Token(),
-		packageCache: make(map[string]bool),
-		projectsMap:  make(map[string]bool),
+		client:           client,
+		logger:           logger,
+		token:            client.Token(),
+		packageCache:     make(map[string]bool),
+		projectsMap:      make(map[string]bool),
+		orgInstallations: make(map[string][]*OrgInstallationInfo),
 	}
 }
 
@@ -356,6 +366,54 @@ func (p *Profiler) LoadProjectsMap(ctx context.Context, org string) error {
 	return nil
 }
 
+// LoadOrgInstallations loads and caches GitHub App installations for an organization.
+// This is called once per org during discovery to avoid repeated API calls.
+func (p *Profiler) LoadOrgInstallations(ctx context.Context, org string) error {
+	p.logger.Info("Loading GitHub App installations for organization", "org", org)
+
+	// Fetch org installations
+	installations, err := p.client.ListOrgInstallations(ctx, org)
+	if err != nil {
+		p.logger.Warn("Failed to load org installations", "org", org, "error", err)
+		return err
+	}
+
+	// Convert to our cached format
+	cachedInstallations := make([]*OrgInstallationInfo, 0, len(installations))
+	for _, install := range installations {
+		info := &OrgInstallationInfo{
+			AppSlug:             install.AppSlug,
+			RepositorySelection: install.RepositorySelection,
+		}
+
+		// For "selected" installations, try to get the list of repos
+		// This can fail if we don't have permission, which is fine
+		if install.RepositorySelection == "selected" {
+			repos, err := p.client.ListInstallationRepos(ctx, install.ID)
+			if err != nil {
+				p.logger.Debug("Could not fetch repos for installation",
+					"app", install.AppSlug,
+					"error", err)
+			} else {
+				info.SelectedRepos = repos
+			}
+		}
+
+		cachedInstallations = append(cachedInstallations, info)
+	}
+
+	p.orgInstallationMu.Lock()
+	defer p.orgInstallationMu.Unlock()
+
+	p.orgInstallations[org] = cachedInstallations
+
+	p.logger.Info("Org installations loaded",
+		"org", org,
+		"count", len(cachedInstallations))
+
+	return nil
+}
+
 // profilePackages checks for GitHub Packages using the REST API cache
 func (p *Profiler) profilePackages(ctx context.Context, org, name string, repo *models.Repository) {
 	// Check cache (thread-safe read)
@@ -486,7 +544,7 @@ func (p *Profiler) profileSecurity(ctx context.Context, org, name string, repo *
 	}
 }
 
-// profileCodeowners checks for CODEOWNERS file in common locations
+// profileCodeowners checks for CODEOWNERS file in common locations and parses its content
 func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo *models.Repository) {
 	// Check common locations: .github/CODEOWNERS, docs/CODEOWNERS, CODEOWNERS
 	locations := []string{".github/CODEOWNERS", "docs/CODEOWNERS", "CODEOWNERS"}
@@ -513,6 +571,11 @@ func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo
 					"repo", repo.FullName,
 					"path", path,
 					"size", fileContent.GetSize())
+
+				// Parse CODEOWNERS content to extract team and user references
+				if content, err := fileContent.GetContent(); err == nil && content != "" {
+					p.parseCodeownersContent(repo, content)
+				}
 				return
 			} else {
 				p.logger.Debug("Path exists but is not a file",
@@ -525,6 +588,92 @@ func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo
 
 	repo.HasCodeowners = false
 	p.logger.Debug("No CODEOWNERS file found", "repo", repo.FullName)
+}
+
+// extractCodeownersReferences extracts team and user references from CODEOWNERS content
+func extractCodeownersReferences(content string) (teams, users map[string]bool) {
+	teams = make(map[string]bool)
+	users = make(map[string]bool)
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Process each owner (skip the first part which is the pattern)
+		for _, owner := range parts[1:] {
+			if strings.HasPrefix(owner, "#") {
+				break
+			}
+			classifyCodeowner(owner, teams, users)
+		}
+	}
+	return teams, users
+}
+
+// classifyCodeowner determines if an owner is a team, user, or email reference
+func classifyCodeowner(owner string, teams, users map[string]bool) {
+	if strings.HasPrefix(owner, "@") && strings.Contains(owner, "/") {
+		teams[owner] = true
+	} else if strings.HasPrefix(owner, "@") {
+		users[owner] = true
+	} else if strings.Contains(owner, "@") {
+		users[owner] = true
+	}
+}
+
+// stringPtr returns a pointer to a heap-allocated copy of the string.
+func stringPtr(s string) *string {
+	ptr := new(string)
+	*ptr = s
+	return ptr
+}
+
+// storeCodeownersJSON stores extracted references as JSON in the repository
+func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) {
+	if len(teams) > 0 {
+		teamList := make([]string, 0, len(teams))
+		for team := range teams {
+			teamList = append(teamList, team)
+		}
+		if teamsJSON, err := json.Marshal(teamList); err == nil {
+			repo.CodeownersTeams = stringPtr(string(teamsJSON))
+		}
+	}
+
+	if len(users) > 0 {
+		userList := make([]string, 0, len(users))
+		for user := range users {
+			userList = append(userList, user)
+		}
+		if usersJSON, err := json.Marshal(userList); err == nil {
+			repo.CodeownersUsers = stringPtr(string(usersJSON))
+		}
+	}
+}
+
+// parseCodeownersContent parses CODEOWNERS file content and extracts team/user references
+func (p *Profiler) parseCodeownersContent(repo *models.Repository, content string) {
+	// Store the raw content using stringPtr to ensure heap allocation
+	repo.CodeownersContent = stringPtr(content)
+
+	// Parse and extract team and user references
+	teams, users := extractCodeownersReferences(content)
+
+	// Store as JSON
+	storeCodeownersJSON(repo, teams, users)
+
+	p.logger.Debug("Parsed CODEOWNERS content",
+		"repo", repo.FullName,
+		"teams_found", len(teams),
+		"users_found", len(users))
 }
 
 // profileWorkflowCount counts GitHub Actions workflows (enhances existing workflow detection)
@@ -594,26 +743,61 @@ func (p *Profiler) profileCollaborators(ctx context.Context, org, name string, r
 	repo.CollaboratorCount = outsideCount
 }
 
-// profileApps counts installed GitHub Apps for the repository
+// profileApps identifies GitHub Apps installed for the repository
+// Uses cached org-level installations to determine which apps have access to this repo
 func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *models.Repository) {
-	// Get installations for this repository
-	// Note: This requires the app to have the appropriate permissions
-	installations, _, err := p.client.REST().Apps.ListRepos(ctx, &ghapi.ListOptions{PerPage: 100})
-	if err != nil {
-		p.logger.Debug("Failed to list app installations (requires app token)", "error", err)
+	p.orgInstallationMu.RLock()
+	installations, ok := p.orgInstallations[org]
+	p.orgInstallationMu.RUnlock()
+
+	if !ok || len(installations) == 0 {
+		// No cached installations for this org
+		p.logger.Debug("No cached installations for org", "org", org)
 		repo.InstalledAppsCount = 0
 		return
 	}
 
-	// Count apps that have access to this specific repository
-	appCount := 0
-	for _, installation := range installations.Repositories {
-		if installation.GetFullName() == repo.FullName {
-			appCount++
+	// Collect app names that have access to this specific repository
+	var appNames []string
+	repoFullName := repo.FullName
+
+	for _, install := range installations {
+		hasAccess := false
+
+		if install.RepositorySelection == "all" {
+			// App has access to all repos in the org
+			hasAccess = true
+		} else if install.RepositorySelection == "selected" {
+			// Check if this repo is in the selected repos list
+			for _, selectedRepo := range install.SelectedRepos {
+				if selectedRepo == repoFullName {
+					hasAccess = true
+					break
+				}
+			}
+		}
+
+		if hasAccess && install.AppSlug != "" {
+			appNames = append(appNames, install.AppSlug)
 		}
 	}
 
-	repo.InstalledAppsCount = appCount
+	repo.InstalledAppsCount = len(appNames)
+
+	// Store app names as JSON array
+	if len(appNames) > 0 {
+		appNamesJSON, err := json.Marshal(appNames)
+		if err != nil {
+			p.logger.Debug("Failed to marshal app names", "error", err)
+		} else {
+			appNamesStr := string(appNamesJSON)
+			repo.InstalledApps = &appNamesStr
+		}
+		p.logger.Debug("Found installed apps",
+			"repo", repo.FullName,
+			"count", len(appNames),
+			"apps", appNames)
+	}
 }
 
 // profileReleases counts releases and checks for assets

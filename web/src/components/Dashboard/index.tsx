@@ -193,10 +193,15 @@ export function Dashboard() {
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
       
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-          Dashboard
-        </h1>
+      <div className="flex justify-between items-start mb-8">
+        <div>
+          <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+            Dashboard
+          </h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Overview of migration progress across all organizations
+          </p>
+        </div>
         <div className="flex items-center gap-4">
           <Button
             variant="primary"

@@ -38,6 +38,7 @@ func TestNewRetryer(t *testing.T) {
 
 	if retryer == nil {
 		t.Fatal("NewRetryer() returned nil")
+		return // Prevent staticcheck SA5011
 	}
 
 	if retryer.config.MaxAttempts != config.MaxAttempts {
@@ -237,6 +238,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 
 	if cb == nil {
 		t.Fatal("NewCircuitBreaker() returned nil")
+		return // Prevent staticcheck SA5011
 	}
 
 	if cb.maxFailures != 5 {

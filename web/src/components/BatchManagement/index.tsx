@@ -467,8 +467,13 @@ export function BatchManagement() {
     <div className="relative">
       <RefreshIndicator isRefreshing={refreshing && !loading} />
       
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Batch Management</h1>
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Batch Management</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Group repositories into batches for coordinated migration
+          </p>
+        </div>
         <div className="flex items-center gap-4">
           <Button
             onClick={handleCreateBatch}

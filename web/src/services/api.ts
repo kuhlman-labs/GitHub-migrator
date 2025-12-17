@@ -9,6 +9,7 @@ import type {
   Organization,
   Project,
   GitHubTeam,
+  GitHubTeamMember,
   MigrationHistoryEntry,
   RepositoryFilters,
   RepositoryListResponse,
@@ -18,12 +19,22 @@ import type {
   SetupStatus,
   SetupConfig,
   ValidationResult,
-  DashboardActionItems
+  DashboardActionItems,
+  GitHubUser,
+  UserMapping,
+  UserMappingStats,
+  UserStats,
+  UserDetail,
+  TeamMapping,
+  TeamMappingStats,
+  ImportResult,
+  TeamDetail,
+  TeamMigrationStatusResponse,
 } from '../types';
 
 const client = axios.create({
   baseURL: '/api/v1',
-  timeout: 30000,
+  timeout: 120000, // 120 seconds for long operations like mannequin fetching
   withCredentials: true, // Send cookies with requests
 });
 
@@ -51,6 +62,22 @@ export const api = {
 
   async getDiscoveryStatus() {
     const { data} = await client.get('/discovery/status');
+    return data;
+  },
+
+  // Standalone Discovery (per entity type)
+  async discoverRepositories(organization: string) {
+    const { data } = await client.post('/repositories/discover', { organization });
+    return data;
+  },
+
+  async discoverOrgMembers(organization: string) {
+    const { data } = await client.post('/users/discover', { organization });
+    return data;
+  },
+
+  async discoverTeams(organization: string) {
+    const { data } = await client.post('/teams/discover', { organization });
     return data;
   },
 
@@ -470,6 +497,253 @@ export const api = {
 
   async applySetup(config: SetupConfig): Promise<void> {
     const { data } = await client.post('/setup/apply', config);
+    return data;
+  },
+
+  // Users
+  async listUsers(filters?: { source_instance?: string; limit?: number; offset?: number }): Promise<{ users: GitHubUser[]; total: number }> {
+    const { data } = await client.get('/users', { params: filters });
+    return data;
+  },
+
+  async getUserStats(): Promise<UserStats> {
+    const { data } = await client.get('/users/stats');
+    return data;
+  },
+
+  // User Mappings
+  async listUserMappings(filters?: {
+    status?: string;
+    source_org?: string;
+    has_destination?: boolean;
+    has_mannequin?: boolean;
+    reclaim_status?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ mappings: UserMapping[]; total: number }> {
+    const { data } = await client.get('/user-mappings', { params: filters });
+    return data;
+  },
+
+  async getUserMappingStats(sourceOrg?: string): Promise<UserMappingStats> {
+    const params = new URLSearchParams();
+    if (sourceOrg) params.append('source_org', sourceOrg);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const { data } = await client.get(`/user-mappings/stats${query}`);
+    return data;
+  },
+
+  async getUserDetail(login: string): Promise<UserDetail> {
+    const { data } = await client.get(`/user-mappings/${encodeURIComponent(login)}`);
+    return data;
+  },
+
+  async getUserMappingSourceOrgs(): Promise<{ organizations: string[] }> {
+    const { data } = await client.get('/user-mappings/source-orgs');
+    return data;
+  },
+
+  async createUserMapping(mapping: Partial<UserMapping>): Promise<UserMapping> {
+    const { data } = await client.post('/user-mappings', mapping);
+    return data;
+  },
+
+  async updateUserMapping(sourceLogin: string, updates: Partial<UserMapping>): Promise<UserMapping> {
+    const { data } = await client.patch(`/user-mappings/${encodeURIComponent(sourceLogin)}`, updates);
+    return data;
+  },
+
+  async deleteUserMapping(sourceLogin: string): Promise<void> {
+    await client.delete(`/user-mappings/${encodeURIComponent(sourceLogin)}`);
+  },
+
+  async importUserMappings(file: File): Promise<ImportResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await client.post('/user-mappings/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+
+  async exportUserMappings(status?: string): Promise<Blob> {
+    const { data } = await client.get('/user-mappings/export', {
+      params: { status },
+      responseType: 'blob',
+    });
+    return data;
+  },
+
+  async generateGEICSV(mannequinsOnly?: boolean): Promise<Blob> {
+    const { data } = await client.get('/user-mappings/generate-gei-csv', {
+      params: { mannequins_only: mannequinsOnly },
+      responseType: 'blob',
+    });
+    return data;
+  },
+
+  async suggestUserMappings(): Promise<{ suggestions: unknown[]; total: number }> {
+    const { data } = await client.post('/user-mappings/suggest');
+    return data;
+  },
+
+  async syncUserMappings(): Promise<{ created: number; message: string }> {
+    const { data } = await client.post('/user-mappings/sync');
+    return data;
+  },
+
+  async fetchMannequins(destinationOrg: string, emuShortcode?: string): Promise<{
+    total_mannequins: number;
+    total_dest_members: number;
+    matched: number;
+    unmatched: number;
+    destination_org: string;
+    emu_shortcode_applied: boolean;
+    message: string;
+  }> {
+    const { data } = await client.post('/user-mappings/fetch-mannequins', {
+      destination_org: destinationOrg,
+      emu_shortcode: emuShortcode || undefined,
+    });
+    return data;
+  },
+
+  async sendAttributionInvitation(sourceLogin: string, destinationOrg: string): Promise<{
+    success: boolean;
+    source_login: string;
+    mannequin_login?: string;
+    target_user?: string;
+    message: string;
+  }> {
+    const { data } = await client.post(
+      `/user-mappings/${encodeURIComponent(sourceLogin)}/send-invitation`,
+      { destination_org: destinationOrg }
+    );
+    return data;
+  },
+
+  async bulkSendAttributionInvitations(
+    destinationOrg: string,
+    sourceLogins?: string[]
+  ): Promise<{
+    success: boolean;
+    invited: number;
+    failed: number;
+    skipped: number;
+    errors: string[];
+    message: string;
+  }> {
+    const { data } = await client.post('/user-mappings/send-invitations', {
+      destination_org: destinationOrg,
+      source_logins: sourceLogins,
+    });
+    return data;
+  },
+
+  // Team Members
+  async getTeamMembers(org: string, teamSlug: string): Promise<{ members: GitHubTeamMember[]; total: number }> {
+    const { data } = await client.get(`/teams/${encodeURIComponent(org)}/${encodeURIComponent(teamSlug)}/members`);
+    return data;
+  },
+
+  // Team Mappings
+  async listTeamMappings(filters?: {
+    source_org?: string;
+    destination_org?: string;
+    status?: string;
+    has_destination?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ mappings: TeamMapping[]; total: number }> {
+    const { data } = await client.get('/team-mappings', { params: filters });
+    return data;
+  },
+
+  async getTeamMappingStats(organization?: string): Promise<TeamMappingStats> {
+    const params = new URLSearchParams();
+    if (organization) params.append('organization', organization);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const { data } = await client.get(`/team-mappings/stats${query}`);
+    return data;
+  },
+
+  async getTeamSourceOrgs(): Promise<string[]> {
+    const { data } = await client.get('/team-mappings/source-orgs');
+    return data.organizations || [];
+  },
+
+  async createTeamMapping(mapping: Partial<TeamMapping>): Promise<TeamMapping> {
+    const { data } = await client.post('/team-mappings', mapping);
+    return data;
+  },
+
+  async updateTeamMapping(sourceOrg: string, sourceTeamSlug: string, updates: Partial<TeamMapping>): Promise<TeamMapping> {
+    const { data } = await client.patch(`/team-mappings/${encodeURIComponent(sourceOrg)}/${encodeURIComponent(sourceTeamSlug)}`, updates);
+    return data;
+  },
+
+  async deleteTeamMapping(sourceOrg: string, sourceTeamSlug: string): Promise<void> {
+    await client.delete(`/team-mappings/${encodeURIComponent(sourceOrg)}/${encodeURIComponent(sourceTeamSlug)}`);
+  },
+
+  async importTeamMappings(file: File): Promise<ImportResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await client.post('/team-mappings/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+
+  async exportTeamMappings(filters?: { status?: string; source_org?: string }): Promise<Blob> {
+    const { data } = await client.get('/team-mappings/export', {
+      params: filters,
+      responseType: 'blob',
+    });
+    return data;
+  },
+
+  async suggestTeamMappings(destinationOrg: string, destTeamSlugs?: string[]): Promise<{ suggestions: unknown[]; total: number }> {
+    const { data } = await client.post('/team-mappings/suggest', {
+      destination_org: destinationOrg,
+      dest_team_slugs: destTeamSlugs,
+    });
+    return data;
+  },
+
+  async syncTeamMappings(): Promise<{ created: number; message: string }> {
+    const { data } = await client.post('/team-mappings/sync');
+    return data;
+  },
+
+  // Team Detail
+  async getTeamDetail(org: string, teamSlug: string): Promise<TeamDetail> {
+    const { data } = await client.get(`/teams/${encodeURIComponent(org)}/${encodeURIComponent(teamSlug)}`);
+    return data;
+  },
+
+  // Team Migration Execution
+  async executeTeamMigration(options?: { source_org?: string; source_team_slug?: string; dry_run?: boolean }): Promise<{ message: string; dry_run: boolean; source_org?: string }> {
+    const { data } = await client.post('/team-mappings/execute', options);
+    return data;
+  },
+
+  async getTeamMigrationStatus(): Promise<TeamMigrationStatusResponse> {
+    const { data } = await client.get('/team-mappings/execution-status');
+    return data;
+  },
+
+  async cancelTeamMigration(): Promise<{ message: string }> {
+    const { data } = await client.post('/team-mappings/cancel');
+    return data;
+  },
+
+  async resetTeamMigrationStatus(sourceOrg?: string): Promise<{ message: string }> {
+    const { data } = await client.post('/team-mappings/reset', null, {
+      params: sourceOrg ? { source_org: sourceOrg } : undefined,
+    });
     return data;
   },
 };

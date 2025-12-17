@@ -69,17 +69,23 @@ export function MigrationHistory() {
   return (
     <div className="relative">
       <RefreshIndicator isRefreshing={isFetching && !isLoading} />
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration History</h1>
+      <div className="flex justify-between items-start mb-8">
+        <div>
+          <h1 className="text-2xl font-semibold" style={{ color: 'var(--fgColor-default)' }}>Migration History</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Audit trail of all migration attempts and outcomes
+          </p>
+        </div>
         <div className="flex items-center gap-4">
           {/* Export Button with Dropdown */}
           <div className="relative">
             <Button
+              variant="invisible"
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={exporting || migrations.length === 0}
               leadingVisual={DownloadIcon}
               trailingVisual={ChevronDownIcon}
-              variant="primary"
+              className="btn-bordered-invisible"
             >
               Export
             </Button>

@@ -45,6 +45,7 @@ export interface Repository {
   has_self_hosted_runners: boolean;
   collaborator_count: number;
   installed_apps_count: number;
+  installed_apps?: string; // JSON array of app names
   // Releases
   release_count: number;
   has_release_assets: boolean;
@@ -213,6 +214,7 @@ export interface Batch {
   destination_org?: string;
   migration_api?: 'GEI' | 'ELM';
   exclude_releases?: boolean;
+  exclude_attachments?: boolean;
 }
 
 // Helper function to calculate batch duration in seconds
@@ -780,5 +782,300 @@ export interface DashboardActionItems {
   failed_dry_runs: FailedRepository[];
   ready_batches: Batch[];
   blocked_repositories: Repository[];
+}
+
+// User identity mapping types
+export interface GitHubUser {
+  id: number;
+  login: string;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  source_instance: string;
+  discovered_at: string;
+  updated_at: string;
+  commit_count: number;
+  issue_count: number;
+  pr_count: number;
+  comment_count: number;
+  repository_count: number;
+}
+
+export type UserMappingStatus = 'unmapped' | 'mapped' | 'reclaimed' | 'skipped';
+export type ReclaimStatus = 'pending' | 'invited' | 'completed' | 'failed';
+
+// UserMapping now represents a discovered user with their mapping status
+// This is a unified view - no sync required
+export interface UserMapping {
+  id: number;
+  login: string;  // Source user login
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  source_instance: string;
+  source_org?: string;  // Organization where user was discovered
+  // Mapping fields (from LEFT JOIN with user_mappings)
+  destination_login?: string;
+  mapping_status: UserMappingStatus;
+  mannequin_id?: string;
+  mannequin_login?: string;
+  reclaim_status?: ReclaimStatus;
+  // Auto-match info
+  match_confidence?: number;  // 0-100 confidence score
+  match_reason?: 'email_exact' | 'login_exact' | 'login_contains' | 'name_fuzzy';
+  // Legacy aliases for backwards compatibility
+  source_login?: string;  // Alias for login
+  source_email?: string;  // Alias for email
+  source_name?: string;   // Alias for name
+}
+
+export interface UserMappingStats {
+  total: number;
+  mapped: number;
+  unmapped: number;
+  skipped: number;
+  reclaimed: number;
+  pending_reclaim: number;
+  invitable: number;
+}
+
+export interface UserStats {
+  total_users: number;
+  users_with_email: number;
+  total_commits: number;
+  total_prs: number;
+  total_issues: number;
+}
+
+// Invitation workflow types
+export interface SendInvitationResult {
+  success: boolean;
+  source_login: string;
+  mannequin_login?: string;
+  target_user?: string;
+  message: string;
+  error?: string;
+}
+
+export interface BulkInvitationResult {
+  success: boolean;
+  invited: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
+  message: string;
+}
+
+export interface FetchMannequinsResult {
+  total_mannequins: number;
+  matched: number;
+  unmatched: number;
+  message: string;
+}
+
+// Team mapping types
+export interface GitHubTeam {
+  id: number;
+  organization: string;
+  slug: string;
+  name: string;
+  description?: string;
+  privacy: string;
+  full_slug: string;
+}
+
+export interface GitHubTeamMember {
+  id: number;
+  team_id: number;
+  login: string;
+  role: 'member' | 'maintainer';
+  discovered_at: string;
+}
+
+export type TeamMappingStatus = 'unmapped' | 'mapped' | 'skipped';
+
+// TeamMapping now represents a discovered team with their mapping status
+// This is a unified view - no sync required
+export interface TeamMapping {
+  id: number;
+  organization: string;  // Source organization
+  slug: string;          // Source team slug
+  name: string;          // Source team name
+  description?: string;
+  privacy: string;
+  // Mapping fields (from LEFT JOIN with team_mappings)
+  destination_org?: string;
+  destination_team_slug?: string;
+  destination_team_name?: string;
+  mapping_status: TeamMappingStatus;
+  // Migration execution fields
+  migration_status: string;  // "pending", "in_progress", "completed", "failed"
+  repos_synced: number;
+  repos_eligible: number;
+  total_source_repos: number;
+  team_created_in_dest: boolean;
+  sync_status: TeamMigrationCompleteness;  // Derived: "pending", "team_only", "partial", "complete", "needs_sync"
+  // Legacy aliases for backwards compatibility
+  source_org?: string;        // Alias for organization
+  source_team_slug?: string;  // Alias for slug
+  source_team_name?: string;  // Alias for name
+}
+
+export interface TeamMappingStats {
+  total: number;
+  mapped: number;
+  unmapped: number;
+  skipped: number;
+}
+
+// Suggestion types
+export interface UserMappingSuggestion {
+  source_login: string;
+  suggested_login?: string;
+  suggested_email?: string;
+  match_reason: string;
+  confidence_percent: number;
+}
+
+export interface TeamMappingSuggestion {
+  source_full_slug: string;
+  destination_full_slug: string;
+  match_reason: string;
+  confidence_percent: number;
+}
+
+// Import result type
+export interface ImportResult {
+  created: number;
+  updated: number;
+  errors: number;
+  messages: string[];
+}
+
+// Team migration execution types
+export type TeamMigrationStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+// Migration completeness indicates whether a team is fully migrated with all repo permissions
+export type TeamMigrationCompleteness = 'pending' | 'team_only' | 'partial' | 'complete' | 'needs_sync';
+
+export interface TeamMigrationProgress {
+  total_teams: number;
+  processed_teams: number;
+  created_teams: number;
+  skipped_teams: number;
+  failed_teams: number;
+  total_repos_synced: number;
+  started_at: string;
+  completed_at?: string;
+  current_team?: string;
+  status: string;
+  errors?: string[];
+}
+
+export interface TeamMigrationExecutionStats {
+  pending: number;
+  in_progress: number;
+  completed: number;
+  failed: number;
+  needs_sync: number;      // Teams that need re-sync (new repos migrated)
+  team_only: number;       // Teams created but no repos migrated yet
+  partial: number;         // Teams with some but not all repo permissions synced
+  total_repos_synced: number;
+  total_repos_eligible: number;
+}
+
+export interface TeamMigrationStatusResponse {
+  is_running: boolean;
+  progress?: TeamMigrationProgress;
+  execution_stats: TeamMigrationExecutionStats;
+  mapping_stats: TeamMappingStats;
+}
+
+// Team detail types
+export interface TeamDetailMember {
+  login: string;
+  role: 'member' | 'maintainer';
+}
+
+export interface TeamDetailRepository {
+  full_name: string;
+  permission: 'pull' | 'triage' | 'push' | 'maintain' | 'admin';
+  migration_status?: string;
+}
+
+export interface TeamDetailMapping {
+  destination_org?: string;
+  destination_team_slug?: string;
+  mapping_status: TeamMappingStatus;
+  migration_status?: TeamMigrationStatus;
+  migrated_at?: string;
+  repos_synced?: number;
+  error_message?: string;
+  // New fields for tracking partial vs. full migration
+  total_source_repos: number;
+  repos_eligible: number;
+  team_created_in_dest: boolean;
+  last_synced_at?: string;
+  migration_completeness: TeamMigrationCompleteness;
+  sync_status?: TeamMigrationCompleteness;
+}
+
+export interface TeamDetail {
+  id: number;
+  organization: string;
+  slug: string;
+  name: string;
+  description?: string;
+  privacy: string;
+  discovered_at: string;
+  members: TeamDetailMember[];
+  repositories: TeamDetailRepository[];
+  mapping?: TeamDetailMapping;
+}
+
+// User organization membership
+export interface UserOrgMembership {
+  id: number;
+  user_login: string;
+  organization: string;
+  role: 'member' | 'admin';
+  discovered_at: string;
+}
+
+// User contribution stats
+export interface UserContributionStats {
+  commit_count: number;
+  issue_count: number;
+  pr_count: number;
+  comment_count: number;
+  repository_count: number;
+}
+
+// User mapping detail for detail panel
+export interface UserMappingDetail {
+  source_org?: string;
+  destination_login?: string;
+  destination_email?: string;
+  mapping_status: UserMappingStatus;
+  mannequin_id?: string;
+  mannequin_login?: string;
+  reclaim_status?: ReclaimStatus;
+  reclaim_error?: string;
+  match_confidence?: number;
+  match_reason?: string;
+}
+
+// Complete user detail response
+export interface UserDetail {
+  login: string;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  source_instance: string;
+  discovered_at: string;
+  updated_at: string;
+  stats: UserContributionStats;
+  organizations: UserOrgMembership[];
+  mapping?: UserMappingDetail;
 }
 

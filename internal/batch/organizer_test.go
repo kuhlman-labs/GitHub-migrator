@@ -247,6 +247,7 @@ func TestCreatePilotBatch(t *testing.T) {
 
 		if batch == nil {
 			t.Fatal("Expected batch to be created")
+			return // Prevent staticcheck SA5011
 		}
 
 		if batch.Type != "pilot" {
