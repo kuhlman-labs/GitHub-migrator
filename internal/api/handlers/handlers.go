@@ -1797,13 +1797,14 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Parse update request
 	var updates struct {
-		Name            *string    `json:"name,omitempty"`
-		Description     *string    `json:"description,omitempty"`
-		Type            *string    `json:"type,omitempty"`
-		ScheduledAt     *time.Time `json:"scheduled_at,omitempty"`
-		DestinationOrg  *string    `json:"destination_org,omitempty"`
-		MigrationAPI    *string    `json:"migration_api,omitempty"`
-		ExcludeReleases *bool      `json:"exclude_releases,omitempty"`
+		Name               *string    `json:"name,omitempty"`
+		Description        *string    `json:"description,omitempty"`
+		Type               *string    `json:"type,omitempty"`
+		ScheduledAt        *time.Time `json:"scheduled_at,omitempty"`
+		DestinationOrg     *string    `json:"destination_org,omitempty"`
+		MigrationAPI       *string    `json:"migration_api,omitempty"`
+		ExcludeReleases    *bool      `json:"exclude_releases,omitempty"`
+		ExcludeAttachments *bool      `json:"exclude_attachments,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
@@ -1852,6 +1853,9 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if updates.ExcludeReleases != nil {
 		batch.ExcludeReleases = *updates.ExcludeReleases
+	}
+	if updates.ExcludeAttachments != nil {
+		batch.ExcludeAttachments = *updates.ExcludeAttachments
 	}
 
 	if err := h.db.UpdateBatch(ctx, batch); err != nil {
@@ -2103,6 +2107,13 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		// Only apply if batch has it enabled - we don't want to override if repo explicitly set to false
 		if batch.ExcludeReleases && !repo.ExcludeReleases {
 			repo.ExcludeReleases = batch.ExcludeReleases
+			needsUpdate = true
+		}
+
+		// Apply exclude_attachments setting from batch if repo doesn't have it set
+		// Only apply if batch has it enabled - we don't want to override if repo explicitly set to false
+		if batch.ExcludeAttachments && !repo.ExcludeAttachments {
+			repo.ExcludeAttachments = batch.ExcludeAttachments
 			needsUpdate = true
 		}
 
