@@ -113,6 +113,13 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 			"error", err)
 	}
 
+	// Load GitHub App installations for this organization
+	if err := profiler.LoadOrgInstallations(ctx, org); err != nil {
+		c.logger.Warn("Failed to load org installations, app detection may be limited",
+			"org", org,
+			"error", err)
+	}
+
 	// Process repositories in parallel
 	if err := c.processRepositoriesWithProfiler(ctx, repos, profiler); err != nil {
 		return err
@@ -499,6 +506,14 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 					"error", err)
 			}
 
+			// Load GitHub App installations for this organization
+			if err := orgProfiler.LoadOrgInstallations(ctx, org); err != nil {
+				c.logger.Warn("Failed to load org installations for organization",
+					"enterprise", enterpriseSlug,
+					"org", org,
+					"error", err)
+			}
+
 			allRepos = append(allRepos, repos...)
 
 			// Discover teams and their repository associations for this org
@@ -624,6 +639,15 @@ func (c *Collector) processOrganizationsInParallel(ctx context.Context, enterpri
 				// Load ProjectsV2 map for this organization
 				if err := orgProfiler.LoadProjectsMap(ctx, org); err != nil {
 					c.logger.Warn("Failed to load ProjectsV2 map for organization",
+						"worker_id", workerID,
+						"enterprise", enterpriseSlug,
+						"org", org,
+						"error", err)
+				}
+
+				// Load GitHub App installations for this organization
+				if err := orgProfiler.LoadOrgInstallations(ctx, org); err != nil {
+					c.logger.Warn("Failed to load org installations for organization",
 						"worker_id", workerID,
 						"enterprise", enterpriseSlug,
 						"org", org,
@@ -999,6 +1023,14 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 			// Load ProjectsV2 map
 			if err := profiler.LoadProjectsMap(ctx, org); err != nil {
 				c.logger.Warn("Failed to load ProjectsV2 map for single repository",
+					"repo", repo.FullName,
+					"org", org,
+					"error", err)
+			}
+
+			// Load GitHub App installations
+			if err := profiler.LoadOrgInstallations(ctx, org); err != nil {
+				c.logger.Warn("Failed to load org installations for single repository",
 					"repo", repo.FullName,
 					"org", org,
 					"error", err)

@@ -237,6 +237,24 @@ export function MigrationReadinessSection({
           </label>
         </div>
         
+        {/* Exclude Attachments */}
+        <div className="border border-gray-200 rounded-lg p-3 mt-3">
+          <label className="flex items-start cursor-pointer">
+            <input
+              type="checkbox"
+              checked={flags.exclude_attachments}
+              onChange={(e) => setFlags({ ...flags, exclude_attachments: e.target.checked })}
+              className="mt-1 mr-3 h-4 w-4"
+            />
+            <div className="flex-1">
+              <div className="font-medium text-gray-900">Exclude Attachments</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Skip file attachments (images, files attached to Issues/PRs). This can reduce archive size for repositories with many attachments.
+              </div>
+            </div>
+          </label>
+        </div>
+        
         {/* Save/Reset buttons */}
         {hasChanges && (
           <div className="pt-3 mt-3 border-t border-gray-200 flex gap-2">
