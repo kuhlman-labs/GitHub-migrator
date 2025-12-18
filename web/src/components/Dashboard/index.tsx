@@ -6,7 +6,7 @@ import { XIcon, RepoIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
-import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems } from '../../hooks/useQueries';
+import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems, useDiscoveryProgress } from '../../hooks/useQueries';
 import { useStartDiscovery, useStartADODiscovery } from '../../hooks/useMutations';
 import { api } from '../../services/api';
 import { KPISection } from './KPISection';
@@ -15,6 +15,7 @@ import { ActionItemsPanel } from './ActionItemsPanel';
 import { GitHubOrganizationCard } from './GitHubOrganizationCard';
 import { ADOOrganizationCard } from './ADOOrganizationCard';
 import { UpcomingBatchesTimeline } from './UpcomingBatchesTimeline';
+import { DiscoveryProgressCard } from './DiscoveryProgressCard';
 
 export function Dashboard() {
   // Fetch all dashboard data with polling
@@ -22,6 +23,7 @@ export function Dashboard() {
   const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching, refetch: refetchAnalytics } = useAnalytics();
   const { data: batches = [], isLoading: batchesLoading, isFetching: batchesFetching, refetch: refetchBatches } = useBatches();
   const { data: actionItems, isLoading: actionItemsLoading, isFetching: actionItemsFetching, refetch: refetchActionItems } = useDashboardActionItems();
+  const { data: discoveryProgress } = useDiscoveryProgress();
   
   const startDiscoveryMutation = useStartDiscovery();
   const startADODiscoveryMutation = useStartADODiscovery();
@@ -216,6 +218,13 @@ export function Dashboard() {
         <Flash variant="success" className="mb-3">
           {discoverySuccess}
         </Flash>
+      )}
+
+      {/* Discovery Progress Card - shown when discovery is active or recently completed */}
+      {discoveryProgress && (
+        <div className="mb-4">
+          <DiscoveryProgressCard progress={discoveryProgress} />
+        </div>
       )}
 
       {/* KPI Section */}

@@ -12,8 +12,9 @@ import (
 func TestDefaultRetryConfig(t *testing.T) {
 	config := DefaultRetryConfig()
 
-	if config.MaxAttempts != 3 {
-		t.Errorf("MaxAttempts = %d, want 3", config.MaxAttempts)
+	// MaxAttempts is 5 to allow recovery from secondary rate limits
+	if config.MaxAttempts != 5 {
+		t.Errorf("MaxAttempts = %d, want 5", config.MaxAttempts)
 	}
 
 	if config.InitialBackoff != 1*time.Second {

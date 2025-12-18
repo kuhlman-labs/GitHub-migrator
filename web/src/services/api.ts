@@ -30,6 +30,7 @@ import type {
   ImportResult,
   TeamDetail,
   TeamMigrationStatusResponse,
+  DiscoveryProgress,
 } from '../types';
 
 const client = axios.create({
@@ -62,6 +63,15 @@ export const api = {
 
   async getDiscoveryStatus() {
     const { data} = await client.get('/discovery/status');
+    return data;
+  },
+
+  async getDiscoveryProgress(): Promise<DiscoveryProgress | null> {
+    const { data } = await client.get('/discovery/progress');
+    // API returns { status: "none" } when no discovery has been run
+    if (data.status === 'none') {
+      return null;
+    }
     return data;
   },
 

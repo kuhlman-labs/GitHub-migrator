@@ -20,6 +20,7 @@ import {
   TeamMappingStats,
   TeamDetail,
   TeamMigrationStatusResponse,
+  DiscoveryProgress,
 } from '../types';
 
 // Organization queries
@@ -240,6 +241,23 @@ export function useTeamMigrationStatus(enabled = true) {
     refetchInterval: (query) => {
       // Poll every 2 seconds while migration is running
       if (query.state.data?.is_running) {
+        return 2000;
+      }
+      return false;
+    },
+  });
+}
+
+// Discovery progress query with polling
+export function useDiscoveryProgress(enabled = true) {
+  return useQuery<DiscoveryProgress | null, Error>({
+    queryKey: ['discoveryProgress'],
+    queryFn: () => api.getDiscoveryProgress(),
+    enabled,
+    refetchInterval: (query) => {
+      // Poll every 2 seconds while discovery is in progress
+      const data = query.state.data;
+      if (data?.status === 'in_progress') {
         return 2000;
       }
       return false;

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -199,10 +200,54 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if a discovery is already in progress
+	activeProgress, err := h.db.GetActiveDiscoveryProgress()
+	if err != nil {
+		h.logger.Error("Failed to check for active discovery", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to check discovery status")
+		return
+	}
+	if activeProgress != nil {
+		h.sendError(w, http.StatusConflict, fmt.Sprintf("Discovery already in progress (target: %s, started: %s)", activeProgress.Target, activeProgress.StartedAt.Format(time.RFC3339)))
+		return
+	}
+
 	// Set workers if specified
 	if req.Workers > 0 {
 		h.collector.SetWorkers(req.Workers)
 	}
+
+	// Determine discovery type and target
+	var discoveryType, target string
+	if req.EnterpriseSlug != "" {
+		discoveryType = models.DiscoveryTypeEnterprise
+		target = req.EnterpriseSlug
+	} else {
+		discoveryType = models.DiscoveryTypeOrganization
+		target = req.Organization
+	}
+
+	// Create progress record
+	progress := &models.DiscoveryProgress{
+		DiscoveryType: discoveryType,
+		Target:        target,
+		TotalOrgs:     1, // Default to 1, will be updated for enterprise discovery
+	}
+
+	if err := h.db.CreateDiscoveryProgress(progress); err != nil {
+		// Check if this is a race condition where another discovery started between our check and create
+		if errors.Is(err, storage.ErrDiscoveryInProgress) {
+			h.sendError(w, http.StatusConflict, err.Error())
+			return
+		}
+		h.logger.Error("Failed to create discovery progress", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to initialize discovery progress")
+		return
+	}
+
+	// Create progress tracker
+	progressTracker := discovery.NewDBProgressTracker(h.db, h.logger, progress)
+	h.collector.SetProgressTracker(progressTracker)
 
 	// Start discovery asynchronously based on type
 	if req.EnterpriseSlug != "" {
@@ -211,14 +256,23 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 			ctx := context.Background()
 			if err := h.collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug); err != nil {
 				h.logger.Error("Enterprise discovery failed", "error", err, "enterprise", req.EnterpriseSlug)
+				if dbErr := h.db.MarkDiscoveryFailed(progress.ID, err.Error()); dbErr != nil {
+					h.logger.Error("Failed to mark discovery as failed", "error", dbErr)
+				}
+			} else {
+				if dbErr := h.db.MarkDiscoveryComplete(progress.ID); dbErr != nil {
+					h.logger.Error("Failed to mark discovery as complete", "error", dbErr)
+				}
 			}
+			progressTracker.Flush()
 		}()
 
-		h.sendJSON(w, http.StatusAccepted, map[string]string{
-			"message":    "Enterprise discovery started",
-			"enterprise": req.EnterpriseSlug,
-			"status":     statusInProgress,
-			"type":       "enterprise",
+		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+			"message":     "Enterprise discovery started",
+			"enterprise":  req.EnterpriseSlug,
+			"status":      statusInProgress,
+			"type":        "enterprise",
+			"progress_id": progress.ID,
 		})
 	} else {
 		// Organization discovery
@@ -226,14 +280,23 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 			ctx := context.Background()
 			if err := h.collector.DiscoverRepositories(ctx, req.Organization); err != nil {
 				h.logger.Error("Discovery failed", "error", err, "org", req.Organization)
+				if dbErr := h.db.MarkDiscoveryFailed(progress.ID, err.Error()); dbErr != nil {
+					h.logger.Error("Failed to mark discovery as failed", "error", dbErr)
+				}
+			} else {
+				if dbErr := h.db.MarkDiscoveryComplete(progress.ID); dbErr != nil {
+					h.logger.Error("Failed to mark discovery as complete", "error", dbErr)
+				}
 			}
+			progressTracker.Flush()
 		}()
 
-		h.sendJSON(w, http.StatusAccepted, map[string]string{
+		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 			"message":      "Discovery started",
 			"organization": req.Organization,
 			"status":       statusInProgress,
 			"type":         "organization",
+			"progress_id":  progress.ID,
 		})
 	}
 }
@@ -258,6 +321,28 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 		"repositories_found": count,
 		"completed_at":       time.Now().Format(time.RFC3339),
 	})
+}
+
+// GetDiscoveryProgress handles GET /api/v1/discovery/progress
+// Returns the current or most recent discovery progress
+func (h *Handler) GetDiscoveryProgress(w http.ResponseWriter, r *http.Request) {
+	progress, err := h.db.GetLatestDiscoveryProgress()
+	if err != nil {
+		h.logger.Error("Failed to get discovery progress", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to get discovery progress")
+		return
+	}
+
+	if progress == nil {
+		// No discovery has been run yet
+		h.sendJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "none",
+			"message": "No discovery has been run yet",
+		})
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, progress)
 }
 
 // DiscoverRepositories handles POST /api/v1/repositories/discover

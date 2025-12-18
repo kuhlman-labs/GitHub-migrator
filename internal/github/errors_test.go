@@ -170,6 +170,66 @@ func TestIsRateLimitError(t *testing.T) {
 	}
 }
 
+func TestIsSecondaryRateLimitError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "secondary rate limit sentinel error",
+			err:  ErrSecondaryRateLimitExceeded,
+			want: true,
+		},
+		{
+			name: "secondary rate limit message pattern",
+			err:  errors.New("You have exceeded a secondary rate limit. Please wait a few minutes before you try again."),
+			want: true,
+		},
+		{
+			name: "secondary rate limit doc URL pattern",
+			err:  errors.New("rate-limits-for-the-rest-api#about-secondary-rate-limits"),
+			want: true,
+		},
+		{
+			name: "wrapped secondary rate limit error",
+			err: &APIError{
+				StatusCode: http.StatusForbidden,
+				Message:    "You have exceeded a secondary rate limit",
+				Err:        ErrSecondaryRateLimitExceeded,
+			},
+			want: true,
+		},
+		{
+			name: "403 forbidden without secondary rate limit",
+			err: &APIError{
+				StatusCode: http.StatusForbidden,
+				Message:    "Resource not accessible by integration",
+				Err:        ErrForbidden,
+			},
+			want: false,
+		},
+		{
+			name: "primary rate limit error",
+			err:  ErrRateLimitExceeded,
+			want: false,
+		},
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsSecondaryRateLimitError(tt.err); got != tt.want {
+				t.Errorf("IsSecondaryRateLimitError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsRetryableError(t *testing.T) {
 	tests := []struct {
 		name string
