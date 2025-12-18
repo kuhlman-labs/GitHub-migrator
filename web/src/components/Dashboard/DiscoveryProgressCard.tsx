@@ -1,4 +1,4 @@
-import { Box, Text, ProgressBar, Label } from '@primer/react';
+import { ProgressBar, Label } from '@primer/react';
 import { SyncIcon, CheckCircleIcon, AlertIcon, XCircleIcon } from '@primer/octicons-react';
 import type { DiscoveryProgress, DiscoveryPhase } from '../../types';
 
@@ -36,15 +36,11 @@ export function DiscoveryProgressCard({ progress }: DiscoveryProgressCardProps) 
       : 'bg-blue-50';
 
   // Get the icon based on status
-  const StatusIcon = () => {
-    if (isFailed) {
-      return <XCircleIcon className="text-red-600" size={16} />;
-    }
-    if (isComplete) {
-      return <CheckCircleIcon className="text-green-600" size={16} />;
-    }
-    return <SyncIcon className="animate-spin text-blue-600" size={16} />;
-  };
+  const statusIcon = isFailed 
+    ? <XCircleIcon className="text-red-600" size={16} />
+    : isComplete 
+      ? <CheckCircleIcon className="text-green-600" size={16} />
+      : <SyncIcon className="animate-spin text-blue-600" size={16} />;
 
   // Get status text
   const statusText = isFailed 
@@ -57,59 +53,64 @@ export function DiscoveryProgressCard({ progress }: DiscoveryProgressCardProps) 
   const typeLabel = progress.discovery_type.charAt(0).toUpperCase() + progress.discovery_type.slice(1);
 
   return (
-    <Box className={`p-4 rounded-lg border ${borderColor} ${bgColor}`}>
+    <div className={`p-4 rounded-lg border ${borderColor} ${bgColor}`}>
       <div className="flex items-center gap-2 mb-3">
-        <StatusIcon />
-        <Text as="span" sx={{ fontWeight: 'semibold' }}>{statusText}</Text>
+        {statusIcon}
+        <span className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>{statusText}</span>
         <Label variant="accent">{typeLabel}</Label>
       </div>
       
       {isInProgress && (
         <>
-          <ProgressBar progress={percentage} sx={{ mb: 2 }} />
+          <div className="mb-2">
+            <ProgressBar 
+              progress={percentage} 
+              aria-label={`${progress.processed_repos} of ${progress.total_repos} repositories processed`}
+            />
+          </div>
           
           <div className="flex justify-between text-sm mb-1">
-            <Text as="span" sx={{ color: 'fg.muted' }}>
+            <span style={{ color: 'var(--fgColor-muted)' }}>
               {progress.total_orgs > 1 
                 ? `Org ${progress.processed_orgs + 1} of ${progress.total_orgs}: ${progress.current_org}`
                 : `Processing: ${progress.current_org || progress.target}`
               }
-            </Text>
-            <Text as="span" sx={{ color: 'fg.muted' }}>
+            </span>
+            <span style={{ color: 'var(--fgColor-muted)' }}>
               {progress.processed_repos} / {progress.total_repos} repos
-            </Text>
+            </span>
           </div>
           
-          <Text as="p" sx={{ fontSize: 1, color: 'fg.muted', mt: 1 }}>
+          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
             {phaseLabels[progress.phase] || progress.phase}
-          </Text>
+          </p>
         </>
       )}
 
       {isComplete && (
         <div className="text-sm">
-          <Text as="p" sx={{ color: 'fg.muted' }}>
+          <p style={{ color: 'var(--fgColor-muted)' }}>
             Discovered {progress.processed_repos} repositories across {progress.processed_orgs} organization{progress.processed_orgs !== 1 ? 's' : ''}
-          </Text>
+          </p>
           {progress.completed_at && (
-            <Text as="p" sx={{ color: 'fg.muted', mt: 1 }}>
+            <p className="mt-1" style={{ color: 'var(--fgColor-muted)' }}>
               Completed {new Date(progress.completed_at).toLocaleString()}
-            </Text>
+            </p>
           )}
         </div>
       )}
 
       {isFailed && (
         <div className="text-sm">
-          <Text as="p" sx={{ color: 'fg.muted' }}>
+          <p style={{ color: 'var(--fgColor-muted)' }}>
             Processed {progress.processed_repos} of {progress.total_repos} repositories before failure
-          </Text>
+          </p>
           {progress.last_error && (
             <div className="flex items-start gap-1 mt-2">
               <AlertIcon className="text-red-500 flex-shrink-0 mt-0.5" size={14} />
-              <Text as="p" sx={{ color: 'danger.fg', fontSize: 1 }}>
+              <p style={{ color: 'var(--fgColor-danger)' }}>
                 {progress.last_error}
-              </Text>
+              </p>
             </div>
           )}
         </div>
@@ -118,12 +119,11 @@ export function DiscoveryProgressCard({ progress }: DiscoveryProgressCardProps) 
       {progress.error_count > 0 && isInProgress && (
         <div className="flex items-center gap-1 mt-2">
           <AlertIcon className="text-orange-500" size={14} />
-          <Text as="span" sx={{ fontSize: 1, color: 'attention.fg' }}>
+          <span className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
             {progress.error_count} error{progress.error_count !== 1 ? 's' : ''} encountered
-          </Text>
+          </span>
         </div>
       )}
-    </Box>
+    </div>
   );
 }
-

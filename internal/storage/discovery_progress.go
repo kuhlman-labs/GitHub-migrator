@@ -232,4 +232,3 @@ func (d *Database) IncrementProcessedRepos(id int64, count int) error {
 
 	return nil
 }
-

@@ -183,13 +183,12 @@ func (t *DBProgressTracker) Flush() {
 // NoOpProgressTracker is a no-op implementation for when progress tracking is disabled
 type NoOpProgressTracker struct{}
 
-func (NoOpProgressTracker) SetTotalOrgs(int)                {}
-func (NoOpProgressTracker) StartOrg(string, int)            {}
-func (NoOpProgressTracker) CompleteOrg(string, int)         {}
-func (NoOpProgressTracker) SetTotalRepos(int)               {}
-func (NoOpProgressTracker) AddRepos(int)                    {}
-func (NoOpProgressTracker) IncrementProcessedRepos(int)     {}
-func (NoOpProgressTracker) SetPhase(string)                 {}
-func (NoOpProgressTracker) RecordError(error)               {}
-func (NoOpProgressTracker) GetProgressID() int64            { return 0 }
-
+func (NoOpProgressTracker) SetTotalOrgs(int)            {}
+func (NoOpProgressTracker) StartOrg(string, int)        {}
+func (NoOpProgressTracker) CompleteOrg(string, int)     {}
+func (NoOpProgressTracker) SetTotalRepos(int)           {}
+func (NoOpProgressTracker) AddRepos(int)                {}
+func (NoOpProgressTracker) IncrementProcessedRepos(int) {}
+func (NoOpProgressTracker) SetPhase(string)             {}
+func (NoOpProgressTracker) RecordError(error)           {}
+func (NoOpProgressTracker) GetProgressID() int64        { return 0 }

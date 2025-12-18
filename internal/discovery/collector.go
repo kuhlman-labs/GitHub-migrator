@@ -823,61 +823,6 @@ func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*gha
 	return c.listAllRepositoriesWithClient(ctx, org, c.client)
 }
 
-// processRepositoriesWithProfiler processes repositories in parallel using worker pool with a shared profiler
-func (c *Collector) processRepositoriesWithProfiler(ctx context.Context, repos []*ghapi.Repository, profiler *Profiler) error {
-	jobs := make(chan *ghapi.Repository, len(repos))
-	errors := make(chan error, len(repos))
-	var wg sync.WaitGroup
-
-	// Start workers
-	for i := 0; i < c.workers; i++ {
-		wg.Add(1)
-		go c.workerWithProfiler(ctx, &wg, jobs, errors, profiler)
-	}
-
-	// Send jobs
-	for _, repo := range repos {
-		jobs <- repo
-	}
-	close(jobs)
-
-	// Wait for completion
-	wg.Wait()
-	close(errors)
-
-	// Collect errors
-	var errs []error
-	for err := range errors {
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if len(errs) > 0 {
-		c.logger.Warn("Discovery completed with errors",
-			"total_repos", len(repos),
-			"error_count", len(errs))
-		return fmt.Errorf("encountered %d errors during discovery (see logs for details)", len(errs))
-	}
-
-	c.logger.Info("Discovery completed successfully", "total_repos", len(repos))
-	return nil
-}
-
-// workerWithProfiler processes repositories from the jobs channel with an optional shared profiler
-func (c *Collector) workerWithProfiler(ctx context.Context, wg *sync.WaitGroup, jobs <-chan *ghapi.Repository, errors chan<- error, profiler *Profiler) {
-	defer wg.Done()
-
-	for repo := range jobs {
-		if err := c.ProfileRepositoryWithProfiler(ctx, repo, profiler); err != nil {
-			c.logger.Error("Failed to profile repository",
-				"repo", repo.GetFullName(),
-				"error", err)
-			errors <- err
-		}
-	}
-}
-
 // processRepositoriesWithProfilerTracked processes repositories in parallel with progress tracking
 func (c *Collector) processRepositoriesWithProfilerTracked(ctx context.Context, repos []*ghapi.Repository, profiler *Profiler, tracker ProgressTracker) error {
 	jobs := make(chan *ghapi.Repository, len(repos))

@@ -251,21 +251,9 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 
 	// Start discovery asynchronously based on type
 	if req.EnterpriseSlug != "" {
-		// Enterprise-wide discovery
-		go func() {
-			ctx := context.Background()
-			if err := h.collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug); err != nil {
-				h.logger.Error("Enterprise discovery failed", "error", err, "enterprise", req.EnterpriseSlug)
-				if dbErr := h.db.MarkDiscoveryFailed(progress.ID, err.Error()); dbErr != nil {
-					h.logger.Error("Failed to mark discovery as failed", "error", dbErr)
-				}
-			} else {
-				if dbErr := h.db.MarkDiscoveryComplete(progress.ID); dbErr != nil {
-					h.logger.Error("Failed to mark discovery as complete", "error", dbErr)
-				}
-			}
-			progressTracker.Flush()
-		}()
+		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
+			return h.collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug)
+		}, "enterprise", req.EnterpriseSlug)
 
 		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 			"message":     "Enterprise discovery started",
@@ -275,21 +263,9 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 			"progress_id": progress.ID,
 		})
 	} else {
-		// Organization discovery
-		go func() {
-			ctx := context.Background()
-			if err := h.collector.DiscoverRepositories(ctx, req.Organization); err != nil {
-				h.logger.Error("Discovery failed", "error", err, "org", req.Organization)
-				if dbErr := h.db.MarkDiscoveryFailed(progress.ID, err.Error()); dbErr != nil {
-					h.logger.Error("Failed to mark discovery as failed", "error", dbErr)
-				}
-			} else {
-				if dbErr := h.db.MarkDiscoveryComplete(progress.ID); dbErr != nil {
-					h.logger.Error("Failed to mark discovery as complete", "error", dbErr)
-				}
-			}
-			progressTracker.Flush()
-		}()
+		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
+			return h.collector.DiscoverRepositories(ctx, req.Organization)
+		}, "organization", req.Organization)
 
 		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 			"message":      "Discovery started",
@@ -299,6 +275,22 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 			"progress_id":  progress.ID,
 		})
 	}
+}
+
+// runDiscoveryAsync executes a discovery operation asynchronously and updates progress
+func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgressTracker, discoverFn func(context.Context) error, discoveryType, target string) {
+	ctx := context.Background()
+	if err := discoverFn(ctx); err != nil {
+		h.logger.Error("Discovery failed", "error", err, "type", discoveryType, "target", target)
+		if dbErr := h.db.MarkDiscoveryFailed(progressID, err.Error()); dbErr != nil {
+			h.logger.Error("Failed to mark discovery as failed", "error", dbErr)
+		}
+	} else {
+		if dbErr := h.db.MarkDiscoveryComplete(progressID); dbErr != nil {
+			h.logger.Error("Failed to mark discovery as complete", "error", dbErr)
+		}
+	}
+	tracker.Flush()
 }
 
 // DiscoveryStatus handles GET /api/v1/discovery/status
