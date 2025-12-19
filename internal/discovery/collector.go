@@ -114,6 +114,22 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 		orgClient = c.client
 	}
 
+	// Get progress tracker and set up for single org discovery
+	tracker := c.getProgressTracker()
+	tracker.SetTotalOrgs(1)
+	tracker.StartOrg(org, 0)
+
+	// Get total repo count upfront for accurate progress tracking
+	repoCount, err := orgClient.GetOrganizationRepoCount(ctx, org)
+	if err != nil {
+		c.logger.Warn("Failed to get repo count upfront, progress may be incremental",
+			"org", org,
+			"error", err)
+	} else {
+		c.logger.Info("Got repository count upfront", "org", org, "count", repoCount)
+		tracker.SetTotalRepos(repoCount)
+	}
+
 	// List all repositories using the appropriate client
 	repos, err := c.listAllRepositoriesWithClient(ctx, org, orgClient)
 	if err != nil {
@@ -121,6 +137,11 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 	}
 
 	c.logger.Info("Found repositories", "count", len(repos))
+
+	// If we didn't get the count upfront, set it now (fallback)
+	if repoCount == 0 {
+		tracker.SetTotalRepos(len(repos))
+	}
 
 	// Create profiler with the appropriate client and load package cache
 	profiler = NewProfiler(orgClient, c.logger)
@@ -144,11 +165,6 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 			"error", err)
 	}
 
-	// Get progress tracker and set up for single org discovery
-	tracker := c.getProgressTracker()
-	tracker.SetTotalOrgs(1)
-	tracker.StartOrg(org, 0)
-	tracker.AddRepos(len(repos))
 	tracker.SetPhase(models.PhaseProfilingRepos)
 
 	// Process repositories in parallel with progress tracking
@@ -473,15 +489,28 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			"org_count", len(orgs))
 	} else {
 		// Use enterprise GraphQL API (requires installation token or PAT with enterprise access)
-		var err error
-		orgs, err = c.client.ListEnterpriseOrganizations(ctx, enterpriseSlug)
+		// Get orgs with repo counts for accurate upfront progress tracking
+		orgInfos, err := c.client.ListEnterpriseOrganizationsWithCounts(ctx, enterpriseSlug)
 		if err != nil {
 			return fmt.Errorf("failed to list enterprise organizations: %w", err)
 		}
 
+		// Extract org names and calculate total repos
+		orgs = make([]string, len(orgInfos))
+		totalRepos := 0
+		for i, info := range orgInfos {
+			orgs[i] = info.Login
+			totalRepos += info.RepoCount
+		}
+
 		c.logger.Info("Found organizations in enterprise",
 			"enterprise", enterpriseSlug,
-			"org_count", len(orgs))
+			"org_count", len(orgs),
+			"total_repos", totalRepos)
+
+		// Set total repos upfront for accurate progress tracking
+		tracker := c.getProgressTracker()
+		tracker.SetTotalRepos(totalRepos)
 	}
 
 	// Collect repositories from all organizations
@@ -543,8 +572,7 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 				"organization", org,
 				"count", len(repos))
 
-			// Update progress with repo count for this org
-			tracker.AddRepos(len(repos))
+			// Note: Total repos was set upfront via ListEnterpriseOrganizationsWithCounts
 
 			// Load package cache for this organization using org-specific profiler
 			if err := orgProfiler.LoadPackageCache(ctx, org); err != nil {
@@ -656,6 +684,40 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 	// Set total orgs count for progress tracking
 	tracker.SetTotalOrgs(len(orgs))
 
+	// Pre-fetch repo counts for all orgs to set accurate total upfront
+	c.logger.Info("Pre-fetching repository counts for all organizations", "org_count", len(orgs))
+	totalRepos := 0
+	orgClients := make(map[string]*github.Client)
+
+	for _, org := range orgs {
+		installationID := orgInstallations[org]
+		orgConfig := *c.baseConfig
+		orgConfig.AppInstallationID = installationID
+
+		orgClient, err := github.NewClient(orgConfig)
+		if err != nil {
+			c.logger.Warn("Failed to create client for repo count pre-fetch",
+				"organization", org,
+				"error", err)
+			continue
+		}
+		orgClients[org] = orgClient
+
+		count, err := orgClient.GetOrganizationRepoCount(ctx, org)
+		if err != nil {
+			c.logger.Warn("Failed to get repo count for organization",
+				"organization", org,
+				"error", err)
+			continue
+		}
+		totalRepos += count
+	}
+
+	c.logger.Info("Pre-fetched total repository count",
+		"enterprise", enterpriseSlug,
+		"total_repos", totalRepos)
+	tracker.SetTotalRepos(totalRepos)
+
 	for i, org := range orgs {
 		c.logger.Info("Processing organization",
 			"enterprise", enterpriseSlug,
@@ -665,27 +727,30 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 		// Update progress tracker
 		tracker.StartOrg(org, i)
 
-		// Create org-specific client with installation token
-		installationID := orgInstallations[org]
-		orgConfig := *c.baseConfig
-		orgConfig.AppInstallationID = installationID
+		// Reuse cached org-specific client from pre-fetch phase, or create new one
+		orgClient, ok := orgClients[org]
+		if !ok {
+			installationID := orgInstallations[org]
+			orgConfig := *c.baseConfig
+			orgConfig.AppInstallationID = installationID
 
-		orgClient, err := github.NewClient(orgConfig)
-		if err != nil {
-			c.logger.Error("Failed to create org-specific client",
-				"enterprise", enterpriseSlug,
-				"organization", org,
-				"installation_id", installationID,
-				"error", err)
-			tracker.RecordError(err)
-			tracker.CompleteOrg(org, 0) // Mark org as processed even on failure
-			continue
+			var err error
+			orgClient, err = github.NewClient(orgConfig)
+			if err != nil {
+				c.logger.Error("Failed to create org-specific client",
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"installation_id", installationID,
+					"error", err)
+				tracker.RecordError(err)
+				tracker.CompleteOrg(org, 0) // Mark org as processed even on failure
+				continue
+			}
 		}
 
-		c.logger.Debug("Created org-specific client",
+		c.logger.Debug("Using org-specific client",
 			"enterprise", enterpriseSlug,
-			"organization", org,
-			"installation_id", installationID)
+			"organization", org)
 
 		// Create org-specific profiler
 		orgProfiler := NewProfiler(orgClient, c.logger)
@@ -707,8 +772,7 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 			"organization", org,
 			"count", len(repos))
 
-		// Update progress with repo count for this org
-		tracker.AddRepos(len(repos))
+		// Note: Total repos was set upfront via pre-fetch phase
 		tracker.SetPhase(models.PhaseProfilingRepos)
 
 		// Load package cache for this organization
