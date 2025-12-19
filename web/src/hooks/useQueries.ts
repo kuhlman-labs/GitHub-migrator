@@ -254,13 +254,15 @@ export function useDiscoveryProgress(enabled = true) {
     queryKey: ['discoveryProgress'],
     queryFn: () => api.getDiscoveryProgress(),
     enabled,
+    staleTime: 0, // Always refetch when invalidated
     refetchInterval: (query) => {
-      // Poll every 2 seconds while discovery is in progress
+      // Poll every 1 second while discovery is in progress for real-time updates
       const data = query.state.data;
       if (data?.status === 'in_progress') {
-        return 2000;
+        return 1000;
       }
-      return false;
+      // Poll every 30 seconds when idle to detect new discoveries started elsewhere
+      return 30000;
     },
   });
 }

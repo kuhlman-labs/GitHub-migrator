@@ -43,12 +43,36 @@ export function Dashboard() {
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
   const [discoveryBannerDismissed, setDiscoveryBannerDismissed] = useState(false);
 
-  // Reset dismissed state when a new discovery starts
+  // Persist dismissed state in localStorage, keyed by discovery ID
+  const dismissedDiscoveryKey = 'dismissedDiscoveryId';
+  const currentDiscoveryId = discoveryProgress?.id;
+
+  // Sync dismissed state with localStorage when discovery data loads or changes
   useEffect(() => {
+    if (!currentDiscoveryId) return;
+    
     if (discoveryProgress?.status === 'in_progress') {
+      // New discovery in progress - clear any previous dismissal
+      localStorage.removeItem(dismissedDiscoveryKey);
       setDiscoveryBannerDismissed(false);
+    } else {
+      // Check if this completed discovery was previously dismissed
+      const dismissedId = localStorage.getItem(dismissedDiscoveryKey);
+      setDiscoveryBannerDismissed(dismissedId === String(currentDiscoveryId));
     }
-  }, [discoveryProgress?.status]);
+  }, [discoveryProgress?.status, currentDiscoveryId]);
+
+  const handleDismissDiscoveryBanner = () => {
+    if (currentDiscoveryId) {
+      localStorage.setItem(dismissedDiscoveryKey, String(currentDiscoveryId));
+    }
+    setDiscoveryBannerDismissed(true);
+  };
+
+  const handleExpandDiscoveryBanner = () => {
+    localStorage.removeItem(dismissedDiscoveryKey);
+    setDiscoveryBannerDismissed(false);
+  };
 
   // Fetch source type on mount
   useEffect(() => {
@@ -234,12 +258,12 @@ export function Dashboard() {
           {discoveryProgress.status === 'completed' && discoveryBannerDismissed ? (
             <LastDiscoveryIndicator 
               progress={discoveryProgress} 
-              onExpand={() => setDiscoveryBannerDismissed(false)}
+              onExpand={handleExpandDiscoveryBanner}
             />
           ) : (
             <DiscoveryProgressCard 
               progress={discoveryProgress} 
-              onDismiss={() => setDiscoveryBannerDismissed(true)}
+              onDismiss={handleDismissDiscoveryBanner}
             />
           )}
         </div>

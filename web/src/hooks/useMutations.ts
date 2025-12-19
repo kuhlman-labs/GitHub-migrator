@@ -8,6 +8,7 @@ export function useStartDiscovery() {
   return useMutation({
     mutationFn: (params: { organization?: string; enterprise_slug?: string }) => api.startDiscovery(params),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['discoveryProgress'] });
       queryClient.invalidateQueries({ queryKey: ['discoveryStatus'] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
@@ -23,6 +24,7 @@ export function useStartADODiscovery() {
   return useMutation({
     mutationFn: (params: { organization?: string; project?: string; workers?: number }) => api.startADODiscovery(params),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['discoveryProgress'] });
       queryClient.invalidateQueries({ queryKey: ['adoDiscoveryStatus'] });
       queryClient.invalidateQueries({ queryKey: ['adoProjects'] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
