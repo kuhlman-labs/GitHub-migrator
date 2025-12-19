@@ -77,41 +77,58 @@ func (c *Collector) getProgressTracker() ProgressTracker {
 	return NoOpProgressTracker{}
 }
 
-// DiscoverRepositories discovers all repositories from the source organization
-func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error {
-	c.logger.Info("Starting repository discovery", "organization", org)
-
-	// Check if we need to create an org-specific client (JWT-only mode)
-	var orgClient *github.Client
-	var profiler *Profiler
-
+// getOrCreateOrgClient returns an org-specific client for JWT-only mode, or the default client
+func (c *Collector) getOrCreateOrgClient(ctx context.Context, org string) (*github.Client, error) {
 	if c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0 {
 		// JWT-only mode: create org-specific client
 		c.logger.Info("Creating org-specific client for single-org discovery",
 			"org", org,
 			"app_id", c.baseConfig.AppID)
 
-		// Get installation ID for this org
 		installationID, err := c.client.GetOrganizationInstallationID(ctx, org)
 		if err != nil {
-			return fmt.Errorf("failed to get installation ID for org %s: %w", org, err)
+			return nil, fmt.Errorf("failed to get installation ID for org %s: %w", org, err)
 		}
 
-		// Create org-specific client
 		orgConfig := *c.baseConfig
 		orgConfig.AppInstallationID = installationID
 
-		orgClient, err = github.NewClient(orgConfig)
+		orgClient, err := github.NewClient(orgConfig)
 		if err != nil {
-			return fmt.Errorf("failed to create org-specific client for %s: %w", org, err)
+			return nil, fmt.Errorf("failed to create org-specific client for %s: %w", org, err)
 		}
 
-		c.logger.Debug("Created org-specific client",
-			"org", org,
-			"installation_id", installationID)
-	} else {
-		// Use the default client (PAT or App with installation ID)
-		orgClient = c.client
+		c.logger.Debug("Created org-specific client", "org", org, "installation_id", installationID)
+		return orgClient, nil
+	}
+	// Use the default client (PAT or App with installation ID)
+	return c.client, nil
+}
+
+// initProfilerForOrg creates a profiler and loads caches for an organization
+func (c *Collector) initProfilerForOrg(ctx context.Context, org string, client *github.Client) *Profiler {
+	profiler := NewProfiler(client, c.logger)
+
+	if err := profiler.LoadPackageCache(ctx, org); err != nil {
+		c.logger.Warn("Failed to load package cache, package detection may be slower", "org", org, "error", err)
+	}
+	if err := profiler.LoadProjectsMap(ctx, org); err != nil {
+		c.logger.Warn("Failed to load ProjectsV2 map, will use fallback detection", "org", org, "error", err)
+	}
+	if err := profiler.LoadOrgInstallations(ctx, org); err != nil {
+		c.logger.Warn("Failed to load org installations, app detection may be limited", "org", org, "error", err)
+	}
+
+	return profiler
+}
+
+// DiscoverRepositories discovers all repositories from the source organization
+func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error {
+	c.logger.Info("Starting repository discovery", "organization", org)
+
+	orgClient, err := c.getOrCreateOrgClient(ctx, org)
+	if err != nil {
+		return err
 	}
 
 	// Get progress tracker and set up for single org discovery
@@ -122,9 +139,7 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 	// Get total repo count upfront for accurate progress tracking
 	repoCount, err := orgClient.GetOrganizationRepoCount(ctx, org)
 	if err != nil {
-		c.logger.Warn("Failed to get repo count upfront, progress may be incremental",
-			"org", org,
-			"error", err)
+		c.logger.Warn("Failed to get repo count upfront, progress may be incremental", "org", org, "error", err)
 	} else {
 		c.logger.Info("Got repository count upfront", "org", org, "count", repoCount)
 		tracker.SetTotalRepos(repoCount)
@@ -143,28 +158,7 @@ func (c *Collector) DiscoverRepositories(ctx context.Context, org string) error 
 		tracker.SetTotalRepos(len(repos))
 	}
 
-	// Create profiler with the appropriate client and load package cache
-	profiler = NewProfiler(orgClient, c.logger)
-	if err := profiler.LoadPackageCache(ctx, org); err != nil {
-		c.logger.Warn("Failed to load package cache, package detection may be slower",
-			"org", org,
-			"error", err)
-	}
-
-	// Load ProjectsV2 map for this organization
-	if err := profiler.LoadProjectsMap(ctx, org); err != nil {
-		c.logger.Warn("Failed to load ProjectsV2 map, will use fallback detection",
-			"org", org,
-			"error", err)
-	}
-
-	// Load GitHub App installations for this organization
-	if err := profiler.LoadOrgInstallations(ctx, org); err != nil {
-		c.logger.Warn("Failed to load org installations, app detection may be limited",
-			"org", org,
-			"error", err)
-	}
-
+	profiler := c.initProfilerForOrg(ctx, org, orgClient)
 	tracker.SetPhase(models.PhaseProfilingRepos)
 
 	// Process repositories in parallel with progress tracking
@@ -674,17 +668,9 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 // This helps prevent secondary rate limits when processing multiple orgs
 const DefaultOrgDelay = 1 * time.Second
 
-// processOrganizationsSequentially processes organizations one at a time
-// This prevents secondary rate limits by avoiding concurrent API requests across orgs
-// Repositories within each org are still processed in parallel using c.workers
-func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterpriseSlug string, orgs []string, orgInstallations map[string]int64) []*ghapi.Repository {
-	allRepos := make([]*ghapi.Repository, 0)
-	tracker := c.getProgressTracker()
-
-	// Set total orgs count for progress tracking
-	tracker.SetTotalOrgs(len(orgs))
-
-	// Pre-fetch repo counts for all orgs to set accurate total upfront
+// prefetchOrgClientsAndCounts creates org-specific clients and fetches repo counts for all orgs upfront
+// Returns map of org -> client and total repo count
+func (c *Collector) prefetchOrgClientsAndCounts(ctx context.Context, orgs []string, orgInstallations map[string]int64) (map[string]*github.Client, int) {
 	c.logger.Info("Pre-fetching repository counts for all organizations", "org_count", len(orgs))
 	totalRepos := 0
 	orgClients := make(map[string]*github.Client)
@@ -696,26 +682,48 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 
 		orgClient, err := github.NewClient(orgConfig)
 		if err != nil {
-			c.logger.Warn("Failed to create client for repo count pre-fetch",
-				"organization", org,
-				"error", err)
+			c.logger.Warn("Failed to create client for repo count pre-fetch", "organization", org, "error", err)
 			continue
 		}
 		orgClients[org] = orgClient
 
 		count, err := orgClient.GetOrganizationRepoCount(ctx, org)
 		if err != nil {
-			c.logger.Warn("Failed to get repo count for organization",
-				"organization", org,
-				"error", err)
+			c.logger.Warn("Failed to get repo count for organization", "organization", org, "error", err)
 			continue
 		}
 		totalRepos += count
 	}
 
-	c.logger.Info("Pre-fetched total repository count",
-		"enterprise", enterpriseSlug,
-		"total_repos", totalRepos)
+	return orgClients, totalRepos
+}
+
+// getOrCreateCachedOrgClient returns an org client from cache or creates a new one
+func (c *Collector) getOrCreateCachedOrgClient(org string, orgClients map[string]*github.Client, orgInstallations map[string]int64) (*github.Client, error) {
+	if client, ok := orgClients[org]; ok {
+		return client, nil
+	}
+
+	installationID := orgInstallations[org]
+	orgConfig := *c.baseConfig
+	orgConfig.AppInstallationID = installationID
+
+	return github.NewClient(orgConfig)
+}
+
+// processOrganizationsSequentially processes organizations one at a time
+// This prevents secondary rate limits by avoiding concurrent API requests across orgs
+// Repositories within each org are still processed in parallel using c.workers
+func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterpriseSlug string, orgs []string, orgInstallations map[string]int64) []*ghapi.Repository {
+	allRepos := make([]*ghapi.Repository, 0)
+	tracker := c.getProgressTracker()
+
+	// Set total orgs count for progress tracking
+	tracker.SetTotalOrgs(len(orgs))
+
+	// Pre-fetch repo counts for all orgs to set accurate total upfront
+	orgClients, totalRepos := c.prefetchOrgClientsAndCounts(ctx, orgs, orgInstallations)
+	c.logger.Info("Pre-fetched total repository count", "enterprise", enterpriseSlug, "total_repos", totalRepos)
 	tracker.SetTotalRepos(totalRepos)
 
 	for i, org := range orgs {
@@ -728,29 +736,18 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 		tracker.StartOrg(org, i)
 
 		// Reuse cached org-specific client from pre-fetch phase, or create new one
-		orgClient, ok := orgClients[org]
-		if !ok {
-			installationID := orgInstallations[org]
-			orgConfig := *c.baseConfig
-			orgConfig.AppInstallationID = installationID
-
-			var err error
-			orgClient, err = github.NewClient(orgConfig)
-			if err != nil {
-				c.logger.Error("Failed to create org-specific client",
-					"enterprise", enterpriseSlug,
-					"organization", org,
-					"installation_id", installationID,
-					"error", err)
-				tracker.RecordError(err)
-				tracker.CompleteOrg(org, 0) // Mark org as processed even on failure
-				continue
-			}
+		orgClient, err := c.getOrCreateCachedOrgClient(org, orgClients, orgInstallations)
+		if err != nil {
+			c.logger.Error("Failed to create org-specific client",
+				"enterprise", enterpriseSlug,
+				"organization", org,
+				"error", err)
+			tracker.RecordError(err)
+			tracker.CompleteOrg(org, 0)
+			continue
 		}
 
-		c.logger.Debug("Using org-specific client",
-			"enterprise", enterpriseSlug,
-			"organization", org)
+		c.logger.Debug("Using org-specific client", "enterprise", enterpriseSlug, "organization", org)
 
 		// Create org-specific profiler
 		orgProfiler := NewProfiler(orgClient, c.logger)
