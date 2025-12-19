@@ -38,12 +38,12 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
         : 'var(--bgColor-accent-muted, var(--color-accent-subtle))',
   };
 
-  // Get the icon based on status
+  // Get the icon based on status (wrapped in span for color styling)
   const statusIcon = isFailed 
-    ? <XCircleIcon style={{ color: 'var(--fgColor-danger)' }} size={16} />
+    ? <span style={{ color: 'var(--fgColor-danger)' }}><XCircleIcon size={16} /></span>
     : isComplete 
-      ? <CheckCircleIcon style={{ color: 'var(--fgColor-success)' }} size={16} />
-      : <SyncIcon className="animate-spin" style={{ color: 'var(--fgColor-accent)' }} size={16} />;
+      ? <span style={{ color: 'var(--fgColor-success)' }}><CheckCircleIcon size={16} /></span>
+      : <span className="animate-spin" style={{ color: 'var(--fgColor-accent)', display: 'inline-flex' }}><SyncIcon size={16} /></span>;
 
   // Get status text
   const statusText = isFailed 
@@ -81,9 +81,7 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
             <ProgressBar 
               progress={percentage} 
               aria-label={`${progress.processed_repos} of ${progress.total_repos} repositories processed`}
-              sx={{
-                backgroundColor: 'var(--bgColor-neutral-muted, var(--color-neutral-muted))',
-              }}
+              bg="accent.emphasis"
             />
           </div>
           
@@ -125,7 +123,9 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
           </p>
           {progress.last_error && (
             <div className="flex items-start gap-1 mt-2">
-              <AlertIcon className="flex-shrink-0 mt-0.5" style={{ color: 'var(--fgColor-danger)' }} size={14} />
+              <span className="flex-shrink-0 mt-0.5" style={{ color: 'var(--fgColor-danger)' }}>
+                <AlertIcon size={14} />
+              </span>
               <p style={{ color: 'var(--fgColor-danger)' }}>
                 {progress.last_error}
               </p>
@@ -136,7 +136,9 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
       
       {progress.error_count > 0 && isInProgress && (
         <div className="flex items-center gap-1 mt-2">
-          <AlertIcon style={{ color: 'var(--fgColor-attention)' }} size={14} />
+          <span style={{ color: 'var(--fgColor-attention)' }}>
+            <AlertIcon size={14} />
+          </span>
           <span className="text-sm" style={{ color: 'var(--fgColor-attention)' }}>
             {progress.error_count} error{progress.error_count !== 1 ? 's' : ''} encountered
           </span>
@@ -180,7 +182,9 @@ export function LastDiscoveryIndicator({ progress, onExpand }: LastDiscoveryIndi
       onKeyDown={(e) => e.key === 'Enter' && onExpand?.()}
       title="Click to show details"
     >
-      <CheckCircleIcon size={14} style={{ color: 'var(--fgColor-success)' }} />
+      <span style={{ color: 'var(--fgColor-success)' }}>
+        <CheckCircleIcon size={14} />
+      </span>
       <span style={{ color: 'var(--fgColor-muted)' }}>
         Last discovery: {progress.processed_repos} repos
         {completedDate && ` · ${formatRelativeTime(completedDate)}`}
