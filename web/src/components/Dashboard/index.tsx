@@ -6,7 +6,7 @@ import { XIcon, RepoIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
-import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems } from '../../hooks/useQueries';
+import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems, useDiscoveryProgress } from '../../hooks/useQueries';
 import { useStartDiscovery, useStartADODiscovery } from '../../hooks/useMutations';
 import { api } from '../../services/api';
 import { KPISection } from './KPISection';
@@ -15,6 +15,7 @@ import { ActionItemsPanel } from './ActionItemsPanel';
 import { GitHubOrganizationCard } from './GitHubOrganizationCard';
 import { ADOOrganizationCard } from './ADOOrganizationCard';
 import { UpcomingBatchesTimeline } from './UpcomingBatchesTimeline';
+import { DiscoveryProgressCard, LastDiscoveryIndicator } from './DiscoveryProgressCard';
 
 export function Dashboard() {
   // Fetch all dashboard data with polling
@@ -22,6 +23,7 @@ export function Dashboard() {
   const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching, refetch: refetchAnalytics } = useAnalytics();
   const { data: batches = [], isLoading: batchesLoading, isFetching: batchesFetching, refetch: refetchBatches } = useBatches();
   const { data: actionItems, isLoading: actionItemsLoading, isFetching: actionItemsFetching, refetch: refetchActionItems } = useDashboardActionItems();
+  const { data: discoveryProgress } = useDiscoveryProgress();
   
   const startDiscoveryMutation = useStartDiscovery();
   const startADODiscoveryMutation = useStartADODiscovery();
@@ -39,6 +41,38 @@ export function Dashboard() {
   const [adoProject, setAdoProject] = useState('');
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
+  const [discoveryBannerDismissed, setDiscoveryBannerDismissed] = useState(false);
+
+  // Persist dismissed state in localStorage, keyed by discovery ID
+  const dismissedDiscoveryKey = 'dismissedDiscoveryId';
+  const currentDiscoveryId = discoveryProgress?.id;
+
+  // Sync dismissed state with localStorage when discovery data loads or changes
+  useEffect(() => {
+    if (!currentDiscoveryId) return;
+    
+    if (discoveryProgress?.status === 'in_progress') {
+      // New discovery in progress - clear any previous dismissal
+      localStorage.removeItem(dismissedDiscoveryKey);
+      setDiscoveryBannerDismissed(false);
+    } else {
+      // Check if this completed discovery was previously dismissed
+      const dismissedId = localStorage.getItem(dismissedDiscoveryKey);
+      setDiscoveryBannerDismissed(dismissedId === String(currentDiscoveryId));
+    }
+  }, [discoveryProgress?.status, currentDiscoveryId]);
+
+  const handleDismissDiscoveryBanner = () => {
+    if (currentDiscoveryId) {
+      localStorage.setItem(dismissedDiscoveryKey, String(currentDiscoveryId));
+    }
+    setDiscoveryBannerDismissed(true);
+  };
+
+  const handleExpandDiscoveryBanner = () => {
+    localStorage.removeItem(dismissedDiscoveryKey);
+    setDiscoveryBannerDismissed(false);
+  };
 
   // Fetch source type on mount
   useEffect(() => {
@@ -216,6 +250,23 @@ export function Dashboard() {
         <Flash variant="success" className="mb-3">
           {discoverySuccess}
         </Flash>
+      )}
+
+      {/* Discovery Progress Card - shown when discovery is active or recently completed */}
+      {discoveryProgress && (
+        <div className="mb-4">
+          {discoveryProgress.status === 'completed' && discoveryBannerDismissed ? (
+            <LastDiscoveryIndicator 
+              progress={discoveryProgress} 
+              onExpand={handleExpandDiscoveryBanner}
+            />
+          ) : (
+            <DiscoveryProgressCard 
+              progress={discoveryProgress} 
+              onDismiss={handleDismissDiscoveryBanner}
+            />
+          )}
+        </div>
       )}
 
       {/* KPI Section */}

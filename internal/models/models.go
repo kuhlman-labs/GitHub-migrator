@@ -650,3 +650,62 @@ func (t *TeamMapping) DestinationFullSlug() string {
 	}
 	return *t.DestinationOrg + "/" + *t.DestinationTeamSlug
 }
+
+// Discovery progress phase constants
+const (
+	PhaseListingRepos       = "listing_repos"
+	PhaseProfilingRepos     = "profiling_repos"
+	PhaseDiscoveringTeams   = "discovering_teams"
+	PhaseDiscoveringMembers = "discovering_members"
+	PhaseCompleted          = "completed"
+)
+
+// Discovery progress status constants
+const (
+	DiscoveryStatusInProgress = "in_progress"
+	DiscoveryStatusCompleted  = "completed"
+	DiscoveryStatusFailed     = "failed"
+)
+
+// Discovery type constants
+const (
+	DiscoveryTypeEnterprise   = "enterprise"
+	DiscoveryTypeOrganization = "organization"
+	DiscoveryTypeRepository   = "repository"
+)
+
+// DiscoveryProgress tracks the progress of a discovery operation
+type DiscoveryProgress struct {
+	ID             int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	DiscoveryType  string     `json:"discovery_type" db:"discovery_type" gorm:"column:discovery_type;not null"`   // "enterprise", "organization", or "repository"
+	Target         string     `json:"target" db:"target" gorm:"column:target;not null"`                           // enterprise slug, org name, or "org/repo"
+	Status         string     `json:"status" db:"status" gorm:"column:status;not null;default:in_progress;index"` // "in_progress", "completed", "failed"
+	StartedAt      time.Time  `json:"started_at" db:"started_at" gorm:"column:started_at;not null;autoCreateTime"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty" db:"completed_at" gorm:"column:completed_at"`
+	TotalOrgs      int        `json:"total_orgs" db:"total_orgs" gorm:"column:total_orgs;default:0"`
+	ProcessedOrgs  int        `json:"processed_orgs" db:"processed_orgs" gorm:"column:processed_orgs;default:0"`
+	CurrentOrg     string     `json:"current_org" db:"current_org" gorm:"column:current_org"`
+	TotalRepos     int        `json:"total_repos" db:"total_repos" gorm:"column:total_repos;default:0"`
+	ProcessedRepos int        `json:"processed_repos" db:"processed_repos" gorm:"column:processed_repos;default:0"`
+	Phase          string     `json:"phase" db:"phase" gorm:"column:phase;default:listing_repos"` // Current phase within org processing
+	ErrorCount     int        `json:"error_count" db:"error_count" gorm:"column:error_count;default:0"`
+	LastError      *string    `json:"last_error,omitempty" db:"last_error" gorm:"column:last_error"`
+}
+
+// TableName specifies the table name for DiscoveryProgress model
+func (DiscoveryProgress) TableName() string {
+	return "discovery_progress"
+}
+
+// IsActive returns true if the discovery is still in progress
+func (d *DiscoveryProgress) IsActive() bool {
+	return d.Status == DiscoveryStatusInProgress
+}
+
+// PercentComplete returns the completion percentage based on repos processed
+func (d *DiscoveryProgress) PercentComplete() float64 {
+	if d.TotalRepos == 0 {
+		return 0
+	}
+	return float64(d.ProcessedRepos) / float64(d.TotalRepos) * 100
+}

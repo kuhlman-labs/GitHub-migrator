@@ -13,6 +13,11 @@ var (
 	// ErrRateLimitExceeded is returned when the GitHub API rate limit is exceeded
 	ErrRateLimitExceeded = errors.New("github rate limit exceeded")
 
+	// ErrSecondaryRateLimitExceeded is returned when GitHub's secondary rate limit is hit
+	// Secondary rate limits are triggered by concurrent requests regardless of primary quota
+	// See: https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits
+	ErrSecondaryRateLimitExceeded = errors.New("github secondary rate limit exceeded")
+
 	// ErrUnauthorized is returned when authentication fails
 	ErrUnauthorized = errors.New("github authentication failed")
 
@@ -76,6 +81,12 @@ func WrapError(err error, method, url string) error {
 			Err:        err,
 		}
 
+		// Check for secondary rate limit first (403 with specific message)
+		if ghErr.Response.StatusCode == http.StatusForbidden && isSecondaryRateLimitMessage(ghErr.Message) {
+			apiErr.Err = ErrSecondaryRateLimitExceeded
+			return apiErr
+		}
+
 		// Map to specific error types based on status code
 		apiErr.Err = mapErrorType(ghErr.Response.StatusCode, ghErr.Response.Header)
 
@@ -85,13 +96,20 @@ func WrapError(err error, method, url string) error {
 	// Try to extract status code from error message for non-JSON responses
 	// This handles cases like nginx HTML error pages (502, 503, etc.)
 	statusCode := extractStatusCodeFromError(err)
+	errMsg := err.Error()
 
 	apiErr := &APIError{
 		StatusCode: statusCode,
-		Message:    err.Error(),
+		Message:    errMsg,
 		URL:        url,
 		Method:     method,
 		Err:        err,
+	}
+
+	// Check for secondary rate limit in the error message
+	if statusCode == http.StatusForbidden && isSecondaryRateLimitMessage(errMsg) {
+		apiErr.Err = ErrSecondaryRateLimitExceeded
+		return apiErr
 	}
 
 	// Map to specific error types if we have a valid status code
@@ -100,6 +118,13 @@ func WrapError(err error, method, url string) error {
 	}
 
 	return apiErr
+}
+
+// isSecondaryRateLimitMessage checks if an error message indicates a secondary rate limit
+func isSecondaryRateLimitMessage(message string) bool {
+	msgLower := strings.ToLower(message)
+	return strings.Contains(msgLower, "secondary rate limit") ||
+		strings.Contains(msgLower, "exceeded a secondary rate limit")
 }
 
 // mapErrorType maps HTTP status codes to specific error types
@@ -162,9 +187,42 @@ func extractStatusCodeFromError(err error) int {
 	return 0
 }
 
-// IsRateLimitError checks if an error is a rate limit error
+// IsRateLimitError checks if an error is a rate limit error (primary or secondary)
 func IsRateLimitError(err error) bool {
-	return errors.Is(err, ErrRateLimitExceeded)
+	return errors.Is(err, ErrRateLimitExceeded) || IsSecondaryRateLimitError(err)
+}
+
+// IsSecondaryRateLimitError checks if an error is a secondary rate limit error
+// Secondary rate limits are triggered by concurrent/burst requests regardless of primary quota
+// Detection is based on the error message pattern from GitHub:
+// "You have exceeded a secondary rate limit. Please wait a few minutes before you try again."
+func IsSecondaryRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for the sentinel error
+	if errors.Is(err, ErrSecondaryRateLimitExceeded) {
+		return true
+	}
+
+	// Check error message for secondary rate limit patterns
+	errMsg := strings.ToLower(err.Error())
+
+	// Patterns that indicate a secondary rate limit
+	secondaryRateLimitPatterns := []string{
+		"secondary rate limit",
+		"exceeded a secondary rate limit",
+		"rate-limits-for-the-rest-api#about-secondary-rate-limits",
+	}
+
+	for _, pattern := range secondaryRateLimitPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // IsRetryableError checks if an error is retryable
@@ -181,14 +239,24 @@ func IsRetryableError(err error) bool {
 			return true
 		}
 
+		// Check for secondary rate limit (403 with specific message)
+		if apiErr.StatusCode == http.StatusForbidden && IsSecondaryRateLimitError(err) {
+			return true
+		}
+
 		// Check for stream errors (status code 0 with stream error patterns)
 		if apiErr.StatusCode == 0 && IsStreamError(err) {
 			return true
 		}
 	}
 
-	// Also retry on rate limit errors
-	if errors.Is(err, ErrRateLimitExceeded) {
+	// Also retry on rate limit errors (primary and secondary)
+	if errors.Is(err, ErrRateLimitExceeded) || errors.Is(err, ErrSecondaryRateLimitExceeded) {
+		return true
+	}
+
+	// Check for secondary rate limit by message pattern
+	if IsSecondaryRateLimitError(err) {
 		return true
 	}
 

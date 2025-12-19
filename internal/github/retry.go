@@ -18,12 +18,16 @@ type RetryConfig struct {
 // DefaultRetryConfig returns sensible defaults for retry configuration
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxAttempts:     3,
+		MaxAttempts:     5, // Increased to allow recovery from secondary rate limits
 		InitialBackoff:  1 * time.Second,
 		MaxBackoff:      30 * time.Second,
 		BackoffMultiple: 2.0,
 	}
 }
+
+// SecondaryRateLimitBackoff is the backoff duration for secondary rate limit errors
+// GitHub recommends waiting "a few minutes" - we use 60 seconds as a reasonable default
+const SecondaryRateLimitBackoff = 60 * time.Second
 
 // Retryer handles retry logic with exponential backoff
 type Retryer struct {
@@ -84,7 +88,24 @@ func (r *Retryer) Do(ctx context.Context, operation string, fn RetryFunc) error 
 			break
 		}
 
-		// Handle rate limit errors specially
+		// Handle secondary rate limit errors with longer backoff
+		// Secondary limits require waiting "a few minutes" before retrying
+		if IsSecondaryRateLimitError(err) {
+			r.logger.Warn("Secondary rate limit hit, waiting before retry",
+				"operation", operation,
+				"attempt", attempt,
+				"backoff", SecondaryRateLimitBackoff)
+
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("context cancelled during secondary rate limit wait: %w", ctx.Err())
+			case <-time.After(SecondaryRateLimitBackoff):
+				// Continue with next attempt after waiting
+			}
+			continue
+		}
+
+		// Handle primary rate limit errors
 		if IsRateLimitError(err) {
 			r.logger.Warn("Rate limit error, waiting before retry",
 				"operation", operation,

@@ -20,6 +20,7 @@ import {
   TeamMappingStats,
   TeamDetail,
   TeamMigrationStatusResponse,
+  DiscoveryProgress,
 } from '../types';
 
 // Organization queries
@@ -243,6 +244,25 @@ export function useTeamMigrationStatus(enabled = true) {
         return 2000;
       }
       return false;
+    },
+  });
+}
+
+// Discovery progress query with polling
+export function useDiscoveryProgress(enabled = true) {
+  return useQuery<DiscoveryProgress | null, Error>({
+    queryKey: ['discoveryProgress'],
+    queryFn: () => api.getDiscoveryProgress(),
+    enabled,
+    staleTime: 0, // Always refetch when invalidated
+    refetchInterval: (query) => {
+      // Poll every 1 second while discovery is in progress for real-time updates
+      const data = query.state.data;
+      if (data?.status === 'in_progress') {
+        return 1000;
+      }
+      // Poll every 30 seconds when idle to detect new discoveries started elsewhere
+      return 30000;
     },
   });
 }

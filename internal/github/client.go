@@ -1022,6 +1022,104 @@ func (c *Client) ListEnterpriseOrganizations(ctx context.Context, enterpriseSlug
 	return allOrgs, nil
 }
 
+// EnterpriseOrgInfo contains organization info including repo count
+type EnterpriseOrgInfo struct {
+	Login     string
+	RepoCount int
+}
+
+// ListEnterpriseOrganizationsWithCounts lists all organizations in an enterprise with their repo counts
+// This allows getting accurate total repo counts upfront for progress tracking
+func (c *Client) ListEnterpriseOrganizationsWithCounts(ctx context.Context, enterpriseSlug string) ([]EnterpriseOrgInfo, error) {
+	c.logger.Info("Listing organizations with repo counts for enterprise", "enterprise", enterpriseSlug)
+
+	var allOrgs []EnterpriseOrgInfo
+	var endCursor *githubv4.String
+
+	// GraphQL query for enterprise organizations with repo counts
+	var query struct {
+		Enterprise struct {
+			Organizations struct {
+				Nodes []struct {
+					Login        githubv4.String
+					Repositories struct {
+						TotalCount githubv4.Int
+					} `graphql:"repositories(first: 1)"`
+				}
+				PageInfo struct {
+					HasNextPage githubv4.Boolean
+					EndCursor   githubv4.String
+				}
+			} `graphql:"organizations(first: 100, after: $cursor)"`
+		} `graphql:"enterprise(slug: $slug)"`
+	}
+
+	for {
+		variables := map[string]interface{}{
+			"slug":   githubv4.String(enterpriseSlug),
+			"cursor": endCursor,
+		}
+
+		err := c.QueryWithRetry(ctx, "ListEnterpriseOrganizationsWithCounts", &query, variables)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list enterprise organizations with counts: %w", err)
+		}
+
+		// Collect organization info
+		for _, org := range query.Enterprise.Organizations.Nodes {
+			allOrgs = append(allOrgs, EnterpriseOrgInfo{
+				Login:     string(org.Login),
+				RepoCount: int(org.Repositories.TotalCount),
+			})
+		}
+
+		if !query.Enterprise.Organizations.PageInfo.HasNextPage {
+			break
+		}
+		endCursor = &query.Enterprise.Organizations.PageInfo.EndCursor
+	}
+
+	totalRepos := 0
+	for _, org := range allOrgs {
+		totalRepos += org.RepoCount
+	}
+
+	c.logger.Info("Enterprise organizations with counts listed",
+		"enterprise", enterpriseSlug,
+		"total_orgs", len(allOrgs),
+		"total_repos", totalRepos)
+
+	return allOrgs, nil
+}
+
+// GetOrganizationRepoCount returns the total number of repositories in an organization
+// This is a lightweight query that only fetches the count, not the actual repos
+func (c *Client) GetOrganizationRepoCount(ctx context.Context, org string) (int, error) {
+	c.logger.Debug("Getting repository count for organization", "org", org)
+
+	var query struct {
+		Organization struct {
+			Repositories struct {
+				TotalCount githubv4.Int
+			} `graphql:"repositories(first: 1)"`
+		} `graphql:"organization(login: $owner)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner": githubv4.String(org),
+	}
+
+	err := c.QueryWithRetry(ctx, "GetOrganizationRepoCount", &query, variables)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get organization repo count: %w", err)
+	}
+
+	count := int(query.Organization.Repositories.TotalCount)
+	c.logger.Debug("Organization repository count retrieved", "org", org, "count", count)
+
+	return count, nil
+}
+
 // DependencyGraphManifest represents a dependency manifest from the dependency graph
 type DependencyGraphManifest struct {
 	Filename     string

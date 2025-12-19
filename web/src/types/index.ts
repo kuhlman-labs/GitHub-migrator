@@ -1079,3 +1079,35 @@ export interface UserDetail {
   mapping?: UserMappingDetail;
 }
 
+// Discovery progress phases
+export type DiscoveryPhase = 
+  | 'listing_repos'
+  | 'profiling_repos'
+  | 'discovering_teams'
+  | 'discovering_members'
+  | 'completed';
+
+// Discovery progress status
+export type DiscoveryStatus = 'in_progress' | 'completed' | 'failed' | 'none';
+
+// Discovery progress type
+export type DiscoveryType = 'enterprise' | 'organization' | 'repository';
+
+// Discovery progress tracking
+export interface DiscoveryProgress {
+  id: number;
+  discovery_type: DiscoveryType;
+  target: string;
+  status: DiscoveryStatus;
+  started_at: string;
+  completed_at?: string;
+  total_orgs: number;
+  processed_orgs: number;
+  current_org: string;
+  total_repos: number;
+  processed_repos: number;
+  phase: DiscoveryPhase;
+  error_count: number;
+  last_error?: string;
+}
+
