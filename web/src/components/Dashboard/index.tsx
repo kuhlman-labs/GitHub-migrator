@@ -15,7 +15,7 @@ import { ActionItemsPanel } from './ActionItemsPanel';
 import { GitHubOrganizationCard } from './GitHubOrganizationCard';
 import { ADOOrganizationCard } from './ADOOrganizationCard';
 import { UpcomingBatchesTimeline } from './UpcomingBatchesTimeline';
-import { DiscoveryProgressCard } from './DiscoveryProgressCard';
+import { DiscoveryProgressCard, LastDiscoveryIndicator } from './DiscoveryProgressCard';
 
 export function Dashboard() {
   // Fetch all dashboard data with polling
@@ -41,6 +41,14 @@ export function Dashboard() {
   const [adoProject, setAdoProject] = useState('');
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
+  const [discoveryBannerDismissed, setDiscoveryBannerDismissed] = useState(false);
+
+  // Reset dismissed state when a new discovery starts
+  useEffect(() => {
+    if (discoveryProgress?.status === 'in_progress') {
+      setDiscoveryBannerDismissed(false);
+    }
+  }, [discoveryProgress?.status]);
 
   // Fetch source type on mount
   useEffect(() => {
@@ -223,7 +231,17 @@ export function Dashboard() {
       {/* Discovery Progress Card - shown when discovery is active or recently completed */}
       {discoveryProgress && (
         <div className="mb-4">
-          <DiscoveryProgressCard progress={discoveryProgress} />
+          {discoveryProgress.status === 'completed' && discoveryBannerDismissed ? (
+            <LastDiscoveryIndicator 
+              progress={discoveryProgress} 
+              onExpand={() => setDiscoveryBannerDismissed(false)}
+            />
+          ) : (
+            <DiscoveryProgressCard 
+              progress={discoveryProgress} 
+              onDismiss={() => setDiscoveryBannerDismissed(true)}
+            />
+          )}
         </div>
       )}
 

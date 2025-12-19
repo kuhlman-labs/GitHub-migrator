@@ -48,7 +48,7 @@ func NewDBProgressTracker(db *storage.Database, logger *slog.Logger, progress *m
 		db:        db,
 		logger:    logger,
 		progress:  progress,
-		batchSize: 5, // Flush every 5 repos to reduce DB writes
+		batchSize: 1, // Flush every repo to keep progress in sync with total repos
 	}
 }
 
