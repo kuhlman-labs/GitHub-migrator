@@ -83,6 +83,25 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 	}
 }
 
+// NewHandlerWithDataStore creates a new Handler instance with a DataStore interface.
+// This is primarily used for testing with MockDataStore.
+// Note: When using MockDataStore, the collector will be nil since it requires a real database.
+func NewHandlerWithDataStore(db DataStore, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient, sourceProvider source.Provider, sourceBaseConfig *github.ClientConfig, authConfig *config.AuthConfig, sourceBaseURL string, sourceType string) *Handler {
+	// Note: collector requires *storage.Database, so it's nil when using MockDataStore
+	// Tests that need the collector should use NewHandler with a real database
+	return &Handler{
+		db:               db,
+		logger:           logger,
+		sourceDualClient: sourceDualClient,
+		destDualClient:   destDualClient,
+		collector:        nil,
+		sourceBaseConfig: sourceBaseConfig,
+		authConfig:       authConfig,
+		sourceBaseURL:    sourceBaseURL,
+		sourceType:       sourceType,
+	}
+}
+
 // Health handles GET /health
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, map[string]string{
