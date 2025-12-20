@@ -34,6 +34,12 @@ const (
 	statusExported = "exported"
 )
 
+// Completion message constants
+const (
+	msgMigrationComplete = "Migration completed successfully"
+	msgDryRunComplete    = "Dry run completed successfully - repository can be migrated safely"
+)
+
 // Adaptive polling configuration - preserves rate limits for long-running migrations
 const (
 	// Archive polling intervals
@@ -171,20 +177,25 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 	}, nil
 }
 
-// ExecuteMigration performs a full repository migration
-// batch parameter is optional - if provided, batch-level settings will be applied when repo settings are not specified
+// ExecuteMigration performs a full repository migration.
+// batch parameter is optional - if provided, batch-level settings will be applied when repo settings are not specified.
 //
-//nolint:gocyclo // Sequential state machine with multiple phases requires complexity
+// The migration proceeds through these phases:
+//  1. Pre-migration validation and discovery
+//  2. Archive generation on source (GHES)
+//  3. Polling for archive completion
+//  4. Migration start on destination (GHEC)
+//  5. Polling for migration completion
+//  6. Post-migration validation
+//  7. Completion and cleanup
 func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool) error {
 	// GitHub-to-GitHub migrations require source client
 	if e.sourceClient == nil {
 		return fmt.Errorf("source client is required for GitHub-to-GitHub migrations")
 	}
 
-	// Determine effective migration flags (repo settings take precedence over batch settings)
-	excludeReleases := e.shouldExcludeReleases(repo, batch)
-	excludeAttachments := e.shouldExcludeAttachments(repo, batch)
-	lockRepositories := !dryRun
+	// Create migration context with computed values
+	mc := e.NewMigrationContext(repo, batch, dryRun)
 
 	e.logger.Info("Starting migration",
 		"repo", repo.FullName,
@@ -195,9 +206,9 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	e.logger.Info("Migration flags",
 		"repo", repo.FullName,
 		"dry_run", dryRun,
-		"lock_repositories", lockRepositories,
-		"exclude_releases", excludeReleases,
-		"exclude_attachments", excludeAttachments,
+		"lock_repositories", mc.LockRepositories,
+		"exclude_releases", mc.ExcludeReleases,
+		"exclude_attachments", mc.ExcludeAttachments,
 		"archive_mode", "separate",
 		"repo_exclude_releases", repo.ExcludeReleases,
 		"repo_exclude_attachments", repo.ExcludeAttachments,
@@ -209,247 +220,52 @@ func (e *Executor) ExecuteMigration(ctx context.Context, repo *models.Repository
 	if err != nil {
 		return fmt.Errorf("failed to create migration history: %w", err)
 	}
+	mc.HistoryID = historyID
 
-	// Log operation
+	// Log operation start
 	e.logOperation(ctx, repo, historyID, "INFO", "migration", "start",
 		fmt.Sprintf("Starting %s for repository", map[bool]string{true: "dry run", false: "migration"}[dryRun]), nil)
 
 	// Log migration flags to history for audit trail
 	flagsDetails := fmt.Sprintf("lock_repositories=%v, exclude_releases=%v, exclude_attachments=%v, archive_mode=separate",
-		lockRepositories, excludeReleases, excludeAttachments)
+		mc.LockRepositories, mc.ExcludeReleases, mc.ExcludeAttachments)
 	e.logOperation(ctx, repo, historyID, "INFO", "migration", "flags", "Migration flags configured", &flagsDetails)
 
 	// Phase 1: Pre-migration validation
-	e.logger.Info("Running pre-migration validation", "repo", repo.FullName)
-	e.logOperation(ctx, repo, historyID, "INFO", "pre_migration", "validate", "Running pre-migration validation", nil)
-
-	// Run discovery on source repository for production migrations to get latest stats
-	if !dryRun {
-		e.logger.Info("Running pre-migration discovery to refresh repository data", "repo", repo.FullName)
-		e.logOperation(ctx, repo, historyID, "INFO", "pre_migration", "discovery", "Refreshing repository characteristics", nil)
-
-		if err := e.runPreMigrationDiscovery(ctx, repo); err != nil {
-			// Log warning but don't fail migration
-			errMsg := err.Error()
-			e.logger.Warn("Pre-migration discovery failed, continuing with existing data",
-				"repo", repo.FullName,
-				"error", err)
-			e.logOperation(ctx, repo, historyID, "WARN", "pre_migration", "discovery", "Pre-migration discovery failed", &errMsg)
-		} else {
-			e.logOperation(ctx, repo, historyID, "INFO", "pre_migration", "discovery", "Repository data refreshed successfully", nil)
-		}
+	if err := e.phasePreMigration(ctx, mc); err != nil {
+		e.handlePhaseError(ctx, mc, err)
+		return err
 	}
 
-	if err := e.validatePreMigration(ctx, repo, batch); err != nil {
-		errMsg := err.Error()
-		e.logOperation(ctx, repo, historyID, "ERROR", "pre_migration", "validate", "Pre-migration validation failed", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
-
-		status := models.StatusMigrationFailed
-		if dryRun {
-			status = models.StatusDryRunFailed
-		}
-		repo.Status = string(status)
-		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
-			e.logger.Error("Failed to update repository status", "error", updateErr)
-		}
-		return fmt.Errorf("pre-migration validation failed: %w", err)
-	}
-	e.logOperation(ctx, repo, historyID, "INFO", "pre_migration", "validate", "Pre-migration validation passed", nil)
-
-	// Update status
-	status := models.StatusPreMigration
-	if dryRun {
-		status = models.StatusDryRunInProgress
-	}
-	repo.Status = string(status)
-	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
-		e.logger.Error("Failed to update repository status", "error", err)
+	// Phase 2: Archive generation
+	if err := e.phaseArchiveGeneration(ctx, mc); err != nil {
+		e.handlePhaseError(ctx, mc, err)
+		return err
 	}
 
-	// Phase 2: Generate migration archives on GHES
-	// For dry runs: lock_repositories = false (test migration without locking)
-	// For production: lock_repositories = true (lock during migration)
-	lockRepos := !dryRun
-	migrationMode := "production migration"
-	if dryRun {
-		migrationMode = "dry run migration (lock_repositories: false)"
+	// Phase 3: Archive polling
+	if err := e.phaseArchivePolling(ctx, mc); err != nil {
+		e.handlePhaseError(ctx, mc, err)
+		return err
 	}
 
-	e.logger.Info("Generating archives on source repository", "repo", repo.FullName, "mode", migrationMode)
-	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "initiate",
-		fmt.Sprintf("Initiating archive generation on %s with options: exclude_releases=%v, exclude_attachments=%v (%s)", e.sourceClient.BaseURL(), excludeReleases, excludeAttachments, migrationMode), nil)
-
-	archiveIDs, err := e.generateArchivesOnGHES(ctx, repo, batch, lockRepos)
-	if err != nil {
-		errMsg := err.Error()
-		e.logOperation(ctx, repo, historyID, "ERROR", "archive_generation", "initiate", "Failed to generate archives", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
-
-		status := models.StatusMigrationFailed
-		if dryRun {
-			status = models.StatusDryRunFailed
-		}
-		repo.Status = string(status)
-
-		// Unlock repository if it was locked
-		if lockRepos && repo.SourceMigrationID != nil {
-			repo.IsSourceLocked = false
-			e.unlockSourceRepository(ctx, repo)
-		}
-
-		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
-			e.logger.Error("Failed to update repository status", "error", updateErr)
-		}
-		return fmt.Errorf("failed to generate archives: %w", err)
+	// Phase 4: Migration start
+	if err := e.phaseMigrationStart(ctx, mc); err != nil {
+		e.handlePhaseError(ctx, mc, err)
+		return err
 	}
 
-	details := fmt.Sprintf("Git Archive ID: %d, Metadata Archive ID: %d", archiveIDs.GitArchiveID, archiveIDs.MetadataArchiveID)
-	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "initiate", "Archive generation initiated successfully", &details)
-
-	repo.Status = string(models.StatusArchiveGenerating)
-	// Track migration ID and lock status for production migrations (use git archive ID as primary)
-	migID := archiveIDs.GitArchiveID
-	repo.SourceMigrationID = &migID
-	repo.IsSourceLocked = lockRepos
-	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
-		e.logger.Error("Failed to update repository status", "error", err)
+	// Phase 5: Migration polling
+	if err := e.phaseMigrationPolling(ctx, mc); err != nil {
+		e.handlePhaseError(ctx, mc, err)
+		return err
 	}
 
-	// Phase 3: Poll for archive generation completion (both git and metadata archives)
-	e.logger.Info("Polling archive generation status", "repo", repo.FullName,
-		"git_archive_id", archiveIDs.GitArchiveID,
-		"metadata_archive_id", archiveIDs.MetadataArchiveID)
-	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "poll", "Polling for archive generation completion", nil)
-
-	archiveURLs, err := e.pollArchiveGeneration(ctx, repo, historyID, archiveIDs)
-	if err != nil {
-		errMsg := err.Error()
-		e.logOperation(ctx, repo, historyID, "ERROR", "archive_generation", "poll", "Archive generation failed", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
-
-		repo.Status = string(models.StatusMigrationFailed)
-
-		// Unlock repository if it was locked
-		if lockRepos && repo.SourceMigrationID != nil {
-			repo.IsSourceLocked = false
-			e.unlockSourceRepository(ctx, repo)
-		}
-
-		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
-			e.logger.Error("Failed to update repository status", "error", updateErr)
-		}
-		return fmt.Errorf("archive generation failed: %w", err)
+	// Phase 6: Post-migration validation (errors are logged but don't fail migration)
+	if err := e.phasePostMigration(ctx, mc); err != nil {
+		e.logger.Warn("Post-migration phase returned error", "error", err)
 	}
 
-	e.logOperation(ctx, repo, historyID, "INFO", "archive_generation", "complete", "Archives generated successfully", nil)
-
-	// Phase 4: Start migration on GHEC using GraphQL
-	e.logger.Info("Starting migration on GHEC", "repo", repo.FullName)
-	e.logOperation(ctx, repo, historyID, "INFO", "migration_start", "initiate", "Starting migration on destination", nil)
-
-	migrationID, err := e.startRepositoryMigration(ctx, repo, batch, archiveURLs)
-	if err != nil {
-		errMsg := err.Error()
-		e.logOperation(ctx, repo, historyID, "ERROR", "migration_start", "initiate", "Failed to start migration", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
-
-		repo.Status = string(models.StatusMigrationFailed)
-
-		// Unlock repository if it was locked
-		if lockRepos && repo.SourceMigrationID != nil {
-			repo.IsSourceLocked = false
-			e.unlockSourceRepository(ctx, repo)
-		}
-
-		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
-			e.logger.Error("Failed to update repository status", "error", updateErr)
-		}
-		return fmt.Errorf("failed to start migration: %w", err)
-	}
-
-	details = fmt.Sprintf("Migration ID: %s", migrationID)
-	e.logOperation(ctx, repo, historyID, "INFO", "migration_start", "initiate", "Migration started successfully", &details)
-
-	repo.Status = string(models.StatusMigratingContent)
-	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
-		e.logger.Error("Failed to update repository status", "error", err)
-	}
-
-	// Phase 5: Poll for migration completion
-	e.logger.Info("Polling migration status", "repo", repo.FullName, "migration_id", migrationID)
-	e.logOperation(ctx, repo, historyID, "INFO", "migration_progress", "poll", "Polling for migration completion", nil)
-
-	if err := e.pollMigrationStatus(ctx, repo, batch, historyID, migrationID); err != nil {
-		errMsg := err.Error()
-		e.logOperation(ctx, repo, historyID, "ERROR", "migration_progress", "poll", "Migration failed", &errMsg)
-		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
-
-		repo.Status = string(models.StatusMigrationFailed)
-
-		// Unlock repository if it was locked
-		if lockRepos && repo.SourceMigrationID != nil {
-			repo.IsSourceLocked = false
-			e.unlockSourceRepository(ctx, repo)
-		}
-
-		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
-			e.logger.Error("Failed to update repository status", "error", updateErr)
-		}
-		return fmt.Errorf("migration failed: %w", err)
-	}
-
-	e.logOperation(ctx, repo, historyID, "INFO", "migration_progress", "complete", "Migration completed successfully", nil)
-
-	// Phase 6: Post-migration validation (configurable)
-	if e.shouldRunPostMigration(dryRun) {
-		e.logger.Info("Running post-migration validation", "repo", repo.FullName, "mode", e.postMigrationMode)
-		e.logOperation(ctx, repo, historyID, "INFO", "post_migration", "validate", "Running post-migration validation", nil)
-
-		if err := e.validatePostMigration(ctx, repo); err != nil {
-			errMsg := err.Error()
-			e.logOperation(ctx, repo, historyID, "WARN", "post_migration", "validate", "Post-migration validation failed", &errMsg)
-			// Don't fail the migration on validation warnings
-		} else {
-			e.logOperation(ctx, repo, historyID, "INFO", "post_migration", "validate", "Post-migration validation passed", nil)
-		}
-	} else {
-		reason := fmt.Sprintf("Skipping post-migration validation (mode: %s, dry_run: %v)", e.postMigrationMode, dryRun)
-		e.logger.Info(reason, "repo", repo.FullName)
-		e.logOperation(ctx, repo, historyID, "INFO", "post_migration", "skip", reason, nil)
-	}
-
-	// Phase 7: Mark complete
-	completionStatus := models.StatusComplete
-	completionMsg := "Migration completed successfully"
-	// Clear lock status on successful completion
-	repo.IsSourceLocked = false
-
-	// Unlock source repository for production migrations
-	if !dryRun && repo.SourceMigrationID != nil {
-		e.unlockSourceRepository(ctx, repo)
-	}
-
-	if dryRun {
-		completionStatus = models.StatusDryRunComplete
-		completionMsg = "Dry run completed successfully - repository can be migrated safely"
-	}
-
-	e.logger.Info("Migration complete", "repo", repo.FullName, "dry_run", dryRun)
-	e.logOperation(ctx, repo, historyID, "INFO", "migration", "complete", completionMsg, nil)
-	e.updateHistoryStatus(ctx, historyID, "completed", nil)
-
-	repo.Status = string(completionStatus)
-	now := time.Now()
-
-	// Set appropriate timestamps based on migration type
-	if dryRun {
-		// Set last dry run timestamp
-		repo.LastDryRunAt = &now
-	} else {
-		// Set migrated timestamp for production migrations
-		repo.MigratedAt = &now
-	}
-
-	return e.storage.UpdateRepository(ctx, repo)
+	// Phase 7: Completion
+	return e.phaseCompletion(ctx, mc)
 }

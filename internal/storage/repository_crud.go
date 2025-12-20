@@ -257,70 +257,116 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 	return repos, nil
 }
 
-// applyListScopes applies GORM scopes based on the provided filters
-//
-//nolint:gocyclo // Complexity is justified for handling multiple filter types
+// applyListScopes applies GORM scopes based on the provided filters.
+// This method delegates to smaller helper functions for better organization and testability.
 func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
-	// Apply status filter
+	// Apply core filters (status, batch, source, search)
+	query = applyCoreFilters(query, filters)
+
+	// Apply organization filters (GitHub org, ADO org/project, team)
+	query = applyOrganizationFilters(query, filters)
+
+	// Apply size and complexity filters
+	query = applySizeFilters(query, filters)
+
+	// Apply feature flag filters (boolean features)
+	query = applyFeatureFlagFilters(query, filters)
+
+	// Apply Azure DevOps count-based filters
+	query = applyADOCountFilters(query, filters)
+
+	// Apply batch availability filter
+	if availableForBatch, ok := filters["available_for_batch"].(bool); ok && availableForBatch {
+		query = query.Scopes(WithAvailableForBatch())
+	}
+
+	// Apply ordering and pagination
+	query = applyOrderingAndPagination(query, filters)
+
+	return query
+}
+
+// applyCoreFilters applies basic filters: status, batch_id, source, visibility, search
+func applyCoreFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
 	if status, ok := filters["status"]; ok {
 		query = query.Scopes(WithStatus(status))
 	}
 
-	// Apply batch_id filter
 	if batchID, ok := filters["batch_id"].(int64); ok {
 		query = query.Scopes(WithBatchID(batchID))
 	}
 
-	// Apply source filter
 	if source, ok := filters["source"].(string); ok {
 		query = query.Scopes(WithSource(source))
 	}
 
-	// Apply size range filters
+	if visibility, ok := filters["visibility"].(string); ok {
+		query = query.Scopes(WithVisibility(visibility))
+	}
+
+	if search, ok := filters["search"].(string); ok {
+		query = query.Scopes(WithSearch(search))
+	}
+
+	return query
+}
+
+// applyOrganizationFilters applies GitHub organization, ADO organization/project, and team filters
+func applyOrganizationFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+	if org, ok := filters["organization"]; ok {
+		query = query.Scopes(WithOrganization(org))
+	}
+
+	if adoOrg, ok := filters["ado_organization"]; ok {
+		query = query.Scopes(WithADOOrganization(adoOrg))
+	}
+
+	if project, ok := filters["ado_project"]; ok {
+		query = query.Scopes(WithADOProject(project))
+	}
+
+	if team, ok := filters["team"]; ok {
+		query = query.Scopes(WithTeam(team))
+	}
+
+	return query
+}
+
+// applySizeFilters applies size-related filters: min/max size, size category, complexity
+func applySizeFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
 	minSize, hasMin := filters["min_size"].(int64)
 	maxSize, hasMax := filters["max_size"].(int64)
 	if hasMin || hasMax {
 		query = query.Scopes(WithSizeRange(minSize, maxSize))
 	}
 
-	// Apply search filter
-	if search, ok := filters["search"].(string); ok {
-		query = query.Scopes(WithSearch(search))
+	if sizeCategory, ok := filters["size_category"]; ok {
+		query = query.Scopes(WithSizeCategory(sizeCategory))
 	}
 
-	// Apply organization filter
-	if org, ok := filters["organization"]; ok {
-		query = query.Scopes(WithOrganization(org))
+	if complexity, ok := filters["complexity"]; ok {
+		query = query.Scopes(WithComplexity(complexity))
 	}
 
-	// Apply ADO organization filter (filters by ado_projects table)
-	if adoOrg, ok := filters["ado_organization"]; ok {
-		query = query.Scopes(WithADOOrganization(adoOrg))
-	}
+	return query
+}
 
-	// Apply ADO project filter
-	if project, ok := filters["ado_project"]; ok {
-		query = query.Scopes(WithADOProject(project))
-	}
+// featureFlagKeys contains all supported feature flag filter keys
+var featureFlagKeys = []string{
+	// GitHub features
+	"has_lfs", "has_submodules", "has_large_files", "has_actions", "has_wiki",
+	"has_pages", "has_discussions", "has_projects", "has_packages", "has_rulesets",
+	"is_archived", "is_fork", "has_code_scanning", "has_dependabot", "has_secret_scanning",
+	"has_codeowners", "has_self_hosted_runners", "has_release_assets", "has_branch_protections",
+	"has_webhooks", "has_environments", "has_secrets", "has_variables",
+	// Azure DevOps features
+	"ado_is_git", "ado_has_boards", "ado_has_pipelines", "ado_has_ghas", "ado_has_wiki",
+}
 
-	// Apply visibility filter
-	if visibility, ok := filters["visibility"].(string); ok {
-		query = query.Scopes(WithVisibility(visibility))
-	}
-
-	// Apply feature flags
+// applyFeatureFlagFilters applies boolean feature flag filters
+func applyFeatureFlagFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
 	featureFlags := make(map[string]bool)
-	featureKeys := []string{
-		// GitHub features
-		"has_lfs", "has_submodules", "has_large_files", "has_actions", "has_wiki",
-		"has_pages", "has_discussions", "has_projects", "has_packages", "has_rulesets",
-		"is_archived", "is_fork", "has_code_scanning", "has_dependabot", "has_secret_scanning",
-		"has_codeowners", "has_self_hosted_runners", "has_release_assets", "has_branch_protections",
-		"has_webhooks", "has_environments", "has_secrets", "has_variables",
-		// Azure DevOps features
-		"ado_is_git", "ado_has_boards", "ado_has_pipelines", "ado_has_ghas", "ado_has_wiki",
-	}
-	for _, key := range featureKeys {
+	for _, key := range featureFlagKeys {
 		if value, ok := filters[key].(bool); ok {
 			featureFlags[key] = value
 		}
@@ -328,15 +374,20 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	if len(featureFlags) > 0 {
 		query = query.Scopes(WithFeatureFlags(featureFlags))
 	}
+	return query
+}
 
-	// Apply ADO count-based filters
+// adoCountFilterKeys contains all supported ADO count filter keys
+var adoCountFilterKeys = []string{
+	"ado_pull_request_count", "ado_work_item_count", "ado_branch_policy_count",
+	"ado_yaml_pipeline_count", "ado_classic_pipeline_count", "ado_test_plan_count",
+	"ado_package_feed_count", "ado_service_hook_count",
+}
+
+// applyADOCountFilters applies Azure DevOps count-based filters
+func applyADOCountFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
 	adoCountFilters := make(map[string]string)
-	adoCountKeys := []string{
-		"ado_pull_request_count", "ado_work_item_count", "ado_branch_policy_count",
-		"ado_yaml_pipeline_count", "ado_classic_pipeline_count", "ado_test_plan_count",
-		"ado_package_feed_count", "ado_service_hook_count",
-	}
-	for _, key := range adoCountKeys {
+	for _, key := range adoCountFilterKeys {
 		if value, ok := filters[key].(string); ok {
 			adoCountFilters[key] = value
 		}
@@ -344,35 +395,17 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 	if len(adoCountFilters) > 0 {
 		query = query.Scopes(WithADOCountFilters(adoCountFilters))
 	}
+	return query
+}
 
-	// Apply size category filter
-	if sizeCategory, ok := filters["size_category"]; ok {
-		query = query.Scopes(WithSizeCategory(sizeCategory))
-	}
-
-	// Apply complexity filter
-	if complexity, ok := filters["complexity"]; ok {
-		query = query.Scopes(WithComplexity(complexity))
-	}
-
-	// Apply available for batch filter
-	if availableForBatch, ok := filters["available_for_batch"].(bool); ok && availableForBatch {
-		query = query.Scopes(WithAvailableForBatch())
-	}
-
-	// Apply team filter
-	if team, ok := filters["team"]; ok {
-		query = query.Scopes(WithTeam(team))
-	}
-
-	// Apply ordering
+// applyOrderingAndPagination applies sort order and pagination filters
+func applyOrderingAndPagination(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
 	sortBy := "name" // default
 	if sort, ok := filters["sort_by"].(string); ok {
 		sortBy = sort
 	}
 	query = query.Scopes(WithOrdering(sortBy))
 
-	// Apply pagination
 	limit, _ := filters["limit"].(int)
 	offset, _ := filters["offset"].(int)
 	if limit > 0 || offset > 0 {

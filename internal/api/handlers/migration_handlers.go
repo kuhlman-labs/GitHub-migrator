@@ -36,7 +36,7 @@ type StartMigrationResponse struct {
 func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 	var req StartMigrationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
@@ -49,18 +49,18 @@ func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 	} else if len(req.FullNames) > 0 {
 		repos, err = h.db.GetRepositoriesByNames(ctx, req.FullNames)
 	} else {
-		h.sendError(w, http.StatusBadRequest, "Must provide repository_ids or full_names")
+		WriteError(w, ErrMissingField.WithDetails("Must provide repository_ids or full_names"))
 		return
 	}
 
 	if err != nil {
 		h.logger.Error("Failed to fetch repositories", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("repositories"))
 		return
 	}
 
 	if len(repos) == 0 {
-		h.sendError(w, http.StatusNotFound, "No repositories found")
+		WriteError(w, ErrRepositoryNotFound)
 		return
 	}
 
@@ -70,7 +70,7 @@ func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Start migration access denied", "error", err)
-		h.sendError(w, http.StatusForbidden, err.Error())
+		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 
@@ -155,12 +155,12 @@ type BatchUpdateRepositoryStatusResponse struct {
 func (h *Handler) BatchUpdateRepositoryStatus(w http.ResponseWriter, r *http.Request) {
 	var req BatchUpdateRepositoryStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if err := validateBatchAction(req.Action); err != nil {
-		h.sendError(w, http.StatusBadRequest, err.Error())
+		WriteError(w, ErrBadRequest.WithDetails(err.Error()))
 		return
 	}
 
@@ -173,7 +173,7 @@ func (h *Handler) BatchUpdateRepositoryStatus(w http.ResponseWriter, r *http.Req
 
 	if err := h.checkBatchUpdatePermissions(ctx, repos); err != nil {
 		h.logger.Warn("Batch update access denied", "error", err)
-		h.sendError(w, http.StatusForbidden, err.Error())
+		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 
@@ -221,11 +221,11 @@ func (h *Handler) fetchRepositoriesForBatchUpdate(ctx context.Context, req Batch
 
 func (h *Handler) handleBatchUpdateError(w http.ResponseWriter, err error) {
 	if err.Error() == "no repositories found" {
-		h.sendError(w, http.StatusNotFound, err.Error())
+		WriteError(w, ErrRepositoryNotFound)
 	} else if err.Error() == "must provide repository_ids or full_names" {
-		h.sendError(w, http.StatusBadRequest, err.Error())
+		WriteError(w, ErrMissingField.WithDetails("repository_ids or full_names"))
 	} else {
-		h.sendError(w, http.StatusInternalServerError, err.Error())
+		WriteError(w, ErrInternal.WithDetails(err.Error()))
 	}
 }
 
@@ -447,7 +447,7 @@ func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid repository ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid repository ID"))
 		return
 	}
 
@@ -458,12 +458,12 @@ func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get repository", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch migration status")
+		WriteError(w, ErrDatabaseFetch.WithDetails("migration status"))
 		return
 	}
 
 	if repo == nil {
-		h.sendError(w, http.StatusNotFound, "Migration not found")
+		WriteError(w, ErrNotFound.WithDetails("Migration not found"))
 		return
 	}
 
@@ -496,7 +496,7 @@ func (h *Handler) GetMigrationHistory(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid repository ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid repository ID"))
 		return
 	}
 
@@ -507,7 +507,7 @@ func (h *Handler) GetMigrationHistory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get migration history", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch history")
+		WriteError(w, ErrDatabaseFetch.WithDetails("migration history"))
 		return
 	}
 
@@ -519,7 +519,7 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid repository ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid repository ID"))
 		return
 	}
 
@@ -550,7 +550,7 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get migration logs", "error", err, "repo_id", id)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch logs")
+		WriteError(w, ErrDatabaseFetch.WithDetails("migration logs"))
 		return
 	}
 
@@ -589,18 +589,18 @@ type SelfServiceMigrationResponse struct {
 func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Request) {
 	var req SelfServiceMigrationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if len(req.Repositories) == 0 {
-		h.sendError(w, http.StatusBadRequest, "No repositories provided")
+		WriteError(w, ErrMissingField.WithDetails("No repositories provided"))
 		return
 	}
 
 	for _, repoFullName := range req.Repositories {
 		if !strings.Contains(repoFullName, "/") {
-			h.sendError(w, http.StatusBadRequest, fmt.Sprintf("Invalid repository format: %s (must be 'org/repo')", repoFullName))
+			WriteError(w, ErrInvalidField.WithDetails(fmt.Sprintf("Invalid repository format: %s (must be 'org/repo')", repoFullName)))
 			return
 		}
 	}
@@ -609,7 +609,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 	if err := h.checkRepositoriesAccess(ctx, req.Repositories); err != nil {
 		h.logger.Warn("Self-service migration access denied", "error", err)
-		h.sendError(w, http.StatusForbidden, err.Error())
+		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 
@@ -626,7 +626,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		repo, err := h.db.GetRepository(ctx, repoFullName)
 		if err != nil {
 			h.logger.Error("Failed to check repository existence", "repo", repoFullName, "error", err)
-			h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to check repository: %s", repoFullName))
+			WriteError(w, ErrDatabaseFetch.WithDetails(fmt.Sprintf("repository %s", repoFullName)))
 			return
 		}
 
@@ -641,7 +641,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		h.logger.Info("Starting discovery for new repositories", "count", len(reposToDiscover))
 
 		if h.collector == nil {
-			h.sendError(w, http.StatusServiceUnavailable, "Discovery service not configured")
+			WriteError(w, ErrClientNotConfigured.WithDetails("Discovery service"))
 			return
 		}
 
@@ -686,7 +686,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 	}
 
 	if len(existingRepos) == 0 {
-		h.sendError(w, http.StatusBadRequest, "No valid repositories to migrate. All repositories failed discovery or validation.")
+		WriteError(w, ErrBadRequest.WithDetails("No valid repositories to migrate. All repositories failed discovery or validation."))
 		return
 	}
 
@@ -713,7 +713,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 	if err := h.db.CreateBatch(ctx, batch); err != nil {
 		h.logger.Error("Failed to create batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to create batch")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("batch creation"))
 		return
 	}
 
@@ -726,7 +726,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 	if err := h.db.AddRepositoriesToBatch(ctx, batch.ID, repoIDs); err != nil {
 		h.logger.Error("Failed to add repositories to batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to add repositories to batch")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("adding repositories to batch"))
 		return
 	}
 
@@ -843,7 +843,7 @@ func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request
 			return
 		}
 		h.logger.Error("Failed to get migration history", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch migration history")
+		WriteError(w, ErrDatabaseFetch.WithDetails("migration history"))
 		return
 	}
 
@@ -859,14 +859,14 @@ func (h *Handler) ExportMigrationHistory(w http.ResponseWriter, r *http.Request)
 	format := r.URL.Query().Get("format")
 
 	if format != "csv" && format != "json" {
-		h.sendError(w, http.StatusBadRequest, "Invalid format. Must be 'csv' or 'json'")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid format. Must be 'csv' or 'json'"))
 		return
 	}
 
 	migrations, err := h.db.GetCompletedMigrations(ctx)
 	if err != nil {
 		h.logger.Error("Failed to get migration history for export", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch migration history")
+		WriteError(w, ErrDatabaseFetch.WithDetails("migration history"))
 		return
 	}
 

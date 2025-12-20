@@ -81,9 +81,17 @@ var (
 		Code:    http.StatusUnauthorized,
 		Message: "Authentication required",
 	}
+	ErrAuthenticationFailed = APIError{
+		Code:    http.StatusUnauthorized,
+		Message: "Authentication failed",
+	}
 	ErrInvalidToken = APIError{
 		Code:    http.StatusUnauthorized,
 		Message: "Invalid or expired token",
+	}
+	ErrAuthorizationFailed = APIError{
+		Code:    http.StatusUnauthorized,
+		Message: "Authorization failed",
 	}
 
 	// 403 Forbidden errors
@@ -176,6 +184,10 @@ var (
 	ErrDiscoveryInProgress = APIError{
 		Code:    http.StatusServiceUnavailable,
 		Message: "Discovery is already in progress",
+	}
+	ErrDiscoveryFailed = APIError{
+		Code:    http.StatusServiceUnavailable,
+		Message: "Discovery operation failed",
 	}
 )
 

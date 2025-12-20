@@ -20,7 +20,7 @@ func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to list batches", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batches")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batches"))
 		return
 	}
 	h.sendJSON(w, http.StatusOK, batches)
@@ -30,17 +30,17 @@ func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 	var batch models.Batch
 	if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if strings.TrimSpace(batch.Name) == "" {
-		h.sendError(w, http.StatusBadRequest, "Batch name is required")
+		WriteError(w, ErrMissingField.WithField("name"))
 		return
 	}
 
 	if batch.MigrationAPI != "" && batch.MigrationAPI != models.MigrationAPIGEI && batch.MigrationAPI != models.MigrationAPIELM {
-		h.sendError(w, http.StatusBadRequest, "Invalid migration_api. Must be 'GEI' or 'ELM'")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid migration_api. Must be 'GEI' or 'ELM'"))
 		return
 	}
 
@@ -57,11 +57,11 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
 			strings.Contains(err.Error(), "unique constraint") {
-			h.sendError(w, http.StatusConflict, fmt.Sprintf("A batch with the name '%s' already exists. Please choose a different name.", batch.Name))
+			WriteError(w, ErrConflict.WithDetails(fmt.Sprintf("A batch with the name '%s' already exists. Please choose a different name.", batch.Name)))
 			return
 		}
 
-		h.sendError(w, http.StatusInternalServerError, "Failed to create batch")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("batch creation"))
 		return
 	}
 
@@ -73,7 +73,7 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -84,12 +84,12 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
@@ -116,7 +116,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -133,17 +133,17 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
 	if batch.Status != statusPending && batch.Status != statusReady {
-		h.sendError(w, http.StatusBadRequest, "Can only run dry run on batches with 'pending' or 'ready' status")
+		WriteError(w, ErrBadRequest.WithDetails("Can only run dry run on batches with 'pending' or 'ready' status"))
 		return
 	}
 
@@ -152,12 +152,12 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		h.logger.Error("Failed to get batch repositories", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("repositories"))
 		return
 	}
 
 	if len(repos) == 0 {
-		h.sendError(w, http.StatusBadRequest, "Batch has no repositories")
+		WriteError(w, ErrBadRequest.WithDetails("Batch has no repositories"))
 		return
 	}
 
@@ -217,7 +217,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(dryRunIDs) == 0 {
-		h.sendError(w, http.StatusBadRequest, fmt.Sprintf("No repositories to run dry run. %d repositories were skipped.", skippedCount))
+		WriteError(w, ErrBadRequest.WithDetails(fmt.Sprintf("No repositories to run dry run. %d repositories were skipped.", skippedCount)))
 		return
 	}
 
@@ -251,7 +251,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -268,22 +268,22 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
 	if batch.Status == statusPending && !req.SkipDryRun {
-		h.sendError(w, http.StatusBadRequest, "Batch is in 'pending' state. Run dry run first or set skip_dry_run=true")
+		WriteError(w, ErrBadRequest.WithDetails("Batch is in 'pending' state. Run dry run first or set skip_dry_run=true"))
 		return
 	}
 
 	if batch.Status != statusReady && batch.Status != statusPending {
-		h.sendError(w, http.StatusBadRequest, "Can only start batches with 'ready' or 'pending' status")
+		WriteError(w, ErrBadRequest.WithDetails("Can only start batches with 'ready' or 'pending' status"))
 		return
 	}
 
@@ -292,12 +292,12 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		h.logger.Error("Failed to get batch repositories", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("repositories"))
 		return
 	}
 
 	if len(repos) == 0 {
-		h.sendError(w, http.StatusBadRequest, "Batch has no repositories")
+		WriteError(w, ErrBadRequest.WithDetails("Batch has no repositories"))
 		return
 	}
 
@@ -307,7 +307,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Start batch access denied", "batch_id", batchID, "error", err)
-		h.sendError(w, http.StatusForbidden, err.Error())
+		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 
@@ -369,7 +369,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -381,17 +381,17 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
 	if batch.Status != statusReady && batch.Status != statusPending {
-		h.sendError(w, http.StatusBadRequest, "Can only edit batches with 'pending' or 'ready' status")
+		WriteError(w, ErrBadRequest.WithDetails("Can only edit batches with 'pending' or 'ready' status"))
 		return
 	}
 
@@ -407,12 +407,12 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if updates.MigrationAPI != nil && *updates.MigrationAPI != models.MigrationAPIGEI && *updates.MigrationAPI != models.MigrationAPIELM {
-		h.sendError(w, http.StatusBadRequest, "Invalid migration_api. Must be 'GEI' or 'ELM'")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid migration_api. Must be 'GEI' or 'ELM'"))
 		return
 	}
 
@@ -455,7 +455,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.db.UpdateBatch(ctx, batch); err != nil {
 		h.logger.Error("Failed to update batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to update batch")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("batch"))
 		return
 	}
 
@@ -517,7 +517,7 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -529,23 +529,23 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
 	if batch.Status == "in_progress" {
-		h.sendError(w, http.StatusBadRequest, "Cannot delete batch in 'in_progress' status")
+		WriteError(w, ErrBadRequest.WithDetails("Cannot delete batch in 'in_progress' status"))
 		return
 	}
 
 	if err := h.db.DeleteBatch(ctx, batchID); err != nil {
 		h.logger.Error("Failed to delete batch", "error", err, "batch_id", batchID)
-		h.sendError(w, http.StatusInternalServerError, "Failed to delete batch")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("batch deletion"))
 		return
 	}
 
@@ -563,7 +563,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -575,17 +575,17 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
 	if batch.Status != statusReady && batch.Status != statusPending {
-		h.sendError(w, http.StatusBadRequest, "Can only add repositories to batches with 'pending' or 'ready' status")
+		WriteError(w, ErrBadRequest.WithDetails("Can only add repositories to batches with 'pending' or 'ready' status"))
 		return
 	}
 
@@ -594,19 +594,19 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if len(req.RepositoryIDs) == 0 {
-		h.sendError(w, http.StatusBadRequest, "No repository IDs provided")
+		WriteError(w, ErrMissingField.WithDetails("repository_ids"))
 		return
 	}
 
 	repos, err := h.db.GetRepositoriesByIDs(ctx, req.RepositoryIDs)
 	if err != nil {
 		h.logger.Error("Failed to get repositories", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to validate repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("repository validation"))
 		return
 	}
 
@@ -616,7 +616,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	}
 	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Add repositories to batch access denied", "batch_id", batchID, "error", err)
-		h.sendError(w, http.StatusForbidden, err.Error())
+		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 
@@ -638,13 +638,13 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		for _, repoName := range ineligibleRepos {
 			errorMsg += fmt.Sprintf("  - %s: %s\n", repoName, ineligibleReasons[repoName])
 		}
-		h.sendError(w, http.StatusBadRequest, strings.TrimSpace(errorMsg))
+		WriteError(w, ErrBadRequest.WithDetails(strings.TrimSpace(errorMsg)))
 		return
 	}
 
 	if err := h.db.AddRepositoriesToBatch(ctx, batchID, eligibleRepoIDs); err != nil {
 		h.logger.Error("Failed to add repositories to batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to add repositories to batch")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("adding repositories to batch"))
 		return
 	}
 
@@ -724,7 +724,7 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -736,17 +736,17 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
 	if batch.Status != statusReady && batch.Status != statusPending {
-		h.sendError(w, http.StatusBadRequest, "Can only remove repositories from batches with 'pending' or 'ready' status")
+		WriteError(w, ErrBadRequest.WithDetails("Can only remove repositories from batches with 'pending' or 'ready' status"))
 		return
 	}
 
@@ -755,18 +755,18 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if len(req.RepositoryIDs) == 0 {
-		h.sendError(w, http.StatusBadRequest, "No repository IDs provided")
+		WriteError(w, ErrMissingField.WithDetails("repository_ids"))
 		return
 	}
 
 	if err := h.db.RemoveRepositoriesFromBatch(ctx, batchID, req.RepositoryIDs); err != nil {
 		h.logger.Error("Failed to remove repositories from batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to remove repositories from batch")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("removing repositories from batch"))
 		return
 	}
 
@@ -786,7 +786,7 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	batchID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
 	}
 
@@ -798,12 +798,12 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch batch")
+		WriteError(w, ErrDatabaseFetch.WithDetails("batch"))
 		return
 	}
 
 	if batch == nil {
-		h.sendError(w, http.StatusNotFound, "Batch not found")
+		WriteError(w, ErrBatchNotFound)
 		return
 	}
 
@@ -821,19 +821,19 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 		reposToRetry, err = h.db.GetRepositoriesByIDs(ctx, req.RepositoryIDs)
 		if err != nil {
 			h.logger.Error("Failed to get repositories", "error", err)
-			h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+			WriteError(w, ErrDatabaseFetch.WithDetails("repositories"))
 			return
 		}
 
 		for _, repo := range reposToRetry {
 			if repo.BatchID == nil || *repo.BatchID != batchID {
-				h.sendError(w, http.StatusBadRequest,
-					fmt.Sprintf("Repository %s is not in this batch", repo.FullName))
+				WriteError(w, ErrBadRequest.WithDetails(
+					fmt.Sprintf("Repository %s is not in this batch", repo.FullName)))
 				return
 			}
 			if repo.Status != string(models.StatusMigrationFailed) && repo.Status != string(models.StatusDryRunFailed) {
-				h.sendError(w, http.StatusBadRequest,
-					fmt.Sprintf("Repository %s is not in a failed state", repo.FullName))
+				WriteError(w, ErrBadRequest.WithDetails(
+					fmt.Sprintf("Repository %s is not in a failed state", repo.FullName)))
 				return
 			}
 		}
@@ -848,13 +848,13 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 		reposToRetry, err = h.db.ListRepositories(ctx, filters)
 		if err != nil {
 			h.logger.Error("Failed to get failed repositories", "error", err)
-			h.sendError(w, http.StatusInternalServerError, "Failed to fetch failed repositories")
+			WriteError(w, ErrDatabaseFetch.WithDetails("failed repositories"))
 			return
 		}
 	}
 
 	if len(reposToRetry) == 0 {
-		h.sendError(w, http.StatusBadRequest, "No failed repositories to retry")
+		WriteError(w, ErrBadRequest.WithDetails("No failed repositories to retry"))
 		return
 	}
 
@@ -864,7 +864,7 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Retry batch access denied", "batch_id", batchID, "error", err)
-		h.sendError(w, http.StatusForbidden, err.Error())
+		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 

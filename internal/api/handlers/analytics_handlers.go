@@ -26,7 +26,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
+		WriteError(w, ErrDatabaseFetch.WithDetails("analytics"))
 		return
 	}
 
@@ -127,7 +127,7 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get repository stats", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch progress")
+		WriteError(w, ErrDatabaseFetch.WithDetails("progress"))
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch analytics")
+		WriteError(w, ErrDatabaseFetch.WithDetails("analytics"))
 		return
 	}
 
@@ -307,7 +307,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	if format != formatCSV && format != formatJSON {
-		h.sendError(w, http.StatusBadRequest, "Invalid format. Must be 'csv' or 'json'")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid format. Must be 'csv' or 'json'"))
 		return
 	}
 
@@ -401,7 +401,7 @@ func (h *Handler) ExportDetailedDiscoveryReport(w http.ResponseWriter, r *http.R
 	batchFilter := r.URL.Query().Get("batch_id")
 
 	if format != formatCSV && format != formatJSON {
-		h.sendError(w, http.StatusBadRequest, "Invalid format. Must be 'csv' or 'json'")
+		WriteError(w, ErrInvalidField.WithDetails("Invalid format. Must be 'csv' or 'json'"))
 		return
 	}
 
@@ -409,13 +409,13 @@ func (h *Handler) ExportDetailedDiscoveryReport(w http.ResponseWriter, r *http.R
 	repos, err := h.db.ListRepositories(ctx, filters)
 	if err != nil {
 		h.logger.Error("Failed to list repositories", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("repositories"))
 		return
 	}
 
 	if err := h.checkDiscoveryReportAccess(ctx, repos); err != nil {
 		h.logger.Warn("Detailed discovery report access denied", "error", err)
-		h.sendError(w, http.StatusForbidden, err.Error())
+		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 

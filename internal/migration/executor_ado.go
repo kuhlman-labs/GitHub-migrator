@@ -158,11 +158,11 @@ func (e *Executor) ExecuteADOMigration(ctx context.Context, repo *models.Reposit
 
 	// Phase 5: Mark complete (matches GitHub migration flow)
 	completionStatus := models.StatusComplete
-	completionMsg := "Migration completed successfully"
+	completionMsg := msgMigrationComplete
 
 	if dryRun {
 		completionStatus = models.StatusDryRunComplete
-		completionMsg = "Dry run completed successfully - repository can be migrated safely"
+		completionMsg = msgDryRunComplete
 	}
 
 	e.logger.Info("ADO migration complete", "repo", repo.FullName, "dry_run", dryRun)

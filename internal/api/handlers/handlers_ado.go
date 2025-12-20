@@ -41,12 +41,12 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.Organization == "" {
-		h.sendError(w, http.StatusBadRequest, "organization is required")
+		WriteError(w, ErrMissingField.WithField("organization"))
 		return
 	}
 
@@ -127,7 +127,7 @@ func (h *ADOHandler) ListADOProjects(w http.ResponseWriter, r *http.Request) {
 	// Query projects from database
 	projects, err := h.db.GetADOProjects(ctx, organization)
 	if err != nil {
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch ADO projects")
+		WriteError(w, ErrDatabaseFetch.WithDetails("ADO projects"))
 		return
 	}
 
@@ -203,21 +203,21 @@ func (h *ADOHandler) GetADOProject(w http.ResponseWriter, r *http.Request) {
 	projectName := r.PathValue("project")
 
 	if organization == "" || projectName == "" {
-		h.sendError(w, http.StatusBadRequest, "organization and project are required")
+		WriteError(w, ErrMissingField.WithDetails("organization and project are required"))
 		return
 	}
 
 	// Get project from database
 	project, err := h.db.GetADOProject(ctx, organization, projectName)
 	if err != nil {
-		h.sendError(w, http.StatusNotFound, fmt.Sprintf("Project not found: %s/%s", organization, projectName))
+		WriteError(w, ErrNotFound.WithDetails(fmt.Sprintf("Project not found: %s/%s", organization, projectName)))
 		return
 	}
 
 	// Get repositories for this project
 	repositories, err := h.db.GetRepositoriesByADOProject(ctx, organization, projectName)
 	if err != nil {
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("repositories"))
 		return
 	}
 
@@ -239,7 +239,7 @@ func (h *ADOHandler) ADODiscoveryStatus(w http.ResponseWriter, r *http.Request) 
 	// Count total ADO repositories
 	totalCount, err := h.db.CountRepositoriesByADOOrganization(ctx, organization)
 	if err != nil {
-		h.sendError(w, http.StatusInternalServerError, "Failed to count repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("repository count"))
 		return
 	}
 

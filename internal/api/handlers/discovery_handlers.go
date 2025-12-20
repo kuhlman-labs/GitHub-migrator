@@ -22,23 +22,23 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	// Validate that either organization or enterprise is provided, but not both
 	if req.Organization == "" && req.EnterpriseSlug == "" {
-		h.sendError(w, http.StatusBadRequest, "Either organization or enterprise_slug is required")
+		WriteError(w, ErrMissingField.WithDetails("Either organization or enterprise_slug is required"))
 		return
 	}
 
 	if req.Organization != "" && req.EnterpriseSlug != "" {
-		h.sendError(w, http.StatusBadRequest, "Cannot specify both organization and enterprise_slug")
+		WriteError(w, ErrBadRequest.WithDetails("Cannot specify both organization and enterprise_slug"))
 		return
 	}
 
 	if h.collector == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
 		return
 	}
 
@@ -46,11 +46,11 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 	activeProgress, err := h.db.GetActiveDiscoveryProgress()
 	if err != nil {
 		h.logger.Error("Failed to check for active discovery", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to check discovery status")
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery status"))
 		return
 	}
 	if activeProgress != nil {
-		h.sendError(w, http.StatusConflict, fmt.Sprintf("Discovery already in progress (target: %s, started: %s)", activeProgress.Target, activeProgress.StartedAt.Format(time.RFC3339)))
+		WriteError(w, ErrConflict.WithDetails(fmt.Sprintf("Discovery already in progress (target: %s, started: %s)", activeProgress.Target, activeProgress.StartedAt.Format(time.RFC3339))))
 		return
 	}
 
@@ -79,11 +79,11 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.CreateDiscoveryProgress(progress); err != nil {
 		// Check if this is a race condition where another discovery started between our check and create
 		if errors.Is(err, storage.ErrDiscoveryInProgress) {
-			h.sendError(w, http.StatusConflict, err.Error())
+			WriteError(w, ErrConflict.WithDetails(err.Error()))
 			return
 		}
 		h.logger.Error("Failed to create discovery progress", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to initialize discovery progress")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("discovery progress initialization"))
 		return
 	}
 
@@ -146,7 +146,7 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to count repositories", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get discovery status")
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery status"))
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *Handler) GetDiscoveryProgress(w http.ResponseWriter, r *http.Request) {
 	progress, err := h.db.GetLatestDiscoveryProgress()
 	if err != nil {
 		h.logger.Error("Failed to get discovery progress", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get discovery progress")
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery progress"))
 		return
 	}
 
@@ -187,17 +187,17 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.Organization == "" {
-		h.sendError(w, http.StatusBadRequest, "organization is required")
+		WriteError(w, ErrMissingField.WithField("organization"))
 		return
 	}
 
 	if h.collector == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
 		return
 	}
 

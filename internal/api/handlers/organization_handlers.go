@@ -89,7 +89,7 @@ func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to list teams", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch teams")
+		WriteError(w, ErrDatabaseFetch.WithDetails("teams"))
 		return
 	}
 
@@ -131,7 +131,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			h.logger.Error("Failed to get ADO projects", "error", err)
-			h.sendError(w, http.StatusInternalServerError, "Failed to fetch projects")
+			WriteError(w, ErrDatabaseFetch.WithDetails("projects"))
 			return
 		}
 
@@ -168,7 +168,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get organization stats", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch organizations")
+		WriteError(w, ErrDatabaseFetch.WithDetails("organizations"))
 		return
 	}
 
@@ -191,7 +191,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get ADO projects", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch projects")
+		WriteError(w, ErrDatabaseFetch.WithDetails("projects"))
 		return
 	}
 
@@ -233,7 +233,7 @@ func (h *Handler) GetOrganizationList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get organization list", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch organization list")
+		WriteError(w, ErrDatabaseFetch.WithDetails("organization list"))
 		return
 	}
 
@@ -251,7 +251,7 @@ func (h *Handler) GetDashboardActionItems(w http.ResponseWriter, r *http.Request
 			return
 		}
 		h.logger.Error("Failed to get dashboard action items", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch dashboard action items")
+		WriteError(w, ErrDatabaseFetch.WithDetails("dashboard action items"))
 		return
 	}
 

@@ -13,7 +13,7 @@ import (
 func (h *Handler) GetRepositoryDependencies(w http.ResponseWriter, r *http.Request) {
 	fullName := r.PathValue("fullName")
 	if fullName == "" {
-		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
 	}
 	h.getRepositoryDependencies(w, r, fullName)
@@ -32,7 +32,7 @@ func (h *Handler) getRepositoryDependencies(w http.ResponseWriter, r *http.Reque
 		h.logger.Error("Failed to get repository dependencies",
 			"repo", decodedFullName,
 			"error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependencies")
+		WriteError(w, ErrDatabaseFetch.WithDetails("dependencies"))
 		return
 	}
 
@@ -68,7 +68,7 @@ func (h *Handler) getRepositoryDependencies(w http.ResponseWriter, r *http.Reque
 func (h *Handler) GetRepositoryDependents(w http.ResponseWriter, r *http.Request) {
 	fullName := r.PathValue("fullName")
 	if fullName == "" {
-		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *Handler) GetRepositoryDependents(w http.ResponseWriter, r *http.Request
 		h.logger.Error("Failed to get dependent repositories",
 			"repo", decodedFullName,
 			"error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependent repositories")
+		WriteError(w, ErrDatabaseFetch.WithDetails("dependent repositories"))
 		return
 	}
 
@@ -146,7 +146,7 @@ func (h *Handler) GetDependencyGraph(w http.ResponseWriter, r *http.Request) {
 	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes)
 	if err != nil {
 		h.logger.Error("Failed to get dependency graph", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependency graph")
+		WriteError(w, ErrDatabaseFetch.WithDetails("dependency graph"))
 		return
 	}
 
@@ -260,7 +260,7 @@ func (h *Handler) ExportDependencies(w http.ResponseWriter, r *http.Request) {
 	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes)
 	if err != nil {
 		h.logger.Error("Failed to get dependencies for export", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to retrieve dependencies")
+		WriteError(w, ErrDatabaseFetch.WithDetails("dependencies"))
 		return
 	}
 
@@ -413,7 +413,7 @@ func (h *Handler) writeRepoDependencyExport(w http.ResponseWriter, format, repoF
 func (h *Handler) ExportRepositoryDependencies(w http.ResponseWriter, r *http.Request) {
 	fullName := r.PathValue("fullName")
 	if fullName == "" {
-		h.sendError(w, http.StatusBadRequest, "Repository name is required")
+		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
 	}
 
@@ -431,7 +431,7 @@ func (h *Handler) ExportRepositoryDependencies(w http.ResponseWriter, r *http.Re
 
 	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil || repo == nil {
-		h.sendError(w, http.StatusNotFound, "Repository not found")
+		WriteError(w, ErrRepositoryNotFound)
 		return
 	}
 

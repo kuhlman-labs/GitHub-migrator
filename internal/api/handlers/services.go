@@ -114,3 +114,72 @@ type MockTimeProvider struct {
 func (m MockTimeProvider) Now() time.Time {
 	return m.FixedTime
 }
+
+// Composite interfaces for common use cases
+
+// RepositoryService combines read and write operations for repositories.
+// Use this when a handler needs both read and write access.
+type RepositoryService interface {
+	RepositoryReader
+	RepositoryWriter
+	ListRepositories(ctx context.Context, filters map[string]interface{}) ([]*models.Repository, error)
+	CountRepositoriesWithFilters(ctx context.Context, filters map[string]interface{}) (int, error)
+}
+
+// BatchService combines read and write operations for batches.
+type BatchService interface {
+	BatchReader
+	BatchWriter
+}
+
+// MigrationHistoryService combines read and write operations for migration history.
+type MigrationHistoryService interface {
+	MigrationHistoryReader
+	MigrationHistoryWriter
+}
+
+// UserService defines operations for user management.
+type UserService interface {
+	GetUsers(ctx context.Context) ([]*models.GitHubUser, error)
+	GetUserByLogin(ctx context.Context, login string) (*models.GitHubUser, error)
+	SaveUser(ctx context.Context, user *models.GitHubUser) error
+	DeleteUser(ctx context.Context, login string) error
+}
+
+// UserMappingService defines operations for user mappings.
+type UserMappingService interface {
+	GetUserMappings(ctx context.Context) ([]*models.UserMapping, error)
+	GetUserMapping(ctx context.Context, sourceLogin string) (*models.UserMapping, error)
+	SaveUserMapping(ctx context.Context, mapping *models.UserMapping) error
+	UpdateUserMapping(ctx context.Context, mapping *models.UserMapping) error
+	DeleteUserMapping(ctx context.Context, sourceLogin string) error
+}
+
+// TeamService defines operations for team management.
+type TeamService interface {
+	GetTeams(ctx context.Context) ([]*models.GitHubTeam, error)
+	GetTeam(ctx context.Context, org, slug string) (*models.GitHubTeam, error)
+	GetTeamMembers(ctx context.Context, teamID int64) ([]*models.GitHubTeamMember, error)
+	SaveTeam(ctx context.Context, team *models.GitHubTeam) error
+}
+
+// TeamMappingService defines operations for team mappings.
+type TeamMappingService interface {
+	GetTeamMappings(ctx context.Context) ([]*models.TeamMapping, error)
+	GetTeamMapping(ctx context.Context, sourceOrg, sourceSlug string) (*models.TeamMapping, error)
+	SaveTeamMapping(ctx context.Context, mapping *models.TeamMapping) error
+	UpdateTeamMapping(ctx context.Context, mapping *models.TeamMapping) error
+	DeleteTeamMapping(ctx context.Context, sourceOrg, sourceSlug string) error
+}
+
+// OrganizationService defines operations for organization management.
+type OrganizationService interface {
+	GetOrganizations(ctx context.Context) ([]string, error)
+	GetOrganizationStats(ctx context.Context, org string) (map[string]interface{}, error)
+}
+
+// AnalyticsService defines operations for analytics and reporting.
+type AnalyticsService interface {
+	GetRepositoryStats(ctx context.Context) (map[string]int, error)
+	GetMigrationProgress(ctx context.Context) (map[string]interface{}, error)
+}

@@ -31,7 +31,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to list users", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch users")
+		WriteError(w, ErrDatabaseFetch.WithDetails("users"))
 		return
 	}
 
@@ -52,7 +52,7 @@ func (h *Handler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get user stats", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch user stats")
+		WriteError(w, ErrDatabaseFetch.WithDetails("user stats"))
 		return
 	}
 
@@ -67,17 +67,17 @@ func (h *Handler) DiscoverOrgMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.Organization == "" {
-		h.sendError(w, http.StatusBadRequest, "organization is required")
+		WriteError(w, ErrMissingField.WithField("organization"))
 		return
 	}
 
 	if h.collector == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *Handler) DiscoverOrgMembers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Org member discovery failed", "error", err, "org", req.Organization)
-		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Discovery failed: %v", err))
+		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Discovery failed: %v", err)))
 		return
 	}
 
@@ -146,7 +146,7 @@ func (h *Handler) ListUserMappings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to list users with mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch users")
+		WriteError(w, ErrDatabaseFetch.WithDetails("users"))
 		return
 	}
 
@@ -170,7 +170,7 @@ func (h *Handler) GetUserMappingStats(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get user mapping stats", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch user mapping stats")
+		WriteError(w, ErrDatabaseFetch.WithDetails("user mapping stats"))
 		return
 	}
 
@@ -184,7 +184,7 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 
 	login := r.PathValue("login")
 	if login == "" {
-		h.sendError(w, http.StatusBadRequest, "login is required")
+		WriteError(w, ErrMissingField.WithField("login"))
 		return
 	}
 
@@ -195,7 +195,7 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get user", "login", login, "error", err)
-		h.sendError(w, http.StatusNotFound, "User not found")
+		WriteError(w, ErrNotFound.WithDetails("User not found"))
 		return
 	}
 
@@ -268,12 +268,12 @@ func (h *Handler) CreateUserMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.SourceLogin == "" {
-		h.sendError(w, http.StatusBadRequest, "source_login is required")
+		WriteError(w, ErrMissingField.WithField("source_login"))
 		return
 	}
 
@@ -303,7 +303,7 @@ func (h *Handler) CreateUserMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to save user mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to save user mapping")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("user mapping"))
 		return
 	}
 
@@ -320,7 +320,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 	sourceLogin, _ = decodePathComponent(sourceLogin)
 
 	if sourceLogin == "" {
-		h.sendError(w, http.StatusBadRequest, "source_login is required")
+		WriteError(w, ErrMissingField.WithField("source_login"))
 		return
 	}
 
@@ -331,7 +331,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
@@ -342,7 +342,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get user mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get user mapping")
+		WriteError(w, ErrDatabaseFetch.WithDetails("user mapping"))
 		return
 	}
 
@@ -373,7 +373,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 	// Validate data integrity: "mapped" status requires a destination_login
 	if existing.MappingStatus == string(models.UserMappingStatusMapped) {
 		if existing.DestinationLogin == nil || *existing.DestinationLogin == "" {
-			h.sendError(w, http.StatusBadRequest, "Cannot set status to 'mapped' without a destination_login")
+			WriteError(w, ErrBadRequest.WithDetails("Cannot set status to 'mapped' without a destination_login"))
 			return
 		}
 	}
@@ -385,7 +385,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to update user mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to update user mapping")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("user mapping"))
 		return
 	}
 
@@ -402,7 +402,7 @@ func (h *Handler) DeleteUserMapping(w http.ResponseWriter, r *http.Request) {
 	sourceLogin, _ = decodePathComponent(sourceLogin)
 
 	if sourceLogin == "" {
-		h.sendError(w, http.StatusBadRequest, "source_login is required")
+		WriteError(w, ErrMissingField.WithField("source_login"))
 		return
 	}
 
@@ -411,7 +411,7 @@ func (h *Handler) DeleteUserMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to delete user mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to delete user mapping")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("user mapping deletion"))
 		return
 	}
 
@@ -426,13 +426,13 @@ func (h *Handler) ImportUserMappings(w http.ResponseWriter, r *http.Request) {
 
 	// Parse multipart form (max 10MB)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Failed to parse form data")
+		WriteError(w, ErrBadRequest.WithDetails("Failed to parse form data"))
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "No file provided")
+		WriteError(w, ErrMissingField.WithField("file"))
 		return
 	}
 	defer file.Close()
@@ -443,7 +443,7 @@ func (h *Handler) ImportUserMappings(w http.ResponseWriter, r *http.Request) {
 	// Read header
 	header, err := reader.Read()
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Failed to read CSV header")
+		WriteError(w, ErrBadRequest.WithDetails("Failed to read CSV header"))
 		return
 	}
 
@@ -474,7 +474,7 @@ func (h *Handler) ImportUserMappings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if sourceLoginIdx == -1 {
-		h.sendError(w, http.StatusBadRequest, "CSV must have a 'source_login' column")
+		WriteError(w, ErrBadRequest.WithDetails("CSV must have a 'source_login' column"))
 		return
 	}
 
@@ -600,7 +600,7 @@ func (h *Handler) ExportUserMappings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to export user mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to export user mappings")
+		WriteError(w, ErrInternal.WithDetails("Failed to export user mappings"))
 		return
 	}
 
@@ -670,7 +670,7 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to generate GEI CSV", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to generate GEI CSV")
+		WriteError(w, ErrInternal.WithDetails("Failed to generate GEI CSV"))
 		return
 	}
 
@@ -729,7 +729,7 @@ func (h *Handler) SuggestUserMappings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get unmapped users", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get unmapped users")
+		WriteError(w, ErrDatabaseFetch.WithDetails("unmapped users"))
 		return
 	}
 
@@ -785,7 +785,7 @@ func (h *Handler) SyncUserMappingsFromDiscovery(w http.ResponseWriter, r *http.R
 			return
 		}
 		h.logger.Error("Failed to sync user mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to sync user mappings")
+		WriteError(w, ErrInternal.WithDetails("Failed to sync user mappings"))
 		return
 	}
 
@@ -814,12 +814,12 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.DestinationOrg == "" {
-		h.sendError(w, http.StatusBadRequest, "destination_org is required")
+		WriteError(w, ErrMissingField.WithField("destination_org"))
 		return
 	}
 
@@ -834,7 +834,7 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 	mappings, _, err := h.db.ListUserMappings(ctx, filters)
 	if err != nil {
 		h.logger.Error("Failed to list user mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get user mappings")
+		WriteError(w, ErrDatabaseFetch.WithDetails("user mappings"))
 		return
 	}
 
@@ -891,18 +891,18 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.DestinationOrg == "" {
-		h.sendError(w, http.StatusBadRequest, "destination_org is required")
+		WriteError(w, ErrMissingField.WithField("destination_org"))
 		return
 	}
 
 	destClient := h.getDestinationClient()
 	if destClient == nil {
-		h.sendError(w, http.StatusBadRequest, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 
@@ -911,7 +911,7 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	mannequins, err := destClient.ListMannequins(ctx, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch mannequins", "org", req.DestinationOrg, "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch mannequins from destination")
+		WriteError(w, ErrInternal.WithDetails("Failed to fetch mannequins from destination"))
 		return
 	}
 
@@ -921,7 +921,7 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	destMembers, err := destClient.ListOrgMembers(ctx, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch destination org members", "org", req.DestinationOrg, "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch destination organization members")
+		WriteError(w, ErrInternal.WithDetails("Failed to fetch destination organization members"))
 		return
 	}
 
@@ -931,7 +931,7 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	matched, unmatched, err := h.matchMannequinsToDestMembers(ctx, mannequins, destMembers, req.EMUShortcode)
 	if err != nil {
 		h.logger.Error("Failed to match mannequins to destination members", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to match mannequins to destination members")
+		WriteError(w, ErrInternal.WithDetails("Failed to match mannequins to destination members"))
 		return
 	}
 
@@ -1235,7 +1235,7 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	sourceLogin, _ = decodePathComponent(sourceLogin)
 
 	if sourceLogin == "" {
-		h.sendError(w, http.StatusBadRequest, "source_login is required")
+		WriteError(w, ErrMissingField.WithField("source_login"))
 		return
 	}
 
@@ -1244,12 +1244,12 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.DestinationOrg == "" {
-		h.sendError(w, http.StatusBadRequest, "destination_org is required")
+		WriteError(w, ErrMissingField.WithField("destination_org"))
 		return
 	}
 
@@ -1257,21 +1257,21 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	mapping, err := h.db.GetUserMappingBySourceLogin(ctx, sourceLogin)
 	if err != nil {
 		h.logger.Error("Failed to get user mapping", "source_login", sourceLogin, "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get user mapping")
+		WriteError(w, ErrDatabaseFetch.WithDetails("user mapping"))
 		return
 	}
 	if mapping == nil {
-		h.sendError(w, http.StatusNotFound, "User mapping not found")
+		WriteError(w, ErrNotFound.WithDetails("User mapping not found"))
 		return
 	}
 	if err := validateMappingForInvitation(mapping); err != nil {
-		h.sendError(w, http.StatusBadRequest, err.Error())
+		WriteError(w, ErrBadRequest.WithDetails(err.Error()))
 		return
 	}
 
 	destClient := h.getDestinationClient()
 	if destClient == nil {
-		h.sendError(w, http.StatusBadRequest, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 
@@ -1279,18 +1279,18 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	targetUser, err := destClient.GetUserByLogin(ctx, *mapping.DestinationLogin)
 	if err != nil {
 		h.logger.Error("Failed to get destination user", "login", *mapping.DestinationLogin, "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to look up destination user")
+		WriteError(w, ErrInternal.WithDetails("Failed to look up destination user"))
 		return
 	}
 	if targetUser == nil {
-		h.sendError(w, http.StatusBadRequest, fmt.Sprintf("Destination user '%s' not found on GitHub", *mapping.DestinationLogin))
+		WriteError(w, ErrBadRequest.WithDetails(fmt.Sprintf("Destination user '%s' not found on GitHub", *mapping.DestinationLogin)))
 		return
 	}
 
 	orgID, err := h.getOrgIDFromMannequins(ctx, destClient, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch mannequins for org ID", "org", req.DestinationOrg, "error", err)
-		h.sendError(w, http.StatusInternalServerError, err.Error())
+		WriteError(w, ErrInternal.WithDetails(err.Error()))
 		return
 	}
 
@@ -1303,7 +1303,7 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 			"error", err)
 		errMsg := err.Error()
 		_ = h.db.UpdateReclaimStatus(ctx, sourceLogin, string(models.ReclaimStatusFailed), &errMsg)
-		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to send invitation: %s", err.Error()))
+		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Failed to send invitation: %s", err.Error())))
 		return
 	}
 
@@ -1403,25 +1403,25 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.DestinationOrg == "" {
-		h.sendError(w, http.StatusBadRequest, "destination_org is required")
+		WriteError(w, ErrMissingField.WithField("destination_org"))
 		return
 	}
 
 	destClient := h.getDestinationClient()
 	if destClient == nil {
-		h.sendError(w, http.StatusBadRequest, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 
 	orgID, err := h.getOrgIDFromMannequins(ctx, destClient, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch mannequins", "org", req.DestinationOrg, "error", err)
-		h.sendError(w, http.StatusInternalServerError, err.Error())
+		WriteError(w, ErrInternal.WithDetails(err.Error()))
 		return
 	}
 
@@ -1436,7 +1436,7 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 	mappings, _, err := h.db.ListUserMappings(ctx, filters)
 	if err != nil {
 		h.logger.Error("Failed to list user mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get user mappings")
+		WriteError(w, ErrDatabaseFetch.WithDetails("user mappings"))
 		return
 	}
 
@@ -1483,7 +1483,7 @@ func (h *Handler) GetSourceOrgs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get source orgs", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get source organizations")
+		WriteError(w, ErrDatabaseFetch.WithDetails("source organizations"))
 		return
 	}
 
