@@ -653,7 +653,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 			}
 			org, repoName := parts[0], parts[1]
 
-			client, err := h.getClientForOrg(ctx, org)
+			client, err := h.GetClientForOrg(ctx, org)
 			if err != nil {
 				h.logger.Error("Failed to get client for organization", "repo", repoFullName, "org", org, "error", err)
 				discoveryErrors = append(discoveryErrors, fmt.Sprintf("%s: failed to initialize client", repoFullName))

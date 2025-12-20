@@ -53,6 +53,9 @@ type MockDataStore struct {
 	SaveTeamMappingErr        error
 	GetADOProjectsErr         error
 	SaveADOProjectErr         error
+
+	// Function overrides for additional methods
+	DeleteRepositoryFunc func(ctx context.Context, fullName string) error
 }
 
 // NewMockDataStore creates a new MockDataStore with initialized maps.
@@ -802,6 +805,29 @@ func (m *MockDataStore) MarkSetupComplete() error {
 func (m *MockDataStore) DB() *gorm.DB {
 	// Return nil - tests using MockDataStore shouldn't need raw DB access
 	// If they do, they should use setupTestDB instead
+	return nil
+}
+
+// ============================================================================
+// ADDITIONAL REPOSITORY METHODS (from expanded interfaces)
+// ============================================================================
+
+func (m *MockDataStore) DeleteRepository(ctx context.Context, fullName string) error {
+	if m.DeleteRepositoryFunc != nil {
+		return m.DeleteRepositoryFunc(ctx, fullName)
+	}
+	return nil
+}
+
+func (m *MockDataStore) UpdateRepositoryStatus(ctx context.Context, fullName string, status models.MigrationStatus) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	repo, exists := m.Repos[fullName]
+	if !exists {
+		return fmt.Errorf("repository not found: %s", fullName)
+	}
+	repo.Status = string(status)
 	return nil
 }
 

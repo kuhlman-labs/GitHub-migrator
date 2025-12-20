@@ -419,7 +419,7 @@ func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.
 	}
 	org, repoName := parts[0], parts[1]
 
-	client, err := h.getClientForOrg(ctx, org)
+	client, err := h.GetClientForOrg(ctx, org)
 	if err != nil {
 		h.logger.Error("Failed to get client for organization", "error", err, "org", org)
 		WriteError(w, ErrInternal.WithDetails("Failed to initialize client for repository"))
@@ -500,7 +500,7 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 	}
 	org, repoName := parts[0], parts[1]
 
-	client, err := h.getClientForOrg(ctx, org)
+	client, err := h.GetClientForOrg(ctx, org)
 	if err != nil {
 		h.logger.Error("Failed to get client for organization", "error", err, "org", org)
 		WriteError(w, ErrInternal.WithDetails("Failed to initialize client for repository"))

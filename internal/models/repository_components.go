@@ -238,3 +238,137 @@ func (r *Repository) HasMigrationBlockers() bool {
 func (r *Repository) NeedsRemediation() bool {
 	return r.Status == string(StatusRemediationRequired)
 }
+
+// IsMigrationComplete returns true if the repository migration is complete.
+func (r *Repository) IsMigrationComplete() bool {
+	return r.Status == string(StatusComplete) || r.Status == string(StatusMigrationComplete)
+}
+
+// IsMigrationInProgress returns true if the repository is currently being migrated.
+func (r *Repository) IsMigrationInProgress() bool {
+	inProgressStatuses := map[string]bool{
+		string(StatusPreMigration):       true,
+		string(StatusArchiveGenerating):  true,
+		string(StatusQueuedForMigration): true,
+		string(StatusMigratingContent):   true,
+		string(StatusPostMigration):      true,
+	}
+	return inProgressStatuses[r.Status]
+}
+
+// IsMigrationFailed returns true if the repository migration has failed.
+func (r *Repository) IsMigrationFailed() bool {
+	return r.Status == string(StatusMigrationFailed) || r.Status == string(StatusRolledBack)
+}
+
+// CanBeMigrated returns true if the repository is in a state where it can be queued for migration.
+func (r *Repository) CanBeMigrated() bool {
+	if r.Status == string(StatusWontMigrate) {
+		return false
+	}
+	eligibleStatuses := map[string]bool{
+		string(StatusPending):         true,
+		string(StatusDryRunComplete):  true,
+		string(StatusDryRunFailed):    true,
+		string(StatusMigrationFailed): true,
+		string(StatusRolledBack):      true,
+		string(StatusDryRunQueued):    true,
+	}
+	return eligibleStatuses[r.Status]
+}
+
+// CanBeAssignedToBatch returns true if the repository can be assigned to a batch.
+func (r *Repository) CanBeAssignedToBatch() (bool, string) {
+	if r.BatchID != nil {
+		return false, "repository is already assigned to a batch"
+	}
+	if r.HasOversizedRepository {
+		return false, "repository exceeds GitHub's 40 GiB size limit and requires remediation"
+	}
+	eligibleStatuses := map[string]bool{
+		string(StatusPending):         true,
+		string(StatusDryRunComplete):  true,
+		string(StatusDryRunFailed):    true,
+		string(StatusMigrationFailed): true,
+		string(StatusRolledBack):      true,
+	}
+	if !eligibleStatuses[r.Status] {
+		return false, "repository status is not eligible for batch assignment"
+	}
+	return true, ""
+}
+
+// GetOrganization extracts the organization name from the full name.
+func (r *Repository) GetOrganization() string {
+	if r.FullName == "" {
+		return ""
+	}
+	for i, c := range r.FullName {
+		if c == '/' {
+			return r.FullName[:i]
+		}
+	}
+	return r.FullName
+}
+
+// GetRepoName extracts the repository name from the full name.
+func (r *Repository) GetRepoName() string {
+	if r.FullName == "" {
+		return ""
+	}
+	for i := len(r.FullName) - 1; i >= 0; i-- {
+		if r.FullName[i] == '/' {
+			return r.FullName[i+1:]
+		}
+	}
+	return r.FullName
+}
+
+// GetComplexityCategoryFromFeatures returns the complexity category based on repository features.
+// This supplements the existing GetComplexityCategory function in constants.go
+// by providing a feature-based assessment when complexity score is not available.
+func (r *Repository) GetComplexityCategoryFromFeatures() string {
+	// Very complex: Has migration blockers
+	if r.HasMigrationBlockers() {
+		return ComplexityVeryComplex
+	}
+
+	// Count complex features
+	complexFeatureCount := 0
+	if r.HasLFS {
+		complexFeatureCount++
+	}
+	if r.HasSubmodules {
+		complexFeatureCount++
+	}
+	if r.HasLargeFiles {
+		complexFeatureCount++
+	}
+	if r.HasPackages {
+		complexFeatureCount++
+	}
+	if r.HasActions {
+		complexFeatureCount++
+	}
+	if r.BranchProtections > 5 {
+		complexFeatureCount++
+	}
+	if r.HasRulesets {
+		complexFeatureCount++
+	}
+
+	if complexFeatureCount >= 4 {
+		return ComplexityVeryComplex
+	}
+	if complexFeatureCount >= 2 {
+		return ComplexityComplex
+	}
+	if complexFeatureCount >= 1 {
+		return ComplexityMedium
+	}
+	if r.TotalSize != nil && *r.TotalSize > 1<<30 { // > 1GB
+		return ComplexityMedium
+	}
+
+	return ComplexitySimple
+}

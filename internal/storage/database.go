@@ -320,49 +320,21 @@ func splitSQLStatements(content string) []string {
 
 // GetDistinctOrganizations retrieves a list of unique organizations from repositories using GORM
 func (d *Database) GetDistinctOrganizations(ctx context.Context) ([]string, error) {
-	// Use GORM's raw SQL capability for complex string manipulation
-	// Use dialect-specific string functions
+	// Use dialect-specific string functions via the DialectDialer interface
 	var orgs []string
-	var query string
+	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
 
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		query = `
-			SELECT DISTINCT 
-				CASE 
-					WHEN full_name LIKE '%/%'
-					THEN SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1)
-					ELSE full_name
-				END as organization
-			FROM repositories
-			WHERE full_name LIKE '%/%'
-			ORDER BY organization ASC
-		`
-	case DBTypeSQLServer, DBTypeMSSQL:
-		query = `
-			SELECT DISTINCT 
-				CASE 
-					WHEN full_name LIKE '%/%'
-					THEN SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1)
-					ELSE full_name
-				END as organization
-			FROM repositories
-			WHERE full_name LIKE '%/%'
-			ORDER BY organization ASC
-		`
-	default: // SQLite
-		query = `
-			SELECT DISTINCT 
-				CASE 
-					WHEN full_name LIKE '%/%'
-					THEN SUBSTR(full_name, 1, INSTR(full_name, '/') - 1)
-					ELSE full_name
-				END as organization
-			FROM repositories
-			WHERE full_name LIKE '%/%'
-			ORDER BY organization ASC
-		`
-	}
+	query := fmt.Sprintf(`
+		SELECT DISTINCT 
+			CASE 
+				WHEN full_name LIKE '%%/%%'
+				THEN %s
+				ELSE full_name
+			END as organization
+		FROM repositories
+		WHERE full_name LIKE '%%/%%'
+		ORDER BY organization ASC
+	`, extractOrg)
 
 	err := d.db.WithContext(ctx).Raw(query).Scan(&orgs).Error
 	if err != nil {

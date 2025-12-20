@@ -214,55 +214,23 @@ type MigrationCompletionStats struct {
 
 // GetMigrationCompletionStatsByOrg returns migration completion stats grouped by organization
 func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*MigrationCompletionStats, error) {
-	// Use dialect-specific string functions
-	var query string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as organization,
-				COUNT(*) as total_repos,
-				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-			FROM repositories
-			WHERE full_name LIKE '%/%'
-			AND status != 'wont_migrate'
-			GROUP BY organization
-			ORDER BY total_repos DESC
-		`
-	case DBTypeSQLServer, DBTypeMSSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as organization,
-				COUNT(*) as total_repos,
-				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-			FROM repositories
-			WHERE full_name LIKE '%/%'
-			AND status != 'wont_migrate'
-			GROUP BY organization
-			ORDER BY total_repos DESC
-		`
-	default: // SQLite
-		query = `
-			SELECT 
-				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
-				COUNT(*) as total_repos,
-				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-			FROM repositories
-			WHERE full_name LIKE '%/%'
-			AND status != 'wont_migrate'
-			GROUP BY organization
-			ORDER BY total_repos DESC
-		`
-	}
+	// Use dialect-specific string functions via DialectDialer interface
+	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
+
+	query := fmt.Sprintf(`
+		SELECT 
+			%s as organization,
+			COUNT(*) as total_repos,
+			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN status LIKE '%%failed%%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+		FROM repositories
+		WHERE full_name LIKE '%%/%%'
+		AND status != 'wont_migrate'
+		GROUP BY organization
+		ORDER BY total_repos DESC
+	`, extractOrg)
 
 	// Use GORM Raw() for analytics query
 	var stats []*MigrationCompletionStats
@@ -283,64 +251,26 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	// Use dialect-specific string functions
-	var query string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as organization,
-				COUNT(*) as total_repos,
-				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-			FROM repositories r
-			WHERE full_name LIKE '%/%'
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + projectFilterSQL + `
-				` + batchFilterSQL + `
-			GROUP BY organization
-			ORDER BY total_repos DESC
-		`
-	case DBTypeSQLServer, DBTypeMSSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as organization,
-				COUNT(*) as total_repos,
-				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-			FROM repositories r
-			WHERE full_name LIKE '%/%'
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + projectFilterSQL + `
-				` + batchFilterSQL + `
-			GROUP BY organization
-			ORDER BY total_repos DESC
-		`
-	default: // SQLite
-		query = `
-			SELECT 
-				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization,
-				COUNT(*) as total_repos,
-				SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-				SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-				SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-				SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
-			FROM repositories r
-			WHERE full_name LIKE '%/%'
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + projectFilterSQL + `
-				` + batchFilterSQL + `
-			GROUP BY organization
-			ORDER BY total_repos DESC
-		`
-	}
+	// Use dialect-specific string functions via DialectDialer interface
+	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
+
+	query := fmt.Sprintf(`
+		SELECT 
+			%s as organization,
+			COUNT(*) as total_repos,
+			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN status LIKE '%%failed%%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+		FROM repositories r
+		WHERE full_name LIKE '%%/%%'
+			AND status != 'wont_migrate'
+			%s
+			%s
+			%s
+		GROUP BY organization
+		ORDER BY total_repos DESC
+	`, extractOrg, orgFilterSQL, projectFilterSQL, batchFilterSQL)
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)

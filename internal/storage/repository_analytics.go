@@ -26,49 +26,22 @@ type OrganizationStats struct {
 
 // GetOrganizationStats returns repository counts grouped by organization
 func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationStats, error) {
-	// Use dialect-specific string functions
-	var query string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as org,
-				COUNT(*) as total,
-				status,
-				COUNT(*) as status_count
-			FROM repositories
-			WHERE POSITION('/' IN full_name) > 0
-			AND status != 'wont_migrate'
-			GROUP BY org, status
-			ORDER BY total DESC, org ASC
-		`
-	case DBTypeSQLServer, DBTypeMSSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as org,
-				COUNT(*) as total,
-				status,
-				COUNT(*) as status_count
-			FROM repositories
-			WHERE CHARINDEX('/', full_name) > 0
-			AND status != 'wont_migrate'
-			GROUP BY org, status
-			ORDER BY total DESC, org ASC
-		`
-	default: // SQLite
-		query = `
-			SELECT 
-				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
-				COUNT(*) as total,
-				status,
-				COUNT(*) as status_count
-			FROM repositories
-			WHERE INSTR(full_name, '/') > 0
-			AND status != 'wont_migrate'
-			GROUP BY org, status
-			ORDER BY total DESC, org ASC
-		`
-	}
+	// Use dialect-specific string functions via DialectDialer interface
+	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
+	findSlash := d.dialect.FindCharPosition("full_name", "/")
+
+	query := fmt.Sprintf(`
+		SELECT 
+			%s as org,
+			COUNT(*) as total,
+			status,
+			COUNT(*) as status_count
+		FROM repositories
+		WHERE %s > 0
+		AND status != 'wont_migrate'
+		GROUP BY org, status
+		ORDER BY total DESC, org ASC
+	`, extractOrg, findSlash)
 
 	// Use GORM Raw() for analytics query
 	type OrgStatusResult struct {
@@ -357,27 +330,12 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	// Use dialect-specific date arithmetic
-	var dateCondition string
+	// Use dialect-specific date arithmetic via DialectDialer interface
 	var args []interface{}
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		dateCondition = fmt.Sprintf("AND mh.completed_at >= NOW() - INTERVAL '%d days'", days)
-		args = append(args, orgArgs...)
-		args = append(args, projectArgs...)
-		args = append(args, batchArgs...)
-	case DBTypeSQLServer, DBTypeMSSQL:
-		dateCondition = fmt.Sprintf("AND mh.completed_at >= DATEADD(day, -%d, GETUTCDATE())", days)
-		args = append(args, orgArgs...)
-		args = append(args, projectArgs...)
-		args = append(args, batchArgs...)
-	default: // SQLite
-		dateCondition = "AND mh.completed_at >= datetime('now', '-' || ? || ' days')"
-		args = []interface{}{days}
-		args = append(args, orgArgs...)
-		args = append(args, projectArgs...)
-		args = append(args, batchArgs...)
-	}
+	dateCondition := "AND mh.completed_at >= " + d.dialect.DateIntervalAgo(days)
+	args = append(args, orgArgs...)
+	args = append(args, projectArgs...)
+	args = append(args, batchArgs...)
 
 	query := `
 		SELECT COUNT(DISTINCT r.id) as total_completed
@@ -424,16 +382,8 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projec
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	// Use dialect-specific date arithmetic
-	var dateCondition string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		dateCondition = "AND mh.completed_at >= NOW() - INTERVAL '30 days'"
-	case DBTypeSQLServer, DBTypeMSSQL:
-		dateCondition = "AND mh.completed_at >= DATEADD(day, -30, GETUTCDATE())"
-	default: // SQLite
-		dateCondition = "AND mh.completed_at >= datetime('now', '-30 days')"
-	}
+	// Use dialect-specific date arithmetic via DialectDialer interface
+	dateCondition := "AND mh.completed_at >= " + d.dialect.DateIntervalAgo(30)
 
 	query := `
 		SELECT 
@@ -513,13 +463,13 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	// SQLite uses a different approach for median than PostgreSQL
+	// Use dialect-specific median calculation via DialectDialer interface
 	var query string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		// PostgreSQL percentile_cont
+	if d.dialect.SupportsPercentileCont() {
+		// PostgreSQL and SQL Server support PERCENTILE_CONT
+		medianExpr := d.dialect.PercentileMedian("mh.duration_seconds")
 		query = `
-			SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mh.duration_seconds) as median_duration
+			SELECT ` + medianExpr + ` as median_duration
 			FROM repositories r
 			INNER JOIN migration_history mh ON r.id = mh.repository_id
 			WHERE mh.status = 'completed'
@@ -530,7 +480,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 				` + projectFilterSQL + `
 				` + batchFilterSQL + `
 		`
-	default:
+	} else {
 		// SQLite - use subquery approach for median
 		query = `
 			WITH ordered AS (
@@ -580,16 +530,9 @@ func (d *Database) buildOrgFilter(orgFilter string) (string, []interface{}) {
 		return "", nil
 	}
 
-	// Use dialect-specific string functions
-	var filterSQL string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		filterSQL = " AND SUBSTRING(r.full_name, 1, POSITION('/' IN r.full_name) - 1) = ?"
-	case DBTypeSQLServer, DBTypeMSSQL:
-		filterSQL = " AND SUBSTRING(r.full_name, 1, CHARINDEX('/', r.full_name) - 1) = ?"
-	default: // SQLite
-		filterSQL = " AND SUBSTR(r.full_name, 1, INSTR(r.full_name, '/') - 1) = ?"
-	}
+	// Use dialect-specific string functions via DialectDialer interface
+	extractOrg := d.dialect.ExtractOrgFromFullName("r.full_name")
+	filterSQL := fmt.Sprintf(" AND %s = ?", extractOrg)
 
 	return filterSQL, []interface{}{orgFilter}
 }
@@ -791,58 +734,25 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
-	// Use dialect-specific string functions
-	var query string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1) as org,
-				COUNT(*) as total,
-				status,
-				COUNT(*) as status_count
-			FROM repositories r
-			WHERE POSITION('/' IN full_name) > 0
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + projectFilterSQL + `
-				` + batchFilterSQL + `
-			GROUP BY org, status
-			ORDER BY total DESC, org ASC
-		`
-	case DBTypeSQLServer, DBTypeMSSQL:
-		query = `
-			SELECT 
-				SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1) as org,
-				COUNT(*) as total,
-				status,
-				COUNT(*) as status_count
-			FROM repositories r
-			WHERE CHARINDEX('/', full_name) > 0
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + projectFilterSQL + `
-				` + batchFilterSQL + `
-			GROUP BY org, status
-			ORDER BY total DESC, org ASC
-		`
-	default: // SQLite
-		query = `
-			SELECT 
-				SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as org,
-				COUNT(*) as total,
-				status,
-				COUNT(*) as status_count
-			FROM repositories r
-			WHERE INSTR(full_name, '/') > 0
-				AND status != 'wont_migrate'
-				` + orgFilterSQL + `
-				` + projectFilterSQL + `
-				` + batchFilterSQL + `
-			GROUP BY org, status
-			ORDER BY total DESC, org ASC
-		`
-	}
+	// Use dialect-specific string functions via DialectDialer interface
+	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
+	findSlash := d.dialect.FindCharPosition("full_name", "/")
+
+	query := fmt.Sprintf(`
+		SELECT 
+			%s as org,
+			COUNT(*) as total,
+			status,
+			COUNT(*) as status_count
+		FROM repositories r
+		WHERE %s > 0
+			AND status != 'wont_migrate'
+			%s
+			%s
+			%s
+		GROUP BY org, status
+		ORDER BY total DESC, org ASC
+	`, extractOrg, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL)
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)

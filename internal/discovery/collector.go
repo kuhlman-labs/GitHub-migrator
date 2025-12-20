@@ -408,33 +408,17 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 			"team", teamInfo.Slug,
 			"count", len(teamMembers))
 
-		for _, member := range teamMembers {
-			// Save team member relationship
-			teamMember := &models.GitHubTeamMember{
-				TeamID: team.ID,
-				Login:  member.Login,
-				Role:   member.Role,
-			}
-			if err := c.storage.SaveTeamMember(ctx, teamMember); err != nil {
-				c.logger.Warn("Failed to save team member",
-					"worker_id", workerID,
-					"organization", org,
-					"team", teamInfo.Slug,
-					"member", member.Login,
-					"error", err)
-				continue
-			}
-			result.memberCount++
-
-			// Also save the user to github_users table
-			user := &models.GitHubUser{
-				Login:          member.Login,
-				SourceInstance: sourceInstance,
-			}
-			if err := c.storage.SaveUser(ctx, user); err != nil {
-				c.logger.Debug("User may already exist", "login", member.Login, "error", err)
-			}
-		}
+		// Use shared helper to save team members
+		saver := NewTeamMemberSaver(c.storage, c.logger)
+		saveResult := saver.SaveTeamMembers(ctx, SaveMemberParams{
+			WorkerID:       workerID,
+			Organization:   org,
+			TeamSlug:       teamInfo.Slug,
+			TeamID:         team.ID,
+			Members:        teamMembers,
+			SourceInstance: sourceInstance,
+		})
+		result.memberCount = saveResult.SavedCount
 
 		c.logger.Debug("Worker completed team",
 			"worker_id", workerID,

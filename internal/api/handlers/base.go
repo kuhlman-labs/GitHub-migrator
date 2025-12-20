@@ -35,16 +35,13 @@ const (
 
 // Handler contains all HTTP handlers
 type Handler struct {
-	db               DataStore // Uses interface for testability (storage.Database implements this)
-	logger           *slog.Logger
-	sourceDualClient *github.DualClient
-	destDualClient   *github.DualClient
-	collector        *discovery.Collector
-	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
-	authConfig       *config.AuthConfig   // Auth configuration for permission checks
-	sourceBaseURL    string               // Source GitHub base URL for permission checks
-	sourceType       string               // Source type: models.SourceTypeGitHub or models.SourceTypeAzureDevOps
-	adoHandler       *ADOHandler          // ADO-specific handler (set by server if ADO is configured)
+	*HandlerUtils            // Embed shared utilities for getClientForOrg
+	db             DataStore // Uses interface for testability (storage.Database implements this)
+	logger         *slog.Logger
+	destDualClient *github.DualClient
+	collector      *discovery.Collector
+	sourceType     string      // Source type: models.SourceTypeGitHub or models.SourceTypeAzureDevOps
+	adoHandler     *ADOHandler // ADO-specific handler (set by server if ADO is configured)
 }
 
 // SetADOHandler sets the ADO handler reference for delegating ADO operations
@@ -71,15 +68,12 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 		}
 	}
 	return &Handler{
-		db:               db,
-		logger:           logger,
-		sourceDualClient: sourceDualClient,
-		destDualClient:   destDualClient,
-		collector:        collector,
-		sourceBaseConfig: sourceBaseConfig,
-		authConfig:       authConfig,
-		sourceBaseURL:    sourceBaseURL,
-		sourceType:       sourceType,
+		HandlerUtils:   NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
+		db:             db,
+		logger:         logger,
+		destDualClient: destDualClient,
+		collector:      collector,
+		sourceType:     sourceType,
 	}
 }
 
@@ -90,15 +84,12 @@ func NewHandlerWithDataStore(db DataStore, logger *slog.Logger, sourceDualClient
 	// Note: collector requires *storage.Database, so it's nil when using MockDataStore
 	// Tests that need the collector should use NewHandler with a real database
 	return &Handler{
-		db:               db,
-		logger:           logger,
-		sourceDualClient: sourceDualClient,
-		destDualClient:   destDualClient,
-		collector:        nil,
-		sourceBaseConfig: sourceBaseConfig,
-		authConfig:       authConfig,
-		sourceBaseURL:    sourceBaseURL,
-		sourceType:       sourceType,
+		HandlerUtils:   NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
+		db:             db,
+		logger:         logger,
+		destDualClient: destDualClient,
+		collector:      nil,
+		sourceType:     sourceType,
 	}
 }
 
@@ -130,47 +121,6 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, response)
-}
-
-// getClientForOrg returns the appropriate GitHub client for an organization
-// If using JWT-only mode, creates an org-specific client with installation token
-// Otherwise, returns the existing API client
-func (h *Handler) getClientForOrg(ctx context.Context, org string) (*github.Client, error) {
-	// Check if we're in JWT-only mode (App auth without installation ID)
-	isJWTOnlyMode := h.sourceBaseConfig != nil &&
-		h.sourceBaseConfig.AppID > 0 &&
-		h.sourceBaseConfig.AppInstallationID == 0
-
-	if isJWTOnlyMode {
-		h.logger.Debug("Creating org-specific client for single-repo operation",
-			"org", org,
-			"app_id", h.sourceBaseConfig.AppID)
-
-		// Use the JWT client to get the installation ID for this org
-		jwtClient := h.sourceDualClient.APIClient()
-		installationID, err := jwtClient.GetOrganizationInstallationID(ctx, org)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get installation ID for org %s: %w", org, err)
-		}
-
-		// Create org-specific client
-		orgConfig := *h.sourceBaseConfig
-		orgConfig.AppInstallationID = installationID
-
-		orgClient, err := github.NewClient(orgConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create org-specific client for %s: %w", org, err)
-		}
-
-		h.logger.Debug("Created org-specific client",
-			"org", org,
-			"installation_id", installationID)
-
-		return orgClient, nil
-	}
-
-	// Use the existing API client (PAT or App with installation ID)
-	return h.sourceDualClient.APIClient(), nil
 }
 
 // sendJSON sends a JSON response

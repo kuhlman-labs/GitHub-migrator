@@ -158,30 +158,18 @@ func (d *Database) enrichDependencyURLs(ctx context.Context, dependencies []*mod
 // based on whether the dependency exists in our database
 // This should be run after discovery to properly mark local dependencies
 func (d *Database) UpdateLocalDependencyFlags(ctx context.Context) error {
-	// Use dialect-specific boolean values
-	var query string
-	switch d.cfg.Type {
-	case DBTypePostgres, DBTypePostgreSQL, DBTypeSQLServer, DBTypeMSSQL:
-		// PostgreSQL and SQL Server use TRUE/FALSE for boolean columns
-		query = `
-			UPDATE repository_dependencies
-			SET is_local = CASE
-				WHEN dependency_full_name IN (SELECT full_name FROM repositories)
-				THEN TRUE
-				ELSE FALSE
-			END
-		`
-	default: // SQLite
-		// SQLite uses 1/0 for boolean columns
-		query = `
-			UPDATE repository_dependencies
-			SET is_local = CASE
-				WHEN dependency_full_name IN (SELECT full_name FROM repositories)
-				THEN 1
-				ELSE 0
-			END
-		`
-	}
+	// Use dialect-specific boolean values via DialectDialer interface
+	boolTrue := d.dialect.BooleanTrue()
+	boolFalse := d.dialect.BooleanFalse()
+
+	query := fmt.Sprintf(`
+		UPDATE repository_dependencies
+		SET is_local = CASE
+			WHEN dependency_full_name IN (SELECT full_name FROM repositories)
+			THEN %s
+			ELSE %s
+		END
+	`, boolTrue, boolFalse)
 
 	err := d.db.WithContext(ctx).Exec(query).Error
 	if err != nil {
