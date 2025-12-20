@@ -35,7 +35,7 @@ const (
 
 // Handler contains all HTTP handlers
 type Handler struct {
-	db               *storage.Database
+	db               DataStore // Uses interface for testability (storage.Database implements this)
 	logger           *slog.Logger
 	sourceDualClient *github.DualClient
 	destDualClient   *github.DualClient
@@ -318,44 +318,43 @@ func (h *Handler) checkRepositoriesAccess(ctx context.Context, repoFullNames []s
 
 // Helper functions
 
-func canMigrate(status string) bool {
-	// Cannot migrate repositories marked as wont_migrate
-	if status == string(models.StatusWontMigrate) {
-		return false
-	}
-
-	allowedStatuses := []string{
-		string(models.StatusPending),         // Can queue pending repositories for migration
-		string(models.StatusDryRunQueued),    // Allow re-queuing dry runs
-		string(models.StatusDryRunFailed),    // Allow retrying failed dry runs
-		string(models.StatusDryRunComplete),  // Can queue after successful dry run
-		string(models.StatusMigrationFailed), // Allow retrying failed migrations
-		string(models.StatusRolledBack),      // Allow re-migrating rolled back repositories
-	}
-
-	for _, allowed := range allowedStatuses {
-		if status == allowed {
+// statusIn checks if a status is in the given list of allowed statuses.
+func statusIn(status string, allowed []string) bool {
+	for _, s := range allowed {
+		if status == s {
 			return true
 		}
 	}
 	return false
 }
 
-func isEligibleForBatch(status string) bool {
-	eligibleStatuses := []string{
-		string(models.StatusPending),
-		string(models.StatusDryRunComplete),
-		string(models.StatusDryRunFailed),
-		string(models.StatusMigrationFailed),
-		string(models.StatusRolledBack),
-	}
+// batchEligibleStatuses defines the statuses that make a repository eligible for batch assignment.
+// This is the base set used by both batch assignment and migration eligibility checks.
+var batchEligibleStatuses = []string{
+	string(models.StatusPending),
+	string(models.StatusDryRunComplete),
+	string(models.StatusDryRunFailed),
+	string(models.StatusMigrationFailed),
+	string(models.StatusRolledBack),
+}
 
-	for _, eligible := range eligibleStatuses {
-		if status == eligible {
-			return true
-		}
+// migrationAllowedStatuses extends batchEligibleStatuses with additional statuses
+// that allow re-queuing for migration (like DryRunQueued for re-runs).
+var migrationAllowedStatuses = append(
+	batchEligibleStatuses,
+	string(models.StatusDryRunQueued), // Allow re-queuing dry runs
+)
+
+func canMigrate(status string) bool {
+	// Cannot migrate repositories marked as wont_migrate
+	if status == string(models.StatusWontMigrate) {
+		return false
 	}
-	return false
+	return statusIn(status, migrationAllowedStatuses)
+}
+
+func isEligibleForBatch(status string) bool {
+	return statusIn(status, batchEligibleStatuses)
 }
 
 // getInitiatingUser extracts the authenticated username from the context
@@ -390,14 +389,9 @@ func isRepositoryEligibleForBatch(repo *models.Repository) (bool, string) {
 
 // CSV helper functions
 
-func escapesCSV(s string) string {
-	// Escape quotes and wrap in quotes if contains comma, quote, or newline
-	if strings.ContainsAny(s, ",\"\n") {
-		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-	}
-	return s
-}
-
+// escapeCSV escapes a string for safe inclusion in a CSV field.
+// It wraps the string in quotes and escapes internal quotes if the string
+// contains commas, quotes, newlines, or carriage returns.
 func escapeCSV(s string) string {
 	if strings.ContainsAny(s, ",\"\n\r") {
 		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`

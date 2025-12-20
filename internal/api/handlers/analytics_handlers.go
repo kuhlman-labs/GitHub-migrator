@@ -439,10 +439,10 @@ func (h *Handler) exportMigrationHistoryCSV(w http.ResponseWriter, migrations []
 
 	for _, m := range migrations {
 		row := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%d\n",
-			escapesCSV(m.FullName),
-			escapesCSV(m.SourceURL),
-			escapesCSV(stringPtrOrEmpty(m.DestinationURL)),
-			escapesCSV(m.Status),
+			escapeCSV(m.FullName),
+			escapeCSV(m.SourceURL),
+			escapeCSV(stringPtrOrEmpty(m.DestinationURL)),
+			escapeCSV(m.Status),
 			formatTimePtr(m.StartedAt),
 			formatTimePtr(m.CompletedAt),
 			intPtrOrZero(m.DurationSeconds),

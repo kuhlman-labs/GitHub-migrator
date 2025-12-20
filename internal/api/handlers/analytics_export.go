@@ -45,7 +45,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 		if total > 0 {
 			pct = float64(dist.Count) / float64(total) * 100
 		}
-		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapesCSV(dist.Category), dist.Count, pct))
+		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapeCSV(dist.Category), dist.Count, pct))
 	}
 	output.WriteString("\n")
 
@@ -56,7 +56,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 		if total > 0 {
 			pct = float64(dist.Count) / float64(total) * 100
 		}
-		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapesCSV(dist.Category), dist.Count, pct))
+		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapeCSV(dist.Category), dist.Count, pct))
 	}
 	output.WriteString("\n")
 
@@ -124,7 +124,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 		if total > 0 {
 			pct = float64(count) / float64(total) * 100
 		}
-		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapesCSV(status), count, pct))
+		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapeCSV(status), count, pct))
 	}
 
 	if _, err := w.Write([]byte(output.String())); err != nil {
@@ -324,26 +324,26 @@ func (h *Handler) writeCSVColumnHeaders(output *strings.Builder) {
 }
 
 func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Repository, localDepsCount map[int64]int, batchNames map[int64]string) {
-	output.WriteString(escapesCSV(repo.FullName))
+	output.WriteString(escapeCSV(repo.FullName))
 	output.WriteString(",")
-	output.WriteString(escapesCSV(repo.Organization()))
+	output.WriteString(escapeCSV(repo.Organization()))
 	output.WriteString(",")
 
 	if h.sourceType == models.SourceTypeAzureDevOps {
 		if repo.ADOProject != nil {
-			output.WriteString(escapesCSV(*repo.ADOProject))
+			output.WriteString(escapeCSV(*repo.ADOProject))
 		}
 		output.WriteString(",")
 	}
 
-	output.WriteString(escapesCSV(formatSourceForDisplay(repo.Source)))
+	output.WriteString(escapeCSV(formatSourceForDisplay(repo.Source)))
 	output.WriteString(",")
-	output.WriteString(escapesCSV(formatStatusForDisplay(repo.Status)))
+	output.WriteString(escapeCSV(formatStatusForDisplay(repo.Status)))
 	output.WriteString(",")
 
 	if repo.BatchID != nil {
 		if batchName, exists := batchNames[*repo.BatchID]; exists {
-			output.WriteString(escapesCSV(batchName))
+			output.WriteString(escapeCSV(batchName))
 		} else {
 			output.WriteString(fmt.Sprintf("Batch %d", *repo.BatchID))
 		}
@@ -351,7 +351,7 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	output.WriteString(",")
 
 	if repo.TotalSize != nil {
-		output.WriteString(fmt.Sprintf("%d,%s,", *repo.TotalSize, escapesCSV(formatBytes(*repo.TotalSize))))
+		output.WriteString(fmt.Sprintf("%d,%s,", *repo.TotalSize, escapeCSV(formatBytes(*repo.TotalSize))))
 	} else {
 		output.WriteString("0,0 B,")
 	}
@@ -381,7 +381,7 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	}
 
 	if repo.DefaultBranch != nil {
-		output.WriteString(escapesCSV(*repo.DefaultBranch))
+		output.WriteString(escapeCSV(*repo.DefaultBranch))
 	}
 	output.WriteString(",")
 	output.WriteString(fmt.Sprintf("%d,", repo.BranchCount))
@@ -391,7 +391,7 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	}
 	output.WriteString(",")
 
-	output.WriteString(fmt.Sprintf("%s,%s,%s,", escapesCSV(formatVisibilityForDisplay(repo.Visibility)), formatBool(repo.IsArchived), formatBool(repo.IsFork)))
+	output.WriteString(fmt.Sprintf("%s,%s,%s,", escapeCSV(formatVisibilityForDisplay(repo.Visibility)), formatBool(repo.IsArchived), formatBool(repo.IsFork)))
 
 	h.writeCSVSourceSpecificFields(output, repo)
 	output.WriteString("\n")

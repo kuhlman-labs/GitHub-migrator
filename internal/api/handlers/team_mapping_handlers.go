@@ -867,7 +867,13 @@ func (h *Handler) getOrCreateTeamExecutor() *migration.TeamExecutor {
 			sourceClient = h.sourceDualClient.APIClient()
 		}
 		var destClient = h.destDualClient.APIClient()
-		teamExecutor = migration.NewTeamExecutor(h.db, sourceClient, destClient, h.logger)
+		// Type assert to get concrete *storage.Database for NewTeamExecutor
+		db, ok := h.db.(*storage.Database)
+		if !ok {
+			h.logger.Error("Database type assertion failed in team executor creation")
+			return nil
+		}
+		teamExecutor = migration.NewTeamExecutor(db, sourceClient, destClient, h.logger)
 	}
 
 	return teamExecutor

@@ -83,8 +83,13 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create progress tracker
-	progressTracker := discovery.NewDBProgressTracker(h.db, h.logger, progress)
+	// Create progress tracker (type assert to get concrete *storage.Database)
+	db, ok := h.db.(*storage.Database)
+	if !ok {
+		WriteError(w, ErrInternal.WithDetails("database type assertion failed"))
+		return
+	}
+	progressTracker := discovery.NewDBProgressTracker(db, h.logger, progress)
 	h.collector.SetProgressTracker(progressTracker)
 
 	// Start discovery asynchronously based on type
