@@ -102,9 +102,7 @@ func (h *Handler) GetTeamMappingStats(w http.ResponseWriter, r *http.Request) {
 // DiscoverTeams handles POST /api/v1/teams/discover
 // Discovers teams and their members for a single organization (standalone, teams-only discovery)
 func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Organization string `json:"organization"`
-	}
+	var req DiscoverTeamsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -180,15 +178,7 @@ func (h *Handler) GetTeamSourceOrgs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CreateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		SourceOrg           string  `json:"source_org"`
-		SourceTeamSlug      string  `json:"source_team_slug"`
-		SourceTeamName      *string `json:"source_team_name,omitempty"`
-		DestinationOrg      *string `json:"destination_org,omitempty"`
-		DestinationTeamSlug *string `json:"destination_team_slug,omitempty"`
-		DestinationTeamName *string `json:"destination_team_name,omitempty"`
-		MappingStatus       string  `json:"mapping_status,omitempty"`
-	}
+	var req CreateTeamMappingRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -251,12 +241,7 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	sourceOrg, _ := decodePathComponent(parts[0])
 	sourceTeamSlug, _ := decodePathComponent(parts[1])
 
-	var req struct {
-		DestinationOrg      *string `json:"destination_org,omitempty"`
-		DestinationTeamSlug *string `json:"destination_team_slug,omitempty"`
-		DestinationTeamName *string `json:"destination_team_name,omitempty"`
-		MappingStatus       *string `json:"mapping_status,omitempty"`
-	}
+	var req UpdateTeamMappingRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -591,10 +576,7 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SuggestTeamMappings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		DestinationOrg string   `json:"destination_org"`
-		DestTeamSlugs  []string `json:"dest_team_slugs"` // List of team slugs that exist in destination
-	}
+	var req SuggestTeamMappingsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		// If no body, just return suggestions based on same-slug matching
@@ -901,11 +883,7 @@ func (h *Handler) ExecuteTeamMigration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse request body
-	var req struct {
-		SourceOrg      string `json:"source_org,omitempty"`       // Required with source_team_slug for single team migration
-		SourceTeamSlug string `json:"source_team_slug,omitempty"` // Required with source_org for single team migration
-		DryRun         bool   `json:"dry_run,omitempty"`          // If true, don't actually create teams
-	}
+	var req MigrateTeamsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		WriteError(w, ErrInvalidJSON)

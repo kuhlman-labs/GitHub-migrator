@@ -52,7 +52,7 @@ func setupTestADOHandler(t *testing.T) (*ADOHandler, *Handler) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	authConfig := &config.AuthConfig{Enabled: false}
 
-	baseHandler := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://dev.azure.com", sourceTypeAzureDevOps)
+	baseHandler := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://dev.azure.com", models.SourceTypeAzureDevOps)
 
 	// For unit tests, we don't need the real collector or client
 	// The handler will skip the actual discovery when these are nil
@@ -204,14 +204,14 @@ func TestADODiscoveryStatus(t *testing.T) {
 	repo1 := &models.Repository{
 		FullName:   "test-org/TestProject/repo1",
 		Status:     string(models.StatusPending),
-		Source:     sourceTypeAzureDevOps,
+		Source:     models.SourceTypeAzureDevOps,
 		ADOProject: &projectName,
 		ADOIsGit:   true,
 	}
 	repo2 := &models.Repository{
 		FullName:   "test-org/TestProject/repo2",
 		Status:     string(models.StatusPending),
-		Source:     sourceTypeAzureDevOps,
+		Source:     models.SourceTypeAzureDevOps,
 		ADOProject: &projectName,
 		ADOIsGit:   false, // TFVC
 	}

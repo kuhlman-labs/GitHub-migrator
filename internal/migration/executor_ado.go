@@ -10,12 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kuhlman-labs/github-migrator/internal/ado"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/shurcooL/githubv4"
 )
-
-// adoGitPathSegment is the URL path segment that identifies a Git repository in ADO URLs
-const adoGitPathSegment = "_git"
 
 // ExecuteADOMigration executes a migration from Azure DevOps to GitHub
 // ADO migrations use a different flow than GitHub migrations:
@@ -477,21 +475,15 @@ func (e *Executor) validateADORepositoryAccess(ctx context.Context, repo *models
 		return fmt.Errorf("repository source URL is not set")
 	}
 
-	// Parse the ADO repository URL to extract org, project, and repo name
-	// Format: https://dev.azure.com/{org}/{project}/_git/{repo}
-	parsedURL, err := url.Parse(repo.SourceURL)
+	// Parse the ADO repository URL using the centralized ado package
+	parsed, err := ado.ParseFromSourceURL(repo.SourceURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse source URL: %w", err)
+		return fmt.Errorf("failed to parse ADO source URL: %w", err)
 	}
 
-	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
-	if len(pathParts) < 4 || pathParts[2] != adoGitPathSegment {
-		return fmt.Errorf("invalid ADO URL format - expected: https://dev.azure.com/{org}/{project}/%s/{repo}", adoGitPathSegment)
-	}
-
-	org := pathParts[0]
-	project := pathParts[1]
-	repoName := pathParts[3]
+	org := parsed.Organization
+	project := parsed.Project
+	repoName := parsed.Repository
 
 	// Build the ADO API URL to get repository information
 	// API: https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repo}?api-version=7.0

@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"net/http"
+
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 // adoProjectStats holds the computed statistics for an ADO project
@@ -76,7 +78,7 @@ func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organizat
 func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		h.sendJSON(w, http.StatusOK, []interface{}{})
 		return
 	}
@@ -124,7 +126,7 @@ func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		projects, err := h.db.GetADOProjects(ctx, "")
 		if err != nil {
 			if h.handleContextError(ctx, err, "get ADO projects", r) {
@@ -180,7 +182,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	if h.sourceType != sourceTypeAzureDevOps {
+	if h.sourceType != models.SourceTypeAzureDevOps {
 		h.sendJSON(w, http.StatusOK, []interface{}{})
 		return
 	}

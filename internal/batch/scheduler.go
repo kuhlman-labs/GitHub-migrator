@@ -123,7 +123,7 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 	s.logger.Info("Found migratable repositories", "count", len(migratable), "total", len(repos))
 
 	// Update batch status
-	batch.Status = StatusInProgress
+	batch.Status = models.BatchStatusInProgress
 	now := time.Now()
 	batch.StartedAt = &now
 	if err := s.storage.UpdateBatch(ctx, batch); err != nil {
@@ -162,7 +162,7 @@ func (s *Scheduler) executeBatchAsync(ctx context.Context, batch *models.Batch, 
 	// Queue all repositories for migration (let the worker pool handle them concurrently)
 	queuedCount := 0
 	priority := 0
-	if batch.Type == TypePilot {
+	if batch.Type == models.BatchTypePilot {
 		priority = 1
 	}
 
@@ -234,7 +234,7 @@ func (s *Scheduler) CancelBatch(ctx context.Context, batchID int64) error {
 	}
 
 	if batch != nil {
-		batch.Status = StatusCancelled
+		batch.Status = models.BatchStatusCancelled
 		if err := s.storage.UpdateBatch(ctx, batch); err != nil {
 			s.logger.Error("Failed to update batch status", "batch_id", batchID, "error", err)
 		}

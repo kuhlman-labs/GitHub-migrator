@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/kuhlman-labs/github-migrator/internal/ado"
 )
 
 // isSkippedDir checks if a directory should be skipped during scanning
@@ -246,51 +248,30 @@ func (ps *PackageScanner) parseFileForADOURLs(filePath, manifestPath string, eco
 	return deps
 }
 
-// isADOURL checks if a URL is an Azure DevOps URL
+// isADOURL checks if a URL is an Azure DevOps URL.
+// This is a wrapper around ado.IsADOURL for package-internal use.
 func isADOURL(gitURL string) bool {
-	return strings.Contains(gitURL, "dev.azure.com") ||
-		strings.Contains(gitURL, "visualstudio.com") ||
-		strings.Contains(gitURL, "ssh.dev.azure.com")
+	return ado.IsADOURL(gitURL)
 }
 
-// isADOHost checks if a host is an Azure DevOps host
+// isADOHost checks if a host is an Azure DevOps host.
+// This is a wrapper around ado.IsADOHost for package-internal use.
 func isADOHost(host string) bool {
-	return host == hostAzureDevOps ||
-		host == hostAzureDevSSH ||
-		strings.HasSuffix(host, suffixVisualStudio)
+	return ado.IsADOHost(host)
 }
 
-// extractADOReference extracts org, project, and repo from an Azure DevOps Git URL
+// extractADOReference extracts org, project, and repo from an Azure DevOps Git URL.
+// Uses the centralized ado.Parse function internally.
 func (ps *PackageScanner) extractADOReference(gitURL string) (org, project, repo, host string, isLocal bool) {
-	// Pattern for dev.azure.com
-	adoPattern := regexp.MustCompile(`(?:https://)?(?:[^@]+@)?dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/"'\s]+)`)
-	if matches := adoPattern.FindStringSubmatch(gitURL); len(matches) >= 4 {
-		org, project, repo = matches[1], matches[2], matches[3]
-		repo = strings.TrimSuffix(repo, ".git")
-		host = hostAzureDevOps
-		isLocal = ps.isADOSource && ps.sourceOrg == org
-		return
+	parsed := ado.Parse(gitURL)
+	if parsed == nil {
+		return "", "", "", "", false
 	}
 
-	// Pattern for visualstudio.com
-	vstsPattern := regexp.MustCompile(`https://([^.]+)\.visualstudio\.com/([^/]+)/_git/([^/"'\s]+)`)
-	if matches := vstsPattern.FindStringSubmatch(gitURL); len(matches) >= 4 {
-		org, project, repo = matches[1], matches[2], matches[3]
-		repo = strings.TrimSuffix(repo, ".git")
-		host = org + suffixVisualStudio
-		isLocal = ps.isADOSource && ps.sourceOrg == org
-		return
-	}
-
-	// Pattern for SSH
-	sshPattern := regexp.MustCompile(`git@ssh\.dev\.azure\.com:v3/([^/]+)/([^/]+)/([^/"'\s]+)`)
-	if matches := sshPattern.FindStringSubmatch(gitURL); len(matches) >= 4 {
-		org, project, repo = matches[1], matches[2], matches[3]
-		repo = strings.TrimSuffix(repo, ".git")
-		host = hostAzureDevSSH
-		isLocal = ps.isADOSource && ps.sourceOrg == org
-		return
-	}
-
-	return "", "", "", "", false
+	org = parsed.Organization
+	project = parsed.Project
+	repo = parsed.Repository
+	host = parsed.Host
+	isLocal = ps.isADOSource && ps.sourceOrg == org
+	return
 }

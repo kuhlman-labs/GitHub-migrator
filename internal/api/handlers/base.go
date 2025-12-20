@@ -20,24 +20,10 @@ import (
 )
 
 const (
-	statusInProgress = "in_progress"
-	statusReady      = "ready"
-	statusPending    = "pending"
-	statusCompleted  = "completed"
-	boolTrue         = "true"
+	boolTrue = "true"
 
 	formatCSV  = "csv"
 	formatJSON = "json"
-
-	sourceTypeGitHub      = "github"
-	sourceTypeAzureDevOps = "azuredevops"
-
-	// Complexity categories
-	categoryComplex     = "complex"
-	categoryVeryComplex = "very_complex"
-
-	// Size categories
-	categorySizeVeryLarge = "very_large"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -57,7 +43,7 @@ type Handler struct {
 	sourceBaseConfig *github.ClientConfig // For creating org-specific clients (JWT-only mode)
 	authConfig       *config.AuthConfig   // Auth configuration for permission checks
 	sourceBaseURL    string               // Source GitHub base URL for permission checks
-	sourceType       string               // Source type: sourceTypeGitHub or sourceTypeAzureDevOps
+	sourceType       string               // Source type: models.SourceTypeGitHub or models.SourceTypeAzureDevOps
 	adoHandler       *ADOHandler          // ADO-specific handler (set by server if ADO is configured)
 }
 
@@ -111,7 +97,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	// Default to github if not set
 	sourceType := h.sourceType
 	if sourceType == "" {
-		sourceType = sourceTypeGitHub
+		sourceType = models.SourceTypeGitHub
 	}
 
 	response := map[string]interface{}{

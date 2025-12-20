@@ -50,7 +50,7 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	batch.CreatedAt = time.Now()
-	batch.Status = statusPending
+	batch.Status = models.BatchStatusPending
 
 	if err := h.db.CreateBatch(ctx, &batch); err != nil {
 		h.logger.Error("Failed to create batch", "error", err, "name", batch.Name)
@@ -122,9 +122,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var req struct {
-		OnlyPending bool `json:"only_pending,omitempty"`
-	}
+	var req RunDryRunRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	batch, err := h.db.GetBatch(ctx, batchID)
@@ -142,7 +140,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if batch.Status != statusPending && batch.Status != statusReady {
+	if batch.Status != models.BatchStatusPending && batch.Status != models.BatchStatusReady {
 		WriteError(w, ErrBadRequest.WithDetails("Can only run dry run on batches with 'pending' or 'ready' status"))
 		return
 	}
@@ -222,7 +220,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, &now, nil); err != nil {
+	if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, &now, nil); err != nil {
 		h.logger.Error("Failed to update batch progress", "error", err)
 	}
 
@@ -257,9 +255,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var req struct {
-		SkipDryRun bool `json:"skip_dry_run,omitempty"`
-	}
+	var req StartBatchRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	batch, err := h.db.GetBatch(ctx, batchID)
@@ -277,12 +273,12 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if batch.Status == statusPending && !req.SkipDryRun {
+	if batch.Status == models.BatchStatusPending && !req.SkipDryRun {
 		WriteError(w, ErrBadRequest.WithDetails("Batch is in 'pending' state. Run dry run first or set skip_dry_run=true"))
 		return
 	}
 
-	if batch.Status != statusReady && batch.Status != statusPending {
+	if batch.Status != models.BatchStatusReady && batch.Status != models.BatchStatusPending {
 		WriteError(w, ErrBadRequest.WithDetails("Can only start batches with 'ready' or 'pending' status"))
 		return
 	}
@@ -347,7 +343,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, nil, &now); err != nil {
+	if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, nil, &now); err != nil {
 		h.logger.Error("Failed to update batch progress", "error", err)
 	}
 
@@ -390,7 +386,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if batch.Status != statusReady && batch.Status != statusPending {
+	if batch.Status != models.BatchStatusReady && batch.Status != models.BatchStatusPending {
 		WriteError(w, ErrBadRequest.WithDetails("Can only edit batches with 'pending' or 'ready' status"))
 		return
 	}
@@ -584,14 +580,12 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if batch.Status != statusReady && batch.Status != statusPending {
+	if batch.Status != models.BatchStatusReady && batch.Status != models.BatchStatusPending {
 		WriteError(w, ErrBadRequest.WithDetails("Can only add repositories to batches with 'pending' or 'ready' status"))
 		return
 	}
 
-	var req struct {
-		RepositoryIDs []int64 `json:"repository_ids"`
-	}
+	var req BatchRepositoryIDsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -745,14 +739,12 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if batch.Status != statusReady && batch.Status != statusPending {
+	if batch.Status != models.BatchStatusReady && batch.Status != models.BatchStatusPending {
 		WriteError(w, ErrBadRequest.WithDetails("Can only remove repositories from batches with 'pending' or 'ready' status"))
 		return
 	}
 
-	var req struct {
-		RepositoryIDs []int64 `json:"repository_ids"`
-	}
+	var req BatchRepositoryIDsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -807,9 +799,7 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		RepositoryIDs []int64 `json:"repository_ids,omitempty"`
-	}
+	var req RetryBatchRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		req.RepositoryIDs = nil

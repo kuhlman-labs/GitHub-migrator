@@ -329,7 +329,7 @@ func (h *Handler) markRepositoryMigrated(ctx context.Context, repo *models.Repos
 
 	history := &models.MigrationHistory{
 		RepositoryID: repo.ID,
-		Status:       statusCompleted,
+		Status:       models.BatchStatusCompleted,
 		Phase:        "migration",
 		Message:      &message,
 		StartedAt:    now,
@@ -706,7 +706,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 	batch := &models.Batch{
 		Name:            batchName,
 		Type:            "self-service",
-		Status:          statusPending,
+		Status:          models.BatchStatusPending,
 		RepositoryCount: len(existingRepos),
 		CreatedAt:       time.Now(),
 	}
@@ -743,7 +743,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		h.logger.Info("Starting dry run for batch", "batch_id", batch.ID)
 
 		now := time.Now()
-		if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, &now, nil); err != nil {
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, &now, nil); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 
@@ -773,7 +773,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		h.logger.Info("Starting production migration for batch", "batch_id", batch.ID)
 
 		now := time.Now()
-		if err := h.db.UpdateBatchProgress(ctx, batch.ID, statusInProgress, &now, nil, &now); err != nil {
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, nil, &now); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 

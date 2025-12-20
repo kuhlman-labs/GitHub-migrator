@@ -34,11 +34,7 @@ func NewADOHandler(baseHandler *Handler, adoClient *azuredevops.Client, adoProvi
 // StartADODiscovery handles POST /api/v1/ado/discover
 // Discovers ADO organizations or specific projects
 func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Organization string   `json:"organization"`       // Required: ADO organization name
-		Projects     []string `json:"projects,omitempty"` // Optional: specific projects to discover
-		Workers      int      `json:"workers,omitempty"`  // Optional: number of parallel workers
-	}
+	var req StartADODiscoveryRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)

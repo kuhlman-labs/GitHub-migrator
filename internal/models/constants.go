@@ -104,11 +104,19 @@ const (
 
 // Batch status constants for batch lifecycle.
 const (
-	BatchStatusPending    = "pending"
-	BatchStatusInProgress = "in_progress"
-	BatchStatusCompleted  = "completed"
-	BatchStatusFailed     = "failed"
-	BatchStatusCanceled   = "canceled"
+	BatchStatusPending             = "pending"
+	BatchStatusReady               = "ready"
+	BatchStatusInProgress          = "in_progress"
+	BatchStatusCompleted           = "completed"
+	BatchStatusCompletedWithErrors = "completed_with_errors"
+	BatchStatusFailed              = "failed"
+	BatchStatusCancelled           = "cancelled"
+)
+
+// Batch type constants.
+const (
+	BatchTypePilot = "pilot"
+	// Wave types are dynamically created as "wave_1", "wave_2", etc.
 )
 
 // User mapping status constants.

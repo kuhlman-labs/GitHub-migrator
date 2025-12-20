@@ -143,7 +143,7 @@ func (o *Orchestrator) ExecuteScheduledBatches(ctx context.Context, dryRun bool)
 	for _, batch := range batches {
 		// Check if batch is scheduled and ready to execute
 		if batch.ScheduledAt != nil &&
-			batch.Status == StatusReady &&
+			batch.Status == models.BatchStatusReady &&
 			batch.ScheduledAt.Before(now) {
 
 			o.logger.Info("Executing scheduled batch",
@@ -237,7 +237,7 @@ func (o *Orchestrator) ExecuteSequentialWaves(ctx context.Context, dryRun bool) 
 	// Filter and sort wave batches (exclude pilot batches and batches with no type)
 	var waves []*models.Batch
 	for _, batch := range batches {
-		if batch.Type != TypePilot && batch.Type != "" {
+		if batch.Type != models.BatchTypePilot && batch.Type != "" {
 			waves = append(waves, batch)
 		}
 	}

@@ -13,7 +13,33 @@ const (
 	MigrationAPIELM = "ELM" // Enterprise Live Migrator
 )
 
-// Repository represents a Git repository to be migrated
+// Repository represents a Git repository to be migrated.
+//
+// # Field Organization
+//
+// This model's 80+ fields are logically grouped into components defined in
+// repository_components.go. Use the corresponding getter methods for type-safe
+// access to related field groups:
+//
+//   - GetGitProperties(): size, LFS, submodules, branches, commits
+//   - GetGitHubFeatures(): wiki, pages, actions, packages, protections
+//   - GetSecurityFeatures(): code scanning, Dependabot, secret scanning
+//   - GetMigrationState(): status, batch, destination, lock state
+//   - GetMigrationExclusions(): what to exclude during migration
+//   - GetGHESLimitViolations(): oversized commits, long refs, blocking files
+//   - GetADOProperties(): project, pipelines, boards (Azure DevOps only)
+//
+// # Helper Methods
+//
+//   - IsADORepository(): returns true if this is an Azure DevOps source
+//   - HasMigrationBlockers(): returns true if migration blockers exist
+//   - NeedsRemediation(): returns true if status is remediation_required
+//
+// # Future Refactoring
+//
+// The component types in repository_components.go are designed for eventual
+// embedding. Currently they serve as documentation and provide getter methods.
+// Full embedding is deferred due to GORM complexity with nullable embedded fields.
 type Repository struct {
 	ID        int64  `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
 	FullName  string `json:"full_name" db:"full_name" gorm:"column:full_name;uniqueIndex;not null"` // org/repo

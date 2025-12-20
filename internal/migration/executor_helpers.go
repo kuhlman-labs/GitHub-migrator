@@ -106,39 +106,39 @@ func (e *Executor) shouldExcludeAttachments(repo *models.Repository, batch *mode
 // determineTargetVisibility determines the target visibility based on source visibility and config
 func (e *Executor) determineTargetVisibility(sourceVisibility string) string {
 	switch strings.ToLower(sourceVisibility) {
-	case visibilityPublic:
+	case models.VisibilityPublic:
 		// Apply configured mapping for public repos
 		targetVis := strings.ToLower(e.visibilityHandling.PublicRepos)
 		// Validate target visibility
-		if targetVis == visibilityPublic || targetVis == visibilityInternal || targetVis == visibilityPrivate {
+		if targetVis == models.VisibilityPublic || targetVis == models.VisibilityInternal || targetVis == models.VisibilityPrivate {
 			return targetVis
 		}
 		// Default to private if invalid
 		e.logger.Warn("Invalid target visibility for public repos, defaulting to private",
 			"configured", e.visibilityHandling.PublicRepos)
-		return visibilityPrivate
+		return models.VisibilityPrivate
 
-	case visibilityInternal:
+	case models.VisibilityInternal:
 		// Apply configured mapping for internal repos
 		targetVis := strings.ToLower(e.visibilityHandling.InternalRepos)
 		// Validate target visibility (internal repos can only become internal or private)
-		if targetVis == visibilityInternal || targetVis == visibilityPrivate {
+		if targetVis == models.VisibilityInternal || targetVis == models.VisibilityPrivate {
 			return targetVis
 		}
 		// Default to private if invalid
 		e.logger.Warn("Invalid target visibility for internal repos, defaulting to private",
 			"configured", e.visibilityHandling.InternalRepos)
-		return visibilityPrivate
+		return models.VisibilityPrivate
 
-	case visibilityPrivate:
+	case models.VisibilityPrivate:
 		// Private repos always stay private
-		return visibilityPrivate
+		return models.VisibilityPrivate
 
 	default:
 		// Unknown visibility, default to private (safest)
 		e.logger.Warn("Unknown source visibility, defaulting to private",
 			"source_visibility", sourceVisibility)
-		return visibilityPrivate
+		return models.VisibilityPrivate
 	}
 }
 

@@ -62,9 +62,7 @@ func (h *Handler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 // DiscoverOrgMembers handles POST /api/v1/users/discover
 // Discovers organization members for a single organization (standalone, users-only discovery)
 func (h *Handler) DiscoverOrgMembers(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Organization string `json:"organization"`
-	}
+	var req DiscoverUsersRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -258,14 +256,7 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CreateUserMapping(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		SourceLogin      string  `json:"source_login"`
-		SourceEmail      *string `json:"source_email,omitempty"`
-		SourceName       *string `json:"source_name,omitempty"`
-		DestinationLogin *string `json:"destination_login,omitempty"`
-		DestinationEmail *string `json:"destination_email,omitempty"`
-		MappingStatus    string  `json:"mapping_status,omitempty"`
-	}
+	var req CreateUserMappingRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -324,11 +315,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		DestinationLogin *string `json:"destination_login,omitempty"`
-		DestinationEmail *string `json:"destination_email,omitempty"`
-		MappingStatus    *string `json:"mapping_status,omitempty"`
-	}
+	var req UpdateUserMappingRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -808,10 +795,7 @@ func (h *Handler) SyncUserMappingsFromDiscovery(w http.ResponseWriter, r *http.R
 func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		DestinationOrg string `json:"destination_org"`
-		DryRun         bool   `json:"dry_run"`
-	}
+	var req ReconcileUsersRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -885,10 +869,7 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		DestinationOrg string `json:"destination_org"`
-		EMUShortcode   string `json:"emu_shortcode,omitempty"` // e.g., "coinbase" to match "jsmith" -> "jsmith_coinbase"
-	}
+	var req AutoMapUsersRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -1239,9 +1220,7 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var req struct {
-		DestinationOrg string `json:"destination_org"`
-	}
+	var req ValidateMappingsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -1397,10 +1376,7 @@ func (h *Handler) processBulkInvitations(ctx context.Context, destClient *github
 func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		DestinationOrg string   `json:"destination_org"`
-		SourceLogins   []string `json:"source_logins,omitempty"`
-	}
+	var req MigrateUsersRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)

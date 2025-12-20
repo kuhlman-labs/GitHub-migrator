@@ -641,9 +641,7 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Reason string `json:"reason,omitempty"`
-	}
+	var req RollbackRepositoryRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		req.Reason = ""
@@ -690,9 +688,7 @@ func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var req struct {
-		Unmark bool `json:"unmark,omitempty"`
-	}
+	var req MarkWontMigrateRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		req.Unmark = false

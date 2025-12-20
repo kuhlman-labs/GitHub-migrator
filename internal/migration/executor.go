@@ -58,13 +58,6 @@ const (
 	pollingBackoffMultiplier = 1.5
 )
 
-// Visibility constants
-const (
-	visibilityPrivate  = "private"
-	visibilityPublic   = "public"
-	visibilityInternal = "internal"
-)
-
 // DestinationRepoExistsAction defines what to do if destination repo already exists
 type DestinationRepoExistsAction string
 
@@ -155,10 +148,10 @@ func NewExecutor(cfg ExecutorConfig) (*Executor, error) {
 	// Default visibility handling to private if not specified (safest option)
 	visibilityHandling := cfg.VisibilityHandling
 	if visibilityHandling.PublicRepos == "" {
-		visibilityHandling.PublicRepos = visibilityPrivate
+		visibilityHandling.PublicRepos = models.VisibilityPrivate
 	}
 	if visibilityHandling.InternalRepos == "" {
-		visibilityHandling.InternalRepos = visibilityPrivate
+		visibilityHandling.InternalRepos = models.VisibilityPrivate
 	}
 
 	return &Executor{

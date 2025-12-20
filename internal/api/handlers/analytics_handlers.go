@@ -79,7 +79,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	orgStats, _ := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	var projectStats []*storage.OrganizationStats
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		projectStats, _ = h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	}
 
@@ -87,7 +87,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	featureStats, _ := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
 
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	} else {
 		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -196,7 +196,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	} else {
 		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -213,15 +213,15 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	veryComplexCount := 0
 	veryLargePending := 0
 	for _, dist := range complexityDistribution {
-		if dist.Category == categoryComplex || dist.Category == categoryVeryComplex {
+		if dist.Category == models.ComplexityComplex || dist.Category == models.ComplexityVeryComplex {
 			highComplexityPending += dist.Count
 		}
-		if dist.Category == categoryVeryComplex {
+		if dist.Category == models.ComplexityVeryComplex {
 			veryComplexCount += dist.Count
 		}
 	}
 	for _, dist := range sizeDistribution {
-		if dist.Category == categorySizeVeryLarge {
+		if dist.Category == models.SizeCategoryVeryLarge {
 			veryLargePending += dist.Count
 		}
 	}
@@ -230,11 +230,11 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	completedBatches, inProgressBatches, pendingBatches := 0, 0, 0
 	for _, batch := range batches {
 		switch batch.Status {
-		case statusCompleted, "completed_with_errors":
+		case models.BatchStatusCompleted, models.BatchStatusCompletedWithErrors:
 			completedBatches++
-		case statusInProgress:
+		case models.BatchStatusInProgress:
 			inProgressBatches++
-		case statusPending, statusReady:
+		case models.BatchStatusPending, models.BatchStatusReady:
 			pendingBatches++
 		}
 	}
@@ -282,7 +282,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		if discoveryData, ok := report["discovery_data"].(map[string]interface{}); ok {
 			discoveryData["ado_specific_risks"] = map[string]interface{}{
 				"tfvc_repos":                   featureStats.ADOTFVCCount,
@@ -348,7 +348,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	} else {
 		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -365,11 +365,11 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	completedBatches, inProgressBatches, pendingBatches := 0, 0, 0
 	for _, batch := range batches {
 		switch batch.Status {
-		case statusCompleted, "completed_with_errors":
+		case models.BatchStatusCompleted, models.BatchStatusCompletedWithErrors:
 			completedBatches++
-		case statusInProgress:
+		case models.BatchStatusInProgress:
 			inProgressBatches++
-		case statusPending, statusReady:
+		case models.BatchStatusPending, models.BatchStatusReady:
 			pendingBatches++
 		}
 	}

@@ -85,7 +85,7 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 	updated := 0
 	for _, batch := range batches {
 		// Only update batches that are not in a terminal or stable state
-		if batch.Status == StatusReady || batch.Status == StatusPending {
+		if batch.Status == models.BatchStatusReady || batch.Status == models.BatchStatusPending {
 			continue // Ready and pending batches don't need status updates
 		}
 
@@ -154,7 +154,7 @@ func (su *StatusUpdater) calculateBatchStatus(ctx context.Context, batch *models
 	}
 
 	if len(repos) == 0 {
-		return StatusReady, nil
+		return models.BatchStatusReady, nil
 	}
 
 	return CalculateBatchStatusFromRepos(repos), nil
@@ -197,43 +197,43 @@ func CalculateBatchStatusFromRepos(repos []*models.Repository) string {
 
 	// Determine overall batch status
 	if inProgressCount > 0 {
-		return StatusInProgress
+		return models.BatchStatusInProgress
 	}
 
 	// If all migrations are complete
 	if completedCount == totalRepos {
-		return StatusCompleted
+		return models.BatchStatusCompleted
 	}
 
 	// If all migrations failed
 	if failedCount == totalRepos {
-		return StatusFailed
+		return models.BatchStatusFailed
 	}
 
 	// If some completed and some failed
 	if completedCount > 0 && failedCount > 0 {
-		return StatusCompletedWithErrors
+		return models.BatchStatusCompletedWithErrors
 	}
 
 	// If any failed during migration
 	if failedCount > 0 {
-		return StatusCompletedWithErrors
+		return models.BatchStatusCompletedWithErrors
 	}
 
 	// If all dry runs are complete (batch is ready for migration)
 	if dryRunCompleteCount == totalRepos {
-		return StatusReady
+		return models.BatchStatusReady
 	}
 
 	// If some dry runs complete and some failed
 	if dryRunCompleteCount > 0 && failedCount > 0 {
-		return StatusReady
+		return models.BatchStatusReady
 	}
 
-	return StatusReady
+	return models.BatchStatusReady
 }
 
 // isTerminalStatus returns true if the status represents a completed state
 func isTerminalStatus(status string) bool {
-	return status == StatusCompleted || status == StatusFailed || status == StatusCompletedWithErrors || status == StatusCancelled
+	return status == models.BatchStatusCompleted || status == models.BatchStatusFailed || status == models.BatchStatusCompletedWithErrors || status == models.BatchStatusCancelled
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/kuhlman-labs/github-migrator/internal/ado"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
@@ -394,7 +395,7 @@ func TestADOSourceURLParsing(t *testing.T) {
 				// Check if URL has required _git segment
 				hasGit := false
 				for _, p := range parts {
-					if p == adoGitPathSegment {
+					if p == ado.GitPathSegment {
 						hasGit = true
 						break
 					}
@@ -408,7 +409,7 @@ func TestADOSourceURLParsing(t *testing.T) {
 			// Find org, project, repo in path parts
 			gitIndex := -1
 			for i, p := range parts {
-				if p == adoGitPathSegment {
+				if p == ado.GitPathSegment {
 					gitIndex = i
 					break
 				}

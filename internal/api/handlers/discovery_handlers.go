@@ -15,11 +15,7 @@ import (
 
 // StartDiscovery handles POST /api/v1/discovery/start
 func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Organization   string `json:"organization,omitempty"`
-		EnterpriseSlug string `json:"enterprise_slug,omitempty"`
-		Workers        int    `json:"workers,omitempty"`
-	}
+	var req StartDiscoveryRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -100,7 +96,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 			"message":     "Enterprise discovery started",
 			"enterprise":  req.EnterpriseSlug,
-			"status":      statusInProgress,
+			"status":      models.BatchStatusInProgress,
 			"type":        "enterprise",
 			"progress_id": progress.ID,
 		})
@@ -112,7 +108,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 			"message":      "Discovery started",
 			"organization": req.Organization,
-			"status":       statusInProgress,
+			"status":       models.BatchStatusInProgress,
 			"type":         "organization",
 			"progress_id":  progress.ID,
 		})
@@ -182,9 +178,7 @@ func (h *Handler) GetDiscoveryProgress(w http.ResponseWriter, r *http.Request) {
 // DiscoverRepositories handles POST /api/v1/repositories/discover
 // Discovers repositories for a single organization (standalone, repos-only discovery)
 func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Organization string `json:"organization"`
-	}
+	var req StartProfilingRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, ErrInvalidJSON)
@@ -212,6 +206,6 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 		"message":      "Repository discovery started",
 		"organization": req.Organization,
-		"status":       statusInProgress,
+		"status":       models.BatchStatusInProgress,
 	})
 }

@@ -902,13 +902,13 @@ func TestExecutorConfigDefaults(t *testing.T) {
 			t.Fatalf("Failed to create executor: %v", err)
 		}
 
-		if executor.visibilityHandling.PublicRepos != visibilityPrivate {
+		if executor.visibilityHandling.PublicRepos != models.VisibilityPrivate {
 			t.Errorf("Expected default public repos visibility %q, got %q",
-				visibilityPrivate, executor.visibilityHandling.PublicRepos)
+				models.VisibilityPrivate, executor.visibilityHandling.PublicRepos)
 		}
-		if executor.visibilityHandling.InternalRepos != visibilityPrivate {
+		if executor.visibilityHandling.InternalRepos != models.VisibilityPrivate {
 			t.Errorf("Expected default internal repos visibility %q, got %q",
-				visibilityPrivate, executor.visibilityHandling.InternalRepos)
+				models.VisibilityPrivate, executor.visibilityHandling.InternalRepos)
 		}
 	})
 

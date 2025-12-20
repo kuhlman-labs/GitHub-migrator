@@ -97,38 +97,38 @@ func TestIsTerminalStatus(t *testing.T) {
 		// Terminal statuses
 		{
 			name:     "completed - terminal",
-			status:   StatusCompleted,
+			status:   models.BatchStatusCompleted,
 			expected: true,
 		},
 		{
 			name:     "failed - terminal",
-			status:   StatusFailed,
+			status:   models.BatchStatusFailed,
 			expected: true,
 		},
 		{
 			name:     "completed with errors - terminal",
-			status:   StatusCompletedWithErrors,
+			status:   models.BatchStatusCompletedWithErrors,
 			expected: true,
 		},
 		{
 			name:     "cancelled - terminal",
-			status:   StatusCancelled,
+			status:   models.BatchStatusCancelled,
 			expected: true,
 		},
 		// Non-terminal statuses
 		{
 			name:     "pending - not terminal",
-			status:   StatusPending,
+			status:   models.BatchStatusPending,
 			expected: false,
 		},
 		{
 			name:     "ready - not terminal",
-			status:   StatusReady,
+			status:   models.BatchStatusReady,
 			expected: false,
 		},
 		{
 			name:     "in progress - not terminal",
-			status:   StatusInProgress,
+			status:   models.BatchStatusInProgress,
 			expected: false,
 		},
 		{
@@ -158,7 +158,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 		{
 			name:           "empty repos - completed (0 == 0)",
 			repos:          []*models.Repository{},
-			expectedStatus: StatusCompleted, // totalRepos == 0 and completedCount == 0, so 0 == 0 is true
+			expectedStatus: models.BatchStatusCompleted, // totalRepos == 0 and completedCount == 0, so 0 == 0 is true
 		},
 		{
 			name: "all pending - ready",
@@ -166,7 +166,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusPending)},
 				{Status: string(models.StatusPending)},
 			},
-			expectedStatus: StatusReady,
+			expectedStatus: models.BatchStatusReady,
 		},
 		{
 			name: "all complete - completed",
@@ -175,7 +175,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusComplete)},
 				{Status: string(models.StatusComplete)},
 			},
-			expectedStatus: StatusCompleted,
+			expectedStatus: models.BatchStatusCompleted,
 		},
 		{
 			name: "all failed - failed",
@@ -183,7 +183,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusMigrationFailed)},
 				{Status: string(models.StatusMigrationFailed)},
 			},
-			expectedStatus: StatusFailed,
+			expectedStatus: models.BatchStatusFailed,
 		},
 		{
 			name: "some complete some failed - completed with errors",
@@ -192,7 +192,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusComplete)},
 				{Status: string(models.StatusMigrationFailed)},
 			},
-			expectedStatus: StatusCompletedWithErrors,
+			expectedStatus: models.BatchStatusCompletedWithErrors,
 		},
 		{
 			name: "some in progress - in progress",
@@ -201,7 +201,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusMigratingContent)},
 				{Status: string(models.StatusPending)},
 			},
-			expectedStatus: StatusInProgress,
+			expectedStatus: models.BatchStatusInProgress,
 		},
 		{
 			name: "dry run queued - in progress",
@@ -209,21 +209,21 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusDryRunQueued)},
 				{Status: string(models.StatusPending)},
 			},
-			expectedStatus: StatusInProgress,
+			expectedStatus: models.BatchStatusInProgress,
 		},
 		{
 			name: "dry run in progress - in progress",
 			repos: []*models.Repository{
 				{Status: string(models.StatusDryRunInProgress)},
 			},
-			expectedStatus: StatusInProgress,
+			expectedStatus: models.BatchStatusInProgress,
 		},
 		{
 			name: "archive generating - in progress",
 			repos: []*models.Repository{
 				{Status: string(models.StatusArchiveGenerating)},
 			},
-			expectedStatus: StatusInProgress,
+			expectedStatus: models.BatchStatusInProgress,
 		},
 		{
 			name: "all dry run complete - ready",
@@ -231,7 +231,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusDryRunComplete)},
 				{Status: string(models.StatusDryRunComplete)},
 			},
-			expectedStatus: StatusReady,
+			expectedStatus: models.BatchStatusReady,
 		},
 		{
 			name: "dry run failed - completed with errors",
@@ -239,7 +239,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusDryRunComplete)},
 				{Status: string(models.StatusDryRunFailed)},
 			},
-			expectedStatus: StatusCompletedWithErrors, // failedCount > 0 triggers CompletedWithErrors
+			expectedStatus: models.BatchStatusCompletedWithErrors, // failedCount > 0 triggers CompletedWithErrors
 		},
 		{
 			name: "mixed dry run and migration failed",
@@ -247,7 +247,7 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 				{Status: string(models.StatusDryRunFailed)},
 				{Status: string(models.StatusMigrationFailed)},
 			},
-			expectedStatus: StatusFailed,
+			expectedStatus: models.BatchStatusFailed,
 		},
 	}
 
@@ -267,13 +267,13 @@ func TestBatchStatusConstants(t *testing.T) {
 		constant string
 		expected string
 	}{
-		{StatusPending, "pending"},
-		{StatusReady, "ready"},
-		{StatusInProgress, "in_progress"},
-		{StatusCompleted, "completed"},
-		{StatusCompletedWithErrors, "completed_with_errors"},
-		{StatusFailed, "failed"},
-		{StatusCancelled, "cancelled"},
+		{models.BatchStatusPending, "pending"},
+		{models.BatchStatusReady, "ready"},
+		{models.BatchStatusInProgress, "in_progress"},
+		{models.BatchStatusCompleted, "completed"},
+		{models.BatchStatusCompletedWithErrors, "completed_with_errors"},
+		{models.BatchStatusFailed, "failed"},
+		{models.BatchStatusCancelled, "cancelled"},
 	}
 
 	for _, tt := range tests {
@@ -287,8 +287,8 @@ func TestBatchStatusConstants(t *testing.T) {
 
 // TestBatchTypeConstants tests batch type constants
 func TestBatchTypeConstants(t *testing.T) {
-	if TypePilot != "pilot" {
-		t.Errorf("Expected TypePilot='pilot', got %q", TypePilot)
+	if models.BatchTypePilot != "pilot" {
+		t.Errorf("Expected BatchTypePilot='pilot', got %q", models.BatchTypePilot)
 	}
 }
 
@@ -338,7 +338,7 @@ func TestBatchStatusFlow(t *testing.T) {
 	// Test the typical status flow
 	t.Run("typical batch lifecycle", func(t *testing.T) {
 		// 1. Batch starts as pending or ready
-		initialStatuses := []string{StatusPending, StatusReady}
+		initialStatuses := []string{models.BatchStatusPending, models.BatchStatusReady}
 		for _, s := range initialStatuses {
 			if isTerminalStatus(s) {
 				t.Errorf("Initial status %q should not be terminal", s)
@@ -346,12 +346,12 @@ func TestBatchStatusFlow(t *testing.T) {
 		}
 
 		// 2. Batch goes in_progress when executing
-		if isTerminalStatus(StatusInProgress) {
+		if isTerminalStatus(models.BatchStatusInProgress) {
 			t.Error("in_progress should not be terminal")
 		}
 
 		// 3. Batch ends in a terminal state
-		terminalStatuses := []string{StatusCompleted, StatusFailed, StatusCompletedWithErrors, StatusCancelled}
+		terminalStatuses := []string{models.BatchStatusCompleted, models.BatchStatusFailed, models.BatchStatusCompletedWithErrors, models.BatchStatusCancelled}
 		for _, s := range terminalStatuses {
 			if !isTerminalStatus(s) {
 				t.Errorf("Terminal status %q should be marked as terminal", s)

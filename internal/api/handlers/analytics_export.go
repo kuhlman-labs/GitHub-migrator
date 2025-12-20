@@ -64,7 +64,7 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 	output.WriteString("Feature,Repository Count,Percentage\n")
 	totalRepos := featureStats.TotalRepositories
 	if totalRepos > 0 {
-		if sourceType == sourceTypeAzureDevOps {
+		if sourceType == models.SourceTypeAzureDevOps {
 			output.WriteString(fmt.Sprintf("TFVC Repositories,%d,%.1f%%\n", featureStats.ADOTFVCCount, float64(featureStats.ADOTFVCCount)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Azure Boards,%d,%.1f%%\n", featureStats.ADOHasBoards, float64(featureStats.ADOHasBoards)/float64(totalRepos)*100))
 			output.WriteString(fmt.Sprintf("Azure Pipelines,%d,%.1f%%\n", featureStats.ADOHasPipelines, float64(featureStats.ADOHasPipelines)/float64(totalRepos)*100))
@@ -144,13 +144,13 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 
 	highComplexity := 0
 	for _, dist := range complexityDist {
-		if dist.Category == categoryComplex || dist.Category == categoryVeryComplex {
+		if dist.Category == models.ComplexityComplex || dist.Category == models.ComplexityVeryComplex {
 			highComplexity += dist.Count
 		}
 	}
 	veryLarge := 0
 	for _, dist := range sizeDist {
-		if dist.Category == categorySizeVeryLarge {
+		if dist.Category == models.SizeCategoryVeryLarge {
 			veryLarge += dist.Count
 		}
 	}
@@ -203,7 +203,7 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 		},
 	}
 
-	if sourceType == sourceTypeAzureDevOps {
+	if sourceType == models.SourceTypeAzureDevOps {
 		if discoveryData, ok := report["discovery_data"].(map[string]interface{}); ok {
 			discoveryData["ado_specific_risks"] = map[string]interface{}{
 				"tfvc_repos":                   featureStats.ADOTFVCCount,
@@ -302,7 +302,7 @@ func (h *Handler) writeCSVReportHeader(output *strings.Builder, repoCount int) {
 }
 
 func (h *Handler) writeCSVColumnHeaders(output *strings.Builder) {
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		output.WriteString("Repository,Organization,Project,Source,Status,Batch,")
 	} else {
 		output.WriteString("Repository,Organization,Source,Status,Batch,")
@@ -312,7 +312,7 @@ func (h *Handler) writeCSVColumnHeaders(output *strings.Builder) {
 	output.WriteString("Has Blocking Files,Local Dependencies,Complexity Score,")
 	output.WriteString("Default Branch,Branch Count,Last Commit Date,Visibility,Is Archived,Is Fork,")
 
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		output.WriteString("Is Git,Pipeline Count,YAML Pipelines,Classic Pipelines,Has Boards,Has Wiki,")
 		output.WriteString("Pull Requests,Work Items,Branch Policies,Test Plans,Package Feeds,Service Hooks")
 	} else {
@@ -329,7 +329,7 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	output.WriteString(escapesCSV(repo.Organization()))
 	output.WriteString(",")
 
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		if repo.ADOProject != nil {
 			output.WriteString(escapesCSV(*repo.ADOProject))
 		}
@@ -398,7 +398,7 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 }
 
 func (h *Handler) writeCSVSourceSpecificFields(output *strings.Builder, repo *models.Repository) {
-	if h.sourceType == sourceTypeAzureDevOps {
+	if h.sourceType == models.SourceTypeAzureDevOps {
 		output.WriteString(fmt.Sprintf("%s,%d,%d,%d,%s,%s,",
 			formatBool(repo.ADOIsGit),
 			repo.ADOPipelineCount,

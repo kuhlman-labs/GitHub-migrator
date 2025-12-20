@@ -312,8 +312,8 @@ func TestExecuteBatch(t *testing.T) {
 
 		// Verify batch status was updated
 		updated, _ := db.GetBatch(ctx, batch.ID)
-		if updated.Status != StatusInProgress {
-			t.Errorf("Expected status '%s', got %s", StatusInProgress, updated.Status)
+		if updated.Status != models.BatchStatusInProgress {
+			t.Errorf("Expected status '%s', got %s", models.BatchStatusInProgress, updated.Status)
 		}
 
 		if updated.StartedAt == nil {
@@ -328,8 +328,8 @@ func TestExecuteBatch(t *testing.T) {
 
 		// Verify batch is still marked as in progress (workers would normally pick up the queued repos)
 		updated, _ = db.GetBatch(ctx, batch.ID)
-		if updated.Status != StatusInProgress {
-			t.Errorf("Expected batch status to remain '%s', got %s", StatusInProgress, updated.Status)
+		if updated.Status != models.BatchStatusInProgress {
+			t.Errorf("Expected batch status to remain '%s', got %s", models.BatchStatusInProgress, updated.Status)
 		}
 	})
 
@@ -545,8 +545,8 @@ func TestGetRunningBatches(t *testing.T) {
 
 		// Check batch1 is in progress in the database
 		batch1Updated, _ := db.GetBatch(ctx, batch1.ID)
-		if batch1Updated.Status != StatusInProgress {
-			t.Errorf("Expected batch1 status '%s', got %s", StatusInProgress, batch1Updated.Status)
+		if batch1Updated.Status != models.BatchStatusInProgress {
+			t.Errorf("Expected batch1 status '%s', got %s", models.BatchStatusInProgress, batch1Updated.Status)
 		}
 
 		// Start second batch
@@ -559,8 +559,8 @@ func TestGetRunningBatches(t *testing.T) {
 
 		// Check batch2 is also in progress in the database
 		batch2Updated, _ := db.GetBatch(ctx, batch2.ID)
-		if batch2Updated.Status != StatusInProgress {
-			t.Errorf("Expected batch2 status '%s', got %s", StatusInProgress, batch2Updated.Status)
+		if batch2Updated.Status != models.BatchStatusInProgress {
+			t.Errorf("Expected batch2 status '%s', got %s", models.BatchStatusInProgress, batch2Updated.Status)
 		}
 
 		// Verify both batches have repositories queued

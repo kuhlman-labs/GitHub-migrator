@@ -389,7 +389,7 @@ func (o *Organizer) CreatePilotBatch(ctx context.Context, name string, criteria 
 		Description:     strPtr(fmt.Sprintf("Pilot batch with %d repositories for initial migration testing", len(repos))),
 		Type:            "pilot",
 		RepositoryCount: len(repos),
-		Status:          StatusReady,
+		Status:          models.BatchStatusReady,
 		CreatedAt:       time.Now(),
 	}
 
@@ -480,7 +480,7 @@ func (o *Organizer) OrganizeIntoWaves(ctx context.Context, criteria WaveCriteria
 			Description:     strPtr(fmt.Sprintf("Migration wave %d with %d repositories", waveNum, len(waveRepos))),
 			Type:            fmt.Sprintf("wave_%d", waveNum),
 			RepositoryCount: len(waveRepos),
-			Status:          StatusReady,
+			Status:          models.BatchStatusReady,
 			CreatedAt:       time.Now(),
 		}
 
