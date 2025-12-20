@@ -14,6 +14,9 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
+// adoGitPathSegment is the URL path segment that identifies a Git repository in ADO URLs
+const adoGitPathSegment = "_git"
+
 // ExecuteADOMigration executes a migration from Azure DevOps to GitHub
 // ADO migrations use a different flow than GitHub migrations:
 // - No archive generation (GEI pulls directly from ADO)
@@ -482,8 +485,8 @@ func (e *Executor) validateADORepositoryAccess(ctx context.Context, repo *models
 	}
 
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
-	if len(pathParts) < 4 || pathParts[2] != "_git" {
-		return fmt.Errorf("invalid ADO URL format - expected: https://dev.azure.com/{org}/{project}/_git/{repo}")
+	if len(pathParts) < 4 || pathParts[2] != adoGitPathSegment {
+		return fmt.Errorf("invalid ADO URL format - expected: https://dev.azure.com/{org}/{project}/%s/{repo}", adoGitPathSegment)
 	}
 
 	org := pathParts[0]

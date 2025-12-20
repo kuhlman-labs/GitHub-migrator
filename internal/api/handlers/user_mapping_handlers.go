@@ -23,24 +23,9 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	// Parse query parameters
 	sourceInstance := r.URL.Query().Get("source_instance")
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
+	pagination := ParsePagination(r)
 
-	limit := 100
-	offset := 0
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
-	}
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			offset = o
-		}
-	}
-
-	users, total, err := h.db.ListUsers(ctx, sourceInstance, limit, offset)
+	users, total, err := h.db.ListUsers(ctx, sourceInstance, pagination.Limit, pagination.Offset)
 	if err != nil {
 		if h.handleContextError(ctx, err, "list users", r) {
 			return

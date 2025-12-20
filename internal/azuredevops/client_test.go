@@ -261,3 +261,74 @@ func TestClient_GetBranchPolicyDetails(t *testing.T) {
 		t.Error("GetBranchPolicyDetails() returned negative counts")
 	}
 }
+
+func TestClientConfig_Structure(t *testing.T) {
+	config := ClientConfig{
+		OrganizationURL:     "https://dev.azure.com/myorg",
+		PersonalAccessToken: "my-pat-token-123",
+		Logger:              nil,
+	}
+
+	if config.OrganizationURL != "https://dev.azure.com/myorg" {
+		t.Errorf("Expected OrganizationURL 'https://dev.azure.com/myorg', got '%s'", config.OrganizationURL)
+	}
+	if config.PersonalAccessToken != "my-pat-token-123" {
+		t.Errorf("Expected PersonalAccessToken 'my-pat-token-123', got '%s'", config.PersonalAccessToken)
+	}
+}
+
+func TestTfsGitRepositoryType(t *testing.T) {
+	if TfsGitRepositoryType != "TfsGit" {
+		t.Errorf("Expected TfsGitRepositoryType 'TfsGit', got '%s'", TfsGitRepositoryType)
+	}
+}
+
+func TestClientConfig_ValidateEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  ClientConfig
+		wantErr bool
+	}{
+		{
+			name: "valid HTTPS URL",
+			config: ClientConfig{
+				OrganizationURL:     "https://dev.azure.com/myorg",
+				PersonalAccessToken: "token",
+			},
+			wantErr: false,
+		},
+		{
+			name: "URL with trailing slash",
+			config: ClientConfig{
+				OrganizationURL:     "https://dev.azure.com/myorg/",
+				PersonalAccessToken: "token",
+			},
+			wantErr: false,
+		},
+		{
+			name: "whitespace only URL",
+			config: ClientConfig{
+				OrganizationURL:     "   ",
+				PersonalAccessToken: "token",
+			},
+			wantErr: false, // Validation doesn't trim whitespace
+		},
+		{
+			name: "whitespace only PAT",
+			config: ClientConfig{
+				OrganizationURL:     "https://dev.azure.com/myorg",
+				PersonalAccessToken: "   ",
+			},
+			wantErr: false, // Validation doesn't trim whitespace
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
