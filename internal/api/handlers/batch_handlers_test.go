@@ -594,7 +594,10 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
-		saved, _ := db.GetRepository(ctx, repo.FullName)
+		saved, err := db.GetRepository(ctx, repo.FullName)
+		if err != nil || saved == nil {
+			t.Fatalf("GetRepository() error = %v, saved = %v", err, saved)
+		}
 		repoIDs = append(repoIDs, saved.ID)
 	}
 

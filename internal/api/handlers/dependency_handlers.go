@@ -313,7 +313,7 @@ func (h *Handler) ExportDependencies(w http.ResponseWriter, r *http.Request) {
 			DependencyName: edge.SourceRepo,
 			Direction:      "depended_by",
 			DependencyType: edge.DependencyType,
-			DependencyURL:  edge.DependencyURL, // Use target repo URL for consistency
+			DependencyURL:  edge.SourceRepoURL, // URL of DependencyName (source repo)
 		})
 	}
 
