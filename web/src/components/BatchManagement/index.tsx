@@ -683,6 +683,19 @@ export function BatchManagement() {
                             )}
                           </div>
                         )}
+                        {!selectedBatch.last_migration_attempt_at && selectedBatch.completed_at && (
+                          <div className="text-sm">
+                            <span style={{ color: 'var(--fgColor-muted)' }}>Migration Completed:</span>
+                            <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
+                              {formatDate(selectedBatch.completed_at)}
+                            </div>
+                            {selectedBatch.started_at && (
+                              <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+                                Completed in {formatBatchDuration(selectedBatch)}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
