@@ -430,7 +430,10 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		if batch.DestinationOrg != nil {
 			oldDestinationOrg = *batch.DestinationOrg
 		}
-		destinationOrgChanged = oldDestinationOrg != newDestinationOrg
+		// A change occurred if:
+		// 1. Old was nil and new value is explicitly provided (even if empty string)
+		// 2. Old and new have different dereferenced values
+		destinationOrgChanged = (batch.DestinationOrg == nil) || (oldDestinationOrg != newDestinationOrg)
 	}
 
 	if updates.Name != nil {
