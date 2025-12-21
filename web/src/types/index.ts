@@ -215,6 +215,9 @@ export interface Batch {
   migration_api?: 'GEI' | 'ELM';
   exclude_releases?: boolean;
   exclude_attachments?: boolean;
+  // Progress information (populated by backend for in-progress/completed batches)
+  percent_complete?: number;
+  completed_repos?: number;
 }
 
 // Helper function to calculate batch duration in seconds

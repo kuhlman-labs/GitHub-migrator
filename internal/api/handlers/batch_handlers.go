@@ -12,6 +12,13 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+// BatchWithProgress extends Batch with progress information
+type BatchWithProgress struct {
+	*models.Batch
+	PercentComplete float64 `json:"percent_complete"`
+	CompletedRepos  int     `json:"completed_repos"`
+}
+
 // ListBatches handles GET /api/v1/batches
 func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -24,7 +31,39 @@ func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, ErrDatabaseFetch.WithDetails("batches"))
 		return
 	}
-	h.sendJSON(w, http.StatusOK, batches)
+
+	// Enhance batches with progress information
+	result := make([]*BatchWithProgress, len(batches))
+	for i, batch := range batches {
+		bwp := &BatchWithProgress{
+			Batch:           batch,
+			PercentComplete: 0,
+			CompletedRepos:  0,
+		}
+
+		// Calculate progress for in-progress or completed batches
+		if batch.Status == models.BatchStatusInProgress ||
+			batch.Status == models.BatchStatusCompleted ||
+			batch.Status == models.BatchStatusCompletedWithErrors {
+			repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
+				"batch_id": batch.ID,
+			})
+			if err == nil && len(repos) > 0 {
+				completed := 0
+				for _, repo := range repos {
+					if repo.Status == string(models.StatusComplete) {
+						completed++
+					}
+				}
+				bwp.CompletedRepos = completed
+				bwp.PercentComplete = float64(completed) / float64(len(repos)) * 100
+			}
+		}
+
+		result[i] = bwp
+	}
+
+	h.sendJSON(w, http.StatusOK, result)
 }
 
 // CreateBatch handles POST /api/v1/batches

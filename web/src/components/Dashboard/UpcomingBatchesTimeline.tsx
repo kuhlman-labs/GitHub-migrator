@@ -124,14 +124,8 @@ function BatchTimelineItem({ batch }: BatchTimelineItemProps) {
 
   const countdown = getCountdown();
 
-  // Calculate progress for in-progress batches (mock - would need actual data)
-  const getProgress = () => {
-    // This would need to be calculated based on actual repository statuses in the batch
-    // For now, return a placeholder
-    return isInProgress ? 50 : 0;
-  };
-
-  const progress = getProgress();
+  // Get progress from batch data (calculated by backend)
+  const progress = batch.percent_complete ?? 0;
 
   return (
     <div className="p-4 hover:bg-[var(--bgColor-muted)] transition-colors">
@@ -170,19 +164,19 @@ function BatchTimelineItem({ batch }: BatchTimelineItemProps) {
             )}
           </div>
 
-          {isInProgress && progress > 0 && (
+          {isInProgress && (
             <div className="mt-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
                   Progress
                 </span>
                 <span className="text-xs font-medium" style={{ color: 'var(--fgColor-accent)' }}>
-                  {progress}%
+                  {Math.round(progress)}%
                 </span>
               </div>
               <ProgressBar 
                 progress={progress} 
-                aria-label={`${batch.name} ${progress}% complete`}
+                aria-label={`${batch.name} ${Math.round(progress)}% complete`}
                 bg="accent.emphasis"
                 barSize="small"
               />
