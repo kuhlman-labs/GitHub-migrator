@@ -247,7 +247,8 @@ func categorizeStatuses(statusStats map[string]int) statusCounts {
 			counts.Completed += count
 		case models.StatusPreMigration, models.StatusArchiveGenerating, models.StatusQueuedForMigration, models.StatusMigratingContent, models.StatusPostMigration:
 			counts.InProgress += count
-		case models.StatusPending, models.StatusDryRunQueued, models.StatusDryRunInProgress, models.StatusDryRunComplete:
+		case models.StatusPending, models.StatusDryRunQueued, models.StatusDryRunInProgress, models.StatusDryRunComplete, models.StatusRemediationRequired:
+			// StatusRemediationRequired is pending - waiting for remediation before migration can proceed
 			counts.Pending += count
 		case models.StatusMigrationFailed, models.StatusDryRunFailed, models.StatusRolledBack:
 			counts.Failed += count

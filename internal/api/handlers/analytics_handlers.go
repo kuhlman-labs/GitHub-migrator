@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,7 +40,8 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 
 	migrated := stats[string(models.StatusComplete)] + stats[string(models.StatusMigrationComplete)]
 	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)] + stats[string(models.StatusRolledBack)]
-	pending := stats[string(models.StatusPending)] + stats[string(models.StatusDryRunQueued)] + stats[string(models.StatusDryRunInProgress)] + stats[string(models.StatusDryRunComplete)]
+	// StatusRemediationRequired is pending - waiting for remediation before migration can proceed
+	pending := stats[string(models.StatusPending)] + stats[string(models.StatusDryRunQueued)] + stats[string(models.StatusDryRunInProgress)] + stats[string(models.StatusDryRunComplete)] + stats[string(models.StatusRemediationRequired)]
 	inProgress := stats[string(models.StatusPreMigration)] + stats[string(models.StatusArchiveGenerating)] + stats[string(models.StatusQueuedForMigration)] + stats[string(models.StatusMigratingContent)] + stats[string(models.StatusPostMigration)]
 
 	successRate := 0.0
@@ -173,7 +175,8 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	migrated := stats[string(models.StatusComplete)] + stats[string(models.StatusMigrationComplete)]
 	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)] + stats[string(models.StatusRolledBack)]
-	pending := stats[string(models.StatusPending)] + stats[string(models.StatusDryRunQueued)] + stats[string(models.StatusDryRunInProgress)] + stats[string(models.StatusDryRunComplete)]
+	// StatusRemediationRequired is pending - waiting for remediation before migration can proceed
+	pending := stats[string(models.StatusPending)] + stats[string(models.StatusDryRunQueued)] + stats[string(models.StatusDryRunInProgress)] + stats[string(models.StatusDryRunComplete)] + stats[string(models.StatusRemediationRequired)]
 	inProgress := stats[string(models.StatusPreMigration)] + stats[string(models.StatusArchiveGenerating)] + stats[string(models.StatusQueuedForMigration)] + stats[string(models.StatusMigratingContent)] + stats[string(models.StatusPostMigration)]
 
 	successRate := 0.0
@@ -329,7 +332,8 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 
 	migrated := stats[string(models.StatusComplete)] + stats[string(models.StatusMigrationComplete)]
 	failed := stats[string(models.StatusMigrationFailed)] + stats[string(models.StatusDryRunFailed)] + stats[string(models.StatusRolledBack)]
-	pending := stats[string(models.StatusPending)] + stats[string(models.StatusDryRunQueued)] + stats[string(models.StatusDryRunInProgress)] + stats[string(models.StatusDryRunComplete)]
+	// StatusRemediationRequired is pending - waiting for remediation before migration can proceed
+	pending := stats[string(models.StatusPending)] + stats[string(models.StatusDryRunQueued)] + stats[string(models.StatusDryRunInProgress)] + stats[string(models.StatusDryRunComplete)] + stats[string(models.StatusRemediationRequired)]
 	inProgress := stats[string(models.StatusPreMigration)] + stats[string(models.StatusArchiveGenerating)] + stats[string(models.StatusQueuedForMigration)] + stats[string(models.StatusMigratingContent)] + stats[string(models.StatusPostMigration)]
 
 	successRate := 0.0
@@ -386,14 +390,19 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		completionRate = float64(migrated) / float64(total) * 100
 	}
 
+	// Use math.Round to properly round float64 seconds to int before passing to export
+	// This prevents truncation errors when converting to minutes (e.g., 90.7s → 91s → 1 min)
+	avgMigrationTimeInt := int(math.Round(avgMigrationTime))
+	medianMigrationTimeInt := int(math.Round(medianMigrationTime))
+
 	if format == formatCSV {
 		h.exportExecutiveReportCSV(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
-			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime), int(medianMigrationTime),
+			estimatedCompletionDate, daysRemaining, migrationVelocity, avgMigrationTimeInt, medianMigrationTimeInt,
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	} else {
 		h.exportExecutiveReportJSON(w, h.sourceType, total, migrated, inProgress, pending, failed, completionRate, successRate,
-			estimatedCompletionDate, daysRemaining, migrationVelocity, int(avgMigrationTime), int(medianMigrationTime),
+			estimatedCompletionDate, daysRemaining, migrationVelocity, avgMigrationTimeInt, medianMigrationTimeInt,
 			migrationCompletionStats, complexityDistribution, sizeDistribution, featureStats,
 			stats, completedBatches, inProgressBatches, pendingBatches)
 	}
