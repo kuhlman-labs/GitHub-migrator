@@ -40,22 +40,24 @@ const (
 	msgDryRunComplete    = "Dry run completed successfully - repository can be migrated safely"
 )
 
-// Adaptive polling configuration - preserves rate limits for long-running migrations
+// Adaptive polling configuration - optimized for typical migration times
+// Most migrations complete within 30 minutes, so we poll aggressively during that window
+// and then gradually back off to preserve rate limits for longer-running migrations
 const (
 	// Archive polling intervals
-	archiveInitialInterval   = 30 * time.Second // Initial polling interval
+	archiveInitialInterval   = 15 * time.Second // Initial polling interval (aggressive during fast phase)
 	archiveMaxInterval       = 5 * time.Minute  // Maximum polling interval (don't poll slower than this)
-	archiveFastPhaseDuration = 10 * time.Minute // Duration of fast polling phase
+	archiveFastPhaseDuration = 30 * time.Minute // Duration of fast polling phase (most archives complete here)
 	archiveTimeout           = 24 * time.Hour   // Maximum time to wait for archive generation
 
 	// Migration status polling intervals
-	migrationInitialInterval   = 30 * time.Second // Initial polling interval
-	migrationMaxInterval       = 10 * time.Minute // Maximum polling interval
-	migrationFastPhaseDuration = 15 * time.Minute // Duration of fast polling phase
+	migrationInitialInterval   = 15 * time.Second // Initial polling interval (aggressive during fast phase)
+	migrationMaxInterval       = 5 * time.Minute  // Maximum polling interval (capped per user request)
+	migrationFastPhaseDuration = 30 * time.Minute // Duration of fast polling phase (most migrations complete here)
 	migrationTimeout           = 48 * time.Hour   // Maximum time to wait for migration
 
 	// Backoff multiplier (interval grows by this factor each iteration after fast phase)
-	pollingBackoffMultiplier = 1.5
+	pollingBackoffMultiplier = 1.3 // Gentler backoff for more frequent status updates
 )
 
 // DestinationRepoExistsAction defines what to do if destination repo already exists
