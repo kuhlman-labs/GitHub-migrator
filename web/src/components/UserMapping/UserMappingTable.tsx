@@ -859,11 +859,11 @@ export function UserMappingTable() {
                 <TextInput
                   value={emuShortcode}
                   onChange={(e) => setEmuShortcode(e.target.value)}
-                  placeholder="e.g., coinbase"
+                  placeholder="e.g., fabrikam"
                   block
                 />
                 <FormControl.Caption>
-                  For EMU migrations where usernames differ. If source is "jsmith" and destination is "jsmith_coinbase", enter "coinbase".
+                  For EMU migrations where usernames differ. If source is "jsmith" and destination is "jsmith_fabrikam", enter "fabrikam".
                 </FormControl.Caption>
               </FormControl>
             )}
