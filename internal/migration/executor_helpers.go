@@ -418,8 +418,9 @@ func calculateAdaptivePollInterval(elapsed, initial, max, fastPhaseDuration time
 	// Apply exponential backoff: initial * (multiplier ^ iterations)
 	interval := float64(initial) * math.Pow(pollingBackoffMultiplier, iterationsSinceFastPhase)
 
-	// Cap at maximum interval
-	if time.Duration(interval) > max {
+	// Cap at maximum interval (check as float64 to avoid int64 overflow)
+	maxFloat := float64(max)
+	if interval >= maxFloat {
 		return max
 	}
 	return time.Duration(interval)
