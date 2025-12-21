@@ -386,6 +386,9 @@ func WithAvailableForBatch() func(db *gorm.DB) *gorm.DB {
 			"archive_generating",
 			"post_migration",
 			"migration_complete",
+			"wont_migrate",
+			"remediation_required",
+			"pre_migration",
 		}
 		db = db.Where("status NOT IN ?", excludedStatuses)
 

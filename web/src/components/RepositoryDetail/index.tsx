@@ -605,31 +605,18 @@ export function RepositoryDetail() {
 
       {/* Rollback Dialog */}
       {showRollbackDialog && (
-        <>
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 z-50"
-            onClick={() => {
-              setShowRollbackDialog(false);
-              setRollbackReason('');
-            }}
-          />
-          
-          {/* Dialog */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div 
-              className="rounded-lg shadow-xl max-w-md w-full"
-              style={{ backgroundColor: 'var(--bgColor-default)' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-4 py-3 border-b border-gh-border-default">
-                <h3 className="text-base font-semibold text-gh-text-primary">
-                  Rollback Migration
-                </h3>
-              </div>
-              
-              <div className="p-4">
-                <p className="text-sm text-gh-text-secondary mb-4">
+        <Dialog
+          onClose={() => {
+            setShowRollbackDialog(false);
+            setRollbackReason('');
+          }}
+          aria-labelledby="rollback-dialog-header"
+        >
+          <Dialog.Header id="rollback-dialog-header">
+            Rollback Migration
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)', marginBottom: '16px' }}>
               This will mark the repository as rolled back and allow it to be migrated again in the future.
               You can optionally provide a reason for the rollback.
             </p>
@@ -645,29 +632,32 @@ export function RepositoryDetail() {
                 block
               />
             </FormControl>
-              </div>
-
-              <div className="px-4 py-3 border-t border-gh-border-default flex justify-end gap-2">
-                <Button
-                onClick={() => {
-                  setShowRollbackDialog(false);
-                  setRollbackReason('');
-                }}
-                disabled={rollbackMutation.isPending}
-              >
-                Cancel
-                </Button>
-              <Button
-                onClick={handleRollback}
-                disabled={rollbackMutation.isPending}
-                variant="danger"
-              >
-                {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
-              </Button>
-            </div>
           </div>
-        </div>
-        </>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button
+              onClick={() => {
+                setShowRollbackDialog(false);
+                setRollbackReason('');
+              }}
+              disabled={rollbackMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRollback}
+              disabled={rollbackMutation.isPending}
+              variant="danger"
+            >
+              {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
+            </Button>
+          </div>
+        </Dialog>
       )}
 
       {/* Rediscover Confirmation Dialog */}
