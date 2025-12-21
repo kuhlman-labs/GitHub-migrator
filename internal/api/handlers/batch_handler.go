@@ -85,7 +85,7 @@ func (h *BatchHandler) GetBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Get repositories in this batch
 	repos, err := h.repoStore.ListRepositories(ctx, map[string]interface{}{
-		"batch_id": strconv.FormatInt(id, 10),
+		"batch_id": id,
 	})
 	if err != nil {
 		h.logger.Error("Failed to get batch repositories", "batch_id", id, "error", err)
@@ -226,7 +226,7 @@ func (h *BatchHandler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Remove batch assignment from repositories
 	repos, err := h.repoStore.ListRepositories(ctx, map[string]interface{}{
-		"batch_id": strconv.FormatInt(id, 10),
+		"batch_id": id,
 	})
 	if err != nil {
 		h.logger.Error("Failed to get batch repositories", "batch_id", id, "error", err)
@@ -265,13 +265,16 @@ func (h *BatchHandler) addSingleRepoToBatch(ctx context.Context, repoID, batchID
 	if err != nil {
 		return addRepoToBatchResult{err: fmt.Sprintf("Repository %d: not found", repoID)}
 	}
+	if repo == nil {
+		return addRepoToBatchResult{err: fmt.Sprintf("Repository %d: not found", repoID)}
+	}
 
 	if repo.BatchID != nil && *repo.BatchID != batchID {
 		return addRepoToBatchResult{err: fmt.Sprintf("Repository %s: already in another batch", repo.FullName)}
 	}
 
 	eligible, reason := isRepositoryEligibleForBatch(repo)
-	if !eligible && repo.BatchID == nil {
+	if !eligible {
 		return addRepoToBatchResult{err: fmt.Sprintf("Repository %s: %s", repo.FullName, reason)}
 	}
 

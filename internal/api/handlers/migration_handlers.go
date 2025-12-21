@@ -68,7 +68,7 @@ func (h *Handler) StartMigration(w http.ResponseWriter, r *http.Request) {
 	for i, repo := range repos {
 		repoFullNames[i] = repo.FullName
 	}
-	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+	if err := h.CheckRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Start migration access denied", "error", err)
 		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
@@ -234,7 +234,7 @@ func (h *Handler) checkBatchUpdatePermissions(ctx context.Context, repos []*mode
 	for i, repo := range repos {
 		repoFullNames[i] = repo.FullName
 	}
-	return h.checkRepositoriesAccess(ctx, repoFullNames)
+	return h.CheckRepositoriesAccess(ctx, repoFullNames)
 }
 
 func (h *Handler) executeBatchUpdate(ctx context.Context, repos []*models.Repository, action string, reason string) BatchUpdateRepositoryStatusResponse {
@@ -607,7 +607,7 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 	ctx := r.Context()
 
-	if err := h.checkRepositoriesAccess(ctx, req.Repositories); err != nil {
+	if err := h.CheckRepositoriesAccess(ctx, req.Repositories); err != nil {
 		h.logger.Warn("Self-service migration access denied", "error", err)
 		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return

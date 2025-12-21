@@ -73,8 +73,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	if remaining > 0 && migrationVelocity.ReposPerDay > 0 {
 		daysRemaining := float64(remaining) / migrationVelocity.ReposPerDay
 		completionDate := time.Now().Add(time.Duration(daysRemaining*24) * time.Hour)
-		dateStr := completionDate.Format("2006-01-02")
-		estimatedCompletionDate = &dateStr
+		estimatedCompletionDate = stringPtr(completionDate.Format("2006-01-02"))
 	}
 
 	orgStats, _ := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -118,10 +117,16 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMigrationProgress handles GET /api/v1/analytics/progress
+// Supports optional query parameters: organization, project, batch_id
 func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	stats, err := h.db.GetRepositoryStatsByStatus(ctx)
+	// Parse filter query parameters for consistency with other analytics endpoints
+	orgFilter := r.URL.Query().Get("organization")
+	projectFilter := r.URL.Query().Get("project")
+	batchFilter := r.URL.Query().Get("batch_id")
+
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get repository stats", r) {
 			return
@@ -191,8 +196,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		daysRemainingFloat := float64(remaining) / migrationVelocity.ReposPerDay
 		daysRemaining = int(daysRemainingFloat)
 		completionDate := time.Now().Add(time.Duration(daysRemainingFloat*24) * time.Hour)
-		dateStr := completionDate.Format("2006-01-02")
-		estimatedCompletionDate = &dateStr
+		estimatedCompletionDate = stringPtr(completionDate.Format("2006-01-02"))
 	}
 
 	var migrationCompletionStats []*storage.MigrationCompletionStats
@@ -241,7 +245,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	var firstMigrationDate *string
 	if len(migrationTimeSeries) > 0 {
-		firstMigrationDate = &migrationTimeSeries[0].Date
+		firstMigrationDate = stringPtr(migrationTimeSeries[0].Date)
 	}
 
 	completionRate := 0.0
@@ -302,6 +306,9 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = formatCSV // Default to CSV for consistency with other export endpoints
+	}
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
@@ -396,6 +403,9 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) ExportDetailedDiscoveryReport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = formatCSV // Default to CSV for consistency with other export endpoints
+	}
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
@@ -482,14 +492,14 @@ func buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter string) m
 }
 
 func (h *Handler) checkDiscoveryReportAccess(ctx context.Context, repos []*models.Repository) error {
-	if !h.authConfig.Enabled {
+	if h.authConfig == nil || !h.authConfig.Enabled {
 		return nil
 	}
 	repoFullNames := make([]string, len(repos))
 	for i, repo := range repos {
 		repoFullNames[i] = repo.FullName
 	}
-	return h.checkRepositoriesAccess(ctx, repoFullNames)
+	return h.CheckRepositoriesAccess(ctx, repoFullNames)
 }
 
 func (h *Handler) getLocalDependenciesCount(ctx context.Context, repos []*models.Repository) map[int64]int {

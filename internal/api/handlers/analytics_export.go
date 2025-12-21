@@ -21,6 +21,11 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=executive_migration_report.csv")
 
+	// Ensure featureStats is not nil to prevent panics
+	if featureStats == nil {
+		featureStats = &storage.FeatureStats{}
+	}
+
 	var output strings.Builder
 
 	output.WriteString("EXECUTIVE MIGRATION REPORT\n")
@@ -120,11 +125,19 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 	output.WriteString("--- DETAILED STATUS BREAKDOWN ---\n")
 	output.WriteString("Status,Repository Count,Percentage\n")
 	for status, count := range statusBreakdown {
+		// Skip wont_migrate since total excludes it (would produce incorrect percentage)
+		if status == string(models.StatusWontMigrate) {
+			continue
+		}
 		pct := 0.0
 		if total > 0 {
 			pct = float64(count) / float64(total) * 100
 		}
 		output.WriteString(fmt.Sprintf("%s,%d,%.1f%%\n", escapeCSV(status), count, pct))
+	}
+	// Add wont_migrate separately without percentage since it's excluded from migration scope
+	if wontMigrateCount, ok := statusBreakdown[string(models.StatusWontMigrate)]; ok && wontMigrateCount > 0 {
+		output.WriteString(fmt.Sprintf("%s,%d,N/A (excluded from migration)\n", escapeCSV(string(models.StatusWontMigrate)), wontMigrateCount))
 	}
 
 	if _, err := w.Write([]byte(output.String())); err != nil {
@@ -141,6 +154,11 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=executive_migration_report.json")
+
+	// Ensure featureStats is not nil to prevent panics
+	if featureStats == nil {
+		featureStats = &storage.FeatureStats{}
+	}
 
 	highComplexity := 0
 	for _, dist := range complexityDist {

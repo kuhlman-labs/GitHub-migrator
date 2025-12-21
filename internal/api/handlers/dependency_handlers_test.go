@@ -37,7 +37,7 @@ func TestGetRepositoryDependents(t *testing.T) {
 	t.Run("repository exists", func(t *testing.T) {
 		// Use URL-encoded path but set path value with decoded value
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/org%2Frepo1/dependents", nil)
-		req.SetPathValue("name", "org%2Frepo1") // URL-encoded
+		req.SetPathValue("fullName", "org%2Frepo1") // URL-encoded
 		w := httptest.NewRecorder()
 
 		h.GetRepositoryDependents(w, req)
@@ -50,7 +50,7 @@ func TestGetRepositoryDependents(t *testing.T) {
 
 	t.Run("repository not found", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/org%2Fnonexistent/dependents", nil)
-		req.SetPathValue("name", "org%2Fnonexistent") // URL-encoded
+		req.SetPathValue("fullName", "org%2Fnonexistent") // URL-encoded
 		w := httptest.NewRecorder()
 
 		h.GetRepositoryDependents(w, req)
@@ -228,7 +228,7 @@ func TestExportRepositoryDependencies(t *testing.T) {
 
 	t.Run("export repository dependencies as CSV", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/org%2Frepo1/dependencies/export?format=csv", nil)
-		req.SetPathValue("name", "org%2Frepo1") // URL-encoded
+		req.SetPathValue("fullName", "org%2Frepo1") // URL-encoded
 		w := httptest.NewRecorder()
 
 		h.ExportRepositoryDependencies(w, req)
@@ -241,7 +241,7 @@ func TestExportRepositoryDependencies(t *testing.T) {
 
 	t.Run("export repository dependencies - not found", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/org%2Fnonexistent/dependencies/export", nil)
-		req.SetPathValue("name", "org%2Fnonexistent") // URL-encoded
+		req.SetPathValue("fullName", "org%2Fnonexistent") // URL-encoded
 		w := httptest.NewRecorder()
 
 		h.ExportRepositoryDependencies(w, req)

@@ -770,6 +770,18 @@ func (m *MockDataStore) UpdateDiscoveryProgress(_ *models.DiscoveryProgress) err
 	return nil
 }
 
+func (m *MockDataStore) UpdateDiscoveryRepoProgress(_ int64, _, _ int) error {
+	return nil
+}
+
+func (m *MockDataStore) UpdateDiscoveryPhase(_ int64, _ string) error {
+	return nil
+}
+
+func (m *MockDataStore) IncrementDiscoveryError(_ int64, _ string) error {
+	return nil
+}
+
 func (m *MockDataStore) GetActiveDiscoveryProgress() (*models.DiscoveryProgress, error) {
 	return nil, nil
 }

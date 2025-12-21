@@ -83,13 +83,8 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create progress tracker (type assert to get concrete *storage.Database)
-	db, ok := h.db.(*storage.Database)
-	if !ok {
-		WriteError(w, ErrInternal.WithDetails("database type assertion failed"))
-		return
-	}
-	progressTracker := discovery.NewDBProgressTracker(db, h.logger, progress)
+	// Create progress tracker using the database (which implements storage.DiscoveryStore)
+	progressTracker := discovery.NewDBProgressTracker(h.db, h.logger, progress)
 	h.collector.SetProgressTracker(progressTracker)
 
 	// Start discovery asynchronously based on type
@@ -101,7 +96,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 			"message":     "Enterprise discovery started",
 			"enterprise":  req.EnterpriseSlug,
-			"status":      models.BatchStatusInProgress,
+			"status":      models.DiscoveryStatusInProgress,
 			"type":        "enterprise",
 			"progress_id": progress.ID,
 		})
@@ -113,7 +108,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 			"message":      "Discovery started",
 			"organization": req.Organization,
-			"status":       models.BatchStatusInProgress,
+			"status":       models.DiscoveryStatusInProgress,
 			"type":         "organization",
 			"progress_id":  progress.ID,
 		})
@@ -140,6 +135,14 @@ func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgr
 func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Get the latest discovery progress to determine actual status
+	progress, err := h.db.GetLatestDiscoveryProgress()
+	if err != nil {
+		h.logger.Error("Failed to get discovery progress", "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery status"))
+		return
+	}
+
 	// Count total repositories discovered
 	count, err := h.db.CountRepositories(ctx, nil)
 	if err != nil {
@@ -151,11 +154,35 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"status":             "complete",
+	// Build response based on actual discovery state
+	response := map[string]interface{}{
 		"repositories_found": count,
-		"completed_at":       time.Now().Format(time.RFC3339),
-	})
+	}
+
+	if progress == nil {
+		// No discovery has been run yet
+		response["status"] = "none"
+		response["message"] = "No discovery has been run yet"
+	} else {
+		response["status"] = progress.Status
+		response["target"] = progress.Target
+		response["discovery_type"] = progress.DiscoveryType
+		response["started_at"] = progress.StartedAt.Format(time.RFC3339)
+
+		if progress.Status == models.DiscoveryStatusCompleted && progress.CompletedAt != nil {
+			response["completed_at"] = progress.CompletedAt.Format(time.RFC3339)
+		}
+		if progress.Status == models.DiscoveryStatusFailed && progress.LastError != nil && *progress.LastError != "" {
+			response["error"] = *progress.LastError
+		}
+		if progress.Status == models.DiscoveryStatusInProgress {
+			response["processed_repos"] = progress.ProcessedRepos
+			response["total_repos"] = progress.TotalRepos
+			response["phase"] = progress.Phase
+		}
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // GetDiscoveryProgress handles GET /api/v1/discovery/progress
@@ -211,6 +238,6 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
 		"message":      "Repository discovery started",
 		"organization": req.Organization,
-		"status":       models.BatchStatusInProgress,
+		"status":       models.DiscoveryStatusInProgress,
 	})
 }

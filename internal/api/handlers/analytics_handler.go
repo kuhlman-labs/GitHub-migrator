@@ -38,7 +38,7 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 	ctx := r.Context()
 
 	// Parse filter parameters
-	orgFilter := r.URL.Query().Get("org")
+	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
@@ -50,10 +50,12 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Get total count
+	// Get total count (excluding wont_migrate to match main analytics handler)
 	total := 0
-	for _, count := range statusStats {
-		total += count
+	for status, count := range statusStats {
+		if status != string(models.StatusWontMigrate) {
+			total += count
+		}
 	}
 
 	// Get organization breakdown
@@ -85,7 +87,7 @@ func (h *AnalyticsHandler) GetMigrationProgress(w http.ResponseWriter, r *http.R
 	ctx := r.Context()
 
 	// Parse filter parameters
-	orgFilter := r.URL.Query().Get("org")
+	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
@@ -139,7 +141,7 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 	ctx := r.Context()
 
 	// Parse filter parameters
-	orgFilter := r.URL.Query().Get("org")
+	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
@@ -230,9 +232,15 @@ type statusCounts struct {
 }
 
 // categorizeStatuses categorizes repository statuses into summary counts
+// Note: StatusWontMigrate is excluded from the total to match the behavior
+// of the main Handler implementation - these repos are out of migration scope.
 func categorizeStatuses(statusStats map[string]int) statusCounts {
 	var counts statusCounts
 	for status, count := range statusStats {
+		// Exclude wont_migrate from total - these repos are out of migration scope
+		if models.MigrationStatus(status) == models.StatusWontMigrate {
+			continue
+		}
 		counts.Total += count
 		switch models.MigrationStatus(status) {
 		case models.StatusComplete, models.StatusMigrationComplete:
@@ -241,7 +249,7 @@ func categorizeStatuses(statusStats map[string]int) statusCounts {
 			counts.InProgress += count
 		case models.StatusPending, models.StatusDryRunQueued, models.StatusDryRunInProgress, models.StatusDryRunComplete:
 			counts.Pending += count
-		case models.StatusMigrationFailed, models.StatusRolledBack:
+		case models.StatusMigrationFailed, models.StatusDryRunFailed, models.StatusRolledBack:
 			counts.Failed += count
 		}
 	}

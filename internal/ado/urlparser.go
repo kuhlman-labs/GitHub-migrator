@@ -140,7 +140,7 @@ func ParseFromSourceURL(sourceURL string) (*ParsedURL, error) {
 	return &ParsedURL{
 		Organization: pathParts[0],
 		Project:      pathParts[1],
-		Repository:   pathParts[3],
+		Repository:   strings.TrimSuffix(pathParts[3], ".git"),
 		Host:         parsedURL.Host,
 		IsSSH:        false,
 	}, nil

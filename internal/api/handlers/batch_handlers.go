@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -123,7 +124,11 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req RunDryRunRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		// Reject malformed JSON, but allow empty body (optional request)
+		WriteError(w, ErrInvalidJSON)
+		return
+	}
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
@@ -160,7 +165,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	priority := 0
-	if batch.Type == "pilot" {
+	if batch.Type == models.BatchTypePilot {
 		priority = 1
 	}
 
@@ -256,7 +261,11 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req StartBatchRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		// Reject malformed JSON, but allow empty body (optional request)
+		WriteError(w, ErrInvalidJSON)
+		return
+	}
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
@@ -301,14 +310,14 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 	for i, repo := range repos {
 		repoFullNames[i] = repo.FullName
 	}
-	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+	if err := h.CheckRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Start batch access denied", "batch_id", batchID, "error", err)
 		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
 	}
 
 	priority := 0
-	if batch.Type == "pilot" {
+	if batch.Type == models.BatchTypePilot {
 		priority = 1
 	}
 
@@ -455,7 +464,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if destinationOrgChanged && oldDestinationOrg != "" {
+	if destinationOrgChanged {
 		h.logger.Info("Batch destination_org changed, updating repository destinations",
 			"batch_id", batchID,
 			"old_destination_org", oldDestinationOrg,
@@ -467,15 +476,33 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		} else {
 			updatedCount := 0
 			for _, repo := range repos {
-				if repo.DestinationFullName == nil || *repo.DestinationFullName == "" {
-					continue
-				}
-
 				parts := strings.Split(repo.FullName, "/")
 				if len(parts) != 2 {
 					continue
 				}
 				repoName := parts[1]
+
+				// Case 1: Setting destination_org for the first time - initialize repos without destinations
+				if oldDestinationOrg == "" && newDestinationOrg != "" {
+					if repo.DestinationFullName == nil || *repo.DestinationFullName == "" {
+						newDestination := fmt.Sprintf("%s/%s", newDestinationOrg, repoName)
+						repo.DestinationFullName = &newDestination
+						if err := h.db.UpdateRepository(ctx, repo); err != nil {
+							h.logger.Error("Failed to set repository destination",
+								"repo_id", repo.ID,
+								"repo_name", repo.FullName,
+								"error", err)
+						} else {
+							updatedCount++
+						}
+					}
+					continue
+				}
+
+				// Case 2: Updating from old org to new org - only update repos matching old pattern
+				if repo.DestinationFullName == nil || *repo.DestinationFullName == "" {
+					continue
+				}
 
 				expectedOldDestination := fmt.Sprintf("%s/%s", oldDestinationOrg, repoName)
 				if *repo.DestinationFullName == expectedOldDestination {
@@ -534,7 +561,7 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if batch.Status == "in_progress" {
+	if batch.Status == models.BatchStatusInProgress {
 		WriteError(w, ErrBadRequest.WithDetails("Cannot delete batch in 'in_progress' status"))
 		return
 	}
@@ -608,7 +635,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	for i, repo := range repos {
 		repoFullNames[i] = repo.FullName
 	}
-	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+	if err := h.CheckRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Add repositories to batch access denied", "batch_id", batchID, "error", err)
 		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
@@ -642,9 +669,15 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Core operation succeeded - now try to apply batch defaults
+	// If this fails, we continue with partial success since repos are already in the batch
 	repos, err = h.db.GetRepositoriesByIDs(ctx, eligibleRepoIDs)
 	if err != nil {
-		h.logger.Error("Failed to re-fetch repositories after adding to batch", "error", err)
+		h.logger.Warn("Failed to re-fetch repositories for batch defaults - repos were added but defaults not applied",
+			"batch_id", batchID,
+			"error", err)
+		// Continue with partial success - repos are in the batch, just can't apply defaults
+		repos = nil
 	}
 
 	updatedCount := 0
@@ -680,7 +713,11 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	batch, _ = h.db.GetBatch(ctx, batchID)
+	batch, err = h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Warn("Failed to refresh batch after adding repositories", "batch_id", batchID, "error", err)
+		// Continue without batch in response - the operation succeeded, just can't return updated batch
+	}
 
 	message := fmt.Sprintf("Added %d of %d repositories to batch", len(eligibleRepoIDs), len(req.RepositoryIDs))
 	if updatedCount > 0 {
@@ -694,11 +731,15 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	response := map[string]interface{}{
-		"batch":                  batch,
 		"repositories_added":     len(eligibleRepoIDs),
 		"repositories_requested": len(req.RepositoryIDs),
 		"defaults_applied_count": updatedCount,
 		"message":                message,
+	}
+
+	// Only include batch in response if successfully retrieved
+	if batch != nil {
+		response["batch"] = batch
 	}
 
 	if len(ineligibleRepos) > 0 {
@@ -762,13 +803,23 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	batch, _ = h.db.GetBatch(ctx, batchID)
+	batch, err = h.db.GetBatch(ctx, batchID)
+	if err != nil {
+		h.logger.Warn("Failed to refresh batch after removing repositories", "batch_id", batchID, "error", err)
+		// Continue without batch in response - the operation succeeded, just can't return updated batch
+	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"batch":                batch,
+	response := map[string]interface{}{
 		"repositories_removed": len(req.RepositoryIDs),
 		"message":              fmt.Sprintf("Removed %d repositories from batch", len(req.RepositoryIDs)),
-	})
+	}
+
+	// Only include batch in response if successfully retrieved
+	if batch != nil {
+		response["batch"] = batch
+	}
+
+	h.sendJSON(w, http.StatusOK, response)
 }
 
 // RetryBatchFailures handles POST /api/v1/batches/{id}/retry
@@ -852,7 +903,7 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 	for i, repo := range reposToRetry {
 		repoFullNames[i] = repo.FullName
 	}
-	if err := h.checkRepositoriesAccess(ctx, repoFullNames); err != nil {
+	if err := h.CheckRepositoriesAccess(ctx, repoFullNames); err != nil {
 		h.logger.Warn("Retry batch access denied", "batch_id", batchID, "error", err)
 		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return

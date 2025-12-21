@@ -38,6 +38,7 @@ func NewHandlerUtils(
 }
 
 // CheckRepositoryAccess validates that the user has access to a specific repository.
+// Returns an error if auth is enabled and user doesn't have access.
 func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName string) error {
 	// If auth is not enabled, allow access
 	if u.authConfig == nil || !u.authConfig.Enabled {
@@ -71,6 +72,34 @@ func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName s
 	}
 
 	return nil
+}
+
+// CheckRepositoriesAccess validates that the user has access to all specified repositories.
+// Returns an error if auth is enabled and user doesn't have access to any repository.
+func (u *HandlerUtils) CheckRepositoriesAccess(ctx context.Context, repoFullNames []string) error {
+	// If auth is not enabled, allow access
+	if u.authConfig == nil || !u.authConfig.Enabled {
+		return nil
+	}
+
+	user, hasUser := auth.GetUserFromContext(ctx)
+	token, hasToken := auth.GetTokenFromContext(ctx)
+
+	if !hasUser || !hasToken {
+		return fmt.Errorf("authentication required")
+	}
+
+	if u.sourceDualClient == nil {
+		u.logger.Warn("Cannot check repositories access: source client not available")
+		return nil // Allow access if we can't check
+	}
+
+	// Create permission checker
+	apiClient := u.sourceDualClient.APIClient()
+	checker := auth.NewPermissionChecker(apiClient, u.authConfig, u.logger, u.sourceBaseURL)
+
+	// Validate access to all repositories
+	return checker.ValidateRepositoryAccess(ctx, user, token, repoFullNames)
 }
 
 // GetClientForOrg returns the appropriate GitHub client for an organization.

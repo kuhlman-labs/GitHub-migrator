@@ -71,14 +71,23 @@ func (h *Handler) GetRepositoryDependents(w http.ResponseWriter, r *http.Request
 		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
 	}
+	h.getRepositoryDependents(w, r, fullName)
+}
 
+// getRepositoryDependents is the internal implementation
+func (h *Handler) getRepositoryDependents(w http.ResponseWriter, r *http.Request, fullName string) {
 	decodedFullName, err := url.QueryUnescape(fullName)
 	if err != nil {
 		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
 		decodedFullName = fullName
 	}
 
-	decodedFullName = strings.TrimSuffix(decodedFullName, "/dependents")
+	// Check if the target repository exists
+	repo, err := h.db.GetRepository(r.Context(), decodedFullName)
+	if err != nil || repo == nil {
+		WriteError(w, ErrRepositoryNotFound)
+		return
+	}
 
 	dependents, err := h.db.GetDependentRepositories(r.Context(), decodedFullName)
 	if err != nil {
@@ -112,6 +121,11 @@ func (h *Handler) GetRepositoryDependents(w http.ResponseWriter, r *http.Request
 				depTypes = append(depTypes, dep.DependencyType)
 				seen[dep.DependencyType] = true
 			}
+		}
+
+		// Only include repositories that actually have dependencies on the target
+		if len(depTypes) == 0 {
+			continue
 		}
 
 		result = append(result, DependentRepo{
@@ -220,17 +234,26 @@ func (h *Handler) GetDependencyGraph(w http.ResponseWriter, r *http.Request) {
 		"total_local_dependencies":      len(edges),
 	}
 
-	circularCount := 0
+	// Count circular dependencies using normalized pair keys to avoid double-counting
+	// A pair (A,B) is normalized by sorting: min(A,B) + "|" + max(A,B)
+	circularPairs := make(map[string]bool)
 	edgeSet := make(map[string]bool)
 	for _, edge := range edges {
 		key := edge.SourceRepo + "->" + edge.TargetRepo
 		reverseKey := edge.TargetRepo + "->" + edge.SourceRepo
 		if edgeSet[reverseKey] {
-			circularCount++
+			// Normalize the pair key to avoid counting the same pair twice
+			var pairKey string
+			if edge.SourceRepo < edge.TargetRepo {
+				pairKey = edge.SourceRepo + "|" + edge.TargetRepo
+			} else {
+				pairKey = edge.TargetRepo + "|" + edge.SourceRepo
+			}
+			circularPairs[pairKey] = true
 		}
 		edgeSet[key] = true
 	}
-	stats["circular_dependency_count"] = circularCount
+	stats["circular_dependency_count"] = len(circularPairs)
 
 	response := map[string]interface{}{
 		"nodes": nodes,
@@ -416,12 +439,15 @@ func (h *Handler) ExportRepositoryDependencies(w http.ResponseWriter, r *http.Re
 		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
 	}
+	h.exportRepositoryDependencies(w, r, fullName)
+}
 
+// exportRepositoryDependencies is the internal implementation
+func (h *Handler) exportRepositoryDependencies(w http.ResponseWriter, r *http.Request, fullName string) {
 	decodedFullName, err := url.QueryUnescape(fullName)
 	if err != nil {
 		decodedFullName = fullName
 	}
-	decodedFullName = strings.TrimSuffix(decodedFullName, "/dependencies/export")
 
 	ctx := r.Context()
 	format := r.URL.Query().Get("format")

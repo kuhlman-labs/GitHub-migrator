@@ -243,6 +243,12 @@ type DiscoveryStore interface {
 	CreateDiscoveryProgress(progress *models.DiscoveryProgress) error
 	// UpdateDiscoveryProgress updates a discovery progress record.
 	UpdateDiscoveryProgress(progress *models.DiscoveryProgress) error
+	// UpdateDiscoveryRepoProgress updates repository-level progress counters.
+	UpdateDiscoveryRepoProgress(id int64, processedRepos, totalRepos int) error
+	// UpdateDiscoveryPhase updates the current phase of a discovery.
+	UpdateDiscoveryPhase(id int64, phase string) error
+	// IncrementDiscoveryError increments the error count and records the last error.
+	IncrementDiscoveryError(id int64, errMsg string) error
 	// GetActiveDiscoveryProgress retrieves the active discovery progress.
 	GetActiveDiscoveryProgress() (*models.DiscoveryProgress, error)
 	// GetLatestDiscoveryProgress retrieves the most recent discovery progress.

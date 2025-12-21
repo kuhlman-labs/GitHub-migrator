@@ -93,7 +93,7 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Check if user has permission to access this repository
-	if err := h.checkRepositoryAccess(r.Context(), fullName); err != nil {
+	if err := h.CheckRepositoryAccess(r.Context(), fullName); err != nil {
 		h.logger.Warn("Repository access denied", "repo", fullName, "action", action, "error", err)
 		WriteError(w, ErrForbidden.WithDetails(err.Error()))
 		return
@@ -185,13 +185,15 @@ func (h *Handler) GetRepositoryOrDependencies(w http.ResponseWriter, r *http.Req
 
 	// Check for dependencies/export first (more specific)
 	if strings.HasSuffix(fullPath, "/dependencies/export") {
-		h.ExportRepositoryDependencies(w, r)
+		fullName := strings.TrimSuffix(fullPath, "/dependencies/export")
+		h.exportRepositoryDependencies(w, r, fullName)
 		return
 	}
 
 	// Check if this is a dependents request
 	if strings.HasSuffix(fullPath, "/dependents") {
-		h.GetRepositoryDependents(w, r)
+		fullName := strings.TrimSuffix(fullPath, "/dependents")
+		h.getRepositoryDependents(w, r, fullName)
 		return
 	}
 

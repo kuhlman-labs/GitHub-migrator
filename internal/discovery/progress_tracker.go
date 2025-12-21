@@ -32,7 +32,7 @@ type ProgressTracker interface {
 
 // DBProgressTracker implements ProgressTracker using database storage
 type DBProgressTracker struct {
-	db       *storage.Database
+	db       storage.DiscoveryStore
 	logger   *slog.Logger
 	progress *models.DiscoveryProgress
 	mu       sync.Mutex
@@ -42,8 +42,9 @@ type DBProgressTracker struct {
 	batchSize            int
 }
 
-// NewDBProgressTracker creates a new database-backed progress tracker
-func NewDBProgressTracker(db *storage.Database, logger *slog.Logger, progress *models.DiscoveryProgress) *DBProgressTracker {
+// NewDBProgressTracker creates a new database-backed progress tracker.
+// Accepts storage.DiscoveryStore interface for testability.
+func NewDBProgressTracker(db storage.DiscoveryStore, logger *slog.Logger, progress *models.DiscoveryProgress) *DBProgressTracker {
 	return &DBProgressTracker{
 		db:        db,
 		logger:    logger,
