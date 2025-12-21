@@ -15,6 +15,7 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
@@ -232,9 +233,9 @@ func (h *SetupHandler) ValidateSource(w http.ResponseWriter, r *http.Request) {
 	response := ValidationResponse{Details: make(map[string]interface{})}
 
 	switch strings.ToLower(req.Type) {
-	case sourceTypeGitHub:
+	case models.SourceTypeGitHub:
 		response = h.validateGitHub(ctx, req.BaseURL, req.Token)
-	case sourceTypeAzureDevOps:
+	case models.SourceTypeAzureDevOps:
 		response = h.validateAzureDevOps(ctx, req.BaseURL, req.Token, req.Organization)
 	default:
 		response.Valid = false
@@ -537,7 +538,7 @@ func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigDa
 	}
 
 	// GitHub App for source (only when source is GitHub)
-	if src.Type == sourceTypeGitHub && src.AppID > 0 {
+	if src.Type == models.SourceTypeGitHub && src.AppID > 0 {
 		sb.WriteString("\n# GitHub App Configuration for Source (Optional)\n")
 		sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_APP_ID=%d\n", src.AppID))
 		if src.AppPrivateKey != "" {

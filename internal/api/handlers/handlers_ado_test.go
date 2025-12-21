@@ -15,48 +15,18 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/source"
 )
 
-// mockADOCollector wraps the real ADOCollector and  overrides methods for testing
-// For now, we can't easily mock the ADOCollector since it's a concrete type
-// So we'll just set it to nil and handle that in the handler
-
-// mockADOSourceProvider is a mock implementation of source.Provider for ADO testing
-type mockADOSourceProvider struct{}
-
-func (m *mockADOSourceProvider) Type() source.ProviderType {
-	return source.ProviderAzureDevOps
-}
-
-func (m *mockADOSourceProvider) Name() string {
-	return "Mock ADO Provider"
-}
-
-func (m *mockADOSourceProvider) CloneRepository(ctx context.Context, info source.RepositoryInfo, destPath string, opts source.CloneOptions) error {
-	return nil
-}
-
-func (m *mockADOSourceProvider) GetAuthenticatedCloneURL(cloneURL string) (string, error) {
-	return cloneURL, nil
-}
-
-func (m *mockADOSourceProvider) ValidateCredentials(ctx context.Context) error {
-	return nil
-}
-
-func (m *mockADOSourceProvider) SupportsFeature(feature source.Feature) bool {
-	return true
-}
-
+// setupTestADOHandler creates an ADOHandler for testing.
+// Uses the shared MockSourceProvider from test_helpers_test.go.
 func setupTestADOHandler(t *testing.T) (*ADOHandler, *Handler) {
 	t.Helper()
 	db := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	authConfig := &config.AuthConfig{Enabled: false}
 
-	baseHandler := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://dev.azure.com", sourceTypeAzureDevOps)
+	baseHandler := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://dev.azure.com", models.SourceTypeAzureDevOps)
 
-	// For unit tests, we don't need the real collector or client
-	// The handler will skip the actual discovery when these are nil
-	adoProvider := &mockADOSourceProvider{}
+	// Use the shared MockSourceProvider configured for Azure DevOps
+	adoProvider := NewMockSourceProvider(source.ProviderAzureDevOps)
 
 	adoHandler := &ADOHandler{
 		Handler:      *baseHandler,
@@ -204,14 +174,14 @@ func TestADODiscoveryStatus(t *testing.T) {
 	repo1 := &models.Repository{
 		FullName:   "test-org/TestProject/repo1",
 		Status:     string(models.StatusPending),
-		Source:     sourceTypeAzureDevOps,
+		Source:     models.SourceTypeAzureDevOps,
 		ADOProject: &projectName,
 		ADOIsGit:   true,
 	}
 	repo2 := &models.Repository{
 		FullName:   "test-org/TestProject/repo2",
 		Status:     string(models.StatusPending),
-		Source:     sourceTypeAzureDevOps,
+		Source:     models.SourceTypeAzureDevOps,
 		ADOProject: &projectName,
 		ADOIsGit:   false, // TFVC
 	}

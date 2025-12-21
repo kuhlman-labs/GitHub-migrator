@@ -68,7 +68,7 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to list teams with mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch teams")
+		WriteError(w, ErrDatabaseFetch.WithDetails("teams"))
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *Handler) GetTeamMappingStats(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get team mapping stats", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch team mapping stats")
+		WriteError(w, ErrDatabaseFetch.WithDetails("team mapping stats"))
 		return
 	}
 
@@ -102,22 +102,20 @@ func (h *Handler) GetTeamMappingStats(w http.ResponseWriter, r *http.Request) {
 // DiscoverTeams handles POST /api/v1/teams/discover
 // Discovers teams and their members for a single organization (standalone, teams-only discovery)
 func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Organization string `json:"organization"`
-	}
+	var req DiscoverTeamsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.Organization == "" {
-		h.sendError(w, http.StatusBadRequest, "organization is required")
+		WriteError(w, ErrMissingField.WithField("organization"))
 		return
 	}
 
 	if h.collector == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
 		return
 	}
 
@@ -129,7 +127,7 @@ func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Team discovery failed", "error", err, "org", req.Organization)
-		h.sendError(w, http.StatusInternalServerError, fmt.Sprintf("Discovery failed: %v", err))
+		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Discovery failed: %v", err)))
 		return
 	}
 
@@ -166,7 +164,7 @@ func (h *Handler) GetTeamSourceOrgs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get team source orgs", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch team source organizations")
+		WriteError(w, ErrDatabaseFetch.WithDetails("team source organizations"))
 		return
 	}
 
@@ -180,23 +178,15 @@ func (h *Handler) GetTeamSourceOrgs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CreateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		SourceOrg           string  `json:"source_org"`
-		SourceTeamSlug      string  `json:"source_team_slug"`
-		SourceTeamName      *string `json:"source_team_name,omitempty"`
-		DestinationOrg      *string `json:"destination_org,omitempty"`
-		DestinationTeamSlug *string `json:"destination_team_slug,omitempty"`
-		DestinationTeamName *string `json:"destination_team_name,omitempty"`
-		MappingStatus       string  `json:"mapping_status,omitempty"`
-	}
+	var req CreateTeamMappingRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
 	if req.SourceOrg == "" || req.SourceTeamSlug == "" {
-		h.sendError(w, http.StatusBadRequest, "source_org and source_team_slug are required")
+		WriteError(w, ErrMissingField.WithDetails("source_org and source_team_slug are required"))
 		return
 	}
 
@@ -227,7 +217,7 @@ func (h *Handler) CreateTeamMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to save team mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to save team mapping")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("team mapping"))
 		return
 	}
 
@@ -245,21 +235,16 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/team-mappings/")
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) != 2 {
-		h.sendError(w, http.StatusBadRequest, "source_org and source_team_slug are required in path")
+		WriteError(w, ErrMissingField.WithDetails("source_org and source_team_slug are required in path"))
 		return
 	}
 	sourceOrg, _ := decodePathComponent(parts[0])
 	sourceTeamSlug, _ := decodePathComponent(parts[1])
 
-	var req struct {
-		DestinationOrg      *string `json:"destination_org,omitempty"`
-		DestinationTeamSlug *string `json:"destination_team_slug,omitempty"`
-		DestinationTeamName *string `json:"destination_team_name,omitempty"`
-		MappingStatus       *string `json:"mapping_status,omitempty"`
-	}
+	var req UpdateTeamMappingRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
@@ -270,7 +255,7 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get team mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to get team mapping")
+		WriteError(w, ErrDatabaseFetch.WithDetails("team mapping"))
 		return
 	}
 
@@ -310,7 +295,7 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	if existing.MappingStatus == teamMappingStatusMapped {
 		if existing.DestinationOrg == nil || *existing.DestinationOrg == "" ||
 			existing.DestinationTeamSlug == nil || *existing.DestinationTeamSlug == "" {
-			h.sendError(w, http.StatusBadRequest, "Cannot set status to 'mapped' without destination_org and destination_team_slug")
+			WriteError(w, ErrBadRequest.WithDetails("Cannot set status to 'mapped' without destination_org and destination_team_slug"))
 			return
 		}
 	}
@@ -322,7 +307,7 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to update team mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to update team mapping")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("team mapping"))
 		return
 	}
 
@@ -338,7 +323,7 @@ func (h *Handler) DeleteTeamMapping(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/team-mappings/")
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) != 2 {
-		h.sendError(w, http.StatusBadRequest, "source_org and source_team_slug are required in path")
+		WriteError(w, ErrMissingField.WithDetails("source_org and source_team_slug are required in path"))
 		return
 	}
 	sourceOrg, _ := decodePathComponent(parts[0])
@@ -349,7 +334,7 @@ func (h *Handler) DeleteTeamMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to delete team mapping", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to delete team mapping")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("team mapping deletion"))
 		return
 	}
 
@@ -364,13 +349,13 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 
 	// Parse multipart form (max 10MB)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		h.sendError(w, http.StatusBadRequest, "Failed to parse form data")
+		WriteError(w, ErrBadRequest.WithDetails("Failed to parse form data"))
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "No file provided")
+		WriteError(w, ErrMissingField.WithField("file"))
 		return
 	}
 	defer file.Close()
@@ -381,7 +366,7 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	// Read header
 	header, err := reader.Read()
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, "Failed to read CSV header")
+		WriteError(w, ErrBadRequest.WithDetails("Failed to read CSV header"))
 		return
 	}
 
@@ -415,7 +400,7 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if sourceOrgIdx == -1 || sourceTeamSlugIdx == -1 {
-		h.sendError(w, http.StatusBadRequest, "CSV must have 'source_org' and 'source_team_slug' columns")
+		WriteError(w, ErrBadRequest.WithDetails("CSV must have 'source_org' and 'source_team_slug' columns"))
 		return
 	}
 
@@ -543,7 +528,7 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to export team mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to export team mappings")
+		WriteError(w, ErrInternal.WithDetails("Failed to export team mappings"))
 		return
 	}
 
@@ -591,10 +576,7 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SuggestTeamMappings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		DestinationOrg string   `json:"destination_org"`
-		DestTeamSlugs  []string `json:"dest_team_slugs"` // List of team slugs that exist in destination
-	}
+	var req SuggestTeamMappingsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		// If no body, just return suggestions based on same-slug matching
@@ -602,7 +584,7 @@ func (h *Handler) SuggestTeamMappings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.DestinationOrg == "" {
-		h.sendError(w, http.StatusBadRequest, "destination_org is required")
+		WriteError(w, ErrMissingField.WithField("destination_org"))
 		return
 	}
 
@@ -612,7 +594,7 @@ func (h *Handler) SuggestTeamMappings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to suggest team mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to suggest team mappings")
+		WriteError(w, ErrInternal.WithDetails("Failed to suggest team mappings"))
 		return
 	}
 
@@ -651,7 +633,7 @@ func (h *Handler) SyncTeamMappingsFromDiscovery(w http.ResponseWriter, r *http.R
 			return
 		}
 		h.logger.Error("Failed to sync team mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to sync team mappings")
+		WriteError(w, ErrInternal.WithDetails("Failed to sync team mappings"))
 		return
 	}
 
@@ -672,7 +654,7 @@ func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 	parts := strings.SplitN(path, "/", 2)
 
 	if len(parts) != 2 {
-		h.sendError(w, http.StatusBadRequest, "org and team_slug are required")
+		WriteError(w, ErrMissingField.WithDetails("org and team_slug are required"))
 		return
 	}
 
@@ -685,7 +667,7 @@ func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get team members", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch team members")
+		WriteError(w, ErrDatabaseFetch.WithDetails("team members"))
 		return
 	}
 
@@ -705,7 +687,7 @@ func (h *Handler) GetTeamDetail(w http.ResponseWriter, r *http.Request) {
 	parts := strings.SplitN(path, "/", 2)
 
 	if len(parts) != 2 {
-		h.sendError(w, http.StatusBadRequest, "org and team_slug are required")
+		WriteError(w, ErrMissingField.WithDetails("org and team_slug are required"))
 		return
 	}
 
@@ -718,12 +700,12 @@ func (h *Handler) GetTeamDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("Failed to get team detail", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch team detail")
+		WriteError(w, ErrDatabaseFetch.WithDetails("team detail"))
 		return
 	}
 
 	if detail == nil {
-		h.sendError(w, http.StatusNotFound, "Team not found")
+		WriteError(w, ErrNotFound.WithDetails("Team not found"))
 		return
 	}
 
@@ -752,14 +734,14 @@ func (h *Handler) GetPermissionAudit(w http.ResponseWriter, r *http.Request) {
 	teams, err := h.db.ListTeams(ctx, "")
 	if err != nil {
 		h.logger.Error("Failed to list teams", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch teams")
+		WriteError(w, ErrDatabaseFetch.WithDetails("teams"))
 		return
 	}
 
 	teamMappings, _, err := h.db.ListTeamMappings(ctx, storage.TeamMappingFilters{Limit: 0})
 	if err != nil {
 		h.logger.Error("Failed to list team mappings", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to fetch team mappings")
+		WriteError(w, ErrDatabaseFetch.WithDetails("team mappings"))
 		return
 	}
 
@@ -885,7 +867,13 @@ func (h *Handler) getOrCreateTeamExecutor() *migration.TeamExecutor {
 			sourceClient = h.sourceDualClient.APIClient()
 		}
 		var destClient = h.destDualClient.APIClient()
-		teamExecutor = migration.NewTeamExecutor(h.db, sourceClient, destClient, h.logger)
+		// Type assert to get concrete *storage.Database for NewTeamExecutor
+		db, ok := h.db.(*storage.Database)
+		if !ok {
+			h.logger.Error("Database type assertion failed in team executor creation")
+			return nil
+		}
+		teamExecutor = migration.NewTeamExecutor(db, sourceClient, destClient, h.logger)
 	}
 
 	return teamExecutor
@@ -896,19 +884,15 @@ func (h *Handler) getOrCreateTeamExecutor() *migration.TeamExecutor {
 func (h *Handler) ExecuteTeamMigration(w http.ResponseWriter, r *http.Request) {
 	// Check if destination client is available
 	if h.destDualClient == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 
 	// Parse request body
-	var req struct {
-		SourceOrg      string `json:"source_org,omitempty"`       // Required with source_team_slug for single team migration
-		SourceTeamSlug string `json:"source_team_slug,omitempty"` // Required with source_org for single team migration
-		DryRun         bool   `json:"dry_run,omitempty"`          // If true, don't actually create teams
-	}
+	var req MigrateTeamsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		h.sendError(w, http.StatusBadRequest, "Invalid request body")
+		WriteError(w, ErrInvalidJSON)
 		return
 	}
 
@@ -919,7 +903,7 @@ func (h *Handler) ExecuteTeamMigration(w http.ResponseWriter, r *http.Request) {
 
 	executor := h.getOrCreateTeamExecutor()
 	if executor == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 
@@ -953,7 +937,7 @@ func (h *Handler) ExecuteTeamMigration(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetTeamMigrationStatus(w http.ResponseWriter, r *http.Request) {
 	executor := h.getOrCreateTeamExecutor()
 	if executor == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 	ctx := r.Context()
@@ -990,12 +974,12 @@ func (h *Handler) GetTeamMigrationStatus(w http.ResponseWriter, r *http.Request)
 func (h *Handler) CancelTeamMigration(w http.ResponseWriter, r *http.Request) {
 	executor := h.getOrCreateTeamExecutor()
 	if executor == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 
 	if err := executor.Cancel(); err != nil {
-		h.sendError(w, http.StatusBadRequest, err.Error())
+		WriteError(w, ErrBadRequest.WithDetails(err.Error()))
 		return
 	}
 
@@ -1015,11 +999,11 @@ func (h *Handler) ResetTeamMigrationStatus(w http.ResponseWriter, r *http.Reques
 	// Check if migration is running
 	executor := h.getOrCreateTeamExecutor()
 	if executor == nil {
-		h.sendError(w, http.StatusServiceUnavailable, "Destination GitHub client not configured")
+		WriteError(w, ErrClientNotConfigured.WithDetails("Destination GitHub client"))
 		return
 	}
 	if executor.IsRunning() {
-		h.sendError(w, http.StatusConflict, "Cannot reset while migration is running")
+		WriteError(w, ErrConflict.WithDetails("Cannot reset while migration is running"))
 		return
 	}
 
@@ -1028,7 +1012,7 @@ func (h *Handler) ResetTeamMigrationStatus(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		h.logger.Error("Failed to reset team migration status", "error", err)
-		h.sendError(w, http.StatusInternalServerError, "Failed to reset team migration status")
+		WriteError(w, ErrDatabaseUpdate.WithDetails("team migration status reset"))
 		return
 	}
 

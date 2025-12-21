@@ -58,6 +58,17 @@ export function useRepository(fullName: string) {
   });
 }
 
+export function useRepositoryWithHistory(fullName: string) {
+  return useQuery<{ repository: Repository; history: import('../types').MigrationHistory[] }, Error>({
+    queryKey: ['repository-with-history', fullName],
+    queryFn: async () => {
+      const response = await api.getRepository(fullName);
+      return { repository: response.repository, history: response.history };
+    },
+    enabled: !!fullName,
+  });
+}
+
 // Analytics queries
 interface AnalyticsFilters {
   organization?: string;

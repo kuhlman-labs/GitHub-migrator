@@ -3,7 +3,7 @@ import { useParams, Link as RouterLink, useLocation } from 'react-router-dom';
 import { Button, UnderlineNav, Textarea, FormControl, Link, useTheme, Dialog } from '@primer/react';
 import { CalendarIcon, AlertIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
-import type { Repository } from '../../types';
+import type { Repository, MigrationHistory } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
@@ -13,16 +13,27 @@ import { MigrationReadinessTab } from './MigrationReadinessTab';
 import { TechnicalProfileTab } from './TechnicalProfileTab';
 import { DependenciesTab } from './DependenciesTab';
 import { ActivityLogTab } from './ActivityLogTab';
-import { useRepository, useBatches } from '../../hooks/useQueries';
+import { useRepositoryWithHistory, useBatches } from '../../hooks/useQueries';
 import { useRediscoverRepository, useUnlockRepository, useRollbackRepository, useMarkRepositoryWontMigrate } from '../../hooks/useMutations';
 import { useToast } from '../../contexts/ToastContext';
+import { formatDuration } from '../../utils/format';
+
+// Helper to get duration from migration history
+function getDurationFromHistory(history: MigrationHistory[], phase: 'dry_run' | 'migration'): number | null {
+  // Find the most recent completed entry for this phase
+  const entry = history
+    .filter(h => h.phase === phase && h.status === 'completed' && h.duration_seconds)
+    .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())[0];
+  return entry?.duration_seconds ?? null;
+}
 
 export function RepositoryDetail() {
   const { fullName } = useParams<{ fullName: string }>();
   const location = useLocation();
   const locationState = location.state as { fromBatch?: boolean; batchId?: number; batchName?: string } | null;
-  const { data, isLoading, isFetching } = useRepository(fullName || '');
-  const repository: Repository | undefined = data;
+  const { data, isLoading, isFetching } = useRepositoryWithHistory(fullName || '');
+  const repository: Repository | undefined = data?.repository;
+  const migrationHistory: MigrationHistory[] = data?.history ?? [];
   const { data: allBatches = [] } = useBatches();
   const rediscoverMutation = useRediscoverRepository();
   const unlockMutation = useUnlockRepository();
@@ -355,6 +366,14 @@ export function RepositoryDetail() {
                     label="Dry run"
                     size="sm"
                   />
+                  {(() => {
+                    const duration = getDurationFromHistory(migrationHistory, 'dry_run');
+                    return duration ? (
+                      <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+                        ({formatDuration(duration)})
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
               )}
               {repository.migrated_at && (
@@ -365,6 +384,14 @@ export function RepositoryDetail() {
                     label="Migrated"
                     size="sm"
                   />
+                  {(() => {
+                    const duration = getDurationFromHistory(migrationHistory, 'migration');
+                    return duration ? (
+                      <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+                        ({formatDuration(duration)})
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
               )}
             </div>
@@ -605,31 +632,18 @@ export function RepositoryDetail() {
 
       {/* Rollback Dialog */}
       {showRollbackDialog && (
-        <>
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 z-50"
-            onClick={() => {
-              setShowRollbackDialog(false);
-              setRollbackReason('');
-            }}
-          />
-          
-          {/* Dialog */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div 
-              className="rounded-lg shadow-xl max-w-md w-full"
-              style={{ backgroundColor: 'var(--bgColor-default)' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-4 py-3 border-b border-gh-border-default">
-                <h3 className="text-base font-semibold text-gh-text-primary">
-                  Rollback Migration
-                </h3>
-              </div>
-              
-              <div className="p-4">
-                <p className="text-sm text-gh-text-secondary mb-4">
+        <Dialog
+          onClose={() => {
+            setShowRollbackDialog(false);
+            setRollbackReason('');
+          }}
+          aria-labelledby="rollback-dialog-header"
+        >
+          <Dialog.Header id="rollback-dialog-header">
+            Rollback Migration
+          </Dialog.Header>
+          <div style={{ padding: '16px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)', marginBottom: '16px' }}>
               This will mark the repository as rolled back and allow it to be migrated again in the future.
               You can optionally provide a reason for the rollback.
             </p>
@@ -645,29 +659,32 @@ export function RepositoryDetail() {
                 block
               />
             </FormControl>
-              </div>
-
-              <div className="px-4 py-3 border-t border-gh-border-default flex justify-end gap-2">
-                <Button
-                onClick={() => {
-                  setShowRollbackDialog(false);
-                  setRollbackReason('');
-                }}
-                disabled={rollbackMutation.isPending}
-              >
-                Cancel
-                </Button>
-              <Button
-                onClick={handleRollback}
-                disabled={rollbackMutation.isPending}
-                variant="danger"
-              >
-                {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
-              </Button>
-            </div>
           </div>
-        </div>
-        </>
+          <div style={{ 
+            padding: '12px 16px', 
+            borderTop: '1px solid var(--borderColor-default)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px'
+          }}>
+            <Button
+              onClick={() => {
+                setShowRollbackDialog(false);
+                setRollbackReason('');
+              }}
+              disabled={rollbackMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRollback}
+              disabled={rollbackMutation.isPending}
+              variant="danger"
+            >
+              {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
+            </Button>
+          </div>
+        </Dialog>
       )}
 
       {/* Rediscover Confirmation Dialog */}

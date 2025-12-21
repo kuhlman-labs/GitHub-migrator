@@ -13,7 +13,33 @@ const (
 	MigrationAPIELM = "ELM" // Enterprise Live Migrator
 )
 
-// Repository represents a Git repository to be migrated
+// Repository represents a Git repository to be migrated.
+//
+// # Field Organization
+//
+// This model's 80+ fields are logically grouped into components defined in
+// repository_components.go. Use the corresponding getter methods for type-safe
+// access to related field groups:
+//
+//   - GetGitProperties(): size, LFS, submodules, branches, commits
+//   - GetGitHubFeatures(): wiki, pages, actions, packages, protections
+//   - GetSecurityFeatures(): code scanning, Dependabot, secret scanning
+//   - GetMigrationState(): status, batch, destination, lock state
+//   - GetMigrationExclusions(): what to exclude during migration
+//   - GetGHESLimitViolations(): oversized commits, long refs, blocking files
+//   - GetADOProperties(): project, pipelines, boards (Azure DevOps only)
+//
+// # Helper Methods
+//
+//   - IsADORepository(): returns true if this is an Azure DevOps source
+//   - HasMigrationBlockers(): returns true if migration blockers exist
+//   - NeedsRemediation(): returns true if status is remediation_required
+//
+// # Future Refactoring
+//
+// The component types in repository_components.go are designed for eventual
+// embedding. Currently they serve as documentation and provide getter methods.
+// Full embedding is deferred due to GORM complexity with nullable embedded fields.
 type Repository struct {
 	ID        int64  `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
 	FullName  string `json:"full_name" db:"full_name" gorm:"column:full_name;uniqueIndex;not null"` // org/repo
@@ -198,6 +224,92 @@ type Repository struct {
 // TableName specifies the table name for Repository model
 func (Repository) TableName() string {
 	return "repositories"
+}
+
+// RepositorySource constants for source types
+const (
+	SourceGHES        = "ghes"
+	SourceGHEC        = "ghec"
+	SourceGitLab      = "gitlab"
+	SourceAzureDevOps = "azuredevops"
+)
+
+// RepositoryOptions provides options for creating a new repository
+type RepositoryOptions struct {
+	FullName      string
+	Source        string
+	SourceURL     string
+	Visibility    string
+	DefaultBranch *string
+	TotalSize     *int64
+	IsArchived    bool
+	IsFork        bool
+	HasWiki       bool
+	HasPages      bool
+	// ADO-specific options
+	ADOProject *string
+	ADOIsGit   bool
+}
+
+// NewRepository creates a new Repository with common fields initialized.
+// This factory function ensures consistent initialization across all collectors.
+func NewRepository(opts RepositoryOptions) *Repository {
+	now := time.Now()
+	return &Repository{
+		FullName:        opts.FullName,
+		Source:          opts.Source,
+		SourceURL:       opts.SourceURL,
+		Visibility:      opts.Visibility,
+		DefaultBranch:   opts.DefaultBranch,
+		TotalSize:       opts.TotalSize,
+		IsArchived:      opts.IsArchived,
+		IsFork:          opts.IsFork,
+		HasWiki:         opts.HasWiki,
+		HasPages:        opts.HasPages,
+		HasPackages:     false, // Will be detected by profiler
+		Status:          string(StatusPending),
+		DiscoveredAt:    now,
+		UpdatedAt:       now,
+		LastDiscoveryAt: &now,
+		// ADO-specific fields
+		ADOProject: opts.ADOProject,
+		ADOIsGit:   opts.ADOIsGit,
+	}
+}
+
+// NewGitHubRepository creates a new Repository from GitHub API data with standard settings.
+func NewGitHubRepository(fullName, sourceURL, visibility string, defaultBranch *string, totalSize *int64, isArchived, isFork, hasWiki, hasPages bool) *Repository {
+	return NewRepository(RepositoryOptions{
+		FullName:      fullName,
+		Source:        SourceGHES,
+		SourceURL:     sourceURL,
+		Visibility:    visibility,
+		DefaultBranch: defaultBranch,
+		TotalSize:     totalSize,
+		IsArchived:    isArchived,
+		IsFork:        isFork,
+		HasWiki:       hasWiki,
+		HasPages:      hasPages,
+	})
+}
+
+// NewADORepository creates a new Repository for Azure DevOps with standard settings.
+func NewADORepository(fullName, sourceURL, visibility string, project *string, isGit bool) *Repository {
+	repo := NewRepository(RepositoryOptions{
+		FullName:   fullName,
+		Source:     SourceAzureDevOps,
+		SourceURL:  sourceURL,
+		Visibility: visibility,
+		ADOProject: project,
+		ADOIsGit:   isGit,
+	})
+
+	// TFVC repos need special status
+	if !isGit {
+		repo.Status = string(StatusRemediationRequired)
+	}
+
+	return repo
 }
 
 // SetComplexityBreakdown serializes a ComplexityBreakdown struct to JSON and stores it

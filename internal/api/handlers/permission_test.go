@@ -74,11 +74,9 @@ func TestHandler_ListRepositories_Filtering(t *testing.T) {
 			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
 
 			handler := &Handler{
-				db:            db,
-				logger:        logger,
-				authConfig:    cfg,
-				sourceBaseURL: server.URL,
-				// No sourceDualClient needed - ListRepositories doesn't filter anymore
+				HandlerUtils: NewHandlerUtils(cfg, nil, nil, server.URL, logger),
+				db:           db,
+				logger:       logger,
 			}
 
 			// Create request with context
@@ -207,10 +205,9 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			// Create handler
 			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
 			handler := &Handler{
-				db:            db,
-				logger:        logger,
-				authConfig:    cfg,
-				sourceBaseURL: server.URL,
+				HandlerUtils: NewHandlerUtils(cfg, nil, nil, server.URL, logger),
+				db:           db,
+				logger:       logger,
 			}
 
 			// Initialize sourceDualClient when auth is enabled
@@ -327,10 +324,9 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			// Create handler
 			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
 			handler := &Handler{
-				db:            db,
-				logger:        logger,
-				authConfig:    cfg,
-				sourceBaseURL: server.URL,
+				HandlerUtils: NewHandlerUtils(cfg, nil, nil, server.URL, logger),
+				db:           db,
+				logger:       logger,
 			}
 
 			// Initialize sourceDualClient for unlock handler requirement
@@ -452,10 +448,9 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			// Create handler
 			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
 			handler := &Handler{
-				db:            db,
-				logger:        logger,
-				authConfig:    cfg,
-				sourceBaseURL: server.URL,
+				HandlerUtils: NewHandlerUtils(cfg, nil, nil, server.URL, logger),
+				db:           db,
+				logger:       logger,
 			}
 
 			// Initialize sourceDualClient when auth is enabled

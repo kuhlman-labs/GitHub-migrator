@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { UnderlineNav } from '@primer/react';
 import type { Repository, MigrationHistory, MigrationLog } from '../../types';
 import { api } from '../../services/api';
-import { formatDate } from '../../utils/format';
+import { formatDate, formatDuration } from '../../utils/format';
 
 interface ActivityLogTabProps {
   repository: Repository;
@@ -260,7 +260,7 @@ function MigrationEvent({ event }: { event: MigrationHistory }) {
           )}
           {event.duration_seconds !== undefined && event.duration_seconds !== null && (
             <div className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-              Duration: {event.duration_seconds}s
+              Duration: {formatDuration(event.duration_seconds)}
             </div>
           )}
         </div>
