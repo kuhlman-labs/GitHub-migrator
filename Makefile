@@ -1,4 +1,4 @@
-.PHONY: help build test lint clean docker-build docker-run install-tools install-dependencies install setup web-install web-build web-dev web-lint download-binaries
+.PHONY: help build test lint clean docker-build docker-run install-tools install-dependencies install setup web-install web-build web-dev web-lint web-test web-test-coverage web-test-watch test-all lint-all download-binaries all
 
 # Variables
 APP_NAME=github-migrator
@@ -100,7 +100,21 @@ web-lint: ## Run frontend linter
 	@echo "Linting frontend..."
 	cd web && npm run lint
 
+web-test: ## Run frontend tests
+	@echo "Running frontend tests..."
+	cd web && npm run test:run
+
+web-test-coverage: ## Run frontend tests with coverage
+	@echo "Running frontend tests with coverage..."
+	cd web && npm run test:coverage
+
+web-test-watch: ## Run frontend tests in watch mode
+	@echo "Running frontend tests in watch mode..."
+	cd web && npm run test
+
 lint-all: lint web-lint ## Run all linters
+
+test-all: test web-test ## Run all tests (backend and frontend)
 
 fmt: ## Format code
 	@echo "Formatting Go code..."
@@ -172,6 +186,6 @@ cleanup-test-repos: ## Delete all test repositories from GitHub organization (re
 	@echo "Cleaning up test repositories in organization: $(ORG)"
 	go run scripts/create-test-repos.go -org $(ORG) -cleanup
 
-all: lint test build web-build ## Run all checks and build
+all: lint-all test-all build web-build ## Run all checks, tests, and build
 
 .DEFAULT_GOAL := help
