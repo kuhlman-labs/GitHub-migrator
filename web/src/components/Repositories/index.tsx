@@ -14,8 +14,11 @@ import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
 import { RepositoryCard } from './RepositoryCard';
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { exportToCSV, exportToExcel, exportToJSON, getTimestampedFilename } from '../../utils/export';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 export function Repositories() {
+  const { showError } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Parse filters from URL
@@ -175,8 +178,7 @@ export function Repositories() {
           break;
       }
     } catch (error) {
-      console.error('Export failed:', error);
-      alert('Failed to export repositories. Please try again.');
+      handleApiError(error, showError, 'Failed to export repositories');
     }
   };
 

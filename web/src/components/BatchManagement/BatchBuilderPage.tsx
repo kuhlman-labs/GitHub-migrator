@@ -5,8 +5,11 @@ import type { Batch } from '../../types';
 import { BatchBuilder } from './BatchBuilder';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 export function BatchBuilderPage() {
+  const { showError } = useToast();
   const navigate = useNavigate();
   const { batchId } = useParams<{ batchId: string }>();
   const [batch, setBatch] = useState<Batch | undefined>();
@@ -30,11 +33,9 @@ export function BatchBuilderPage() {
 
     try {
       const batchData = await api.getBatch(parseInt(batchId, 10));
-      console.log('Raw batch data from API:', batchData);
-      console.log('Batch structure check - has batch property?', 'batch' in (batchData as object));
       setBatch(batchData);
     } catch (err) {
-      console.error('Failed to load batch:', err);
+      handleApiError(err, showError, 'Failed to load batch');
       setError('Failed to load batch. Please try again.');
     } finally {
       setLoading(false);

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnderlineNav, ProgressBar, Button } from '@primer/react';
@@ -6,13 +6,15 @@ import { ChevronRightIcon, DownloadIcon, ChevronDownIcon } from '@primer/octicon
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDuration } from '../../utils/format';
-import { useAnalytics } from '../../hooks/useQueries';
+import { useAnalytics, useConfig } from '../../hooks/useQueries';
 import { FilterBar } from './FilterBar';
 import { MigrationTrendChart } from './MigrationTrendChart';
 import { ComplexityChart } from './ComplexityChart';
 import { KPICard } from './KPICard';
 import { getRepositoriesUrl } from '../../utils/filters';
 import { api } from '../../services/api';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#656D76',
@@ -30,32 +32,23 @@ const STATUS_COLORS: Record<string, string> = {
 type AnalyticsTab = 'discovery' | 'migration';
 
 export function Analytics() {
+  const { showError } = useToast();
   const navigate = useNavigate();
   const [selectedOrganization, setSelectedOrganization] = useState('');
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('');
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
-  const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
   const [showExportMenu, setShowExportMenu] = useState(false);
+
+  // Use React Query for config
+  const { data: config } = useConfig();
+  const sourceType = config?.source_type || 'github';
 
   const { data: analytics, isLoading, isFetching } = useAnalytics({
     organization: selectedOrganization || undefined,
     project: selectedProject || undefined,
     batch_id: selectedBatch || undefined,
   });
-
-  // Fetch source type on mount
-  useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const config = await api.getConfig();
-        setSourceType(config.source_type);
-      } catch (error) {
-        console.error('Failed to fetch config:', error);
-      }
-    };
-    fetchConfig();
-  }, []);
 
   // Calculate days until completion (must be before early returns to satisfy rules of hooks)
   const daysUntilCompletion = useMemo(() => {
@@ -143,8 +136,7 @@ export function Analytics() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Export failed:', error);
-      alert('Failed to export report. Please try again.');
+      handleApiError(error, showError, 'Failed to export report');
     }
   };
 

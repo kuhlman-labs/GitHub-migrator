@@ -21,6 +21,8 @@ import {
 import { useTeamDetail } from '../../hooks/useQueries';
 import { useExecuteTeamMigration } from '../../hooks/useMutations';
 import { TeamMigrationStatus, TeamMigrationCompleteness } from '../../types';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 interface TeamDetailPanelProps {
   org: string;
@@ -78,6 +80,7 @@ const permissionColors: Record<string, 'default' | 'accent' | 'success' | 'atten
 };
 
 export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping, onMigrationStarted }: TeamDetailPanelProps) {
+  const { showError } = useToast();
   const [activeTab, setActiveTab] = useState<'members' | 'repositories'>('members');
   const [isMigrating, setIsMigrating] = useState(false);
   const { data: team, isLoading, error, refetch } = useTeamDetail(org, teamSlug);
@@ -101,8 +104,8 @@ export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping, onMigra
         refetch();
         setIsMigrating(false);
       }, 1000);
-    } catch (err) {
-      console.error('Failed to migrate team:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to migrate team');
       setIsMigrating(false);
     }
   };

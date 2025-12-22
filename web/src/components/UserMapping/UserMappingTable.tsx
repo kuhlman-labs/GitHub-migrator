@@ -36,11 +36,15 @@ import {
   useBulkSendAttributionInvitations,
   useDiscoverOrgMembers,
 } from '../../hooks/useMutations';
+import { useTableState } from '../../hooks/useTableState';
+import { useDialogState } from '../../hooks/useDialogState';
 import { UserMapping, UserMappingStatus, ReclaimStatus } from '../../types';
 import { api } from '../../services/api';
 import { Pagination } from '../common/Pagination';
 import { FallbackAvatar } from '../common/FallbackAvatar';
 import { UserDetailPanel } from './UserDetailPanel';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -78,43 +82,48 @@ const matchReasonLabels: Record<string, string> = {
   name_contains_login: 'Name Contains Login',
 };
 
+interface UserMappingFilters extends Record<string, unknown> {
+  status: string;
+  sourceOrg: string;
+}
+
 export function UserMappingTable() {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [sourceOrgFilter, setSourceOrgFilter] = useState<string>('');
+  const { showError } = useToast();
+  
+  // Use shared table state hook for pagination, search, and filtering
+  const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<UserMappingFilters>({
+    initialFilters: { status: '', sourceOrg: '' },
+    pageSize: ITEMS_PER_PAGE,
+  });
+  
   const [orgSearchFilter, setOrgSearchFilter] = useState('');
-  const [page, setPage] = useState(1);
   const [editingMapping, setEditingMapping] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [importResult, setImportResult] = useState<{ created: number; updated: number; errors: number } | null>(null);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   
-  // Destination org dialog state
-  const [showDestOrgDialog, setShowDestOrgDialog] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'fetch' | 'invite' | 'bulk_invite' | null>(null);
-  const [pendingSourceLogin, setPendingSourceLogin] = useState<string | null>(null);
+  // Dialog state using shared hooks
+  const deleteDialog = useDialogState<string>(); // stores the source login to delete
+  const discoverDialog = useDialogState();
+  const destOrgDialog = useDialogState<{ action: 'fetch' | 'invite' | 'bulk_invite'; sourceLogin?: string }>();
+  
+  // Form state for dialogs
   const [destinationOrg, setDestinationOrg] = useState('');
   const [emuShortcode, setEmuShortcode] = useState('');
-  
-  // Discover dialog state
-  const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
-  
-  // Delete dialog state
-  const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null);
   
   // Action result state
   const [actionResult, setActionResult] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
 
   const { data, isLoading, error, refetch } = useUserMappings({
     search: search || undefined,
-    status: statusFilter || undefined,
-    source_org: sourceOrgFilter || undefined,
-    limit: ITEMS_PER_PAGE,
-    offset: (page - 1) * ITEMS_PER_PAGE,
+    status: filters.status || undefined,
+    source_org: filters.sourceOrg || undefined,
+    limit,
+    offset,
   });
 
-  const { data: stats } = useUserMappingStats(sourceOrgFilter || undefined);
+  const { data: stats } = useUserMappingStats(filters.sourceOrg || undefined);
   const { data: sourceOrgsData } = useUserMappingSourceOrgs();
   const updateMapping = useUpdateUserMapping();
   const deleteMapping = useDeleteUserMapping();
@@ -129,18 +138,15 @@ export function UserMappingTable() {
 
   const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
-    setPage(1);
-  }, []);
+  }, [setSearch]);
 
   const handleStatusFilter = useCallback((status: string) => {
-    setStatusFilter(status);
-    setPage(1);
-  }, []);
+    updateFilter('status', status);
+  }, [updateFilter]);
 
   const handleSourceOrgFilter = useCallback((org: string) => {
-    setSourceOrgFilter(org);
-    setPage(1);
-  }, []);
+    updateFilter('sourceOrg', org);
+  }, [updateFilter]);
 
   // Helper to get fields from either new or legacy field names
   const getLogin = (mapping: UserMapping) => mapping.login || mapping.source_login || '';
@@ -164,8 +170,8 @@ export function UserMappingTable() {
       });
       setEditingMapping(null);
       setEditValue('');
-    } catch (err) {
-      console.error('Failed to update mapping:', err);
+    } catch {
+      // Update failed, mutation will show error
     }
   }, [editingMapping, editValue, updateMapping]);
 
@@ -175,18 +181,18 @@ export function UserMappingTable() {
   }, []);
 
   const handleDelete = useCallback((sourceLogin: string) => {
-    setShowDeleteDialog(sourceLogin);
-  }, []);
+    deleteDialog.open(sourceLogin);
+  }, [deleteDialog]);
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!showDeleteDialog) return;
+    if (!deleteDialog.data) return;
     try {
-      await deleteMapping.mutateAsync(showDeleteDialog);
-      setShowDeleteDialog(null);
-    } catch (err) {
-      console.error('Failed to delete mapping:', err);
+      await deleteMapping.mutateAsync(deleteDialog.data);
+      deleteDialog.close();
+    } catch {
+      // Delete failed, mutation will show error
     }
-  }, [deleteMapping, showDeleteDialog]);
+  }, [deleteMapping, deleteDialog]);
 
   const handleSkip = useCallback(async (sourceLogin: string) => {
     try {
@@ -194,14 +200,14 @@ export function UserMappingTable() {
         sourceLogin,
         updates: { mapping_status: 'skipped' as const },
       });
-    } catch (err) {
-      console.error('Failed to skip mapping:', err);
+    } catch {
+      // Skip failed, mutation will show error
     }
   }, [updateMapping]);
 
   const handleExport = useCallback(async () => {
     try {
-      const blob = await api.exportUserMappings(statusFilter || undefined);
+      const blob = await api.exportUserMappings(filters.status || undefined);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -210,10 +216,10 @@ export function UserMappingTable() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (err) {
-      console.error('Failed to export mappings:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to export mappings');
     }
-  }, [statusFilter]);
+  }, [filters.status, showError]);
 
   const handleImport = useCallback(async (file?: File) => {
     if (!file) return;
@@ -223,10 +229,10 @@ export function UserMappingTable() {
       setImportResult(result);
       refetch();
       setTimeout(() => setImportResult(null), 5000);
-    } catch (err) {
-      console.error('Failed to import mappings:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to import mappings');
     }
-  }, [refetch]);
+  }, [refetch, showError]);
 
   const handleGenerateGEI = useCallback(async () => {
     try {
@@ -239,25 +245,24 @@ export function UserMappingTable() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (err) {
-      console.error('Failed to generate GEI CSV:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to generate GEI CSV');
     }
-  }, []);
+  }, [showError]);
 
   // Action handlers that require destination org
   const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite', sourceLogin?: string) => {
-    setPendingAction(action);
-    setPendingSourceLogin(sourceLogin || null);
-    setShowDestOrgDialog(true);
-  }, []);
+    destOrgDialog.open({ action, sourceLogin });
+  }, [destOrgDialog]);
 
   const handleConfirmDestOrg = useCallback(async () => {
-    if (!destinationOrg) return;
+    if (!destinationOrg || !destOrgDialog.data) return;
     
-    setShowDestOrgDialog(false);
+    const { action, sourceLogin } = destOrgDialog.data;
+    destOrgDialog.close();
     
     try {
-      if (pendingAction === 'fetch') {
+      if (action === 'fetch') {
         // Fetch mannequins and match to destination org members
         const result = await fetchMannequins.mutateAsync({
           destinationOrg,
@@ -267,16 +272,16 @@ export function UserMappingTable() {
           type: 'success',
           message: result.message,
         });
-      } else if (pendingAction === 'invite' && pendingSourceLogin) {
+      } else if (action === 'invite' && sourceLogin) {
         const result = await sendInvitation.mutateAsync({
-          sourceLogin: pendingSourceLogin,
+          sourceLogin,
           destinationOrg,
         });
         setActionResult({
           type: result.success ? 'success' : 'danger',
           message: result.message,
         });
-      } else if (pendingAction === 'bulk_invite') {
+      } else if (action === 'bulk_invite') {
         const result = await bulkSendInvitations.mutateAsync({
           destinationOrg,
         });
@@ -292,18 +297,14 @@ export function UserMappingTable() {
       });
     }
     
-    setPendingAction(null);
-    setPendingSourceLogin(null);
     setEmuShortcode('');
     setTimeout(() => setActionResult(null), 8000);
-  }, [destinationOrg, emuShortcode, pendingAction, pendingSourceLogin, fetchMannequins, sendInvitation, bulkSendInvitations]);
+  }, [destinationOrg, emuShortcode, destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations]);
 
   const cancelDestOrgDialog = useCallback(() => {
-    setShowDestOrgDialog(false);
-    setPendingAction(null);
-    setPendingSourceLogin(null);
+    destOrgDialog.close();
     setEmuShortcode('');
-  }, []);
+  }, [destOrgDialog]);
 
   // Get invitable count from stats (not from paginated mappings)
   const invitableCount = stats?.invitable || 0;
@@ -343,7 +344,7 @@ export function UserMappingTable() {
           {/* Discovery action */}
           <Button
             variant="invisible"
-            onClick={() => setShowDiscoverDialog(true)}
+            onClick={() => discoverDialog.open()}
             leadingVisual={PersonIcon}
             disabled={discoverOrgMembers.isPending}
             className="btn-bordered-invisible"
@@ -455,7 +456,7 @@ export function UserMappingTable() {
                 trailingAction={TriangleDownIcon}
                 className="btn-bordered-invisible"
               >
-                Org: {sourceOrgFilter || 'All'}
+                Org: {filters.sourceOrg || 'All'}
               </Button>
             </ActionMenu.Anchor>
             <ActionMenu.Overlay>
@@ -474,7 +475,7 @@ export function UserMappingTable() {
               <ActionList selectionVariant="single" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                 {!orgSearchFilter && (
                   <>
-                    <ActionList.Item selected={!sourceOrgFilter} onSelect={() => handleSourceOrgFilter('')}>
+                    <ActionList.Item selected={!filters.sourceOrg} onSelect={() => handleSourceOrgFilter('')}>
                       All Organizations
                     </ActionList.Item>
                     <ActionList.Divider />
@@ -485,7 +486,7 @@ export function UserMappingTable() {
                   .map((org) => (
                     <ActionList.Item 
                       key={org} 
-                      selected={sourceOrgFilter === org} 
+                      selected={filters.sourceOrg === org} 
                       onSelect={() => handleSourceOrgFilter(org)}
                     >
                       {org}
@@ -508,25 +509,25 @@ export function UserMappingTable() {
               trailingAction={TriangleDownIcon}
               className="btn-bordered-invisible"
             >
-              Status: {statusFilter ? statusLabels[statusFilter as UserMappingStatus] : 'All'}
+              Status: {filters.status ? statusLabels[filters.status as UserMappingStatus] : 'All'}
             </Button>
           </ActionMenu.Anchor>
           <ActionMenu.Overlay>
             <ActionList selectionVariant="single">
-              <ActionList.Item selected={!statusFilter} onSelect={() => handleStatusFilter('')}>
+              <ActionList.Item selected={!filters.status} onSelect={() => handleStatusFilter('')}>
                 All
               </ActionList.Item>
               <ActionList.Divider />
-              <ActionList.Item selected={statusFilter === 'unmapped'} onSelect={() => handleStatusFilter('unmapped')}>
+              <ActionList.Item selected={filters.status === 'unmapped'} onSelect={() => handleStatusFilter('unmapped')}>
                 Unmapped
               </ActionList.Item>
-              <ActionList.Item selected={statusFilter === 'mapped'} onSelect={() => handleStatusFilter('mapped')}>
+              <ActionList.Item selected={filters.status === 'mapped'} onSelect={() => handleStatusFilter('mapped')}>
                 Mapped
               </ActionList.Item>
-              <ActionList.Item selected={statusFilter === 'reclaimed'} onSelect={() => handleStatusFilter('reclaimed')}>
+              <ActionList.Item selected={filters.status === 'reclaimed'} onSelect={() => handleStatusFilter('reclaimed')}>
                 Reclaimed
               </ActionList.Item>
-              <ActionList.Item selected={statusFilter === 'skipped'} onSelect={() => handleStatusFilter('skipped')}>
+              <ActionList.Item selected={filters.status === 'skipped'} onSelect={() => handleStatusFilter('skipped')}>
                 Skipped
               </ActionList.Item>
             </ActionList>
@@ -765,11 +766,11 @@ export function UserMappingTable() {
       )}
 
       {/* Discover Org Members Dialog */}
-      {showDiscoverDialog && (
+      {discoverDialog.isOpen && (
         <Dialog
           title="Discover Organization Members"
           onClose={() => {
-            setShowDiscoverDialog(false);
+            discoverDialog.close();
             setDiscoverOrg('');
           }}
         >
@@ -792,7 +793,7 @@ export function UserMappingTable() {
           </div>
           <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
             <Button onClick={() => {
-              setShowDiscoverDialog(false);
+              discoverDialog.close();
               setDiscoverOrg('');
             }}>
               Cancel
@@ -804,7 +805,7 @@ export function UserMappingTable() {
                 discoverOrgMembers.mutate(discoverOrg.trim(), {
                   onSuccess: (data) => {
                     setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
-                    setShowDiscoverDialog(false);
+                    discoverDialog.close();
                     setDiscoverOrg('');
                   },
                   onError: (error) => {
@@ -821,22 +822,22 @@ export function UserMappingTable() {
       )}
 
       {/* Destination Org Dialog */}
-      {showDestOrgDialog && (
+      {destOrgDialog.isOpen && destOrgDialog.data && (
         <Dialog
           title={
-            pendingAction === 'fetch' ? 'Fetch Mannequins' :
-            pendingAction === 'invite' ? 'Send Attribution Invitation' :
+            destOrgDialog.data.action === 'fetch' ? 'Fetch Mannequins' :
+            destOrgDialog.data.action === 'invite' ? 'Send Attribution Invitation' :
             'Send Attribution Invitations'
           }
           onClose={cancelDestOrgDialog}
         >
           <div className="p-4">
             <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              {pendingAction === 'fetch' && 
+              {destOrgDialog.data.action === 'fetch' && 
                 'Enter the destination GitHub organization to fetch mannequins from. Mannequins will be matched to destination org members using login, email, and name.'}
-              {pendingAction === 'invite' && 
-                `Send an attribution invitation for ${pendingSourceLogin} to reclaim their mannequin.`}
-              {pendingAction === 'bulk_invite' && 
+              {destOrgDialog.data.action === 'invite' && 
+                `Send an attribution invitation for ${destOrgDialog.data.sourceLogin} to reclaim their mannequin.`}
+              {destOrgDialog.data.action === 'bulk_invite' && 
                 `Send attribution invitations to all ${invitableCount} mapped users with mannequins.`}
             </p>
             <FormControl>
@@ -853,7 +854,7 @@ export function UserMappingTable() {
             </FormControl>
             
             {/* EMU Shortcode - only show for fetch action */}
-            {pendingAction === 'fetch' && (
+            {destOrgDialog.data.action === 'fetch' && (
               <FormControl className="mt-4">
                 <FormControl.Label>EMU Shortcode (Optional)</FormControl.Label>
                 <TextInput
@@ -875,30 +876,30 @@ export function UserMappingTable() {
               onClick={handleConfirmDestOrg}
               disabled={!destinationOrg}
             >
-              {pendingAction === 'fetch' && 'Fetch'}
-              {pendingAction === 'invite' && 'Send Invitation'}
-              {pendingAction === 'bulk_invite' && 'Send All'}
+              {destOrgDialog.data.action === 'fetch' && 'Fetch'}
+              {destOrgDialog.data.action === 'invite' && 'Send Invitation'}
+              {destOrgDialog.data.action === 'bulk_invite' && 'Send All'}
             </Button>
           </div>
         </Dialog>
       )}
 
       {/* Delete Mapping Dialog */}
-      {showDeleteDialog && (
+      {deleteDialog.isOpen && deleteDialog.data && (
         <Dialog
           title="Delete Mapping"
-          onClose={() => setShowDeleteDialog(null)}
+          onClose={deleteDialog.close}
         >
           <div className="p-4">
             <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
-              Are you sure you want to delete the mapping for <strong>{showDeleteDialog}</strong>?
+              Are you sure you want to delete the mapping for <strong>{deleteDialog.data}</strong>?
             </p>
             <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
               This will remove the destination mapping. The source user data will be preserved.
             </p>
           </div>
           <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => setShowDeleteDialog(null)}>Cancel</Button>
+            <Button onClick={deleteDialog.close}>Cancel</Button>
             <Button
               variant="danger"
               onClick={handleConfirmDelete}

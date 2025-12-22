@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { TextInput } from '@primer/react';
 import { SearchIcon } from '@primer/octicons-react';
 import type { RepositoryFilters, GitHubTeam } from '../../types';
 import { api } from '../../services/api';
 import { FilterSection } from '../BatchManagement/FilterSection';
 import { OrganizationSelector } from '../BatchManagement/OrganizationSelector';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
+import { useConfig, useOrganizations } from '../../hooks/useQueries';
 
 interface UnifiedFilterSidebarProps {
   filters: RepositoryFilters;
@@ -72,18 +75,23 @@ export function UnifiedFilterSidebar({
   hideOrganization = false,
   hideProject = false 
 }: UnifiedFilterSidebarProps) {
-  const [organizations, setOrganizations] = useState<string[]>([]);
+  const { showError } = useToast();
+  
+  // React Query hooks for config and organizations
+  const { data: config } = useConfig();
+  const { data: organizationData, isLoading: loadingOrgs } = useOrganizations();
+  
+  // Derive sourceType and organizations from React Query data
+  const sourceType = config?.source_type || 'github';
+  const organizations = useMemo(() => {
+    return (organizationData || []).map(org => org.organization);
+  }, [organizationData]);
+  
+  // Local state for projects and teams (complex iteration logic)
   const [projects, setProjects] = useState<string[]>([]);
   const [teams, setTeams] = useState<GitHubTeam[]>([]);
-  const [loadingOrgs, setLoadingOrgs] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingTeams, setLoadingTeams] = useState(false);
-  const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
-
-  useEffect(() => {
-    loadConfig();
-    loadOrganizations();
-  }, []);
 
   // Reload projects when organization filter changes (for Azure DevOps)
   useEffect(() => {
@@ -100,29 +108,6 @@ export function UnifiedFilterSidebar({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceType, filters.organization]);
-
-  const loadConfig = async () => {
-    try {
-      const config = await api.getConfig();
-      setSourceType(config.source_type);
-      // Projects will be loaded by the useEffect watching sourceType and filters.organization
-    } catch (error) {
-      console.error('Failed to load config:', error);
-    }
-  };
-
-  const loadOrganizations = async () => {
-    setLoadingOrgs(true);
-    try {
-      const orgs = await api.getOrganizationList();
-      setOrganizations(orgs || []);
-    } catch (error) {
-      console.error('Failed to load organizations:', error);
-      setOrganizations([]);
-    } finally {
-      setLoadingOrgs(false);
-    }
-  };
 
   const loadProjects = async () => {
     setLoadingProjects(true);
@@ -145,8 +130,8 @@ export function UnifiedFilterSidebar({
                 allProjects.push(name);
               }
             });
-          } catch (error) {
-            console.error(`Failed to load projects for organization ${org}:`, error);
+          } catch {
+            // Silently ignore individual org failures when loading projects for multiple orgs
           }
         }
         
@@ -158,7 +143,7 @@ export function UnifiedFilterSidebar({
         setProjects(projectNames || []);
       }
     } catch (error) {
-      console.error('Failed to load projects:', error);
+      handleApiError(error, showError, 'Failed to load projects');
       setProjects([]);
     } finally {
       setLoadingProjects(false);
@@ -185,8 +170,8 @@ export function UnifiedFilterSidebar({
                 allTeams.push(team);
               }
             });
-          } catch (error) {
-            console.error(`Failed to load teams for organization ${org}:`, error);
+          } catch {
+            // Silently ignore individual org failures when loading teams for multiple orgs
           }
         }
         
@@ -197,7 +182,7 @@ export function UnifiedFilterSidebar({
         setTeams(allTeams || []);
       }
     } catch (error) {
-      console.error('Failed to load teams:', error);
+      handleApiError(error, showError, 'Failed to load teams');
       setTeams([]);
     } finally {
       setLoadingTeams(false);

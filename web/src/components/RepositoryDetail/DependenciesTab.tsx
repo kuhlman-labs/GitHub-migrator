@@ -7,6 +7,8 @@ import type { DependenciesResponse, RepositoryDependency, DependentsResponse, De
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pagination } from '../common/Pagination';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 interface DependenciesTabProps {
   fullName: string;
@@ -32,6 +34,7 @@ type ScopeFilter = 'all' | 'local' | 'external';
 type ViewTab = 'depends_on' | 'depended_by';
 
 export function DependenciesTab({ fullName }: DependenciesTabProps) {
+  const { showError } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DependenciesResponse | null>(null);
@@ -117,7 +120,6 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
         setData(depsResponse);
         setDependentsData(dependentsResponse);
       } catch (err: unknown) {
-        console.error('Failed to fetch dependencies:', err);
         const errorMessage = err instanceof Error ? err.message : 'Failed to load dependencies';
         setError(errorMessage);
       } finally {
@@ -146,8 +148,8 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Failed to export dependencies:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to export dependencies');
     } finally {
       setExporting(false);
     }

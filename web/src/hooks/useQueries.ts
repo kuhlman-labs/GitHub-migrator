@@ -23,11 +23,30 @@ import {
   DiscoveryProgress,
 } from '../types';
 
+// Polling options interface
+interface PollingOptions {
+  /** Enable polling at specified interval in ms */
+  refetchInterval?: number | false;
+  /** Only poll when window is focused */
+  refetchIntervalInBackground?: boolean;
+}
+
 // Organization queries
-export function useOrganizations() {
+export function useOrganizations(options?: PollingOptions) {
   return useQuery<Organization[], Error>({
     queryKey: ['organizations'],
     queryFn: () => api.listOrganizations(),
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
+  });
+}
+
+// Config query
+export function useConfig() {
+  return useQuery<{ source_type: 'github' | 'azuredevops'; auth_enabled: boolean; entraid_enabled?: boolean }, Error>({
+    queryKey: ['config'],
+    queryFn: () => api.getConfig(),
+    staleTime: 5 * 60 * 1000, // Config rarely changes, cache for 5 minutes
   });
 }
 
@@ -36,6 +55,22 @@ export function useProjects() {
   return useQuery<Project[], Error>({
     queryKey: ['projects'],
     queryFn: () => api.listProjects(),
+  });
+}
+
+// ADO Projects query
+interface ADOProject {
+  name?: string;
+  project_name?: string;
+}
+
+export function useADOProjects(organization?: string) {
+  return useQuery<string[], Error>({
+    queryKey: ['adoProjects', organization],
+    queryFn: async () => {
+      const projectList = await api.listADOProjects(organization);
+      return projectList.map((p: ADOProject) => p.name || p.project_name || '').filter(Boolean);
+    },
   });
 }
 
@@ -76,18 +111,22 @@ interface AnalyticsFilters {
   batch_id?: string;
 }
 
-export function useAnalytics(filters: AnalyticsFilters = {}) {
+export function useAnalytics(filters: AnalyticsFilters = {}, options?: PollingOptions) {
   return useQuery<Analytics, Error>({
     queryKey: ['analytics', filters],
     queryFn: () => api.getAnalyticsSummary(filters),
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }
 
 // Batch queries
-export function useBatches() {
+export function useBatches(options?: PollingOptions) {
   return useQuery<Batch[], Error>({
     queryKey: ['batches'],
     queryFn: () => api.listBatches(),
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }
 
@@ -96,6 +135,16 @@ export function useBatch(id: number) {
     queryKey: ['batch', id],
     queryFn: () => api.getBatch(id),
     enabled: !!id,
+  });
+}
+
+export function useBatchRepositories(batchId: number | null, options?: PollingOptions) {
+  return useQuery<{ repositories: Repository[]; total?: number }, Error>({
+    queryKey: ['batchRepositories', batchId],
+    queryFn: () => api.listRepositories({ batch_id: batchId! }),
+    enabled: !!batchId,
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }
 
@@ -116,10 +165,12 @@ export function useDiscoveryStatus() {
 }
 
 // Dashboard queries
-export function useDashboardActionItems() {
+export function useDashboardActionItems(options?: PollingOptions) {
   return useQuery<DashboardActionItems, Error>({
     queryKey: ['dashboardActionItems'],
     queryFn: () => api.getDashboardActionItems(),
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }
 
@@ -256,6 +307,16 @@ export function useTeamMigrationStatus(enabled = true) {
       }
       return false;
     },
+  });
+}
+
+// Setup status query
+export function useSetupStatus() {
+  return useQuery<{ setup_completed: boolean; completed_at?: string }, Error>({
+    queryKey: ['setupStatus'],
+    queryFn: () => api.getSetupStatus(),
+    staleTime: Infinity, // Only fetch once per session unless invalidated
+    retry: 1, // Only retry once on failure
   });
 }
 

@@ -138,7 +138,6 @@ export function MigrationReadinessTab({
       
       showSuccess('Destination saved successfully!');
     } catch (error: unknown) {
-      console.error('Failed to save destination:', error);
       const err = error as { response?: { data?: { error?: string } }; message?: string };
       const errorMessage = err.response?.data?.error || err.message || 'Failed to save destination. Please try again.';
       showError(errorMessage);
@@ -159,7 +158,6 @@ export function MigrationReadinessTab({
       showSuccess('Repository assigned to batch successfully!');
       setSelectedBatchId(null);
     } catch (error: unknown) {
-      console.error('Failed to assign to batch:', error);
       const err = error as { response?: { data?: { error?: string } } };
       const errorMsg = err.response?.data?.error || 'Failed to assign to batch. Please try again.';
       showError(errorMsg);
@@ -187,7 +185,6 @@ export function MigrationReadinessTab({
       
       showSuccess('Repository removed from batch successfully!');
     } catch (error: unknown) {
-      console.error('Failed to remove from batch:', error);
       const err = error as { response?: { data?: { error?: string } } };
       const errorMsg = err.response?.data?.error || 'Failed to remove from batch. Please try again.';
       showError(errorMsg);
@@ -209,7 +206,6 @@ export function MigrationReadinessTab({
       
       showSuccess('Migration options saved successfully!');
     } catch (error: unknown) {
-      console.error('Failed to save migration options:', error);
       const err = error as { response?: { data?: { error?: string } } };
       const errorMsg = err.response?.data?.error || 'Failed to save migration options. Please try again.';
       showError(errorMsg);

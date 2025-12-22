@@ -120,11 +120,67 @@ export function useStartBatch() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (id: number) => api.startBatch(id),
-    onSuccess: (_, id) => {
+    mutationFn: ({ id, skipDryRun }: { id: number; skipDryRun?: boolean }) => 
+      api.startBatch(id, skipDryRun),
+    onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['batch', id] });
       queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories', id] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
+    },
+  });
+}
+
+export function useDeleteBatch() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id: number) => api.deleteBatch(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+    },
+  });
+}
+
+export function useDryRunBatch() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, onlyPending }: { id: number; onlyPending?: boolean }) => 
+      api.dryRunBatch(id, onlyPending),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['batch', id] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories', id] });
+    },
+  });
+}
+
+export function useRetryBatchFailures() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, repositoryIds }: { id: number; repositoryIds?: number[] }) => 
+      api.retryBatchFailures(id, repositoryIds),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['batch', id] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories', id] });
+    },
+  });
+}
+
+export function useRetryRepository() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ repositoryId, dryRun }: { repositoryId: number; dryRun?: boolean }) => 
+      api.retryRepository(repositoryId, dryRun ?? false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories'] });
     },
   });
 }

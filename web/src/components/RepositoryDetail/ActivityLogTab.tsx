@@ -3,6 +3,8 @@ import { UnderlineNav } from '@primer/react';
 import type { Repository, MigrationHistory, MigrationLog } from '../../types';
 import { api } from '../../services/api';
 import { formatDate, formatDuration } from '../../utils/format';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 interface ActivityLogTabProps {
   repository: Repository;
@@ -11,6 +13,7 @@ interface ActivityLogTabProps {
 type ViewMode = 'history' | 'logs';
 
 export function ActivityLogTab({ repository }: ActivityLogTabProps) {
+  const { showError } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('history');
   const [history, setHistory] = useState<MigrationHistory[]>([]);
   const [logs, setLogs] = useState<MigrationLog[]>([]);
@@ -29,11 +32,11 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
           const response = await api.getMigrationHistory(repository.id);
           setHistory(response || []);
         } catch (error) {
-          console.error('Failed to load migration history:', error);
+          handleApiError(error, showError, 'Failed to load migration history');
         }
       })();
     }
-  }, [repository]);
+  }, [repository, showError]);
 
   // Load logs when view mode changes to logs
   useEffect(() => {
@@ -59,7 +62,7 @@ export function ActivityLogTab({ repository }: ActivityLogTabProps) {
       );
       setLogs(sortedLogs);
     } catch (error) {
-      console.error('Failed to load logs:', error);
+      handleApiError(error, showError, 'Failed to load logs');
     } finally {
       setLogsLoading(false);
     }
