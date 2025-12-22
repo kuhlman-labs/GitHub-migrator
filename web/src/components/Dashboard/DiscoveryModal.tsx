@@ -7,7 +7,7 @@ export interface DiscoveryModalProps {
   isOpen: boolean;
   sourceType: 'github' | 'azuredevops';
   discoveryType: DiscoveryType;
-  setDiscoveryType: (type: DiscoveryType) => void;
+  setDiscoveryType: (type: DiscoveryType | null) => void;
   organization: string;
   setOrganization: (org: string) => void;
   enterpriseSlug: string;

@@ -1,4 +1,5 @@
 import { ChevronDownIcon } from '@primer/octicons-react';
+import { formatDateForInput } from '../../utils/format';
 
 interface MigrationSettings {
   destinationOrg: string;
@@ -238,6 +239,7 @@ export function BatchMetadataForm({
             type="datetime-local"
             value={scheduledAt}
             onChange={(e) => setScheduledAt(e.target.value)}
+            min={formatDateForInput(new Date().toISOString())}
             className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             style={{
               border: '1px solid var(--borderColor-default)',
@@ -269,7 +271,7 @@ export function BatchMetadataForm({
       <div className="p-3 flex gap-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
         <button
           onClick={onClose}
-          className="flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors hover:opacity-80"
+          className="px-3 py-2 text-sm font-medium rounded-lg border transition-colors hover:opacity-80"
           style={{
             borderColor: 'var(--borderColor-default)',
             color: 'var(--fgColor-default)',
@@ -290,6 +292,19 @@ export function BatchMetadataForm({
         >
           {loading ? 'Saving...' : isEditMode ? 'Update Batch' : 'Create Batch'}
         </button>
+        {!isEditMode && (
+          <button
+            onClick={() => onSave(true)}
+            disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
+            className="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: 'var(--bgColor-success-emphasis)',
+              color: 'var(--fgColor-onEmphasis)'
+            }}
+          >
+            {loading ? 'Starting...' : 'Create & Start'}
+          </button>
+        )}
       </div>
     </div>
   );

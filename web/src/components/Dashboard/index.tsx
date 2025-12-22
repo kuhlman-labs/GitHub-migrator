@@ -31,21 +31,26 @@ export function Dashboard() {
   const { data: config } = useConfig();
   const sourceType = config?.source_type || 'github';
   
-  // Derive hasActiveMigrations from analytics (no setState in effect)
-  const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching } = useAnalytics({});
-  const hasActiveMigrations = useMemo(() => 
-    analytics?.in_progress_count ? analytics.in_progress_count > 0 : false,
-    [analytics?.in_progress_count]
-  );
+  // Track if there are active migrations to adjust polling intervals
+  const [hasActiveMigrations, setHasActiveMigrations] = useState(false);
   
   // Fetch all dashboard data with React Query polling
   const { data: organizations = [], isLoading: orgsLoading, isFetching: orgsFetching } = useOrganizations({
     refetchInterval: POLLING_INTERVALS.orgs,
   });
-  // Re-fetch analytics with appropriate interval based on activity
-  const { isFetching: analyticsRefetching } = useAnalytics({}, {
-    refetchInterval: hasActiveMigrations ? POLLING_INTERVALS.analyticsActive : POLLING_INTERVALS.analyticsIdle,
+  const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching } = useAnalytics({}, {
+    refetchInterval: hasActiveMigrations 
+      ? POLLING_INTERVALS.analyticsActive 
+      : POLLING_INTERVALS.analyticsIdle,
   });
+  
+  // Update active migrations state when analytics changes
+  // This is the standard React pattern for syncing state with derived values
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHasActiveMigrations(analytics?.in_progress_count ? analytics.in_progress_count > 0 : false);
+  }, [analytics?.in_progress_count]);
+  
   const { data: batches = [], isLoading: batchesLoading, isFetching: batchesFetching } = useBatches({
     refetchInterval: hasActiveMigrations ? POLLING_INTERVALS.batchesActive : POLLING_INTERVALS.batchesIdle,
   });
@@ -60,10 +65,17 @@ export function Dashboard() {
   
   const searchTerm = searchParams.get('search') || '';
   const [currentPage, setCurrentPage] = useState(1);
-  const [lastSearchTerm, setLastSearchTerm] = useState(searchTerm);
   const pageSize = 12;
+  
+  // Reset page when search changes - standard React pattern for prop-dependent state
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCurrentPage(1);
+  }, [searchTerm]);
+  
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
-  const [discoveryType, setDiscoveryType] = useState<DiscoveryType>('organization');
+  // Initialize discoveryType lazily - will be set to defaultDiscoveryType when modal opens
+  const [discoveryType, setDiscoveryType] = useState<DiscoveryType | null>(null);
   const [organization, setOrganization] = useState('');
   const [enterpriseSlug, setEnterpriseSlug] = useState('');
   const [adoOrganization, setAdoOrganization] = useState('');
@@ -113,31 +125,29 @@ export function Dashboard() {
     [config?.source_type]
   );
   
-  // Reset page when search changes (setState during render pattern - React approved)
-  if (searchTerm !== lastSearchTerm) {
-    setLastSearchTerm(searchTerm);
-    setCurrentPage(1);
-  }
 
 
   const handleStartDiscovery = async () => {
+    // Use the effective discovery type (fallback to default if null)
+    const effectiveDiscoveryType = discoveryType ?? defaultDiscoveryType;
+    
     // Validate input based on discovery type
-    if (discoveryType === 'organization' && !organization.trim()) {
+    if (effectiveDiscoveryType === 'organization' && !organization.trim()) {
       setDiscoveryError('Organization name is required');
       return;
     }
     
-    if (discoveryType === 'enterprise' && !enterpriseSlug.trim()) {
+    if (effectiveDiscoveryType === 'enterprise' && !enterpriseSlug.trim()) {
       setDiscoveryError('Enterprise slug is required');
       return;
     }
 
-    if (discoveryType === 'ado-org' && !adoOrganization.trim()) {
+    if (effectiveDiscoveryType === 'ado-org' && !adoOrganization.trim()) {
       setDiscoveryError('Azure DevOps organization name is required');
       return;
     }
 
-    if (discoveryType === 'ado-project' && (!adoOrganization.trim() || !adoProject.trim())) {
+    if (effectiveDiscoveryType === 'ado-project' && (!adoOrganization.trim() || !adoProject.trim())) {
       setDiscoveryError('Both Azure DevOps organization and project names are required');
       return;
     }
@@ -146,15 +156,15 @@ export function Dashboard() {
     setDiscoverySuccess(null);
 
     try {
-      if (discoveryType === 'enterprise') {
+      if (effectiveDiscoveryType === 'enterprise') {
         await startDiscoveryMutation.mutateAsync({ enterprise_slug: enterpriseSlug.trim() });
         setDiscoverySuccess(`Enterprise discovery started for ${enterpriseSlug}`);
         setEnterpriseSlug('');
-      } else if (discoveryType === 'ado-org') {
+      } else if (effectiveDiscoveryType === 'ado-org') {
         await startADODiscoveryMutation.mutateAsync({ organization: adoOrganization.trim() });
         setDiscoverySuccess(`ADO organization discovery started for ${adoOrganization}`);
         setAdoOrganization('');
-      } else if (discoveryType === 'ado-project') {
+      } else if (effectiveDiscoveryType === 'ado-project') {
         await startADODiscoveryMutation.mutateAsync({ 
           organization: adoOrganization.trim(), 
           project: adoProject.trim() 
@@ -192,7 +202,7 @@ export function Dashboard() {
   const paginatedOrgs = filteredOrgs.slice(startIndex, endIndex);
 
   const isLoading = orgsLoading || analyticsLoading || batchesLoading || actionItemsLoading;
-  const isFetching = orgsFetching || analyticsFetching || analyticsRefetching || batchesFetching || actionItemsFetching;
+  const isFetching = orgsFetching || analyticsFetching || batchesFetching || actionItemsFetching;
 
   // Group ADO projects by organization
   const groupedADOOrgs = sourceType === 'azuredevops' 
@@ -350,7 +360,7 @@ export function Dashboard() {
       <DiscoveryModal
         isOpen={showDiscoveryModal}
         sourceType={sourceType}
-        discoveryType={discoveryType}
+        discoveryType={discoveryType ?? defaultDiscoveryType}
         setDiscoveryType={setDiscoveryType}
         organization={organization}
         setOrganization={setOrganization}
@@ -365,6 +375,7 @@ export function Dashboard() {
         onStart={handleStartDiscovery}
         onClose={() => {
           setShowDiscoveryModal(false);
+          setDiscoveryType(null);
           setDiscoveryError(null);
           setOrganization('');
           setEnterpriseSlug('');
