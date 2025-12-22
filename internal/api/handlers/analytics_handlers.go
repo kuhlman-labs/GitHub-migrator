@@ -569,13 +569,13 @@ func formatStatusForDisplay(status string) string {
 
 func formatSourceForDisplay(source string) string {
 	switch source {
-	case "github":
+	case models.SourceTypeGitHub:
 		return "GitHub"
-	case "azuredevops":
+	case models.SourceTypeAzureDevOps:
 		return "Azure DevOps"
-	case "gitlab":
+	case models.SourceTypeGitLab:
 		return "GitLab"
-	case "ghes":
+	case models.SourceTypeGHES:
 		return "GitHub Enterprise Server"
 	default:
 		return titleCase(source)
