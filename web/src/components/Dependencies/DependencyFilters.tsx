@@ -47,7 +47,7 @@ export function DependencyFilters({
         placeholder="Search repositories..."
         value={searchQuery}
         onChange={(e) => onSearchQueryChange(e.target.value)}
-        sx={{ width: 300 }}
+        className="w-[300px]"
       />
     </div>
   );

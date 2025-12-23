@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, Link as RouterLink, useLocation } from 'react-router-dom';
 import { UnderlineNav, Textarea, FormControl, Link, useTheme, Dialog } from '@primer/react';
 import { Button, SuccessButton, AttentionButton, BorderedButton } from '../common/buttons';
-import { CalendarIcon, AlertIcon, PlayIcon } from '@primer/octicons-react';
+import { CalendarIcon, AlertIcon, PlayIcon, IterationsIcon, SyncIcon, BeakerIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository, MigrationHistory } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -386,7 +386,8 @@ export function RepositoryDetail() {
             <BorderedButton
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
-              sx={{ whiteSpace: 'nowrap' }}
+              leadingVisual={SyncIcon}
+              className="whitespace-nowrap"
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
             </BorderedButton>
@@ -398,7 +399,7 @@ export function RepositoryDetail() {
                   onClick={handleToggleWontMigrate}
                   disabled={markWontMigrateMutation.isPending}
                   variant="primary"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  className="whitespace-nowrap"
                 >
                   {markWontMigrateMutation.isPending ? 'Processing...' : 'Unmark Won\'t Migrate'}
                 </Button>
@@ -406,7 +407,8 @@ export function RepositoryDetail() {
                 <AttentionButton
                   onClick={handleToggleWontMigrate}
                   disabled={markWontMigrateMutation.isPending}
-                  sx={{ whiteSpace: 'nowrap' }}
+                  leadingVisual={AlertIcon}
+                  className="whitespace-nowrap"
                 >
                   Mark as Won't Migrate
                 </AttentionButton>
@@ -419,7 +421,8 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
                   variant="primary"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  leadingVisual={BeakerIcon}
+                  className="whitespace-nowrap"
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </Button>
@@ -427,7 +430,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   leadingVisual={PlayIcon}
-                  sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}
+                  className="whitespace-nowrap font-semibold"
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
                 </SuccessButton>
@@ -439,7 +442,8 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
                   variant="danger"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  leadingVisual={BeakerIcon}
+                  className="whitespace-nowrap"
                 >
                   {migrating ? 'Re-running...' : 'Re-run Dry Run'}
                 </Button>
@@ -447,7 +451,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="primary"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  className="whitespace-nowrap"
                 >
                   {migrating ? 'Starting...' : 'Start Migration Anyway'}
                 </Button>
@@ -459,7 +463,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="danger"
-                  sx={{ whiteSpace: 'nowrap' }}
+                  className="whitespace-nowrap"
                 >
                   Retry Migration
                 </Button>
@@ -468,7 +472,7 @@ export function RepositoryDetail() {
                     onClick={handleUnlock}
                     disabled={unlockMutation.isPending}
                     variant="danger"
-                    sx={{ whiteSpace: 'nowrap' }}
+                    className="whitespace-nowrap"
                   >
                     {unlockMutation.isPending ? 'Unlocking...' : '🔓 Unlock Source'}
                   </Button>
@@ -480,7 +484,8 @@ export function RepositoryDetail() {
                 onClick={() => rollbackDialog.open()}
                 disabled={rollbackMutation.isPending}
                 variant="danger"
-                sx={{ whiteSpace: 'nowrap' }}
+                leadingVisual={IterationsIcon}
+                className="whitespace-nowrap"
               >
                 {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback Migration'}
               </Button>
@@ -592,14 +597,6 @@ export function RepositoryDetail() {
             rows={3}
             disabled={rollbackMutation.isPending}
             block
-            sx={{
-              backgroundColor: 'var(--bgColor-muted)',
-              color: 'var(--fgColor-default)',
-              borderColor: 'var(--borderColor-default)',
-              '&::placeholder': {
-                color: 'var(--fgColor-muted)',
-              },
-            }}
           />
         </FormControl>
       </FormDialog>

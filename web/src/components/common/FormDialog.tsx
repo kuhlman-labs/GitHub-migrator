@@ -142,7 +142,6 @@ export function FormDialog({
               variant="invisible"
               onClick={onCancel}
               disabled={isLoading}
-              sx={{ color: 'fg.muted' }}
             />
           </div>
 

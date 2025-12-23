@@ -156,8 +156,6 @@ export function Repositories() {
 
   // Export functions
   const handleExport = async (format: 'csv' | 'excel' | 'json') => {
-    setShowExportMenu(false);
-
     if (repositories.length === 0) {
       alert('No repositories to export');
       return;

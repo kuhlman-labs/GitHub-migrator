@@ -9,6 +9,7 @@ import { Pagination } from '../common/Pagination';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { useBatches, useBatchRepositories } from '../../hooks/useQueries';
+import { useBatchUpdateRepositoryStatus } from '../../hooks/useMutations';
 import { useDialogState } from '../../hooks/useDialogState';
 import { BatchListPanel } from './BatchListPanel';
 import { BatchDetailHeader } from './BatchDetailHeader';
@@ -57,6 +58,10 @@ export function BatchManagement() {
   const dryRunDialog = useDialogState<DryRunDialogData>();
   const startDialog = useDialogState<StartDialogData>();
   const retryDialog = useDialogState<RetryDialogData>();
+  const rollbackDialog = useDialogState<Batch>();
+  
+  // Mutations
+  const batchUpdateStatus = useBatchUpdateRepositoryStatus();
   
   // Ref for dry run button focus management
   const dryRunButtonRef = useRef<HTMLButtonElement>(null);
@@ -260,6 +265,31 @@ export function BatchManagement() {
     deleteDialog.open(batch);
   };
 
+  const handleRollbackBatch = (batch: Batch) => {
+    rollbackDialog.open(batch);
+  };
+
+  const confirmRollbackBatch = async () => {
+    const batch = rollbackDialog.data;
+    if (!batch || !batchRepositories.length) return;
+
+    try {
+      const repositoryIds = batchRepositories.map(r => r.id);
+      await batchUpdateStatus.mutateAsync({
+        repositoryIds,
+        action: 'rollback',
+        reason: `Batch rollback: ${batch.name}`,
+      });
+      showSuccess(`Successfully rolled back ${repositoryIds.length} repositories in batch "${batch.name}"`);
+      rollbackDialog.close();
+      await refetchBatches();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to rollback batch';
+      showError(errorMessage);
+    }
+  };
+
   const confirmDeleteBatch = async () => {
     const batch = deleteDialog.data;
     if (!batch) return;
@@ -408,6 +438,7 @@ export function BatchManagement() {
                 onDryRun={handleDryRunBatch}
                 onStart={handleStartBatch}
                 onRetryFailed={handleRetryFailed}
+                onRollback={handleRollbackBatch}
                 dryRunButtonRef={dryRunButtonRef}
               />
 
@@ -669,6 +700,29 @@ export function BatchManagement() {
         confirmLabel="Retry"
         onConfirm={confirmRetryFailed}
         onCancel={retryDialog.close}
+      />
+
+      {/* Rollback Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={rollbackDialog.isOpen && rollbackDialog.data !== null}
+        title="Rollback Batch"
+        message={
+          rollbackDialog.data ? (
+            <>
+              Are you sure you want to rollback batch <strong>"{rollbackDialog.data.name}"</strong>?
+              <br /><br />
+              This will reset <strong>{batchRepositories.length} {batchRepositories.length === 1 ? 'repository' : 'repositories'}</strong> to their pre-migration state, allowing them to be migrated again.
+              <br /><br />
+              <span style={{ color: 'var(--fgColor-attention)' }}>
+                ⚠️ The migrated repositories in the destination will NOT be deleted. You may need to manually clean them up.
+              </span>
+            </>
+          ) : ''
+        }
+        confirmLabel="Rollback"
+        variant="danger"
+        onConfirm={confirmRollbackBatch}
+        onCancel={rollbackDialog.close}
       />
 
     </div>

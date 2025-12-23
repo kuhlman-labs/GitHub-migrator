@@ -26,7 +26,7 @@ export type {
 
 // Batch types
 export type { Batch, BatchStatus } from './batch';
-export { getBatchDuration, formatBatchDuration } from './batch';
+export { getBatchDuration, formatBatchDuration, formatDurationSeconds, getDryRunDuration, formatDryRunDuration } from './batch';
 
 // Migration types
 export type {

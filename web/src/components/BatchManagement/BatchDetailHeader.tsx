@@ -1,8 +1,8 @@
 import { ActionMenu, ActionList } from '@primer/react';
-import { GearIcon, ClockIcon, PencilIcon, TrashIcon, TriangleDownIcon, PlayIcon, SyncIcon } from '@primer/octicons-react';
+import { GearIcon, ClockIcon, PencilIcon, TrashIcon, TriangleDownIcon, PlayIcon, SyncIcon, IterationsIcon, BeakerIcon } from '@primer/octicons-react';
 import { Button, SuccessButton, BorderedButton } from '../common/buttons';
 import type { Batch, Repository } from '../../types';
-import { formatBatchDuration } from '../../types';
+import { formatBatchDuration, formatDryRunDuration } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import { formatDate } from '../../utils/format';
 
@@ -14,6 +14,7 @@ interface BatchDetailHeaderProps {
   onDryRun: (batchId: number, onlyPending?: boolean) => void;
   onStart: (batchId: number, skipDryRun?: boolean) => void;
   onRetryFailed: () => void;
+  onRollback?: (batch: Batch) => void;
   dryRunButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
@@ -25,6 +26,7 @@ export function BatchDetailHeader({
   onDryRun,
   onStart,
   onRetryFailed,
+  onRollback,
   dryRunButtonRef,
 }: BatchDetailHeaderProps) {
   // Calculate counts for different states
@@ -105,45 +107,89 @@ export function BatchDetailHeader({
               </div>
             )}
 
-            {/* Right Column: Schedule & Timestamps */}
+            {/* Right Column: Timeline */}
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span style={{ color: 'var(--fgColor-muted)' }}>
                   <ClockIcon size={16} />
                 </span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Schedule & Timeline</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--fgColor-default)' }}>Timeline</span>
               </div>
-              <div className="space-y-2 pl-6">
+              <div className="space-y-3 pl-6">
+                {/* Step 1: Scheduled (if applicable) */}
                 {batch.scheduled_at && (
                   <div className="text-sm">
-                    <span style={{ color: 'var(--fgColor-muted)' }}>Scheduled:</span>
-                    <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ 
+                        backgroundColor: new Date(batch.scheduled_at) > new Date() ? 'var(--bgColor-accent-muted)' : 'var(--bgColor-muted)',
+                        color: new Date(batch.scheduled_at) > new Date() ? 'var(--fgColor-accent)' : 'var(--fgColor-muted)'
+                      }}>
+                        {new Date(batch.scheduled_at) > new Date() ? 'SCHEDULED' : 'WAS SCHEDULED'}
+                      </span>
+                    </div>
+                    <div className="font-medium mt-1" style={{ color: 'var(--fgColor-default)' }}>
                       {formatDate(batch.scheduled_at)}
                     </div>
-                    {new Date(batch.scheduled_at) > new Date() && (
-                      <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-accent)' }}>Auto-start when ready</div>
-                    )}
                   </div>
                 )}
+
+                {/* Step 2: Dry Run */}
                 {batch.last_dry_run_at && (
                   <div className="text-sm">
-                    <span style={{ color: 'var(--fgColor-muted)' }}>Last Dry Run:</span>
-                    <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ 
+                        backgroundColor: 'var(--bgColor-accent-muted)',
+                        color: 'var(--fgColor-accent)'
+                      }}>
+                        DRY RUN
+                      </span>
+                    </div>
+                    <div className="font-medium mt-1" style={{ color: 'var(--fgColor-default)' }}>
                       {formatDate(batch.last_dry_run_at)}
                     </div>
+                    {formatDryRunDuration(batch) ? (
+                      <div className="font-semibold mt-1" style={{ color: 'var(--fgColor-accent)' }}>
+                        Duration: {formatDryRunDuration(batch)}
+                      </div>
+                    ) : batch.dry_run_started_at && !batch.dry_run_completed_at ? (
+                      <div className="text-xs mt-0.5 italic" style={{ color: 'var(--fgColor-attention)' }}>
+                        Dry run in progress...
+                      </div>
+                    ) : null}
                   </div>
                 )}
-                {batch.last_migration_attempt_at && (
+
+                {/* Step 3: Production Migration */}
+                {batch.started_at && (
                   <div className="text-sm">
-                    <span style={{ color: 'var(--fgColor-muted)' }}>Last Migration:</span>
-                    <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
-                      {formatDate(batch.last_migration_attempt_at)}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ 
+                        backgroundColor: batch.completed_at ? 'var(--bgColor-success-muted)' : 'var(--bgColor-attention-muted)',
+                        color: batch.completed_at ? 'var(--fgColor-success)' : 'var(--fgColor-attention)'
+                      }}>
+                        {batch.completed_at ? 'MIGRATED' : 'IN PROGRESS'}
+                      </span>
                     </div>
-                    {batch.started_at && batch.completed_at && (
-                      <div className="text-xs italic mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
-                        Completed in {formatBatchDuration(batch)}
-                      </div>
+                    <div className="font-medium mt-1" style={{ color: 'var(--fgColor-default)' }}>
+                      Started: {formatDate(batch.started_at)}
+                    </div>
+                    {batch.completed_at && (
+                      <>
+                        <div className="font-medium mt-0.5" style={{ color: 'var(--fgColor-default)' }}>
+                          Completed: {formatDate(batch.completed_at)}
+                        </div>
+                        <div className="font-semibold mt-1" style={{ color: 'var(--fgColor-success)' }}>
+                          Duration: {formatBatchDuration(batch)}
+                        </div>
+                      </>
                     )}
+                  </div>
+                )}
+
+                {/* Show message if no timeline events yet */}
+                {!batch.scheduled_at && !batch.last_dry_run_at && !batch.started_at && (
+                  <div className="text-sm italic" style={{ color: 'var(--fgColor-muted)' }}>
+                    No activity yet
                   </div>
                 )}
               </div>
@@ -153,26 +199,43 @@ export function BatchDetailHeader({
         
         {/* Action buttons */}
         <div className="flex items-center gap-2 ml-4 flex-shrink-0">
-          <BorderedButton
-            size="small"
-            leadingVisual={PencilIcon}
-            onClick={() => onEdit(batch)}
-          >
-            Edit
-          </BorderedButton>
-          <Button
-            size="small"
-            variant="danger"
-            leadingVisual={TrashIcon}
-            onClick={() => onDelete(batch)}
-          >
-            Delete
-          </Button>
+          {batch.status === 'completed' ? (
+            /* Completed batches can only be rolled back, not edited or deleted */
+            onRollback && (
+              <Button
+                size="small"
+                variant="danger"
+                leadingVisual={IterationsIcon}
+                onClick={() => onRollback(batch)}
+              >
+                Rollback
+              </Button>
+            )
+          ) : (
+            /* Non-completed batches can be edited and deleted */
+            <>
+              <BorderedButton
+                size="small"
+                leadingVisual={PencilIcon}
+                onClick={() => onEdit(batch)}
+              >
+                Edit
+              </BorderedButton>
+              <Button
+                size="small"
+                variant="danger"
+                leadingVisual={TrashIcon}
+                onClick={() => onDelete(batch)}
+              >
+                Delete
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Action Bar */}
-      {!isInProgress && batch.status !== 'complete' && (
+      {!isInProgress && batch.status !== 'completed' && (
         <div className="flex items-center gap-2 mb-6 pb-4 border-b" style={{ borderColor: 'var(--borderColor-muted)' }}>
           {/* Dry Run Action */}
           {(hasPendingRepos || hasDryRunComplete) && (
@@ -182,6 +245,7 @@ export function BatchDetailHeader({
                   ref={dryRunButtonRef}
                   size="small" 
                   variant="primary"
+                  leadingVisual={BeakerIcon}
                   trailingVisual={TriangleDownIcon}
                 >
                   Dry Run
@@ -219,6 +283,7 @@ export function BatchDetailHeader({
               <ActionMenu.Anchor>
                 <SuccessButton
                   size="small"
+                  leadingVisual={PlayIcon}
                   trailingVisual={TriangleDownIcon}
                 >
                   Start Migration

@@ -45,8 +45,6 @@ export function DependencyExport({
 
   // Export current filtered view (client-side) - one row per repository
   const handleExportFiltered = (format: 'csv' | 'json') => {
-    setShowExportMenu(false);
-    
     // Build maps for dependencies (what each repo depends on) and dependents (what depends on each repo)
     const dependsOnMap = new Map<string, string[]>();
     const dependedByMap = new Map<string, string[]>();

@@ -15,6 +15,10 @@ export interface Batch {
   created_at: string;
   last_dry_run_at?: string;
   last_migration_attempt_at?: string;
+  // Dry run timing tracking
+  dry_run_started_at?: string;
+  dry_run_completed_at?: string;
+  dry_run_duration_seconds?: number;
   // Migration settings (batch-level defaults, repository settings take precedence)
   destination_org?: string;
   migration_api?: 'GEI' | 'ELM';
@@ -42,6 +46,11 @@ export function formatBatchDuration(batch: Batch): string | null {
     return null;
   }
 
+  return formatDurationSeconds(durationSeconds);
+}
+
+// Helper function to format seconds as human-readable duration string
+export function formatDurationSeconds(durationSeconds: number): string {
   const hours = Math.floor(durationSeconds / 3600);
   const minutes = Math.floor((durationSeconds % 3600) / 60);
   const seconds = Math.floor(durationSeconds % 60);
@@ -53,6 +62,32 @@ export function formatBatchDuration(batch: Batch): string | null {
   } else {
     return `${seconds}s`;
   }
+}
+
+// Helper function to get dry run duration in seconds
+export function getDryRunDuration(batch: Batch): number | null {
+  // Use pre-calculated duration if available
+  if (batch.dry_run_duration_seconds !== undefined) {
+    return batch.dry_run_duration_seconds;
+  }
+  
+  // Calculate from timestamps if both are available
+  if (!batch.dry_run_started_at || !batch.dry_run_completed_at) {
+    return null;
+  }
+  const startTime = new Date(batch.dry_run_started_at).getTime();
+  const endTime = new Date(batch.dry_run_completed_at).getTime();
+  return (endTime - startTime) / 1000;
+}
+
+// Helper function to format dry run duration as human-readable string
+export function formatDryRunDuration(batch: Batch): string | null {
+  const durationSeconds = getDryRunDuration(batch);
+  if (durationSeconds === null) {
+    return null;
+  }
+
+  return formatDurationSeconds(durationSeconds);
 }
 
 export type BatchStatus =

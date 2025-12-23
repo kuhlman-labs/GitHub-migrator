@@ -278,9 +278,9 @@ export function BatchMetadataForm({
         </Button>
         {isEditMode ? (
           <SuccessButton
-          onClick={() => onSave(false)}
+            onClick={() => onSave(false)}
             disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
-            sx={{ flex: 1 }}
+            className="flex-1"
           >
             {loading ? 'Saving...' : 'Update Batch'}
           </SuccessButton>
@@ -290,16 +290,16 @@ export function BatchMetadataForm({
               onClick={() => onSave(false)}
               disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
               variant="primary"
-              sx={{ flex: 1 }}
+              className="flex-1"
             >
               {loading ? 'Saving...' : 'Create Batch'}
             </Button>
             <SuccessButton
               onClick={() => onSave(true)}
               disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
-              sx={{ flex: 1 }}
-          >
-            {loading ? 'Starting...' : 'Create & Start'}
+              className="flex-1"
+            >
+              {loading ? 'Starting...' : 'Create & Start'}
             </SuccessButton>
           </>
         )}

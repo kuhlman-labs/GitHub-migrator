@@ -117,7 +117,6 @@ export function ConfirmationDialog({
               size="small"
               onClick={onCancel}
               disabled={isLoading}
-              sx={{ color: 'fg.muted' }}
             />
           </div>
 

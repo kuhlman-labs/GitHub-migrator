@@ -105,7 +105,32 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 				"old_status", batch.Status,
 				"new_status", newStatus)
 
+			oldStatus := batch.Status
 			batch.Status = newStatus
+
+			// Track dry run completion: when batch transitions from in_progress to ready
+			// and dry run was started (DryRunStartedAt is set), record completion time
+			if oldStatus == models.BatchStatusInProgress && newStatus == models.BatchStatusReady {
+				if batch.DryRunStartedAt != nil && batch.DryRunCompletedAt == nil {
+					now := time.Now()
+					batch.DryRunCompletedAt = &now
+
+					// Calculate and store dry run duration
+					duration := batch.DryRunDuration()
+					if duration != nil {
+						durationSeconds := int(duration.Seconds())
+						batch.DryRunDurationSeconds = &durationSeconds
+
+						su.logger.Info("Batch dry run completed",
+							"batch_id", batch.ID,
+							"batch_name", batch.Name,
+							"started_at", batch.DryRunStartedAt.Format(time.RFC3339),
+							"completed_at", batch.DryRunCompletedAt.Format(time.RFC3339),
+							"duration_seconds", durationSeconds,
+							"duration", duration.String())
+					}
+				}
+			}
 
 			// Set completion time if batch is now complete
 			if isTerminalStatus(newStatus) && batch.CompletedAt == nil {

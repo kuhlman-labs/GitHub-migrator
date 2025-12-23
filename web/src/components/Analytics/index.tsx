@@ -102,8 +102,6 @@ export function Analytics() {
 
   // Export functions
   const handleExport = async (reportType: 'executive' | 'discovery', format: 'csv' | 'json') => {
-    setShowExportMenu(false);
-
     if (!analytics) {
       alert('No analytics data to export');
       return;

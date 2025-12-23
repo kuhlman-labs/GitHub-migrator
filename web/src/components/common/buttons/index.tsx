@@ -1,5 +1,6 @@
 import { Button, IconButton } from '@primer/react';
-import type { ButtonProps, IconButtonProps } from '@primer/react';
+import type { ButtonProps } from '@primer/react';
+import { XIcon } from '@primer/octicons-react';
 import { forwardRef } from 'react';
 
 /**
@@ -106,14 +107,26 @@ export const PrimaryButton = forwardRef<HTMLButtonElement, SharedButtonProps>(
  * CloseIconButton - Standardized close button for dialogs and panels
  * Use for: Dialog close buttons, panel close buttons
  */
-export const CloseIconButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon' | 'aria-label'> & { 'aria-label'?: string }>(
-  function CloseIconButton({ 'aria-label': ariaLabel = 'Close', ...props }, ref) {
+interface CloseIconButtonProps {
+  'aria-label'?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  size?: 'small' | 'medium' | 'large';
+  className?: string;
+}
+
+export const CloseIconButton = forwardRef<HTMLButtonElement, CloseIconButtonProps>(
+  function CloseIconButton({ 'aria-label': ariaLabel = 'Close', onClick, disabled, size, className }, ref) {
     return (
       <IconButton
         ref={ref}
+        icon={XIcon}
         variant="invisible"
         aria-label={ariaLabel}
-        {...props}
+        onClick={onClick}
+        disabled={disabled}
+        size={size}
+        className={className}
       />
     );
   }

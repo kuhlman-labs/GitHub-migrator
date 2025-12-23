@@ -389,13 +389,13 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
                   }}
                 >
                   <SegmentedControl.Button selected={scopeFilter === 'all'}>
-                    All ({deduplicatedSummary.total})
+                    {`All (${deduplicatedSummary.total})`}
                   </SegmentedControl.Button>
                   <SegmentedControl.Button selected={scopeFilter === 'local'}>
-                    Local ({deduplicatedSummary.local})
+                    {`Local (${deduplicatedSummary.local})`}
                   </SegmentedControl.Button>
                   <SegmentedControl.Button selected={scopeFilter === 'external'}>
-                    External ({deduplicatedSummary.external})
+                    {`External (${deduplicatedSummary.external})`}
                   </SegmentedControl.Button>
                 </SegmentedControl>
               </div>
