@@ -1,5 +1,6 @@
 import { ChevronDownIcon } from '@primer/octicons-react';
 import { formatDateForInput } from '../../utils/format';
+import { Button, SuccessButton } from '../common/buttons';
 
 interface MigrationSettings {
   destinationOrg: string;
@@ -269,41 +270,38 @@ export function BatchMetadataForm({
 
       {/* Action Buttons */}
       <div className="p-3 flex gap-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
-        <button
+        <Button
           onClick={onClose}
-          className="px-3 py-2 text-sm font-medium rounded-lg border transition-colors hover:opacity-80"
-          style={{
-            borderColor: 'var(--borderColor-default)',
-            color: 'var(--fgColor-default)',
-            backgroundColor: 'var(--control-bgColor-rest)'
-          }}
           disabled={loading}
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        {isEditMode ? (
+          <SuccessButton
           onClick={() => onSave(false)}
-          disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
-          className="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            backgroundColor: 'var(--accent-emphasis)',
-            color: 'var(--fgColor-onEmphasis)'
-          }}
-        >
-          {loading ? 'Saving...' : isEditMode ? 'Update Batch' : 'Create Batch'}
-        </button>
-        {!isEditMode && (
-          <button
-            onClick={() => onSave(true)}
             disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
-            className="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              backgroundColor: 'var(--bgColor-success-emphasis)',
-              color: 'var(--fgColor-onEmphasis)'
-            }}
+            sx={{ flex: 1 }}
+          >
+            {loading ? 'Saving...' : 'Update Batch'}
+          </SuccessButton>
+        ) : (
+          <>
+            <Button
+              onClick={() => onSave(false)}
+              disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
+              variant="primary"
+              sx={{ flex: 1 }}
+            >
+              {loading ? 'Saving...' : 'Create Batch'}
+            </Button>
+            <SuccessButton
+              onClick={() => onSave(true)}
+              disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
+              sx={{ flex: 1 }}
           >
             {loading ? 'Starting...' : 'Create & Start'}
-          </button>
+            </SuccessButton>
+          </>
         )}
       </div>
     </div>

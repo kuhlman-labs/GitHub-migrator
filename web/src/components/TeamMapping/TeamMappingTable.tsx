@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import {
-  Button,
   TextInput,
   Flash,
   ActionMenu,
@@ -10,6 +9,7 @@ import {
   Dialog,
   FormControl,
 } from '@primer/react';
+import { Button, BorderedButton, SuccessButton } from '../common/buttons';
 import {
   PeopleIcon,
   CheckIcon,
@@ -514,15 +514,13 @@ export function TeamMappingTable() {
         </div>
         <div className="flex gap-2">
           {/* Discover Teams Button */}
-          <Button
-            variant="invisible"
+          <BorderedButton
             onClick={() => discoverDialog.open()}
             leadingVisual={PeopleIcon}
             disabled={discoverTeams.isPending}
-            className="btn-bordered-invisible"
           >
             {discoverTeams.isPending ? 'Discovering...' : 'Discover Teams'}
-          </Button>
+          </BorderedButton>
           
           <input
             type="file"
@@ -537,30 +535,25 @@ export function TeamMappingTable() {
             }}
             className="hidden"
           />
-          <Button
-            variant="invisible"
+          <BorderedButton
             onClick={() => document.getElementById('import-team-csv-input')?.click()}
             leadingVisual={UploadIcon}
-            className="btn-bordered-invisible"
           >
             Import
-          </Button>
-          <Button
-            variant="invisible"
+          </BorderedButton>
+          <BorderedButton
             onClick={handleExport}
             leadingVisual={DownloadIcon}
-            className="btn-bordered-invisible"
           >
             Export
-          </Button>
-          <Button
+          </BorderedButton>
+          <SuccessButton
             onClick={() => executeDialog.open()}
             disabled={!hasMappedTeams || isRunning}
             leadingVisual={PlayIcon}
-            variant="primary"
           >
             Migrate Teams
-          </Button>
+          </SuccessButton>
         </div>
       </div>
 
@@ -604,14 +597,12 @@ export function TeamMappingTable() {
         {sourceOrgs.length > 0 && (
           <ActionMenu onOpenChange={(open) => { if (!open) setOrgSearchFilter(''); }}>
             <ActionMenu.Anchor>
-              <Button
-                variant="invisible"
+              <BorderedButton
                 leadingVisual={OrganizationIcon}
                 trailingAction={TriangleDownIcon}
-                className="btn-bordered-invisible"
               >
                 Org: {filters.sourceOrg || 'All'}
-              </Button>
+              </BorderedButton>
             </ActionMenu.Anchor>
             <ActionMenu.Overlay>
               <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
@@ -657,14 +648,12 @@ export function TeamMappingTable() {
         {/* Status Filter */}
         <ActionMenu>
           <ActionMenu.Anchor>
-            <Button
-              variant="invisible"
+            <BorderedButton
               leadingVisual={FilterIcon}
               trailingAction={TriangleDownIcon}
-              className="btn-bordered-invisible"
             >
               Status: {filters.status ? statusLabels[filters.status as TeamMappingStatus] : 'All'}
-            </Button>
+            </BorderedButton>
           </ActionMenu.Anchor>
           <ActionMenu.Overlay>
             <ActionList selectionVariant="single">

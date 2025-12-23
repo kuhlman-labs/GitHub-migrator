@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import {
-  Button,
   TextInput,
   Flash,
   ActionMenu,
@@ -10,6 +9,7 @@ import {
   Dialog,
   FormControl,
 } from '@primer/react';
+import { Button, BorderedButton } from '../common/buttons';
 import {
   PersonIcon,
   CheckIcon,
@@ -342,26 +342,22 @@ export function UserMappingTable() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* Discovery action */}
-          <Button
-            variant="invisible"
+          <BorderedButton
             onClick={() => discoverDialog.open()}
             leadingVisual={PersonIcon}
             disabled={discoverOrgMembers.isPending}
-            className="btn-bordered-invisible"
           >
             {discoverOrgMembers.isPending ? 'Discovering...' : 'Discover Org Members'}
-          </Button>
+          </BorderedButton>
           
           {/* Mannequin fetch */}
-          <Button
-            variant="invisible"
+          <BorderedButton
             onClick={() => openDestOrgDialog('fetch')}
             leadingVisual={SyncIcon}
             disabled={fetchMannequins.isPending}
-            className="btn-bordered-invisible"
           >
             {fetchMannequins.isPending ? 'Fetching...' : 'Fetch Mannequins'}
-          </Button>
+          </BorderedButton>
           
           {/* Import/Export */}
           <input
@@ -375,24 +371,20 @@ export function UserMappingTable() {
             }}
             className="hidden"
           />
-          <Button
-            variant="invisible"
+          <BorderedButton
             onClick={() => document.getElementById('import-csv-input')?.click()}
             leadingVisual={UploadIcon}
-            className="btn-bordered-invisible"
           >
             Import
-          </Button>
+          </BorderedButton>
           <ActionMenu>
             <ActionMenu.Anchor>
-              <Button
-                variant="invisible"
+              <BorderedButton
                 leadingVisual={DownloadIcon}
                 trailingAction={TriangleDownIcon}
-                className="btn-bordered-invisible"
               >
                 Export
-              </Button>
+              </BorderedButton>
             </ActionMenu.Anchor>
             <ActionMenu.Overlay>
               <ActionList>
@@ -450,14 +442,12 @@ export function UserMappingTable() {
         {sourceOrgs.length > 0 && (
           <ActionMenu onOpenChange={(open) => { if (!open) setOrgSearchFilter(''); }}>
             <ActionMenu.Anchor>
-              <Button
-                variant="invisible"
+              <BorderedButton
                 leadingVisual={OrganizationIcon}
                 trailingAction={TriangleDownIcon}
-                className="btn-bordered-invisible"
               >
                 Org: {filters.sourceOrg || 'All'}
-              </Button>
+              </BorderedButton>
             </ActionMenu.Anchor>
             <ActionMenu.Overlay>
               <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
@@ -503,14 +493,12 @@ export function UserMappingTable() {
         {/* Status Filter */}
         <ActionMenu>
           <ActionMenu.Anchor>
-            <Button
-              variant="invisible"
+            <BorderedButton
               leadingVisual={FilterIcon}
               trailingAction={TriangleDownIcon}
-              className="btn-bordered-invisible"
             >
               Status: {filters.status ? statusLabels[filters.status as UserMappingStatus] : 'All'}
-            </Button>
+            </BorderedButton>
           </ActionMenu.Anchor>
           <ActionMenu.Overlay>
             <ActionList selectionVariant="single">

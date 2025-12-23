@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useParams, Link as RouterLink, useLocation } from 'react-router-dom';
-import { Button, UnderlineNav, Textarea, FormControl, Link, useTheme, Dialog } from '@primer/react';
-import { CalendarIcon, AlertIcon } from '@primer/octicons-react';
+import { UnderlineNav, Textarea, FormControl, Link, useTheme, Dialog } from '@primer/react';
+import { Button, SuccessButton, AttentionButton, BorderedButton } from '../common/buttons';
+import { CalendarIcon, AlertIcon, PlayIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository, MigrationHistory } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
+import { FormDialog } from '../common/FormDialog';
 import { TimestampDisplay } from '../common/TimestampDisplay';
 import { MigrationReadinessTab } from './MigrationReadinessTab';
 import { TechnicalProfileTab } from './TechnicalProfileTab';
@@ -381,29 +383,13 @@ export function RepositoryDetail() {
 
           {/* Migration Actions */}
           <div className="flex flex-col gap-3 ml-6">
-            <button
+            <BorderedButton
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
-              className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
-              style={{ 
-                whiteSpace: 'nowrap',
-                border: '1px solid var(--borderColor-default)',
-                backgroundColor: 'var(--bgColor-muted)',
-                color: 'var(--fgColor-default)'
-              }}
-              onMouseEnter={(e) => {
-                if (!rediscoverMutation.isPending) {
-                  e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!rediscoverMutation.isPending) {
-                  e.currentTarget.style.backgroundColor = 'var(--bgColor-muted)';
-                }
-              }}
+              sx={{ whiteSpace: 'nowrap' }}
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
-            </button>
+            </BorderedButton>
             
             {/* Won't Migrate Toggle */}
             {!isInActiveMigration && repository.status !== 'complete' && (
@@ -412,34 +398,18 @@ export function RepositoryDetail() {
                   onClick={handleToggleWontMigrate}
                   disabled={markWontMigrateMutation.isPending}
                   variant="primary"
-                  style={{ whiteSpace: 'nowrap' }}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {markWontMigrateMutation.isPending ? 'Processing...' : 'Unmark Won\'t Migrate'}
                 </Button>
               ) : (
-                <button
+                <AttentionButton
                   onClick={handleToggleWontMigrate}
                   disabled={markWontMigrateMutation.isPending}
-                  className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
-                  style={{ 
-                    whiteSpace: 'nowrap',
-                    border: '1px solid var(--borderColor-attention-emphasis)',
-                    backgroundColor: 'var(--bgColor-attention-muted)',
-                    color: 'var(--fgColor-attention)'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!markWontMigrateMutation.isPending) {
-                      e.currentTarget.style.backgroundColor = 'var(--control-attention-bgColor-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!markWontMigrateMutation.isPending) {
-                      e.currentTarget.style.backgroundColor = 'var(--bgColor-attention-muted)';
-                    }
-                  }}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   Mark as Won't Migrate
-                </button>
+                </AttentionButton>
               )
             )}
             
@@ -449,36 +419,18 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
                   variant="primary"
-                  style={{ whiteSpace: 'nowrap' }}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </Button>
-                <button
+                <SuccessButton
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
-                  style={{ 
-                    whiteSpace: 'nowrap',
-                    backgroundColor: '#1a7f37',
-                    color: '#ffffff',
-                    border: '1px solid #1a7f37',
-                    fontWeight: 600
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!migrating) {
-                      e.currentTarget.style.backgroundColor = '#2da44e';
-                      e.currentTarget.style.borderColor = '#2da44e';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!migrating) {
-                      e.currentTarget.style.backgroundColor = '#1a7f37';
-                      e.currentTarget.style.borderColor = '#1a7f37';
-                    }
-                  }}
+                  leadingVisual={PlayIcon}
+                  sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
-                </button>
+                </SuccessButton>
               </>
             )}
             {repository.status === 'dry_run_failed' && (
@@ -487,7 +439,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
                   variant="danger"
-                  style={{ whiteSpace: 'nowrap' }}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Re-running...' : 'Re-run Dry Run'}
                 </Button>
@@ -495,7 +447,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="primary"
-                  style={{ whiteSpace: 'nowrap' }}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {migrating ? 'Starting...' : 'Start Migration Anyway'}
                 </Button>
@@ -507,7 +459,7 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="danger"
-                  style={{ whiteSpace: 'nowrap' }}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   Retry Migration
                 </Button>
@@ -516,7 +468,7 @@ export function RepositoryDetail() {
                     onClick={handleUnlock}
                     disabled={unlockMutation.isPending}
                     variant="danger"
-                    style={{ whiteSpace: 'nowrap' }}
+                    sx={{ whiteSpace: 'nowrap' }}
                   >
                     {unlockMutation.isPending ? 'Unlocking...' : '🔓 Unlock Source'}
                   </Button>
@@ -528,7 +480,7 @@ export function RepositoryDetail() {
                 onClick={() => rollbackDialog.open()}
                 disabled={rollbackMutation.isPending}
                 variant="danger"
-                style={{ whiteSpace: 'nowrap' }}
+                sx={{ whiteSpace: 'nowrap' }}
               >
                 {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback Migration'}
               </Button>
@@ -613,62 +565,44 @@ export function RepositoryDetail() {
       </div>
 
       {/* Rollback Dialog */}
-      {rollbackDialog.isOpen && (
-        <Dialog
-          returnFocusRef={rollbackDialog.returnFocusRef}
-          onClose={() => {
-            rollbackDialog.close();
-            setRollbackReason('');
-          }}
-          aria-labelledby="rollback-dialog-header"
-        >
-          <Dialog.Header id="rollback-dialog-header">
-            Rollback Migration
-          </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)', marginBottom: '16px' }}>
-              This will mark the repository as rolled back and allow it to be migrated again in the future.
-              You can optionally provide a reason for the rollback.
-            </p>
-            
-            <FormControl>
-              <FormControl.Label>Reason (optional)</FormControl.Label>
-              <Textarea
-                value={rollbackReason}
-                onChange={(e) => setRollbackReason(e.target.value)}
-                placeholder="e.g., CI/CD integration issues, workflow failures..."
-                rows={3}
-                disabled={rollbackMutation.isPending}
-                block
-              />
-            </FormControl>
-          </div>
-          <div style={{ 
-            padding: '12px 16px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px'
-          }}>
-            <Button
-              onClick={() => {
-                rollbackDialog.close();
-                setRollbackReason('');
-              }}
-              disabled={rollbackMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRollback}
-              disabled={rollbackMutation.isPending}
-              variant="danger"
-            >
-              {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+      <FormDialog
+        isOpen={rollbackDialog.isOpen}
+        title="Rollback Migration"
+        submitLabel="Confirm Rollback"
+        onSubmit={handleRollback}
+        onCancel={() => {
+          rollbackDialog.close();
+          setRollbackReason('');
+        }}
+        isLoading={rollbackMutation.isPending}
+        variant="danger"
+        size="medium"
+      >
+        <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)', marginBottom: '16px' }}>
+          This will mark the repository as rolled back and allow it to be migrated again in the future.
+          You can optionally provide a reason for the rollback.
+        </p>
+        
+        <FormControl>
+          <FormControl.Label>Reason (optional)</FormControl.Label>
+          <Textarea
+            value={rollbackReason}
+            onChange={(e) => setRollbackReason(e.target.value)}
+            placeholder="e.g., CI/CD integration issues, workflow failures..."
+            rows={3}
+            disabled={rollbackMutation.isPending}
+            block
+            sx={{
+              backgroundColor: 'var(--bgColor-muted)',
+              color: 'var(--fgColor-default)',
+              borderColor: 'var(--borderColor-default)',
+              '&::placeholder': {
+                color: 'var(--fgColor-muted)',
+              },
+            }}
+          />
+        </FormControl>
+      </FormDialog>
 
       {/* Rediscover Confirmation Dialog */}
       {rediscoverDialog.isOpen && (

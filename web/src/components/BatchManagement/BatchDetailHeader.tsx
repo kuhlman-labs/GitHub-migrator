@@ -1,5 +1,6 @@
-import { Button, ActionMenu, ActionList } from '@primer/react';
+import { ActionMenu, ActionList } from '@primer/react';
 import { GearIcon, ClockIcon, PencilIcon, TrashIcon, TriangleDownIcon, PlayIcon, SyncIcon } from '@primer/octicons-react';
+import { Button, SuccessButton, BorderedButton } from '../common/buttons';
 import type { Batch, Repository } from '../../types';
 import { formatBatchDuration } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
@@ -152,15 +153,16 @@ export function BatchDetailHeader({
         
         {/* Action buttons */}
         <div className="flex items-center gap-2 ml-4 flex-shrink-0">
-          <Button
+          <BorderedButton
             size="small"
             leadingVisual={PencilIcon}
             onClick={() => onEdit(batch)}
           >
             Edit
-          </Button>
+          </BorderedButton>
           <Button
             size="small"
+            variant="danger"
             leadingVisual={TrashIcon}
             onClick={() => onDelete(batch)}
           >
@@ -179,6 +181,7 @@ export function BatchDetailHeader({
                 <Button 
                   ref={dryRunButtonRef}
                   size="small" 
+                  variant="primary"
                   trailingVisual={TriangleDownIcon}
                 >
                   Dry Run
@@ -201,27 +204,25 @@ export function BatchDetailHeader({
 
           {/* Start Migration Action */}
           {batch.status === 'ready' && (
-            <Button
+            <SuccessButton
               size="small"
-              variant="primary"
               leadingVisual={PlayIcon}
               onClick={() => onStart(batch.id)}
             >
               Start Migration
-            </Button>
+            </SuccessButton>
           )}
 
           {/* Start Migration for Pending Batches (with warning) */}
           {batch.status === 'pending' && batchRepositories.length > 0 && (
             <ActionMenu>
               <ActionMenu.Anchor>
-                <Button 
-                  size="small" 
-                  variant="primary"
+                <SuccessButton
+                  size="small"
                   trailingVisual={TriangleDownIcon}
                 >
                   Start Migration
-                </Button>
+                </SuccessButton>
               </ActionMenu.Anchor>
               <ActionMenu.Overlay>
                 <ActionList>

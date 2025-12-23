@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button, Checkbox, TextInput, FormControl, Select, Dialog } from '@primer/react';
-import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon } from '@primer/octicons-react';
+import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon, TrashIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -550,7 +550,8 @@ export function MigrationReadinessTab({
                 <Button
                   onClick={handleRemoveFromBatch}
                   disabled={assigningBatch}
-                  variant="default"
+                  variant="danger"
+                  leadingVisual={TrashIcon}
                 >
                     {assigningBatch ? 'Removing...' : 'Remove'}
                 </Button>

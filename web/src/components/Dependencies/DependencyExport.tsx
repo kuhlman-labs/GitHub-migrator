@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Button } from '@primer/react';
-import { DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
+import { ActionMenu, ActionList } from '@primer/react';
+import { DownloadIcon } from '@primer/octicons-react';
+import { BorderedButton } from '../common/buttons';
 import { api } from '../../services/api';
 import type { DependencyGraphNode, DependencyGraphEdge } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
@@ -21,11 +22,9 @@ export function DependencyExport({
 }: DependencyExportProps) {
   const { showError } = useToast();
   const [exporting, setExporting] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // Export all dependencies from API (no filters applied)
   const handleExportAll = async (format: 'csv' | 'json') => {
-    setShowExportMenu(false);
     try {
       setExporting(true);
       const blob = await api.exportDependencies(format);
@@ -124,79 +123,37 @@ export function DependencyExport({
   };
 
   return (
-    <div className="relative">
-      <Button
-        variant="invisible"
-        onClick={() => setShowExportMenu(!showExportMenu)}
-        disabled={exporting || !hasFilteredData}
-        leadingVisual={DownloadIcon}
-        trailingVisual={ChevronDownIcon}
-        className="btn-bordered-invisible"
-      >
-        Export
-      </Button>
-      {showExportMenu && (
-        <>
-          {/* Backdrop to close menu when clicking outside */}
-          <div 
-            className="fixed inset-0 z-10" 
-            onClick={() => setShowExportMenu(false)}
-          />
-          {/* Dropdown menu */}
-          <div 
-            className="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-20"
-            style={{
-              backgroundColor: 'var(--bgColor-default)',
-              border: '1px solid var(--borderColor-default)',
-              boxShadow: 'var(--shadow-floating-large)'
-            }}
-          >
-            <div className="py-1">
-              {/* Summary Export Section */}
-              <div className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
-                Summary {hasActiveFilters && `(${filteredNodes.length} repos)`}
-              </div>
-              <button
-                onClick={() => handleExportFiltered('csv')}
-                className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                style={{ color: 'var(--fgColor-default)' }}
-              >
-                Export Summary as CSV
-              </button>
-              <button
-                onClick={() => handleExportFiltered('json')}
-                className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                style={{ color: 'var(--fgColor-default)' }}
-              >
-                Export Summary as JSON
-              </button>
-              
-              {/* Divider */}
-              <div className="my-1 border-t" style={{ borderColor: 'var(--borderColor-muted)' }} />
-              
-              {/* Full Export Section */}
-              <div className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
-                All Dependencies
-              </div>
-              <button
-                onClick={() => handleExportAll('csv')}
-                className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                style={{ color: 'var(--fgColor-default)' }}
-              >
-                Export All as CSV
-              </button>
-              <button
-                onClick={() => handleExportAll('json')}
-                className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                style={{ color: 'var(--fgColor-default)' }}
-              >
-                Export All as JSON
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+    <ActionMenu>
+      <ActionMenu.Anchor>
+        <BorderedButton
+          disabled={exporting || !hasFilteredData}
+          leadingVisual={DownloadIcon}
+        >
+          {exporting ? 'Exporting...' : 'Export'}
+        </BorderedButton>
+      </ActionMenu.Anchor>
+      <ActionMenu.Overlay>
+        <ActionList>
+          <ActionList.Group title={`Summary ${hasActiveFilters ? `(${filteredNodes.length} repos)` : ''}`}>
+            <ActionList.Item onSelect={() => handleExportFiltered('csv')}>
+              Export Summary as CSV
+            </ActionList.Item>
+            <ActionList.Item onSelect={() => handleExportFiltered('json')}>
+              Export Summary as JSON
+            </ActionList.Item>
+          </ActionList.Group>
+          <ActionList.Divider />
+          <ActionList.Group title="All Dependencies">
+            <ActionList.Item onSelect={() => handleExportAll('csv')}>
+              Export All as CSV
+            </ActionList.Item>
+            <ActionList.Item onSelect={() => handleExportAll('json')}>
+              Export All as JSON
+            </ActionList.Item>
+          </ActionList.Group>
+        </ActionList>
+      </ActionMenu.Overlay>
+    </ActionMenu>
   );
 }
 

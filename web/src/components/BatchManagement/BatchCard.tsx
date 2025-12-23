@@ -2,6 +2,7 @@ import { CalendarIcon } from '@primer/octicons-react';
 import type { Batch } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import { formatDate } from '../../utils/format';
+import { SuccessButton } from '../common/buttons';
 
 export interface BatchCardProps {
   batch: Batch;
@@ -43,26 +44,15 @@ export function BatchCard({ batch, isSelected, onClick, onStart }: BatchCardProp
           )}
         </div>
         {batch.status === 'ready' && (
-          <button
+          <SuccessButton
+            size="small"
             onClick={(e) => {
               e.stopPropagation();
               onStart();
             }}
-            className="text-sm px-3 py-1 rounded border-0 transition-all cursor-pointer"
-            style={{
-              backgroundColor: 'var(--bgColor-success-emphasis)',
-              color: 'var(--fgColor-onEmphasis)',
-              fontWeight: 500,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '0.9';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '1';
-            }}
           >
             Start
-          </button>
+          </SuccessButton>
         )}
         {batch.status === 'pending' && (
           <span className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>

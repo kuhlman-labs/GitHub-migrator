@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { UnderlineNav, ProgressBar, Button } from '@primer/react';
-import { ChevronRightIcon, DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
+import { UnderlineNav, ProgressBar, ActionMenu, ActionList } from '@primer/react';
+import { ChevronRightIcon, DownloadIcon } from '@primer/octicons-react';
+import { BorderedButton } from '../common/buttons';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDuration } from '../../utils/format';
@@ -38,7 +39,6 @@ export function Analytics() {
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('');
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
-  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // Use React Query for config
   const { data: config } = useConfig();
@@ -152,79 +152,37 @@ export function Analytics() {
         </div>
         
         {/* Export Button with Dropdown */}
-        <div className="relative">
-          <Button
-            variant="invisible"
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            disabled={!analytics}
-            leadingVisual={DownloadIcon}
-            trailingVisual={ChevronDownIcon}
-            className="btn-bordered-invisible"
-          >
-            Export
-          </Button>
-          {showExportMenu && (
-            <>
-              {/* Backdrop to close menu when clicking outside */}
-              <div 
-                className="fixed inset-0 z-10" 
-                onClick={() => setShowExportMenu(false)}
-              />
-              {/* Dropdown menu */}
-              <div 
-                className="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-20"
-                style={{
-                  backgroundColor: 'var(--bgColor-default)',
-                  border: '1px solid var(--borderColor-default)',
-                  boxShadow: 'var(--shadow-floating-large)'
-                }}
-              >
-                <div className="py-1">
-                  {/* Executive Reports */}
-                  <div className="px-3 py-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--fgColor-muted)' }}>
-                    Executive Report
-                  </div>
-                  <button
-                    onClick={() => handleExport('executive', 'csv')}
-                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                    style={{ color: 'var(--fgColor-default)' }}
-                  >
-                    Export as CSV
-                  </button>
-                  <button
-                    onClick={() => handleExport('executive', 'json')}
-                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                    style={{ color: 'var(--fgColor-default)' }}
-                  >
-                    Export as JSON
-                  </button>
-                  
-                  {/* Divider */}
-                  <div className="my-1 border-t" style={{ borderColor: 'var(--borderColor-default)' }}></div>
-                  
-                  {/* Discovery Reports */}
-                  <div className="px-3 py-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--fgColor-muted)' }}>
-                    Discovery Report
-                  </div>
-                  <button
-                    onClick={() => handleExport('discovery', 'csv')}
-                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                    style={{ color: 'var(--fgColor-default)' }}
-                  >
-                    Export as CSV
-                  </button>
-                  <button
-                    onClick={() => handleExport('discovery', 'json')}
-                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                    style={{ color: 'var(--fgColor-default)' }}
-                  >
-                    Export as JSON
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <ActionMenu>
+          <ActionMenu.Anchor>
+            <BorderedButton
+              disabled={!analytics}
+              leadingVisual={DownloadIcon}
+            >
+              Export
+            </BorderedButton>
+          </ActionMenu.Anchor>
+          <ActionMenu.Overlay>
+            <ActionList>
+              <ActionList.Group title="Executive Report">
+                <ActionList.Item onSelect={() => handleExport('executive', 'csv')}>
+                  Export as CSV
+                </ActionList.Item>
+                <ActionList.Item onSelect={() => handleExport('executive', 'json')}>
+                  Export as JSON
+                </ActionList.Item>
+              </ActionList.Group>
+              <ActionList.Divider />
+              <ActionList.Group title="Discovery Report">
+                <ActionList.Item onSelect={() => handleExport('discovery', 'csv')}>
+                  Export as CSV
+                </ActionList.Item>
+                <ActionList.Item onSelect={() => handleExport('discovery', 'json')}>
+                  Export as JSON
+                </ActionList.Item>
+              </ActionList.Group>
+            </ActionList>
+          </ActionMenu.Overlay>
+        </ActionMenu>
       </div>
 
       {/* Filter Bar */}

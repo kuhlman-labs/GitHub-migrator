@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
-import { Button } from '@primer/react';
 import { XIcon } from '@primer/octicons-react';
+import { Button, IconButton } from './buttons';
 
 export interface FormDialogProps {
   isOpen: boolean;
@@ -13,6 +13,7 @@ export interface FormDialogProps {
   isSubmitDisabled?: boolean;
   children: React.ReactNode;
   size?: 'small' | 'medium' | 'large';
+  variant?: 'default' | 'primary' | 'danger';
 }
 
 const sizeClasses = {
@@ -52,6 +53,7 @@ export function FormDialog({
   isSubmitDisabled = false,
   children,
   size = 'medium',
+  variant = 'primary',
 }: FormDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -134,15 +136,14 @@ export function FormDialog({
             >
               {title}
             </h2>
-            <button
+            <IconButton
+              icon={XIcon}
+              aria-label="Close"
+              variant="invisible"
               onClick={onCancel}
               disabled={isLoading}
-              className="p-1 rounded transition-colors hover:bg-[var(--control-bgColor-hover)]"
-              aria-label="Close"
-              style={{ color: 'var(--fgColor-muted)' }}
-            >
-              <XIcon size={20} />
-            </button>
+              sx={{ color: 'fg.muted' }}
+            />
           </div>
 
           {/* Form */}
@@ -160,7 +161,7 @@ export function FormDialog({
               </Button>
               <Button
                 type="submit"
-                variant="primary"
+                variant={variant}
                 disabled={isLoading || isSubmitDisabled}
               >
                 {isLoading ? 'Loading...' : submitLabel}

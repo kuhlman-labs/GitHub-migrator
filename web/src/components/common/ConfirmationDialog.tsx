@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
-import { Button } from '@primer/react';
 import { XIcon } from '@primer/octicons-react';
+import { Button, IconButton } from './buttons';
 
 export interface ConfirmationDialogProps {
   isOpen: boolean;
@@ -110,15 +110,15 @@ export function ConfirmationDialog({
             >
               {title}
             </h2>
-            <button
+            <IconButton
+              icon={XIcon}
+              aria-label="Close"
+              variant="invisible"
+              size="small"
               onClick={onCancel}
               disabled={isLoading}
-              className="p-1 rounded transition-colors hover:bg-[var(--control-bgColor-hover)]"
-              aria-label="Close"
-              style={{ color: 'var(--fgColor-muted)' }}
-            >
-              <XIcon size={16} />
-            </button>
+              sx={{ color: 'fg.muted' }}
+            />
           </div>
 
           {/* Body */}

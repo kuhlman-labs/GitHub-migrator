@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
-import { ActionMenu, ActionList, TextInput, Button } from '@primer/react';
+import { ActionMenu, ActionList, TextInput } from '@primer/react';
 import { OrganizationIcon, RepoIcon, PackageIcon, SearchIcon, TriangleDownIcon } from '@primer/octicons-react';
+import { FilterDropdownButton } from '../common/buttons';
 import { useOrganizations, useBatches, useProjects } from '../../hooks/useQueries';
 
 interface FilterBarProps {
@@ -80,15 +81,12 @@ export function FilterBar({
           </label>
           <ActionMenu onOpenChange={(open) => { if (!open) setOrgSearch(''); }}>
             <ActionMenu.Anchor>
-              <Button
-                variant="invisible"
+              <FilterDropdownButton
                 leadingVisual={OrganizationIcon}
                 trailingAction={TriangleDownIcon}
-                block
-                className="btn-filter-dropdown"
               >
                 <span className="truncate">{getOrgButtonText()}</span>
-              </Button>
+              </FilterDropdownButton>
             </ActionMenu.Anchor>
             <ActionMenu.Overlay width="large">
               <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
@@ -146,15 +144,12 @@ export function FilterBar({
             </label>
             <ActionMenu onOpenChange={(open) => { if (!open) setProjectSearch(''); }}>
               <ActionMenu.Anchor>
-                <Button
-                  variant="invisible"
+                <FilterDropdownButton
                   leadingVisual={RepoIcon}
                   trailingAction={TriangleDownIcon}
-                  block
-                  className="btn-filter-dropdown"
                 >
                   <span className="truncate">{getProjectButtonText()}</span>
-                </Button>
+                </FilterDropdownButton>
               </ActionMenu.Anchor>
               <ActionMenu.Overlay width="large">
                 <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
@@ -212,15 +207,12 @@ export function FilterBar({
           </label>
           <ActionMenu onOpenChange={(open) => { if (!open) setBatchSearch(''); }}>
             <ActionMenu.Anchor>
-              <Button
-                variant="invisible"
+              <FilterDropdownButton
                 leadingVisual={PackageIcon}
                 trailingAction={TriangleDownIcon}
-                block
-                className="btn-filter-dropdown"
               >
                 <span className="truncate">{getBatchButtonText()}</span>
-              </Button>
+              </FilterDropdownButton>
             </ActionMenu.Anchor>
             <ActionMenu.Overlay width="large">
               <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>

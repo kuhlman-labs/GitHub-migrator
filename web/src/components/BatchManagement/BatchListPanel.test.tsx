@@ -38,7 +38,7 @@ const mockBatches: Batch[] = [
     description: 'Finished',
     type: 'manual',
     repository_count: 20,
-    status: 'complete',
+    status: 'completed',
     created_at: '2024-01-03T00:00:00Z',
   },
 ];

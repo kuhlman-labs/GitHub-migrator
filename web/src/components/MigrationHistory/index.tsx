@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button } from '@primer/react';
+import { ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { HistoryIcon, DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
+import { HistoryIcon, DownloadIcon } from '@primer/octicons-react';
+import { BorderedButton } from '../common/buttons';
 import { api } from '../../services/api';
 import type { MigrationHistoryEntry } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -20,12 +21,10 @@ export function MigrationHistory() {
   
   const searchTerm = searchParams.get('search') || '';
   const [exporting, setExporting] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
 
   const handleExport = async (format: 'csv' | 'json') => {
-    setShowExportMenu(false);
     setExporting(true);
     try {
       const blob = await api.exportMigrationHistory(format);
@@ -77,53 +76,26 @@ export function MigrationHistory() {
         </div>
         <div className="flex items-center gap-4">
           {/* Export Button with Dropdown */}
-          <div className="relative">
-            <Button
-              variant="invisible"
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              disabled={exporting || migrations.length === 0}
-              leadingVisual={DownloadIcon}
-              trailingVisual={ChevronDownIcon}
-              className="btn-bordered-invisible"
-            >
-              Export
-            </Button>
-            {showExportMenu && (
-              <>
-                {/* Backdrop to close menu when clicking outside */}
-                <div 
-                  className="fixed inset-0 z-10" 
-                  onClick={() => setShowExportMenu(false)}
-                />
-                {/* Dropdown menu */}
-                <div 
-                  className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20"
-                  style={{
-                    backgroundColor: 'var(--bgColor-default)',
-                    border: '1px solid var(--borderColor-default)',
-                    boxShadow: 'var(--shadow-floating-large)'
-                  }}
-                >
-                  <div className="py-1">
-                    <button
-                      onClick={() => handleExport('csv')}
-                      className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                      style={{ color: 'var(--fgColor-default)' }}
-                    >
-                      Export as CSV
-                    </button>
-                    <button
-                      onClick={() => handleExport('json')}
-                      className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                      style={{ color: 'var(--fgColor-default)' }}
-                    >
-                      Export as JSON
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <ActionMenu>
+            <ActionMenu.Anchor>
+              <BorderedButton
+                disabled={exporting || migrations.length === 0}
+                leadingVisual={DownloadIcon}
+              >
+                {exporting ? 'Exporting...' : 'Export'}
+              </BorderedButton>
+            </ActionMenu.Anchor>
+            <ActionMenu.Overlay>
+              <ActionList>
+                <ActionList.Item onSelect={() => handleExport('csv')}>
+                  Export as CSV
+                </ActionList.Item>
+                <ActionList.Item onSelect={() => handleExport('json')}>
+                  Export as JSON
+                </ActionList.Item>
+              </ActionList>
+            </ActionMenu.Overlay>
+          </ActionMenu>
         </div>
       </div>
 

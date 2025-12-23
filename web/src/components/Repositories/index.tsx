@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, Dialog, FormControl, TextInput, Flash } from '@primer/react';
+import { Dialog, FormControl, TextInput, Flash, ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { RepoIcon, DownloadIcon, ChevronDownIcon, SquareIcon, XIcon } from '@primer/octicons-react';
+import { RepoIcon, DownloadIcon, SquareIcon, XIcon } from '@primer/octicons-react';
+import { Button, BorderedButton } from '../common/buttons';
 import type { RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -26,7 +27,6 @@ export function Repositories() {
   
   const [currentPage, setCurrentPage] = useState(1);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<Set<number>>(new Set());
   const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
@@ -283,71 +283,38 @@ export function Repositories() {
                 )}
                 
                 {/* Discover Repos Button */}
-                <Button
-                  variant="invisible"
+                <BorderedButton
                   onClick={() => setShowDiscoverDialog(true)}
                   leadingVisual={RepoIcon}
                   disabled={discoverRepositories.isPending}
-                  className="btn-bordered-invisible"
                 >
                   {discoverRepositories.isPending ? 'Discovering...' : 'Discover Repos'}
-                </Button>
+                </BorderedButton>
 
                 {/* Export Button with Dropdown */}
-                <div className="relative">
-                  <Button
-                    variant="invisible"
-                    onClick={() => setShowExportMenu(!showExportMenu)}
-                    disabled={repositories.length === 0}
-                    leadingVisual={DownloadIcon}
-                    trailingVisual={ChevronDownIcon}
-                    className="btn-bordered-invisible"
-                  >
-                    Export
-                  </Button>
-                  {showExportMenu && (
-                    <>
-                      {/* Backdrop to close menu when clicking outside */}
-                      <div 
-                        className="fixed inset-0 z-10" 
-                        onClick={() => setShowExportMenu(false)}
-                      />
-                      {/* Dropdown menu */}
-                      <div 
-                        className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20"
-                        style={{
-                          backgroundColor: 'var(--bgColor-default)',
-                          border: '1px solid var(--borderColor-default)',
-                          boxShadow: 'var(--shadow-floating-large)'
-                        }}
-                      >
-                        <div className="py-1">
-                          <button
-                            onClick={() => handleExport('csv')}
-                            className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                            style={{ color: 'var(--fgColor-default)' }}
-                          >
-                            Export as CSV
-                          </button>
-                          <button
-                            onClick={() => handleExport('excel')}
-                            className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                            style={{ color: 'var(--fgColor-default)' }}
-                          >
-                            Export as Excel
-                          </button>
-                          <button
-                            onClick={() => handleExport('json')}
-                            className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                            style={{ color: 'var(--fgColor-default)' }}
-                          >
-                            Export as JSON
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <ActionMenu>
+                  <ActionMenu.Anchor>
+                    <BorderedButton
+                      disabled={repositories.length === 0}
+                      leadingVisual={DownloadIcon}
+                    >
+                      Export
+                    </BorderedButton>
+                  </ActionMenu.Anchor>
+                  <ActionMenu.Overlay>
+                    <ActionList>
+                      <ActionList.Item onSelect={() => handleExport('csv')}>
+                        Export as CSV
+                      </ActionList.Item>
+                      <ActionList.Item onSelect={() => handleExport('excel')}>
+                        Export as Excel
+                      </ActionList.Item>
+                      <ActionList.Item onSelect={() => handleExport('json')}>
+                        Export as JSON
+                      </ActionList.Item>
+                    </ActionList>
+                  </ActionMenu.Overlay>
+                </ActionMenu>
               </div>
             </div>
           </div>
