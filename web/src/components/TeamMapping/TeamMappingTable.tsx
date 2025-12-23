@@ -6,7 +6,6 @@ import {
   ActionList,
   Label,
   Spinner,
-  Dialog,
   FormControl,
 } from '@primer/react';
 import { Button, BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
@@ -45,6 +44,8 @@ import { useDialogState } from '../../hooks/useDialogState';
 import { TeamMapping, TeamMappingStatus } from '../../types';
 import { api } from '../../services/api';
 import { Pagination } from '../common/Pagination';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { FormDialog } from '../common/FormDialog';
 import { TeamDetailPanel } from './TeamDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
@@ -930,196 +931,148 @@ export function TeamMappingTable() {
       )}
 
       {/* Execute Migration Dialog */}
-      {executeDialog.isOpen && (
-        <Dialog
-          title="Migrate Teams"
-          onClose={executeDialog.close}
-        >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              This will create teams in the destination organization and apply repository permissions for all mapped teams.
-            </p>
+      <FormDialog
+        isOpen={executeDialog.isOpen}
+        title="Migrate Teams"
+        submitLabel={executeMigration.isPending ? 'Starting...' : dryRun ? 'Start Dry Run' : 'Start Migration'}
+        onSubmit={handleExecute}
+        onCancel={executeDialog.close}
+        isLoading={executeMigration.isPending}
+      >
+        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          This will create teams in the destination organization and apply repository permissions for all mapped teams.
+        </p>
 
-            <Flash variant="warning" className="mb-4">
-              <div className="flex items-start gap-2">
-                <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
-                <div>
-                  <strong>EMU/IdP Notice:</strong> Teams are created <strong>without members</strong>. 
-                  If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM). 
-                  Repository permissions will be applied to teams.
-                </div>
-              </div>
-            </Flash>
-
-            <div className="mb-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={dryRun}
-                  onChange={(e) => setDryRun(e.target.checked)}
-                />
-                <span>Dry run (preview changes without applying)</span>
-              </label>
+        <Flash variant="warning" className="mb-4">
+          <div className="flex items-start gap-2">
+            <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <strong>EMU/IdP Notice:</strong> Teams are created <strong>without members</strong>. 
+              If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM). 
+              Repository permissions will be applied to teams.
             </div>
+          </div>
+        </Flash>
 
-            {filters.sourceOrg && (
-              <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-                Only teams from <strong>{filters.sourceOrg}</strong> will be processed.
-              </p>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={executeDialog.close}>Cancel</Button>
-            <Button
-              variant="primary"
-              onClick={handleExecute}
-              disabled={executeMigration.isPending}
-            >
-              {executeMigration.isPending ? (
-                <>
-                  <Spinner size="small" /> Starting...
-                </>
-              ) : dryRun ? (
-                'Start Dry Run'
-              ) : (
-                'Start Migration'
-              )}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+        <div className="mb-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+            />
+            <span>Dry run (preview changes without applying)</span>
+          </label>
+        </div>
+
+        {filters.sourceOrg && (
+          <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+            Only teams from <strong>{filters.sourceOrg}</strong> will be processed.
+          </p>
+        )}
+      </FormDialog>
 
       {/* Single Team Migration Dialog */}
-      {singleTeamDialog.isOpen && singleTeamDialog.data && (
-        <Dialog
+      {singleTeamDialog.data && (
+        <ConfirmationDialog
+          isOpen={singleTeamDialog.isOpen}
           title="Migrate Team"
-          onClose={singleTeamDialog.close}
-        >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              This will create the team <strong style={{ color: 'var(--fgColor-default)' }}>{singleTeamDialog.data.org}/{singleTeamDialog.data.slug}</strong> in the destination organization and apply repository permissions.
-            </p>
+          message={
+            <>
+              <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+                This will create the team <strong style={{ color: 'var(--fgColor-default)' }}>{singleTeamDialog.data.org}/{singleTeamDialog.data.slug}</strong> in the destination organization and apply repository permissions.
+              </p>
 
-            <Flash variant="warning">
-              <div className="flex items-start gap-2">
-                <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
-                <div>
-                  <strong>EMU/IdP Notice:</strong> The team will be created <strong>without members</strong>. 
-                  If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM).
+              <Flash variant="warning">
+                <div className="flex items-start gap-2">
+                  <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong>EMU/IdP Notice:</strong> The team will be created <strong>without members</strong>. 
+                    If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM).
+                  </div>
                 </div>
-              </div>
-            </Flash>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={singleTeamDialog.close}>Cancel</Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmSingleTeamMigration}
-              disabled={executeMigration.isPending}
-            >
-              {executeMigration.isPending ? (
-                <>
-                  <Spinner size="small" /> Migrating...
-                </>
-              ) : (
-                'Migrate Team'
-              )}
-            </Button>
-          </div>
-        </Dialog>
+              </Flash>
+            </>
+          }
+          confirmLabel="Migrate Team"
+          onConfirm={handleConfirmSingleTeamMigration}
+          onCancel={singleTeamDialog.close}
+          isLoading={executeMigration.isPending}
+        />
       )}
 
       {/* Discover Teams Dialog */}
-      {discoverDialog.isOpen && (
-        <Dialog
-          title="Discover Teams"
-          onClose={() => {
-            discoverDialog.close();
-            setDiscoverOrg('');
-          }}
-        >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              Discover all teams from a GitHub organization. This will fetch teams, their members, and create team mappings.
-            </p>
-            <FormControl>
-              <FormControl.Label>Source Organization</FormControl.Label>
-              <TextInput
-                value={discoverOrg}
-                onChange={(e) => setDiscoverOrg(e.target.value)}
-                placeholder="e.g., my-org"
-                block
-              />
-              <FormControl.Caption>
-                Enter the source GitHub organization name
-              </FormControl.Caption>
-            </FormControl>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => {
+      <FormDialog
+        isOpen={discoverDialog.isOpen}
+        title="Discover Teams"
+        submitLabel={discoverTeams.isPending ? 'Discovering...' : 'Discover'}
+        onSubmit={() => {
+          if (!discoverOrg.trim()) return;
+          discoverTeams.mutate(discoverOrg.trim(), {
+            onSuccess: (data) => {
+              setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
               discoverDialog.close();
               setDiscoverOrg('');
-            }}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (!discoverOrg.trim()) return;
-                discoverTeams.mutate(discoverOrg.trim(), {
-                  onSuccess: (data) => {
-                    setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
-                    discoverDialog.close();
-                    setDiscoverOrg('');
-                  },
-                  onError: (error) => {
-                    setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
-                  },
-                });
-              }}
-              disabled={discoverTeams.isPending || !discoverOrg.trim()}
-            >
-              {discoverTeams.isPending ? 'Discovering...' : 'Discover'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+            },
+            onError: (error) => {
+              setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
+            },
+          });
+        }}
+        onCancel={() => {
+          discoverDialog.close();
+          setDiscoverOrg('');
+        }}
+        isLoading={discoverTeams.isPending}
+        isSubmitDisabled={!discoverOrg.trim()}
+      >
+        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          Discover all teams from a GitHub organization. This will fetch teams, their members, and create team mappings.
+        </p>
+        <FormControl>
+          <FormControl.Label>Source Organization</FormControl.Label>
+          <TextInput
+            value={discoverOrg}
+            onChange={(e) => setDiscoverOrg(e.target.value)}
+            placeholder="e.g., my-org"
+            block
+          />
+          <FormControl.Caption>
+            Enter the source GitHub organization name
+          </FormControl.Caption>
+        </FormControl>
+      </FormDialog>
 
       {/* Delete Mapping Dialog */}
-      {deleteDialog.isOpen && deleteDialog.data && (
-        <Dialog
+      {deleteDialog.data && (
+        <ConfirmationDialog
+          isOpen={deleteDialog.isOpen}
           title="Delete Mapping"
-          onClose={deleteDialog.close}
-        >
-          <div className="p-4">
-            <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
-              Are you sure you want to delete the mapping for{' '}
-              <strong>{deleteDialog.data.org}/{deleteDialog.data.slug}</strong>?
-            </p>
-            <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-              This will remove the destination mapping. The source team data will be preserved.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={deleteDialog.close}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmDelete}
-              disabled={deleteMapping.isPending}
-            >
-              {deleteMapping.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
-        </Dialog>
+          message={
+            <>
+              <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
+                Are you sure you want to delete the mapping for{' '}
+                <strong>{deleteDialog.data.org}/{deleteDialog.data.slug}</strong>?
+              </p>
+              <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                This will remove the destination mapping. The source team data will be preserved.
+              </p>
+            </>
+          }
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={handleConfirmDelete}
+          onCancel={deleteDialog.close}
+          isLoading={deleteMapping.isPending}
+        />
       )}
 
       {/* Reset Migration Status Dialog */}
-      {resetDialog.isOpen && (
-        <Dialog
-          title="Reset Migration Status"
-          onClose={resetDialog.close}
-        >
-          <div className="p-4">
+      <ConfirmationDialog
+        isOpen={resetDialog.isOpen}
+        title="Reset Migration Status"
+        message={
+          <>
             <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
               Are you sure you want to reset all team migration statuses to pending?
             </p>
@@ -1131,19 +1084,14 @@ export function TeamMappingTable() {
                 <strong>Note:</strong> Only teams from <strong>{filters.sourceOrg}</strong> will be reset.
               </p>
             )}
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={resetDialog.close}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmReset}
-              disabled={resetMigration.isPending}
-            >
-              {resetMigration.isPending ? 'Resetting...' : 'Reset Status'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+          </>
+        }
+        confirmLabel="Reset Status"
+        variant="danger"
+        onConfirm={handleConfirmReset}
+        onCancel={resetDialog.close}
+        isLoading={resetMigration.isPending}
+      />
     </div>
   );
 }

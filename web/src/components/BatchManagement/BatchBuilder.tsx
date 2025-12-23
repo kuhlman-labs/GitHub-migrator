@@ -8,6 +8,7 @@ import { ActiveFilterPills } from './ActiveFilterPills';
 import { RepositoryListItem } from './RepositoryListItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pagination } from '../common/Pagination';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { formatDateForInput } from '../../utils/format';
 import { ImportDialog } from './ImportDialog';
 import { ImportPreview, type ValidationGroup } from './ImportPreview';
@@ -842,72 +843,18 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       </div>
 
       {/* Confirmation Dialog */}
-      {confirmDialog.isOpen && (
-        <div 
-          className="fixed inset-0 flex items-center justify-center"
-          style={{ zIndex: 99999 }}
-        >
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0" 
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
-            onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-          />
-          
-          {/* Modal Content */}
-          <div 
-            className="relative rounded-lg shadow-xl max-w-lg w-full mx-4"
-            style={{ 
-              backgroundColor: 'var(--bgColor-default)',
-              border: '1px solid var(--borderColor-default)'
-            }}
-          >
-            {/* Header */}
-            <div 
-              className="px-4 py-3 border-b"
-              style={{ borderColor: 'var(--borderColor-default)' }}
-            >
-              <h2 
-                className="text-lg font-semibold"
-                style={{ color: 'var(--fgColor-default)' }}
-              >
-                {confirmDialog.title}
-              </h2>
-            </div>
-            
-            {/* Body */}
-            <div className="px-4 py-4">
-              <p style={{ color: 'var(--fgColor-default)' }}>
-                {confirmDialog.message}
-              </p>
-            </div>
-            
-            {/* Footer */}
-            <div 
-              className="px-4 py-3 border-t flex gap-2 justify-end"
-              style={{ 
-                borderColor: 'var(--borderColor-default)',
-                backgroundColor: 'var(--bgColor-muted)'
-              }}
-            >
-              <Button 
-                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-                  confirmDialog.onConfirm();
-                }}
-              >
-                OK
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmationDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel="OK"
+        variant="danger"
+        onConfirm={() => {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          confirmDialog.onConfirm();
+        }}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
 
       {/* Import Dialog */}
       {showImportDialog && (

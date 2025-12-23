@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Dialog, FormControl, TextInput, Flash, ActionMenu, ActionList } from '@primer/react';
+import { FormControl, TextInput, Flash, ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { RepoIcon, DownloadIcon, SquareIcon, XIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { Button, BorderedButton, PrimaryButton } from '../common/buttons';
+import { FormDialog } from '../common/FormDialog';
 import type { RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -374,70 +375,55 @@ export function Repositories() {
       )}
 
       {/* Discover Repos Dialog */}
-      {showDiscoverDialog && (
-        <Dialog
-          title="Discover Repositories"
-          onClose={() => {
-            setShowDiscoverDialog(false);
-            setDiscoverOrg('');
-            setDiscoverMessage(null);
-          }}
-        >
-          <div className="p-4">
-            {discoverMessage && (
-              <Flash variant={discoverMessage.type === 'success' ? 'success' : 'danger'} className="mb-4">
-                {discoverMessage.text}
-              </Flash>
-            )}
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              Discover all repositories from a GitHub organization. This will start repository discovery and profiling.
-            </p>
-            <FormControl>
-              <FormControl.Label>Source Organization</FormControl.Label>
-              <TextInput
-                value={discoverOrg}
-                onChange={(e) => setDiscoverOrg(e.target.value)}
-                placeholder="e.g., my-org"
-                block
-              />
-              <FormControl.Caption>
-                Enter the GitHub organization to discover repositories from
-              </FormControl.Caption>
-            </FormControl>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => {
-              setShowDiscoverDialog(false);
+      <FormDialog
+        isOpen={showDiscoverDialog}
+        title="Discover Repositories"
+        submitLabel={discoverRepositories.isPending ? 'Discovering...' : 'Discover'}
+        onSubmit={() => {
+          if (!discoverOrg.trim()) return;
+          discoverRepositories.mutate(discoverOrg.trim(), {
+            onSuccess: (data) => {
+              setDiscoverMessage({ type: 'success', text: data.message || 'Discovery started!' });
               setDiscoverOrg('');
-              setDiscoverMessage(null);
-            }}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (!discoverOrg.trim()) return;
-                discoverRepositories.mutate(discoverOrg.trim(), {
-                  onSuccess: (data) => {
-                    setDiscoverMessage({ type: 'success', text: data.message || 'Discovery started!' });
-                    setDiscoverOrg('');
-                    setTimeout(() => {
-                      setShowDiscoverDialog(false);
-                      setDiscoverMessage(null);
-                    }, 2000);
-                  },
-                  onError: (error) => {
-                    setDiscoverMessage({ type: 'error', text: error instanceof Error ? error.message : 'Discovery failed' });
-                  },
-                });
-              }}
-              disabled={discoverRepositories.isPending || !discoverOrg.trim()}
-            >
-              {discoverRepositories.isPending ? 'Discovering...' : 'Discover'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+              setTimeout(() => {
+                setShowDiscoverDialog(false);
+                setDiscoverMessage(null);
+              }, 2000);
+            },
+            onError: (error) => {
+              setDiscoverMessage({ type: 'error', text: error instanceof Error ? error.message : 'Discovery failed' });
+            },
+          });
+        }}
+        onCancel={() => {
+          setShowDiscoverDialog(false);
+          setDiscoverOrg('');
+          setDiscoverMessage(null);
+        }}
+        isLoading={discoverRepositories.isPending}
+        isSubmitDisabled={!discoverOrg.trim()}
+      >
+        {discoverMessage && (
+          <Flash variant={discoverMessage.type === 'success' ? 'success' : 'danger'} className="mb-4">
+            {discoverMessage.text}
+          </Flash>
+        )}
+        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          Discover all repositories from a GitHub organization. This will start repository discovery and profiling.
+        </p>
+        <FormControl>
+          <FormControl.Label>Source Organization</FormControl.Label>
+          <TextInput
+            value={discoverOrg}
+            onChange={(e) => setDiscoverOrg(e.target.value)}
+            placeholder="e.g., my-org"
+            block
+          />
+          <FormControl.Caption>
+            Enter the GitHub organization to discover repositories from
+          </FormControl.Caption>
+        </FormControl>
+      </FormDialog>
     </div>
   );
 }

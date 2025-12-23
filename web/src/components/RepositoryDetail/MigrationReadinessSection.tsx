@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@primer/octicons-react';
-import { Button, Dialog } from '@primer/react';
+import { Button } from '@primer/react';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { Repository } from '../../types';
 import { api } from '../../services/api';
 import { formatBytes } from '../../utils/format';
@@ -832,36 +833,14 @@ export function MigrationReadinessSection({
       </div>
 
       {/* Mark as Remediated Confirmation Dialog */}
-      {showRemediateDialog && (
-        <Dialog
-          returnFocusRef={remediateButtonRef as React.RefObject<HTMLElement>}
-          onClose={() => setShowRemediateDialog(false)}
-          aria-labelledby="remediate-dialog-header"
-        >
-          <Dialog.Header id="remediate-dialog-header">
-            Mark as Remediated
-          </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
-              Have you fixed all blocking issues in the source repository? This will trigger a full re-validation.
-            </p>
-          </div>
-          <div style={{ 
-            padding: '12px 16px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px'
-          }}>
-            <Button onClick={() => setShowRemediateDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={confirmMarkRemediated}>
-              Mark as Remediated
-            </Button>
-          </div>
-        </Dialog>
-      )}
+      <ConfirmationDialog
+        isOpen={showRemediateDialog}
+        title="Mark as Remediated"
+        message="Have you fixed all blocking issues in the source repository? This will trigger a full re-validation."
+        confirmLabel="Mark as Remediated"
+        onConfirm={confirmMarkRemediated}
+        onCancel={() => setShowRemediateDialog(false)}
+      />
     </div>
   );
 }

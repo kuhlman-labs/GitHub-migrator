@@ -6,7 +6,6 @@ import {
   ActionList,
   Label,
   Spinner,
-  Dialog,
   FormControl,
 } from '@primer/react';
 import { Button, BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
@@ -41,6 +40,8 @@ import { useDialogState } from '../../hooks/useDialogState';
 import { UserMapping, UserMappingStatus, ReclaimStatus } from '../../types';
 import { api } from '../../services/api';
 import { Pagination } from '../common/Pagination';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { FormDialog } from '../common/FormDialog';
 import { FallbackAvatar } from '../common/FallbackAvatar';
 import { UserDetailPanel } from './UserDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
@@ -751,149 +752,125 @@ export function UserMappingTable() {
       )}
 
       {/* Discover Org Members Dialog */}
-      {discoverDialog.isOpen && (
-        <Dialog
-          title="Discover Organization Members"
-          onClose={() => {
-            discoverDialog.close();
-            setDiscoverOrg('');
-          }}
-        >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              Discover all members from a GitHub organization. This will fetch org members and create user mappings for mannequin matching.
-            </p>
-            <FormControl>
-              <FormControl.Label>Source Organization</FormControl.Label>
-              <TextInput
-                value={discoverOrg}
-                onChange={(e) => setDiscoverOrg(e.target.value)}
-                placeholder="e.g., my-org"
-                block
-              />
-              <FormControl.Caption>
-                Enter the source GitHub organization name
-              </FormControl.Caption>
-            </FormControl>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => {
+      <FormDialog
+        isOpen={discoverDialog.isOpen}
+        title="Discover Organization Members"
+        submitLabel={discoverOrgMembers.isPending ? 'Discovering...' : 'Discover'}
+        onSubmit={() => {
+          if (!discoverOrg.trim()) return;
+          discoverOrgMembers.mutate(discoverOrg.trim(), {
+            onSuccess: (data) => {
+              setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
               discoverDialog.close();
               setDiscoverOrg('');
-            }}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (!discoverOrg.trim()) return;
-                discoverOrgMembers.mutate(discoverOrg.trim(), {
-                  onSuccess: (data) => {
-                    setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
-                    discoverDialog.close();
-                    setDiscoverOrg('');
-                  },
-                  onError: (error) => {
-                    setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
-                  },
-                });
-              }}
-              disabled={discoverOrgMembers.isPending || !discoverOrg.trim()}
-            >
-              {discoverOrgMembers.isPending ? 'Discovering...' : 'Discover'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+            },
+            onError: (error) => {
+              setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
+            },
+          });
+        }}
+        onCancel={() => {
+          discoverDialog.close();
+          setDiscoverOrg('');
+        }}
+        isLoading={discoverOrgMembers.isPending}
+        isSubmitDisabled={!discoverOrg.trim()}
+      >
+        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          Discover all members from a GitHub organization. This will fetch org members and create user mappings for mannequin matching.
+        </p>
+        <FormControl>
+          <FormControl.Label>Source Organization</FormControl.Label>
+          <TextInput
+            value={discoverOrg}
+            onChange={(e) => setDiscoverOrg(e.target.value)}
+            placeholder="e.g., my-org"
+            block
+          />
+          <FormControl.Caption>
+            Enter the source GitHub organization name
+          </FormControl.Caption>
+        </FormControl>
+      </FormDialog>
 
       {/* Destination Org Dialog */}
-      {destOrgDialog.isOpen && destOrgDialog.data && (
-        <Dialog
+      {destOrgDialog.data && (
+        <FormDialog
+          isOpen={destOrgDialog.isOpen}
           title={
             destOrgDialog.data.action === 'fetch' ? 'Fetch Mannequins' :
             destOrgDialog.data.action === 'invite' ? 'Send Attribution Invitation' :
             'Send Attribution Invitations'
           }
-          onClose={cancelDestOrgDialog}
+          submitLabel={
+            destOrgDialog.data.action === 'fetch' ? 'Fetch' :
+            destOrgDialog.data.action === 'invite' ? 'Send Invitation' :
+            'Send All'
+          }
+          onSubmit={handleConfirmDestOrg}
+          onCancel={cancelDestOrgDialog}
+          isSubmitDisabled={!destinationOrg}
         >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              {destOrgDialog.data.action === 'fetch' && 
-                'Enter the destination GitHub organization to fetch mannequins from. Mannequins will be matched to destination org members using login, email, and name.'}
-              {destOrgDialog.data.action === 'invite' && 
-                `Send an attribution invitation for ${destOrgDialog.data.sourceLogin} to reclaim their mannequin.`}
-              {destOrgDialog.data.action === 'bulk_invite' && 
-                `Send attribution invitations to all ${invitableCount} mapped users with mannequins.`}
-            </p>
-            <FormControl>
-              <FormControl.Label>Destination Organization</FormControl.Label>
+          <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+            {destOrgDialog.data.action === 'fetch' && 
+              'Enter the destination GitHub organization to fetch mannequins from. Mannequins will be matched to destination org members using login, email, and name.'}
+            {destOrgDialog.data.action === 'invite' && 
+              `Send an attribution invitation for ${destOrgDialog.data.sourceLogin} to reclaim their mannequin.`}
+            {destOrgDialog.data.action === 'bulk_invite' && 
+              `Send attribution invitations to all ${invitableCount} mapped users with mannequins.`}
+          </p>
+          <FormControl>
+            <FormControl.Label>Destination Organization</FormControl.Label>
+            <TextInput
+              value={destinationOrg}
+              onChange={(e) => setDestinationOrg(e.target.value)}
+              placeholder="e.g., my-org"
+              block
+            />
+            <FormControl.Caption>
+              The GitHub organization where migrations were imported
+            </FormControl.Caption>
+          </FormControl>
+          
+          {/* EMU Shortcode - only show for fetch action */}
+          {destOrgDialog.data.action === 'fetch' && (
+            <FormControl className="mt-4">
+              <FormControl.Label>EMU Shortcode (Optional)</FormControl.Label>
               <TextInput
-                value={destinationOrg}
-                onChange={(e) => setDestinationOrg(e.target.value)}
-                placeholder="e.g., my-org"
+                value={emuShortcode}
+                onChange={(e) => setEmuShortcode(e.target.value)}
+                placeholder="e.g., fabrikam"
                 block
               />
               <FormControl.Caption>
-                The GitHub organization where migrations were imported
+                For EMU migrations where usernames differ. If source is "jsmith" and destination is "jsmith_fabrikam", enter "fabrikam".
               </FormControl.Caption>
             </FormControl>
-            
-            {/* EMU Shortcode - only show for fetch action */}
-            {destOrgDialog.data.action === 'fetch' && (
-              <FormControl className="mt-4">
-                <FormControl.Label>EMU Shortcode (Optional)</FormControl.Label>
-                <TextInput
-                  value={emuShortcode}
-                  onChange={(e) => setEmuShortcode(e.target.value)}
-                  placeholder="e.g., fabrikam"
-                  block
-                />
-                <FormControl.Caption>
-                  For EMU migrations where usernames differ. If source is "jsmith" and destination is "jsmith_fabrikam", enter "fabrikam".
-                </FormControl.Caption>
-              </FormControl>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={cancelDestOrgDialog}>Cancel</Button>
-            <Button 
-              variant="primary" 
-              onClick={handleConfirmDestOrg}
-              disabled={!destinationOrg}
-            >
-              {destOrgDialog.data.action === 'fetch' && 'Fetch'}
-              {destOrgDialog.data.action === 'invite' && 'Send Invitation'}
-              {destOrgDialog.data.action === 'bulk_invite' && 'Send All'}
-            </Button>
-          </div>
-        </Dialog>
+          )}
+        </FormDialog>
       )}
 
       {/* Delete Mapping Dialog */}
-      {deleteDialog.isOpen && deleteDialog.data && (
-        <Dialog
+      {deleteDialog.data && (
+        <ConfirmationDialog
+          isOpen={deleteDialog.isOpen}
           title="Delete Mapping"
-          onClose={deleteDialog.close}
-        >
-          <div className="p-4">
-            <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
-              Are you sure you want to delete the mapping for <strong>{deleteDialog.data}</strong>?
-            </p>
-            <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-              This will remove the destination mapping. The source user data will be preserved.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={deleteDialog.close}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmDelete}
-              disabled={deleteMapping.isPending}
-            >
-              {deleteMapping.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
-        </Dialog>
+          message={
+            <>
+              <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
+                Are you sure you want to delete the mapping for <strong>{deleteDialog.data}</strong>?
+              </p>
+              <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                This will remove the destination mapping. The source user data will be preserved.
+              </p>
+            </>
+          }
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={handleConfirmDelete}
+          onCancel={deleteDialog.close}
+          isLoading={deleteMapping.isPending}
+        />
       )}
 
       {/* User Detail Panel */}
