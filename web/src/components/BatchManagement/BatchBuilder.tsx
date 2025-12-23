@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Button } from '@primer/react';
-import { UploadIcon } from '@primer/octicons-react';
+import { UploadIcon, PlusIcon } from '@primer/octicons-react';
+import { BorderedButton, PrimaryButton } from '../common/buttons';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
@@ -579,11 +579,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
       {/* Middle Panel - Available Repositories */}
       <div 
-        className={`flex-1 min-w-0 grid grid-rows-[auto_1fr_auto] border-r transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}
+        className={`flex-1 min-w-0 min-h-0 grid grid-rows-[auto_1fr_auto] border-r transition-all duration-300 h-full overflow-hidden ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}
         style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-default)' }}
       >
         <div 
-          className="p-4 border-b row-start-1"
+          className="p-4 border-b row-start-1 flex-shrink-0"
           style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }}
         >
           <div className="flex items-center justify-between mb-3">
@@ -594,46 +594,50 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
               </p>
             </div>
               <div className="flex items-center gap-2">
-              <button
+              {/* Import Button - BorderedButton style */}
+              <BorderedButton
                 onClick={handleImportClick}
                 disabled={loading}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                style={{
-                  borderColor: 'var(--borderColor-default)',
-                  color: 'var(--fgColor-default)',
-                  backgroundColor: 'var(--control-bgColor-rest)'
-                }}
+                leadingVisual={UploadIcon}
+                size="small"
                 title="Import repositories from file"
               >
-                <UploadIcon size={16} />
-                Import from File
-              </button>
+                Import
+              </BorderedButton>
+              
+              {/* Add Matching Button - Blue bordered style */}
+              {totalAvailable > 0 && availableReposToShow.length > 0 && (
+                <BorderedButton
+                  onClick={handleAddAll}
+                  disabled={availableLoading}
+                  leadingVisual={PlusIcon}
+                  size="small"
+                  title="Add all repositories matching current filters to the batch"
+                  className="btn-bordered-accent"
+                >
+                  Add Matching ({totalAvailable})
+                </BorderedButton>
+              )}
+              
+              {/* Selected count badge - positioned next to Add Selected */}
               {selectedRepoIds.size > 0 && (
                 <span 
-                  className="px-3 py-1.5 rounded-full text-sm font-semibold"
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold"
                   style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
                 >
                   {selectedRepoIds.size} selected
                 </span>
               )}
-              {totalAvailable > 0 && availableReposToShow.length > 0 && (
-                <button
-                  onClick={handleAddAll}
-                  disabled={availableLoading}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{
-                    borderColor: 'var(--borderColor-default)',
-                    color: 'var(--fgColor-accent)',
-                    backgroundColor: 'var(--control-bgColor-rest)'
-                  }}
-                  title="Add all repositories matching current filters"
-                >
-                  <svg className="w-4 h-4 inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Add All ({totalAvailable})
-                </button>
-            )}
+              
+              {/* Add Selected Button - Primary style */}
+              <PrimaryButton
+                onClick={handleAddSelected}
+                disabled={selectedRepoIds.size === 0 || loading}
+                size="small"
+                title="Add only the selected repositories to the batch"
+              >
+                Add Selected
+              </PrimaryButton>
             </div>
           </div>
 
@@ -771,30 +775,17 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           )}
         </div>
 
-        {/* Bottom Section - Pagination & Add Button */}
+        {/* Bottom Section - Pagination */}
         <div 
-          className="shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] row-start-3"
-          style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)', zIndex: 1 }}
+          className="row-start-3 flex-shrink-0"
+          style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)' }}
         >
-          {/* Pagination */}
           <Pagination
             currentPage={currentPage}
             totalItems={totalAvailable}
             pageSize={pageSize}
             onPageChange={handlePageChange}
           />
-
-          {/* Add Selected Button - Always Visible */}
-          <div className="p-4">
-            <Button
-              onClick={handleAddSelected}
-              disabled={selectedRepoIds.size === 0 || loading}
-              variant="primary"
-              block
-            >
-              Add Selected ({selectedRepoIds.size})
-            </Button>
-          </div>
         </div>
       </div>
 

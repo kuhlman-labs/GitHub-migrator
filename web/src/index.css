@@ -577,6 +577,24 @@ input[type="checkbox"]:not(.custom-checkbox) {
   background-color: var(--bgColor-muted, #f6f8fa) !important;
 }
 
+/* Bordered Button Accent - Blue bordered variant for emphasis */
+.btn-bordered.btn-bordered-accent {
+  border-color: var(--fgColor-accent, #0969da) !important;
+  color: var(--fgColor-accent, #0969da) !important;
+}
+
+.btn-bordered.btn-bordered-accent svg,
+.btn-bordered.btn-bordered-accent [data-component="leadingVisual"],
+.btn-bordered.btn-bordered-accent [data-component="trailingVisual"],
+.btn-bordered.btn-bordered-accent [data-component="trailingAction"] {
+  color: var(--fgColor-accent, #0969da) !important;
+  fill: var(--fgColor-accent, #0969da) !important;
+}
+
+.btn-bordered.btn-bordered-accent:hover:not(:disabled) {
+  background-color: var(--accent-subtle, rgba(9, 105, 218, 0.1)) !important;
+}
+
 /* Secondary Button - Default secondary action styling */
 .btn-secondary {
   background-color: var(--control-bgColor-rest, #f6f8fa) !important;
@@ -669,6 +687,29 @@ input[type="checkbox"]:not(.custom-checkbox) {
 .dark .btn-bordered [data-component="trailingAction"] {
   color: var(--fgColor-muted, #8b949e) !important;
   fill: var(--fgColor-muted, #8b949e) !important;
+}
+
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent,
+.dark .btn-bordered.btn-bordered-accent {
+  border-color: var(--fgColor-accent, #58a6ff) !important;
+  color: var(--fgColor-accent, #58a6ff) !important;
+}
+
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent svg,
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent [data-component="leadingVisual"],
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent [data-component="trailingVisual"],
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent [data-component="trailingAction"],
+.dark .btn-bordered.btn-bordered-accent svg,
+.dark .btn-bordered.btn-bordered-accent [data-component="leadingVisual"],
+.dark .btn-bordered.btn-bordered-accent [data-component="trailingVisual"],
+.dark .btn-bordered.btn-bordered-accent [data-component="trailingAction"] {
+  color: var(--fgColor-accent, #58a6ff) !important;
+  fill: var(--fgColor-accent, #58a6ff) !important;
+}
+
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent:hover:not(:disabled),
+.dark .btn-bordered.btn-bordered-accent:hover:not(:disabled) {
+  background-color: var(--accent-subtle, rgba(56, 139, 253, 0.15)) !important;
 }
 
 [data-color-mode="dark"] .btn-secondary,

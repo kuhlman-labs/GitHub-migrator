@@ -1,6 +1,6 @@
-import { ChevronDownIcon } from '@primer/octicons-react';
+import { ChevronDownIcon, RocketIcon } from '@primer/octicons-react';
 import { formatDateForInput } from '../../utils/format';
-import { Button, SuccessButton } from '../common/buttons';
+import { Button, SuccessButton, BorderedButton, PrimaryButton } from '../common/buttons';
 
 interface MigrationSettings {
   destinationOrg: string;
@@ -270,12 +270,12 @@ export function BatchMetadataForm({
 
       {/* Action Buttons */}
       <div className="p-3 flex gap-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
-        <Button
+        <BorderedButton
           onClick={onClose}
           disabled={loading}
         >
           Cancel
-        </Button>
+        </BorderedButton>
         {isEditMode ? (
           <SuccessButton
             onClick={() => onSave(false)}
@@ -286,18 +286,18 @@ export function BatchMetadataForm({
           </SuccessButton>
         ) : (
           <>
-            <Button
+            <PrimaryButton
               onClick={() => onSave(false)}
               disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
-              variant="primary"
               className="flex-1"
             >
               {loading ? 'Saving...' : 'Create Batch'}
-            </Button>
+            </PrimaryButton>
             <SuccessButton
               onClick={() => onSave(true)}
               disabled={loading || !batchName.trim() || currentBatchReposCount === 0}
               className="flex-1"
+              leadingVisual={RocketIcon}
             >
               {loading ? 'Starting...' : 'Create & Start'}
             </SuccessButton>
