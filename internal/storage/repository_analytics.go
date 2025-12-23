@@ -978,10 +978,12 @@ func (d *Database) GetDashboardActionItems(ctx context.Context) (*DashboardActio
 		}
 	}
 
-	// Get ready batches (status = ready OR scheduled in the past)
+	// Get ready batches (status = ready OR status = pending/ready with scheduled time in the past)
+	// Exclude completed, failed, or cancelled batches
 	now := time.Now()
 	err = d.db.WithContext(ctx).
-		Where("status = ? OR (scheduled_at IS NOT NULL AND scheduled_at <= ?)", "ready", now).
+		Where("status = ? OR (status IN (?, ?) AND scheduled_at IS NOT NULL AND scheduled_at <= ?)",
+			"ready", "pending", "ready", now).
 		Order("scheduled_at ASC NULLS LAST, created_at ASC").
 		Limit(10).
 		Find(&actionItems.ReadyBatches).Error

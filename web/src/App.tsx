@@ -16,7 +16,6 @@ import { PageLayout } from './components/common/PageLayout';
 import { Login } from './components/Auth/Login';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { Setup } from './components/Setup';
-import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { useSetupStatus } from './hooks/useQueries';
 
@@ -41,29 +40,27 @@ function App() {
     <ThemeProvider colorMode={colorMode} preventSSRMismatch>
       <BaseStyles>
         <Router>
-          <AuthProvider>
-            <ToastProvider>
-              <div className="min-h-screen" style={{ backgroundColor: 'var(--bgColor-muted)', color: 'var(--fgColor-default)' }}>
-                <Routes>
-                  {/* Setup page (public) */}
-                  <Route path="/setup" element={<Setup />} />
-                  
-                  {/* Login page (public) */}
-                  <Route path="/login" element={<Login />} />
-                  
-                  {/* Protected routes with navigation and setup check */}
-                  <Route path="*" element={
-                    <ProtectedRoute>
-                      <SetupCheck>
-                        <Navigation />
-                        <ProtectedRoutes />
-                      </SetupCheck>
-                    </ProtectedRoute>
-                  } />
-                </Routes>
-              </div>
-            </ToastProvider>
-          </AuthProvider>
+          <ToastProvider>
+            <div className="min-h-screen" style={{ backgroundColor: 'var(--bgColor-muted)', color: 'var(--fgColor-default)' }}>
+              <Routes>
+                {/* Setup page (public) */}
+                <Route path="/setup" element={<Setup />} />
+                
+                {/* Login page (public) */}
+                <Route path="/login" element={<Login />} />
+                
+                {/* Protected routes with navigation and setup check */}
+                <Route path="*" element={
+                  <ProtectedRoute>
+                    <SetupCheck>
+                      <Navigation />
+                      <ProtectedRoutes />
+                    </SetupCheck>
+                  </ProtectedRoute>
+                } />
+              </Routes>
+            </div>
+          </ToastProvider>
         </Router>
       </BaseStyles>
     </ThemeProvider>
