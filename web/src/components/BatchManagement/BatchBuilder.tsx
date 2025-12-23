@@ -578,7 +578,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   };
 
   return (
-    <div className="h-full flex" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+    <div className="h-full flex overflow-hidden" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
       {/* Filter Sidebar */}
       <UnifiedFilterSidebar
         filters={filters}
@@ -870,7 +870,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
       {/* Right Panel - Selected Repositories & Batch Info */}
       <div 
-        className={`flex-shrink-0 flex flex-col transition-all duration-300 h-full ${
+        className={`flex-shrink-0 flex flex-col transition-all duration-300 h-full min-h-0 overflow-hidden ${
           isAvailablePanelCollapsed 
             ? 'flex-1' 
             : currentBatchRepos.length > 0 

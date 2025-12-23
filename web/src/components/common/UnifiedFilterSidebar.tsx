@@ -307,7 +307,7 @@ export function UnifiedFilterSidebar({
   if (isCollapsed) {
     return (
       <div 
-        className="w-12 flex flex-col items-center py-4 flex-shrink-0"
+        className="w-12 h-full flex flex-col items-center py-4 flex-shrink-0"
         style={{ 
           borderRight: '1px solid var(--borderColor-default)',
           backgroundColor: 'var(--bgColor-default)' 
@@ -344,7 +344,7 @@ export function UnifiedFilterSidebar({
 
   return (
     <div 
-      className="w-[280px] flex flex-col transition-all duration-300 flex-shrink-0"
+      className="w-[280px] h-full min-h-0 flex flex-col transition-all duration-300 flex-shrink-0 overflow-hidden"
       style={{ 
         borderRight: '1px solid var(--borderColor-default)',
         backgroundColor: 'var(--bgColor-default)' 

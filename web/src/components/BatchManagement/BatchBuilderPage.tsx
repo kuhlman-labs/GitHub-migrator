@@ -79,7 +79,13 @@ export function BatchBuilderPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+    <div 
+      className="flex flex-col -mx-4 sm:-mx-6 lg:-mx-8 -my-8"
+      style={{ 
+        backgroundColor: 'var(--bgColor-muted)',
+        height: 'calc(100vh - 4rem)' // 4rem for navigation only, negative margins cancel PageLayout padding
+      }}
+    >
       <div 
         className="border-b shadow-sm flex-shrink-0"
         style={{
@@ -114,7 +120,7 @@ export function BatchBuilderPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <ErrorBoundary>
           <BatchBuilder
             batch={batch}
