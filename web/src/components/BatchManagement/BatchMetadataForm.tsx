@@ -1,6 +1,6 @@
 import { ChevronDownIcon, RocketIcon } from '@primer/octicons-react';
 import { formatDateForInput } from '../../utils/format';
-import { Button, SuccessButton, BorderedButton, PrimaryButton } from '../common/buttons';
+import { SuccessButton, BorderedButton, PrimaryButton } from '../common/buttons';
 
 interface MigrationSettings {
   destinationOrg: string;

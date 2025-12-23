@@ -488,8 +488,8 @@ type Batch struct {
 	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
 
 	// Dry run timing tracking
-	DryRunStartedAt       *time.Time `json:"dry_run_started_at,omitempty" db:"dry_run_started_at" gorm:"column:dry_run_started_at"`          // When batch dry run started
-	DryRunCompletedAt     *time.Time `json:"dry_run_completed_at,omitempty" db:"dry_run_completed_at" gorm:"column:dry_run_completed_at"`    // When batch dry run completed
+	DryRunStartedAt       *time.Time `json:"dry_run_started_at,omitempty" db:"dry_run_started_at" gorm:"column:dry_run_started_at"`                   // When batch dry run started
+	DryRunCompletedAt     *time.Time `json:"dry_run_completed_at,omitempty" db:"dry_run_completed_at" gorm:"column:dry_run_completed_at"`             // When batch dry run completed
 	DryRunDurationSeconds *int       `json:"dry_run_duration_seconds,omitempty" db:"dry_run_duration_seconds" gorm:"column:dry_run_duration_seconds"` // Dry run duration in seconds
 
 	// Migration Settings (batch-level defaults, repository settings take precedence)

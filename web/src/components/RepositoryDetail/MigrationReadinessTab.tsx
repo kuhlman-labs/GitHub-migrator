@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Button, Checkbox, TextInput, FormControl, Select } from '@primer/react';
 import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon, TrashIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
@@ -31,7 +31,6 @@ export function MigrationReadinessTab({
   
   // Dialog state
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
-  const removeButtonRef = useRef<HTMLButtonElement>(null);
   
   // Destination configuration
   

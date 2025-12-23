@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@primer/octicons-react';
-import { Button } from '@primer/react';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { Repository } from '../../types';
 import { api } from '../../services/api';

@@ -179,14 +179,14 @@ describe('BatchMetadataForm', () => {
   it('should disable buttons when batch name is empty', () => {
     render(<BatchMetadataForm {...defaultProps} batchName="" />);
 
-    const createButton = screen.getByText('Create Batch');
+    const createButton = screen.getByRole('button', { name: 'Create Batch' });
     expect(createButton).toBeDisabled();
   });
 
   it('should disable buttons when no repos in batch', () => {
     render(<BatchMetadataForm {...defaultProps} batchName="Test" currentBatchReposCount={0} />);
 
-    const createButton = screen.getByText('Create Batch');
+    const createButton = screen.getByRole('button', { name: 'Create Batch' });
     expect(createButton).toBeDisabled();
   });
 

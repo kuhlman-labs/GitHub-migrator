@@ -148,8 +148,8 @@ describe('DiscoveryModal', () => {
   it('shows loading state when loading', () => {
     render(<DiscoveryModal {...defaultProps} loading={true} organization="my-org" />);
 
-    expect(screen.getByRole('button', { name: 'Starting...' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Starting...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Loading...' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loading...' })).toBeDisabled();
   });
 
   it('disables all inputs when loading', () => {

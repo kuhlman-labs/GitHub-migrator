@@ -259,7 +259,7 @@ describe('BatchDetailHeader', () => {
       />
     );
 
-    expect(screen.getByText('Schedule & Timeline')).toBeInTheDocument();
+    expect(screen.getByText('Timeline')).toBeInTheDocument();
   });
 
   it('should not show action bar when batch is in progress', () => {

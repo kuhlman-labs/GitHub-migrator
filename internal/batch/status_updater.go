@@ -75,6 +75,8 @@ func (su *StatusUpdater) Stop() {
 }
 
 // updateBatchStatuses updates the status of all active batches
+//
+//nolint:gocyclo // Complex status transition logic with multiple edge cases
 func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 	batches, err := su.storage.ListBatches(ctx)
 	if err != nil {

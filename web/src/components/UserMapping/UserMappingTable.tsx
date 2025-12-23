@@ -8,7 +8,7 @@ import {
   Spinner,
   FormControl,
 } from '@primer/react';
-import { Button, BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
+import { BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
 import {
   PersonIcon,
   CheckIcon,
