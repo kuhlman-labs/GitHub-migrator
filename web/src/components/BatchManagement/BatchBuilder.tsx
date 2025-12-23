@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UploadIcon, PlusIcon } from '@primer/octicons-react';
-import { BorderedButton, PrimaryButton } from '../common/buttons';
+import { UploadIcon, PlusIcon, SidebarExpandIcon, SidebarCollapseIcon } from '@primer/octicons-react';
+import { BorderedButton, PrimaryButton, IconButton } from '../common/buttons';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
@@ -66,7 +66,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
   // UI state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isAvailablePanelCollapsed, setIsAvailablePanelCollapsed] = useState(false);
+  const [isSelectedReposExpanded, setIsSelectedReposExpanded] = useState(true);
   const [showMigrationSettings, setShowMigrationSettings] = useState(false);
+
+  // Handler to toggle selected repos and auto-expand migration settings
+  const handleToggleSelectedRepos = () => {
+    const willBeCollapsed = isSelectedReposExpanded;
+    setIsSelectedReposExpanded(!isSelectedReposExpanded);
+    // Auto-expand migration settings when collapsing the repo list
+    if (willBeCollapsed) {
+      setShowMigrationSettings(true);
+    }
+  };
   
   // Import state
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -578,68 +590,134 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       />
 
       {/* Middle Panel - Available Repositories */}
-      <div 
-        className={`flex-1 min-w-0 min-h-0 grid grid-rows-[auto_1fr_auto] border-r transition-all duration-300 h-full overflow-hidden ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}
-        style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-default)' }}
-      >
+      {isAvailablePanelCollapsed ? (
+        /* Collapsed State - Narrow vertical bar */
         <div 
-          className="p-4 border-b row-start-1 flex-shrink-0"
-          style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }}
+          className="flex-shrink-0 border-r flex flex-col items-center py-4 transition-all duration-300"
+          style={{ 
+            backgroundColor: 'var(--bgColor-muted)', 
+            borderColor: 'var(--borderColor-default)',
+            width: '56px'
+          }}
         >
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Available Repositories</h3>
-              <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
-                {availableLoading ? 'Loading...' : `${totalAvailable} repositories available`}
-              </p>
-            </div>
-              <div className="flex items-center gap-2">
-              {/* Import Button - BorderedButton style */}
-              <BorderedButton
-                onClick={handleImportClick}
-                disabled={loading}
-                leadingVisual={UploadIcon}
-                size="small"
-                title="Import repositories from file"
-              >
-                Import
-              </BorderedButton>
-              
-              {/* Add Matching Button - Blue bordered style */}
-              {totalAvailable > 0 && availableReposToShow.length > 0 && (
-                <BorderedButton
-                  onClick={handleAddAll}
-                  disabled={availableLoading}
-                  leadingVisual={PlusIcon}
-                  size="small"
-                  title="Add all repositories matching current filters to the batch"
-                  className="btn-bordered-accent"
-                >
-                  Add Matching ({totalAvailable})
-                </BorderedButton>
-              )}
-              
-              {/* Selected count badge - positioned next to Add Selected */}
-              {selectedRepoIds.size > 0 && (
-                <span 
-                  className="px-2.5 py-1 rounded-full text-xs font-semibold"
-                  style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
-                >
-                  {selectedRepoIds.size} selected
-                </span>
-              )}
-              
-              {/* Add Selected Button - Primary style */}
-              <PrimaryButton
-                onClick={handleAddSelected}
-                disabled={selectedRepoIds.size === 0 || loading}
-                size="small"
-                title="Add only the selected repositories to the batch"
-              >
-                Add Selected
-              </PrimaryButton>
-            </div>
+          <IconButton
+            icon={SidebarExpandIcon}
+            aria-label="Expand available repositories"
+            onClick={() => setIsAvailablePanelCollapsed(false)}
+            size="small"
+            variant="invisible"
+          />
+          <div 
+            className="mt-4 flex flex-col items-center gap-1 cursor-pointer hover:opacity-80"
+            onClick={() => setIsAvailablePanelCollapsed(false)}
+            title="Click to expand and add more repositories"
+          >
+            <span 
+              className="text-2xl font-bold"
+              style={{ color: 'var(--fgColor-muted)' }}
+            >
+              {availableReposToShow.length}
+            </span>
+            <span 
+              className="text-xs text-center px-1"
+              style={{ color: 'var(--fgColor-muted)', writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+            >
+              remaining
+            </span>
           </div>
+          {currentBatchRepos.length > 0 && (
+            <div 
+              className="mt-4 flex flex-col items-center gap-1"
+              title={`${currentBatchRepos.length} repositories in batch`}
+            >
+              <span 
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+                style={{ backgroundColor: 'var(--success-subtle)', color: 'var(--fgColor-success)' }}
+              >
+                {currentBatchRepos.length}
+              </span>
+              <span 
+                className="text-xs"
+                style={{ color: 'var(--fgColor-muted)', writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+              >
+                in batch
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Expanded State - Full panel */
+        <div 
+          className={`flex-1 min-w-0 min-h-0 grid grid-rows-[auto_1fr_auto] border-r transition-all duration-300 h-full overflow-hidden ${isAvailablePanelCollapsed ? 'lg:w-0' : currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}
+          style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-default)' }}
+        >
+          <div 
+            className="p-4 border-b row-start-1 flex-shrink-0"
+            style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <IconButton
+                  icon={SidebarCollapseIcon}
+                  aria-label="Collapse available repositories"
+                  onClick={() => setIsAvailablePanelCollapsed(true)}
+                  size="small"
+                  variant="invisible"
+                />
+                <div>
+                  <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Available Repositories</h3>
+                  <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+                    {availableLoading ? 'Loading...' : `${totalAvailable} repositories available`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Import Button - BorderedButton style */}
+                <BorderedButton
+                  onClick={handleImportClick}
+                  disabled={loading}
+                  leadingVisual={UploadIcon}
+                  size="small"
+                  title="Import repositories from file"
+                >
+                  Import
+                </BorderedButton>
+                
+                {/* Add Matching Button - Blue bordered style */}
+                {totalAvailable > 0 && availableReposToShow.length > 0 && (
+                  <BorderedButton
+                    onClick={handleAddAll}
+                    disabled={availableLoading}
+                    leadingVisual={PlusIcon}
+                    size="small"
+                    title="Add all repositories matching current filters to the batch"
+                    className="btn-bordered-accent"
+                  >
+                    Add Matching ({totalAvailable})
+                  </BorderedButton>
+                )}
+                
+                {/* Selected count badge - positioned next to Add Selected */}
+                {selectedRepoIds.size > 0 && (
+                  <span 
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold"
+                    style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
+                  >
+                    {selectedRepoIds.size} selected
+                  </span>
+                )}
+                
+                {/* Add Selected Button - Primary style */}
+                <PrimaryButton
+                  onClick={handleAddSelected}
+                  disabled={selectedRepoIds.size === 0 || loading}
+                  size="small"
+                  title="Add only the selected repositories to the batch"
+                >
+                  Add Selected
+                </PrimaryButton>
+              </div>
+            </div>
 
           {/* Quick Filter Buttons */}
           <div className="flex flex-wrap gap-2 mb-3">
@@ -775,23 +853,30 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           )}
         </div>
 
-        {/* Bottom Section - Pagination */}
-        <div 
-          className="row-start-3 flex-shrink-0"
-          style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)' }}
-        >
-          <Pagination
-            currentPage={currentPage}
-            totalItems={totalAvailable}
-            pageSize={pageSize}
-            onPageChange={handlePageChange}
-          />
+          {/* Bottom Section - Pagination */}
+          <div 
+            className="row-start-3 flex-shrink-0"
+            style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)' }}
+          >
+            <Pagination
+              currentPage={currentPage}
+              totalItems={totalAvailable}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Right Panel - Selected Repositories & Batch Info */}
       <div 
-        className={`flex-shrink-0 flex flex-col transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}
+        className={`flex-shrink-0 flex flex-col transition-all duration-300 h-full ${
+          isAvailablePanelCollapsed 
+            ? 'flex-1' 
+            : currentBatchRepos.length > 0 
+              ? 'w-full lg:w-[40%]' 
+              : 'w-full lg:w-[30%]'
+        }`}
         style={{ backgroundColor: 'var(--bgColor-default)' }}
       >
         <BatchSummaryPanel
@@ -800,6 +885,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           totalSize={totalSize}
           onRemoveRepo={handleRemoveRepo}
           onClearAll={handleClearAll}
+          isExpanded={isSelectedReposExpanded}
+          onToggleExpanded={handleToggleSelectedRepos}
         />
         
         <BatchMetadataForm

@@ -59,16 +59,31 @@ export function BatchMetadataForm({
 
   return (
     <div 
-      className="flex-shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
+      className="flex-1 flex flex-col min-h-0"
       style={{ 
-        borderTop: '1px solid var(--borderColor-default)',
         backgroundColor: 'var(--bgColor-default)' 
       }}
     >
-      {/* Essential Fields - Always Visible */}
-      <div className="p-3 space-y-2.5">
+      {/* Section Header */}
+      <div 
+        className="px-4 py-3 flex-shrink-0"
+        style={{ 
+          backgroundColor: 'var(--bgColor-muted)',
+          borderBottom: '1px solid var(--borderColor-default)'
+        }}
+      >
+        <h3 className="text-base font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+          Batch Configuration
+        </h3>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+          Configure batch settings and migration options
+        </p>
+      </div>
+
+      {/* Scrollable Form Content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <div>
-          <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
+          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--fgColor-default)' }}>
             Batch Name *
           </label>
           <input
@@ -88,14 +103,14 @@ export function BatchMetadataForm({
         </div>
 
         <div>
-          <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
+          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--fgColor-default)' }}>
             Description
           </label>
           <textarea
             value={batchDescription}
             onChange={(e) => setBatchDescription(e.target.value)}
             placeholder="Optional description"
-            rows={1}
+            rows={2}
             className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
             style={{
               border: '1px solid var(--borderColor-default)',
@@ -105,11 +120,13 @@ export function BatchMetadataForm({
             disabled={loading}
           />
         </div>
-      </div>
 
-      {/* Collapsible Migration Settings */}
-      <div style={{ borderTop: '1px solid var(--borderColor-default)' }}>
-        <button
+        {/* Collapsible Migration Settings - Inside scrollable area */}
+        <div 
+          className="rounded-lg overflow-hidden"
+          style={{ border: '1px solid var(--borderColor-default)' }}
+        >
+          <button
           type="button"
           onClick={() => setShowMigrationSettings(!showMigrationSettings)}
           className="w-full px-3 py-2.5 flex items-center justify-between text-sm font-medium hover:opacity-80 transition-opacity"
@@ -228,12 +245,11 @@ export function BatchMetadataForm({
             </div>
           </div>
         )}
-      </div>
+        </div>
 
-      {/* Scheduled Date Section */}
-      <div className="p-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+        {/* Scheduled Date Section */}
         <div className="relative z-[60]">
-          <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
+          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--fgColor-default)' }}>
             Scheduled Date (Optional)
           </label>
           <input
@@ -250,11 +266,9 @@ export function BatchMetadataForm({
             disabled={loading}
           />
         </div>
-      </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="px-3 pb-3">
+        {/* Error Message */}
+        {error && (
           <div 
             className="p-2 rounded text-sm"
             style={{
@@ -265,11 +279,17 @@ export function BatchMetadataForm({
           >
             {error}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Action Buttons */}
-      <div className="p-3 flex gap-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+      {/* Action Buttons - Fixed at bottom */}
+      <div 
+        className="flex-shrink-0 p-4 flex gap-2"
+        style={{ 
+          borderTop: '1px solid var(--borderColor-default)',
+          backgroundColor: 'var(--bgColor-muted)'
+        }}
+      >
         <BorderedButton
           onClick={onClose}
           disabled={loading}
