@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { HistoryIcon, DownloadIcon } from '@primer/octicons-react';
+import { HistoryIcon, DownloadIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { BorderedButton } from '../common/buttons';
 import { api } from '../../services/api';
 import type { MigrationHistoryEntry } from '../../types';
@@ -81,6 +81,7 @@ export function MigrationHistory() {
               <BorderedButton
                 disabled={exporting || migrations.length === 0}
                 leadingVisual={DownloadIcon}
+                trailingAction={TriangleDownIcon}
               >
                 {exporting ? 'Exporting...' : 'Export'}
               </BorderedButton>

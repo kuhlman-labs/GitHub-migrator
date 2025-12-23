@@ -9,7 +9,7 @@ import {
   Dialog,
   FormControl,
 } from '@primer/react';
-import { Button, BorderedButton } from '../common/buttons';
+import { Button, BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
 import {
   PersonIcon,
   CheckIcon,
@@ -341,25 +341,7 @@ export function UserMappingTable() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {/* Discovery action */}
-          <BorderedButton
-            onClick={() => discoverDialog.open()}
-            leadingVisual={PersonIcon}
-            disabled={discoverOrgMembers.isPending}
-          >
-            {discoverOrgMembers.isPending ? 'Discovering...' : 'Discover Org Members'}
-          </BorderedButton>
-          
-          {/* Mannequin fetch */}
-          <BorderedButton
-            onClick={() => openDestOrgDialog('fetch')}
-            leadingVisual={SyncIcon}
-            disabled={fetchMannequins.isPending}
-          >
-            {fetchMannequins.isPending ? 'Fetching...' : 'Fetch Mannequins'}
-          </BorderedButton>
-          
-          {/* Import/Export */}
+          {/* Data Management - Import/Export */}
           <input
             type="file"
             id="import-csv-input"
@@ -398,16 +380,31 @@ export function UserMappingTable() {
             </ActionMenu.Overlay>
           </ActionMenu>
           
-          {/* Primary action - Send Invitations (matches Teams page pattern) */}
+          {/* Discovery/Setup actions */}
+          <PrimaryButton
+            onClick={() => discoverDialog.open()}
+            leadingVisual={PersonIcon}
+            disabled={discoverOrgMembers.isPending}
+          >
+            {discoverOrgMembers.isPending ? 'Discovering...' : 'Discover Org Members'}
+          </PrimaryButton>
+          <PrimaryButton
+            onClick={() => openDestOrgDialog('fetch')}
+            leadingVisual={SyncIcon}
+            disabled={fetchMannequins.isPending}
+          >
+            {fetchMannequins.isPending ? 'Fetching...' : 'Fetch Mannequins'}
+          </PrimaryButton>
+          
+          {/* Primary action - Send Invitations */}
           {invitableCount > 0 && (
-            <Button
+            <SuccessButton
               onClick={() => openDestOrgDialog('bulk_invite')}
               leadingVisual={MailIcon}
-              variant="primary"
               disabled={bulkSendInvitations.isPending}
             >
               {bulkSendInvitations.isPending ? 'Sending...' : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''}`}
-            </Button>
+            </SuccessButton>
           )}
         </div>
       </div>

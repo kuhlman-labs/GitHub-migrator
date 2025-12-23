@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Dialog, FormControl, TextInput, Flash, ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { RepoIcon, DownloadIcon, SquareIcon, XIcon } from '@primer/octicons-react';
-import { Button, BorderedButton } from '../common/buttons';
+import { RepoIcon, DownloadIcon, SquareIcon, XIcon, TriangleDownIcon } from '@primer/octicons-react';
+import { Button, BorderedButton, PrimaryButton } from '../common/buttons';
 import type { RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -281,15 +281,6 @@ export function Repositories() {
                     Clear All Filters
                   </Button>
                 )}
-                
-                {/* Discover Repos Button */}
-                <BorderedButton
-                  onClick={() => setShowDiscoverDialog(true)}
-                  leadingVisual={RepoIcon}
-                  disabled={discoverRepositories.isPending}
-                >
-                  {discoverRepositories.isPending ? 'Discovering...' : 'Discover Repos'}
-                </BorderedButton>
 
                 {/* Export Button with Dropdown */}
                 <ActionMenu>
@@ -297,6 +288,7 @@ export function Repositories() {
                     <BorderedButton
                       disabled={repositories.length === 0}
                       leadingVisual={DownloadIcon}
+                      trailingAction={TriangleDownIcon}
                     >
                       Export
                     </BorderedButton>
@@ -315,6 +307,15 @@ export function Repositories() {
                     </ActionList>
                   </ActionMenu.Overlay>
                 </ActionMenu>
+
+                {/* Discover Repos Button */}
+                <PrimaryButton
+                  onClick={() => setShowDiscoverDialog(true)}
+                  leadingVisual={RepoIcon}
+                  disabled={discoverRepositories.isPending}
+                >
+                  {discoverRepositories.isPending ? 'Discovering...' : 'Discover Repos'}
+                </PrimaryButton>
               </div>
             </div>
           </div>

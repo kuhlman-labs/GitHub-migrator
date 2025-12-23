@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, Flash } from '@primer/react';
+import { Flash } from '@primer/react';
+import { PrimaryButton } from '../common/buttons';
 import { Blankslate } from '@primer/react/experimental';
-import { RepoIcon } from '@primer/octicons-react';
+import { RepoIcon, TelescopeIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
@@ -230,15 +231,15 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <Button
-            variant="primary"
+          <PrimaryButton
+            leadingVisual={TelescopeIcon}
             onClick={() => {
               setDiscoveryType(defaultDiscoveryType);
               setShowDiscoveryModal(true);
             }}
           >
             Start Discovery
-          </Button>
+          </PrimaryButton>
         </div>
       </div>
 

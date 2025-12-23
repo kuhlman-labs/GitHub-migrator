@@ -85,6 +85,24 @@ export const SecondaryButton = forwardRef<HTMLButtonElement, SharedButtonProps>(
 );
 
 /**
+ * PrimaryButton - Blue button for primary actions
+ * Use for: "Start Discovery", "Submit", "Create", main call-to-action buttons
+ */
+export const PrimaryButton = forwardRef<HTMLButtonElement, SharedButtonProps>(
+  function PrimaryButton({ children, ...props }, ref) {
+    return (
+      <Button
+        ref={ref}
+        variant="primary"
+        {...props}
+      >
+        {children}
+      </Button>
+    );
+  }
+);
+
+/**
  * CloseIconButton - Standardized close button for dialogs and panels
  * Use for: Dialog close buttons, panel close buttons
  */

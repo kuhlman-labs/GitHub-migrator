@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActionMenu, ActionList } from '@primer/react';
-import { DownloadIcon } from '@primer/octicons-react';
+import { DownloadIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { BorderedButton } from '../common/buttons';
 import { api } from '../../services/api';
 import type { DependencyGraphNode, DependencyGraphEdge } from '../../types';
@@ -128,6 +128,7 @@ export function DependencyExport({
         <BorderedButton
           disabled={exporting || !hasFilteredData}
           leadingVisual={DownloadIcon}
+          trailingAction={TriangleDownIcon}
         >
           {exporting ? 'Exporting...' : 'Export'}
         </BorderedButton>

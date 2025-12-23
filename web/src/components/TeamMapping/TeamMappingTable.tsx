@@ -9,7 +9,7 @@ import {
   Dialog,
   FormControl,
 } from '@primer/react';
-import { Button, BorderedButton, SuccessButton } from '../common/buttons';
+import { Button, BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
 import {
   PeopleIcon,
   CheckIcon,
@@ -513,15 +513,7 @@ export function TeamMappingTable() {
           </p>
         </div>
         <div className="flex gap-2">
-          {/* Discover Teams Button */}
-          <BorderedButton
-            onClick={() => discoverDialog.open()}
-            leadingVisual={PeopleIcon}
-            disabled={discoverTeams.isPending}
-          >
-            {discoverTeams.isPending ? 'Discovering...' : 'Discover Teams'}
-          </BorderedButton>
-          
+          {/* Data Management - Import/Export */}
           <input
             type="file"
             id="import-team-csv-input"
@@ -547,6 +539,17 @@ export function TeamMappingTable() {
           >
             Export
           </BorderedButton>
+          
+          {/* Discovery/Setup action */}
+          <PrimaryButton
+            onClick={() => discoverDialog.open()}
+            leadingVisual={PeopleIcon}
+            disabled={discoverTeams.isPending}
+          >
+            {discoverTeams.isPending ? 'Discovering...' : 'Discover Teams'}
+          </PrimaryButton>
+          
+          {/* Primary action - Migrate Teams */}
           <SuccessButton
             onClick={() => executeDialog.open()}
             disabled={!hasMappedTeams || isRunning}

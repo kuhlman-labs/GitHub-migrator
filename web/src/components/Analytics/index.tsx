@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnderlineNav, ProgressBar, ActionMenu, ActionList } from '@primer/react';
-import { ChevronRightIcon, DownloadIcon } from '@primer/octicons-react';
+import { ChevronRightIcon, DownloadIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { BorderedButton } from '../common/buttons';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -157,6 +157,7 @@ export function Analytics() {
             <BorderedButton
               disabled={!analytics}
               leadingVisual={DownloadIcon}
+              trailingAction={TriangleDownIcon}
             >
               Export
             </BorderedButton>
