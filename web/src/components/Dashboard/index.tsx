@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Flash } from '@primer/react';
 import { PrimaryButton } from '../common/buttons';
+import { useToast } from '../../contexts/ToastContext';
 import { Blankslate } from '@primer/react/experimental';
 import { RepoIcon, TelescopeIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -20,9 +20,11 @@ import { DiscoveryModal, type DiscoveryType } from './DiscoveryModal';
 // Polling intervals based on activity level
 const POLLING_INTERVALS = {
   actionItems: 15000, // 15s - critical for admin attention
-  orgs: 60000, // 1min
+  orgsIdle: 60000, // 1min when idle
+  orgsDiscovery: 5000, // 5s during discovery for real-time updates
   analyticsActive: 30000, // 30s when migrations active
   analyticsIdle: 120000, // 2min when idle
+  analyticsDiscovery: 5000, // 5s during discovery for real-time updates
   batchesActive: 60000, // 1min when migrations active
   batchesIdle: 300000, // 5min when idle
 } as const;
@@ -30,19 +32,29 @@ const POLLING_INTERVALS = {
 export function Dashboard() {
   // Use React Query for config
   const { data: config } = useConfig();
+  const { showSuccess } = useToast();
   const sourceType = config?.source_type || 'github';
   
   // Track if there are active migrations to adjust polling intervals
   const [hasActiveMigrations, setHasActiveMigrations] = useState(false);
   
+  // Fetch discovery progress first to determine polling intervals
+  const { data: discoveryProgress } = useDiscoveryProgress();
+  const isDiscoveryInProgress = discoveryProgress?.status === 'in_progress';
+  
   // Fetch all dashboard data with React Query polling
+  // Use faster polling when discovery is in progress to show real-time updates
   const { data: organizations = [], isLoading: orgsLoading, isFetching: orgsFetching } = useOrganizations({
-    refetchInterval: POLLING_INTERVALS.orgs,
+    refetchInterval: isDiscoveryInProgress 
+      ? POLLING_INTERVALS.orgsDiscovery 
+      : POLLING_INTERVALS.orgsIdle,
   });
   const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching } = useAnalytics({}, {
-    refetchInterval: hasActiveMigrations 
-      ? POLLING_INTERVALS.analyticsActive 
-      : POLLING_INTERVALS.analyticsIdle,
+    refetchInterval: isDiscoveryInProgress
+      ? POLLING_INTERVALS.analyticsDiscovery
+      : hasActiveMigrations 
+        ? POLLING_INTERVALS.analyticsActive 
+        : POLLING_INTERVALS.analyticsIdle,
   });
   
   // Update active migrations state when analytics changes
@@ -58,7 +70,6 @@ export function Dashboard() {
   const { data: actionItems, isLoading: actionItemsLoading, isFetching: actionItemsFetching } = useDashboardActionItems({
     refetchInterval: POLLING_INTERVALS.actionItems,
   });
-  const { data: discoveryProgress } = useDiscoveryProgress();
   
   const startDiscoveryMutation = useStartDiscovery();
   const startADODiscoveryMutation = useStartADODiscovery();
@@ -82,7 +93,6 @@ export function Dashboard() {
   const [adoOrganization, setAdoOrganization] = useState('');
   const [adoProject, setAdoProject] = useState('');
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
-  const [discoverySuccess, setDiscoverySuccess] = useState<string | null>(null);
 
   // Persist dismissed state in localStorage, keyed by discovery ID
   const dismissedDiscoveryKey = 'dismissedDiscoveryId';
@@ -154,37 +164,31 @@ export function Dashboard() {
     }
 
     setDiscoveryError(null);
-    setDiscoverySuccess(null);
 
     try {
       if (effectiveDiscoveryType === 'enterprise') {
         await startDiscoveryMutation.mutateAsync({ enterprise_slug: enterpriseSlug.trim() });
-        setDiscoverySuccess(`Enterprise discovery started for ${enterpriseSlug}`);
+        showSuccess(`Enterprise discovery started for ${enterpriseSlug}`);
         setEnterpriseSlug('');
       } else if (effectiveDiscoveryType === 'ado-org') {
         await startADODiscoveryMutation.mutateAsync({ organization: adoOrganization.trim() });
-        setDiscoverySuccess(`ADO organization discovery started for ${adoOrganization}`);
+        showSuccess(`ADO organization discovery started for ${adoOrganization}`);
         setAdoOrganization('');
       } else if (effectiveDiscoveryType === 'ado-project') {
         await startADODiscoveryMutation.mutateAsync({ 
           organization: adoOrganization.trim(), 
           project: adoProject.trim() 
         });
-        setDiscoverySuccess(`ADO project discovery started for ${adoOrganization}/${adoProject}`);
+        showSuccess(`ADO project discovery started for ${adoOrganization}/${adoProject}`);
         setAdoOrganization('');
         setAdoProject('');
       } else {
         await startDiscoveryMutation.mutateAsync({ organization: organization.trim() });
-        setDiscoverySuccess(`Discovery started for ${organization}`);
+        showSuccess(`Discovery started for ${organization}`);
         setOrganization('');
       }
       
       setShowDiscoveryModal(false);
-      
-      // Clear success message after 2 seconds
-      setTimeout(() => {
-        setDiscoverySuccess(null);
-      }, 2000);
     } catch (error) {
       setDiscoveryError(error instanceof Error ? error.message : 'Failed to start discovery');
     }
@@ -243,11 +247,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {discoverySuccess && (
-        <Flash variant="success" className="mb-3">
-          {discoverySuccess}
-        </Flash>
-      )}
 
       {/* Discovery Progress Card - shown when discovery is active or recently completed */}
       {discoveryProgress && (

@@ -267,7 +267,7 @@ interface TeamMappingFilters extends Record<string, unknown> {
 }
 
 export function TeamMappingTable() {
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<TeamMappingFilters>({
@@ -279,11 +279,9 @@ export function TeamMappingTable() {
   const [editingMapping, setEditingMapping] = useState<{ org: string; slug: string } | null>(null);
   const [editDestOrg, setEditDestOrg] = useState('');
   const [editDestSlug, setEditDestSlug] = useState('');
-  const [importResult, setImportResult] = useState<{ created: number; updated: number; errors: number } | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<{ org: string; slug: string } | null>(null);
   const [dryRun, setDryRun] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
-  const [actionResult, setActionResult] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
   
   // Dialog state using shared hooks
   const executeDialog = useDialogState();
@@ -406,13 +404,12 @@ export function TeamMappingTable() {
   const handleImport = useCallback(async (file: File) => {
     try {
       const result = await api.importTeamMappings(file);
-      setImportResult(result);
+      showSuccess(`Import complete: ${result.created} created, ${result.updated} updated, ${result.errors} errors`);
       refetch();
-      setTimeout(() => setImportResult(null), 5000);
     } catch (error) {
       handleApiError(error, showError, 'Failed to import mappings');
     }
-  }, [refetch, showError]);
+  }, [refetch, showError, showSuccess]);
 
   const handleExecute = useCallback(async () => {
     try {
@@ -560,30 +557,6 @@ export function TeamMappingTable() {
           </SuccessButton>
         </div>
       </div>
-
-      {/* Import result notification */}
-      {importResult && (
-        <Flash variant="success">
-          Import complete: {importResult.created} created, {importResult.updated} updated, {importResult.errors} errors
-        </Flash>
-      )}
-
-      {/* Action result notification */}
-      {actionResult && (
-        <Flash variant={actionResult.type}>
-          <span className="flex items-center justify-between">
-            {actionResult.message}
-            <Button
-              variant="invisible"
-              size="small"
-              onClick={() => setActionResult(null)}
-              className="ml-2"
-            >
-              Dismiss
-            </Button>
-          </span>
-        </Flash>
-      )}
 
       {/* Search and filters */}
       <div className="flex gap-4 items-center flex-wrap">
@@ -1010,12 +983,12 @@ export function TeamMappingTable() {
           if (!discoverOrg.trim()) return;
           discoverTeams.mutate(discoverOrg.trim(), {
             onSuccess: (data) => {
-              setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
+              showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();
               setDiscoverOrg('');
             },
             onError: (error) => {
-              setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
+              showError(error instanceof Error ? error.message : 'Discovery failed');
             },
           });
         }}

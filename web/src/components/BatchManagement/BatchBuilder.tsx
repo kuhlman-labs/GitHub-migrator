@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UploadIcon, PlusIcon, SidebarExpandIcon, SidebarCollapseIcon } from '@primer/octicons-react';
-import { BorderedButton, PrimaryButton, IconButton } from '../common/buttons';
+import { UploadIcon, PlusIcon, RepoIcon } from '@primer/octicons-react';
+import { BorderedButton, PrimaryButton } from '../common/buttons';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
@@ -591,40 +591,32 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
       {/* Middle Panel - Available Repositories */}
       {isAvailablePanelCollapsed ? (
-        /* Collapsed State - Narrow vertical bar */
+        /* Collapsed State - Narrow vertical bar matching filter sidebar style */
         <div 
-          className="flex-shrink-0 border-r flex flex-col items-center py-4 transition-all duration-300"
+          className="w-12 h-full flex flex-col items-center py-4 flex-shrink-0"
           style={{ 
-            backgroundColor: 'var(--bgColor-muted)', 
-            borderColor: 'var(--borderColor-default)',
-            width: '56px'
+            borderRight: '1px solid var(--borderColor-default)',
+            backgroundColor: 'var(--bgColor-default)' 
           }}
         >
-          <IconButton
-            icon={SidebarExpandIcon}
-            aria-label="Expand available repositories"
+          <button
             onClick={() => setIsAvailablePanelCollapsed(false)}
-            size="small"
-            variant="invisible"
-          />
-          <div 
-            className="mt-4 flex flex-col items-center gap-1 cursor-pointer hover:opacity-80"
-            onClick={() => setIsAvailablePanelCollapsed(false)}
-            title="Click to expand and add more repositories"
+            className="relative p-2 rounded-lg transition-opacity hover:opacity-80 group"
+            title="Expand available repositories"
           >
-            <span 
-              className="text-2xl font-bold"
-              style={{ color: 'var(--fgColor-muted)' }}
-            >
-              {availableReposToShow.length}
-            </span>
-            <span 
-              className="text-xs text-center px-1"
-              style={{ color: 'var(--fgColor-muted)', writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-            >
-              remaining
-            </span>
-          </div>
+            <RepoIcon size={24} style={{ color: 'var(--fgColor-muted)' }} />
+            {(totalAvailable - currentBatchRepos.length) > 0 && (
+              <span 
+                className="absolute -top-1 -right-1 flex items-center justify-center min-w-[20px] h-5 px-1 text-xs font-bold rounded-full"
+                style={{ 
+                  color: 'var(--fgColor-onEmphasis)',
+                  backgroundColor: 'var(--accent-emphasis)' 
+                }}
+              >
+                {totalAvailable - currentBatchRepos.length}
+              </span>
+            )}
+          </button>
           {currentBatchRepos.length > 0 && (
             <div 
               className="mt-4 flex flex-col items-center gap-1"
@@ -657,13 +649,15 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <IconButton
-                  icon={SidebarCollapseIcon}
-                  aria-label="Collapse available repositories"
+                <button
                   onClick={() => setIsAvailablePanelCollapsed(true)}
-                  size="small"
-                  variant="invisible"
-                />
+                  className="p-1 rounded transition-opacity hover:opacity-80"
+                  title="Collapse available repositories"
+                >
+                  <svg className="w-5 h-5" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
                 <div>
                   <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Available Repositories</h3>
                   <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>

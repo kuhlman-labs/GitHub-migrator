@@ -89,7 +89,7 @@ interface UserMappingFilters extends Record<string, unknown> {
 }
 
 export function UserMappingTable() {
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<UserMappingFilters>({
@@ -100,7 +100,6 @@ export function UserMappingTable() {
   const [orgSearchFilter, setOrgSearchFilter] = useState('');
   const [editingMapping, setEditingMapping] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [importResult, setImportResult] = useState<{ created: number; updated: number; errors: number } | null>(null);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   
   // Dialog state using shared hooks
@@ -113,8 +112,6 @@ export function UserMappingTable() {
   const [emuShortcode, setEmuShortcode] = useState('');
   const [discoverOrg, setDiscoverOrg] = useState('');
   
-  // Action result state
-  const [actionResult, setActionResult] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
 
   const { data, isLoading, error, refetch } = useUserMappings({
     search: search || undefined,
@@ -227,13 +224,12 @@ export function UserMappingTable() {
     
     try {
       const result = await api.importUserMappings(file);
-      setImportResult(result);
+      showSuccess(`Import complete: ${result.created} created, ${result.updated} updated, ${result.errors} errors`);
       refetch();
-      setTimeout(() => setImportResult(null), 5000);
     } catch (error) {
       handleApiError(error, showError, 'Failed to import mappings');
     }
-  }, [refetch, showError]);
+  }, [refetch, showError, showSuccess]);
 
   const handleGenerateGEI = useCallback(async () => {
     try {
@@ -269,38 +265,33 @@ export function UserMappingTable() {
           destinationOrg,
           emuShortcode: emuShortcode || undefined,
         });
-        setActionResult({
-          type: 'success',
-          message: result.message,
-        });
+        showSuccess(result.message);
       } else if (action === 'invite' && sourceLogin) {
         const result = await sendInvitation.mutateAsync({
           sourceLogin,
           destinationOrg,
         });
-        setActionResult({
-          type: result.success ? 'success' : 'danger',
-          message: result.message,
-        });
+        if (result.success) {
+          showSuccess(result.message);
+        } else {
+          showError(result.message);
+        }
       } else if (action === 'bulk_invite') {
         const result = await bulkSendInvitations.mutateAsync({
           destinationOrg,
         });
-        setActionResult({
-          type: result.success ? 'success' : 'danger',
-          message: result.message,
-        });
+        if (result.success) {
+          showSuccess(result.message);
+        } else {
+          showError(result.message);
+        }
       }
     } catch (err) {
-      setActionResult({
-        type: 'danger',
-        message: `Action failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      });
+      showError(`Action failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
     
     setEmuShortcode('');
-    setTimeout(() => setActionResult(null), 8000);
-  }, [destinationOrg, emuShortcode, destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations]);
+  }, [destinationOrg, emuShortcode, destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations, showSuccess, showError]);
 
   const cancelDestOrgDialog = useCallback(() => {
     destOrgDialog.close();
@@ -409,20 +400,6 @@ export function UserMappingTable() {
           )}
         </div>
       </div>
-
-      {/* Action result notification */}
-      {actionResult && (
-        <Flash variant={actionResult.type}>
-          {actionResult.message}
-        </Flash>
-      )}
-
-      {/* Import result notification */}
-      {importResult && (
-        <Flash variant="success">
-          Import complete: {importResult.created} created, {importResult.updated} updated, {importResult.errors} errors
-        </Flash>
-      )}
 
       {/* Search and filters */}
       <div className="flex gap-4 items-center flex-wrap">
@@ -760,12 +737,12 @@ export function UserMappingTable() {
           if (!discoverOrg.trim()) return;
           discoverOrgMembers.mutate(discoverOrg.trim(), {
             onSuccess: (data) => {
-              setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
+              showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();
               setDiscoverOrg('');
             },
             onError: (error) => {
-              setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
+              showError(error instanceof Error ? error.message : 'Discovery failed');
             },
           });
         }}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FormControl, TextInput, Flash, ActionMenu, ActionList } from '@primer/react';
+import { FormControl, TextInput, ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { RepoIcon, DownloadIcon, SquareIcon, XIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { Button, BorderedButton, PrimaryButton } from '../common/buttons';
@@ -20,7 +20,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
 
 export function Repositories() {
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Parse filters from URL
@@ -32,7 +32,6 @@ export function Repositories() {
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<Set<number>>(new Set());
   const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
-  const [discoverMessage, setDiscoverMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const pageSize = 12;
   
   // Fetch repositories with filters
@@ -383,31 +382,22 @@ export function Repositories() {
           if (!discoverOrg.trim()) return;
           discoverRepositories.mutate(discoverOrg.trim(), {
             onSuccess: (data) => {
-              setDiscoverMessage({ type: 'success', text: data.message || 'Discovery started!' });
+              showSuccess(data.message || 'Discovery started!');
               setDiscoverOrg('');
-              setTimeout(() => {
-                setShowDiscoverDialog(false);
-                setDiscoverMessage(null);
-              }, 2000);
+              setShowDiscoverDialog(false);
             },
             onError: (error) => {
-              setDiscoverMessage({ type: 'error', text: error instanceof Error ? error.message : 'Discovery failed' });
+              showError(error instanceof Error ? error.message : 'Discovery failed');
             },
           });
         }}
         onCancel={() => {
           setShowDiscoverDialog(false);
           setDiscoverOrg('');
-          setDiscoverMessage(null);
         }}
         isLoading={discoverRepositories.isPending}
         isSubmitDisabled={!discoverOrg.trim()}
       >
-        {discoverMessage && (
-          <Flash variant={discoverMessage.type === 'success' ? 'success' : 'danger'} className="mb-4">
-            {discoverMessage.text}
-          </Flash>
-        )}
         <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
           Discover all repositories from a GitHub organization. This will start repository discovery and profiling.
         </p>
