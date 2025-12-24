@@ -5,6 +5,7 @@ import type { Batch } from '../../types';
 import { BatchBuilder } from './BatchBuilder';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { BorderedButton } from '../common/buttons';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
 
@@ -105,17 +106,9 @@ export function BatchBuilderPage() {
                   : 'Select repositories and configure your migration batch'}
               </p>
             </div>
-            <button
-              onClick={handleClose}
-              className="px-4 py-2 border rounded-lg transition-colors"
-              style={{
-                color: 'var(--fgColor-default)',
-                borderColor: 'var(--borderColor-default)',
-                backgroundColor: 'var(--control-bgColor-rest)'
-              }}
-            >
+            <BorderedButton onClick={handleClose}>
               Cancel
-            </button>
+            </BorderedButton>
           </div>
         </div>
       </div>

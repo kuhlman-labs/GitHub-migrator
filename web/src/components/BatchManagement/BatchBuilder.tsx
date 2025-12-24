@@ -604,7 +604,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
             className="relative p-2 rounded-lg transition-opacity hover:opacity-80 group"
             title="Expand available repositories"
           >
-            <RepoIcon size={24} style={{ color: 'var(--fgColor-muted)' }} />
+            <span style={{ color: 'var(--fgColor-muted)' }}><RepoIcon size={24} /></span>
             {(totalAvailable - currentBatchRepos.length) > 0 && (
               <span 
                 className="absolute -top-1 -right-1 flex items-center justify-center min-w-[20px] h-5 px-1 text-xs font-bold rounded-full"
