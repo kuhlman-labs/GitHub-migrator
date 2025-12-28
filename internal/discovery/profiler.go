@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 
@@ -595,8 +596,8 @@ func extractCodeownersReferences(content string) (teams, users map[string]bool) 
 	teams = make(map[string]bool)
 	users = make(map[string]bool)
 
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(content, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -769,11 +770,8 @@ func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *mode
 			hasAccess = true
 		} else if install.RepositorySelection == "selected" {
 			// Check if this repo is in the selected repos list
-			for _, selectedRepo := range install.SelectedRepos {
-				if selectedRepo == repoFullName {
-					hasAccess = true
-					break
-				}
+			if slices.Contains(install.SelectedRepos, repoFullName) {
+				hasAccess = true
 			}
 		}
 

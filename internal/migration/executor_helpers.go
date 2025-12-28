@@ -179,7 +179,7 @@ func (e *Executor) getOrFetchDestOrgID(ctx context.Context, orgName string) (str
 		} `graphql:"organization(login: $login)"`
 	}
 
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"login": githubv4.String(orgName),
 	}
 

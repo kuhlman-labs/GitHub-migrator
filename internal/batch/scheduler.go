@@ -97,7 +97,7 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 	}
 
 	// Get all repositories in batch
-	repos, err := s.storage.ListRepositories(ctx, map[string]interface{}{
+	repos, err := s.storage.ListRepositories(ctx, map[string]any{
 		"batch_id": batchID,
 	})
 	if err != nil {
@@ -122,10 +122,18 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 
 	s.logger.Info("Found migratable repositories", "count", len(migratable), "total", len(repos))
 
-	// Update batch status
+	// Update batch status and timing
 	batch.Status = models.BatchStatusInProgress
 	now := time.Now()
-	batch.StartedAt = &now
+	if dryRun {
+		// Track dry run start time
+		batch.DryRunStartedAt = &now
+		batch.LastDryRunAt = &now
+	} else {
+		// Track production migration start time
+		batch.StartedAt = &now
+		batch.LastMigrationAttemptAt = &now
+	}
 	if err := s.storage.UpdateBatch(ctx, batch); err != nil {
 		return fmt.Errorf("failed to update batch status: %w", err)
 	}

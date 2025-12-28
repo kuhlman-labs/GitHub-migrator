@@ -360,7 +360,7 @@ func (r *Repository) MarshalJSON() ([]byte, error) {
 	}
 
 	// Parse the marshaled JSON
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
@@ -487,6 +487,11 @@ type Batch struct {
 	LastDryRunAt           *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at" gorm:"column:last_dry_run_at"`                               // When batch dry run was last executed
 	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
 
+	// Dry run timing tracking
+	DryRunStartedAt       *time.Time `json:"dry_run_started_at,omitempty" db:"dry_run_started_at" gorm:"column:dry_run_started_at"`                   // When batch dry run started
+	DryRunCompletedAt     *time.Time `json:"dry_run_completed_at,omitempty" db:"dry_run_completed_at" gorm:"column:dry_run_completed_at"`             // When batch dry run completed
+	DryRunDurationSeconds *int       `json:"dry_run_duration_seconds,omitempty" db:"dry_run_duration_seconds" gorm:"column:dry_run_duration_seconds"` // Dry run duration in seconds
+
 	// Migration Settings (batch-level defaults, repository settings take precedence)
 	DestinationOrg     *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`                 // Default destination org for repositories in this batch
 	MigrationAPI       string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`                        // Migration API to use: "GEI" or "ELM" (default: "GEI")
@@ -515,6 +520,15 @@ func (b *Batch) DurationSeconds() float64 {
 		return 0
 	}
 	return duration.Seconds()
+}
+
+// DryRunDuration calculates the dry run execution duration if both timestamps are set
+func (b *Batch) DryRunDuration() *time.Duration {
+	if b.DryRunStartedAt == nil || b.DryRunCompletedAt == nil {
+		return nil
+	}
+	duration := b.DryRunCompletedAt.Sub(*b.DryRunStartedAt)
+	return &duration
 }
 
 // Organization extracts the organization from full_name (org/repo)

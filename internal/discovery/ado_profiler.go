@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	strings0 "strings"
 
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -19,12 +20,12 @@ import (
 type ADOProfiler struct {
 	client         *azuredevops.Client
 	logger         *slog.Logger
-	sourceProvider interface{} // Will be source.Provider
-	storage        interface{} // Will be *storage.Database
+	sourceProvider any // Will be source.Provider
+	storage        any // Will be *storage.Database
 }
 
 // NewADOProfiler creates a new ADO profiler
-func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger, sourceProvider interface{}, storage interface{}) *ADOProfiler {
+func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger, sourceProvider any, storage any) *ADOProfiler {
 	return &ADOProfiler{
 		client:         client,
 		logger:         logger,
@@ -35,7 +36,7 @@ func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger, sourceProvi
 
 // ProfileRepository profiles an Azure DevOps repository
 // This includes both Git analysis (if it's a Git repo) and ADO-specific features
-func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Repository, adoRepo interface{}) error {
+func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Repository, adoRepo any) error {
 	if repo.ADOProject == nil {
 		return fmt.Errorf("repository missing ADO project name")
 	}
@@ -356,7 +357,7 @@ func (p *ADOProfiler) categorizePipelines(repo *models.Repository, pipelineDefs 
 		if def.Process != nil {
 			// Type assert to check the process type
 			// The Process field is an interface{} that can be different types
-			if processMap, ok := def.Process.(map[string]interface{}); ok {
+			if processMap, ok := def.Process.(map[string]any); ok {
 				if processType, ok := processMap["type"].(float64); ok {
 					if processType == 2 {
 						// YAML pipeline
@@ -491,11 +492,12 @@ func joinStrings(strings []string, sep string) string {
 	if len(strings) == 0 {
 		return ""
 	}
-	result := strings[0]
+	var result strings0.Builder
+	result.WriteString(strings[0])
 	for i := 1; i < len(strings); i++ {
-		result += sep + strings[i]
+		result.WriteString(sep + strings[i])
 	}
-	return result
+	return result.String()
 }
 
 // profileMigratableFeatures determines what will and won't migrate with GEI

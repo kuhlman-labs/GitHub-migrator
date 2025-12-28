@@ -20,11 +20,11 @@ type RepositoryReader interface {
 	// GetRepositoriesByNames retrieves multiple repositories by their full names.
 	GetRepositoriesByNames(ctx context.Context, names []string) ([]*models.Repository, error)
 	// ListRepositories returns repositories matching the given filters.
-	ListRepositories(ctx context.Context, filters map[string]interface{}) ([]*models.Repository, error)
+	ListRepositories(ctx context.Context, filters map[string]any) ([]*models.Repository, error)
 	// CountRepositories counts repositories matching the given filters.
-	CountRepositories(ctx context.Context, filters map[string]interface{}) (int, error)
+	CountRepositories(ctx context.Context, filters map[string]any) (int, error)
 	// CountRepositoriesWithFilters counts repositories with filters applied.
-	CountRepositoriesWithFilters(ctx context.Context, filters map[string]interface{}) (int, error)
+	CountRepositoriesWithFilters(ctx context.Context, filters map[string]any) (int, error)
 }
 
 // RepositoryWriter defines write operations for repositories.
@@ -152,9 +152,9 @@ type UserStore interface {
 	// GetUserByLogin retrieves a user by login.
 	GetUserByLogin(ctx context.Context, login string) (*models.GitHubUser, error)
 	// GetUserStats returns user statistics.
-	GetUserStats(ctx context.Context) (map[string]interface{}, error)
+	GetUserStats(ctx context.Context) (map[string]any, error)
 	// GetUsersWithMappingsStats returns user mapping statistics.
-	GetUsersWithMappingsStats(ctx context.Context, org string) (map[string]interface{}, error)
+	GetUsersWithMappingsStats(ctx context.Context, org string) (map[string]any, error)
 	// GetUserOrgMemberships retrieves organization memberships for a user.
 	GetUserOrgMemberships(ctx context.Context, login string) ([]*models.UserOrgMembership, error)
 	// GetUserMappingSourceOrgs returns source organizations for user mappings.
@@ -178,7 +178,7 @@ type UserMappingStore interface {
 	// UpdateReclaimStatus updates the reclaim status of a user mapping.
 	UpdateReclaimStatus(ctx context.Context, sourceLogin string, status string, errorMsg *string) error
 	// GetUserMappingStats returns user mapping statistics.
-	GetUserMappingStats(ctx context.Context, org string) (map[string]interface{}, error)
+	GetUserMappingStats(ctx context.Context, org string) (map[string]any, error)
 }
 
 // TeamStore defines operations for teams.
@@ -190,7 +190,7 @@ type TeamStore interface {
 	// GetTeamSourceOrgs returns source organizations for teams.
 	GetTeamSourceOrgs(ctx context.Context) ([]string, error)
 	// GetTeamsWithMappingsStats returns team mapping statistics.
-	GetTeamsWithMappingsStats(ctx context.Context, org string) (map[string]interface{}, error)
+	GetTeamsWithMappingsStats(ctx context.Context, org string) (map[string]any, error)
 	// GetTeamMembersByOrgAndSlug retrieves team members.
 	GetTeamMembersByOrgAndSlug(ctx context.Context, org, slug string) ([]*models.GitHubTeamMember, error)
 	// GetTeamDetail retrieves detailed team information.
@@ -212,9 +212,9 @@ type TeamMappingStore interface {
 	// SuggestTeamMappings suggests mappings based on destination teams.
 	SuggestTeamMappings(ctx context.Context, destOrg string, destSlugs []string) (map[string]string, error)
 	// GetTeamMappingStats returns team mapping statistics.
-	GetTeamMappingStats(ctx context.Context, org string) (map[string]interface{}, error)
+	GetTeamMappingStats(ctx context.Context, org string) (map[string]any, error)
 	// GetTeamMigrationExecutionStats returns team migration execution statistics.
-	GetTeamMigrationExecutionStats(ctx context.Context) (map[string]interface{}, error)
+	GetTeamMigrationExecutionStats(ctx context.Context) (map[string]any, error)
 	// ResetTeamMigrationStatus resets migration status for teams in an org.
 	ResetTeamMigrationStatus(ctx context.Context, sourceOrg string) error
 }

@@ -28,7 +28,7 @@ func testStartDiscoveryWithoutClient(t *testing.T) {
 
 	h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"organization": "test-org",
 	}
 	body, _ := json.Marshal(reqBody)
@@ -52,18 +52,18 @@ func testStartDiscoveryValidation(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		reqBody  map[string]interface{}
+		reqBody  map[string]any
 		rawBody  string
 		wantCode int
 	}{
 		{
 			name:     "missing both",
-			reqBody:  map[string]interface{}{},
+			reqBody:  map[string]any{},
 			wantCode: http.StatusBadRequest,
 		},
 		{
 			name: "both provided",
-			reqBody: map[string]interface{}{
+			reqBody: map[string]any{
 				"organization":    "test-org",
 				"enterprise_slug": "test-enterprise",
 			},
@@ -106,7 +106,7 @@ func testStartDiscoveryOrganization(t *testing.T) {
 	authConfig := &config.AuthConfig{Enabled: false}
 	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil, authConfig, "https://api.github.com", "github")
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"organization": "test-org",
 		"workers":      10,
 	}
@@ -121,7 +121,7 @@ func testStartDiscoveryOrganization(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	json.NewDecoder(w.Body).Decode(&response)
 
 	if response["type"] != "organization" {
@@ -141,7 +141,7 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 	authConfig := &config.AuthConfig{Enabled: false}
 	h := NewHandler(db, logger, sourceDualClient, nil, mockProvider, nil, authConfig, "https://api.github.com", "github")
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"enterprise_slug": "test-enterprise",
 	}
 	body, _ := json.Marshal(reqBody)
@@ -155,7 +155,7 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	json.NewDecoder(w.Body).Decode(&response)
 
 	if response["type"] != "enterprise" {
@@ -185,7 +185,7 @@ func TestDiscoveryStatus(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}

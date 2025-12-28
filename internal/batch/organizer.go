@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"time"
 
@@ -82,7 +83,7 @@ func (o *Organizer) SelectPilotRepositories(ctx context.Context, criteria PilotC
 	o.logger.Info("Starting pilot repository selection", "criteria", criteria)
 
 	// Get all pending repositories (exclude wont_migrate)
-	repos, err := o.storage.ListRepositories(ctx, map[string]interface{}{
+	repos, err := o.storage.ListRepositories(ctx, map[string]any{
 		"status": models.StatusPending,
 	})
 	if err != nil {
@@ -165,12 +166,7 @@ func (o *Organizer) matchesOrganization(repo *models.Repository, criteria PilotC
 	}
 
 	repoOrg := repo.Organization()
-	for _, org := range criteria.Organizations {
-		if org == repoOrg {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(criteria.Organizations, repoOrg)
 }
 
 // matchesFeatures checks if repository has required features
@@ -438,7 +434,7 @@ func (o *Organizer) OrganizeIntoWaves(ctx context.Context, criteria WaveCriteria
 	o.logger.Info("Organizing repositories into waves", "criteria", criteria)
 
 	// Get all pending repositories (not in any batch, exclude wont_migrate)
-	repos, err := o.storage.ListRepositories(ctx, map[string]interface{}{
+	repos, err := o.storage.ListRepositories(ctx, map[string]any{
 		"status": models.StatusPending,
 	})
 	if err != nil {
@@ -467,10 +463,7 @@ func (o *Organizer) OrganizeIntoWaves(ctx context.Context, criteria WaveCriteria
 	waveNum := 1
 
 	for i := 0; i < len(unbatched); i += criteria.WaveSize {
-		end := i + criteria.WaveSize
-		if end > len(unbatched) {
-			end = len(unbatched)
-		}
+		end := min(i+criteria.WaveSize, len(unbatched))
 
 		waveRepos := unbatched[i:end]
 
@@ -566,7 +559,7 @@ func (o *Organizer) GetBatchProgress(ctx context.Context, batchID int64) (*Batch
 	}
 
 	// Get all repositories in batch
-	repos, err := o.storage.ListRepositories(ctx, map[string]interface{}{
+	repos, err := o.storage.ListRepositories(ctx, map[string]any{
 		"batch_id": batchID,
 	})
 	if err != nil {

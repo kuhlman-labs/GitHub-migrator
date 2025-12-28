@@ -1,15 +1,15 @@
 import { useState, useCallback } from 'react';
 import {
-  Button,
   TextInput,
   Flash,
   ActionMenu,
   ActionList,
   Label,
   Spinner,
-  Dialog,
   FormControl,
 } from '@primer/react';
+import { Blankslate } from '@primer/react/experimental';
+import { Button, BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
 import {
   PeopleIcon,
   CheckIcon,
@@ -40,10 +40,16 @@ import {
   useResetTeamMigrationStatus,
   useDiscoverTeams,
 } from '../../hooks/useMutations';
+import { useTableState } from '../../hooks/useTableState';
+import { useDialogState } from '../../hooks/useDialogState';
 import { TeamMapping, TeamMappingStatus } from '../../types';
 import { api } from '../../services/api';
 import { Pagination } from '../common/Pagination';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { FormDialog } from '../common/FormDialog';
 import { TeamDetailPanel } from './TeamDetailPanel';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -256,35 +262,44 @@ function MigrationProgress({
   );
 }
 
+interface TeamMappingFilters extends Record<string, unknown> {
+  status: string;
+  sourceOrg: string;
+}
+
 export function TeamMappingTable() {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [sourceOrgFilter, setSourceOrgFilter] = useState<string>('');
+  const { showError, showSuccess } = useToast();
+  
+  // Use shared table state hook for pagination, search, and filtering
+  const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<TeamMappingFilters>({
+    initialFilters: { status: '', sourceOrg: '' },
+    pageSize: ITEMS_PER_PAGE,
+  });
+  
   const [orgSearchFilter, setOrgSearchFilter] = useState('');
-  const [page, setPage] = useState(1);
   const [editingMapping, setEditingMapping] = useState<{ org: string; slug: string } | null>(null);
   const [editDestOrg, setEditDestOrg] = useState('');
   const [editDestSlug, setEditDestSlug] = useState('');
-  const [importResult, setImportResult] = useState<{ created: number; updated: number; errors: number } | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<{ org: string; slug: string } | null>(null);
-  const [showExecuteDialog, setShowExecuteDialog] = useState(false);
-  const [showSingleTeamDialog, setShowSingleTeamDialog] = useState<{ org: string; slug: string } | null>(null);
   const [dryRun, setDryRun] = useState(false);
-  const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
-  const [showResetDialog, setShowResetDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState<{ org: string; slug: string } | null>(null);
-  const [actionResult, setActionResult] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
+  
+  // Dialog state using shared hooks
+  const executeDialog = useDialogState();
+  const singleTeamDialog = useDialogState<{ org: string; slug: string }>();
+  const discoverDialog = useDialogState();
+  const resetDialog = useDialogState();
+  const deleteDialog = useDialogState<{ org: string; slug: string }>();
 
   const { data, isLoading, error, refetch } = useTeamMappings({
     search: search || undefined,
-    status: statusFilter || undefined,
-    source_org: sourceOrgFilter || undefined,
-    limit: ITEMS_PER_PAGE,
-    offset: (page - 1) * ITEMS_PER_PAGE,
+    status: filters.status || undefined,
+    source_org: filters.sourceOrg || undefined,
+    limit,
+    offset,
   });
 
-  const { data: stats } = useTeamMappingStats(sourceOrgFilter || undefined);
+  const { data: stats } = useTeamMappingStats(filters.sourceOrg || undefined);
   const { data: migrationStatus } = useTeamMigrationStatus();
   const { data: sourceOrgsData } = useTeamSourceOrgs();
   const sourceOrgs = sourceOrgsData || [];
@@ -300,18 +315,15 @@ export function TeamMappingTable() {
 
   const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
-    setPage(1);
-  }, []);
+  }, [setSearch]);
 
   const handleStatusFilter = useCallback((status: string) => {
-    setStatusFilter(status);
-    setPage(1);
-  }, []);
+    updateFilter('status', status);
+  }, [updateFilter]);
 
   const handleSourceOrgFilter = useCallback((org: string) => {
-    setSourceOrgFilter(org);
-    setPage(1);
-  }, []);
+    updateFilter('sourceOrg', org);
+  }, [updateFilter]);
 
   const handleEdit = useCallback((mapping: TeamMapping) => {
     setEditingMapping({ org: getOrg(mapping), slug: getSlug(mapping) });
@@ -334,8 +346,8 @@ export function TeamMappingTable() {
       setEditingMapping(null);
       setEditDestOrg('');
       setEditDestSlug('');
-    } catch (err) {
-      console.error('Failed to update mapping:', err);
+    } catch {
+      // Update failed, mutation will show error
     }
   }, [editingMapping, editDestOrg, editDestSlug, updateMapping]);
 
@@ -346,18 +358,18 @@ export function TeamMappingTable() {
   }, []);
 
   const handleDelete = useCallback((sourceOrg: string, sourceTeamSlug: string) => {
-    setShowDeleteDialog({ org: sourceOrg, slug: sourceTeamSlug });
-  }, []);
+    deleteDialog.open({ org: sourceOrg, slug: sourceTeamSlug });
+  }, [deleteDialog]);
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!showDeleteDialog) return;
+    if (!deleteDialog.data) return;
     try {
-      await deleteMapping.mutateAsync({ sourceOrg: showDeleteDialog.org, sourceTeamSlug: showDeleteDialog.slug });
-      setShowDeleteDialog(null);
-    } catch (err) {
-      console.error('Failed to delete mapping:', err);
+      await deleteMapping.mutateAsync({ sourceOrg: deleteDialog.data.org, sourceTeamSlug: deleteDialog.data.slug });
+      deleteDialog.close();
+    } catch {
+      // Delete failed, mutation will show error
     }
-  }, [deleteMapping, showDeleteDialog]);
+  }, [deleteMapping, deleteDialog]);
 
   const handleSkip = useCallback(async (sourceOrg: string, sourceTeamSlug: string) => {
     try {
@@ -366,16 +378,16 @@ export function TeamMappingTable() {
         sourceTeamSlug,
         updates: { mapping_status: 'skipped' as const },
       });
-    } catch (err) {
-      console.error('Failed to skip mapping:', err);
+    } catch {
+      // Skip failed, mutation will show error
     }
   }, [updateMapping]);
 
   const handleExport = useCallback(async () => {
     try {
       const blob = await api.exportTeamMappings({
-        status: statusFilter || undefined,
-        source_org: sourceOrgFilter || undefined,
+        status: filters.status || undefined,
+        source_org: filters.sourceOrg || undefined,
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -385,74 +397,73 @@ export function TeamMappingTable() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (err) {
-      console.error('Failed to export mappings:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to export mappings');
     }
-  }, [statusFilter, sourceOrgFilter]);
+  }, [filters.status, filters.sourceOrg, showError]);
 
   const handleImport = useCallback(async (file: File) => {
     try {
       const result = await api.importTeamMappings(file);
-      setImportResult(result);
+      showSuccess(`Import complete: ${result.created} created, ${result.updated} updated, ${result.errors} errors`);
       refetch();
-      setTimeout(() => setImportResult(null), 5000);
-    } catch (err) {
-      console.error('Failed to import mappings:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to import mappings');
     }
-  }, [refetch]);
+  }, [refetch, showError, showSuccess]);
 
   const handleExecute = useCallback(async () => {
     try {
       await executeMigration.mutateAsync({
-        source_org: sourceOrgFilter || undefined,
+        source_org: filters.sourceOrg || undefined,
         dry_run: dryRun,
       });
-      setShowExecuteDialog(false);
-    } catch (err) {
-      console.error('Failed to execute migration:', err);
+      executeDialog.close();
+    } catch {
+      // Execute migration failed, mutation will show error
     }
-  }, [executeMigration, sourceOrgFilter, dryRun]);
+  }, [executeMigration, filters.sourceOrg, dryRun, executeDialog]);
 
   const handleCancel = useCallback(async () => {
     try {
       await cancelMigration.mutateAsync();
-    } catch (err) {
-      console.error('Failed to cancel migration:', err);
+    } catch {
+      // Cancel failed, mutation will show error
     }
   }, [cancelMigration]);
 
   const handleReset = useCallback(() => {
-    setShowResetDialog(true);
-  }, []);
+    resetDialog.open();
+  }, [resetDialog]);
 
   const handleConfirmReset = useCallback(async () => {
     try {
-      await resetMigration.mutateAsync(sourceOrgFilter || undefined);
+      await resetMigration.mutateAsync(filters.sourceOrg || undefined);
       refetch();
-      setShowResetDialog(false);
-    } catch (err) {
-      console.error('Failed to reset migration status:', err);
+      resetDialog.close();
+    } catch {
+      // Reset failed, mutation will show error
     }
-  }, [resetMigration, sourceOrgFilter, refetch]);
+  }, [resetMigration, filters.sourceOrg, refetch, resetDialog]);
 
   const handleMigrateSingleTeam = useCallback((sourceOrg: string, sourceTeamSlug: string) => {
-    setShowSingleTeamDialog({ org: sourceOrg, slug: sourceTeamSlug });
-  }, []);
+    singleTeamDialog.open({ org: sourceOrg, slug: sourceTeamSlug });
+  }, [singleTeamDialog]);
 
   const handleConfirmSingleTeamMigration = useCallback(async () => {
-    if (!showSingleTeamDialog) return;
+    if (!singleTeamDialog.data) return;
     
     try {
       await executeMigration.mutateAsync({
-        source_org: showSingleTeamDialog.org,
-        source_team_slug: showSingleTeamDialog.slug,
+        source_org: singleTeamDialog.data.org,
+        source_team_slug: singleTeamDialog.data.slug,
         dry_run: false,
       });
-      setShowSingleTeamDialog(null);
-    } catch (err) {
-      console.error('Failed to migrate team:', err);
+      singleTeamDialog.close();
+    } catch {
+      // Single team migration failed, mutation will show error
     }
-  }, [executeMigration, showSingleTeamDialog]);
+  }, [executeMigration, singleTeamDialog]);
 
   const handleTeamClick = useCallback((org: string, slug: string) => {
     setSelectedTeam({ org, slug });
@@ -501,17 +512,7 @@ export function TeamMappingTable() {
           </p>
         </div>
         <div className="flex gap-2">
-          {/* Discover Teams Button */}
-          <Button
-            variant="invisible"
-            onClick={() => setShowDiscoverDialog(true)}
-            leadingVisual={PeopleIcon}
-            disabled={discoverTeams.isPending}
-            className="btn-bordered-invisible"
-          >
-            {discoverTeams.isPending ? 'Discovering...' : 'Discover Teams'}
-          </Button>
-          
+          {/* Data Management - Import/Export */}
           <input
             type="file"
             id="import-team-csv-input"
@@ -525,56 +526,38 @@ export function TeamMappingTable() {
             }}
             className="hidden"
           />
-          <Button
-            variant="invisible"
+          <BorderedButton
             onClick={() => document.getElementById('import-team-csv-input')?.click()}
             leadingVisual={UploadIcon}
-            className="btn-bordered-invisible"
           >
             Import
-          </Button>
-          <Button
-            variant="invisible"
+          </BorderedButton>
+          <BorderedButton
             onClick={handleExport}
             leadingVisual={DownloadIcon}
-            className="btn-bordered-invisible"
           >
             Export
-          </Button>
-          <Button
-            onClick={() => setShowExecuteDialog(true)}
+          </BorderedButton>
+          
+          {/* Discovery/Setup action */}
+          <PrimaryButton
+            onClick={() => discoverDialog.open()}
+            leadingVisual={PeopleIcon}
+            disabled={discoverTeams.isPending}
+          >
+            {discoverTeams.isPending ? 'Discovering...' : 'Discover Teams'}
+          </PrimaryButton>
+          
+          {/* Primary action - Migrate Teams */}
+          <SuccessButton
+            onClick={() => executeDialog.open()}
             disabled={!hasMappedTeams || isRunning}
             leadingVisual={PlayIcon}
-            variant="primary"
           >
             Migrate Teams
-          </Button>
+          </SuccessButton>
         </div>
       </div>
-
-      {/* Import result notification */}
-      {importResult && (
-        <Flash variant="success">
-          Import complete: {importResult.created} created, {importResult.updated} updated, {importResult.errors} errors
-        </Flash>
-      )}
-
-      {/* Action result notification */}
-      {actionResult && (
-        <Flash variant={actionResult.type}>
-          <span className="flex items-center justify-between">
-            {actionResult.message}
-            <Button
-              variant="invisible"
-              size="small"
-              onClick={() => setActionResult(null)}
-              className="ml-2"
-            >
-              Dismiss
-            </Button>
-          </span>
-        </Flash>
-      )}
 
       {/* Search and filters */}
       <div className="flex gap-4 items-center flex-wrap">
@@ -592,14 +575,12 @@ export function TeamMappingTable() {
         {sourceOrgs.length > 0 && (
           <ActionMenu onOpenChange={(open) => { if (!open) setOrgSearchFilter(''); }}>
             <ActionMenu.Anchor>
-              <Button
-                variant="invisible"
+              <BorderedButton
                 leadingVisual={OrganizationIcon}
                 trailingAction={TriangleDownIcon}
-                className="btn-bordered-invisible"
               >
-                Org: {sourceOrgFilter || 'All'}
-              </Button>
+                Org: {filters.sourceOrg || 'All'}
+              </BorderedButton>
             </ActionMenu.Anchor>
             <ActionMenu.Overlay>
               <div className="p-2" style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
@@ -617,7 +598,7 @@ export function TeamMappingTable() {
               <ActionList selectionVariant="single" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                 {!orgSearchFilter && (
                   <>
-                    <ActionList.Item selected={!sourceOrgFilter} onSelect={() => handleSourceOrgFilter('')}>
+                    <ActionList.Item selected={!filters.sourceOrg} onSelect={() => handleSourceOrgFilter('')}>
                       All Organizations
                     </ActionList.Item>
                     <ActionList.Divider />
@@ -628,7 +609,7 @@ export function TeamMappingTable() {
                   .map(org => (
                     <ActionList.Item
                       key={org}
-                      selected={sourceOrgFilter === org}
+                      selected={filters.sourceOrg === org}
                       onSelect={() => handleSourceOrgFilter(org)}
                     >
                       {org}
@@ -645,28 +626,26 @@ export function TeamMappingTable() {
         {/* Status Filter */}
         <ActionMenu>
           <ActionMenu.Anchor>
-            <Button
-              variant="invisible"
+            <BorderedButton
               leadingVisual={FilterIcon}
               trailingAction={TriangleDownIcon}
-              className="btn-bordered-invisible"
             >
-              Status: {statusFilter ? statusLabels[statusFilter as TeamMappingStatus] : 'All'}
-            </Button>
+              Status: {filters.status ? statusLabels[filters.status as TeamMappingStatus] : 'All'}
+            </BorderedButton>
           </ActionMenu.Anchor>
           <ActionMenu.Overlay>
             <ActionList selectionVariant="single">
-              <ActionList.Item selected={!statusFilter} onSelect={() => handleStatusFilter('')}>
+              <ActionList.Item selected={!filters.status} onSelect={() => handleStatusFilter('')}>
                 All
               </ActionList.Item>
               <ActionList.Divider />
-              <ActionList.Item selected={statusFilter === 'unmapped'} onSelect={() => handleStatusFilter('unmapped')}>
+              <ActionList.Item selected={filters.status === 'unmapped'} onSelect={() => handleStatusFilter('unmapped')}>
                 Unmapped
               </ActionList.Item>
-              <ActionList.Item selected={statusFilter === 'mapped'} onSelect={() => handleStatusFilter('mapped')}>
+              <ActionList.Item selected={filters.status === 'mapped'} onSelect={() => handleStatusFilter('mapped')}>
                 Mapped
               </ActionList.Item>
-              <ActionList.Item selected={statusFilter === 'skipped'} onSelect={() => handleStatusFilter('skipped')}>
+              <ActionList.Item selected={filters.status === 'skipped'} onSelect={() => handleStatusFilter('skipped')}>
                 Skipped
               </ActionList.Item>
             </ActionList>
@@ -888,10 +867,23 @@ export function TeamMappingTable() {
             })}
             {mappings.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-8 text-center">
-                  <span style={{ color: 'var(--fgColor-muted)' }}>
-                    No teams found. Run discovery to discover organization teams.
-                  </span>
+                <td colSpan={6} className="p-8">
+                  <Blankslate>
+                    <Blankslate.Visual>
+                      <PeopleIcon size={48} />
+                    </Blankslate.Visual>
+                    <Blankslate.Heading>No teams found</Blankslate.Heading>
+                    <Blankslate.Description>
+                      {search || filters.status || filters.sourceOrg
+                        ? 'Try adjusting your search or filters to find teams.'
+                        : 'No teams have been discovered yet. Start by discovering organization teams.'}
+                    </Blankslate.Description>
+                    {!search && !filters.status && !filters.sourceOrg && (
+                      <Blankslate.PrimaryAction onClick={() => discoverDialog.open()}>
+                        Discover Teams
+                      </Blankslate.PrimaryAction>
+                    )}
+                  </Blankslate>
                 </td>
               </tr>
             )}
@@ -926,220 +918,167 @@ export function TeamMappingTable() {
       )}
 
       {/* Execute Migration Dialog */}
-      {showExecuteDialog && (
-        <Dialog
-          title="Migrate Teams"
-          onClose={() => setShowExecuteDialog(false)}
-        >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              This will create teams in the destination organization and apply repository permissions for all mapped teams.
-            </p>
+      <FormDialog
+        isOpen={executeDialog.isOpen}
+        title="Migrate Teams"
+        submitLabel={executeMigration.isPending ? 'Starting...' : dryRun ? 'Start Dry Run' : 'Start Migration'}
+        onSubmit={handleExecute}
+        onCancel={executeDialog.close}
+        isLoading={executeMigration.isPending}
+      >
+        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          This will create teams in the destination organization and apply repository permissions for all mapped teams.
+        </p>
 
-            <Flash variant="warning" className="mb-4">
-              <div className="flex items-start gap-2">
-                <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
-                <div>
-                  <strong>EMU/IdP Notice:</strong> Teams are created <strong>without members</strong>. 
-                  If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM). 
-                  Repository permissions will be applied to teams.
-                </div>
-              </div>
-            </Flash>
-
-            <div className="mb-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={dryRun}
-                  onChange={(e) => setDryRun(e.target.checked)}
-                />
-                <span>Dry run (preview changes without applying)</span>
-              </label>
+        <Flash variant="warning" className="mb-4">
+          <div className="flex items-start gap-2">
+            <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <strong>EMU/IdP Notice:</strong> Teams are created <strong>without members</strong>. 
+              If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM). 
+              Repository permissions will be applied to teams.
             </div>
+          </div>
+        </Flash>
 
-            {sourceOrgFilter && (
-              <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-                Only teams from <strong>{sourceOrgFilter}</strong> will be processed.
-              </p>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => setShowExecuteDialog(false)}>Cancel</Button>
-            <Button
-              variant="primary"
-              onClick={handleExecute}
-              disabled={executeMigration.isPending}
-            >
-              {executeMigration.isPending ? (
-                <>
-                  <Spinner size="small" /> Starting...
-                </>
-              ) : dryRun ? (
-                'Start Dry Run'
-              ) : (
-                'Start Migration'
-              )}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+        <div className="mb-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+            />
+            <span>Dry run (preview changes without applying)</span>
+          </label>
+        </div>
+
+        {filters.sourceOrg && (
+          <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+            Only teams from <strong>{filters.sourceOrg}</strong> will be processed.
+          </p>
+        )}
+      </FormDialog>
 
       {/* Single Team Migration Dialog */}
-      {showSingleTeamDialog && (
-        <Dialog
+      {singleTeamDialog.data && (
+        <ConfirmationDialog
+          isOpen={singleTeamDialog.isOpen}
           title="Migrate Team"
-          onClose={() => setShowSingleTeamDialog(null)}
-        >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              This will create the team <strong style={{ color: 'var(--fgColor-default)' }}>{showSingleTeamDialog.org}/{showSingleTeamDialog.slug}</strong> in the destination organization and apply repository permissions.
-            </p>
+          message={
+            <>
+              <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+                This will create the team <strong style={{ color: 'var(--fgColor-default)' }}>{singleTeamDialog.data.org}/{singleTeamDialog.data.slug}</strong> in the destination organization and apply repository permissions.
+              </p>
 
-            <Flash variant="warning">
-              <div className="flex items-start gap-2">
-                <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
-                <div>
-                  <strong>EMU/IdP Notice:</strong> The team will be created <strong>without members</strong>. 
-                  If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM).
+              <Flash variant="warning">
+                <div className="flex items-start gap-2">
+                  <AlertIcon size={16} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong>EMU/IdP Notice:</strong> The team will be created <strong>without members</strong>. 
+                    If your destination is an EMU environment, manage team membership through your Identity Provider (IdP/SCIM).
+                  </div>
                 </div>
-              </div>
-            </Flash>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => setShowSingleTeamDialog(null)}>Cancel</Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmSingleTeamMigration}
-              disabled={executeMigration.isPending}
-            >
-              {executeMigration.isPending ? (
-                <>
-                  <Spinner size="small" /> Migrating...
-                </>
-              ) : (
-                'Migrate Team'
-              )}
-            </Button>
-          </div>
-        </Dialog>
+              </Flash>
+            </>
+          }
+          confirmLabel="Migrate Team"
+          onConfirm={handleConfirmSingleTeamMigration}
+          onCancel={singleTeamDialog.close}
+          isLoading={executeMigration.isPending}
+        />
       )}
 
       {/* Discover Teams Dialog */}
-      {showDiscoverDialog && (
-        <Dialog
-          title="Discover Teams"
-          onClose={() => {
-            setShowDiscoverDialog(false);
-            setDiscoverOrg('');
-          }}
-        >
-          <div className="p-4">
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              Discover all teams from a GitHub organization. This will fetch teams, their members, and create team mappings.
-            </p>
-            <FormControl>
-              <FormControl.Label>Source Organization</FormControl.Label>
-              <TextInput
-                value={discoverOrg}
-                onChange={(e) => setDiscoverOrg(e.target.value)}
-                placeholder="e.g., my-org"
-                block
-              />
-              <FormControl.Caption>
-                Enter the source GitHub organization name
-              </FormControl.Caption>
-            </FormControl>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => {
-              setShowDiscoverDialog(false);
+      <FormDialog
+        isOpen={discoverDialog.isOpen}
+        title="Discover Teams"
+        submitLabel={discoverTeams.isPending ? 'Discovering...' : 'Discover'}
+        onSubmit={() => {
+          if (!discoverOrg.trim()) return;
+          discoverTeams.mutate(discoverOrg.trim(), {
+            onSuccess: (data) => {
+              showSuccess(data.message || 'Discovery completed!');
+              discoverDialog.close();
               setDiscoverOrg('');
-            }}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (!discoverOrg.trim()) return;
-                discoverTeams.mutate(discoverOrg.trim(), {
-                  onSuccess: (data) => {
-                    setActionResult({ type: 'success', message: data.message || 'Discovery completed!' });
-                    setShowDiscoverDialog(false);
-                    setDiscoverOrg('');
-                  },
-                  onError: (error) => {
-                    setActionResult({ type: 'danger', message: error instanceof Error ? error.message : 'Discovery failed' });
-                  },
-                });
-              }}
-              disabled={discoverTeams.isPending || !discoverOrg.trim()}
-            >
-              {discoverTeams.isPending ? 'Discovering...' : 'Discover'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+            },
+            onError: (error) => {
+              showError(error instanceof Error ? error.message : 'Discovery failed');
+            },
+          });
+        }}
+        onCancel={() => {
+          discoverDialog.close();
+          setDiscoverOrg('');
+        }}
+        isLoading={discoverTeams.isPending}
+        isSubmitDisabled={!discoverOrg.trim()}
+      >
+        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          Discover all teams from a GitHub organization. This will fetch teams, their members, and create team mappings.
+        </p>
+        <FormControl>
+          <FormControl.Label>Source Organization</FormControl.Label>
+          <TextInput
+            value={discoverOrg}
+            onChange={(e) => setDiscoverOrg(e.target.value)}
+            placeholder="e.g., my-org"
+            block
+          />
+          <FormControl.Caption>
+            Enter the source GitHub organization name
+          </FormControl.Caption>
+        </FormControl>
+      </FormDialog>
 
       {/* Delete Mapping Dialog */}
-      {showDeleteDialog && (
-        <Dialog
+      {deleteDialog.data && (
+        <ConfirmationDialog
+          isOpen={deleteDialog.isOpen}
           title="Delete Mapping"
-          onClose={() => setShowDeleteDialog(null)}
-        >
-          <div className="p-4">
-            <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
-              Are you sure you want to delete the mapping for{' '}
-              <strong>{showDeleteDialog.org}/{showDeleteDialog.slug}</strong>?
-            </p>
-            <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-              This will remove the destination mapping. The source team data will be preserved.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => setShowDeleteDialog(null)}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmDelete}
-              disabled={deleteMapping.isPending}
-            >
-              {deleteMapping.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
-        </Dialog>
+          message={
+            <>
+              <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
+                Are you sure you want to delete the mapping for{' '}
+                <strong>{deleteDialog.data.org}/{deleteDialog.data.slug}</strong>?
+              </p>
+              <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                This will remove the destination mapping. The source team data will be preserved.
+              </p>
+            </>
+          }
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={handleConfirmDelete}
+          onCancel={deleteDialog.close}
+          isLoading={deleteMapping.isPending}
+        />
       )}
 
       {/* Reset Migration Status Dialog */}
-      {showResetDialog && (
-        <Dialog
-          title="Reset Migration Status"
-          onClose={() => setShowResetDialog(false)}
-        >
-          <div className="p-4">
+      <ConfirmationDialog
+        isOpen={resetDialog.isOpen}
+        title="Reset Migration Status"
+        message={
+          <>
             <p className="mb-3" style={{ color: 'var(--fgColor-default)' }}>
               Are you sure you want to reset all team migration statuses to pending?
             </p>
             <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
               This will allow you to re-run the team migration. Teams that have already been created in the destination will be skipped, but repository permissions will be re-applied.
             </p>
-            {sourceOrgFilter && (
+            {filters.sourceOrg && (
               <p className="text-sm mt-3" style={{ color: 'var(--fgColor-accent)' }}>
-                <strong>Note:</strong> Only teams from <strong>{sourceOrgFilter}</strong> will be reset.
+                <strong>Note:</strong> Only teams from <strong>{filters.sourceOrg}</strong> will be reset.
               </p>
             )}
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => setShowResetDialog(false)}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmReset}
-              disabled={resetMigration.isPending}
-            >
-              {resetMigration.isPending ? 'Resetting...' : 'Reset Status'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+          </>
+        }
+        confirmLabel="Reset Status"
+        variant="danger"
+        onConfirm={handleConfirmReset}
+        onCancel={resetDialog.close}
+        isLoading={resetMigration.isPending}
+      />
     </div>
   );
 }

@@ -1,0 +1,71 @@
+/**
+ * Discovery-related API endpoints for GitHub and Azure DevOps.
+ */
+import { client } from './client';
+import type { DiscoveryProgress, Organization, Project, GitHubTeam } from '../../types';
+
+export const discoveryApi = {
+  // GitHub Discovery
+  async start(params: { organization?: string; enterprise_slug?: string; workers?: number }) {
+    const { data } = await client.post('/discovery/start', params);
+    return data;
+  },
+
+  async getStatus() {
+    const { data } = await client.get('/discovery/status');
+    return data;
+  },
+
+  async getProgress(): Promise<DiscoveryProgress | null> {
+    const { data } = await client.get('/discovery/progress');
+    if (data.status === 'none') {
+      return null;
+    }
+    return data;
+  },
+
+  // Azure DevOps Discovery
+  async startADO(params: { organization?: string; project?: string; workers?: number }) {
+    const { data } = await client.post('/ado/discover', params);
+    return data;
+  },
+
+  async getADOStatus(organization?: string) {
+    const { data } = await client.get('/ado/discovery/status', { params: { organization } });
+    return data;
+  },
+
+  async listADOProjects(organization?: string) {
+    const { data } = await client.get('/ado/projects', { params: { organization } });
+    return data.projects || [];
+  },
+
+  async getADOProject(organization: string, project: string) {
+    const { data } = await client.get(
+      `/ado/projects/${encodeURIComponent(organization)}/${encodeURIComponent(project)}`
+    );
+    return data;
+  },
+
+  // Organizations
+  async listOrganizations(): Promise<Organization[]> {
+    const { data } = await client.get('/organizations');
+    return data;
+  },
+
+  async listProjects(): Promise<Project[]> {
+    const { data } = await client.get('/projects');
+    return data;
+  },
+
+  async getOrganizationList(): Promise<string[]> {
+    const { data } = await client.get('/organizations/list');
+    return data;
+  },
+
+  async listTeams(organization?: string): Promise<GitHubTeam[]> {
+    const { data } = await client.get('/teams', { params: { organization } });
+    return data;
+  },
+};
+

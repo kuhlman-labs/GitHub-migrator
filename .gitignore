@@ -54,6 +54,7 @@ web/.next/
 web/out/
 web/build/
 web/.cache/
+web/coverage/
 web/.env.local
 web/.env.development.local
 web/.env.test.local

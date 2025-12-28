@@ -121,7 +121,7 @@ func TestGetRepository(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -185,7 +185,7 @@ func TestUpdateRepository(t *testing.T) {
 	db.SaveRepository(ctx, repo)
 
 	t.Run("update batch_id and priority", func(t *testing.T) {
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"batch_id": float64(batch.ID),
 			"priority": float64(1),
 		}
@@ -215,7 +215,7 @@ func TestUpdateRepository(t *testing.T) {
 	})
 
 	t.Run("repository not found", func(t *testing.T) {
-		updates := map[string]interface{}{"priority": float64(1)}
+		updates := map[string]any{"priority": float64(1)}
 		body, _ := json.Marshal(updates)
 
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/org/nonexistent", bytes.NewReader(body))

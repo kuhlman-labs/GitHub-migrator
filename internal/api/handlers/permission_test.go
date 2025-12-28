@@ -157,14 +157,14 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{
+					resp := []map[string]any{
 						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
 					}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
 				if r.URL.Path == "/user/memberships/orgs/test-org" {
-					resp := map[string]interface{}{"state": "active", "role": "admin"}
+					resp := map[string]any{"state": "active", "role": "admin"}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
@@ -180,12 +180,12 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{}
+					resp := []map[string]any{}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
 				if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
-					resp := map[string]interface{}{"permission": "write"}
+					resp := map[string]any{"permission": "write"}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
@@ -284,7 +284,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs/test-org" {
-					resp := map[string]interface{}{"state": "active", "role": "admin"}
+					resp := map[string]any{"state": "active", "role": "admin"}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
@@ -304,7 +304,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 					return
 				}
 				if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
-					resp := map[string]interface{}{"permission": "write"}
+					resp := map[string]any{"permission": "write"}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
@@ -405,14 +405,14 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{
+					resp := []map[string]any{
 						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
 					}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
 				if r.URL.Path == "/user/memberships/orgs/test-org" {
-					resp := map[string]interface{}{"state": "active", "role": "admin"}
+					resp := map[string]any{"state": "active", "role": "admin"}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
@@ -428,7 +428,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{}
+					resp := []map[string]any{}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}

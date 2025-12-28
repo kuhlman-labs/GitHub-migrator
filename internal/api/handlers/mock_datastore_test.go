@@ -145,7 +145,7 @@ func (m *MockDataStore) GetRepositoriesByNames(_ context.Context, names []string
 	return result, nil
 }
 
-func (m *MockDataStore) ListRepositories(_ context.Context, _ map[string]interface{}) ([]*models.Repository, error) {
+func (m *MockDataStore) ListRepositories(_ context.Context, _ map[string]any) ([]*models.Repository, error) {
 	if m.ListReposErr != nil {
 		return nil, m.ListReposErr
 	}
@@ -158,13 +158,13 @@ func (m *MockDataStore) ListRepositories(_ context.Context, _ map[string]interfa
 	return result, nil
 }
 
-func (m *MockDataStore) CountRepositories(_ context.Context, _ map[string]interface{}) (int, error) {
+func (m *MockDataStore) CountRepositories(_ context.Context, _ map[string]any) (int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.Repos), nil
 }
 
-func (m *MockDataStore) CountRepositoriesWithFilters(_ context.Context, _ map[string]interface{}) (int, error) {
+func (m *MockDataStore) CountRepositoriesWithFilters(_ context.Context, _ map[string]any) (int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.Repos), nil
@@ -519,12 +519,12 @@ func (m *MockDataStore) GetUserByLogin(_ context.Context, login string) (*models
 	return m.Users[login], nil
 }
 
-func (m *MockDataStore) GetUserStats(_ context.Context) (map[string]interface{}, error) {
-	return map[string]interface{}{"total": len(m.Users)}, nil
+func (m *MockDataStore) GetUserStats(_ context.Context) (map[string]any, error) {
+	return map[string]any{"total": len(m.Users)}, nil
 }
 
-func (m *MockDataStore) GetUsersWithMappingsStats(_ context.Context, _ string) (map[string]interface{}, error) {
-	return map[string]interface{}{}, nil
+func (m *MockDataStore) GetUsersWithMappingsStats(_ context.Context, _ string) (map[string]any, error) {
+	return map[string]any{}, nil
 }
 
 func (m *MockDataStore) GetUserOrgMemberships(_ context.Context, _ string) ([]*models.UserOrgMembership, error) {
@@ -611,8 +611,8 @@ func (m *MockDataStore) GetTeamSourceOrgs(_ context.Context) ([]string, error) {
 	return []string{}, nil
 }
 
-func (m *MockDataStore) GetTeamsWithMappingsStats(_ context.Context, _ string) (map[string]interface{}, error) {
-	return map[string]interface{}{}, nil
+func (m *MockDataStore) GetTeamsWithMappingsStats(_ context.Context, _ string) (map[string]any, error) {
+	return map[string]any{}, nil
 }
 
 func (m *MockDataStore) GetTeamMembersByOrgAndSlug(_ context.Context, _, _ string) ([]*models.GitHubTeamMember, error) {
@@ -640,16 +640,16 @@ func (m *MockDataStore) GetTeamDetail(_ context.Context, org, slug string) (*sto
 	return nil, nil
 }
 
-func (m *MockDataStore) GetUserMappingStats(_ context.Context, _ string) (map[string]interface{}, error) {
-	return map[string]interface{}{}, nil
+func (m *MockDataStore) GetUserMappingStats(_ context.Context, _ string) (map[string]any, error) {
+	return map[string]any{}, nil
 }
 
-func (m *MockDataStore) GetTeamMappingStats(_ context.Context, _ string) (map[string]interface{}, error) {
-	return map[string]interface{}{}, nil
+func (m *MockDataStore) GetTeamMappingStats(_ context.Context, _ string) (map[string]any, error) {
+	return map[string]any{}, nil
 }
 
-func (m *MockDataStore) GetTeamMigrationExecutionStats(_ context.Context) (map[string]interface{}, error) {
-	return map[string]interface{}{}, nil
+func (m *MockDataStore) GetTeamMigrationExecutionStats(_ context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
 }
 
 func (m *MockDataStore) ResetTeamMigrationStatus(_ context.Context, _ string) error {

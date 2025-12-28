@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
-import { Button, Checkbox, TextInput, FormControl, Select, Dialog } from '@primer/react';
-import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon } from '@primer/octicons-react';
+import { useState, useEffect } from 'react';
+import { Button, Checkbox, TextInput, FormControl, Select } from '@primer/react';
+import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon, TrashIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import { Badge } from '../common/Badge';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { ComplexityInfoModal } from '../common/ComplexityInfoModal';
 import { useUpdateRepository } from '../../hooks/useMutations';
 import { formatBytes } from '../../utils/format';
@@ -30,7 +31,6 @@ export function MigrationReadinessTab({
   
   // Dialog state
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
-  const removeButtonRef = useRef<HTMLButtonElement>(null);
   
   // Destination configuration
   
@@ -138,7 +138,6 @@ export function MigrationReadinessTab({
       
       showSuccess('Destination saved successfully!');
     } catch (error: unknown) {
-      console.error('Failed to save destination:', error);
       const err = error as { response?: { data?: { error?: string } }; message?: string };
       const errorMessage = err.response?.data?.error || err.message || 'Failed to save destination. Please try again.';
       showError(errorMessage);
@@ -159,7 +158,6 @@ export function MigrationReadinessTab({
       showSuccess('Repository assigned to batch successfully!');
       setSelectedBatchId(null);
     } catch (error: unknown) {
-      console.error('Failed to assign to batch:', error);
       const err = error as { response?: { data?: { error?: string } } };
       const errorMsg = err.response?.data?.error || 'Failed to assign to batch. Please try again.';
       showError(errorMsg);
@@ -187,7 +185,6 @@ export function MigrationReadinessTab({
       
       showSuccess('Repository removed from batch successfully!');
     } catch (error: unknown) {
-      console.error('Failed to remove from batch:', error);
       const err = error as { response?: { data?: { error?: string } } };
       const errorMsg = err.response?.data?.error || 'Failed to remove from batch. Please try again.';
       showError(errorMsg);
@@ -209,7 +206,6 @@ export function MigrationReadinessTab({
       
       showSuccess('Migration options saved successfully!');
     } catch (error: unknown) {
-      console.error('Failed to save migration options:', error);
       const err = error as { response?: { data?: { error?: string } } };
       const errorMsg = err.response?.data?.error || 'Failed to save migration options. Please try again.';
       showError(errorMsg);
@@ -554,7 +550,8 @@ export function MigrationReadinessTab({
                 <Button
                   onClick={handleRemoveFromBatch}
                   disabled={assigningBatch}
-                  variant="default"
+                  variant="danger"
+                  leadingVisual={TrashIcon}
                 >
                     {assigningBatch ? 'Removing...' : 'Remove'}
                 </Button>
@@ -765,36 +762,15 @@ export function MigrationReadinessTab({
       )}
 
       {/* Remove from Batch Confirmation Dialog */}
-      {showRemoveDialog && (
-        <Dialog
-          returnFocusRef={removeButtonRef as React.RefObject<HTMLElement>}
-          onClose={() => setShowRemoveDialog(false)}
-          aria-labelledby="remove-dialog-header"
-        >
-          <Dialog.Header id="remove-dialog-header">
-            Remove from Batch
-          </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
-              Are you sure you want to remove this repository from its batch?
-            </p>
-          </div>
-          <div style={{ 
-            padding: '12px 16px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px'
-          }}>
-            <Button onClick={() => setShowRemoveDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={confirmRemoveFromBatch}>
-              Remove
-            </Button>
-          </div>
-        </Dialog>
-      )}
+      <ConfirmationDialog
+        isOpen={showRemoveDialog}
+        title="Remove from Batch"
+        message="Are you sure you want to remove this repository from its batch?"
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={confirmRemoveFromBatch}
+        onCancel={() => setShowRemoveDialog(false)}
+      />
     </div>
   );
 }

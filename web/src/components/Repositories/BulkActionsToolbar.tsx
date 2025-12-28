@@ -3,6 +3,8 @@ import { Button, TextInput, FormControl } from '@primer/react';
 import { CheckIcon, XIcon, ChevronDownIcon } from '@primer/octicons-react';
 import { useBatchUpdateRepositoryStatus } from '../../hooks/useMutations';
 import { useToast } from '../../contexts/ToastContext';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { FormDialog } from '../common/FormDialog';
 
 interface BulkActionsToolbarProps {
   selectedCount: number;
@@ -180,79 +182,61 @@ export function BulkActionsToolbar({ selectedCount, selectedIds, onClearSelectio
         </div>
       </div>
 
-      {/* Confirmation Dialog */}
-      {confirmDialog && (
-        <>
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 z-50"
-            onClick={() => {
-              if (!batchUpdateMutation.isPending) {
-                setConfirmDialog(null);
-                setRollbackReason('');
-              }
-            }}
-          />
-          
-          {/* Dialog */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div 
-              className="rounded-lg shadow-xl max-w-md w-full"
-              style={{ backgroundColor: 'var(--bgColor-default)' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-4 py-3 border-b border-gh-border-default">
-                <h3 className="text-base font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-                  {confirmDialog.confirmTitle}
-                </h3>
-              </div>
-              
-              <div className="p-4">
-                <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
-                  {confirmDialog.confirmMessage}
-                </p>
-                <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-                  <strong>{selectedCount}</strong> {selectedCount === 1 ? 'repository' : 'repositories'} will be
-                  affected.
-                </p>
-                {confirmDialog.action === 'rollback' && (
-                  <FormControl>
-                    <FormControl.Label>Reason (optional)</FormControl.Label>
-                    <TextInput
-                      value={rollbackReason}
-                      onChange={(e) => setRollbackReason(e.target.value)}
-                      placeholder="e.g., Migration issues, incorrect destination, etc."
-                      disabled={batchUpdateMutation.isPending}
-                      block
-                    />
-                    <FormControl.Caption>
-                      Provide a reason for the rollback to help with tracking and auditing.
-                    </FormControl.Caption>
-                  </FormControl>
-                )}
-              </div>
-              
-              <div className="px-4 py-3 border-t border-gh-border-default flex justify-end gap-2">
-                <Button
-                  onClick={() => {
-                    setConfirmDialog(null);
-                    setRollbackReason('');
-                  }}
-                  disabled={batchUpdateMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleConfirmAction}
-                  variant="primary"
-                  disabled={batchUpdateMutation.isPending}
-                >
-                  {batchUpdateMutation.isPending ? 'Processing...' : 'Confirm'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>
+      {/* Confirmation Dialog for non-rollback actions */}
+      {confirmDialog && confirmDialog.action !== 'rollback' && (
+        <ConfirmationDialog
+          isOpen={true}
+          title={confirmDialog.confirmTitle}
+          message={
+            <>
+              <p className="mb-3">{confirmDialog.confirmMessage}</p>
+              <p>
+                <strong>{selectedCount}</strong> {selectedCount === 1 ? 'repository' : 'repositories'} will be affected.
+              </p>
+            </>
+          }
+          confirmLabel="Confirm"
+          onConfirm={handleConfirmAction}
+          onCancel={() => {
+            setConfirmDialog(null);
+          }}
+          isLoading={batchUpdateMutation.isPending}
+        />
+      )}
+
+      {/* Form Dialog for rollback action (has reason input) */}
+      {confirmDialog && confirmDialog.action === 'rollback' && (
+        <FormDialog
+          isOpen={true}
+          title={confirmDialog.confirmTitle}
+          submitLabel="Confirm"
+          onSubmit={handleConfirmAction}
+          onCancel={() => {
+            setConfirmDialog(null);
+            setRollbackReason('');
+          }}
+          isLoading={batchUpdateMutation.isPending}
+        >
+          <p className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
+            {confirmDialog.confirmMessage}
+          </p>
+          <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+            <strong>{selectedCount}</strong> {selectedCount === 1 ? 'repository' : 'repositories'} will be affected.
+          </p>
+          <FormControl>
+            <FormControl.Label>Reason (optional)</FormControl.Label>
+            <TextInput
+              value={rollbackReason}
+              onChange={(e) => setRollbackReason(e.target.value)}
+              placeholder="e.g., Migration issues, incorrect destination, etc."
+              disabled={batchUpdateMutation.isPending}
+              block
+            />
+            <FormControl.Caption>
+              Provide a reason for the rollback to help with tracking and auditing.
+            </FormControl.Caption>
+          </FormControl>
+        </FormDialog>
       )}
     </>
   );

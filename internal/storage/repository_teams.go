@@ -41,7 +41,7 @@ func (d *Database) SaveTeam(ctx context.Context, team *models.GitHubTeam) error 
 	team.DiscoveredAt = existing.DiscoveredAt
 	team.UpdatedAt = time.Now()
 
-	result := d.db.WithContext(ctx).Model(&existing).Updates(map[string]interface{}{
+	result := d.db.WithContext(ctx).Model(&existing).Updates(map[string]any{
 		"name":        team.Name,
 		"description": team.Description,
 		"privacy":     team.Privacy,

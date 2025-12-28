@@ -13,9 +13,9 @@ import (
 // mockRateLimitHandler returns a handler that responds to rate limit checks
 func mockRateLimitHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"resources": map[string]interface{}{
-			"core": map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
+		"resources": map[string]any{
+			"core": map[string]any{
 				"limit":     5000,
 				"remaining": 4999,
 				"reset":     1234567890,
@@ -28,7 +28,7 @@ func TestListOrganizationTeams(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/rate_limit", mockRateLimitHandler)
 	mux.HandleFunc("/api/v3/orgs/test-org/teams", func(w http.ResponseWriter, _ *http.Request) {
-		teams := []map[string]interface{}{
+		teams := []map[string]any{
 			{
 				"id":          123,
 				"slug":        "team-one",
@@ -83,7 +83,7 @@ func TestListTeamRepositories(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/rate_limit", mockRateLimitHandler)
 	mux.HandleFunc("/api/v3/orgs/test-org/teams/team-one/repos", func(w http.ResponseWriter, _ *http.Request) {
-		repos := []map[string]interface{}{
+		repos := []map[string]any{
 			{
 				"id":        1,
 				"full_name": "test-org/repo-one",
@@ -146,7 +146,7 @@ func TestGetTeamBySlug(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/rate_limit", mockRateLimitHandler)
 	mux.HandleFunc("/api/v3/orgs/test-org/teams/team-one", func(w http.ResponseWriter, _ *http.Request) {
-		team := map[string]interface{}{
+		team := map[string]any{
 			"id":          123,
 			"slug":        "team-one",
 			"name":        "Team One",
@@ -223,7 +223,7 @@ func TestListTeamMembers(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/rate_limit", mockRateLimitHandler)
 	mux.HandleFunc("/api/v3/orgs/test-org/teams/team-one/members", func(w http.ResponseWriter, _ *http.Request) {
-		members := []map[string]interface{}{
+		members := []map[string]any{
 			{
 				"login": "user1",
 				"id":    1001,

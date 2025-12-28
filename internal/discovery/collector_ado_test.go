@@ -146,11 +146,7 @@ func TestADOCollector_BatchProcessing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reposPerWorker := (tt.totalRepos + tt.workers - 1) / tt.workers
-			actualBatches := (tt.totalRepos + reposPerWorker - 1) / reposPerWorker
-
-			if actualBatches < 1 {
-				actualBatches = 1
-			}
+			actualBatches := max((tt.totalRepos+reposPerWorker-1)/reposPerWorker, 1)
 
 			t.Logf("Total repos: %d, Workers: %d, Repos per worker: %d, Batches: %d",
 				tt.totalRepos, tt.workers, reposPerWorker, actualBatches)

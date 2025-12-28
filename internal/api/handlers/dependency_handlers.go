@@ -55,7 +55,7 @@ func (h *Handler) getRepositoryDependencies(w http.ResponseWriter, r *http.Reque
 		summary.ByType[dep.DependencyType]++
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"dependencies": dependencies,
 		"summary":      summary,
 	}
@@ -137,7 +137,7 @@ func (h *Handler) getRepositoryDependents(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"dependents": result,
 		"total":      len(result),
 		"target":     decodedFullName,
@@ -229,7 +229,7 @@ func (h *Handler) GetDependencyGraph(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"total_repos_with_dependencies": len(nodeMap),
 		"total_local_dependencies":      len(edges),
 	}
@@ -255,7 +255,7 @@ func (h *Handler) GetDependencyGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	stats["circular_dependency_count"] = len(circularPairs)
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"nodes": nodes,
 		"edges": graphEdges,
 		"stats": stats,

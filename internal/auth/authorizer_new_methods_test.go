@@ -25,7 +25,7 @@ func TestAuthorizer_IsOrgAdmin(t *testing.T) {
 			name: "user is org admin",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs/test-org" {
-					resp := map[string]interface{}{
+					resp := map[string]any{
 						"state": "active",
 						"role":  "admin",
 					}
@@ -41,7 +41,7 @@ func TestAuthorizer_IsOrgAdmin(t *testing.T) {
 			name: "user is org member but not admin",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs/test-org" {
-					resp := map[string]interface{}{
+					resp := map[string]any{
 						"state": "active",
 						"role":  "member",
 					}
@@ -98,9 +98,9 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 			name: "user has admin permission",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/graphql" {
-					resp := map[string]interface{}{
-						"data": map[string]interface{}{
-							"repository": map[string]interface{}{
+					resp := map[string]any{
+						"data": map[string]any{
+							"repository": map[string]any{
 								"viewerPermission": "ADMIN",
 							},
 						},
@@ -117,9 +117,9 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 			name: "user has write permission but not admin",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/graphql" {
-					resp := map[string]interface{}{
-						"data": map[string]interface{}{
-							"repository": map[string]interface{}{
+					resp := map[string]any{
+						"data": map[string]any{
+							"repository": map[string]any{
 								"viewerPermission": "WRITE",
 							},
 						},
@@ -136,8 +136,8 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 			name: "user has no access to repo",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/graphql" {
-					resp := map[string]interface{}{
-						"errors": []map[string]interface{}{
+					resp := map[string]any{
+						"errors": []map[string]any{
 							{"message": "Could not resolve to a Repository with the name 'test-repo'."},
 						},
 					}
@@ -186,7 +186,7 @@ func TestAuthorizer_GetUserOrganizations(t *testing.T) {
 			name: "user has multiple orgs",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{
+					resp := []map[string]any{
 						{
 							"organization": map[string]string{"login": "org1"},
 							"state":        "active",
@@ -212,7 +212,7 @@ func TestAuthorizer_GetUserOrganizations(t *testing.T) {
 			name: "user has no orgs",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{}
+					resp := []map[string]any{}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
@@ -263,9 +263,9 @@ func TestAuthorizer_CheckEnterpriseMembership(t *testing.T) {
 			name: "user is enterprise member",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/graphql" {
-					resp := map[string]interface{}{
-						"data": map[string]interface{}{
-							"enterprise": map[string]interface{}{
+					resp := map[string]any{
+						"data": map[string]any{
+							"enterprise": map[string]any{
 								"slug":          "test-enterprise",
 								"viewerIsAdmin": false,
 							},
@@ -283,8 +283,8 @@ func TestAuthorizer_CheckEnterpriseMembership(t *testing.T) {
 			name: "user is not enterprise member",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/graphql" {
-					resp := map[string]interface{}{
-						"errors": []map[string]interface{}{
+					resp := map[string]any{
+						"errors": []map[string]any{
 							{
 								"message": "Resource not accessible by integration",
 							},

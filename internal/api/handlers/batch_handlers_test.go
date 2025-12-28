@@ -255,7 +255,7 @@ func TestGetBatch(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -321,7 +321,7 @@ func TestStartBatch(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -396,7 +396,7 @@ func TestUpdateBatch(t *testing.T) {
 
 	t.Run("successful update", func(t *testing.T) {
 		newDesc := "Updated description"
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"name":        "Updated Batch",
 			"description": newDesc,
 			"type":        "wave_1",
@@ -435,7 +435,7 @@ func TestUpdateBatch(t *testing.T) {
 			t.Fatalf("Failed to create batch: %v", err)
 		}
 
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"name": "Should Not Update",
 		}
 
@@ -519,7 +519,7 @@ func TestUpdateBatchDestinationOrg(t *testing.T) {
 
 	// Update batch destination org
 	newDestOrg := "new-org"
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"destination_org": newDestOrg,
 	}
 
@@ -579,8 +579,8 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 	// Create test repositories
 	totalSize := int64(1024)
 	defaultBranch := testMainBranch
-	var repoIDs []int64
-	for i := 0; i < 3; i++ {
+	repoIDs := make([]int64, 0, 3)
+	for i := range 3 {
 		repo := &models.Repository{
 			FullName:      fmt.Sprintf("org/repo%d", i),
 			Source:        "ghes",
@@ -602,7 +602,7 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 	}
 
 	t.Run("successful add", func(t *testing.T) {
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"repository_ids": repoIDs,
 		}
 
@@ -617,7 +617,7 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -639,7 +639,7 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 			t.Fatalf("Failed to create batch: %v", err)
 		}
 
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"repository_ids": repoIDs,
 		}
 
@@ -674,8 +674,8 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	// Create and assign repositories to batch
 	totalSize := int64(1024)
 	defaultBranch := testMainBranch
-	var repoIDs []int64
-	for i := 0; i < 3; i++ {
+	repoIDs := make([]int64, 0, 3)
+	for i := range 3 {
 		repo := &models.Repository{
 			FullName:      fmt.Sprintf("org/repo%d", i),
 			Source:        "ghes",
@@ -698,7 +698,7 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	db.UpdateBatch(ctx, batch)
 
 	t.Run("successful remove", func(t *testing.T) {
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"repository_ids": repoIDs[:2],
 		}
 
@@ -713,7 +713,7 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -742,8 +742,8 @@ func TestRetryBatchFailures(t *testing.T) {
 	// Create failed repositories in the batch
 	totalSize := int64(1024)
 	defaultBranch := testMainBranch
-	var failedRepoIDs []int64
-	for i := 0; i < 2; i++ {
+	failedRepoIDs := make([]int64, 0, 2)
+	for i := range 2 {
 		repo := &models.Repository{
 			FullName:      fmt.Sprintf("org/failed-repo%d", i),
 			Source:        "ghes",
@@ -763,7 +763,7 @@ func TestRetryBatchFailures(t *testing.T) {
 	}
 
 	t.Run("retry all failures", func(t *testing.T) {
-		reqBody := map[string]interface{}{}
+		reqBody := map[string]any{}
 
 		body, _ := json.Marshal(reqBody)
 		req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/batches/%d/retry", batch.ID), bytes.NewReader(body))
@@ -776,7 +776,7 @@ func TestRetryBatchFailures(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -794,7 +794,7 @@ func TestRetryBatchFailures(t *testing.T) {
 			db.UpdateRepository(ctx, repo)
 		}
 
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"repository_ids": []int64{failedRepoIDs[0]},
 		}
 
@@ -809,7 +809,7 @@ func TestRetryBatchFailures(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}

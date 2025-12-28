@@ -32,7 +32,7 @@ func (c *Client) ListEnterpriseOrganizations(ctx context.Context, enterpriseSlug
 	}
 
 	for {
-		variables := map[string]interface{}{
+		variables := map[string]any{
 			"slug":   githubv4.String(enterpriseSlug),
 			"cursor": endCursor,
 		}
@@ -93,7 +93,7 @@ func (c *Client) ListEnterpriseOrganizationsWithCounts(ctx context.Context, ente
 	}
 
 	for {
-		variables := map[string]interface{}{
+		variables := map[string]any{
 			"slug":   githubv4.String(enterpriseSlug),
 			"cursor": endCursor,
 		}
@@ -143,7 +143,7 @@ func (c *Client) GetOrganizationRepoCount(ctx context.Context, org string) (int,
 		} `graphql:"organization(login: $owner)"`
 	}
 
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"owner": githubv4.String(org),
 	}
 
@@ -202,7 +202,7 @@ func (c *Client) ListOrganizationProjects(ctx context.Context, org string) (map[
 
 	// Paginate through all projects
 	for {
-		variables := map[string]interface{}{
+		variables := map[string]any{
 			"owner":  githubv4.String(org),
 			"cursor": endCursor,
 		}
@@ -271,7 +271,7 @@ func (c *Client) paginateProjectRepositories(ctx context.Context, projectID stri
 
 	cursor := startCursor
 	for cursor != nil {
-		variables := map[string]interface{}{
+		variables := map[string]any{
 			"id":     githubv4.ID(projectID),
 			"cursor": cursor,
 		}
@@ -336,7 +336,7 @@ func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]*OrgMember, 
 		} `graphql:"organization(login: $org)"`
 	}
 
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"org":    githubv4.String(org),
 		"cursor": cursor,
 	}
@@ -479,7 +479,7 @@ func (c *Client) ListMannequins(ctx context.Context, org string) ([]*Mannequin, 
 		} `graphql:"organization(login: $org)"`
 	}
 
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"org":    githubv4.String(org),
 		"cursor": cursor,
 	}
@@ -558,7 +558,7 @@ func (c *Client) GetUserByLogin(ctx context.Context, login string) (*UserInfo, e
 		} `graphql:"user(login: $login)"`
 	}
 
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"login": githubv4.String(login),
 	}
 

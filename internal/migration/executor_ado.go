@@ -271,10 +271,7 @@ func (e *Executor) startADORepositoryMigration(ctx context.Context, repo *models
 	}
 
 	// Get PAT prefix for logging (safe slice)
-	patPrefixLen := 10
-	if len(githubToken) < 10 {
-		patPrefixLen = len(githubToken)
-	}
+	patPrefixLen := min(len(githubToken), 10)
 	patPrefix := githubToken[:patPrefixLen]
 
 	if !strings.HasPrefix(githubToken, "ghp_") && !strings.HasPrefix(githubToken, "gho_") {

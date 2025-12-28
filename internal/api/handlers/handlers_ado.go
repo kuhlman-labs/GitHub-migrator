@@ -71,7 +71,7 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 			}()
 		}
 
-		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		h.sendJSON(w, http.StatusAccepted, map[string]any{
 			"message":      "ADO organization discovery started",
 			"organization": req.Organization,
 			"type":         "organization",
@@ -103,7 +103,7 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 			}()
 		}
 
-		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		h.sendJSON(w, http.StatusAccepted, map[string]any{
 			"message":      "ADO project discovery started",
 			"organization": req.Organization,
 			"projects":     req.Projects,
@@ -182,7 +182,7 @@ func (h *ADOHandler) ListADOProjects(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"projects": enrichedProjects,
 		"total":    len(enrichedProjects),
 	})
@@ -217,7 +217,7 @@ func (h *ADOHandler) GetADOProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"project":      project,
 		"repositories": repositories,
 		"total":        len(repositories),
@@ -257,7 +257,7 @@ func (h *ADOHandler) ADODiscoveryStatus(w http.ResponseWriter, r *http.Request) 
 		projects = []models.ADOProject{}
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"total_repositories": totalCount,
 		"total_projects":     len(projects),
 		"tfvc_repositories":  tfvcCount,

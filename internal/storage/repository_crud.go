@@ -93,7 +93,7 @@ func (d *Database) SaveRepository(ctx context.Context, repo *models.Repository) 
 	// GORM's Updates() with structs skips zero values (false, 0, "", nil) by default
 	// We need to convert to a map to include these values in the update
 	// This is especially important for ADOIsGit which can be false (TFVC repos)
-	updateMap := map[string]interface{}{
+	updateMap := map[string]any{
 		"source":            repo.Source,
 		"source_url":        repo.SourceURL,
 		"total_size":        repo.TotalSize,
@@ -236,7 +236,7 @@ func (d *Database) GetRepository(ctx context.Context, fullName string) (*models.
 }
 
 // ListRepositories retrieves repositories with GORM scopes for filtering
-func (d *Database) ListRepositories(ctx context.Context, filters map[string]interface{}) ([]*models.Repository, error) {
+func (d *Database) ListRepositories(ctx context.Context, filters map[string]any) ([]*models.Repository, error) {
 	var repos []*models.Repository
 
 	// Start with base query
@@ -259,7 +259,7 @@ func (d *Database) ListRepositories(ctx context.Context, filters map[string]inte
 
 // applyListScopes applies GORM scopes based on the provided filters.
 // This method delegates to smaller helper functions for better organization and testability.
-func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+func (d *Database) applyListScopes(query *gorm.DB, filters map[string]any) *gorm.DB {
 	// Apply core filters (status, batch, source, search)
 	query = applyCoreFilters(query, filters)
 
@@ -287,7 +287,7 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]interface{
 }
 
 // applyCoreFilters applies basic filters: status, batch_id, source, visibility, search
-func applyCoreFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+func applyCoreFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 	if status, ok := filters["status"]; ok {
 		query = query.Scopes(WithStatus(status))
 	}
@@ -312,7 +312,7 @@ func applyCoreFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
 }
 
 // applyOrganizationFilters applies GitHub organization, ADO organization/project, and team filters
-func applyOrganizationFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+func applyOrganizationFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 	if org, ok := filters["organization"]; ok {
 		query = query.Scopes(WithOrganization(org))
 	}
@@ -333,7 +333,7 @@ func applyOrganizationFilters(query *gorm.DB, filters map[string]interface{}) *g
 }
 
 // applySizeFilters applies size-related filters: min/max size, size category, complexity
-func applySizeFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+func applySizeFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 	minSize, hasMin := filters["min_size"].(int64)
 	maxSize, hasMax := filters["max_size"].(int64)
 	if hasMin || hasMax {
@@ -364,7 +364,7 @@ var featureFlagKeys = []string{
 }
 
 // applyFeatureFlagFilters applies boolean feature flag filters
-func applyFeatureFlagFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+func applyFeatureFlagFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 	featureFlags := make(map[string]bool)
 	for _, key := range featureFlagKeys {
 		if value, ok := filters[key].(bool); ok {
@@ -385,7 +385,7 @@ var adoCountFilterKeys = []string{
 }
 
 // applyADOCountFilters applies Azure DevOps count-based filters
-func applyADOCountFilters(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+func applyADOCountFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 	adoCountFilters := make(map[string]string)
 	for _, key := range adoCountFilterKeys {
 		if value, ok := filters[key].(string); ok {
@@ -399,7 +399,7 @@ func applyADOCountFilters(query *gorm.DB, filters map[string]interface{}) *gorm.
 }
 
 // applyOrderingAndPagination applies sort order and pagination filters
-func applyOrderingAndPagination(query *gorm.DB, filters map[string]interface{}) *gorm.DB {
+func applyOrderingAndPagination(query *gorm.DB, filters map[string]any) *gorm.DB {
 	sortBy := "name" // default
 	if sort, ok := filters["sort_by"].(string); ok {
 		sortBy = sort
@@ -445,7 +445,7 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 func (d *Database) UpdateRepositoryStatus(ctx context.Context, fullName string, status models.MigrationStatus) error {
 	result := d.db.WithContext(ctx).Model(&models.Repository{}).
 		Where("full_name = ?", fullName).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":     string(status),
 			"updated_at": time.Now().UTC(),
 		})
@@ -458,7 +458,7 @@ func (d *Database) UpdateRepositoryDryRunTimestamp(ctx context.Context, fullName
 	now := time.Now().UTC()
 	result := d.db.WithContext(ctx).Model(&models.Repository{}).
 		Where("full_name = ?", fullName).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"last_dry_run_at": now,
 			"updated_at":      now,
 		})
@@ -473,7 +473,7 @@ func (d *Database) DeleteRepository(ctx context.Context, fullName string) error 
 }
 
 // CountRepositories returns the total count of repositories with optional filters using GORM
-func (d *Database) CountRepositories(ctx context.Context, filters map[string]interface{}) (int, error) {
+func (d *Database) CountRepositories(ctx context.Context, filters map[string]any) (int, error) {
 	var count int64
 	query := d.db.WithContext(ctx).Model(&models.Repository{})
 
@@ -574,7 +574,7 @@ func (d *Database) UpdateRepositoryValidation(ctx context.Context, fullName stri
 	now := time.Now().UTC()
 	result := d.db.WithContext(ctx).Model(&models.Repository{}).
 		Where("full_name = ?", fullName).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"validation_status":  validationStatus,
 			"validation_details": validationDetails,
 			"destination_data":   destinationData,
@@ -605,7 +605,7 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 	now := time.Now().UTC()
 	result := d.db.WithContext(ctx).Model(&models.Repository{}).
 		Where("full_name = ?", fullName).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":     string(models.StatusRolledBack),
 			"batch_id":   nil,
 			"updated_at": now,

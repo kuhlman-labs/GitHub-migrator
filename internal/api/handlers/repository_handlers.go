@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -39,7 +40,7 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get total count if pagination is used
-	response := map[string]interface{}{
+	response := map[string]any{
 		"repositories": repos,
 	}
 
@@ -167,7 +168,7 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName
 		history = []*models.MigrationHistory{}
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"repository": repo,
 		"history":    history,
 	}
@@ -184,22 +185,22 @@ func (h *Handler) GetRepositoryOrDependencies(w http.ResponseWriter, r *http.Req
 	}
 
 	// Check for dependencies/export first (more specific)
-	if strings.HasSuffix(fullPath, "/dependencies/export") {
-		fullName := strings.TrimSuffix(fullPath, "/dependencies/export")
+	if before, ok := strings.CutSuffix(fullPath, "/dependencies/export"); ok {
+		fullName := before
 		h.exportRepositoryDependencies(w, r, fullName)
 		return
 	}
 
 	// Check if this is a dependents request
-	if strings.HasSuffix(fullPath, "/dependents") {
-		fullName := strings.TrimSuffix(fullPath, "/dependents")
+	if before, ok := strings.CutSuffix(fullPath, "/dependents"); ok {
+		fullName := before
 		h.getRepositoryDependents(w, r, fullName)
 		return
 	}
 
 	// Check if this is a dependencies request
-	if strings.HasSuffix(fullPath, "/dependencies") {
-		fullName := strings.TrimSuffix(fullPath, "/dependencies")
+	if before, ok := strings.CutSuffix(fullPath, "/dependencies"); ok {
+		fullName := before
 		h.getRepositoryDependencies(w, r, fullName)
 		return
 	}
@@ -222,7 +223,7 @@ func (h *Handler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 		decodedFullName = fullName
 	}
 
-	var updates map[string]interface{}
+	var updates map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		WriteError(w, ErrInvalidJSON)
 		return
@@ -302,13 +303,7 @@ func (h *Handler) ResetRepositoryStatus(w http.ResponseWriter, r *http.Request) 
 		string(models.StatusPostMigration),
 	}
 
-	allowed := false
-	for _, state := range allowedStates {
-		if repo.Status == state {
-			allowed = true
-			break
-		}
-	}
+	allowed := slices.Contains(allowedStates, repo.Status)
 
 	if !allowed {
 		WriteError(w, ErrBadRequest.WithDetails(fmt.Sprintf("Cannot reset repository in status '%s'. Only in-progress states can be reset.", repo.Status)))
@@ -326,7 +321,7 @@ func (h *Handler) ResetRepositoryStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":    "Repository status reset to pending",
 		"repository": repo,
 	})
@@ -401,7 +396,7 @@ func (h *Handler) rediscoverADORepository(w http.ResponseWriter, ctx context.Con
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":    "Repository rediscovered successfully",
 		"repository": updatedRepo,
 	})
@@ -606,7 +601,7 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Repository unlocked successfully", "repo", fullName, "migration_id", *repo.SourceMigrationID)
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":      "Repository unlocked successfully",
 		"full_name":    fullName,
 		"migration_id": *repo.SourceMigrationID,
@@ -659,7 +654,7 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 
 	repo, _ = h.db.GetRepository(ctx, fullName)
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":    "Repository rolled back successfully",
 		"repository": repo,
 	})
@@ -738,7 +733,7 @@ func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Reque
 
 	h.logger.Info("Repository wont_migrate status changed", "repo", fullName, "status", newStatus)
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":    message,
 		"repository": repo,
 	})

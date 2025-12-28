@@ -85,6 +85,7 @@ export function useRediscoverRepository() {
     mutationFn: (fullName: string) => api.rediscoverRepository(fullName),
     onSuccess: (_, fullName) => {
       queryClient.invalidateQueries({ queryKey: ['repository', fullName] });
+      queryClient.invalidateQueries({ queryKey: ['repository-with-history', fullName] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
       queryClient.invalidateQueries({ queryKey: ['analytics'] });
     },
@@ -120,11 +121,67 @@ export function useStartBatch() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (id: number) => api.startBatch(id),
-    onSuccess: (_, id) => {
+    mutationFn: ({ id, skipDryRun }: { id: number; skipDryRun?: boolean }) => 
+      api.startBatch(id, skipDryRun),
+    onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['batch', id] });
       queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories', id] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
+    },
+  });
+}
+
+export function useDeleteBatch() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id: number) => api.deleteBatch(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+    },
+  });
+}
+
+export function useDryRunBatch() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, onlyPending }: { id: number; onlyPending?: boolean }) => 
+      api.dryRunBatch(id, onlyPending),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['batch', id] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories', id] });
+    },
+  });
+}
+
+export function useRetryBatchFailures() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, repositoryIds }: { id: number; repositoryIds?: number[] }) => 
+      api.retryBatchFailures(id, repositoryIds),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['batch', id] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories', id] });
+    },
+  });
+}
+
+export function useRetryRepository() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ repositoryId, dryRun }: { repositoryId: number; dryRun?: boolean }) => 
+      api.retryRepository(repositoryId, dryRun ?? false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batchRepositories'] });
     },
   });
 }
@@ -176,10 +233,11 @@ export function useUpdateRepository() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ fullName, updates }: { fullName: string; updates: Partial<{ destination_full_name: string }> }) => 
+    mutationFn: ({ fullName, updates }: { fullName: string; updates: Partial<{ destination_full_name: string }> }) =>
       api.updateRepository(fullName, updates),
     onSuccess: (_, { fullName }) => {
       queryClient.invalidateQueries({ queryKey: ['repository', fullName] });
+      queryClient.invalidateQueries({ queryKey: ['repository-with-history', fullName] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
     },
   });
@@ -192,6 +250,7 @@ export function useUnlockRepository() {
     mutationFn: (fullName: string) => api.unlockRepository(fullName),
     onSuccess: (_, fullName) => {
       queryClient.invalidateQueries({ queryKey: ['repository', fullName] });
+      queryClient.invalidateQueries({ queryKey: ['repository-with-history', fullName] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
     },
   });
@@ -199,12 +258,13 @@ export function useUnlockRepository() {
 
 export function useRollbackRepository() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: ({ fullName, reason }: { fullName: string; reason?: string }) => 
+    mutationFn: ({ fullName, reason }: { fullName: string; reason?: string }) =>
       api.rollbackRepository(fullName, reason),
     onSuccess: (_, { fullName }) => {
       queryClient.invalidateQueries({ queryKey: ['repository', fullName] });
+      queryClient.invalidateQueries({ queryKey: ['repository-with-history', fullName] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
       queryClient.invalidateQueries({ queryKey: ['analytics'] });
       queryClient.invalidateQueries({ queryKey: ['migrationHistory'] });
@@ -216,10 +276,11 @@ export function useMarkRepositoryWontMigrate() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ fullName, unmark }: { fullName: string; unmark?: boolean }) => 
+    mutationFn: ({ fullName, unmark }: { fullName: string; unmark?: boolean }) =>
       api.markRepositoryWontMigrate(fullName, unmark),
     onSuccess: (_, { fullName }) => {
       queryClient.invalidateQueries({ queryKey: ['repository', fullName] });
+      queryClient.invalidateQueries({ queryKey: ['repository-with-history', fullName] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
       queryClient.invalidateQueries({ queryKey: ['analytics'] });
       queryClient.invalidateQueries({ queryKey: ['batches'] });

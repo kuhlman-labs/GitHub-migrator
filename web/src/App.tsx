@@ -12,12 +12,12 @@ import { Dependencies } from './components/Dependencies';
 import { UserMappingTable } from './components/UserMapping';
 import { TeamMappingTable } from './components/TeamMapping';
 import { Navigation } from './components/common/Navigation';
+import { PageLayout } from './components/common/PageLayout';
 import { Login } from './components/Auth/Login';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { Setup } from './components/Setup';
-import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
-import { api } from './services/api';
+import { useSetupStatus } from './hooks/useQueries';
 
 const THEME_STORAGE_KEY = 'primer-theme-mode';
 
@@ -40,29 +40,27 @@ function App() {
     <ThemeProvider colorMode={colorMode} preventSSRMismatch>
       <BaseStyles>
         <Router>
-          <AuthProvider>
-            <ToastProvider>
-              <div className="min-h-screen" style={{ backgroundColor: 'var(--bgColor-muted)', color: 'var(--fgColor-default)' }}>
-                <Routes>
-                  {/* Setup page (public) */}
-                  <Route path="/setup" element={<Setup />} />
-                  
-                  {/* Login page (public) */}
-                  <Route path="/login" element={<Login />} />
-                  
-                  {/* Protected routes with navigation and setup check */}
-                  <Route path="*" element={
-                    <ProtectedRoute>
-                      <SetupCheck>
-                        <Navigation />
-                        <ProtectedRoutes />
-                      </SetupCheck>
-                    </ProtectedRoute>
-                  } />
-                </Routes>
-              </div>
-            </ToastProvider>
-          </AuthProvider>
+          <ToastProvider>
+            <div className="min-h-screen" style={{ backgroundColor: 'var(--bgColor-muted)', color: 'var(--fgColor-default)' }}>
+              <Routes>
+                {/* Setup page (public) */}
+                <Route path="/setup" element={<Setup />} />
+                
+                {/* Login page (public) */}
+                <Route path="/login" element={<Login />} />
+                
+                {/* Protected routes with navigation and setup check */}
+                <Route path="*" element={
+                  <ProtectedRoute>
+                    <SetupCheck>
+                      <Navigation />
+                      <ProtectedRoutes />
+                    </SetupCheck>
+                  </ProtectedRoute>
+                } />
+              </Routes>
+            </div>
+          </ToastProvider>
         </Router>
       </BaseStyles>
     </ThemeProvider>
@@ -71,32 +69,8 @@ function App() {
 
 // SetupCheck component redirects to /setup if setup is not complete
 function SetupCheck({ children }: { children: React.ReactNode }) {
-  const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
   const location = useLocation();
-
-  useEffect(() => {
-    // Skip check if we're on the setup page to avoid unnecessary API calls
-    if (location.pathname === '/setup') {
-      return;
-    }
-
-    const checkSetup = async () => {
-      setLoading(true);
-      try {
-        const status = await api.getSetupStatus();
-        setSetupComplete(status.setup_completed);
-      } catch (error) {
-        console.error('Failed to check setup status:', error);
-        // If we can't check setup status, assume it's not complete
-        setSetupComplete(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkSetup();
-  }, [location.pathname]); // Re-check when route changes
+  const { data: setupStatus, isLoading, isError } = useSetupStatus();
 
   // Don't redirect if we're already on the setup page
   if (location.pathname === '/setup') {
@@ -104,7 +78,7 @@ function SetupCheck({ children }: { children: React.ReactNode }) {
   }
 
   // Show loading state
-  if (loading) {
+  if (isLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
         Loading...
@@ -112,8 +86,8 @@ function SetupCheck({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Redirect to setup if not complete
-  if (!setupComplete) {
+  // Redirect to setup if not complete or if we couldn't fetch status
+  if (isError || !setupStatus?.setup_completed) {
     return <Navigate to="/setup" replace />;
   }
 
@@ -138,60 +112,26 @@ function OrgProjectRedirect() {
 function ProtectedRoutes() {
   return (
     <Routes>
-          {/* Full-width pages (no container) */}
-          <Route path="/batches/new" element={<BatchBuilderPage />} />
-          <Route path="/batches/:batchId/edit" element={<BatchBuilderPage />} />
-          
-          {/* Standard pages (with max-width container and responsive padding) */}
-          <Route path="/" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <Dashboard />
-            </main>
-          } />
-          {/* Redirect old organization detail routes to repositories view with filters */}
-          <Route path="/org/:orgName" element={<OrgRedirect />} />
-          <Route path="/org/:orgName/project/:projectName" element={<OrgProjectRedirect />} />
-          <Route path="/repository/:fullName" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <RepositoryDetail />
-            </main>
-          } />
-          <Route path="/analytics" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <Analytics />
-            </main>
-          } />
-          <Route path="/repositories" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <Repositories />
-            </main>
-          } />
-          <Route path="/dependencies" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <Dependencies />
-            </main>
-          } />
-          <Route path="/batches" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <BatchManagement />
-            </main>
-          } />
-          <Route path="/history" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <MigrationHistory />
-            </main>
-          } />
-          <Route path="/user-mappings" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <UserMappingTable />
-            </main>
-          } />
-          <Route path="/team-mappings" element={
-            <main id="main-content" className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <TeamMappingTable />
-            </main>
-          } />
-        </Routes>
+      {/* Full-width pages (no container) */}
+      <Route path="/batches/new" element={<PageLayout fullWidth><BatchBuilderPage /></PageLayout>} />
+      <Route path="/batches/:batchId/edit" element={<PageLayout fullWidth><BatchBuilderPage /></PageLayout>} />
+      
+      {/* Standard pages (with max-width container and responsive padding) */}
+      <Route path="/" element={<PageLayout><Dashboard /></PageLayout>} />
+      
+      {/* Redirect old organization detail routes to repositories view with filters */}
+      <Route path="/org/:orgName" element={<OrgRedirect />} />
+      <Route path="/org/:orgName/project/:projectName" element={<OrgProjectRedirect />} />
+      
+      <Route path="/repository/:fullName" element={<PageLayout><RepositoryDetail /></PageLayout>} />
+      <Route path="/analytics" element={<PageLayout><Analytics /></PageLayout>} />
+      <Route path="/repositories" element={<PageLayout><Repositories /></PageLayout>} />
+      <Route path="/dependencies" element={<PageLayout><Dependencies /></PageLayout>} />
+      <Route path="/batches" element={<PageLayout><BatchManagement /></PageLayout>} />
+      <Route path="/history" element={<PageLayout><MigrationHistory /></PageLayout>} />
+      <Route path="/user-mappings" element={<PageLayout><UserMappingTable /></PageLayout>} />
+      <Route path="/team-mappings" element={<PageLayout><TeamMappingTable /></PageLayout>} />
+    </Routes>
   );
 }
 

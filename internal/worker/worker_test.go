@@ -329,14 +329,12 @@ func TestMigrationWorker_StopWithActiveMigrations(t *testing.T) {
 	worker.active[1] = true
 	worker.mu.Unlock()
 
-	worker.wg.Add(1)
-	go func() {
-		defer worker.wg.Done()
+	worker.wg.Go(func() {
 		time.Sleep(100 * time.Millisecond)
 		worker.mu.Lock()
 		delete(worker.active, 1)
 		worker.mu.Unlock()
-	}()
+	})
 
 	// This should block until the "migration" completes
 	startTime := time.Now()

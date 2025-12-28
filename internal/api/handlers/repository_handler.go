@@ -45,7 +45,7 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 	pagination := ParsePagination(r)
 
 	// Parse filter parameters
-	filters := make(map[string]interface{})
+	filters := make(map[string]any)
 	if status := r.URL.Query().Get("status"); status != "" {
 		filters["status"] = status
 	}
@@ -85,7 +85,7 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 		total = len(repos)
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"repositories": repos,
 		"total":        total,
 		"limit":        pagination.Limit,
@@ -132,7 +132,7 @@ func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request
 		history = nil
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"repository": repo,
 		"history":    history,
 	})
@@ -194,7 +194,7 @@ func (h *RepositoryHandler) UpdateRepository(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"repository": repo,
 		"message":    "Repository updated successfully",
 	})
@@ -203,7 +203,7 @@ func (h *RepositoryHandler) UpdateRepository(w http.ResponseWriter, r *http.Requ
 // Helper methods
 
 // sendJSON sends a JSON response
-func (h *RepositoryHandler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+func (h *RepositoryHandler) sendJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
@@ -256,7 +256,7 @@ func (h *RepositoryHandler) MarkWontMigrate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"repository": repo,
 		"message":    "Repository marked as won't migrate",
 	})

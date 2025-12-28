@@ -72,7 +72,7 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"mappings": teams,
 		"total":    total,
 	})
@@ -143,7 +143,7 @@ func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("Failed to sync user mappings after team discovery", "error", err)
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":              fmt.Sprintf("Discovered %d teams with %d members from '%s'", teamsDiscovered, membersDiscovered, req.Organization),
 		"organization":         req.Organization,
 		"teams_discovered":     teamsDiscovered,
@@ -168,7 +168,7 @@ func (h *Handler) GetTeamSourceOrgs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"organizations": orgs,
 	})
 }
@@ -494,7 +494,7 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"created":  created,
 		"updated":  updated,
 		"errors":   errors,
@@ -616,7 +616,7 @@ func (h *Handler) SuggestTeamMappings(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"suggestions": response,
 		"total":       len(response),
 	})
@@ -637,7 +637,7 @@ func (h *Handler) SyncTeamMappingsFromDiscovery(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"created": created,
 		"message": fmt.Sprintf("Created %d new team mappings from discovered teams", created),
 	})
@@ -671,7 +671,7 @@ func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"members": members,
 		"total":   len(members),
 	})
@@ -751,15 +751,15 @@ func (h *Handler) GetPermissionAudit(w http.ResponseWriter, r *http.Request) {
 
 	userStats, _ := h.db.GetUserMappingStats(ctx, "")
 	if userStats == nil {
-		userStats = map[string]interface{}{}
+		userStats = map[string]any{}
 	}
 	teamStats, _ := h.db.GetTeamMappingStats(ctx, "")
 	if teamStats == nil {
-		teamStats = map[string]interface{}{}
+		teamStats = map[string]any{}
 	}
 
-	report := map[string]interface{}{
-		"summary": map[string]interface{}{
+	report := map[string]any{
+		"summary": map[string]any{
 			"total_teams":        len(teams),
 			"unmapped_teams":     len(unmappedTeams),
 			"mapped_teams":       len(teams) - len(unmappedTeams),
@@ -811,7 +811,7 @@ func findUnmappedTeams(teams []*models.GitHubTeam, mappingMap map[string]*models
 func (h *Handler) findCodeownersIssues(ctx context.Context, mappingMap map[string]*models.TeamMapping) []CodeownersIssue {
 	var issues []CodeownersIssue
 
-	repos, err := h.db.ListRepositories(ctx, map[string]interface{}{"has_codeowners": true})
+	repos, err := h.db.ListRepositories(ctx, map[string]any{"has_codeowners": true})
 	if err != nil {
 		h.logger.Warn("Failed to query repositories with CODEOWNERS", "error", err)
 		return issues
@@ -909,7 +909,7 @@ func (h *Handler) ExecuteTeamMigration(w http.ResponseWriter, r *http.Request) {
 
 	// Check if already running
 	if executor.IsRunning() {
-		h.sendJSON(w, http.StatusConflict, map[string]interface{}{
+		h.sendJSON(w, http.StatusConflict, map[string]any{
 			"error":    "Team migration is already running",
 			"progress": executor.GetProgress(),
 		})
@@ -924,7 +924,7 @@ func (h *Handler) ExecuteTeamMigration(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Return immediately with status
-	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+	h.sendJSON(w, http.StatusAccepted, map[string]any{
 		"message":          "Team migration started",
 		"dry_run":          req.DryRun,
 		"source_org":       req.SourceOrg,
@@ -949,17 +949,17 @@ func (h *Handler) GetTeamMigrationStatus(w http.ResponseWriter, r *http.Request)
 	executionStats, err := h.db.GetTeamMigrationExecutionStats(ctx)
 	if err != nil {
 		h.logger.Warn("Failed to get team migration execution stats", "error", err)
-		executionStats = map[string]interface{}{}
+		executionStats = map[string]any{}
 	}
 
 	// Get mapping stats (all orgs for migration status)
 	mappingStats, err := h.db.GetTeamsWithMappingsStats(ctx, "")
 	if err != nil {
 		h.logger.Warn("Failed to get team mapping stats", "error", err)
-		mappingStats = map[string]interface{}{}
+		mappingStats = map[string]any{}
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"is_running":      executor.IsRunning(),
 		"progress":        progress,
 		"execution_stats": executionStats,

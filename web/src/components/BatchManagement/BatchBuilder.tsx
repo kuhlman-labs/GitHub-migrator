@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Button } from '@primer/react';
-import { ChevronDownIcon, UploadIcon } from '@primer/octicons-react';
+import { useState, useEffect, useCallback } from 'react';
+import { UploadIcon, PlusIcon, RepoIcon } from '@primer/octicons-react';
+import { BorderedButton, PrimaryButton } from '../common/buttons';
 import type { Repository, Batch, RepositoryFilters } from '../../types';
 import { api } from '../../services/api';
 import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
@@ -8,9 +8,12 @@ import { ActiveFilterPills } from './ActiveFilterPills';
 import { RepositoryListItem } from './RepositoryListItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pagination } from '../common/Pagination';
-import { formatBytes, formatDateForInput } from '../../utils/format';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { formatDateForInput } from '../../utils/format';
 import { ImportDialog } from './ImportDialog';
 import { ImportPreview, type ValidationGroup } from './ImportPreview';
+import { BatchMetadataForm } from './BatchMetadataForm';
+import { BatchSummaryPanel } from './BatchSummaryPanel';
 import type { ImportParseResult } from '../../utils/import';
 
 interface BatchBuilderProps {
@@ -63,7 +66,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
   // UI state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isAvailablePanelCollapsed, setIsAvailablePanelCollapsed] = useState(false);
+  const [isSelectedReposExpanded, setIsSelectedReposExpanded] = useState(true);
   const [showMigrationSettings, setShowMigrationSettings] = useState(false);
+
+  // Handler to toggle selected repos and auto-expand migration settings
+  const handleToggleSelectedRepos = () => {
+    const willBeCollapsed = isSelectedReposExpanded;
+    setIsSelectedReposExpanded(!isSelectedReposExpanded);
+    // Auto-expand migration settings when collapsing the repo list
+    if (willBeCollapsed) {
+      setShowMigrationSettings(true);
+    }
+  };
   
   // Import state
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -89,8 +104,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       try {
         const orgList = await api.getOrganizationList();
         setOrganizations(orgList);
-      } catch (err) {
-        console.error('Failed to load organizations:', err);
+      } catch {
+        // Organization load failed, autocomplete will be empty
       }
     };
     loadOrganizations();
@@ -99,16 +114,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   // Update form fields when batch loads in edit mode
   useEffect(() => {
     if (batch) {
-      console.log('Populating form with batch data:', batch);
-      console.log('batch.name:', batch.name);
-      console.log('batch.id:', batch.id);
       const batchResp = batch as BatchResponse;
-      console.log('Has nested batch property?', 'batch' in batchResp);
-      
       // Handle nested batch structure from API
       const batchData = batchResp.batch || batch;
-      console.log('Using batch data:', batchData);
-      console.log('batchData.name:', batchData.name);
       
       setBatchName(batchData.name || '');
       setBatchDescription(batchData.description || '');
@@ -128,25 +136,17 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       const batchData = batchResp.batch || batch;
       const batchId = batchData?.id || batch.id;
       
-      console.log('Edit mode: batch object:', batch);
-      console.log('Edit mode: extracted batch ID:', batchId);
-      
       if (batchId) {
         // Check if repositories are already included in the batch response
         const repos = batchResp.repositories;
         if (repos && Array.isArray(repos)) {
-          console.log('✓ Using repositories from batch response:', repos.length);
           setCurrentBatchRepos(repos);
           const repoIds = repos.map((r: Repository) => r.id);
           setSelectedRepoIds(new Set(repoIds));
-          console.log('✓ Auto-selected', repoIds.length, 'repository IDs:', repoIds);
         } else {
-          console.log('Edit mode: Loading repos for batch', batchId);
           loadCurrentBatchRepos();
         }
       }
-    } else if (isEditMode && !batch) {
-      console.log('Edit mode: Waiting for batch to load...');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, batch]);
@@ -164,24 +164,19 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     const batchId = batchData?.id || batch?.id;
     
     if (!batchId) {
-      console.error('Cannot load batch repos: batch ID is undefined', { batch, batchData, batchId });
       return;
     }
     
     try {
-      console.log('Fetching repos for batch ID:', batchId);
       const response = await api.listRepositories({ batch_id: batchId });
       // Ensure we only set repositories that belong to this batch
       const repos = Array.isArray(response) ? response : (response.repositories || []);
-      console.log('✓ Loaded', repos.length, 'repositories for batch', batchId);
       setCurrentBatchRepos(repos);
       
       // Auto-select these repositories
       const repoIds = repos.map(r => r.id);
       setSelectedRepoIds(new Set(repoIds));
-      console.log('✓ Auto-selected', repoIds.length, 'repository IDs:', repoIds);
-    } catch (err) {
-      console.error('Failed to load current batch repos:', err);
+    } catch {
       setCurrentBatchRepos([]);
     }
   };
@@ -192,41 +187,27 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       const response = await api.listRepositories(filters);
       const repos = Array.isArray(response) ? response : (response.repositories || []);
       
-      console.log('API Response:', { 
-        isArray: Array.isArray(response), 
-        reposCount: repos.length, 
-        total: Array.isArray(response) ? 'N/A' : response.total,
-        hasTotal: !Array.isArray(response) && 'total' in response,
-        currentPage: currentPage,
-        filters: filters
-      });
-      
       // Always update repos
       setAvailableRepos(repos);
       
       // Update total based on response
       if (Array.isArray(response)) {
         // No pagination - response is the full array
-        console.log('Setting total from array length:', response.length);
         setTotalAvailable(response.length);
       } else if (response.total !== undefined && response.total !== null && response.total > 0) {
         // Backend provided a valid positive total
-        console.log('Setting total from response:', response.total);
         setTotalAvailable(response.total);
       } else if (response.total === 0 && repos.length === 0 && currentPage === 1) {
         // Only accept total=0 if we're on the first page with no repos (legitimate empty result)
-        console.log('Setting total to 0 (no matching repos on first page)');
         setTotalAvailable(0);
       } else if (currentPage === 1 && repos.length > 0) {
         // First page with repos but no total - estimate
         const estimatedTotal = repos.length < pageSize ? repos.length : repos.length;
-        console.log('Estimating total for first page:', estimatedTotal);
         setTotalAvailable(estimatedTotal);
       }
       // Otherwise, keep existing totalAvailable value (important for pagination)
       
-    } catch (err) {
-      console.error('Failed to load available repos:', err);
+    } catch {
       setError('Failed to load repositories');
       setAvailableRepos([]);
       setTotalAvailable(0);
@@ -349,12 +330,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       setCurrentBatchRepos(updatedBatch);
       setSelectedRepoIds(new Set());
       
-      console.log(`Added ${newRepos.length} repositories to batch (total now: ${updatedBatch.length})`);
-      
       // Reload the current page to show updated state
     await loadAvailableRepos();
-    } catch (err) {
-      console.error('Failed to add all repositories:', err);
+    } catch {
       setError('Failed to add all repositories. Please try again.');
     } finally {
       setAvailableLoading(false);
@@ -431,8 +409,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
       setImportValidation({ valid, alreadyInBatch, notFound });
       setShowImportPreview(true);
-    } catch (err) {
-      console.error('Failed to validate imported repositories:', err);
+    } catch {
       setError('Failed to validate imported repositories');
     }
   };
@@ -497,8 +474,6 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           throw new Error('Cannot update batch: batch ID is undefined');
         }
         
-        console.log('Updating batch with ID:', existingBatchId);
-        
         // Update existing batch
         await api.updateBatch(existingBatchId, {
           name: batchName.trim(),
@@ -518,8 +493,6 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         
         const toAdd = Array.from(currentIds).filter((id) => !originalIds.has(id));
         const toRemove = Array.from(originalIds).filter((id) => !currentIds.has(id));
-        
-        console.log('Repository changes:', { toAdd, toRemove });
         
         if (toAdd.length > 0) {
           await api.addRepositoriesToBatch(existingBatchId, toAdd);
@@ -575,7 +548,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     }
   };
 
-  const groupReposByOrg = (repos: Repository[]) => {
+  const groupReposByOrg = useCallback((repos: Repository[]) => {
     const groups: Record<string, Repository[]> = {};
     repos.forEach((repo) => {
       // For ADO repos, group by project; for GitHub repos, group by org (first part of full_name)
@@ -584,7 +557,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       groups[groupKey].push(repo);
     });
     return groups;
-  };
+  }, []);
 
   // Track which repos have been added to the batch to disable their checkboxes
   const addedRepoIds = new Set(currentBatchRepos.map(r => r.id));
@@ -605,7 +578,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   };
 
   return (
-    <div className="h-full flex" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+    <div className="h-full flex overflow-hidden" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
       {/* Filter Sidebar */}
       <UnifiedFilterSidebar
         filters={filters}
@@ -617,64 +590,128 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       />
 
       {/* Middle Panel - Available Repositories */}
-      <div 
-        className={`flex-1 min-w-0 grid grid-rows-[auto_1fr_auto] border-r transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}
-        style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-default)' }}
-      >
+      {isAvailablePanelCollapsed ? (
+        /* Collapsed State - Narrow vertical bar matching filter sidebar style */
         <div 
-          className="p-4 border-b row-start-1"
-          style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }}
+          className="w-12 h-full flex flex-col items-center py-4 flex-shrink-0"
+          style={{ 
+            borderRight: '1px solid var(--borderColor-default)',
+            backgroundColor: 'var(--bgColor-default)' 
+          }}
         >
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Available Repositories</h3>
-              <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
-                {availableLoading ? 'Loading...' : `${totalAvailable} repositories available`}
-              </p>
-            </div>
-              <div className="flex items-center gap-2">
-              <button
-                onClick={handleImportClick}
-                disabled={loading}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                style={{
-                  borderColor: 'var(--borderColor-default)',
-                  color: 'var(--fgColor-default)',
-                  backgroundColor: 'var(--control-bgColor-rest)'
+          <button
+            onClick={() => setIsAvailablePanelCollapsed(false)}
+            className="relative p-2 rounded-lg transition-opacity hover:opacity-80 group"
+            title="Expand available repositories"
+          >
+            <span style={{ color: 'var(--fgColor-muted)' }}><RepoIcon size={24} /></span>
+            {(totalAvailable - currentBatchRepos.length) > 0 && (
+              <span 
+                className="absolute -top-1 -right-1 flex items-center justify-center min-w-[20px] h-5 px-1 text-xs font-bold rounded-full"
+                style={{ 
+                  color: 'var(--fgColor-onEmphasis)',
+                  backgroundColor: 'var(--accent-emphasis)' 
                 }}
-                title="Import repositories from file"
               >
-                <UploadIcon size={16} />
-                Import from File
-              </button>
-              {selectedRepoIds.size > 0 && (
-                <span 
-                  className="px-3 py-1.5 rounded-full text-sm font-semibold"
-                  style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
-                >
-                  {selectedRepoIds.size} selected
-                </span>
-              )}
-              {totalAvailable > 0 && availableReposToShow.length > 0 && (
-                <button
-                  onClick={handleAddAll}
-                  disabled={availableLoading}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{
-                    borderColor: 'var(--borderColor-default)',
-                    color: 'var(--fgColor-accent)',
-                    backgroundColor: 'var(--control-bgColor-rest)'
-                  }}
-                  title="Add all repositories matching current filters"
-                >
-                  <svg className="w-4 h-4 inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Add All ({totalAvailable})
-                </button>
+                {totalAvailable - currentBatchRepos.length}
+              </span>
             )}
+          </button>
+          {currentBatchRepos.length > 0 && (
+            <div 
+              className="mt-4 flex flex-col items-center gap-1"
+              title={`${currentBatchRepos.length} repositories in batch`}
+            >
+              <span 
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+                style={{ backgroundColor: 'var(--success-subtle)', color: 'var(--fgColor-success)' }}
+              >
+                {currentBatchRepos.length}
+              </span>
+              <span 
+                className="text-xs"
+                style={{ color: 'var(--fgColor-muted)', writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+              >
+                in batch
+              </span>
             </div>
-          </div>
+          )}
+        </div>
+      ) : (
+        /* Expanded State - Full panel */
+        <div 
+          className={`flex-1 min-w-0 min-h-0 grid grid-rows-[auto_1fr_auto] border-r transition-all duration-300 h-full overflow-hidden ${isAvailablePanelCollapsed ? 'lg:w-0' : currentBatchRepos.length > 0 ? 'lg:w-[45%]' : 'lg:w-[60%]'}`}
+          style={{ backgroundColor: 'var(--bgColor-default)', borderColor: 'var(--borderColor-default)' }}
+        >
+          <div 
+            className="p-4 border-b row-start-1 flex-shrink-0"
+            style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-default)' }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsAvailablePanelCollapsed(true)}
+                  className="p-1 rounded transition-opacity hover:opacity-80"
+                  title="Collapse available repositories"
+                >
+                  <svg className="w-5 h-5" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div>
+                  <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Available Repositories</h3>
+                  <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
+                    {availableLoading ? 'Loading...' : `${totalAvailable} repositories available`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Import Button - BorderedButton style */}
+                <BorderedButton
+                  onClick={handleImportClick}
+                  disabled={loading}
+                  leadingVisual={UploadIcon}
+                  size="small"
+                  title="Import repositories from file"
+                >
+                  Import
+                </BorderedButton>
+                
+                {/* Add Matching Button - Blue bordered style */}
+                {totalAvailable > 0 && availableReposToShow.length > 0 && (
+                  <BorderedButton
+                    onClick={handleAddAll}
+                    disabled={availableLoading}
+                    leadingVisual={PlusIcon}
+                    size="small"
+                    title="Add all repositories matching current filters to the batch"
+                    className="btn-bordered-accent"
+                  >
+                    Add Matching ({totalAvailable})
+                  </BorderedButton>
+                )}
+                
+                {/* Selected count badge - positioned next to Add Selected */}
+                {selectedRepoIds.size > 0 && (
+                  <span 
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold"
+                    style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--fgColor-accent)' }}
+                  >
+                    {selectedRepoIds.size} selected
+                  </span>
+                )}
+                
+                {/* Add Selected Button - Primary style */}
+                <PrimaryButton
+                  onClick={handleAddSelected}
+                  disabled={selectedRepoIds.size === 0 || loading}
+                  size="small"
+                  title="Add only the selected repositories to the batch"
+                >
+                  Add Selected
+                </PrimaryButton>
+              </div>
+            </div>
 
           {/* Quick Filter Buttons */}
           <div className="flex flex-wrap gap-2 mb-3">
@@ -810,505 +847,86 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
           )}
         </div>
 
-        {/* Bottom Section - Pagination & Add Button */}
-        <div 
-          className="shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] row-start-3"
-          style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)', zIndex: 1 }}
-        >
-          {/* Pagination */}
-          <Pagination
-            currentPage={currentPage}
-            totalItems={totalAvailable}
-            pageSize={pageSize}
-            onPageChange={handlePageChange}
-          />
-
-          {/* Add Selected Button - Always Visible */}
-          <div className="p-4">
-            <button
-              onClick={handleAddSelected}
-              disabled={selectedRepoIds.size === 0 || loading}
-              className="w-full px-4 py-2.5 font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg border-0 cursor-pointer"
-              style={{ 
-                backgroundColor: '#2da44e',
-                color: '#ffffff'
-              }}
-              onMouseEnter={(e) => {
-                if (!e.currentTarget.disabled) {
-                  e.currentTarget.style.backgroundColor = '#2c974b';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!e.currentTarget.disabled) {
-                  e.currentTarget.style.backgroundColor = '#2da44e';
-                }
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Selected ({selectedRepoIds.size})
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Right Panel - Selected Repositories & Batch Info */}
-      <div 
-        className={`flex-shrink-0 flex flex-col transition-all duration-300 h-full ${currentBatchRepos.length > 0 ? 'w-full lg:w-[40%]' : 'w-full lg:w-[30%]'}`}
-        style={{ backgroundColor: 'var(--bgColor-default)' }}
-      >
-        {/* Sticky Header with Batch Info */}
-        <div 
-          className="flex-shrink-0 sticky top-0 shadow-sm"
-          style={{ 
-            backgroundColor: 'var(--bgColor-default)', 
-            borderBottom: '1px solid var(--borderColor-default)',
-            zIndex: 1
-          }}
-        >
-          <div className="p-4">
-            <div className="flex justify-between items-center mb-3">
-            <div>
-              <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-                Selected Repositories
-              </h3>
-              <p className="text-sm mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
-                {currentBatchRepos.length} {currentBatchRepos.length === 1 ? 'repository' : 'repositories'}
-              </p>
-            </div>
-            {currentBatchRepos.length > 0 && (
-              <button
-                onClick={handleClearAll}
-                className="text-sm font-medium transition-colors hover:opacity-80"
-                style={{ color: 'var(--fgColor-danger)' }}
-              >
-                Clear All
-              </button>
-            )}
-            </div>
-            {/* Batch Size Indicator */}
-            <div 
-              className="border p-2.5 rounded-lg"
-              style={{ backgroundColor: 'var(--accent-subtle)', borderColor: 'var(--accent-muted)' }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-medium" style={{ color: 'var(--fgColor-accent)' }}>Total Batch Size</div>
-                <div className="text-lg font-bold" style={{ color: 'var(--fgColor-accent)' }}>{formatBytes(totalSize)}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Repository List - Scrollable with expanded height */}
-        <div className="flex-1 overflow-y-auto p-4 min-h-0">
-          {currentBatchRepos.length === 0 ? (
-            <div className="text-center py-12">
-              <svg className="mx-auto h-12 w-12" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="mt-2 text-sm" style={{ color: 'var(--fgColor-muted)' }}>No repositories selected</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>Select repositories from the left</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(currentGroups).map(([org, repos]) => (
-                <div 
-                  key={org} 
-                  className="rounded-lg overflow-hidden shadow-sm"
-                  style={{ 
-                    border: '1px solid var(--borderColor-default)',
-                    backgroundColor: 'var(--bgColor-default)' 
-                  }}
-                >
-                  <div 
-                    className="px-3 py-2"
-                    style={{ 
-                      backgroundColor: 'var(--bgColor-muted)',
-                      borderBottom: '1px solid var(--borderColor-default)' 
-                    }}
-                  >
-                    <span className="font-semibold text-sm" style={{ color: 'var(--fgColor-default)' }}>{org}</span>
-                    <span 
-                      className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        backgroundColor: 'var(--bgColor-default)',
-                        color: 'var(--fgColor-default)',
-                        border: '1px solid var(--borderColor-default)'
-                      }}
-                    >
-                      {repos.length}
-                    </span>
-                  </div>
-                  <div style={{ borderTop: '1px solid var(--borderColor-muted)' }}>
-                    {repos.map((repo, index) => (
-                      <div 
-                        key={repo.id} 
-                        className="p-3 flex items-center justify-between hover:opacity-80 transition-opacity"
-                        style={{ borderTop: index > 0 ? '1px solid var(--borderColor-muted)' : 'none' }}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm truncate" style={{ color: 'var(--fgColor-default)' }}>
-                            {repo.ado_project 
-                              ? repo.full_name // For ADO, full_name is just the repo name
-                              : repo.full_name.split('/')[1] || repo.full_name // For GitHub, extract repo name from org/repo
-                            }
-                          </div>
-                          <div className="text-xs mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>
-                            {formatBytes(repo.total_size || 0)} • {repo.branch_count} branches
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveRepo(repo.id)}
-                          className="ml-2 p-1 rounded transition-opacity hover:opacity-80"
-                          style={{ color: 'var(--fgColor-danger)' }}
-                          title="Remove repository"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Bottom Batch Configuration Form - Compact */}
-        <div 
-          className="flex-shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
-          style={{ 
-            borderTop: '1px solid var(--borderColor-default)',
-            backgroundColor: 'var(--bgColor-default)' 
-          }}
-        >
-          {/* Essential Fields - Always Visible */}
-          <div className="p-3 space-y-2.5">
-          <div>
-            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
-              Batch Name *
-            </label>
-            <input
-              type="text"
-              value={batchName}
-              onChange={(e) => setBatchName(e.target.value)}
-              placeholder="e.g., Wave 1, Q1 Migration"
-              className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              style={{
-                border: '1px solid var(--borderColor-default)',
-                backgroundColor: 'var(--control-bgColor-rest)',
-                color: 'var(--fgColor-default)'
-              }}
-              disabled={loading}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
-              Description
-            </label>
-            <textarea
-              value={batchDescription}
-              onChange={(e) => setBatchDescription(e.target.value)}
-              placeholder="Optional description"
-              rows={1}
-              className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
-              style={{
-                border: '1px solid var(--borderColor-default)',
-                backgroundColor: 'var(--control-bgColor-rest)',
-                color: 'var(--fgColor-default)'
-              }}
-              disabled={loading}
-            />
-            </div>
-          </div>
-
-          {/* Collapsible Migration Settings */}
-          <div style={{ borderTop: '1px solid var(--borderColor-default)' }}>
-            <button
-              type="button"
-              onClick={() => setShowMigrationSettings(!showMigrationSettings)}
-              className="w-full px-3 py-2.5 flex items-center justify-between text-sm font-medium hover:opacity-80 transition-opacity"
-              style={{ color: 'var(--fgColor-default)' }}
-            >
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4" style={{ color: 'var(--fgColor-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span>Migration Settings</span>
-                {(destinationOrg || excludeReleases || excludeAttachments || migrationAPI !== 'GEI') && (
-                  <span 
-                    className="px-1.5 py-0.5 text-xs rounded-full font-medium"
-                    style={{
-                      backgroundColor: 'var(--accent-subtle)',
-                      color: 'var(--fgColor-accent)'
-                    }}
-                  >
-                    {[destinationOrg ? 1 : 0, excludeReleases ? 1 : 0, excludeAttachments ? 1 : 0, migrationAPI !== 'GEI' ? 1 : 0].reduce((a, b) => a + b, 0)} configured
-                  </span>
-                )}
-              </div>
-              <span style={{ color: 'var(--fgColor-muted)' }}>
-              <ChevronDownIcon
-                  className={`transition-transform ${showMigrationSettings ? 'rotate-180' : ''}`}
-                size={20}
-              />
-              </span>
-            </button>
-
-            {showMigrationSettings && (
-              <div 
-                className="p-3 space-y-2.5"
-                style={{ 
-                  backgroundColor: 'var(--bgColor-muted)',
-                  borderTop: '1px solid var(--borderColor-default)' 
-                }}
-              >
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
-                    Destination Organization
-                    <span className="ml-1 font-normal text-xs" style={{ color: 'var(--fgColor-muted)' }}>— Default for repos without specific destination</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={destinationOrg}
-                    onChange={(e) => setDestinationOrg(e.target.value)}
-                    placeholder="Leave blank to use source org"
-                    list="organizations-list"
-                    className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    style={{
-                      border: '1px solid var(--borderColor-default)',
-                      backgroundColor: 'var(--control-bgColor-rest)',
-                      color: 'var(--fgColor-default)'
-                    }}
-                    disabled={loading}
-                  />
-                  <datalist id="organizations-list">
-                    {organizations.map((org) => (
-                      <option key={org} value={org} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
-                    Migration API
-                  </label>
-                  <select
-                    value={migrationAPI}
-                    onChange={(e) => setMigrationAPI(e.target.value as 'GEI' | 'ELM')}
-                    className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    style={{
-                      border: '1px solid var(--borderColor-default)',
-                      backgroundColor: 'var(--control-bgColor-rest)',
-                      color: 'var(--fgColor-default)'
-                    }}
-                    disabled={loading}
-                  >
-                    <option value="GEI">GEI (GitHub Enterprise Importer)</option>
-                    <option value="ELM">ELM (Enterprise Live Migrator) - Future</option>
-                  </select>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    id="exclude-releases"
-                    checked={excludeReleases}
-                    onChange={(e) => setExcludeReleases(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-2 focus:ring-blue-500"
-                    style={{ borderColor: 'var(--borderColor-default)' }}
-                    disabled={loading}
-                  />
-                  <label htmlFor="exclude-releases" className="text-xs cursor-pointer" style={{ color: 'var(--fgColor-default)' }}>
-                    <span className="font-semibold">Exclude Releases</span>
-                    <span className="block mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>Skip releases during migration (repo settings override)</span>
-                  </label>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    id="exclude-attachments"
-                    checked={excludeAttachments}
-                    onChange={(e) => setExcludeAttachments(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-2 focus:ring-blue-500"
-                    style={{ borderColor: 'var(--borderColor-default)' }}
-                    disabled={loading}
-                  />
-                  <label htmlFor="exclude-attachments" className="text-xs cursor-pointer" style={{ color: 'var(--fgColor-default)' }}>
-                    <span className="font-semibold">Exclude Attachments</span>
-                    <span className="block mt-0.5" style={{ color: 'var(--fgColor-muted)' }}>Skip file attachments (images, files attached to Issues/PRs) to reduce archive size (repo settings override)</span>
-                  </label>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Scheduled Date Section */}
-          <div className="p-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
-          <div className="relative z-[60]">
-            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
-              Scheduled Date (Optional)
-            </label>
-            <input
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={(e) => setScheduledAt(e.target.value)}
-              min={formatDateForInput(new Date().toISOString())}
-              className="w-full px-2.5 py-1.5 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              style={{
-                border: '1px solid var(--borderColor-default)',
-                backgroundColor: 'var(--control-bgColor-rest)',
-                color: 'var(--fgColor-default)'
-              }}
-              disabled={loading}
-              placeholder="Select date and time"
-            />
-            <p className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-              Batch will auto-start at the scheduled time (after dry run is complete)
-            </p>
-            </div>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="px-3 pb-3">
-            <div 
-              className="px-2.5 py-1.5 rounded-lg text-xs"
-              style={{
-                backgroundColor: 'var(--danger-subtle)',
-                border: '1px solid var(--borderColor-danger)',
-                color: 'var(--fgColor-danger)'
-              }}
-            >
-              {error}
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
+          {/* Bottom Section - Pagination */}
           <div 
-            className="border-t p-3"
-            style={{ borderColor: 'var(--borderColor-default)', backgroundColor: 'var(--bgColor-muted)' }}
+            className="row-start-3 flex-shrink-0"
+            style={{ backgroundColor: 'var(--bgColor-default)', borderTop: '1px solid var(--borderColor-default)' }}
           >
-            <div className="flex flex-col gap-1.5">
-            <Button
-              onClick={() => handleSubmit(false)}
-              disabled={loading || currentBatchRepos.length === 0}
-              variant="primary"
-              block
-            >
-              {loading ? 'Saving...' : isEditMode ? 'Update Batch' : 'Create Batch'}
-            </Button>
-            {!isEditMode && (
-              <button
-                onClick={() => handleSubmit(true)}
-                disabled={loading || currentBatchRepos.length === 0}
-                className="w-full px-3 py-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg border-0 cursor-pointer"
-                style={{ 
-                  backgroundColor: '#2da44e',
-                  color: '#ffffff'
-                }}
-                onMouseEnter={(e) => {
-                  if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.backgroundColor = '#2c974b';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.backgroundColor = '#2da44e';
-                  }
-                }}
-              >
-                Create & Start
-              </button>
-            )}
-            <Button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              block
-            >
-              Cancel
-            </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Confirmation Dialog */}
-      {confirmDialog.isOpen && (
-        <div 
-          className="fixed inset-0 flex items-center justify-center"
-          style={{ zIndex: 99999 }}
-        >
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0" 
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
-            onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-          />
-          
-          {/* Modal Content */}
-          <div 
-            className="relative rounded-lg shadow-xl max-w-lg w-full mx-4"
-            style={{ 
-              backgroundColor: 'var(--bgColor-default)',
-              border: '1px solid var(--borderColor-default)'
-            }}
-          >
-            {/* Header */}
-            <div 
-              className="px-4 py-3 border-b"
-              style={{ borderColor: 'var(--borderColor-default)' }}
-            >
-              <h2 
-                className="text-lg font-semibold"
-                style={{ color: 'var(--fgColor-default)' }}
-              >
-                {confirmDialog.title}
-              </h2>
-            </div>
-            
-            {/* Body */}
-            <div className="px-4 py-4">
-              <p style={{ color: 'var(--fgColor-default)' }}>
-                {confirmDialog.message}
-              </p>
-            </div>
-            
-            {/* Footer */}
-            <div 
-              className="px-4 py-3 border-t flex gap-2 justify-end"
-              style={{ 
-                borderColor: 'var(--borderColor-default)',
-                backgroundColor: 'var(--bgColor-muted)'
-              }}
-            >
-              <Button 
-                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-                  confirmDialog.onConfirm();
-                }}
-              >
-                OK
-              </Button>
-            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalItems={totalAvailable}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+            />
           </div>
         </div>
       )}
+
+      {/* Right Panel - Selected Repositories & Batch Info */}
+      <div 
+        className={`flex-shrink-0 flex flex-col transition-all duration-300 h-full min-h-0 overflow-hidden ${
+          isAvailablePanelCollapsed 
+            ? 'flex-1' 
+            : currentBatchRepos.length > 0 
+              ? 'w-full lg:w-[40%]' 
+              : 'w-full lg:w-[30%]'
+        }`}
+        style={{ backgroundColor: 'var(--bgColor-default)' }}
+      >
+        <BatchSummaryPanel
+          currentBatchRepos={currentBatchRepos}
+          groupedRepos={currentGroups}
+          totalSize={totalSize}
+          onRemoveRepo={handleRemoveRepo}
+          onClearAll={handleClearAll}
+          isExpanded={isSelectedReposExpanded}
+          onToggleExpanded={handleToggleSelectedRepos}
+        />
+        
+        <BatchMetadataForm
+          batchName={batchName}
+          setBatchName={setBatchName}
+          batchDescription={batchDescription}
+          setBatchDescription={setBatchDescription}
+          scheduledAt={scheduledAt}
+          setScheduledAt={setScheduledAt}
+          migrationSettings={{
+            destinationOrg,
+            migrationAPI,
+            excludeReleases,
+            excludeAttachments,
+          }}
+          onMigrationSettingsChange={(settings) => {
+            if (settings.destinationOrg !== undefined) setDestinationOrg(settings.destinationOrg);
+            if (settings.migrationAPI !== undefined) setMigrationAPI(settings.migrationAPI);
+            if (settings.excludeReleases !== undefined) setExcludeReleases(settings.excludeReleases);
+            if (settings.excludeAttachments !== undefined) setExcludeAttachments(settings.excludeAttachments);
+          }}
+          showMigrationSettings={showMigrationSettings}
+          setShowMigrationSettings={setShowMigrationSettings}
+          organizations={organizations}
+          loading={loading}
+          isEditMode={isEditMode}
+          currentBatchReposCount={currentBatchRepos.length}
+          error={error}
+          onSave={handleSubmit}
+          onClose={onClose}
+        />
+      </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel="OK"
+        variant="danger"
+        onConfirm={() => {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          confirmDialog.onConfirm();
+        }}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
 
       {/* Import Dialog */}
       {showImportDialog && (

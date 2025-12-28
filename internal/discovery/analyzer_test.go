@@ -851,10 +851,7 @@ func TestParseHumanSize(t *testing.T) {
 				t.Fatalf("Unexpected error: %v", err)
 			}
 			// Allow 1% tolerance for floating point conversions
-			tolerance := tt.expected / 100
-			if tolerance < 10 {
-				tolerance = 10
-			}
+			tolerance := max(tt.expected/100, 10)
 			if result < tt.expected-tolerance || result > tt.expected+tolerance {
 				t.Errorf("Expected ~%d (±%d), got %d", tt.expected, tolerance, result)
 			}

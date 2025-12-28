@@ -331,7 +331,7 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 
 	// Use dialect-specific date arithmetic via DialectDialer interface
-	var args []interface{}
+	var args []any
 	dateCondition := "AND mh.completed_at >= " + d.dialect.DateIntervalAgo(days)
 	args = append(args, orgArgs...)
 	args = append(args, projectArgs...)
@@ -525,7 +525,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 
 // buildOrgFilter builds the organization filter clause using parameterized queries
 // Returns the SQL fragment and any additional arguments to append
-func (d *Database) buildOrgFilter(orgFilter string) (string, []interface{}) {
+func (d *Database) buildOrgFilter(orgFilter string) (string, []any) {
 	if orgFilter == "" {
 		return "", nil
 	}
@@ -534,12 +534,12 @@ func (d *Database) buildOrgFilter(orgFilter string) (string, []interface{}) {
 	extractOrg := d.dialect.ExtractOrgFromFullName("r.full_name")
 	filterSQL := fmt.Sprintf(" AND %s = ?", extractOrg)
 
-	return filterSQL, []interface{}{orgFilter}
+	return filterSQL, []any{orgFilter}
 }
 
 // buildBatchFilter builds the batch filter clause using parameterized queries
 // Returns the SQL fragment and any additional arguments to append
-func (d *Database) buildBatchFilter(batchFilter string) (string, []interface{}) {
+func (d *Database) buildBatchFilter(batchFilter string) (string, []any) {
 	if batchFilter == "" {
 		return "", nil
 	}
@@ -548,15 +548,15 @@ func (d *Database) buildBatchFilter(batchFilter string) (string, []interface{}) 
 	if err != nil {
 		return "", nil
 	}
-	return " AND r.batch_id = ?", []interface{}{batchID}
+	return " AND r.batch_id = ?", []any{batchID}
 }
 
 // buildProjectFilter builds SQL filter for ADO project (ado_project field)
-func (d *Database) buildProjectFilter(projectFilter string) (string, []interface{}) {
+func (d *Database) buildProjectFilter(projectFilter string) (string, []any) {
 	if projectFilter == "" {
 		return "", nil
 	}
-	return " AND r.ado_project = ?", []interface{}{projectFilter}
+	return " AND r.ado_project = ?", []any{projectFilter}
 }
 
 // GetRepositoryStatsByStatusFiltered returns repository counts by status with filters
@@ -978,10 +978,12 @@ func (d *Database) GetDashboardActionItems(ctx context.Context) (*DashboardActio
 		}
 	}
 
-	// Get ready batches (status = ready OR scheduled in the past)
+	// Get ready batches (status = ready OR status = pending/ready with scheduled time in the past)
+	// Exclude completed, failed, or cancelled batches
 	now := time.Now()
 	err = d.db.WithContext(ctx).
-		Where("status = ? OR (scheduled_at IS NOT NULL AND scheduled_at <= ?)", "ready", now).
+		Where("status = ? OR (status IN (?, ?) AND scheduled_at IS NOT NULL AND scheduled_at <= ?)",
+			"ready", "pending", "ready", now).
 		Order("scheduled_at ASC NULLS LAST, created_at ASC").
 		Limit(10).
 		Find(&actionItems.ReadyBatches).Error

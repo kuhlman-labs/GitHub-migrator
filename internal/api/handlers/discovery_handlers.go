@@ -93,7 +93,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 			return h.collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug)
 		}, "enterprise", req.EnterpriseSlug)
 
-		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		h.sendJSON(w, http.StatusAccepted, map[string]any{
 			"message":     "Enterprise discovery started",
 			"enterprise":  req.EnterpriseSlug,
 			"status":      models.DiscoveryStatusInProgress,
@@ -105,7 +105,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 			return h.collector.DiscoverRepositories(ctx, req.Organization)
 		}, "organization", req.Organization)
 
-		h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+		h.sendJSON(w, http.StatusAccepted, map[string]any{
 			"message":      "Discovery started",
 			"organization": req.Organization,
 			"status":       models.DiscoveryStatusInProgress,
@@ -155,7 +155,7 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build response based on actual discovery state
-	response := map[string]interface{}{
+	response := map[string]any{
 		"repositories_found": count,
 	}
 
@@ -197,7 +197,7 @@ func (h *Handler) GetDiscoveryProgress(w http.ResponseWriter, r *http.Request) {
 
 	if progress == nil {
 		// No discovery has been run yet
-		h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		h.sendJSON(w, http.StatusOK, map[string]any{
 			"status":  "none",
 			"message": "No discovery has been run yet",
 		})
@@ -235,7 +235,7 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+	h.sendJSON(w, http.StatusAccepted, map[string]any{
 		"message":      "Repository discovery started",
 		"organization": req.Organization,
 		"status":       models.DiscoveryStatusInProgress,

@@ -149,9 +149,9 @@ func (ps *PackageScanner) WithSourceURL(sourceURL string) *PackageScanner {
 			if len(pathParts) > 0 {
 				ps.sourceOrg = pathParts[0]
 			}
-		} else if strings.HasSuffix(host, suffixVisualStudio) {
+		} else if before, ok := strings.CutSuffix(host, suffixVisualStudio); ok {
 			// {org}.visualstudio.com - org is in the hostname
-			ps.sourceOrg = strings.TrimSuffix(host, suffixVisualStudio)
+			ps.sourceOrg = before
 		}
 
 		// Add ADO hosts for scanning
@@ -196,104 +196,84 @@ func (ps *PackageScanner) ScanPackageManagers(ctx context.Context, repoPath stri
 
 	// Go modules
 	if len(manifests.GoMod) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parseGoModFiles(manifests.GoMod, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// npm/package.json
 	if len(manifests.PackageJSON) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parsePackageJSONFiles(manifests.PackageJSON, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Python requirements.txt
 	if len(manifests.Requirements) > 0 || len(manifests.RequirementsVariants) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			allReqs := append(manifests.Requirements, manifests.RequirementsVariants...)
 			deps := ps.parseRequirementsFiles(allReqs, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Ruby Gemfile
 	if len(manifests.Gemfile) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parseGemfiles(manifests.Gemfile, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Terraform *.tf
 	if len(manifests.Terraform) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parseTerraformFiles(manifests.Terraform, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Rust Cargo.toml
 	if len(manifests.CargoToml) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parseCargoFiles(manifests.CargoToml, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Helm Chart.yaml
 	if len(manifests.ChartYaml) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parseChartYamlFiles(manifests.ChartYaml, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Swift Package.swift
 	if len(manifests.PackageSwift) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parsePackageSwiftFiles(manifests.PackageSwift, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Elixir mix.exs
 	if len(manifests.MixExs) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deps := ps.parseMixExsFiles(manifests.MixExs, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Gradle build.gradle and build.gradle.kts
 	if len(manifests.BuildGradle) > 0 || len(manifests.BuildGradleKts) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			allGradle := append(manifests.BuildGradle, manifests.BuildGradleKts...)
 			deps := ps.parseBuildGradleFiles(allGradle, repoPath)
 			depsChan <- deps
-		}()
+		})
 	}
 
 	// Close channel when all goroutines complete

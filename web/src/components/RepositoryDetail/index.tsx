@@ -1,13 +1,16 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useParams, Link as RouterLink, useLocation } from 'react-router-dom';
-import { Button, UnderlineNav, Textarea, FormControl, Link, useTheme, Dialog } from '@primer/react';
-import { CalendarIcon, AlertIcon } from '@primer/octicons-react';
+import { UnderlineNav, Textarea, FormControl, Link, useTheme } from '@primer/react';
+import { Button, SuccessButton, AttentionButton, BorderedButton } from '../common/buttons';
+import { CalendarIcon, AlertIcon, PlayIcon, IterationsIcon, SyncIcon, BeakerIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { Repository, MigrationHistory } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
+import { FormDialog } from '../common/FormDialog';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { TimestampDisplay } from '../common/TimestampDisplay';
 import { MigrationReadinessTab } from './MigrationReadinessTab';
 import { TechnicalProfileTab } from './TechnicalProfileTab';
@@ -16,6 +19,7 @@ import { ActivityLogTab } from './ActivityLogTab';
 import { useRepositoryWithHistory, useBatches } from '../../hooks/useQueries';
 import { useRediscoverRepository, useUnlockRepository, useRollbackRepository, useMarkRepositoryWontMigrate } from '../../hooks/useMutations';
 import { useToast } from '../../contexts/ToastContext';
+import { useDialogState } from '../../hooks/useDialogState';
 import { formatDuration } from '../../utils/format';
 
 // Helper to get duration from migration history
@@ -44,50 +48,35 @@ export function RepositoryDetail() {
   
   const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<'readiness' | 'profile' | 'relationships' | 'activity'>('readiness');
-  
-  // Rollback state
-  const [showRollbackDialog, setShowRollbackDialog] = useState(false);
   const [rollbackReason, setRollbackReason] = useState('');
   
-  // Dialog states
-  const [showRediscoverDialog, setShowRediscoverDialog] = useState(false);
-  const [showUnlockDialog, setShowUnlockDialog] = useState(false);
-  const [showWontMigrateDialog, setShowWontMigrateDialog] = useState(false);
-  const [showMigrationDialog, setShowMigrationDialog] = useState(false);
-  const [pendingDryRun, setPendingDryRun] = useState(false);
-  const rediscoverButtonRef = useRef<HTMLButtonElement>(null);
-  const unlockButtonRef = useRef<HTMLButtonElement>(null);
+  // Dialog states using useDialogState hook
+  const rollbackDialog = useDialogState();
+  const rediscoverDialog = useDialogState();
+  const unlockDialog = useDialogState();
+  const wontMigrateDialog = useDialogState();
+  const migrationDialog = useDialogState<{ isDryRun: boolean }>();
 
-  const handleStartMigration = async (dryRun: boolean = false) => {
+  const handleStartMigration = (dryRun: boolean = false) => {
     if (!repository || migrating) return;
-
-    // For actual migration (not dry run), show confirmation dialog
-    if (!dryRun) {
-      setPendingDryRun(false);
-      setShowMigrationDialog(true);
-      return;
-    }
-
-    // For dry run, show confirmation dialog
-    setPendingDryRun(true);
-    setShowMigrationDialog(true);
+    migrationDialog.open({ isDryRun: dryRun });
   };
 
   const confirmStartMigration = async () => {
-    if (!repository) return;
+    if (!repository || !migrationDialog.data) return;
 
-    setShowMigrationDialog(false);
+    const isDryRun = migrationDialog.data.isDryRun;
+    migrationDialog.close();
     setMigrating(true);
     try {
       await api.startMigration({
         repository_ids: [repository.id],
-        dry_run: pendingDryRun,
+        dry_run: isDryRun,
       });
       
       // Show success message
-      showSuccess(`${pendingDryRun ? 'Dry run' : 'Migration'} started successfully!`);
+      showSuccess(`${isDryRun ? 'Dry run' : 'Migration'} started successfully!`);
     } catch (error: unknown) {
-      console.error('Failed to start migration:', error);
       const err = error as { response?: { data?: { error?: string } }; message?: string };
       const errorMessage = err.response?.data?.error || err.message || 'Failed to start migration. Please try again.';
       showError(errorMessage);
@@ -98,18 +87,17 @@ export function RepositoryDetail() {
 
   const handleRediscover = () => {
     if (!repository || !fullName || rediscoverMutation.isPending) return;
-    setShowRediscoverDialog(true);
+    rediscoverDialog.open();
   };
 
   const confirmRediscover = async () => {
     if (!fullName) return;
 
-    setShowRediscoverDialog(false);
+    rediscoverDialog.close();
     try {
       await rediscoverMutation.mutateAsync(decodeURIComponent(fullName));
       showSuccess('Re-discovery started! Repository data will be updated shortly.');
     } catch (error: unknown) {
-      console.error('Failed to start re-discovery:', error);
       const err = error as { response?: { data?: { error?: string } }; message?: string };
       const errorMessage = err.response?.data?.error || err.message || 'Failed to start re-discovery. Please try again.';
       showError(errorMessage);
@@ -118,18 +106,17 @@ export function RepositoryDetail() {
 
   const handleUnlock = () => {
     if (!repository || !fullName || unlockMutation.isPending) return;
-    setShowUnlockDialog(true);
+    unlockDialog.open();
   };
 
   const confirmUnlock = async () => {
     if (!fullName) return;
 
-    setShowUnlockDialog(false);
+    unlockDialog.close();
     try {
       await unlockMutation.mutateAsync(decodeURIComponent(fullName));
       showSuccess('Repository unlocked successfully!');
     } catch (error: unknown) {
-      console.error('Failed to unlock repository:', error);
       const err = error as { response?: { data?: { error?: string } }; message?: string };
       const errorMessage = err.response?.data?.error || err.message || 'Failed to unlock repository. Please try again.';
       showError(errorMessage);
@@ -144,11 +131,10 @@ export function RepositoryDetail() {
         fullName: decodeURIComponent(fullName), 
         reason: rollbackReason 
       });
-      setShowRollbackDialog(false);
+      rollbackDialog.close();
       setRollbackReason('');
       showSuccess('Repository rolled back successfully! It can now be migrated again.');
     } catch (error: unknown) {
-      console.error('Failed to rollback repository:', error);
       const err = error as { response?: { data?: { error?: string } }; message?: string };
       const errorMessage = err.response?.data?.error || err.message || 'Failed to rollback repository. Please try again.';
       showError(errorMessage);
@@ -157,7 +143,7 @@ export function RepositoryDetail() {
 
   const handleToggleWontMigrate = () => {
     if (!repository || !fullName || markWontMigrateMutation.isPending) return;
-    setShowWontMigrateDialog(true);
+    wontMigrateDialog.open();
   };
 
   const confirmToggleWontMigrate = async () => {
@@ -166,7 +152,7 @@ export function RepositoryDetail() {
     const isWontMigrate = repository.status === 'wont_migrate';
     const action = isWontMigrate ? 'unmark' : 'mark';
     
-    setShowWontMigrateDialog(false);
+    wontMigrateDialog.close();
     try {
       await markWontMigrateMutation.mutateAsync({ 
         fullName: decodeURIComponent(fullName), 
@@ -174,7 +160,6 @@ export function RepositoryDetail() {
       });
       showSuccess(`Repository ${action}ed successfully!`);
     } catch (error: unknown) {
-      console.error(`Failed to ${action} repository:`, error);
       const err = error as { response?: { data?: { error?: string } } };
       const errorMsg = err.response?.data?.error || `Failed to ${action} repository. Please try again.`;
       showError(errorMsg);
@@ -398,30 +383,15 @@ export function RepositoryDetail() {
           </div>
 
           {/* Migration Actions */}
-          <div className="flex flex-col gap-3 ml-6">
-            <button
+          <div className="flex flex-col gap-3 ml-6 w-48">
+            <BorderedButton
               onClick={handleRediscover}
               disabled={rediscoverMutation.isPending}
-              className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
-              style={{ 
-                whiteSpace: 'nowrap',
-                border: '1px solid var(--borderColor-default)',
-                backgroundColor: 'var(--bgColor-muted)',
-                color: 'var(--fgColor-default)'
-              }}
-              onMouseEnter={(e) => {
-                if (!rediscoverMutation.isPending) {
-                  e.currentTarget.style.backgroundColor = 'var(--control-bgColor-hover)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!rediscoverMutation.isPending) {
-                  e.currentTarget.style.backgroundColor = 'var(--bgColor-muted)';
-                }
-              }}
+              leadingVisual={SyncIcon}
+              className="whitespace-nowrap w-full justify-start"
             >
               {rediscoverMutation.isPending ? 'Re-discovering...' : 'Re-discover'}
-            </button>
+            </BorderedButton>
             
             {/* Won't Migrate Toggle */}
             {!isInActiveMigration && repository.status !== 'complete' && (
@@ -430,34 +400,19 @@ export function RepositoryDetail() {
                   onClick={handleToggleWontMigrate}
                   disabled={markWontMigrateMutation.isPending}
                   variant="primary"
-                  style={{ whiteSpace: 'nowrap' }}
+                  className="whitespace-nowrap w-full justify-start"
                 >
                   {markWontMigrateMutation.isPending ? 'Processing...' : 'Unmark Won\'t Migrate'}
                 </Button>
               ) : (
-                <button
+                <AttentionButton
                   onClick={handleToggleWontMigrate}
                   disabled={markWontMigrateMutation.isPending}
-                  className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
-                  style={{ 
-                    whiteSpace: 'nowrap',
-                    border: '1px solid var(--borderColor-attention-emphasis)',
-                    backgroundColor: 'var(--bgColor-attention-muted)',
-                    color: 'var(--fgColor-attention)'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!markWontMigrateMutation.isPending) {
-                      e.currentTarget.style.backgroundColor = 'var(--control-attention-bgColor-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!markWontMigrateMutation.isPending) {
-                      e.currentTarget.style.backgroundColor = 'var(--bgColor-attention-muted)';
-                    }
-                  }}
+                  leadingVisual={AlertIcon}
+                  className="whitespace-nowrap w-full justify-start"
                 >
                   Mark as Won't Migrate
-                </button>
+                </AttentionButton>
               )
             )}
             
@@ -467,36 +422,19 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
                   variant="primary"
-                  style={{ whiteSpace: 'nowrap' }}
+                  leadingVisual={BeakerIcon}
+                  className="whitespace-nowrap w-full justify-start"
                 >
                   {migrating ? 'Processing...' : 'Dry Run'}
                 </Button>
-                <button
+                <SuccessButton
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
-                  className="px-4 py-2 rounded-md text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
-                  style={{ 
-                    whiteSpace: 'nowrap',
-                    backgroundColor: '#1a7f37',
-                    color: '#ffffff',
-                    border: '1px solid #1a7f37',
-                    fontWeight: 600
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!migrating) {
-                      e.currentTarget.style.backgroundColor = '#2da44e';
-                      e.currentTarget.style.borderColor = '#2da44e';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!migrating) {
-                      e.currentTarget.style.backgroundColor = '#1a7f37';
-                      e.currentTarget.style.borderColor = '#1a7f37';
-                    }
-                  }}
+                  leadingVisual={PlayIcon}
+                  className="whitespace-nowrap w-full justify-start font-semibold"
                 >
                   {migrating ? 'Processing...' : 'Start Migration'}
-                </button>
+                </SuccessButton>
               </>
             )}
             {repository.status === 'dry_run_failed' && (
@@ -505,7 +443,8 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(true)}
                   disabled={migrating}
                   variant="danger"
-                  style={{ whiteSpace: 'nowrap' }}
+                  leadingVisual={BeakerIcon}
+                  className="whitespace-nowrap w-full justify-start"
                 >
                   {migrating ? 'Re-running...' : 'Re-run Dry Run'}
                 </Button>
@@ -513,7 +452,8 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="primary"
-                  style={{ whiteSpace: 'nowrap' }}
+                  leadingVisual={PlayIcon}
+                  className="whitespace-nowrap w-full justify-start"
                 >
                   {migrating ? 'Starting...' : 'Start Migration Anyway'}
                 </Button>
@@ -525,7 +465,8 @@ export function RepositoryDetail() {
                   onClick={() => handleStartMigration(false)}
                   disabled={migrating}
                   variant="danger"
-                  style={{ whiteSpace: 'nowrap' }}
+                  leadingVisual={SyncIcon}
+                  className="whitespace-nowrap w-full justify-start"
                 >
                   Retry Migration
                 </Button>
@@ -534,7 +475,7 @@ export function RepositoryDetail() {
                     onClick={handleUnlock}
                     disabled={unlockMutation.isPending}
                     variant="danger"
-                    style={{ whiteSpace: 'nowrap' }}
+                    className="whitespace-nowrap w-full justify-start"
                   >
                     {unlockMutation.isPending ? 'Unlocking...' : '🔓 Unlock Source'}
                   </Button>
@@ -543,10 +484,11 @@ export function RepositoryDetail() {
             )}
             {repository.status === 'complete' && (
               <Button
-                onClick={() => setShowRollbackDialog(true)}
+                onClick={() => rollbackDialog.open()}
                 disabled={rollbackMutation.isPending}
                 variant="danger"
-                style={{ whiteSpace: 'nowrap' }}
+                leadingVisual={IterationsIcon}
+                className="whitespace-nowrap w-full justify-start"
               >
                 {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback Migration'}
               </Button>
@@ -631,145 +573,66 @@ export function RepositoryDetail() {
       </div>
 
       {/* Rollback Dialog */}
-      {showRollbackDialog && (
-        <Dialog
-          onClose={() => {
-            setShowRollbackDialog(false);
-            setRollbackReason('');
-          }}
-          aria-labelledby="rollback-dialog-header"
-        >
-          <Dialog.Header id="rollback-dialog-header">
-            Rollback Migration
-          </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)', marginBottom: '16px' }}>
-              This will mark the repository as rolled back and allow it to be migrated again in the future.
-              You can optionally provide a reason for the rollback.
-            </p>
-            
-            <FormControl>
-              <FormControl.Label>Reason (optional)</FormControl.Label>
-              <Textarea
-                value={rollbackReason}
-                onChange={(e) => setRollbackReason(e.target.value)}
-                placeholder="e.g., CI/CD integration issues, workflow failures..."
-                rows={3}
-                disabled={rollbackMutation.isPending}
-                block
-              />
-            </FormControl>
-          </div>
-          <div style={{ 
-            padding: '12px 16px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px'
-          }}>
-            <Button
-              onClick={() => {
-                setShowRollbackDialog(false);
-                setRollbackReason('');
-              }}
-              disabled={rollbackMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRollback}
-              disabled={rollbackMutation.isPending}
-              variant="danger"
-            >
-              {rollbackMutation.isPending ? 'Rolling back...' : 'Confirm Rollback'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+      <FormDialog
+        isOpen={rollbackDialog.isOpen}
+        title="Rollback Migration"
+        submitLabel="Confirm Rollback"
+        onSubmit={handleRollback}
+        onCancel={() => {
+          rollbackDialog.close();
+          setRollbackReason('');
+        }}
+        isLoading={rollbackMutation.isPending}
+        variant="danger"
+        size="medium"
+      >
+        <p style={{ fontSize: '14px', color: 'var(--fgColor-muted)', marginBottom: '16px' }}>
+          This will mark the repository as rolled back and allow it to be migrated again in the future.
+          You can optionally provide a reason for the rollback.
+        </p>
+        
+        <FormControl>
+          <FormControl.Label>Reason (optional)</FormControl.Label>
+          <Textarea
+            value={rollbackReason}
+            onChange={(e) => setRollbackReason(e.target.value)}
+            placeholder="e.g., CI/CD integration issues, workflow failures..."
+            rows={3}
+            disabled={rollbackMutation.isPending}
+            block
+          />
+        </FormControl>
+      </FormDialog>
 
       {/* Rediscover Confirmation Dialog */}
-      {showRediscoverDialog && (
-        <Dialog
-          returnFocusRef={rediscoverButtonRef as React.RefObject<HTMLElement>}
-          onClose={() => setShowRediscoverDialog(false)}
-          aria-labelledby="rediscover-dialog-header"
-        >
-          <Dialog.Header id="rediscover-dialog-header">
-            Re-discover Repository
-          </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
-              Are you sure you want to re-discover this repository? This will update all repository data.
-            </p>
-          </div>
-          <div style={{ 
-            padding: '12px 16px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px'
-          }}>
-            <Button onClick={() => setShowRediscoverDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={confirmRediscover}>
-              Re-discover
-            </Button>
-          </div>
-        </Dialog>
-      )}
+      <ConfirmationDialog
+        isOpen={rediscoverDialog.isOpen}
+        title="Re-discover Repository"
+        message="Are you sure you want to re-discover this repository? This will update all repository data."
+        confirmLabel="Re-discover"
+        onConfirm={confirmRediscover}
+        onCancel={rediscoverDialog.close}
+      />
 
       {/* Unlock Confirmation Dialog */}
-      {showUnlockDialog && (
-        <Dialog
-          returnFocusRef={unlockButtonRef as React.RefObject<HTMLElement>}
-          onClose={() => setShowUnlockDialog(false)}
-          aria-labelledby="unlock-dialog-header"
-        >
-          <Dialog.Header id="unlock-dialog-header">
-            Unlock Repository
-          </Dialog.Header>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontSize: '14px', color: 'var(--fgColor-default)' }}>
-              Are you sure you want to unlock this repository? This will remove the lock from the source repository.
-            </p>
-          </div>
-          <div style={{ 
-            padding: '12px 16px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px'
-          }}>
-            <Button onClick={() => setShowUnlockDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={confirmUnlock}>
-              Unlock
-            </Button>
-          </div>
-        </Dialog>
-      )}
+      <ConfirmationDialog
+        isOpen={unlockDialog.isOpen}
+        title="Unlock Repository"
+        message="Are you sure you want to unlock this repository? This will remove the lock from the source repository."
+        confirmLabel="Unlock"
+        variant="danger"
+        onConfirm={confirmUnlock}
+        onCancel={unlockDialog.close}
+      />
 
       {/* Won't Migrate Confirmation Dialog */}
-      {showWontMigrateDialog && repository && (
-        <Dialog
-          onClose={() => setShowWontMigrateDialog(false)}
-          aria-labelledby="wont-migrate-dialog-header"
-        >
-          <Dialog.Header id="wont-migrate-dialog-header">
-            {repository.status === 'wont_migrate' ? 'Unmark Repository' : 'Mark Repository as Won\'t Migrate'}
-          </Dialog.Header>
-          <div style={{ padding: '16px 24px' }}>
-            {repository.status === 'wont_migrate' ? (
-              <p style={{ 
-                fontSize: '14px', 
-                color: 'var(--fgColor-default)',
-                lineHeight: '1.5',
-                margin: 0
-              }}>
-                Are you sure you want to unmark this repository? It will be changed to <strong>pending</strong> status and can be added to migration batches again.
-              </p>
+      {repository && (
+        <ConfirmationDialog
+          isOpen={wontMigrateDialog.isOpen}
+          title={repository.status === 'wont_migrate' ? 'Unmark Repository' : "Mark Repository as Won't Migrate"}
+          message={
+            repository.status === 'wont_migrate' ? (
+              <>Are you sure you want to unmark this repository? It will be changed to <strong>pending</strong> status and can be added to migration batches again.</>
             ) : (
               <>
                 <div style={{
@@ -812,95 +675,70 @@ export function RepositoryDetail() {
                   Use this for repositories that don't need to be migrated, such as archived projects or test repositories.
                 </p>
               </>
-            )}
-          </div>
-          <div style={{ 
-            padding: '16px 24px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px',
-            backgroundColor: 'var(--bgColor-muted)'
-          }}>
-            <Button onClick={() => setShowWontMigrateDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant={repository.status === 'wont_migrate' ? 'primary' : 'danger'} onClick={confirmToggleWontMigrate}>
-              {repository.status === 'wont_migrate' ? 'Unmark Repository' : 'Mark as Won\'t Migrate'}
-            </Button>
-          </div>
-        </Dialog>
+            )
+          }
+          confirmLabel={repository.status === 'wont_migrate' ? 'Unmark Repository' : "Mark as Won't Migrate"}
+          variant={repository.status === 'wont_migrate' ? 'primary' : 'danger'}
+          onConfirm={confirmToggleWontMigrate}
+          onCancel={wontMigrateDialog.close}
+        />
       )}
 
       {/* Migration Confirmation Dialog */}
-      {showMigrationDialog && repository && (
-        <Dialog
-          onClose={() => setShowMigrationDialog(false)}
-          aria-labelledby="migration-dialog-header"
-        >
-          <Dialog.Header id="migration-dialog-header">
-            {pendingDryRun ? 'Confirm Dry Run' : 'Confirm Migration'}
-          </Dialog.Header>
-          <div style={{ padding: '16px 24px' }}>
-            <p style={{ 
-              fontSize: '14px', 
-              color: 'var(--fgColor-default)', 
-              lineHeight: '1.5',
-              margin: '0 0 16px 0'
-            }}>
-              {pendingDryRun
-                ? 'This will simulate the migration process without making any actual changes to the repository.'
-                : 'This will begin the migration process for this repository.'}
-            </p>
-            {!pendingDryRun && (
-              <div style={{
-                display: 'flex',
-                gap: '12px',
-                padding: '12px',
-                borderRadius: '6px',
-                backgroundColor: 'var(--bgColor-attention-muted)',
-                border: '1px solid var(--borderColor-attention-emphasis)'
+      {migrationDialog.data && (
+        <ConfirmationDialog
+          isOpen={migrationDialog.isOpen && !!repository}
+          title={migrationDialog.data.isDryRun ? 'Confirm Dry Run' : 'Confirm Migration'}
+          message={
+            <>
+              <p style={{ 
+                fontSize: '14px', 
+                color: 'var(--fgColor-default)', 
+                lineHeight: '1.5',
+                margin: '0 0 16px 0'
               }}>
-                <div style={{ flexShrink: 0, marginTop: '2px', color: 'var(--fgColor-attention)' }}>
-                  <AlertIcon size={16} />
+                {migrationDialog.data.isDryRun
+                  ? 'This will simulate the migration process without making any actual changes to the repository.'
+                  : 'This will begin the migration process for this repository.'}
+              </p>
+              {!migrationDialog.data.isDryRun && (
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bgColor-attention-muted)',
+                  border: '1px solid var(--borderColor-attention-emphasis)'
+                }}>
+                  <div style={{ flexShrink: 0, marginTop: '2px', color: 'var(--fgColor-attention)' }}>
+                    <AlertIcon size={16} />
+                  </div>
+                  <div>
+                    <p style={{ 
+                      fontSize: '14px', 
+                      fontWeight: 600,
+                      color: 'var(--fgColor-attention)',
+                      margin: '0 0 4px 0'
+                    }}>
+                      This is a permanent action
+                    </p>
+                    <p style={{ 
+                      fontSize: '13px', 
+                      color: 'var(--fgColor-default)',
+                      lineHeight: '1.5',
+                      margin: 0
+                    }}>
+                      Make sure you have reviewed the migration readiness assessment and have a backup if needed.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p style={{ 
-                    fontSize: '14px', 
-                    fontWeight: 600,
-                    color: 'var(--fgColor-attention)',
-                    margin: '0 0 4px 0'
-                  }}>
-                    This is a permanent action
-                  </p>
-                  <p style={{ 
-                    fontSize: '13px', 
-                    color: 'var(--fgColor-default)',
-                    lineHeight: '1.5',
-                    margin: 0
-                  }}>
-                    Make sure you have reviewed the migration readiness assessment and have a backup if needed.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-          <div style={{ 
-            padding: '16px 24px', 
-            borderTop: '1px solid var(--borderColor-default)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px',
-            backgroundColor: 'var(--bgColor-muted)'
-          }}>
-            <Button onClick={() => setShowMigrationDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={confirmStartMigration}>
-              {pendingDryRun ? 'Start Dry Run' : 'Start Migration'}
-            </Button>
-          </div>
-        </Dialog>
+              )}
+            </>
+          }
+          confirmLabel={migrationDialog.data.isDryRun ? 'Start Dry Run' : 'Start Migration'}
+          onConfirm={confirmStartMigration}
+          onCancel={migrationDialog.close}
+        />
       )}
     </div>
   );

@@ -13,9 +13,9 @@ import (
 // mockRateLimitResponse returns a mock rate limit response
 func mockRateLimitResponse(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"resources": map[string]interface{}{
-			"core": map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
+		"resources": map[string]any{
+			"core": map[string]any{
 				"limit":     5000,
 				"remaining": 4999,
 				"reset":     1234567890,
@@ -61,7 +61,7 @@ func TestListOrgMembers(t *testing.T) {
 		mockRateLimitResponse(w)
 	})
 	mux.HandleFunc("/api/v3/orgs/test-org/members", func(w http.ResponseWriter, _ *http.Request) {
-		members := []map[string]interface{}{
+		members := []map[string]any{
 			{
 				"login":      "user1",
 				"id":         1001,

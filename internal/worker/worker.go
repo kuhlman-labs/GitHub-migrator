@@ -145,7 +145,7 @@ func (w *MigrationWorker) processQueuedRepositories() {
 	}
 
 	// Fetch queued repositories (limit to available slots)
-	filters := map[string]interface{}{
+	filters := map[string]any{
 		"status": []string{
 			string(models.StatusQueuedForMigration),
 			string(models.StatusDryRunQueued),

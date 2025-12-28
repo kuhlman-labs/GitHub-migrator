@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -110,7 +111,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		sourceType = models.SourceTypeGitHub
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"source_type":  sourceType,
 		"auth_enabled": h.authConfig != nil && h.authConfig.Enabled,
 	}
@@ -124,7 +125,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // sendJSON sends a JSON response
-func (h *Handler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+func (h *Handler) sendJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
@@ -224,12 +225,7 @@ func ParsePageParams(r *http.Request, defaultPerPage int) PaginationParams {
 
 // statusIn checks if a status is in the given list of allowed statuses.
 func statusIn(status string, allowed []string) bool {
-	for _, s := range allowed {
-		if status == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, status)
 }
 
 // batchEligibleStatuses defines the statuses that make a repository eligible for batch assignment.

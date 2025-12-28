@@ -74,7 +74,7 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 		complexityDist = nil
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"total_repositories":      total,
 		"status_distribution":     statusStats,
 		"organization_breakdown":  orgStats,
@@ -124,7 +124,7 @@ func (h *AnalyticsHandler) GetMigrationProgress(w http.ResponseWriter, r *http.R
 		velocity = nil
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"total":            counts.Total,
 		"completed":        counts.Completed,
 		"in_progress":      counts.InProgress,
@@ -200,8 +200,8 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 		estimatedCompletionDays = int(float64(remaining) / velocity.ReposPerDay)
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
-		"summary": map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
+		"summary": map[string]any{
 			"total":            counts.Total,
 			"completed":        counts.Completed,
 			"in_progress":      counts.InProgress,
@@ -211,7 +211,7 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 			"success_rate":     successRate,
 		},
 		"organization_breakdown": orgStats,
-		"performance": map[string]interface{}{
+		"performance": map[string]any{
 			"velocity":                 velocity,
 			"average_migration_time":   avgTime,
 			"median_migration_time":    medianTime,
@@ -258,7 +258,7 @@ func categorizeStatuses(statusStats map[string]int) statusCounts {
 }
 
 // sendJSON sends a JSON response
-func (h *AnalyticsHandler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+func (h *AnalyticsHandler) sendJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {

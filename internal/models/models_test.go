@@ -221,7 +221,7 @@ func TestRepository_MarshalJSON(t *testing.T) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 
-		var result map[string]interface{}
+		var result map[string]any
 		if err := json.Unmarshal(data, &result); err != nil {
 			t.Errorf("Failed to unmarshal result: %v", err)
 		}
@@ -244,13 +244,13 @@ func TestRepository_MarshalJSON(t *testing.T) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 
-		var result map[string]interface{}
+		var result map[string]any
 		if err := json.Unmarshal(data, &result); err != nil {
 			t.Errorf("Failed to unmarshal result: %v", err)
 		}
 
 		// Verify complexity_breakdown is marshaled as object not string
-		breakdown, ok := result["complexity_breakdown"].(map[string]interface{})
+		breakdown, ok := result["complexity_breakdown"].(map[string]any)
 		if !ok {
 			t.Error("Expected complexity_breakdown to be an object")
 		} else if breakdown["size_points"] != float64(5) {

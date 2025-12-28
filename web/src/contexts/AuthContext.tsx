@@ -60,8 +60,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         } else {
           setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Failed to fetch auth config:', error);
+      } catch {
         setIsLoading(false);
       }
     };
@@ -92,8 +91,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       // Redirect to login page after logout
       window.location.href = '/login';
-    } catch (error) {
-      console.error('Logout failed:', error);
+    } catch {
       // Even if API call fails, clear local state and redirect
       setUser(null);
       window.location.href = '/login';

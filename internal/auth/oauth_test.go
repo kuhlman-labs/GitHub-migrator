@@ -273,7 +273,7 @@ func TestBuildOAuthURL(t *testing.T) {
 func TestGenerateStateToken(t *testing.T) {
 	// Generate multiple tokens
 	tokens := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		token, err := generateStateToken()
 		if err != nil {
 			t.Fatalf("Failed to generate state token: %v", err)

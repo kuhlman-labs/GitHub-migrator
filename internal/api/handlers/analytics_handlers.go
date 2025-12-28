@@ -94,7 +94,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	}
 
-	summary := map[string]interface{}{
+	summary := map[string]any{
 		"total_repositories":         total,
 		"migrated_count":             migrated,
 		"failed_count":               failed,
@@ -145,7 +145,7 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"total":            total,
 		"status_breakdown": stats,
 	})
@@ -256,21 +256,21 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		completionRate = float64(migrated) / float64(total) * 100
 	}
 
-	report := map[string]interface{}{
+	report := map[string]any{
 		"source_type": h.sourceType,
-		"report_metadata": map[string]interface{}{
+		"report_metadata": map[string]any{
 			"generated_at": time.Now().Format(time.RFC3339),
-			"filters":      map[string]interface{}{"organization": orgFilter, "project": projectFilter, "batch_id": batchFilter},
+			"filters":      map[string]any{"organization": orgFilter, "project": projectFilter, "batch_id": batchFilter},
 		},
-		"discovery_data": map[string]interface{}{
-			"overview":                 map[string]interface{}{"total_repositories": total, "source_type": h.sourceType},
+		"discovery_data": map[string]any{
+			"overview":                 map[string]any{"total_repositories": total, "source_type": h.sourceType},
 			"features":                 featureStats,
-			"complexity":               map[string]interface{}{"distribution": complexityDistribution, "high_complexity_count": highComplexityPending, "very_complex_count": veryComplexCount},
-			"size":                     map[string]interface{}{"distribution": sizeDistribution, "very_large_count": veryLargePending},
+			"complexity":               map[string]any{"distribution": complexityDistribution, "high_complexity_count": highComplexityPending, "very_complex_count": veryComplexCount},
+			"size":                     map[string]any{"distribution": sizeDistribution, "very_large_count": veryLargePending},
 			"organizational_breakdown": migrationCompletionStats,
 		},
-		"migration_analytics": map[string]interface{}{
-			"summary": map[string]interface{}{
+		"migration_analytics": map[string]any{
+			"summary": map[string]any{
 				"total_repositories":        total,
 				"migrated_count":            migrated,
 				"in_progress_count":         inProgress,
@@ -283,15 +283,15 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 				"first_migration_date":      firstMigrationDate,
 			},
 			"status_breakdown": stats,
-			"velocity":         map[string]interface{}{"repos_per_day": migrationVelocity.ReposPerDay, "repos_per_week": migrationVelocity.ReposPerWeek, "average_duration_sec": avgMigrationTime, "median_duration_sec": medianMigrationTime, "trend": migrationTimeSeries},
-			"batches":          map[string]interface{}{"total": len(batches), "completed": completedBatches, "in_progress": inProgressBatches, "pending": pendingBatches},
-			"risk_factors":     map[string]interface{}{"high_complexity_pending": highComplexityPending, "very_large_pending": veryLargePending, "failed_migrations": failed},
+			"velocity":         map[string]any{"repos_per_day": migrationVelocity.ReposPerDay, "repos_per_week": migrationVelocity.ReposPerWeek, "average_duration_sec": avgMigrationTime, "median_duration_sec": medianMigrationTime, "trend": migrationTimeSeries},
+			"batches":          map[string]any{"total": len(batches), "completed": completedBatches, "in_progress": inProgressBatches, "pending": pendingBatches},
+			"risk_factors":     map[string]any{"high_complexity_pending": highComplexityPending, "very_large_pending": veryLargePending, "failed_migrations": failed},
 		},
 	}
 
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		if discoveryData, ok := report["discovery_data"].(map[string]interface{}); ok {
-			discoveryData["ado_specific_risks"] = map[string]interface{}{
+		if discoveryData, ok := report["discovery_data"].(map[string]any); ok {
+			discoveryData["ado_specific_risks"] = map[string]any{
 				"tfvc_repos":                   featureStats.ADOTFVCCount,
 				"classic_pipelines":            featureStats.ADOHasClassicPipelines,
 				"repos_with_active_work_items": featureStats.ADOHasWorkItems,
@@ -474,7 +474,7 @@ func (h *Handler) exportMigrationHistoryJSON(w http.ResponseWriter, migrations [
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=migration_history.json")
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"migrations":  migrations,
 		"total":       len(migrations),
 		"exported_at": time.Now().Format(time.RFC3339),
@@ -483,8 +483,8 @@ func (h *Handler) exportMigrationHistoryJSON(w http.ResponseWriter, migrations [
 
 // Helper functions for report export
 
-func buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter string) map[string]interface{} {
-	filters := make(map[string]interface{})
+func buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter string) map[string]any {
+	filters := make(map[string]any)
 	if orgFilter != "" {
 		filters["organization"] = orgFilter
 	}
@@ -569,13 +569,13 @@ func formatStatusForDisplay(status string) string {
 
 func formatSourceForDisplay(source string) string {
 	switch source {
-	case "github":
+	case models.SourceTypeGitHub:
 		return "GitHub"
-	case "azuredevops":
+	case models.SourceTypeAzureDevOps:
 		return "Azure DevOps"
-	case "gitlab":
+	case models.SourceTypeGitLab:
 		return "GitLab"
-	case "ghes":
+	case models.SourceTypeGHES:
 		return "GitHub Enterprise Server"
 	default:
 		return titleCase(source)

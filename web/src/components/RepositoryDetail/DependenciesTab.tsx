@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { UnderlineNav, Button } from '@primer/react';
-import { DownloadIcon, ChevronDownIcon } from '@primer/octicons-react';
+import { UnderlineNav, SegmentedControl, ActionMenu, ActionList } from '@primer/react';
+import { DownloadIcon } from '@primer/octicons-react';
+import { Button } from '../common/buttons';
 import { api } from '../../services/api';
 import type { DependenciesResponse, RepositoryDependency, DependentsResponse, DependentRepository } from '../../types';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pagination } from '../common/Pagination';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 interface DependenciesTabProps {
   fullName: string;
@@ -32,6 +35,7 @@ type ScopeFilter = 'all' | 'local' | 'external';
 type ViewTab = 'depends_on' | 'depended_by';
 
 export function DependenciesTab({ fullName }: DependenciesTabProps) {
+  const { showError } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DependenciesResponse | null>(null);
@@ -48,7 +52,6 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
   
   // Export state
   const [exporting, setExporting] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // Deduplicate dependencies by dependency_full_name
   const deduplicateDependencies = (dependencies: RepositoryDependency[]): MergedDependency[] => {
@@ -117,7 +120,6 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
         setData(depsResponse);
         setDependentsData(dependentsResponse);
       } catch (err: unknown) {
-        console.error('Failed to fetch dependencies:', err);
         const errorMessage = err instanceof Error ? err.message : 'Failed to load dependencies';
         setError(errorMessage);
       } finally {
@@ -134,7 +136,6 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
   }, [scopeFilter, viewTab]);
 
   const handleExport = async (format: 'csv' | 'json') => {
-    setShowExportMenu(false);
     try {
       setExporting(true);
       const blob = await api.exportRepositoryDependencies(fullName, format);
@@ -146,8 +147,8 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Failed to export dependencies:', err);
+    } catch (error) {
+      handleApiError(error, showError, 'Failed to export dependencies');
     } finally {
       setExporting(false);
     }
@@ -326,52 +327,27 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
 
       {/* Export Button with Dropdown */}
       <div className="flex justify-end">
-        <div className="relative">
-          <Button
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            disabled={exporting}
-            leadingVisual={DownloadIcon}
-            trailingVisual={ChevronDownIcon}
-            variant="primary"
-          >
-            Export
-          </Button>
-          {showExportMenu && (
-            <>
-              {/* Backdrop to close menu when clicking outside */}
-              <div 
-                className="fixed inset-0 z-10" 
-                onClick={() => setShowExportMenu(false)}
-              />
-              {/* Dropdown menu */}
-              <div 
-                className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20"
-                style={{
-                  backgroundColor: 'var(--bgColor-default)',
-                  border: '1px solid var(--borderColor-default)',
-                  boxShadow: 'var(--shadow-floating-large)'
-                }}
-              >
-                <div className="py-1">
-                  <button
-                    onClick={() => handleExport('csv')}
-                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                    style={{ color: 'var(--fgColor-default)' }}
-                  >
-                    Export as CSV
-                  </button>
-                  <button
-                    onClick={() => handleExport('json')}
-                    className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                    style={{ color: 'var(--fgColor-default)' }}
-                  >
-                    Export as JSON
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <ActionMenu>
+          <ActionMenu.Anchor>
+            <Button
+              disabled={exporting}
+              leadingVisual={DownloadIcon}
+              variant="primary"
+            >
+              {exporting ? 'Exporting...' : 'Export'}
+            </Button>
+          </ActionMenu.Anchor>
+          <ActionMenu.Overlay>
+            <ActionList>
+              <ActionList.Item onSelect={() => handleExport('csv')}>
+                Export as CSV
+              </ActionList.Item>
+              <ActionList.Item onSelect={() => handleExport('json')}>
+                Export as JSON
+              </ActionList.Item>
+            </ActionList>
+          </ActionMenu.Overlay>
+        </ActionMenu>
       </div>
 
       {/* View Tabs */}
@@ -405,38 +381,23 @@ export function DependenciesTab({ fullName }: DependenciesTabProps) {
                   Dependencies ({deduplicatedSummary.total})
                 </h3>
                 
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setScopeFilter('all')}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-                    style={{
-                      backgroundColor: scopeFilter === 'all' ? '#2da44e' : 'var(--control-bgColor-rest)',
-                      color: scopeFilter === 'all' ? '#ffffff' : 'var(--fgColor-default)'
-                    }}
-                  >
-                    All ({deduplicatedSummary.total})
-                  </button>
-                  <button
-                    onClick={() => setScopeFilter('local')}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-                    style={{
-                      backgroundColor: scopeFilter === 'local' ? '#2da44e' : 'var(--control-bgColor-rest)',
-                      color: scopeFilter === 'local' ? '#ffffff' : 'var(--fgColor-default)'
-                    }}
-                  >
-                    Local ({deduplicatedSummary.local})
-                  </button>
-                  <button
-                    onClick={() => setScopeFilter('external')}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer border-0"
-                    style={{
-                      backgroundColor: scopeFilter === 'external' ? '#fb8500' : 'var(--control-bgColor-rest)',
-                      color: scopeFilter === 'external' ? '#ffffff' : 'var(--fgColor-default)'
-                    }}
-                  >
-                    External ({deduplicatedSummary.external})
-                  </button>
-                </div>
+                <SegmentedControl
+                  aria-label="Dependency scope filter"
+                  onChange={(index) => {
+                    const scopes: ScopeFilter[] = ['all', 'local', 'external'];
+                    setScopeFilter(scopes[index]);
+                  }}
+                >
+                  <SegmentedControl.Button selected={scopeFilter === 'all'}>
+                    {`All (${deduplicatedSummary.total})`}
+                  </SegmentedControl.Button>
+                  <SegmentedControl.Button selected={scopeFilter === 'local'}>
+                    {`Local (${deduplicatedSummary.local})`}
+                  </SegmentedControl.Button>
+                  <SegmentedControl.Button selected={scopeFilter === 'external'}>
+                    {`External (${deduplicatedSummary.external})`}
+                  </SegmentedControl.Button>
+                </SegmentedControl>
               </div>
               
               {filteredDeps.length === 0 ? (

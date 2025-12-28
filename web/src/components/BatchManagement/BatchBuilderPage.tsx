@@ -5,8 +5,12 @@ import type { Batch } from '../../types';
 import { BatchBuilder } from './BatchBuilder';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { BorderedButton } from '../common/buttons';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 export function BatchBuilderPage() {
+  const { showError } = useToast();
   const navigate = useNavigate();
   const { batchId } = useParams<{ batchId: string }>();
   const [batch, setBatch] = useState<Batch | undefined>();
@@ -30,11 +34,9 @@ export function BatchBuilderPage() {
 
     try {
       const batchData = await api.getBatch(parseInt(batchId, 10));
-      console.log('Raw batch data from API:', batchData);
-      console.log('Batch structure check - has batch property?', 'batch' in (batchData as object));
       setBatch(batchData);
     } catch (err) {
-      console.error('Failed to load batch:', err);
+      handleApiError(err, showError, 'Failed to load batch');
       setError('Failed to load batch. Please try again.');
     } finally {
       setLoading(false);
@@ -78,7 +80,13 @@ export function BatchBuilderPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+    <div 
+      className="flex flex-col -mx-4 sm:-mx-6 lg:-mx-8 -my-8"
+      style={{ 
+        backgroundColor: 'var(--bgColor-muted)',
+        height: 'calc(100vh - 4rem)' // 4rem for navigation only, negative margins cancel PageLayout padding
+      }}
+    >
       <div 
         className="border-b shadow-sm flex-shrink-0"
         style={{
@@ -98,22 +106,14 @@ export function BatchBuilderPage() {
                   : 'Select repositories and configure your migration batch'}
               </p>
             </div>
-            <button
-              onClick={handleClose}
-              className="px-4 py-2 border rounded-lg transition-colors"
-              style={{
-                color: 'var(--fgColor-default)',
-                borderColor: 'var(--borderColor-default)',
-                backgroundColor: 'var(--control-bgColor-rest)'
-              }}
-            >
+            <BorderedButton onClick={handleClose}>
               Cancel
-            </button>
+            </BorderedButton>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <ErrorBoundary>
           <BatchBuilder
             batch={batch}

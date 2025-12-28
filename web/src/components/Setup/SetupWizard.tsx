@@ -7,7 +7,9 @@ import { ConnectionTest } from './ConnectionTest';
 import { CollapsibleSection } from './CollapsibleSection';
 import { ConfigSummary } from './ConfigSummary';
 import { RestartMonitor } from './RestartMonitor';
-import type { SetupConfig } from '../../types';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
+import { useSetupWizardForm } from '../../hooks/useSetupWizardForm';
 
 const STEP_TITLES = [
   'Welcome',
@@ -21,143 +23,30 @@ const STEP_TITLES = [
 ];
 
 export function SetupWizard() {
+  const { showError } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [applyingConfig, setApplyingConfig] = useState(false);
   const [restartingServer, setRestartingServer] = useState(false);
 
-  // Step 1: Source selection
-  const [sourceType, setSourceType] = useState<'github' | 'azuredevops'>('github');
+  // All form state is now managed by the useSetupWizardForm hook
+  const { state: formState, setField, buildConfig } = useSetupWizardForm();
 
-  // Step 2: Source configuration
-  const [sourceBaseURL, setSourceBaseURL] = useState('https://api.github.com');
-  const [sourceToken, setSourceToken] = useState('');
-  const [sourceOrganization, setSourceOrganization] = useState('');
-  const [sourceValidated, setSourceValidated] = useState(false);
-
-  // Step 3: Destination configuration
-  const [destBaseURL, setDestBaseURL] = useState('https://api.github.com');
-  const [destToken, setDestToken] = useState('');
-  const [destValidated, setDestValidated] = useState(false);
-
-  // Step 4: Database configuration
-  const [dbType, setDbType] = useState<'sqlite' | 'postgres' | 'sqlserver'>('sqlite');
-  const [dbDSN, setDbDSN] = useState('./data/migrator.db');
-  const [dbValidated, setDbValidated] = useState(false);
-
-  // Step 5: Server configuration
-  const [serverPort, setServerPort] = useState(8080);
-  const [migrationWorkers, setMigrationWorkers] = useState(5);
-  const [pollInterval, setPollInterval] = useState(30);
-
-  // Step 6: Migration behavior
-  const [destRepoExistsAction, setDestRepoExistsAction] = useState<'fail' | 'skip' | 'delete'>('fail');
-  const [publicReposVisibility, setPublicReposVisibility] = useState<'public' | 'internal' | 'private'>('private');
-  const [internalReposVisibility, setInternalReposVisibility] = useState<'internal' | 'private'>('private');
-
-  // Step 7: Logging & Advanced Configuration
-  const [logLevel, setLogLevel] = useState<'debug' | 'info' | 'warn' | 'error'>('info');
-  const [logFormat, setLogFormat] = useState<'json' | 'text'>('json');
-  const [logOutputFile, setLogOutputFile] = useState('./logs/migrator.log');
-
-  // GitHub App Discovery for Source (optional, only when source is GitHub)
-  const [sourceGithubAppEnabled, setSourceGithubAppEnabled] = useState(false);
-  const [sourceGithubAppID, setSourceGithubAppID] = useState('');
-  const [sourceGithubAppPrivateKey, setSourceGithubAppPrivateKey] = useState('');
-  const [sourceGithubAppInstallationID, setSourceGithubAppInstallationID] = useState('');
-
-  // GitHub App Discovery for Destination (optional, always available)
-  const [destGithubAppEnabled, setDestGithubAppEnabled] = useState(false);
-  const [destGithubAppID, setDestGithubAppID] = useState('');
-  const [destGithubAppPrivateKey, setDestGithubAppPrivateKey] = useState('');
-  const [destGithubAppInstallationID, setDestGithubAppInstallationID] = useState('');
-
-  // Authentication (optional, conditional on source type)
-  const [authEnabled, setAuthEnabled] = useState(false);
-  // GitHub OAuth (when source is GitHub)
-  const [oauthClientID, setOauthClientID] = useState('');
-  const [oauthClientSecret, setOauthClientSecret] = useState('');
-  const [oauthBaseURL, setOauthBaseURL] = useState('');
-  // Azure AD (when source is Azure DevOps)
-  const [azureADTenantID, setAzureADTenantID] = useState('');
-  const [azureADClientID, setAzureADClientID] = useState('');
-  const [azureADClientSecret, setAzureADClientSecret] = useState('');
-  // Common auth settings
-  const [callbackURL, setCallbackURL] = useState('');
-  const [frontendURL, setFrontendURL] = useState('');
-  const [sessionSecret, setSessionSecret] = useState('');
-  const [sessionDuration, setSessionDuration] = useState(24);
-
-  // Authorization rules (optional)
-  const [requireOrgMembership, setRequireOrgMembership] = useState('');
-  const [requireTeamMembership, setRequireTeamMembership] = useState('');
-  const [requireEnterpriseAdmin, setRequireEnterpriseAdmin] = useState(false);
-  const [requireEnterpriseMembership, setRequireEnterpriseMembership] = useState(false);
-  const [enterpriseSlug, setEnterpriseSlug] = useState('');
-  const [privilegedTeams, setPrivilegedTeams] = useState('');
-
-  const buildConfig = (): SetupConfig => ({
-    source: {
-      type: sourceType,
-      base_url: sourceBaseURL,
-      token: sourceToken,
-      organization: sourceType === 'azuredevops' ? sourceOrganization : undefined,
-      // GitHub App for source (only when source is GitHub)
-      app_id: sourceType === 'github' && sourceGithubAppEnabled && sourceGithubAppID ? parseInt(sourceGithubAppID) : undefined,
-      app_private_key: sourceType === 'github' && sourceGithubAppEnabled && sourceGithubAppPrivateKey ? sourceGithubAppPrivateKey : undefined,
-      app_installation_id: sourceType === 'github' && sourceGithubAppEnabled && sourceGithubAppInstallationID ? parseInt(sourceGithubAppInstallationID) : undefined,
-    },
-    destination: {
-      base_url: destBaseURL,
-      token: destToken,
-      // GitHub App for destination (always available since destination is always GitHub)
-      app_id: destGithubAppEnabled && destGithubAppID ? parseInt(destGithubAppID) : undefined,
-      app_private_key: destGithubAppEnabled && destGithubAppPrivateKey ? destGithubAppPrivateKey : undefined,
-      app_installation_id: destGithubAppEnabled && destGithubAppInstallationID ? parseInt(destGithubAppInstallationID) : undefined,
-    },
-    database: {
-      type: dbType,
-      dsn: dbDSN,
-    },
-    server: {
-      port: serverPort,
-    },
-    migration: {
-      workers: migrationWorkers,
-      poll_interval_seconds: pollInterval,
-      dest_repo_exists_action: destRepoExistsAction,
-      visibility_handling: {
-        public_repos: publicReposVisibility,
-        internal_repos: internalReposVisibility,
-      },
-    },
-    logging: {
-      level: logLevel,
-      format: logFormat,
-      output_file: logOutputFile,
-    },
-    auth: authEnabled ? {
-      enabled: true,
-      github_oauth_client_id: sourceType === 'github' ? oauthClientID : undefined,
-      github_oauth_client_secret: sourceType === 'github' ? oauthClientSecret : undefined,
-      github_oauth_base_url: sourceType === 'github' ? oauthBaseURL : undefined,
-      azure_ad_tenant_id: sourceType === 'azuredevops' ? azureADTenantID : undefined,
-      azure_ad_client_id: sourceType === 'azuredevops' ? azureADClientID : undefined,
-      azure_ad_client_secret: sourceType === 'azuredevops' ? azureADClientSecret : undefined,
-      callback_url: callbackURL,
-      frontend_url: frontendURL,
-      session_secret: sessionSecret,
-      session_duration_hours: sessionDuration,
-      authorization_rules: (requireOrgMembership || requireTeamMembership || requireEnterpriseAdmin || 
-                           requireEnterpriseMembership || enterpriseSlug || privilegedTeams) ? {
-        require_org_membership: requireOrgMembership ? requireOrgMembership.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-        require_team_membership: requireTeamMembership ? requireTeamMembership.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-        require_enterprise_admin: requireEnterpriseAdmin || undefined,
-        require_enterprise_membership: requireEnterpriseMembership || undefined,
-        enterprise_slug: enterpriseSlug || undefined,
-        privileged_teams: privilegedTeams ? privilegedTeams.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-      } : undefined,
-    } : undefined,
-  });
+  // Destructure commonly accessed state for convenience
+  const {
+    sourceType, sourceBaseURL, sourceToken, sourceOrganization, sourceValidated,
+    destBaseURL, destToken, destValidated,
+    dbType, dbDSN, dbValidated,
+    serverPort, migrationWorkers, pollInterval,
+    destRepoExistsAction, publicReposVisibility, internalReposVisibility,
+    logLevel, logFormat, logOutputFile,
+    sourceGithubAppEnabled, sourceGithubAppID, sourceGithubAppPrivateKey, sourceGithubAppInstallationID,
+    destGithubAppEnabled, destGithubAppID, destGithubAppPrivateKey, destGithubAppInstallationID,
+    authEnabled, oauthClientID, oauthClientSecret, oauthBaseURL,
+    azureADTenantID, azureADClientID, azureADClientSecret,
+    callbackURL, frontendURL, sessionSecret, sessionDuration,
+    requireOrgMembership, requireTeamMembership, requireEnterpriseAdmin,
+    requireEnterpriseMembership, enterpriseSlug, privilegedTeams,
+  } = formState;
 
   const canProceedFromStep = (step: number): boolean => {
     switch (step) {
@@ -200,8 +89,7 @@ export function SetupWizard() {
       // Configuration saved successfully, show restart instructions
       setRestartingServer(true);
     } catch (error) {
-      console.error('Failed to apply configuration:', error);
-      alert('Failed to apply configuration. Please check the logs and try again.');
+      handleApiError(error, showError, 'Failed to apply configuration');
     } finally {
       setApplyingConfig(false);
     }
@@ -210,25 +98,25 @@ export function SetupWizard() {
 
   // Update source base URL when type changes
   const handleSourceTypeChange = (type: 'github' | 'azuredevops') => {
-    setSourceType(type);
-    setSourceValidated(false);
+    setField('sourceType', type);
+    setField('sourceValidated', false);
     if (type === 'github') {
-      setSourceBaseURL('https://api.github.com');
+      setField('sourceBaseURL', 'https://api.github.com');
     } else {
-      setSourceBaseURL('https://dev.azure.com/your-organization');
+      setField('sourceBaseURL', 'https://dev.azure.com/your-organization');
     }
   };
 
   // Update DSN placeholder when database type changes
   const handleDbTypeChange = (type: 'sqlite' | 'postgres' | 'sqlserver') => {
-    setDbType(type);
-    setDbValidated(false);
+    setField('dbType', type);
+    setField('dbValidated', false);
     if (type === 'sqlite') {
-      setDbDSN('./data/migrator.db');
+      setField('dbDSN', './data/migrator.db');
     } else if (type === 'postgres') {
-      setDbDSN('postgres://user:password@localhost:5432/migrator?sslmode=disable');
+      setField('dbDSN', 'postgres://user:password@localhost:5432/migrator?sslmode=disable');
     } else {
-      setDbDSN('sqlserver://user:password@localhost:1433?database=migrator');
+      setField('dbDSN', 'sqlserver://user:password@localhost:1433?database=migrator');
     }
   };
 
@@ -300,8 +188,8 @@ export function SetupWizard() {
             <TextInput
               value={sourceBaseURL}
               onChange={(e) => {
-                setSourceBaseURL(e.target.value);
-                setSourceValidated(false);
+                setField('sourceBaseURL', e.target.value);
+                setField('sourceValidated', false);
               }}
               placeholder={
                 sourceType === 'github'
@@ -323,8 +211,8 @@ export function SetupWizard() {
               type="password"
               value={sourceToken}
               onChange={(e) => {
-                setSourceToken(e.target.value);
-                setSourceValidated(false);
+                setField('sourceToken', e.target.value);
+                setField('sourceValidated', false);
               }}
               placeholder="ghp_xxx"
               block
@@ -342,8 +230,8 @@ export function SetupWizard() {
               <TextInput
                 value={sourceOrganization}
                 onChange={(e) => {
-                  setSourceOrganization(e.target.value);
-                  setSourceValidated(false);
+                  setField('sourceOrganization', e.target.value);
+                  setField('sourceValidated', false);
                 }}
                 placeholder="your-ado-org"
                 block
@@ -360,7 +248,7 @@ export function SetupWizard() {
                 token: sourceToken,
                 organization: sourceOrganization,
               });
-              setSourceValidated(result.valid);
+              setField('sourceValidated', result.valid);
               return result;
             }}
             disabled={!sourceBaseURL || !sourceToken}
@@ -390,8 +278,8 @@ export function SetupWizard() {
             <TextInput
               value={destBaseURL}
               onChange={(e) => {
-                setDestBaseURL(e.target.value);
-                setDestValidated(false);
+                setField('destBaseURL', e.target.value);
+                setField('destValidated', false);
               }}
               placeholder="https://api.github.com or https://github.company.com/api/v3"
               block
@@ -407,8 +295,8 @@ export function SetupWizard() {
               type="password"
               value={destToken}
               onChange={(e) => {
-                setDestToken(e.target.value);
-                setDestValidated(false);
+                setField('destToken', e.target.value);
+                setField('destValidated', false);
               }}
               placeholder="ghp_xxx"
               block
@@ -422,7 +310,7 @@ export function SetupWizard() {
                 base_url: destBaseURL,
                 token: destToken,
               });
-              setDestValidated(result.valid);
+              setField('destValidated', result.valid);
               return result;
             }}
             disabled={!destBaseURL || !destToken}
@@ -466,8 +354,8 @@ export function SetupWizard() {
             <TextInput
               value={dbDSN}
               onChange={(e) => {
-                setDbDSN(e.target.value);
-                setDbValidated(false);
+                setField('dbDSN', e.target.value);
+                setField('dbValidated', false);
               }}
               placeholder={
                 dbType === 'sqlite'
@@ -491,7 +379,7 @@ export function SetupWizard() {
                 type: dbType,
                 dsn: dbDSN,
               });
-              setDbValidated(result.valid);
+              setField('dbValidated', result.valid);
               return result;
             }}
             disabled={!dbDSN}
@@ -522,7 +410,7 @@ export function SetupWizard() {
             <TextInput
               type="number"
               value={serverPort.toString()}
-              onChange={(e) => setServerPort(parseInt(e.target.value) || 8080)}
+              onChange={(e) => setField('serverPort', parseInt(e.target.value) || 8080)}
               block
             />
             <FormControl.Caption>Default: 8080</FormControl.Caption>
@@ -533,7 +421,7 @@ export function SetupWizard() {
             <TextInput
               type="number"
               value={migrationWorkers.toString()}
-              onChange={(e) => setMigrationWorkers(parseInt(e.target.value) || 5)}
+              onChange={(e) => setField('migrationWorkers', parseInt(e.target.value) || 5)}
               min="1"
               max="20"
               block
@@ -548,7 +436,7 @@ export function SetupWizard() {
             <TextInput
               type="number"
               value={pollInterval.toString()}
-              onChange={(e) => setPollInterval(parseInt(e.target.value) || 30)}
+              onChange={(e) => setField('pollInterval', parseInt(e.target.value) || 30)}
               block
             />
             <FormControl.Caption>How often workers check for new work. Default: 30 seconds</FormControl.Caption>
@@ -572,7 +460,7 @@ export function SetupWizard() {
             isOptional
             defaultExpanded
           >
-            <RadioGroup name="dest-repo-action" onChange={(value) => setDestRepoExistsAction(value as 'fail' | 'skip' | 'delete')}>
+            <RadioGroup name="dest-repo-action" onChange={(value) => setField('destRepoExistsAction', value as 'fail' | 'skip' | 'delete')}>
               <label className="flex items-start cursor-pointer">
                 <Radio value="fail" checked={destRepoExistsAction === 'fail'} />
                 <div className="ml-3 flex-1">
@@ -613,7 +501,7 @@ export function SetupWizard() {
           >
             <FormControl className="mb-4">
               <FormControl.Label>Public Repositories</FormControl.Label>
-              <Select value={publicReposVisibility} onChange={(e) => setPublicReposVisibility(e.target.value as 'public' | 'internal' | 'private')} block>
+              <Select value={publicReposVisibility} onChange={(e) => setField('publicReposVisibility', e.target.value as 'public' | 'internal' | 'private')} block>
                 <Select.Option value="public">Keep Public</Select.Option>
                 <Select.Option value="internal">Convert to Internal</Select.Option>
                 <Select.Option value="private">Convert to Private (Default)</Select.Option>
@@ -625,7 +513,7 @@ export function SetupWizard() {
 
             <FormControl>
               <FormControl.Label>Internal Repositories</FormControl.Label>
-              <Select value={internalReposVisibility} onChange={(e) => setInternalReposVisibility(e.target.value as 'internal' | 'private')} block>
+              <Select value={internalReposVisibility} onChange={(e) => setField('internalReposVisibility', e.target.value as 'internal' | 'private')} block>
                 <Select.Option value="internal">Keep Internal</Select.Option>
                 <Select.Option value="private">Convert to Private (Default)</Select.Option>
               </Select>
@@ -654,7 +542,7 @@ export function SetupWizard() {
           >
             <FormControl className="mb-4">
               <FormControl.Label>Log Level</FormControl.Label>
-              <Select value={logLevel} onChange={(e) => setLogLevel(e.target.value as 'debug' | 'info' | 'warn' | 'error')} block>
+              <Select value={logLevel} onChange={(e) => setField('logLevel', e.target.value as 'debug' | 'info' | 'warn' | 'error')} block>
                 <Select.Option value="debug">Debug (Verbose)</Select.Option>
                 <Select.Option value="info">Info (Recommended)</Select.Option>
                 <Select.Option value="warn">Warn (Warnings & Errors only)</Select.Option>
@@ -665,7 +553,7 @@ export function SetupWizard() {
 
             <FormControl className="mb-4">
               <FormControl.Label>Log Format</FormControl.Label>
-              <RadioGroup name="log-format" onChange={(value) => setLogFormat(value as 'json' | 'text')}>
+              <RadioGroup name="log-format" onChange={(value) => setField('logFormat', value as 'json' | 'text')}>
                 <label className="flex items-start cursor-pointer">
                   <Radio value="json" checked={logFormat === 'json'} />
                   <div className="ml-3 flex-1">
@@ -689,7 +577,7 @@ export function SetupWizard() {
 
             <FormControl>
               <FormControl.Label>Output File Path</FormControl.Label>
-              <TextInput value={logOutputFile} onChange={(e) => setLogOutputFile(e.target.value)} block />
+              <TextInput value={logOutputFile} onChange={(e) => setField('logOutputFile', e.target.value)} block />
               <FormControl.Caption>Default: ./logs/migrator.log</FormControl.Caption>
             </FormControl>
           </CollapsibleSection>
@@ -707,7 +595,7 @@ export function SetupWizard() {
                   <input
                     type="checkbox"
                     checked={sourceGithubAppEnabled}
-                    onChange={(e) => setSourceGithubAppEnabled(e.target.checked)}
+                    onChange={(e) => setField('sourceGithubAppEnabled', e.target.checked)}
                     className="mr-2"
                   />
                   Enable GitHub App for Source Discovery
@@ -724,7 +612,7 @@ export function SetupWizard() {
                     <TextInput
                       type="number"
                       value={sourceGithubAppID}
-                      onChange={(e) => setSourceGithubAppID(e.target.value)}
+                      onChange={(e) => setField('sourceGithubAppID', e.target.value)}
                       placeholder="123456"
                       block
                     />
@@ -736,7 +624,7 @@ export function SetupWizard() {
                     <TextInput
                       type="number"
                       value={sourceGithubAppInstallationID}
-                      onChange={(e) => setSourceGithubAppInstallationID(e.target.value)}
+                      onChange={(e) => setField('sourceGithubAppInstallationID', e.target.value)}
                       placeholder="12345678"
                       block
                     />
@@ -747,7 +635,7 @@ export function SetupWizard() {
                     <FormControl.Label>Private Key (PEM)</FormControl.Label>
                     <textarea
                       value={sourceGithubAppPrivateKey}
-                      onChange={(e) => setSourceGithubAppPrivateKey(e.target.value)}
+                      onChange={(e) => setField('sourceGithubAppPrivateKey', e.target.value)}
                       placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
                       rows={6}
                       className="form-control"
@@ -781,7 +669,7 @@ export function SetupWizard() {
                 <input
                   type="checkbox"
                   checked={destGithubAppEnabled}
-                  onChange={(e) => setDestGithubAppEnabled(e.target.checked)}
+                  onChange={(e) => setField('destGithubAppEnabled', e.target.checked)}
                   className="mr-2"
                 />
                 Enable GitHub App for Destination Discovery
@@ -798,7 +686,7 @@ export function SetupWizard() {
                   <TextInput
                     type="number"
                     value={destGithubAppID}
-                    onChange={(e) => setDestGithubAppID(e.target.value)}
+                    onChange={(e) => setField('destGithubAppID', e.target.value)}
                     placeholder="123456"
                     block
                   />
@@ -810,7 +698,7 @@ export function SetupWizard() {
                   <TextInput
                     type="number"
                     value={destGithubAppInstallationID}
-                    onChange={(e) => setDestGithubAppInstallationID(e.target.value)}
+                    onChange={(e) => setField('destGithubAppInstallationID', e.target.value)}
                     placeholder="12345678"
                     block
                   />
@@ -821,7 +709,7 @@ export function SetupWizard() {
                   <FormControl.Label>Private Key (PEM)</FormControl.Label>
                   <textarea
                     value={destGithubAppPrivateKey}
-                    onChange={(e) => setDestGithubAppPrivateKey(e.target.value)}
+                    onChange={(e) => setField('destGithubAppPrivateKey', e.target.value)}
                     placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
                     rows={6}
                     className="form-control"
@@ -854,7 +742,7 @@ export function SetupWizard() {
                 <input
                   type="checkbox"
                   checked={authEnabled}
-                  onChange={(e) => setAuthEnabled(e.target.checked)}
+                  onChange={(e) => setField('authEnabled', e.target.checked)}
                   className="mr-2"
                 />
                 Enable User Authentication
@@ -874,7 +762,7 @@ export function SetupWizard() {
                       <FormControl.Label>GitHub OAuth Client ID</FormControl.Label>
                       <TextInput
                         value={oauthClientID}
-                        onChange={(e) => setOauthClientID(e.target.value)}
+                        onChange={(e) => setField('oauthClientID', e.target.value)}
                         placeholder="Iv1.a1b2c3d4e5f6g7h8"
                         block
                       />
@@ -886,7 +774,7 @@ export function SetupWizard() {
                       <TextInput
                         type="password"
                         value={oauthClientSecret}
-                        onChange={(e) => setOauthClientSecret(e.target.value)}
+                        onChange={(e) => setField('oauthClientSecret', e.target.value)}
                         placeholder=""
                         block
                       />
@@ -897,7 +785,7 @@ export function SetupWizard() {
                       <FormControl.Label>OAuth Base URL (Optional)</FormControl.Label>
                       <TextInput
                         value={oauthBaseURL}
-                        onChange={(e) => setOauthBaseURL(e.target.value)}
+                        onChange={(e) => setField('oauthBaseURL', e.target.value)}
                         placeholder="Defaults to source URL if blank"
                         block
                       />
@@ -910,7 +798,7 @@ export function SetupWizard() {
                       <FormControl.Label>Azure AD Tenant ID</FormControl.Label>
                       <TextInput
                         value={azureADTenantID}
-                        onChange={(e) => setAzureADTenantID(e.target.value)}
+                        onChange={(e) => setField('azureADTenantID', e.target.value)}
                         placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                         block
                       />
@@ -921,7 +809,7 @@ export function SetupWizard() {
                       <FormControl.Label>Azure AD Application (Client) ID</FormControl.Label>
                       <TextInput
                         value={azureADClientID}
-                        onChange={(e) => setAzureADClientID(e.target.value)}
+                        onChange={(e) => setField('azureADClientID', e.target.value)}
                         placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                         block
                       />
@@ -933,7 +821,7 @@ export function SetupWizard() {
                       <TextInput
                         type="password"
                         value={azureADClientSecret}
-                        onChange={(e) => setAzureADClientSecret(e.target.value)}
+                        onChange={(e) => setField('azureADClientSecret', e.target.value)}
                         placeholder="Client secret value"
                         block
                       />
@@ -946,7 +834,7 @@ export function SetupWizard() {
                   <FormControl.Label>Callback URL</FormControl.Label>
                   <TextInput
                     value={callbackURL}
-                    onChange={(e) => setCallbackURL(e.target.value)}
+                    onChange={(e) => setField('callbackURL', e.target.value)}
                     placeholder="http://localhost:8080/api/v1/auth/callback"
                     block
                   />
@@ -957,7 +845,7 @@ export function SetupWizard() {
                   <FormControl.Label>Frontend URL</FormControl.Label>
                   <TextInput
                     value={frontendURL}
-                    onChange={(e) => setFrontendURL(e.target.value)}
+                    onChange={(e) => setField('frontendURL', e.target.value)}
                     placeholder="http://localhost:3000"
                     block
                   />
@@ -969,7 +857,7 @@ export function SetupWizard() {
                   <TextInput
                     type="password"
                     value={sessionSecret}
-                    onChange={(e) => setSessionSecret(e.target.value)}
+                    onChange={(e) => setField('sessionSecret', e.target.value)}
                     placeholder="Generate a random secret (min 32 characters)"
                     block
                   />
@@ -981,7 +869,7 @@ export function SetupWizard() {
                   <TextInput
                     type="number"
                     value={sessionDuration.toString()}
-                    onChange={(e) => setSessionDuration(parseInt(e.target.value) || 24)}
+                    onChange={(e) => setField('sessionDuration', parseInt(e.target.value) || 24)}
                     block
                   />
                   <FormControl.Caption>Default: 24 hours</FormControl.Caption>
@@ -1000,7 +888,7 @@ export function SetupWizard() {
                     <FormControl.Label>Required Organization Membership</FormControl.Label>
                     <TextInput
                       value={requireOrgMembership}
-                      onChange={(e) => setRequireOrgMembership(e.target.value)}
+                      onChange={(e) => setField('requireOrgMembership', e.target.value)}
                       placeholder="org1,org2"
                       block
                     />
@@ -1011,7 +899,7 @@ export function SetupWizard() {
                     <FormControl.Label>Required Team Membership</FormControl.Label>
                     <TextInput
                       value={requireTeamMembership}
-                      onChange={(e) => setRequireTeamMembership(e.target.value)}
+                      onChange={(e) => setField('requireTeamMembership', e.target.value)}
                       placeholder="org1/team-slug,org2/migration-team"
                       block
                     />
@@ -1023,7 +911,7 @@ export function SetupWizard() {
                       <input
                         type="checkbox"
                         checked={requireEnterpriseAdmin}
-                        onChange={(e) => setRequireEnterpriseAdmin(e.target.checked)}
+                        onChange={(e) => setField('requireEnterpriseAdmin', e.target.checked)}
                         className="mr-2"
                       />
                       Require GitHub Enterprise Admin Role
@@ -1036,7 +924,7 @@ export function SetupWizard() {
                       <input
                         type="checkbox"
                         checked={requireEnterpriseMembership}
-                        onChange={(e) => setRequireEnterpriseMembership(e.target.checked)}
+                        onChange={(e) => setField('requireEnterpriseMembership', e.target.checked)}
                         className="mr-2"
                       />
                       Require Enterprise Membership
@@ -1049,7 +937,7 @@ export function SetupWizard() {
                       <FormControl.Label>Enterprise Slug</FormControl.Label>
                       <TextInput
                         value={enterpriseSlug}
-                        onChange={(e) => setEnterpriseSlug(e.target.value)}
+                        onChange={(e) => setField('enterpriseSlug', e.target.value)}
                         placeholder="your-enterprise"
                         block
                       />
@@ -1061,7 +949,7 @@ export function SetupWizard() {
                     <FormControl.Label>Privileged Teams (Full Access)</FormControl.Label>
                     <TextInput
                       value={privilegedTeams}
-                      onChange={(e) => setPrivilegedTeams(e.target.value)}
+                      onChange={(e) => setField('privilegedTeams', e.target.value)}
                       placeholder="platform-eng/migration-admins"
                       block
                     />

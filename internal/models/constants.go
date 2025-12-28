@@ -4,6 +4,8 @@
 // the application. Import these constants instead of defining local ones.
 package models
 
+import "slices"
+
 // Visibility constants for repository access control.
 // These values align with GitHub's visibility settings.
 const (
@@ -19,12 +21,7 @@ func ValidVisibilities() []string {
 
 // IsValidVisibility checks if a visibility value is valid.
 func IsValidVisibility(visibility string) bool {
-	for _, v := range ValidVisibilities() {
-		if v == visibility {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidVisibilities(), visibility)
 }
 
 // Size category constants for repository classification.

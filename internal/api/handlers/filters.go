@@ -160,8 +160,8 @@ func ParseRepositoryFilters(r *http.Request) *RepositoryFilters {
 
 // ToMap converts the RepositoryFilters struct to a map[string]interface{}
 // for compatibility with the existing database layer.
-func (f *RepositoryFilters) ToMap() map[string]interface{} {
-	m := make(map[string]interface{})
+func (f *RepositoryFilters) ToMap() map[string]any {
+	m := make(map[string]any)
 
 	f.addCoreFiltersToMap(m)
 	f.addSizeFiltersToMap(m)
@@ -173,7 +173,7 @@ func (f *RepositoryFilters) ToMap() map[string]interface{} {
 }
 
 // addCoreFiltersToMap adds core filters (status, source, organization, etc.) to the map.
-func (f *RepositoryFilters) addCoreFiltersToMap(m map[string]interface{}) {
+func (f *RepositoryFilters) addCoreFiltersToMap(m map[string]any) {
 	addSliceOrSingleFilter(m, "status", f.Status)
 
 	if f.BatchID != nil {
@@ -197,7 +197,7 @@ func (f *RepositoryFilters) addCoreFiltersToMap(m map[string]interface{}) {
 }
 
 // addSizeFiltersToMap adds size-related filters to the map.
-func (f *RepositoryFilters) addSizeFiltersToMap(m map[string]interface{}) {
+func (f *RepositoryFilters) addSizeFiltersToMap(m map[string]any) {
 	if f.MinSize != nil {
 		m["min_size"] = *f.MinSize
 	}
@@ -209,7 +209,7 @@ func (f *RepositoryFilters) addSizeFiltersToMap(m map[string]interface{}) {
 }
 
 // addGitHubFeatureFiltersToMap adds GitHub feature filters to the map.
-func (f *RepositoryFilters) addGitHubFeatureFiltersToMap(m map[string]interface{}) {
+func (f *RepositoryFilters) addGitHubFeatureFiltersToMap(m map[string]any) {
 	addBoolFilter(m, "has_lfs", f.HasLFS)
 	addBoolFilter(m, "has_submodules", f.HasSubmodules)
 	addBoolFilter(m, "has_actions", f.HasActions)
@@ -236,7 +236,7 @@ func (f *RepositoryFilters) addGitHubFeatureFiltersToMap(m map[string]interface{
 }
 
 // addADOFiltersToMap adds Azure DevOps filters to the map.
-func (f *RepositoryFilters) addADOFiltersToMap(m map[string]interface{}) {
+func (f *RepositoryFilters) addADOFiltersToMap(m map[string]any) {
 	addSliceOrSingleFilter(m, "ado_organization", f.ADOOrganization)
 	addSliceOrSingleFilter(m, "ado_project", f.ADOProject)
 
@@ -257,7 +257,7 @@ func (f *RepositoryFilters) addADOFiltersToMap(m map[string]interface{}) {
 }
 
 // addPaginationToMap adds sorting and pagination filters to the map.
-func (f *RepositoryFilters) addPaginationToMap(m map[string]interface{}) {
+func (f *RepositoryFilters) addPaginationToMap(m map[string]any) {
 	if f.SortBy != "" {
 		m["sort_by"] = f.SortBy
 	}
@@ -273,7 +273,7 @@ func (f *RepositoryFilters) addPaginationToMap(m map[string]interface{}) {
 }
 
 // addSliceOrSingleFilter adds a slice value as single value or slice depending on length.
-func addSliceOrSingleFilter(m map[string]interface{}, key string, values []string) {
+func addSliceOrSingleFilter(m map[string]any, key string, values []string) {
 	if len(values) == 1 {
 		m[key] = values[0]
 	} else if len(values) > 1 {
@@ -282,7 +282,7 @@ func addSliceOrSingleFilter(m map[string]interface{}, key string, values []strin
 }
 
 // addStringFilter adds a non-empty string to the map.
-func addStringFilter(m map[string]interface{}, key, value string) {
+func addStringFilter(m map[string]any, key, value string) {
 	if value != "" {
 		m[key] = value
 	}
@@ -352,7 +352,7 @@ func parseIntPtr(s string) *int {
 }
 
 // addBoolFilter adds a boolean filter to the map if the value is not nil.
-func addBoolFilter(m map[string]interface{}, key string, val *bool) {
+func addBoolFilter(m map[string]any, key string, val *bool) {
 	if val != nil {
 		m[key] = *val
 	}

@@ -491,29 +491,425 @@ input[type="checkbox"]:not(.custom-checkbox) {
   -webkit-appearance: auto !important;
 }
 
-/* Bordered invisible button style for filter/action buttons */
-.btn-bordered-invisible {
-  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+/* =================================================================
+   Custom Button Variant Classes
+   Override Primer Button styles with !important for specificity
+   ================================================================= */
+
+/* Success Button - Green for positive/confirmation actions */
+.btn-success {
+  background-color: #1a7f37 !important;
+  color: #ffffff !important;
+  border: 1px solid #1a7f37 !important;
 }
 
-.btn-bordered-invisible:hover:not(:disabled) {
-  background-color: var(--bgColor-muted, #F6F8FA) !important;
-  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+.btn-success svg,
+.btn-success svg path,
+.btn-success [data-component="leadingVisual"],
+.btn-success [data-component="leadingVisual"] svg,
+.btn-success [data-component="leadingVisual"] svg path,
+.btn-success [data-component="trailingVisual"],
+.btn-success [data-component="trailingVisual"] svg,
+.btn-success [data-component="trailingVisual"] svg path,
+.btn-success [data-component="trailingAction"],
+.btn-success [data-component="trailingAction"] svg,
+.btn-success [data-component="trailingAction"] svg path {
+  color: #ffffff !important;
+  fill: #ffffff !important;
 }
 
-/* Filter dropdown button with full-width content */
+/* Ensure octicons inherit color in success buttons */
+.btn-success .octicon,
+.btn-success .octicon path {
+  color: inherit !important;
+  fill: currentColor !important;
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: #2da44e !important;
+  border-color: #2da44e !important;
+}
+
+.btn-success:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Attention Button - Yellow/orange for warning actions */
+.btn-attention {
+  background-color: #fff8c5 !important;
+  color: #9a6700 !important;
+  border: 1px solid #bf8700 !important;
+}
+
+.btn-attention svg,
+.btn-attention [data-component="leadingVisual"],
+.btn-attention [data-component="trailingVisual"],
+.btn-attention [data-component="trailingAction"] {
+  color: #9a6700 !important;
+  fill: #9a6700 !important;
+}
+
+.btn-attention:hover:not(:disabled) {
+  background-color: #fff3a8 !important;
+}
+
+.btn-attention:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Bordered Button - Invisible variant with visible border */
+.btn-bordered {
+  border: 1px solid var(--borderColor-default, #d1d9e0) !important;
+  color: var(--fgColor-default, #1f2328) !important;
+}
+
+.btn-bordered svg,
+.btn-bordered [data-component="leadingVisual"],
+.btn-bordered [data-component="trailingVisual"],
+.btn-bordered [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #656d76) !important;
+  fill: var(--fgColor-muted, #656d76) !important;
+}
+
+.btn-bordered:hover:not(:disabled) {
+  background-color: var(--bgColor-muted, #f6f8fa) !important;
+}
+
+/* Bordered Button Accent - Blue bordered variant for emphasis */
+.btn-bordered.btn-bordered-accent {
+  border-color: var(--fgColor-accent, #0969da) !important;
+  color: var(--fgColor-accent, #0969da) !important;
+}
+
+.btn-bordered.btn-bordered-accent svg,
+.btn-bordered.btn-bordered-accent [data-component="leadingVisual"],
+.btn-bordered.btn-bordered-accent [data-component="trailingVisual"],
+.btn-bordered.btn-bordered-accent [data-component="trailingAction"] {
+  color: var(--fgColor-accent, #0969da) !important;
+  fill: var(--fgColor-accent, #0969da) !important;
+}
+
+.btn-bordered.btn-bordered-accent:hover:not(:disabled) {
+  background-color: var(--accent-subtle, rgba(9, 105, 218, 0.1)) !important;
+}
+
+/* Secondary Button - Default secondary action styling */
+.btn-secondary {
+  background-color: var(--control-bgColor-rest, #f6f8fa) !important;
+  color: var(--fgColor-default, #1f2328) !important;
+  border: 1px solid var(--borderColor-default, #d1d9e0) !important;
+}
+
+.btn-secondary svg,
+.btn-secondary [data-component="leadingVisual"],
+.btn-secondary [data-component="trailingVisual"],
+.btn-secondary [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #656d76) !important;
+  fill: var(--fgColor-muted, #656d76) !important;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--control-bgColor-hover, #f3f4f6) !important;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Filter Dropdown Button - Full-width for filter dropdowns */
 .btn-filter-dropdown {
-  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+  border: 1px solid var(--borderColor-default, #d1d9e0) !important;
   justify-content: space-between !important;
+  width: 100%;
+  color: var(--fgColor-default, #1f2328) !important;
 }
 
-.btn-filter-dropdown [data-component="text"] {
-  flex: 1 !important;
-  text-align: left !important;
+.btn-filter-dropdown svg,
+.btn-filter-dropdown [data-component="leadingVisual"],
+.btn-filter-dropdown [data-component="trailingVisual"],
+.btn-filter-dropdown [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #656d76) !important;
+  fill: var(--fgColor-muted, #656d76) !important;
 }
 
 .btn-filter-dropdown:hover:not(:disabled) {
-  background-color: var(--bgColor-muted, #F6F8FA) !important;
-  border: 1px solid var(--borderColor-default, #D1D9E0) !important;
+  background-color: var(--bgColor-muted, #f6f8fa) !important;
+}
+
+/* Dark mode support for custom buttons */
+[data-color-mode="dark"] .btn-success,
+.dark .btn-success {
+  background-color: #238636 !important;
+  border-color: #238636 !important;
+}
+
+[data-color-mode="dark"] .btn-success:hover:not(:disabled),
+.dark .btn-success:hover:not(:disabled) {
+  background-color: #2ea043 !important;
+  border-color: #2ea043 !important;
+}
+
+[data-color-mode="dark"] .btn-attention,
+.dark .btn-attention {
+  background-color: #3d2e00 !important;
+  color: #d29922 !important;
+  border-color: #9e6a03 !important;
+}
+
+[data-color-mode="dark"] .btn-attention svg,
+[data-color-mode="dark"] .btn-attention [data-component="leadingVisual"],
+[data-color-mode="dark"] .btn-attention [data-component="trailingVisual"],
+[data-color-mode="dark"] .btn-attention [data-component="trailingAction"],
+.dark .btn-attention svg,
+.dark .btn-attention [data-component="leadingVisual"],
+.dark .btn-attention [data-component="trailingVisual"],
+.dark .btn-attention [data-component="trailingAction"] {
+  color: #d29922 !important;
+  fill: #d29922 !important;
+}
+
+[data-color-mode="dark"] .btn-bordered,
+.dark .btn-bordered {
+  border-color: var(--borderColor-default, #30363d) !important;
+  color: var(--fgColor-default, #e6edf3) !important;
+}
+
+[data-color-mode="dark"] .btn-bordered svg,
+[data-color-mode="dark"] .btn-bordered [data-component="leadingVisual"],
+[data-color-mode="dark"] .btn-bordered [data-component="trailingVisual"],
+[data-color-mode="dark"] .btn-bordered [data-component="trailingAction"],
+.dark .btn-bordered svg,
+.dark .btn-bordered [data-component="leadingVisual"],
+.dark .btn-bordered [data-component="trailingVisual"],
+.dark .btn-bordered [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #8b949e) !important;
+  fill: var(--fgColor-muted, #8b949e) !important;
+}
+
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent,
+.dark .btn-bordered.btn-bordered-accent {
+  border-color: var(--fgColor-accent, #58a6ff) !important;
+  color: var(--fgColor-accent, #58a6ff) !important;
+}
+
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent svg,
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent [data-component="leadingVisual"],
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent [data-component="trailingVisual"],
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent [data-component="trailingAction"],
+.dark .btn-bordered.btn-bordered-accent svg,
+.dark .btn-bordered.btn-bordered-accent [data-component="leadingVisual"],
+.dark .btn-bordered.btn-bordered-accent [data-component="trailingVisual"],
+.dark .btn-bordered.btn-bordered-accent [data-component="trailingAction"] {
+  color: var(--fgColor-accent, #58a6ff) !important;
+  fill: var(--fgColor-accent, #58a6ff) !important;
+}
+
+[data-color-mode="dark"] .btn-bordered.btn-bordered-accent:hover:not(:disabled),
+.dark .btn-bordered.btn-bordered-accent:hover:not(:disabled) {
+  background-color: var(--accent-subtle, rgba(56, 139, 253, 0.15)) !important;
+}
+
+/* Button content left alignment - for buttons with icons that need to align */
+/* Targets Primer React Button component with justify-start class */
+button.justify-start,
+.justify-start[class*="prc-Button"],
+.justify-start[class*="ButtonBase"] {
+  justify-content: flex-start !important;
+}
+
+/* Also target the internal button content container */
+button.justify-start > span,
+.justify-start[class*="prc-Button"] > span,
+.justify-start[class*="ButtonBase"] > span {
+  justify-content: flex-start !important;
+  width: 100%;
+}
+
+[data-color-mode="dark"] .btn-secondary,
+.dark .btn-secondary {
+  background-color: var(--control-bgColor-rest, #21262d) !important;
+  color: var(--fgColor-default, #e6edf3) !important;
+  border-color: var(--borderColor-default, #30363d) !important;
+}
+
+[data-color-mode="dark"] .btn-secondary svg,
+[data-color-mode="dark"] .btn-secondary [data-component="leadingVisual"],
+[data-color-mode="dark"] .btn-secondary [data-component="trailingVisual"],
+[data-color-mode="dark"] .btn-secondary [data-component="trailingAction"],
+.dark .btn-secondary svg,
+.dark .btn-secondary [data-component="leadingVisual"],
+.dark .btn-secondary [data-component="trailingVisual"],
+.dark .btn-secondary [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #8b949e) !important;
+  fill: var(--fgColor-muted, #8b949e) !important;
+}
+
+[data-color-mode="dark"] .btn-filter-dropdown,
+.dark .btn-filter-dropdown {
+  border-color: var(--borderColor-default, #30363d) !important;
+  color: var(--fgColor-default, #e6edf3) !important;
+}
+
+[data-color-mode="dark"] .btn-filter-dropdown svg,
+[data-color-mode="dark"] .btn-filter-dropdown [data-component="leadingVisual"],
+[data-color-mode="dark"] .btn-filter-dropdown [data-component="trailingVisual"],
+[data-color-mode="dark"] .btn-filter-dropdown [data-component="trailingAction"],
+.dark .btn-filter-dropdown svg,
+.dark .btn-filter-dropdown [data-component="leadingVisual"],
+.dark .btn-filter-dropdown [data-component="trailingVisual"],
+.dark .btn-filter-dropdown [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #8b949e) !important;
+  fill: var(--fgColor-muted, #8b949e) !important;
+}
+
+/* =================================================================
+   Primer Default Button Icon Visibility Fix
+   Ensure icons are visible on default variant buttons
+   ================================================================= */
+
+/* Light mode - Default variant buttons */
+[data-variant="default"] svg,
+[data-variant="default"] [data-component="leadingVisual"],
+[data-variant="default"] [data-component="trailingVisual"],
+[data-variant="default"] [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #656d76) !important;
+  fill: var(--fgColor-muted, #656d76) !important;
+}
+
+/* Light mode - Primary variant buttons */
+[data-variant="primary"] svg,
+[data-variant="primary"] [data-component="leadingVisual"],
+[data-variant="primary"] [data-component="trailingVisual"],
+[data-variant="primary"] [data-component="trailingAction"] {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+/* Light mode - Danger variant buttons */
+[data-variant="danger"] svg,
+[data-variant="danger"] [data-component="leadingVisual"],
+[data-variant="danger"] [data-component="trailingVisual"],
+[data-variant="danger"] [data-component="trailingAction"] {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+/* Light mode - Invisible variant buttons */
+[data-variant="invisible"] svg,
+[data-variant="invisible"] [data-component="leadingVisual"],
+[data-variant="invisible"] [data-component="trailingVisual"],
+[data-variant="invisible"] [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #656d76) !important;
+  fill: var(--fgColor-muted, #656d76) !important;
+}
+
+/* Dark mode - Default variant buttons */
+[data-color-mode="dark"] [data-variant="default"] svg,
+[data-color-mode="dark"] [data-variant="default"] [data-component="leadingVisual"],
+[data-color-mode="dark"] [data-variant="default"] [data-component="trailingVisual"],
+[data-color-mode="dark"] [data-variant="default"] [data-component="trailingAction"],
+.dark [data-variant="default"] svg,
+.dark [data-variant="default"] [data-component="leadingVisual"],
+.dark [data-variant="default"] [data-component="trailingVisual"],
+.dark [data-variant="default"] [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #8b949e) !important;
+  fill: var(--fgColor-muted, #8b949e) !important;
+}
+
+/* Dark mode - Invisible variant buttons */
+[data-color-mode="dark"] [data-variant="invisible"] svg,
+[data-color-mode="dark"] [data-variant="invisible"] [data-component="leadingVisual"],
+[data-color-mode="dark"] [data-variant="invisible"] [data-component="trailingVisual"],
+[data-color-mode="dark"] [data-variant="invisible"] [data-component="trailingAction"],
+.dark [data-variant="invisible"] svg,
+.dark [data-variant="invisible"] [data-component="leadingVisual"],
+.dark [data-variant="invisible"] [data-component="trailingVisual"],
+.dark [data-variant="invisible"] [data-component="trailingAction"] {
+  color: var(--fgColor-muted, #8b949e) !important;
+  fill: var(--fgColor-muted, #8b949e) !important;
+}
+
+/* =================================================================
+   SegmentedControl Styling - Match bordered button aesthetic
+   ================================================================= */
+
+/* SegmentedControl container */
+.prc-SegmentedControl-SegmentedControl-e7570,
+[class*="SegmentedControl-SegmentedControl"] {
+  background-color: transparent !important;
+  border: 1px solid var(--borderColor-default, #d1d9e0) !important;
+  border-radius: 6px !important;
+  padding: 2px !important;
+}
+
+/* SegmentedControl items */
+.prc-SegmentedControl-Item-7Aq6h,
+[class*="SegmentedControl-Item"] {
+  border: none !important;
+}
+
+/* SegmentedControl buttons - unselected state */
+.prc-SegmentedControl-Button-ojWXD,
+[class*="SegmentedControl-Button"] {
+  background-color: transparent !important;
+  color: var(--fgColor-muted, #656d76) !important;
+  border: none !important;
+  border-radius: 4px !important;
+  font-weight: 500 !important;
+}
+
+/* SegmentedControl buttons - hover state */
+.prc-SegmentedControl-Button-ojWXD:hover,
+[class*="SegmentedControl-Button"]:hover {
+  background-color: var(--bgColor-muted, #f6f8fa) !important;
+  color: var(--fgColor-default, #1f2328) !important;
+}
+
+/* SegmentedControl buttons - selected state */
+.prc-SegmentedControl-Item-7Aq6h[data-selected] .prc-SegmentedControl-Button-ojWXD,
+[class*="SegmentedControl-Item"][data-selected] [class*="SegmentedControl-Button"],
+.prc-SegmentedControl-Button-ojWXD[aria-current="true"],
+[class*="SegmentedControl-Button"][aria-current="true"] {
+  background-color: var(--bgColor-accent-muted, #ddf4ff) !important;
+  color: var(--fgColor-accent, #0969da) !important;
+  font-weight: 600 !important;
+}
+
+/* Dark mode - SegmentedControl */
+[data-color-mode="dark"] .prc-SegmentedControl-SegmentedControl-e7570,
+[data-color-mode="dark"] [class*="SegmentedControl-SegmentedControl"],
+.dark .prc-SegmentedControl-SegmentedControl-e7570,
+.dark [class*="SegmentedControl-SegmentedControl"] {
+  border-color: var(--borderColor-default, #30363d) !important;
+}
+
+[data-color-mode="dark"] .prc-SegmentedControl-Button-ojWXD,
+[data-color-mode="dark"] [class*="SegmentedControl-Button"],
+.dark .prc-SegmentedControl-Button-ojWXD,
+.dark [class*="SegmentedControl-Button"] {
+  color: var(--fgColor-muted, #8b949e) !important;
+}
+
+[data-color-mode="dark"] .prc-SegmentedControl-Button-ojWXD:hover,
+[data-color-mode="dark"] [class*="SegmentedControl-Button"]:hover,
+.dark .prc-SegmentedControl-Button-ojWXD:hover,
+.dark [class*="SegmentedControl-Button"]:hover {
+  background-color: var(--bgColor-muted, #21262d) !important;
+  color: var(--fgColor-default, #e6edf3) !important;
+}
+
+[data-color-mode="dark"] .prc-SegmentedControl-Item-7Aq6h[data-selected] .prc-SegmentedControl-Button-ojWXD,
+[data-color-mode="dark"] [class*="SegmentedControl-Item"][data-selected] [class*="SegmentedControl-Button"],
+[data-color-mode="dark"] .prc-SegmentedControl-Button-ojWXD[aria-current="true"],
+[data-color-mode="dark"] [class*="SegmentedControl-Button"][aria-current="true"],
+.dark .prc-SegmentedControl-Item-7Aq6h[data-selected] .prc-SegmentedControl-Button-ojWXD,
+.dark [class*="SegmentedControl-Item"][data-selected] [class*="SegmentedControl-Button"],
+.dark .prc-SegmentedControl-Button-ojWXD[aria-current="true"],
+.dark [class*="SegmentedControl-Button"][aria-current="true"] {
+  background-color: var(--bgColor-accent-muted, #388bfd26) !important;
+  color: var(--fgColor-accent, #58a6ff) !important;
 }
 

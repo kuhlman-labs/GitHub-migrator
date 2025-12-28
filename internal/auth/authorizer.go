@@ -47,7 +47,7 @@ func NewAuthorizer(cfg *config.AuthConfig, logger *slog.Logger, githubBaseURL st
 type AuthorizationResult struct {
 	Authorized bool
 	Reason     string
-	Details    map[string]interface{}
+	Details    map[string]any
 }
 
 // Authorize checks if a user is authorized based on configured rules
@@ -74,7 +74,7 @@ func (a *Authorizer) Authorize(ctx context.Context, user *GitHubUser, githubToke
 			return &AuthorizationResult{
 				Authorized: false,
 				Reason:     fmt.Sprintf("User is not a member of required organizations: %s", strings.Join(rules.RequireOrgMembership, ", ")),
-				Details: map[string]interface{}{
+				Details: map[string]any{
 					"required_orgs": rules.RequireOrgMembership,
 				},
 			}, nil
@@ -91,7 +91,7 @@ func (a *Authorizer) Authorize(ctx context.Context, user *GitHubUser, githubToke
 			return &AuthorizationResult{
 				Authorized: false,
 				Reason:     fmt.Sprintf("User is not a member of required teams: %s", strings.Join(rules.RequireTeamMembership, ", ")),
-				Details: map[string]interface{}{
+				Details: map[string]any{
 					"required_teams": rules.RequireTeamMembership,
 				},
 			}, nil
@@ -111,7 +111,7 @@ func (a *Authorizer) Authorize(ctx context.Context, user *GitHubUser, githubToke
 			return &AuthorizationResult{
 				Authorized: false,
 				Reason:     fmt.Sprintf("User is not an enterprise admin of %s", rules.RequireEnterpriseSlug),
-				Details: map[string]interface{}{
+				Details: map[string]any{
 					"required_enterprise": rules.RequireEnterpriseSlug,
 				},
 			}, nil
@@ -131,7 +131,7 @@ func (a *Authorizer) Authorize(ctx context.Context, user *GitHubUser, githubToke
 			return &AuthorizationResult{
 				Authorized: false,
 				Reason:     fmt.Sprintf("User is not a member of enterprise %s", rules.RequireEnterpriseSlug),
-				Details: map[string]interface{}{
+				Details: map[string]any{
 					"required_enterprise": rules.RequireEnterpriseSlug,
 				},
 			}, nil
@@ -202,7 +202,7 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 		}
 	}`
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"query": query,
 		"variables": map[string]string{
 			"enterpriseSlug": enterpriseSlug,
@@ -302,7 +302,7 @@ func (a *Authorizer) CheckEnterpriseMembership(ctx context.Context, username str
 		}
 	}`
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"query": query,
 		"variables": map[string]string{
 			"enterpriseSlug": enterpriseSlug,
@@ -584,7 +584,7 @@ func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string
 		}
 	}`
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"query": query,
 		"variables": map[string]string{
 			"owner": org,

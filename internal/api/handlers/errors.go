@@ -193,7 +193,7 @@ var (
 
 // WriteJSON writes a JSON response to the response writer with the given status code.
 // This is a standalone function that can be used by any handler without a receiver.
-func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
+func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)

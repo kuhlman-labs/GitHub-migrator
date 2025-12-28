@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,12 +41,8 @@ func (ps *PackageScanner) parsePackageJSON(pkgPath, manifestPath string) []Extra
 
 	// Check all dependencies for GitHub references
 	allDeps := make(map[string]string)
-	for k, v := range pkg.Dependencies {
-		allDeps[k] = v
-	}
-	for k, v := range pkg.DevDependencies {
-		allDeps[k] = v
-	}
+	maps.Copy(allDeps, pkg.Dependencies)
+	maps.Copy(allDeps, pkg.DevDependencies)
 
 	for name, version := range allDeps {
 		owner, repo, host, isLocal := ps.extractGitHubFromNpmVersion(version)

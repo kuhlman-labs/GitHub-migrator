@@ -132,7 +132,7 @@ func TestGetMigrationStatusHandler(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -247,7 +247,7 @@ func TestGetMigrationLogsHandler(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -259,7 +259,7 @@ func TestGetMigrationLogsHandler(t *testing.T) {
 			return
 		}
 
-		logs, ok := logsInterface.([]interface{})
+		logs, ok := logsInterface.([]any)
 		if !ok {
 			t.Errorf("Expected logs to be an array, got %T", logsInterface)
 			return
@@ -293,7 +293,7 @@ func TestGetMigrationLogsHandler(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -351,12 +351,12 @@ func TestGetMigrationHistoryListHandler(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	migrations, ok := response["migrations"].([]interface{})
+	migrations, ok := response["migrations"].([]any)
 	if !ok {
 		t.Fatal("Expected migrations to be an array")
 	}
@@ -461,7 +461,7 @@ func TestSelfServiceMigrationBatchAssignmentHandler(t *testing.T) {
 	}
 
 	// Prepare self-service migration request (dry run = false for production migration)
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"repositories": []string{"test-org/test-repo"},
 		"dry_run":      false,
 	}
@@ -497,7 +497,7 @@ func TestSelfServiceMigrationBatchAssignmentHandler(t *testing.T) {
 	}
 
 	// Verify repository appears when listing by batch_id
-	repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": response.BatchID})
+	repos, err := db.ListRepositories(ctx, map[string]any{"batch_id": response.BatchID})
 	if err != nil {
 		t.Fatalf("Failed to list repositories: %v", err)
 	}

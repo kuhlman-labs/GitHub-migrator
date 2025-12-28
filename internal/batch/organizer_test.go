@@ -287,7 +287,7 @@ func TestOrganizeIntoWaves(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 55 test repositories (will create 2 waves with default size 50)
-	for i := 0; i < 55; i++ {
+	for i := range 55 {
 		org := "org1"
 		if i >= 30 {
 			org = "org2"
@@ -315,7 +315,7 @@ func TestOrganizeIntoWaves(t *testing.T) {
 		// Verify repositories are assigned
 		totalAssigned := 0
 		for _, wave := range waves {
-			repos, _ := db.ListRepositories(ctx, map[string]interface{}{
+			repos, _ := db.ListRepositories(ctx, map[string]any{
 				"batch_id": wave.ID,
 			})
 			totalAssigned += len(repos)
@@ -332,7 +332,7 @@ func TestOrganizeIntoWaves(t *testing.T) {
 		defer testCleanup()
 
 		// Create 55 repos
-		for i := 0; i < 55; i++ {
+		for i := range 55 {
 			createTestRepository(t, testDB, fmt.Sprintf("org/repo%d", i), 100000, map[string]bool{})
 		}
 

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, Dialog, FormControl, TextInput, Flash } from '@primer/react';
+import { FormControl, TextInput, ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
-import { RepoIcon, DownloadIcon, ChevronDownIcon, SquareIcon, XIcon } from '@primer/octicons-react';
+import { RepoIcon, DownloadIcon, SquareIcon, XIcon, TriangleDownIcon } from '@primer/octicons-react';
+import { Button, BorderedButton, PrimaryButton } from '../common/buttons';
+import { FormDialog } from '../common/FormDialog';
 import type { RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
@@ -14,8 +16,11 @@ import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
 import { RepositoryCard } from './RepositoryCard';
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { exportToCSV, exportToExcel, exportToJSON, getTimestampedFilename } from '../../utils/export';
+import { useToast } from '../../contexts/ToastContext';
+import { handleApiError } from '../../utils/errorHandler';
 
 export function Repositories() {
+  const { showError, showSuccess } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Parse filters from URL
@@ -23,12 +28,10 @@ export function Repositories() {
   
   const [currentPage, setCurrentPage] = useState(1);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<Set<number>>(new Set());
   const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
-  const [discoverMessage, setDiscoverMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const pageSize = 12;
   
   // Fetch repositories with filters
@@ -153,8 +156,6 @@ export function Repositories() {
 
   // Export functions
   const handleExport = async (format: 'csv' | 'excel' | 'json') => {
-    setShowExportMenu(false);
-
     if (repositories.length === 0) {
       alert('No repositories to export');
       return;
@@ -175,8 +176,7 @@ export function Repositories() {
           break;
       }
     } catch (error) {
-      console.error('Export failed:', error);
-      alert('Failed to export repositories. Please try again.');
+      handleApiError(error, showError, 'Failed to export repositories');
     }
   };
 
@@ -279,73 +279,41 @@ export function Repositories() {
                     Clear All Filters
                   </Button>
                 )}
-                
+
+                {/* Export Button with Dropdown */}
+                <ActionMenu>
+                  <ActionMenu.Anchor>
+                    <BorderedButton
+                      disabled={repositories.length === 0}
+                      leadingVisual={DownloadIcon}
+                      trailingAction={TriangleDownIcon}
+                    >
+                      Export
+                    </BorderedButton>
+                  </ActionMenu.Anchor>
+                  <ActionMenu.Overlay>
+                    <ActionList>
+                      <ActionList.Item onSelect={() => handleExport('csv')}>
+                        Export as CSV
+                      </ActionList.Item>
+                      <ActionList.Item onSelect={() => handleExport('excel')}>
+                        Export as Excel
+                      </ActionList.Item>
+                      <ActionList.Item onSelect={() => handleExport('json')}>
+                        Export as JSON
+                      </ActionList.Item>
+                    </ActionList>
+                  </ActionMenu.Overlay>
+                </ActionMenu>
+
                 {/* Discover Repos Button */}
-                <Button
-                  variant="invisible"
+                <PrimaryButton
                   onClick={() => setShowDiscoverDialog(true)}
                   leadingVisual={RepoIcon}
                   disabled={discoverRepositories.isPending}
-                  className="btn-bordered-invisible"
                 >
                   {discoverRepositories.isPending ? 'Discovering...' : 'Discover Repos'}
-                </Button>
-
-                {/* Export Button with Dropdown */}
-                <div className="relative">
-                  <Button
-                    variant="invisible"
-                    onClick={() => setShowExportMenu(!showExportMenu)}
-                    disabled={repositories.length === 0}
-                    leadingVisual={DownloadIcon}
-                    trailingVisual={ChevronDownIcon}
-                    className="btn-bordered-invisible"
-                  >
-                    Export
-                  </Button>
-                  {showExportMenu && (
-                    <>
-                      {/* Backdrop to close menu when clicking outside */}
-                      <div 
-                        className="fixed inset-0 z-10" 
-                        onClick={() => setShowExportMenu(false)}
-                      />
-                      {/* Dropdown menu */}
-                      <div 
-                        className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20"
-                        style={{
-                          backgroundColor: 'var(--bgColor-default)',
-                          border: '1px solid var(--borderColor-default)',
-                          boxShadow: 'var(--shadow-floating-large)'
-                        }}
-                      >
-                        <div className="py-1">
-                          <button
-                            onClick={() => handleExport('csv')}
-                            className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                            style={{ color: 'var(--fgColor-default)' }}
-                          >
-                            Export as CSV
-                          </button>
-                          <button
-                            onClick={() => handleExport('excel')}
-                            className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                            style={{ color: 'var(--fgColor-default)' }}
-                          >
-                            Export as Excel
-                          </button>
-                          <button
-                            onClick={() => handleExport('json')}
-                            className="w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[var(--control-bgColor-hover)]"
-                            style={{ color: 'var(--fgColor-default)' }}
-                          >
-                            Export as JSON
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                </PrimaryButton>
               </div>
             </div>
           </div>
@@ -364,9 +332,13 @@ export function Repositories() {
                   ? 'Try adjusting your filters to find repositories.'
                   : 'No repositories have been discovered yet. Start by discovering repositories from your organizations.'}
               </Blankslate.Description>
-              {activeFilterCount > 0 && (
+              {activeFilterCount > 0 ? (
                 <Blankslate.PrimaryAction onClick={clearAllFilters}>
                   Clear All Filters
+                </Blankslate.PrimaryAction>
+              ) : (
+                <Blankslate.PrimaryAction onClick={() => setShowDiscoverDialog(true)}>
+                  Discover Repos
                 </Blankslate.PrimaryAction>
               )}
             </Blankslate>
@@ -406,70 +378,46 @@ export function Repositories() {
       )}
 
       {/* Discover Repos Dialog */}
-      {showDiscoverDialog && (
-        <Dialog
-          title="Discover Repositories"
-          onClose={() => {
-            setShowDiscoverDialog(false);
-            setDiscoverOrg('');
-            setDiscoverMessage(null);
-          }}
-        >
-          <div className="p-4">
-            {discoverMessage && (
-              <Flash variant={discoverMessage.type === 'success' ? 'success' : 'danger'} className="mb-4">
-                {discoverMessage.text}
-              </Flash>
-            )}
-            <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              Discover all repositories from a GitHub organization. This will start repository discovery and profiling.
-            </p>
-            <FormControl>
-              <FormControl.Label>Source Organization</FormControl.Label>
-              <TextInput
-                value={discoverOrg}
-                onChange={(e) => setDiscoverOrg(e.target.value)}
-                placeholder="e.g., my-org"
-                block
-              />
-              <FormControl.Caption>
-                Enter the GitHub organization to discover repositories from
-              </FormControl.Caption>
-            </FormControl>
-          </div>
-          <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
-            <Button onClick={() => {
-              setShowDiscoverDialog(false);
+      <FormDialog
+        isOpen={showDiscoverDialog}
+        title="Discover Repositories"
+        submitLabel={discoverRepositories.isPending ? 'Discovering...' : 'Discover'}
+        onSubmit={() => {
+          if (!discoverOrg.trim()) return;
+          discoverRepositories.mutate(discoverOrg.trim(), {
+            onSuccess: (data) => {
+              showSuccess(data.message || 'Discovery started!');
               setDiscoverOrg('');
-              setDiscoverMessage(null);
-            }}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (!discoverOrg.trim()) return;
-                discoverRepositories.mutate(discoverOrg.trim(), {
-                  onSuccess: (data) => {
-                    setDiscoverMessage({ type: 'success', text: data.message || 'Discovery started!' });
-                    setDiscoverOrg('');
-                    setTimeout(() => {
-                      setShowDiscoverDialog(false);
-                      setDiscoverMessage(null);
-                    }, 2000);
-                  },
-                  onError: (error) => {
-                    setDiscoverMessage({ type: 'error', text: error instanceof Error ? error.message : 'Discovery failed' });
-                  },
-                });
-              }}
-              disabled={discoverRepositories.isPending || !discoverOrg.trim()}
-            >
-              {discoverRepositories.isPending ? 'Discovering...' : 'Discover'}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+              setShowDiscoverDialog(false);
+            },
+            onError: (error) => {
+              showError(error instanceof Error ? error.message : 'Discovery failed');
+            },
+          });
+        }}
+        onCancel={() => {
+          setShowDiscoverDialog(false);
+          setDiscoverOrg('');
+        }}
+        isLoading={discoverRepositories.isPending}
+        isSubmitDisabled={!discoverOrg.trim()}
+      >
+        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          Discover all repositories from a GitHub organization. This will start repository discovery and profiling.
+        </p>
+        <FormControl>
+          <FormControl.Label>Source Organization</FormControl.Label>
+          <TextInput
+            value={discoverOrg}
+            onChange={(e) => setDiscoverOrg(e.target.value)}
+            placeholder="e.g., my-org"
+            block
+          />
+          <FormControl.Caption>
+            Enter the GitHub organization to discover repositories from
+          </FormControl.Caption>
+        </FormControl>
+      </FormDialog>
     </div>
   );
 }
