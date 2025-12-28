@@ -360,7 +360,7 @@ func (r *Repository) MarshalJSON() ([]byte, error) {
 	}
 
 	// Parse the marshaled JSON
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}

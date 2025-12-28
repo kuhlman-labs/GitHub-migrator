@@ -213,7 +213,7 @@ func TestListRepositories(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		filters  map[string]interface{}
+		filters  map[string]any
 		expected int
 	}{
 		{
@@ -223,27 +223,27 @@ func TestListRepositories(t *testing.T) {
 		},
 		{
 			name:     "Filter by status",
-			filters:  map[string]interface{}{"status": string(models.StatusPending)},
+			filters:  map[string]any{"status": string(models.StatusPending)},
 			expected: 1,
 		},
 		{
 			name:     "Filter by multiple statuses",
-			filters:  map[string]interface{}{"status": []string{string(models.StatusPending), string(models.StatusComplete)}},
+			filters:  map[string]any{"status": []string{string(models.StatusPending), string(models.StatusComplete)}},
 			expected: 2,
 		},
 		{
 			name:     "Filter by LFS",
-			filters:  map[string]interface{}{"has_lfs": true},
+			filters:  map[string]any{"has_lfs": true},
 			expected: 1,
 		},
 		{
 			name:     "Filter by source",
-			filters:  map[string]interface{}{"source": "ghes"},
+			filters:  map[string]any{"source": "ghes"},
 			expected: 3,
 		},
 		{
 			name:     "Filter with limit",
-			filters:  map[string]interface{}{"limit": 1},
+			filters:  map[string]any{"limit": 1},
 			expected: 1,
 		},
 	}
@@ -380,7 +380,7 @@ func TestCountRepositories(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		filters  map[string]interface{}
+		filters  map[string]any
 		expected int
 	}{
 		{
@@ -390,17 +390,17 @@ func TestCountRepositories(t *testing.T) {
 		},
 		{
 			name:     "Count pending",
-			filters:  map[string]interface{}{"status": string(models.StatusPending)},
+			filters:  map[string]any{"status": string(models.StatusPending)},
 			expected: 3,
 		},
 		{
 			name:     "Count complete",
-			filters:  map[string]interface{}{"status": string(models.StatusComplete)},
+			filters:  map[string]any{"status": string(models.StatusComplete)},
 			expected: 2,
 		},
 		{
 			name:     "Count multiple statuses",
-			filters:  map[string]interface{}{"status": []string{string(models.StatusPending), string(models.StatusComplete)}},
+			filters:  map[string]any{"status": []string{string(models.StatusPending), string(models.StatusComplete)}},
 			expected: 5,
 		},
 	}
@@ -467,8 +467,8 @@ func TestGetRepositoriesByIDs(t *testing.T) {
 	ctx := context.Background()
 
 	// Save test repositories
-	var ids []int64
-	for i := 0; i < 3; i++ {
+	ids := make([]int64, 0, 3)
+	for i := range 3 {
 		repo := createTestRepository(fmt.Sprintf("org/repo%d", i))
 
 		if err := db.SaveRepository(ctx, repo); err != nil {
@@ -719,7 +719,7 @@ func TestRollbackRepositoryClearsBatchID(t *testing.T) {
 	}
 
 	// Verify repository is now available for batch assignment
-	availableRepos, err := db.ListRepositories(ctx, map[string]interface{}{"available_for_batch": true})
+	availableRepos, err := db.ListRepositories(ctx, map[string]any{"available_for_batch": true})
 	if err != nil {
 		t.Fatalf("ListRepositories() error = %v", err)
 	}
@@ -1007,8 +1007,8 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 	}
 
 	// Create test repositories
-	var repoIDs []int64
-	for i := 0; i < 3; i++ {
+	repoIDs := make([]int64, 0, 3)
+	for i := range 3 {
 		repo := createTestRepository(fmt.Sprintf("org/repo%d", i))
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
@@ -1023,7 +1023,7 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 	}
 
 	// Verify repositories are assigned
-	repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch.ID})
+	repos, err := db.ListRepositories(ctx, map[string]any{"batch_id": batch.ID})
 	if err != nil {
 		t.Fatalf("ListRepositories() error = %v", err)
 	}
@@ -1065,8 +1065,8 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	}
 
 	// Create and assign repositories to batch
-	var repoIDs []int64
-	for i := 0; i < 3; i++ {
+	repoIDs := make([]int64, 0, 3)
+	for i := range 3 {
 		repo := createTestRepository(fmt.Sprintf("org/repo%d", i))
 		repo.BatchID = &batch.ID
 		if err := db.SaveRepository(ctx, repo); err != nil {
@@ -1088,7 +1088,7 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	}
 
 	// Verify repositories were removed
-	repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch.ID})
+	repos, err := db.ListRepositories(ctx, map[string]any{"batch_id": batch.ID})
 	if err != nil {
 		t.Fatalf("ListRepositories() error = %v", err)
 	}
@@ -1265,7 +1265,7 @@ func TestListRepositoriesWithSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := db.ListRepositories(ctx, map[string]interface{}{"search": tt.search})
+			results, err := db.ListRepositories(ctx, map[string]any{"search": tt.search})
 			if err != nil {
 				t.Fatalf("ListRepositories() error = %v", err)
 			}
@@ -1320,7 +1320,7 @@ func TestListRepositoriesAvailableForBatch(t *testing.T) {
 	}
 
 	// Get repositories available for batch
-	results, err := db.ListRepositories(ctx, map[string]interface{}{"available_for_batch": true})
+	results, err := db.ListRepositories(ctx, map[string]any{"available_for_batch": true})
 	if err != nil {
 		t.Fatalf("ListRepositories() error = %v", err)
 	}
@@ -1363,7 +1363,7 @@ func TestListRepositoriesWithPagination(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 10 test repositories
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		repo := createTestRepository(fmt.Sprintf("org/repo%02d", i))
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
@@ -1404,7 +1404,7 @@ func TestListRepositoriesWithPagination(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := db.ListRepositories(ctx, map[string]interface{}{
+			results, err := db.ListRepositories(ctx, map[string]any{
 				"limit":  tt.limit,
 				"offset": tt.offset,
 			})

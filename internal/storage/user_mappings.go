@@ -164,7 +164,7 @@ func (d *Database) ListUserMappings(ctx context.Context, filters UserMappingFilt
 
 // GetUserMappingStats returns summary statistics for user mappings
 // If orgFilter is provided, stats are filtered to that organization only
-func (d *Database) GetUserMappingStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
+func (d *Database) GetUserMappingStats(ctx context.Context, orgFilter string) (map[string]any, error) {
 	var total int64
 	var mapped int64
 	var unmapped int64
@@ -221,7 +221,7 @@ func (d *Database) GetUserMappingStats(ctx context.Context, orgFilter string) (m
 		return nil, fmt.Errorf("failed to count pending reclaim: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total":           total,
 		"mapped":          mapped,
 		"unmapped":        unmapped,
@@ -235,7 +235,7 @@ func (d *Database) GetUserMappingStats(ctx context.Context, orgFilter string) (m
 func (d *Database) UpdateUserMappingStatus(ctx context.Context, sourceLogin, status string) error {
 	result := d.db.WithContext(ctx).Model(&models.UserMapping{}).
 		Where("source_login = ?", sourceLogin).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"mapping_status": status,
 			"updated_at":     time.Now(),
 		})
@@ -249,7 +249,7 @@ func (d *Database) UpdateUserMappingStatus(ctx context.Context, sourceLogin, sta
 
 // UpdateUserMappingDestination updates the destination user for a mapping
 func (d *Database) UpdateUserMappingDestination(ctx context.Context, sourceLogin, destLogin, destEmail string) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"destination_login": destLogin,
 		"mapping_status":    string(models.UserMappingStatusMapped),
 		"updated_at":        time.Now(),
@@ -274,7 +274,7 @@ func (d *Database) UpdateUserMappingDestination(ctx context.Context, sourceLogin
 func (d *Database) UpdateMannequinInfo(ctx context.Context, sourceLogin, mannequinID, mannequinLogin string) error {
 	result := d.db.WithContext(ctx).Model(&models.UserMapping{}).
 		Where("source_login = ?", sourceLogin).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"mannequin_id":    mannequinID,
 			"mannequin_login": mannequinLogin,
 			"updated_at":      time.Now(),
@@ -289,7 +289,7 @@ func (d *Database) UpdateMannequinInfo(ctx context.Context, sourceLogin, mannequ
 
 // UpdateReclaimStatus updates the reclaim status for a user mapping
 func (d *Database) UpdateReclaimStatus(ctx context.Context, sourceLogin, reclaimStatus string, reclaimError *string) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"reclaim_status": reclaimStatus,
 		"updated_at":     time.Now(),
 	}
@@ -318,7 +318,7 @@ func (d *Database) UpdateReclaimStatus(ctx context.Context, sourceLogin, reclaim
 func (d *Database) UpdateMatchInfo(ctx context.Context, sourceLogin string, confidence int, reason string) error {
 	result := d.db.WithContext(ctx).Model(&models.UserMapping{}).
 		Where("source_login = ?", sourceLogin).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"match_confidence": confidence,
 			"match_reason":     reason,
 			"updated_at":       time.Now(),

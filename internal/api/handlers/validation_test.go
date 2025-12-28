@@ -35,7 +35,7 @@ func TestRequestValidation(t *testing.T) {
 	})
 
 	t.Run("CreateBatch - missing required fields", func(t *testing.T) {
-		batch := map[string]interface{}{
+		batch := map[string]any{
 			"description": "No name provided",
 		}
 		body, _ := json.Marshal(batch)
@@ -197,7 +197,7 @@ func TestContentTypeValidation(t *testing.T) {
 	h, _ := setupTestHandler(t)
 
 	t.Run("CreateBatch - with content-type header", func(t *testing.T) {
-		batch := map[string]interface{}{
+		batch := map[string]any{
 			"name": "Test Batch",
 			"type": "pilot",
 		}
@@ -231,7 +231,7 @@ func TestErrorResponseFormat(t *testing.T) {
 
 		h.GetBatch(w, req)
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode error response: %v", err)
 		}
@@ -247,7 +247,7 @@ func TestAddRepositoriesToBatchValidation(t *testing.T) {
 	h, _ := setupTestHandler(t)
 
 	t.Run("empty repository_ids", func(t *testing.T) {
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"repository_ids": []int64{},
 		}
 		body, _ := json.Marshal(reqBody)
@@ -264,7 +264,7 @@ func TestAddRepositoriesToBatchValidation(t *testing.T) {
 	})
 
 	t.Run("invalid batch ID", func(t *testing.T) {
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"repository_ids": []int64{1, 2, 3},
 		}
 		body, _ := json.Marshal(reqBody)
@@ -280,7 +280,7 @@ func TestAddRepositoriesToBatchValidation(t *testing.T) {
 	})
 
 	t.Run("non-existent batch", func(t *testing.T) {
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"repository_ids": []int64{1, 2, 3},
 		}
 		body, _ := json.Marshal(reqBody)

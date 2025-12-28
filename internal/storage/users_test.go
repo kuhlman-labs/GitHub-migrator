@@ -348,7 +348,7 @@ func TestDatabase_DeleteAllUsers(t *testing.T) {
 	ctx := context.Background()
 
 	// Create some users
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		err := db.SaveUser(ctx, &models.GitHubUser{
 			Login:          "user" + string(rune('a'+i)),
 			SourceInstance: "github.com",

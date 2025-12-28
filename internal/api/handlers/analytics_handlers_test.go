@@ -34,7 +34,7 @@ func TestGetAnalyticsSummary(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestGetMigrationProgressHandler(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestGetAnalyticsSummaryWithFilters(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -150,7 +150,7 @@ func TestGetExecutiveReport(t *testing.T) {
 		}
 
 		// Just verify we get a valid JSON response
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -172,7 +172,7 @@ func TestGetExecutiveReport(t *testing.T) {
 }
 
 // getMapKeys returns the keys of a map as a slice of strings
-func getMapKeys(m map[string]interface{}) []string {
+func getMapKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -195,7 +195,7 @@ func TestGetMigrationProgressWithBatchFilter(t *testing.T) {
 	}
 
 	// Create repositories in the batch
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		status := string(models.StatusPending)
 		if i == 0 {
 			status = string(models.StatusComplete)

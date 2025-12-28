@@ -29,8 +29,8 @@ func TestDeleteBatch(t *testing.T) {
 	}
 
 	// Create repositories and add to batch
-	var repoIDs []int64
-	for i := 0; i < 3; i++ {
+	repoIDs := make([]int64, 0, 3)
+	for i := range 3 {
 		repo := &models.Repository{
 			FullName:      "org/delete-test-repo-" + string(rune('a'+i)),
 			Source:        "ghes",
@@ -172,7 +172,7 @@ func TestDeleteBatchMakesRepositoriesAvailable(t *testing.T) {
 	}
 
 	// Verify not available for batch
-	availableRepos, err := db.ListRepositories(ctx, map[string]interface{}{
+	availableRepos, err := db.ListRepositories(ctx, map[string]any{
 		"available_for_batch": true,
 	})
 	if err != nil {
@@ -190,7 +190,7 @@ func TestDeleteBatchMakesRepositoriesAvailable(t *testing.T) {
 	}
 
 	// Verify now available for batch
-	availableRepos, err = db.ListRepositories(ctx, map[string]interface{}{
+	availableRepos, err = db.ListRepositories(ctx, map[string]any{
 		"available_for_batch": true,
 	})
 	if err != nil {

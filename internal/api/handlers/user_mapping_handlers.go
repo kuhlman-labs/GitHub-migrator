@@ -35,7 +35,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"users": users,
 		"total": total,
 	})
@@ -103,7 +103,7 @@ func (h *Handler) DiscoverOrgMembers(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("Failed to update source orgs", "error", err)
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":         fmt.Sprintf("Discovered %d organization members from '%s'", discovered, req.Organization),
 		"organization":    req.Organization,
 		"discovered":      discovered,
@@ -148,7 +148,7 @@ func (h *Handler) ListUserMappings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"mappings": users,
 		"total":    total,
 	})
@@ -212,7 +212,7 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"login":           user.Login,
 		"name":            user.Name,
 		"email":           user.Email,
@@ -221,7 +221,7 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 		"discovered_at":   user.DiscoveredAt,
 		"updated_at":      user.UpdatedAt,
 		// Contribution stats
-		"stats": map[string]interface{}{
+		"stats": map[string]any{
 			"commit_count":     user.CommitCount,
 			"issue_count":      user.IssueCount,
 			"pr_count":         user.PRCount,
@@ -234,7 +234,7 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Add mapping info if exists
 	if mapping != nil {
-		response["mapping"] = map[string]interface{}{
+		response["mapping"] = map[string]any{
 			"source_org":        mapping.SourceOrg,
 			"destination_login": mapping.DestinationLogin,
 			"destination_email": mapping.DestinationEmail,
@@ -558,7 +558,7 @@ func (h *Handler) ImportUserMappings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"created":  created,
 		"updated":  updated,
 		"errors":   errors,
@@ -753,7 +753,7 @@ func (h *Handler) SuggestUserMappings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"suggestions": suggestions,
 		"total":       len(suggestions),
 	})
@@ -783,7 +783,7 @@ func (h *Handler) SyncUserMappingsFromDiscovery(w http.ResponseWriter, r *http.R
 		// Don't fail - the sync itself succeeded
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"created":      created,
 		"orgs_updated": updated,
 		"message":      fmt.Sprintf("Created %d new user mappings, updated source org for %d existing mappings", created, updated),
@@ -831,7 +831,7 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(pendingReclaims) == 0 {
-		h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		h.sendJSON(w, http.StatusOK, map[string]any{
 			"message":       "No pending reclaims found",
 			"pending_count": 0,
 			"instructions":  nil,
@@ -852,7 +852,7 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 		"3. After reclaim completes, use 'Fetch Mannequins' to update reclaim status",
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":       fmt.Sprintf("Found %d mannequins pending reclaim", len(pendingReclaims)),
 		"pending_count": len(pendingReclaims),
 		"mappings":      pendingReclaims,
@@ -916,7 +916,7 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"total_mannequins":      len(mannequins),
 		"total_dest_members":    len(destMembers),
 		"matched":               matched,
@@ -1293,7 +1293,7 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 		"mannequin_login", result.MannequinLogin,
 		"target_user", result.TargetUserLogin)
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"success":         true,
 		"source_login":    sourceLogin,
 		"mannequin_login": result.MannequinLogin,
@@ -1421,7 +1421,7 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 	pendingMappings := filterPendingMappings(mappings)
 
 	if len(pendingMappings) == 0 {
-		h.sendJSON(w, http.StatusOK, map[string]interface{}{
+		h.sendJSON(w, http.StatusOK, map[string]any{
 			"success": true,
 			"invited": 0,
 			"failed":  0,
@@ -1438,7 +1438,7 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 		"failed", result.failed,
 		"skipped", result.skipped)
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"success": result.failed == 0,
 		"invited": result.invited,
 		"failed":  result.failed,
@@ -1463,7 +1463,7 @@ func (h *Handler) GetSourceOrgs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"organizations": orgs,
 	})
 }

@@ -68,7 +68,7 @@ func (d *Database) UpdateMigrationHistory(ctx context.Context, id int64, status 
 	durationSeconds := int(completedAt.Sub(history.StartedAt).Seconds())
 
 	// Update the record
-	result := d.db.WithContext(ctx).Model(&models.MigrationHistory{}).Where("id = ?", id).Updates(map[string]interface{}{
+	result := d.db.WithContext(ctx).Model(&models.MigrationHistory{}).Where("id = ?", id).Updates(map[string]any{
 		"status":           status,
 		"error_message":    errorMsg,
 		"completed_at":     completedAt,

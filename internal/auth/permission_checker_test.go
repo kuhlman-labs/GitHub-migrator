@@ -20,9 +20,9 @@ func TestPermissionChecker_HasFullAccess_EnterpriseAdmin(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/graphql" {
 			// Return enterprise admin response
-			resp := map[string]interface{}{
-				"data": map[string]interface{}{
-					"enterprise": map[string]interface{}{
+			resp := map[string]any{
+				"data": map[string]any{
+					"enterprise": map[string]any{
 						"slug":          "test-enterprise",
 						"viewerIsAdmin": true,
 					},
@@ -62,7 +62,7 @@ func TestPermissionChecker_HasFullAccess_PrivilegedTeam(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Correct path: /orgs/{org}/teams/{team-slug}/memberships/{username}
 		if r.URL.Path == "/orgs/test-org/teams/admin-team/memberships/testuser" {
-			resp := map[string]interface{}{
+			resp := map[string]any{
 				"state": "active",
 				"role":  "member",
 			}
@@ -98,7 +98,7 @@ func TestPermissionChecker_HasRepoAccess_OrgAdmin(t *testing.T) {
 	// Mock GitHub API for org admin check
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/user/memberships/orgs/test-org" {
-			resp := map[string]interface{}{
+			resp := map[string]any{
 				"state": "active",
 				"role":  "admin",
 			}
@@ -135,9 +135,9 @@ func TestPermissionChecker_HasRepoAccess_RepoAdmin(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/graphql" {
-			resp := map[string]interface{}{
-				"data": map[string]interface{}{
-					"repository": map[string]interface{}{
+			resp := map[string]any{
+				"data": map[string]any{
+					"repository": map[string]any{
 						"viewerPermission": "ADMIN",
 					},
 				},
@@ -175,9 +175,9 @@ func TestPermissionChecker_HasRepoAccess_NoPermission(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/graphql" {
-			resp := map[string]interface{}{
-				"data": map[string]interface{}{
-					"repository": map[string]interface{}{
+			resp := map[string]any{
+				"data": map[string]any{
+					"repository": map[string]any{
 						"viewerPermission": "WRITE",
 					},
 				},
@@ -233,7 +233,7 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 			mockResponses: func(w http.ResponseWriter, r *http.Request) {
 				// Mock org membership endpoint to return active memberships
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{
+					resp := []map[string]any{
 						{
 							"organization": map[string]string{"login": "test-org"},
 							"state":        "active",
@@ -243,7 +243,7 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 					return
 				}
 				if r.URL.Path == "/user/memberships/orgs/test-org" {
-					resp := map[string]interface{}{
+					resp := map[string]any{
 						"state": "active",
 						"role":  "admin",
 					}
@@ -259,7 +259,7 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 			repoFullNames: []string{"other-org/repo1"},
 			mockResponses: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{}
+					resp := []map[string]any{}
 					json.NewEncoder(w).Encode(resp)
 					return
 				}
@@ -268,9 +268,9 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 					return
 				}
 				if r.URL.Path == "/graphql" {
-					resp := map[string]interface{}{
-						"data": map[string]interface{}{
-							"repository": map[string]interface{}{
+					resp := map[string]any{
+						"data": map[string]any{
+							"repository": map[string]any{
 								"viewerPermission": "READ",
 							},
 						},
@@ -324,7 +324,7 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 			mockResponses: func(w http.ResponseWriter, r *http.Request) {
 				// Return org1 membership
 				if r.URL.Path == "/user/memberships/orgs" {
-					resp := []map[string]interface{}{
+					resp := []map[string]any{
 						{
 							"organization": map[string]string{"login": "org1"},
 							"state":        "active",
@@ -334,7 +334,7 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 					return
 				}
 				if r.URL.Path == "/user/memberships/orgs/org1" {
-					resp := map[string]interface{}{
+					resp := map[string]any{
 						"state": "active",
 						"role":  "admin",
 					}
@@ -348,9 +348,9 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 				}
 				// No repo-level admin for org2/repo3
 				if r.URL.Path == "/graphql" {
-					resp := map[string]interface{}{
-						"data": map[string]interface{}{
-							"repository": map[string]interface{}{
+					resp := map[string]any{
+						"data": map[string]any{
+							"repository": map[string]any{
 								"viewerPermission": "READ",
 							},
 						},
@@ -391,7 +391,7 @@ func TestPermissionChecker_GetUserOrganizationsWithAdminRole(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Request: %s %s\n", r.Method, r.URL.Path)
 		if r.URL.Path == "/user/memberships/orgs" {
-			resp := []map[string]interface{}{
+			resp := []map[string]any{
 				{
 					"organization": map[string]string{"login": "org1"},
 					"state":        "active",
@@ -405,7 +405,7 @@ func TestPermissionChecker_GetUserOrganizationsWithAdminRole(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/user/memberships/orgs/org1" {
-			resp := map[string]interface{}{
+			resp := map[string]any{
 				"state": "active",
 				"role":  "admin",
 			}
@@ -413,7 +413,7 @@ func TestPermissionChecker_GetUserOrganizationsWithAdminRole(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/user/memberships/orgs/org2" {
-			resp := map[string]interface{}{
+			resp := map[string]any{
 				"state": "active",
 				"role":  "member",
 			}

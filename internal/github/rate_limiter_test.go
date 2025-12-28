@@ -252,7 +252,7 @@ func TestRateLimiter_MaxBackoff(t *testing.T) {
 	ctx := context.Background()
 
 	// Increase backoff multiple times
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_ = rl.StartBackoff(ctx)
 	}
 

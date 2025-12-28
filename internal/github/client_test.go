@@ -248,7 +248,7 @@ func TestClient_MutateWithRetrySuccess(t *testing.T) {
 	// The test just ensures the method exists and basic error handling works.
 	var mutation struct{}
 	// Use an empty map for input to test the interface{} parameter
-	input := map[string]interface{}{}
+	input := map[string]any{}
 	err = client.MutateWithRetry(ctx, "test-mutation", &mutation, input, nil)
 
 	// We expect an error because we're not actually authenticated
@@ -455,13 +455,6 @@ func TestClient_ListEnterpriseOrganizationsUnit(t *testing.T) {
 	if err != nil {
 		t.Logf("Expected error with fake token: %v", err)
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func TestDetectInstanceType(t *testing.T) {

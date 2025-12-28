@@ -117,8 +117,8 @@ func (ps *PackageScanner) parsePythonEnterpriseHost(line, manifestPath string) *
 
 // extractPythonPkgName extracts package name from #egg= or uses fallback
 func extractPythonPkgName(line, fallback string) string {
-	if idx := strings.Index(line, "#egg="); idx != -1 {
-		pkgName := line[idx+5:]
+	if _, after, ok := strings.Cut(line, "#egg="); ok {
+		pkgName := after
 		return strings.Split(pkgName, "&")[0]
 	}
 	return fallback

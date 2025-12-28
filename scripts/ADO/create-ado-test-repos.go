@@ -306,7 +306,7 @@ func initializeRepo(ctx context.Context, clients *ADOClients, project, repoID st
 
 	oldObjectID := "0000000000000000000000000000000000000000"
 
-	changes := []interface{}{
+	changes := []any{
 		git.GitChange{
 			ChangeType: &git.VersionControlChangeTypeValues.Add,
 			Item: &git.GitItem{
@@ -1214,7 +1214,7 @@ func addFilesToRepo(ctx context.Context, clients *ADOClients, project, repoID, b
 
 	// Build changes array as interface{}
 	// Use Edit for existing files (like README.md), Add for new files
-	var changes []interface{}
+	var changes []any
 	for path, content := range files {
 		contentCopy := content // Create a copy for the pointer
 		pathCopy := path       // Create a copy for the pointer

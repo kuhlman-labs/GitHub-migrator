@@ -58,7 +58,7 @@ func (d *Database) SaveUser(ctx context.Context, user *models.GitHubUser) error 
 	}
 
 	// Update name and email if provided
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"updated_at":       user.UpdatedAt,
 		"commit_count":     user.CommitCount,
 		"issue_count":      user.IssueCount,
@@ -153,7 +153,7 @@ func (d *Database) ListUsers(ctx context.Context, sourceInstance string, limit, 
 }
 
 // GetUserStats returns summary statistics for discovered users
-func (d *Database) GetUserStats(ctx context.Context) (map[string]interface{}, error) {
+func (d *Database) GetUserStats(ctx context.Context) (map[string]any, error) {
 	var totalUsers int64
 	var usersWithEmail int64
 	var totalCommits int64
@@ -187,7 +187,7 @@ func (d *Database) GetUserStats(ctx context.Context) (map[string]interface{}, er
 	totalPRs = stats.TotalPRs
 	totalIssues = stats.TotalIssues
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total_users":      totalUsers,
 		"users_with_email": usersWithEmail,
 		"total_commits":    totalCommits,
@@ -242,7 +242,7 @@ func (d *Database) SaveUserOrgMembership(ctx context.Context, membership *models
 
 	// Membership exists - update role if changed
 	if existing.Role != membership.Role {
-		result := d.db.WithContext(ctx).Model(&existing).Updates(map[string]interface{}{
+		result := d.db.WithContext(ctx).Model(&existing).Updates(map[string]any{
 			"role": membership.Role,
 		})
 		if result.Error != nil {
@@ -441,7 +441,7 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 
 // GetUsersWithMappingsStats returns stats for users with their mapping status
 // If orgFilter is provided, stats are filtered to that organization only
-func (d *Database) GetUsersWithMappingsStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
+func (d *Database) GetUsersWithMappingsStats(ctx context.Context, orgFilter string) (map[string]any, error) {
 	var total int64
 	baseQuery := d.db.WithContext(ctx).Model(&models.UserMapping{})
 	if orgFilter != "" {
@@ -501,7 +501,7 @@ func (d *Database) GetUsersWithMappingsStats(ctx context.Context, orgFilter stri
 		return nil, fmt.Errorf("failed to count invitable: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total":     total,
 		"unmapped":  unmapped,
 		"mapped":    mapped,

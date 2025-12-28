@@ -173,7 +173,7 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 
 // calculateBatchStatus determines the appropriate status for a batch based on its repositories
 func (su *StatusUpdater) calculateBatchStatus(ctx context.Context, batch *models.Batch) (string, error) {
-	repos, err := su.storage.ListRepositories(ctx, map[string]interface{}{
+	repos, err := su.storage.ListRepositories(ctx, map[string]any{
 		"batch_id": batch.ID,
 	})
 	if err != nil {

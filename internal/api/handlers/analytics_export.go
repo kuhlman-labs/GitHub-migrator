@@ -173,22 +173,22 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 		}
 	}
 
-	report := map[string]interface{}{
+	report := map[string]any{
 		"source_type": sourceType,
-		"report_metadata": map[string]interface{}{
+		"report_metadata": map[string]any{
 			"generated_at": time.Now().Format(time.RFC3339),
 			"report_type":  "Executive Migration Report",
 			"version":      "2.0",
 		},
-		"discovery_data": map[string]interface{}{
-			"overview":                 map[string]interface{}{"total_repositories": total, "source_type": sourceType},
+		"discovery_data": map[string]any{
+			"overview":                 map[string]any{"total_repositories": total, "source_type": sourceType},
 			"features":                 featureStats,
 			"complexity_distribution":  complexityDist,
 			"size_distribution":        sizeDist,
 			"organizational_breakdown": orgStats,
 		},
-		"migration_analytics": map[string]interface{}{
-			"summary": map[string]interface{}{
+		"migration_analytics": map[string]any{
+			"summary": map[string]any{
 				"total_repositories":        total,
 				"migrated_count":            migrated,
 				"in_progress_count":         inProgress,
@@ -200,19 +200,19 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 				"days_remaining":            daysRemaining,
 			},
 			"status_breakdown": statusBreakdown,
-			"velocity": map[string]interface{}{
+			"velocity": map[string]any{
 				"repos_per_day":        velocity.ReposPerDay,
 				"repos_per_week":       velocity.ReposPerWeek,
 				"average_duration_sec": avgMigrationTime,
 				"median_duration_sec":  medianMigrationTime,
 			},
-			"batches": map[string]interface{}{
+			"batches": map[string]any{
 				"total":       completedBatches + inProgressBatches + pendingBatches,
 				"completed":   completedBatches,
 				"in_progress": inProgressBatches,
 				"pending":     pendingBatches,
 			},
-			"risk_factors": map[string]interface{}{
+			"risk_factors": map[string]any{
 				"high_complexity_pending": highComplexity,
 				"very_large_pending":      veryLarge,
 				"failed_migrations":       failed,
@@ -222,8 +222,8 @@ func (h *Handler) exportExecutiveReportJSON(w http.ResponseWriter, sourceType st
 	}
 
 	if sourceType == models.SourceTypeAzureDevOps {
-		if discoveryData, ok := report["discovery_data"].(map[string]interface{}); ok {
-			discoveryData["ado_specific_risks"] = map[string]interface{}{
+		if discoveryData, ok := report["discovery_data"].(map[string]any); ok {
+			discoveryData["ado_specific_risks"] = map[string]any{
 				"tfvc_repos":                   featureStats.ADOTFVCCount,
 				"classic_pipelines":            featureStats.ADOHasClassicPipelines,
 				"repos_with_active_work_items": featureStats.ADOHasWorkItems,
@@ -254,14 +254,14 @@ func (h *Handler) exportDetailedDiscoveryReportJSON(w http.ResponseWriter, repos
 		filtersApplied["batch_id"] = batchFilter
 	}
 
-	repoData := make([]map[string]interface{}, 0, len(repos))
+	repoData := make([]map[string]any, 0, len(repos))
 	for _, repo := range repos {
 		repoJSON, err := json.Marshal(repo)
 		if err != nil {
 			continue
 		}
 
-		var repoMap map[string]interface{}
+		var repoMap map[string]any
 		if err := json.Unmarshal(repoJSON, &repoMap); err != nil {
 			continue
 		}
@@ -275,8 +275,8 @@ func (h *Handler) exportDetailedDiscoveryReportJSON(w http.ResponseWriter, repos
 		repoData = append(repoData, repoMap)
 	}
 
-	report := map[string]interface{}{
-		"report_metadata": map[string]interface{}{
+	report := map[string]any{
+		"report_metadata": map[string]any{
 			"generated_at":       time.Now().Format(time.RFC3339),
 			"report_type":        "Detailed Repository Discovery Report",
 			"source_type":        h.sourceType,

@@ -478,7 +478,7 @@ func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
 		latestEvent = history[0]
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"repository_id":   repo.ID,
 		"full_name":       repo.FullName,
 		"status":          repo.Status,
@@ -554,7 +554,7 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"logs":   logs,
 		"count":  len(logs),
 		"limit":  limit,
@@ -847,7 +847,7 @@ func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"migrations": migrations,
 		"total":      len(migrations),
 	})

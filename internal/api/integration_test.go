@@ -73,7 +73,7 @@ func TestIntegration_RepositoryLifecycle(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -85,7 +85,7 @@ func TestIntegration_RepositoryLifecycle(t *testing.T) {
 
 	// Test: Update repository
 	t.Run("update repository", func(t *testing.T) {
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"priority": 1,
 		}
 		body, _ := json.Marshal(updates)
@@ -216,7 +216,7 @@ func TestIntegration_MigrationStartWorkflow(t *testing.T) {
 
 	// Test: Start migration by full name
 	t.Run("start migration", func(t *testing.T) {
-		reqBody := map[string]interface{}{
+		reqBody := map[string]any{
 			"full_names": []string{"test-org/migration-repo"},
 			"dry_run":    true,
 			"priority":   1,
@@ -231,7 +231,7 @@ func TestIntegration_MigrationStartWorkflow(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -289,7 +289,7 @@ func TestIntegration_Analytics(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
@@ -315,7 +315,7 @@ func TestIntegration_Analytics(t *testing.T) {
 			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}

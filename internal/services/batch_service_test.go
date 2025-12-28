@@ -129,7 +129,7 @@ func (m *MockRepoStore) GetRepositoriesByNames(_ context.Context, names []string
 	return result, nil
 }
 
-func (m *MockRepoStore) ListRepositories(_ context.Context, _ map[string]interface{}) ([]*models.Repository, error) {
+func (m *MockRepoStore) ListRepositories(_ context.Context, _ map[string]any) ([]*models.Repository, error) {
 	if m.listReposErr != nil {
 		return nil, m.listReposErr
 	}
@@ -143,11 +143,11 @@ func (m *MockRepoStore) ListRepositories(_ context.Context, _ map[string]interfa
 	return result, nil
 }
 
-func (m *MockRepoStore) CountRepositories(_ context.Context, _ map[string]interface{}) (int, error) {
+func (m *MockRepoStore) CountRepositories(_ context.Context, _ map[string]any) (int, error) {
 	return len(m.repos), nil
 }
 
-func (m *MockRepoStore) CountRepositoriesWithFilters(_ context.Context, _ map[string]interface{}) (int, error) {
+func (m *MockRepoStore) CountRepositoriesWithFilters(_ context.Context, _ map[string]any) (int, error) {
 	return len(m.repos), nil
 }
 

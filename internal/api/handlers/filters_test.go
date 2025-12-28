@@ -341,7 +341,7 @@ func TestAddSliceOrSingleFilter(t *testing.T) {
 	tests := []struct {
 		name     string
 		values   []string
-		expected interface{}
+		expected any
 	}{
 		{
 			name:     "empty slice",
@@ -362,7 +362,7 @@ func TestAddSliceOrSingleFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := make(map[string]interface{})
+			m := make(map[string]any)
 			addSliceOrSingleFilter(m, "key", tt.values)
 
 			if tt.expected == nil {
@@ -387,7 +387,7 @@ func TestAddSliceOrSingleFilter(t *testing.T) {
 
 func TestAddBoolFilter(t *testing.T) {
 	t.Run("nil value", func(t *testing.T) {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		addBoolFilter(m, "key", nil)
 		if _, ok := m["key"]; ok {
 			t.Error("Expected key to not be set for nil value")
@@ -395,7 +395,7 @@ func TestAddBoolFilter(t *testing.T) {
 	})
 
 	t.Run("true value", func(t *testing.T) {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		val := true
 		addBoolFilter(m, "key", &val)
 		if v, ok := m["key"].(bool); !ok || !v {
@@ -404,7 +404,7 @@ func TestAddBoolFilter(t *testing.T) {
 	})
 
 	t.Run("false value", func(t *testing.T) {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		val := false
 		addBoolFilter(m, "key", &val)
 		if v, ok := m["key"].(bool); !ok || v {
@@ -415,7 +415,7 @@ func TestAddBoolFilter(t *testing.T) {
 
 func TestAddStringFilter(t *testing.T) {
 	t.Run("empty string", func(t *testing.T) {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		addStringFilter(m, "key", "")
 		if _, ok := m["key"]; ok {
 			t.Error("Expected key to not be set for empty string")
@@ -423,7 +423,7 @@ func TestAddStringFilter(t *testing.T) {
 	})
 
 	t.Run("non-empty string", func(t *testing.T) {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		addStringFilter(m, "key", "value")
 		if v, ok := m["key"].(string); !ok || v != "value" {
 			t.Errorf("Expected 'value', got %v", m["key"])

@@ -14,7 +14,7 @@ func TestSetDefaults(t *testing.T) {
 
 	tests := []struct {
 		key      string
-		expected interface{}
+		expected any
 	}{
 		{"server.port", 8080},
 		{"database.type", "sqlite"},
@@ -374,8 +374,8 @@ auth:
 	// Test that environment variables override file values
 	tests := []struct {
 		name     string
-		got      interface{}
-		expected interface{}
+		got      any
+		expected any
 	}{
 		{"server.port", cfg.Server.Port, 9090},
 		{"database.type", cfg.Database.Type, "postgres"},

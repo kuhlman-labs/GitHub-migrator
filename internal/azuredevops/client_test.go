@@ -573,8 +573,7 @@ func BenchmarkClientConfig_Validate(b *testing.B) {
 		PersonalAccessToken: "test-token-12345",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = config.Validate()
 	}
 }

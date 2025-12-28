@@ -47,7 +47,7 @@ func TestStartADODiscovery(t *testing.T) {
 func testADOOrganizationDiscovery(t *testing.T) {
 	adoHandler, _ := setupTestADOHandler(t)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"organization": "test-ado-org",
 		"workers":      5,
 	}
@@ -62,7 +62,7 @@ func testADOOrganizationDiscovery(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
@@ -81,7 +81,7 @@ func testADOOrganizationDiscovery(t *testing.T) {
 func testADOProjectDiscovery(t *testing.T) {
 	adoHandler, _ := setupTestADOHandler(t)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"organization": "test-ado-org",
 		"projects":     []string{"Project1", "Project2"},
 		"workers":      3,
@@ -97,7 +97,7 @@ func testADOProjectDiscovery(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
@@ -110,7 +110,7 @@ func testADOProjectDiscovery(t *testing.T) {
 	}
 
 	// Verify projects are included in response
-	projects, ok := response["projects"].([]interface{})
+	projects, ok := response["projects"].([]any)
 	if !ok || len(projects) != 2 {
 		t.Errorf("Expected 2 projects in response, got %v", response["projects"])
 	}
@@ -121,13 +121,13 @@ func testADODiscoveryValidation(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		reqBody  map[string]interface{}
+		reqBody  map[string]any
 		rawBody  string
 		wantCode int
 	}{
 		{
 			name:     "missing organization",
-			reqBody:  map[string]interface{}{},
+			reqBody:  map[string]any{},
 			wantCode: http.StatusBadRequest,
 		},
 		{
@@ -137,7 +137,7 @@ func testADODiscoveryValidation(t *testing.T) {
 		},
 		{
 			name: "empty organization",
-			reqBody: map[string]interface{}{
+			reqBody: map[string]any{
 				"organization": "",
 			},
 			wantCode: http.StatusBadRequest,
@@ -201,7 +201,7 @@ func TestADODiscoveryStatus(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
@@ -267,12 +267,12 @@ func TestListADOProjects(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	projects, ok := response["projects"].([]interface{})
+	projects, ok := response["projects"].([]any)
 	if !ok {
 		t.Fatal("Expected projects to be an array")
 	}

@@ -53,7 +53,7 @@ func (s *BatchService) GetBatchWithStats(ctx context.Context, batchID int64) (*B
 	}
 
 	// Get repositories in this batch
-	repos, err := s.repoStore.ListRepositories(ctx, map[string]interface{}{
+	repos, err := s.repoStore.ListRepositories(ctx, map[string]any{
 		"batch_id": fmt.Sprintf("%d", batchID),
 	})
 	if err != nil {
@@ -224,7 +224,7 @@ func (s *BatchService) DeleteBatch(ctx context.Context, batchID int64) error {
 	}
 
 	// Remove repositories from batch first
-	repos, err := s.repoStore.ListRepositories(ctx, map[string]interface{}{
+	repos, err := s.repoStore.ListRepositories(ctx, map[string]any{
 		"batch_id": fmt.Sprintf("%d", batchID),
 	})
 	if err != nil {

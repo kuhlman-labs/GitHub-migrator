@@ -495,9 +495,9 @@ func (a *Analyzer) getGitObjectSize(ctx context.Context, repoPath string) (int64
 // size-pack: 2.44 KiB
 func (a *Analyzer) parseGitCountObjects(output string) (*GitCountObjectsOutput, error) {
 	result := &GitCountObjectsOutput{}
-	lines := strings.Split(output, "\n")
+	lines := strings.SplitSeq(output, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		a.parseCountObjectsLine(line, result)
 	}
 
@@ -704,9 +704,9 @@ func (a *Analyzer) validateGitReferences(ctx context.Context, repoPath string, r
 	}
 
 	var longRefs []string
-	lines := bytes.Split(output, []byte("\n"))
+	lines := bytes.SplitSeq(output, []byte("\n"))
 
-	for _, line := range lines {
+	for line := range lines {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			continue

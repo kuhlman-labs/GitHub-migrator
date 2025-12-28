@@ -45,7 +45,7 @@ func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 		if batch.Status == models.BatchStatusInProgress ||
 			batch.Status == models.BatchStatusCompleted ||
 			batch.Status == models.BatchStatusCompletedWithErrors {
-			repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
+			repos, err := h.db.ListRepositories(ctx, map[string]any{
 				"batch_id": batch.ID,
 			})
 			if err == nil && len(repos) > 0 {
@@ -133,7 +133,7 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
+	repos, err := h.db.ListRepositories(ctx, map[string]any{
 		"batch_id": batchID,
 	})
 	if err != nil {
@@ -141,7 +141,7 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 		repos = []*models.Repository{}
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"batch":        batch,
 		"repositories": repos,
 	}
@@ -189,7 +189,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
+	repos, err := h.db.ListRepositories(ctx, map[string]any{
 		"batch_id": batchID,
 	})
 	if err != nil {
@@ -273,7 +273,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 		message += fmt.Sprintf(" (%d repositories skipped)", skippedCount)
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"batch_id":      batchID,
 		"batch_name":    batch.Name,
 		"dry_run_ids":   dryRunIDs,
@@ -331,7 +331,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repos, err := h.db.ListRepositories(ctx, map[string]interface{}{
+	repos, err := h.db.ListRepositories(ctx, map[string]any{
 		"batch_id": batchID,
 	})
 	if err != nil {
@@ -395,7 +395,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to update batch progress", "error", err)
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"batch_id":      batchID,
 		"batch_name":    batch.Name,
 		"migration_ids": migrationIDs,
@@ -512,7 +512,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 			"old_destination_org", oldDestinationOrg,
 			"new_destination_org", newDestinationOrg)
 
-		repos, err := h.db.ListRepositories(ctx, map[string]interface{}{"batch_id": batchID})
+		repos, err := h.db.ListRepositories(ctx, map[string]any{"batch_id": batchID})
 		if err != nil {
 			h.logger.Error("Failed to list batch repositories for destination update", "error", err)
 		} else {
@@ -616,7 +616,7 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Batch deleted successfully", "batch_id", batchID, "batch_name", batch.Name)
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message": "Batch deleted successfully",
 	})
 }
@@ -697,11 +697,12 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	if len(eligibleRepoIDs) == 0 {
-		errorMsg := "No repositories are eligible for batch assignment:\n"
+		var errorMsg strings.Builder
+		errorMsg.WriteString("No repositories are eligible for batch assignment:\n")
 		for _, repoName := range ineligibleRepos {
-			errorMsg += fmt.Sprintf("  - %s: %s\n", repoName, ineligibleReasons[repoName])
+			errorMsg.WriteString(fmt.Sprintf("  - %s: %s\n", repoName, ineligibleReasons[repoName]))
 		}
-		WriteError(w, ErrBadRequest.WithDetails(strings.TrimSpace(errorMsg)))
+		WriteError(w, ErrBadRequest.WithDetails(strings.TrimSpace(errorMsg.String())))
 		return
 	}
 
@@ -772,7 +773,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		message += fmt.Sprintf(". %d repos failed to apply defaults", len(failedUpdates))
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"repositories_added":     len(eligibleRepoIDs),
 		"repositories_requested": len(req.RepositoryIDs),
 		"defaults_applied_count": updatedCount,
@@ -851,7 +852,7 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 		// Continue without batch in response - the operation succeeded, just can't return updated batch
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"repositories_removed": len(req.RepositoryIDs),
 		"message":              fmt.Sprintf("Removed %d repositories from batch", len(req.RepositoryIDs)),
 	}
@@ -921,7 +922,7 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		filters := map[string]interface{}{
+		filters := map[string]any{
 			"batch_id": batchID,
 			"status": []string{
 				string(models.StatusMigrationFailed),
@@ -975,7 +976,7 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 		retriedIDs = append(retriedIDs, repo.ID)
 	}
 
-	h.sendJSON(w, http.StatusAccepted, map[string]interface{}{
+	h.sendJSON(w, http.StatusAccepted, map[string]any{
 		"batch_id":      batchID,
 		"batch_name":    batch.Name,
 		"retried_count": len(retriedIDs),

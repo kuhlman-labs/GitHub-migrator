@@ -3,6 +3,7 @@ package migration
 import (
 	"log/slog"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/kuhlman-labs/github-migrator/internal/ado"
@@ -393,13 +394,7 @@ func TestADOSourceURLParsing(t *testing.T) {
 
 			if tt.expectError {
 				// Check if URL has required _git segment
-				hasGit := false
-				for _, p := range parts {
-					if p == ado.GitPathSegment {
-						hasGit = true
-						break
-					}
-				}
+				hasGit := slices.Contains(parts, ado.GitPathSegment)
 				if hasGit {
 					t.Error("Expected error but URL appears valid")
 				}

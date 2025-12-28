@@ -197,7 +197,7 @@ func (da *DependencyAnalyzer) parseWorkflowFile(filePath, fileName string) ([]Wo
 		return nil, err
 	}
 
-	jobs, ok := workflow["jobs"].(map[string]interface{})
+	jobs, ok := workflow["jobs"].(map[string]any)
 	if !ok {
 		return nil, nil
 	}
@@ -221,8 +221,8 @@ func (da *DependencyAnalyzer) readWorkflowFile(filePath string) ([]byte, error) 
 }
 
 // parseWorkflowYAML parses workflow YAML content
-func (da *DependencyAnalyzer) parseWorkflowYAML(content []byte) (map[string]interface{}, error) {
-	var workflow map[string]interface{}
+func (da *DependencyAnalyzer) parseWorkflowYAML(content []byte) (map[string]any, error) {
+	var workflow map[string]any
 	if err := yaml.Unmarshal(content, &workflow); err != nil {
 		return nil, fmt.Errorf("failed to parse workflow YAML: %w", err)
 	}
@@ -230,11 +230,11 @@ func (da *DependencyAnalyzer) parseWorkflowYAML(content []byte) (map[string]inte
 }
 
 // extractDependenciesFromJobs extracts dependencies from workflow jobs
-func (da *DependencyAnalyzer) extractDependenciesFromJobs(jobs map[string]interface{}, fileName string) []WorkflowDependency {
+func (da *DependencyAnalyzer) extractDependenciesFromJobs(jobs map[string]any, fileName string) []WorkflowDependency {
 	var dependencies []WorkflowDependency
 
 	for _, job := range jobs {
-		jobMap, ok := job.(map[string]interface{})
+		jobMap, ok := job.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -254,16 +254,16 @@ func (da *DependencyAnalyzer) extractDependenciesFromJobs(jobs map[string]interf
 }
 
 // extractDependenciesFromSteps extracts dependencies from job steps
-func (da *DependencyAnalyzer) extractDependenciesFromSteps(jobMap map[string]interface{}, fileName string) []WorkflowDependency {
+func (da *DependencyAnalyzer) extractDependenciesFromSteps(jobMap map[string]any, fileName string) []WorkflowDependency {
 	var dependencies []WorkflowDependency
 
-	steps, ok := jobMap["steps"].([]interface{})
+	steps, ok := jobMap["steps"].([]any)
 	if !ok {
 		return dependencies
 	}
 
 	for _, step := range steps {
-		stepMap, ok := step.(map[string]interface{})
+		stepMap, ok := step.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -370,7 +370,7 @@ func (da *DependencyAnalyzer) AnalyzeDependencies(ctx context.Context, repoPath,
 			}
 
 			// Create metadata JSON
-			metadata := map[string]interface{}{
+			metadata := map[string]any{
 				"path":   sub.Path,
 				"url":    sub.URL,
 				"branch": sub.Branch,
@@ -406,7 +406,7 @@ func (da *DependencyAnalyzer) AnalyzeDependencies(ctx context.Context, repoPath,
 			seenDeps[key] = true
 
 			// Create metadata JSON
-			metadata := map[string]interface{}{
+			metadata := map[string]any{
 				"workflow_file": wf.WorkflowFile,
 				"uses":          wf.Uses,
 				"ref":           wf.Ref,

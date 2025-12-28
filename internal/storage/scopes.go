@@ -12,7 +12,7 @@ import (
 // Scopes provide a clean way to compose queries
 
 // WithStatus filters repositories by status
-func WithStatus(status interface{}) func(db *gorm.DB) *gorm.DB {
+func WithStatus(status any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		switch v := status.(type) {
 		case string:
@@ -72,7 +72,7 @@ func WithSearch(search string) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithOrganization filters by organization (single or multiple)
-func WithOrganization(org interface{}) func(db *gorm.DB) *gorm.DB {
+func WithOrganization(org any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		switch v := org.(type) {
 		case string:
@@ -82,7 +82,7 @@ func WithOrganization(org interface{}) func(db *gorm.DB) *gorm.DB {
 		case []string:
 			if len(v) > 0 {
 				conditions := make([]string, len(v))
-				args := make([]interface{}, len(v))
+				args := make([]any, len(v))
 				for i, o := range v {
 					conditions[i] = "LOWER(full_name) LIKE LOWER(?)"
 					args[i] = o + "/%"
@@ -95,7 +95,7 @@ func WithOrganization(org interface{}) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithADOProject filters by Azure DevOps project (single or multiple)
-func WithADOProject(project interface{}) func(db *gorm.DB) *gorm.DB {
+func WithADOProject(project any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		switch v := project.(type) {
 		case string:
@@ -113,7 +113,7 @@ func WithADOProject(project interface{}) func(db *gorm.DB) *gorm.DB {
 
 // WithADOOrganization filters by Azure DevOps organization (single or multiple)
 // This filters repositories where ado_project belongs to the specified organization(s)
-func WithADOOrganization(org interface{}) func(db *gorm.DB) *gorm.DB {
+func WithADOOrganization(org any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		switch v := org.(type) {
 		case string:
@@ -278,7 +278,7 @@ func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithSizeCategory filters by size category
-func WithSizeCategory(categories interface{}) func(db *gorm.DB) *gorm.DB {
+func WithSizeCategory(categories any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		const (
 			MB100 = 100 * 1024 * 1024      // 100MB
@@ -301,7 +301,7 @@ func WithSizeCategory(categories interface{}) func(db *gorm.DB) *gorm.DB {
 		}
 
 		var conditions []string
-		var args []interface{}
+		var args []any
 
 		for _, category := range categoryList {
 			switch category {
@@ -331,7 +331,7 @@ func WithSizeCategory(categories interface{}) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithComplexity filters by complexity category
-func WithComplexity(categories interface{}) func(db *gorm.DB) *gorm.DB {
+func WithComplexity(categories any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		var categoryList []string
 		switch v := categories.(type) {
@@ -430,7 +430,7 @@ func WithPagination(limit, offset int) func(db *gorm.DB) *gorm.DB {
 // WithTeam filters repositories by team membership
 // teamFilter accepts values in "org/team-slug" format to uniquely identify teams across organizations
 // Supports single value or slice of values
-func WithTeam(teamFilter interface{}) func(db *gorm.DB) *gorm.DB {
+func WithTeam(teamFilter any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		var teamSpecs []string
 		switch v := teamFilter.(type) {
@@ -450,7 +450,7 @@ func WithTeam(teamFilter interface{}) func(db *gorm.DB) *gorm.DB {
 
 		// Parse team specs into org/slug pairs and build conditions
 		var conditions []string
-		var args []interface{}
+		var args []any
 
 		for _, spec := range teamSpecs {
 			parts := strings.SplitN(spec, "/", 2)

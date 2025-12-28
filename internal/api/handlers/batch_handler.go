@@ -54,7 +54,7 @@ func (h *BatchHandler) ListBatches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"batches": batches,
 		"total":   len(batches),
 	})
@@ -84,7 +84,7 @@ func (h *BatchHandler) GetBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get repositories in this batch
-	repos, err := h.repoStore.ListRepositories(ctx, map[string]interface{}{
+	repos, err := h.repoStore.ListRepositories(ctx, map[string]any{
 		"batch_id": id,
 	})
 	if err != nil {
@@ -93,7 +93,7 @@ func (h *BatchHandler) GetBatch(w http.ResponseWriter, r *http.Request) {
 		repos = nil
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"batch":        batch,
 		"repositories": repos,
 	})
@@ -132,7 +132,7 @@ func (h *BatchHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusCreated, map[string]interface{}{
+	h.sendJSON(w, http.StatusCreated, map[string]any{
 		"batch":   batch,
 		"message": "Batch created successfully",
 	})
@@ -189,7 +189,7 @@ func (h *BatchHandler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"batch":   batch,
 		"message": "Batch updated successfully",
 	})
@@ -225,7 +225,7 @@ func (h *BatchHandler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remove batch assignment from repositories
-	repos, err := h.repoStore.ListRepositories(ctx, map[string]interface{}{
+	repos, err := h.repoStore.ListRepositories(ctx, map[string]any{
 		"batch_id": id,
 	})
 	if err != nil {
@@ -248,7 +248,7 @@ func (h *BatchHandler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message": "Batch deleted successfully",
 	})
 }
@@ -342,7 +342,7 @@ func (h *BatchHandler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"added":   added,
 		"total":   len(addReq.RepositoryIDs),
 		"message": fmt.Sprintf("Added %d of %d repositories to batch", added, len(addReq.RepositoryIDs)),
@@ -431,7 +431,7 @@ func (h *BatchHandler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *htt
 		removed++
 	}
 
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"removed": removed,
 		"message": fmt.Sprintf("Removed %d repositories from batch", removed),
 	})
@@ -440,7 +440,7 @@ func (h *BatchHandler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *htt
 // Helper methods
 
 // sendJSON sends a JSON response
-func (h *BatchHandler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+func (h *BatchHandler) sendJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {

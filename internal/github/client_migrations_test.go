@@ -13,9 +13,9 @@ import (
 // mockRateLimitHandlerMigrations returns a mock rate limit response
 func mockRateLimitHandlerMigrations(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"resources": map[string]interface{}{
-			"core": map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
+		"resources": map[string]any{
+			"core": map[string]any{
 				"limit":     5000,
 				"remaining": 4999,
 				"reset":     1234567890,
@@ -33,7 +33,7 @@ func TestStartMigrationWithOptions(t *testing.T) {
 		}
 
 		// Parse request body
-		var req map[string]interface{}
+		var req map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("Failed to decode request body: %v", err)
 		}
@@ -44,7 +44,7 @@ func TestStartMigrationWithOptions(t *testing.T) {
 		}
 
 		// Return mock migration
-		migration := map[string]interface{}{
+		migration := map[string]any{
 			"id":                12345,
 			"state":             "pending",
 			"guid":              "test-migration-guid-123",
@@ -178,9 +178,9 @@ func TestListOrgInstallations(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/rate_limit", mockRateLimitHandlerMigrations)
 	mux.HandleFunc("/api/v3/orgs/test-org/installations", func(w http.ResponseWriter, _ *http.Request) {
-		response := map[string]interface{}{
+		response := map[string]any{
 			"total_count": 2,
-			"installations": []map[string]interface{}{
+			"installations": []map[string]any{
 				{
 					"id":       1001,
 					"app_id":   101,

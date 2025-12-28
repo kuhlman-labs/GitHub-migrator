@@ -261,7 +261,7 @@ func TestCircuitBreaker_AllowRequest(t *testing.T) {
 	}
 
 	// Record failures to open circuit
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		cb.RecordFailure()
 	}
 
@@ -362,7 +362,7 @@ func TestCircuitBreaker_Reset(t *testing.T) {
 	cb := NewCircuitBreaker(3, 1*time.Minute, logger)
 
 	// Open the circuit
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		cb.RecordFailure()
 	}
 
@@ -391,7 +391,7 @@ func TestCircuitBreaker_GetState(t *testing.T) {
 	}
 
 	// Open the circuit
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		cb.RecordFailure()
 	}
 

@@ -131,10 +131,7 @@ func (rl *RateLimiter) StartBackoff(ctx context.Context) error {
 	rl.mu.Lock()
 
 	// Calculate backoff duration
-	backoff := rl.backoffDuration
-	if backoff > rl.maxBackoff {
-		backoff = rl.maxBackoff
-	}
+	backoff := min(rl.backoffDuration, rl.maxBackoff)
 
 	rl.logger.Info("Starting backoff", "duration", backoff)
 

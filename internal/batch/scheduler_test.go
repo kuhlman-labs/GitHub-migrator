@@ -60,10 +60,10 @@ func (m *MockMigrationExecutor) SetDelay(d time.Duration) {
 func waitForQueuedRepositories(t *testing.T, db *storage.Database, ctx context.Context, batchID int64, expectedCount int) int {
 	t.Helper()
 	maxRetries := 50 // 50 * 100ms = 5 seconds max wait
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		time.Sleep(100 * time.Millisecond)
 
-		repos, err := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batchID})
+		repos, err := db.ListRepositories(ctx, map[string]any{"batch_id": batchID})
 		if err != nil {
 			continue
 		}
@@ -81,7 +81,7 @@ func waitForQueuedRepositories(t *testing.T, db *storage.Database, ctx context.C
 	}
 
 	// Final check to get the actual count
-	repos, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batchID})
+	repos, _ := db.ListRepositories(ctx, map[string]any{"batch_id": batchID})
 	queuedCount := 0
 	for _, repo := range repos {
 		if repo.Status == string(models.StatusQueuedForMigration) {
@@ -564,12 +564,12 @@ func TestGetRunningBatches(t *testing.T) {
 		}
 
 		// Verify both batches have repositories queued
-		repos1, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch1.ID})
+		repos1, _ := db.ListRepositories(ctx, map[string]any{"batch_id": batch1.ID})
 		if repos1[0].Status != string(models.StatusQueuedForMigration) {
 			t.Errorf("Expected batch1 repo queued, got status %s", repos1[0].Status)
 		}
 
-		repos2, _ := db.ListRepositories(ctx, map[string]interface{}{"batch_id": batch2.ID})
+		repos2, _ := db.ListRepositories(ctx, map[string]any{"batch_id": batch2.ID})
 		if repos2[0].Status != string(models.StatusQueuedForMigration) {
 			t.Errorf("Expected batch2 repo queued, got status %s", repos2[0].Status)
 		}

@@ -181,7 +181,7 @@ func (c *Collector) processDependencyGraph(manifests []*github.DependencyGraphMa
 			stats.GitHubRepoDeps++
 
 			// Create metadata JSON with source marker to indicate this came from API fallback
-			metadataMap := map[string]interface{}{
+			metadataMap := map[string]any{
 				"source":          "github_api",
 				"manifest":        manifest.Filename,
 				"package_name":    dep.PackageName,

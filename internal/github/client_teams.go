@@ -260,7 +260,7 @@ func (c *Client) ListTeamMembersGraphQL(ctx context.Context, org, teamSlug strin
 		} `graphql:"organization(login: $org)"`
 	}
 
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"org":    githubv4.String(org),
 		"slug":   githubv4.String(teamSlug),
 		"cursor": cursor,

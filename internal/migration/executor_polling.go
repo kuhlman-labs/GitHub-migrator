@@ -396,7 +396,7 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 				} `graphql:"node(id: $id)"`
 			}
 
-			variables := map[string]interface{}{
+			variables := map[string]any{
 				"id": githubv4.ID(migrationID),
 			}
 

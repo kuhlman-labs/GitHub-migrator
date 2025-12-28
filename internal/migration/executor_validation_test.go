@@ -339,7 +339,7 @@ func TestExecutor_serializeDestinationData(t *testing.T) {
 
 	jsonData := e.serializeDestinationData(dest)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal([]byte(jsonData), &parsed); err != nil {
 		t.Fatalf("Failed to parse JSON: %v\nData: %s", err, jsonData)
 	}
@@ -381,7 +381,7 @@ func TestExecutor_serializeDestinationData_NilFields(t *testing.T) {
 
 	jsonData := e.serializeDestinationData(dest)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal([]byte(jsonData), &parsed); err != nil {
 		t.Fatalf("Failed to parse JSON: %v", err)
 	}

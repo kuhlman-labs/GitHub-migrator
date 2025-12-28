@@ -128,10 +128,7 @@ func (r *Retryer) Do(ctx context.Context, operation string, fn RetryFunc) error 
 			return fmt.Errorf("context cancelled during retry: %w", ctx.Err())
 		case <-time.After(backoff):
 			// Calculate next backoff
-			backoff = time.Duration(float64(backoff) * r.config.BackoffMultiple)
-			if backoff > r.config.MaxBackoff {
-				backoff = r.config.MaxBackoff
-			}
+			backoff = min(time.Duration(float64(backoff)*r.config.BackoffMultiple), r.config.MaxBackoff)
 		}
 	}
 

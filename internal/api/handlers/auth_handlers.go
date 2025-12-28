@@ -199,7 +199,7 @@ func (h *AuthHandler) HandleCurrentUser(w http.ResponseWriter, r *http.Request) 
 
 	claims, _ := auth.GetClaimsFromContext(r.Context())
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"id":         user.ID,
 		"login":      user.Login,
 		"name":       user.Name,
@@ -256,7 +256,7 @@ func (h *AuthHandler) HandleRefreshToken(w http.ResponseWriter, r *http.Request)
 
 // HandleAuthConfig returns auth configuration (for frontend)
 func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
-	response := map[string]interface{}{
+	response := map[string]any{
 		"enabled": h.config.Enabled,
 	}
 
@@ -264,7 +264,7 @@ func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		response["login_url"] = "/api/v1/auth/login"
 
 		// Include authorization requirements (sanitized)
-		rules := make(map[string]interface{})
+		rules := make(map[string]any)
 		if len(h.config.AuthorizationRules.RequireOrgMembership) > 0 {
 			rules["requires_org_membership"] = true
 			rules["required_orgs"] = h.config.AuthorizationRules.RequireOrgMembership

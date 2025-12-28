@@ -170,7 +170,7 @@ func (d *Database) ListTeamMappings(ctx context.Context, filters TeamMappingFilt
 
 // GetTeamMappingStats returns summary statistics for team mappings
 // If orgFilter is provided, stats are filtered to that organization only
-func (d *Database) GetTeamMappingStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
+func (d *Database) GetTeamMappingStats(ctx context.Context, orgFilter string) (map[string]any, error) {
 	var total int64
 	var mapped int64
 	var unmapped int64
@@ -209,7 +209,7 @@ func (d *Database) GetTeamMappingStats(ctx context.Context, orgFilter string) (m
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total":    total,
 		"mapped":   mapped,
 		"unmapped": unmapped,
@@ -219,7 +219,7 @@ func (d *Database) GetTeamMappingStats(ctx context.Context, orgFilter string) (m
 
 // UpdateTeamMappingDestination updates the destination for a team mapping
 func (d *Database) UpdateTeamMappingDestination(ctx context.Context, sourceOrg, sourceTeamSlug, destOrg, destTeamSlug, destTeamName string) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"destination_org":       destOrg,
 		"destination_team_slug": destTeamSlug,
 		"mapping_status":        "mapped",
@@ -245,7 +245,7 @@ func (d *Database) UpdateTeamMappingDestination(ctx context.Context, sourceOrg, 
 func (d *Database) UpdateTeamMappingStatus(ctx context.Context, sourceOrg, sourceTeamSlug, status string) error {
 	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
 		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"mapping_status": status,
 			"updated_at":     time.Now(),
 		})
@@ -532,7 +532,7 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 
 // GetTeamsWithMappingsStats returns stats for teams with their mapping status
 // If orgFilter is provided, stats are filtered to that organization only
-func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter string) (map[string]interface{}, error) {
+func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter string) (map[string]any, error) {
 	var total int64
 	baseQuery := d.db.WithContext(ctx).Model(&models.GitHubTeam{})
 	if orgFilter != "" {
@@ -582,7 +582,7 @@ func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter stri
 		return nil, fmt.Errorf("failed to count unmapped: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total":    total,
 		"unmapped": unmapped,
 		"mapped":   mapped,
@@ -592,7 +592,7 @@ func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter stri
 
 // UpdateTeamMigrationStatus updates the migration execution status for a team mapping
 func (d *Database) UpdateTeamMigrationStatus(ctx context.Context, sourceOrg, sourceTeamSlug, status string, errMsg *string) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"migration_status": status,
 		"updated_at":       time.Now(),
 	}
@@ -623,7 +623,7 @@ func (d *Database) UpdateTeamReposSynced(ctx context.Context, sourceOrg, sourceT
 	now := time.Now()
 	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
 		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"repos_synced":   count,
 			"last_synced_at": &now,
 			"updated_at":     now,
@@ -646,7 +646,7 @@ type TeamMigrationTrackingUpdate struct {
 }
 
 func (d *Database) UpdateTeamMigrationTracking(ctx context.Context, sourceOrg, sourceTeamSlug string, update TeamMigrationTrackingUpdate) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"updated_at": time.Now(),
 	}
 
@@ -695,7 +695,7 @@ func (d *Database) UpdateTeamReposEligible(ctx context.Context, teamID int64, so
 	// Update the team mapping
 	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
 		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"repos_eligible": int(count),
 			"updated_at":     time.Now(),
 		})
@@ -723,7 +723,7 @@ func (d *Database) UpdateTeamTotalSourceRepos(ctx context.Context, teamID int64,
 	// Update the team mapping
 	result := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
 		Where("source_org = ? AND source_team_slug = ?", sourceOrg, sourceTeamSlug).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"total_source_repos": int(count),
 			"updated_at":         time.Now(),
 		})
@@ -779,7 +779,7 @@ func (d *Database) GetMappedTeamsForMigration(ctx context.Context, sourceOrgFilt
 }
 
 // GetTeamMigrationExecutionStats returns statistics about team migration execution
-func (d *Database) GetTeamMigrationExecutionStats(ctx context.Context) (map[string]interface{}, error) {
+func (d *Database) GetTeamMigrationExecutionStats(ctx context.Context) (map[string]any, error) {
 	var pending, inProgress, completed, failed, needsSync, teamOnly, partial int64
 
 	db := d.db.WithContext(ctx).Model(&models.TeamMapping{}).Where("mapping_status = ?", teamMappingStatusMapped)
@@ -854,7 +854,7 @@ func (d *Database) GetTeamMigrationExecutionStats(ctx context.Context) (map[stri
 		return nil, fmt.Errorf("failed to sum repos eligible: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"pending":              pending,
 		"in_progress":          inProgress,
 		"completed":            completed,
@@ -877,7 +877,7 @@ func (d *Database) ResetTeamMigrationStatus(ctx context.Context, sourceOrgFilter
 		query = query.Where("source_org = ?", sourceOrgFilter)
 	}
 
-	result := query.Updates(map[string]interface{}{
+	result := query.Updates(map[string]any{
 		"migration_status":     TeamMigrationStatusPending,
 		"migrated_at":          nil,
 		"error_message":        nil,

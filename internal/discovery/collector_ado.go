@@ -16,15 +16,15 @@ import (
 // ADOCollector wraps an ADO client for discovery operations
 type ADOCollector struct {
 	client   *azuredevops.Client
-	storage  interface{} // Will be *storage.Database
+	storage  any // Will be *storage.Database
 	logger   *slog.Logger
-	provider interface{} // Will be source.Provider
+	provider any // Will be source.Provider
 	profiler *ADOProfiler
 	workers  int // Number of parallel workers
 }
 
 // NewADOCollector creates a new Azure DevOps collector
-func NewADOCollector(client *azuredevops.Client, storage interface{}, logger *slog.Logger, provider interface{}) *ADOCollector {
+func NewADOCollector(client *azuredevops.Client, storage any, logger *slog.Logger, provider any) *ADOCollector {
 	return &ADOCollector{
 		client:   client,
 		storage:  storage,
@@ -435,7 +435,7 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 }
 
 // getRemoteURL extracts the web URL from an ADO repository (for viewing in browser)
-func getRemoteURL(repo interface{}) string {
+func getRemoteURL(repo any) string {
 	// Type assert to *git.GitRepository from ADO SDK
 	if gitRepo, ok := repo.(*git.GitRepository); ok {
 		// Use WebUrl first - this is the HTTPS URL for viewing the repo in a browser

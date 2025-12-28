@@ -97,7 +97,7 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 	}
 
 	// Get all repositories in batch
-	repos, err := s.storage.ListRepositories(ctx, map[string]interface{}{
+	repos, err := s.storage.ListRepositories(ctx, map[string]any{
 		"batch_id": batchID,
 	})
 	if err != nil {

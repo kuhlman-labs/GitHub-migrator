@@ -79,10 +79,10 @@ type DatabaseValidationRequest struct {
 
 // ValidationResponse represents the validation result
 type ValidationResponse struct {
-	Valid    bool                   `json:"valid"`
-	Error    string                 `json:"error,omitempty"`
-	Warnings []string               `json:"warnings,omitempty"`
-	Details  map[string]interface{} `json:"details,omitempty"`
+	Valid    bool           `json:"valid"`
+	Error    string         `json:"error,omitempty"`
+	Warnings []string       `json:"warnings,omitempty"`
+	Details  map[string]any `json:"details,omitempty"`
 }
 
 // SetupConfig represents the full setup configuration
@@ -230,7 +230,7 @@ func (h *SetupHandler) ValidateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	response := ValidationResponse{Details: make(map[string]interface{})}
+	response := ValidationResponse{Details: make(map[string]any)}
 
 	switch strings.ToLower(req.Type) {
 	case models.SourceTypeGitHub:
@@ -314,7 +314,7 @@ func (h *SetupHandler) ApplySetup(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Configuration has been saved. Server will shutdown to apply changes.")
 
 	// Send success response
-	h.sendJSON(w, http.StatusOK, map[string]interface{}{
+	h.sendJSON(w, http.StatusOK, map[string]any{
 		"success":        true,
 		"message":        "Configuration applied successfully. Server will restart.",
 		"restart_needed": true,
@@ -331,7 +331,7 @@ func (h *SetupHandler) ApplySetup(w http.ResponseWriter, r *http.Request) {
 
 // validateGitHub validates a GitHub connection
 func (h *SetupHandler) validateGitHub(ctx context.Context, baseURL, token string) ValidationResponse {
-	response := ValidationResponse{Details: make(map[string]interface{})}
+	response := ValidationResponse{Details: make(map[string]any)}
 
 	// Create temporary GitHub client
 	client, err := github.NewClient(github.ClientConfig{
@@ -377,7 +377,7 @@ func (h *SetupHandler) validateGitHub(ctx context.Context, baseURL, token string
 
 // validateAzureDevOps validates an Azure DevOps connection
 func (h *SetupHandler) validateAzureDevOps(ctx context.Context, orgURL, token, organization string) ValidationResponse {
-	response := ValidationResponse{Details: make(map[string]interface{})}
+	response := ValidationResponse{Details: make(map[string]any)}
 
 	// Create temporary ADO client
 	client, err := azuredevops.NewClient(azuredevops.ClientConfig{
@@ -412,7 +412,7 @@ func (h *SetupHandler) validateAzureDevOps(ctx context.Context, orgURL, token, o
 
 // validateSQLitePath validates that a SQLite database path is secure
 func (h *SetupHandler) validateSQLitePath(dsn string) ValidationResponse {
-	response := ValidationResponse{Details: make(map[string]interface{})}
+	response := ValidationResponse{Details: make(map[string]any)}
 	const safeBaseDir = "./data"
 
 	// Extract directory from DSN
@@ -459,7 +459,7 @@ func (h *SetupHandler) validateSQLitePath(dsn string) ValidationResponse {
 
 // validateDatabaseConnection validates a database connection
 func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) ValidationResponse {
-	response := ValidationResponse{Details: make(map[string]interface{})}
+	response := ValidationResponse{Details: make(map[string]any)}
 
 	var driverName string
 	switch strings.ToLower(dbType) {
@@ -758,7 +758,7 @@ func (h *SetupHandler) hasRequiredConfig() bool {
 	return hasSource && hasDestination && hasDatabase
 }
 
-func (h *SetupHandler) sendJSON(w http.ResponseWriter, statusCode int, data interface{}) {
+func (h *SetupHandler) sendJSON(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {

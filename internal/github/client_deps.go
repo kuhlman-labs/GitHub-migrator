@@ -65,7 +65,7 @@ func (c *Client) GetDependencyGraph(ctx context.Context, owner, repo string) ([]
 	}
 
 	for {
-		variables := map[string]interface{}{
+		variables := map[string]any{
 			"owner":  githubv4.String(owner),
 			"name":   githubv4.String(repo),
 			"cursor": manifestCursor,
@@ -187,7 +187,7 @@ func (c *Client) paginateManifestDependencies(ctx context.Context, owner, repo, 
 		found := false
 
 		for {
-			variables := map[string]interface{}{
+			variables := map[string]any{
 				"owner":          githubv4.String(owner),
 				"name":           githubv4.String(repo),
 				"depCursor":      depCursor,

@@ -105,7 +105,7 @@ func TestAuthConfigResponse_Structure(t *testing.T) {
 		t.Fatalf("Failed to marshal response: %v", err)
 	}
 
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("Failed to unmarshal: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestAuthHandler_HandleAuthConfig(t *testing.T) {
 		t.Errorf("HandleAuthConfig returned status %d, want %d", w.Code, http.StatusOK)
 	}
 
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}

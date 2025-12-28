@@ -97,7 +97,7 @@ func TestGetDependencyGraph(t *testing.T) {
 			t.Errorf("Expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
 		}
 
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -91,7 +92,7 @@ func (d *Database) DeleteBatch(ctx context.Context, batchID int64) error {
 		now := time.Now().UTC()
 		result := tx.Model(&models.Repository{}).
 			Where("batch_id = ?", batchID).
-			Updates(map[string]interface{}{
+			Updates(map[string]any{
 				"batch_id":   nil,
 				"updated_at": now,
 			})
@@ -134,7 +135,7 @@ func (d *Database) UpdateBatchMigrationAttemptTimestamp(ctx context.Context, bat
 // UpdateBatchProgress updates batch status and operational timestamps without affecting user-configured fields using GORM
 // This preserves scheduled_at and other user-set fields while updating execution state
 func (d *Database) UpdateBatchProgress(ctx context.Context, batchID int64, status string, startedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"status": status,
 	}
 
@@ -168,7 +169,7 @@ func (d *Database) AddRepositoriesToBatch(ctx context.Context, batchID int64, re
 	now := time.Now().UTC()
 	result := d.db.WithContext(ctx).Model(&models.Repository{}).
 		Where("id IN ?", repoIDs).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"batch_id":   batchID,
 			"updated_at": now,
 		})
@@ -201,7 +202,7 @@ func (d *Database) RemoveRepositoriesFromBatch(ctx context.Context, batchID int6
 	now := time.Now().UTC()
 	result := d.db.WithContext(ctx).Model(&models.Repository{}).
 		Where("batch_id = ? AND id IN ?", batchID, repoIDs).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"batch_id":   nil,
 			"updated_at": now,
 		})
@@ -249,7 +250,7 @@ func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64
 // Batch is 'pending' if ANY repository hasn't completed a dry run
 func (d *Database) UpdateBatchStatus(ctx context.Context, batchID int64) error {
 	// Get all repositories in the batch
-	repos, err := d.ListRepositories(ctx, map[string]interface{}{
+	repos, err := d.ListRepositories(ctx, map[string]any{
 		"batch_id": batchID,
 	})
 	if err != nil {
@@ -267,11 +268,9 @@ func (d *Database) UpdateBatchStatus(ctx context.Context, batchID int64) error {
 
 	// Don't update status if batch is in progress or completed
 	terminalStates := []string{"in_progress", "completed", "completed_with_errors", "failed", "cancelled"}
-	for _, state := range terminalStates {
-		if batch.Status == state {
-			// Batch is actively running or finished, don't change status
-			return nil
-		}
+	if slices.Contains(terminalStates, batch.Status) {
+		// Batch is actively running or finished, don't change status
+		return nil
 	}
 
 	// Calculate new status based on repository dry run status

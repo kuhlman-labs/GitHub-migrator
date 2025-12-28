@@ -108,7 +108,7 @@ func (d *Database) DB() *gorm.DB {
 // slogWriter adapts slog for GORM's logger interface
 type slogWriter struct{}
 
-func (w *slogWriter) Printf(format string, args ...interface{}) {
+func (w *slogWriter) Printf(format string, args ...any) {
 	slog.Info(fmt.Sprintf(format, args...))
 }
 
@@ -268,8 +268,8 @@ func splitSQLStatements(content string) []string {
 	var statements []string
 	var currentStmt strings.Builder
 
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(content, "\n")
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 
 		// Check for goose directives
@@ -345,7 +345,7 @@ func (d *Database) GetDistinctOrganizations(ctx context.Context) ([]string, erro
 }
 
 // CountRepositoriesWithFilters counts repositories matching the given filters using GORM
-func (d *Database) CountRepositoriesWithFilters(ctx context.Context, filters map[string]interface{}) (int, error) {
+func (d *Database) CountRepositoriesWithFilters(ctx context.Context, filters map[string]any) (int, error) {
 	var count int64
 
 	// Start with base query

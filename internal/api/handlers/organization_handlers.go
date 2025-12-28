@@ -79,7 +79,7 @@ func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		h.sendJSON(w, http.StatusOK, []interface{}{})
+		h.sendJSON(w, http.StatusOK, []any{})
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		projectStats := make([]interface{}, 0, len(projects))
+		projectStats := make([]any, 0, len(projects))
 		for _, project := range projects {
 			repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
 			if err != nil {
@@ -147,7 +147,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 
 			stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
 
-			projectStats = append(projectStats, map[string]interface{}{
+			projectStats = append(projectStats, map[string]any{
 				"organization":                  project.Name,
 				"ado_organization":              project.Organization,
 				"total_repos":                   repoCount,
@@ -183,7 +183,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if h.sourceType != models.SourceTypeAzureDevOps {
-		h.sendJSON(w, http.StatusOK, []interface{}{})
+		h.sendJSON(w, http.StatusOK, []any{})
 		return
 	}
 
@@ -197,7 +197,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectStats := make([]interface{}, 0, len(projects))
+	projectStats := make([]any, 0, len(projects))
 	for _, project := range projects {
 		repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
 		if err != nil {
@@ -207,7 +207,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 		stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
 
-		projectStats = append(projectStats, map[string]interface{}{
+		projectStats = append(projectStats, map[string]any{
 			"organization":                  project.Name,
 			"ado_organization":              project.Organization,
 			"project":                       project.Name,

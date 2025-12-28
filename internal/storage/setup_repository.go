@@ -46,7 +46,7 @@ func (d *Database) MarkSetupComplete() error {
 	now := time.Now()
 	result := d.db.Model(&SetupStatus{}).
 		Where("id = ?", 1).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"setup_completed": true,
 			"completed_at":    now,
 			"updated_at":      now,
@@ -64,7 +64,7 @@ func (d *Database) ResetSetup() error {
 	now := time.Now()
 	result := d.db.Model(&SetupStatus{}).
 		Where("id = ?", 1).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"setup_completed": false,
 			"completed_at":    nil,
 			"updated_at":      now,

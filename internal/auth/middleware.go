@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -107,13 +108,7 @@ func (m *Middleware) RequireRole(role string) func(http.Handler) http.Handler {
 			}
 
 			// Check if user has required role
-			hasRole := false
-			for _, userRole := range claims.Roles {
-				if userRole == role {
-					hasRole = true
-					break
-				}
-			}
+			hasRole := slices.Contains(claims.Roles, role)
 
 			if !hasRole {
 				m.respondForbidden(w, "Insufficient permissions")

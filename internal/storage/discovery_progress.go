@@ -119,7 +119,7 @@ func (d *Database) MarkDiscoveryComplete(id int64) error {
 	now := time.Now()
 	result := d.db.Model(&models.DiscoveryProgress{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":       models.DiscoveryStatusCompleted,
 			"completed_at": now,
 			"phase":        models.PhaseCompleted,
@@ -141,7 +141,7 @@ func (d *Database) MarkDiscoveryFailed(id int64, errorMsg string) error {
 	now := time.Now()
 	result := d.db.Model(&models.DiscoveryProgress{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":       models.DiscoveryStatusFailed,
 			"completed_at": now,
 			"last_error":   errorMsg,
@@ -162,7 +162,7 @@ func (d *Database) MarkDiscoveryFailed(id int64, errorMsg string) error {
 func (d *Database) IncrementDiscoveryError(id int64, errorMsg string) error {
 	result := d.db.Model(&models.DiscoveryProgress{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"error_count": gorm.Expr("error_count + 1"),
 			"last_error":  errorMsg,
 		})
@@ -191,7 +191,7 @@ func (d *Database) UpdateDiscoveryPhase(id int64, phase string) error {
 func (d *Database) UpdateDiscoveryOrgProgress(id int64, currentOrg string, processedOrgs, totalOrgs int) error {
 	result := d.db.Model(&models.DiscoveryProgress{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"current_org":    currentOrg,
 			"processed_orgs": processedOrgs,
 			"total_orgs":     totalOrgs,
@@ -208,7 +208,7 @@ func (d *Database) UpdateDiscoveryOrgProgress(id int64, currentOrg string, proce
 func (d *Database) UpdateDiscoveryRepoProgress(id int64, processedRepos, totalRepos int) error {
 	result := d.db.Model(&models.DiscoveryProgress{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"processed_repos": processedRepos,
 			"total_repos":     totalRepos,
 		})

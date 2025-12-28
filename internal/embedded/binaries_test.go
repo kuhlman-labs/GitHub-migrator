@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -186,13 +187,7 @@ func TestPlatformDetection(t *testing.T) {
 		}
 
 		if archs, ok := supportedPlatforms[goos]; ok {
-			supported := false
-			for _, arch := range archs {
-				if arch == goarch {
-					supported = true
-					break
-				}
-			}
+			supported := slices.Contains(archs, goarch)
 			if !supported {
 				t.Logf("Current architecture %s not in supported list for %s", goarch, goos)
 			}
@@ -301,8 +296,7 @@ func BenchmarkGetGitSizerPath(b *testing.B) {
 	// First call to initialize
 	GetGitSizerPath()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = GetGitSizerPath()
 	}
 }
@@ -311,8 +305,8 @@ func BenchmarkGetGitSizerPath(b *testing.B) {
 func BenchmarkExtractGitSizer(b *testing.B) {
 	// Note: This benchmark only tests the first extraction due to caching
 	// Subsequent calls will use the cached path
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_, _ = extractGitSizer()
 	}
 }

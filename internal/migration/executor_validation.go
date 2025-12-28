@@ -13,10 +13,10 @@ import (
 
 // ValidationMismatch represents a mismatch between source and destination repository characteristics
 type ValidationMismatch struct {
-	Field       string      `json:"field"`
-	SourceValue interface{} `json:"source_value"`
-	DestValue   interface{} `json:"dest_value"`
-	Critical    bool        `json:"critical"` // Whether this mismatch is critical (affects migration success)
+	Field       string `json:"field"`
+	SourceValue any    `json:"source_value"`
+	DestValue   any    `json:"dest_value"`
+	Critical    bool   `json:"critical"` // Whether this mismatch is critical (affects migration success)
 }
 
 // validatePreMigration performs pre-migration validation
