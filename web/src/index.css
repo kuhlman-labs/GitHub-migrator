@@ -712,6 +712,22 @@ input[type="checkbox"]:not(.custom-checkbox) {
   background-color: var(--accent-subtle, rgba(56, 139, 253, 0.15)) !important;
 }
 
+/* Button content left alignment - for buttons with icons that need to align */
+/* Targets Primer React Button component with justify-start class */
+button.justify-start,
+.justify-start[class*="prc-Button"],
+.justify-start[class*="ButtonBase"] {
+  justify-content: flex-start !important;
+}
+
+/* Also target the internal button content container */
+button.justify-start > span,
+.justify-start[class*="prc-Button"] > span,
+.justify-start[class*="ButtonBase"] > span {
+  justify-content: flex-start !important;
+  width: 100%;
+}
+
 [data-color-mode="dark"] .btn-secondary,
 .dark .btn-secondary {
   background-color: var(--control-bgColor-rest, #21262d) !important;
