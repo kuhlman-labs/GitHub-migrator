@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { UnderlineNav } from '@primer/react';
-import { AlertIcon } from '@primer/octicons-react';
+import { Blankslate } from '@primer/react/experimental';
+import { AlertIcon, GitBranchIcon } from '@primer/octicons-react';
 import { api } from '../../services/api';
 import type { DependencyGraphResponse } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -315,19 +316,16 @@ export function Dependencies() {
 
       {/* Show global empty state only when there's no data at all */}
       {!hasAnyData ? (
-        <div 
-          className="rounded-lg p-6"
-          style={{
-            backgroundColor: 'var(--accent-subtle)',
-            border: '1px solid var(--borderColor-accent-muted)'
-          }}
-        >
-          <h4 className="font-medium mb-2" style={{ color: 'var(--fgColor-accent)' }}>No Local Dependencies Found</h4>
-          <p className="text-sm" style={{ color: 'var(--fgColor-accent)' }}>
-            No local dependencies have been detected between repositories in your enterprise. 
+        <Blankslate border>
+          <Blankslate.Visual>
+            <GitBranchIcon size={48} />
+          </Blankslate.Visual>
+          <Blankslate.Heading>No local dependencies found</Blankslate.Heading>
+          <Blankslate.Description>
+            No local dependencies have been detected between repositories in your enterprise.
             Dependencies are discovered during repository profiling (submodules, workflow references, dependency graph).
-          </p>
-        </div>
+          </Blankslate.Description>
+        </Blankslate>
       ) : (
         <>
           {/* Circular Dependencies Filter Indicator */}
@@ -392,15 +390,21 @@ export function Dependencies() {
             <div className="p-6">
               {/* Show filter-specific empty state when current filter has no results */}
               {!hasFilteredData ? (
-                <div className="text-center py-8">
-                  <p className="text-lg mb-2" style={{ color: 'var(--fgColor-default)' }}>
-                    No {typeFilter === 'dependency_graph' ? 'Dependency Graph' : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)} Dependencies Found
-                  </p>
-                  <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                <Blankslate>
+                  <Blankslate.Visual>
+                    <GitBranchIcon size={48} />
+                  </Blankslate.Visual>
+                  <Blankslate.Heading>
+                    No {typeFilter === 'dependency_graph' ? 'Dependency Graph' : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)} dependencies found
+                  </Blankslate.Heading>
+                  <Blankslate.Description>
                     No local dependencies of type "{typeFilter.replace('_', ' ')}" have been detected.
-                    Try selecting a different dependency type or click "All Types" to see all dependencies.
-                  </p>
-                </div>
+                    Try selecting a different dependency type.
+                  </Blankslate.Description>
+                  <Blankslate.PrimaryAction onClick={() => setTypeFilter('all')}>
+                    Show All Types
+                  </Blankslate.PrimaryAction>
+                </Blankslate>
               ) : viewMode === 'list' ? (
                 <DependencyListView 
                   nodes={paginatedNodes}

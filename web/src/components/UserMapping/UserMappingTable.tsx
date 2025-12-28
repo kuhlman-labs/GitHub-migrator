@@ -8,6 +8,7 @@ import {
   Spinner,
   FormControl,
 } from '@primer/react';
+import { Blankslate } from '@primer/react/experimental';
 import { BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
 import {
   PersonIcon,
@@ -706,10 +707,23 @@ export function UserMappingTable() {
               })}
               {mappings.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center">
-                    <span style={{ color: 'var(--fgColor-muted)' }}>
-                      No users found. Run discovery to discover organization members.
-                    </span>
+                  <td colSpan={6} className="p-8">
+                    <Blankslate>
+                      <Blankslate.Visual>
+                        <PersonIcon size={48} />
+                      </Blankslate.Visual>
+                      <Blankslate.Heading>No users found</Blankslate.Heading>
+                      <Blankslate.Description>
+                        {search || filters.status || filters.sourceOrg
+                          ? 'Try adjusting your search or filters to find users.'
+                          : 'No users have been discovered yet. Start by discovering organization members.'}
+                      </Blankslate.Description>
+                      {!search && !filters.status && !filters.sourceOrg && (
+                        <Blankslate.PrimaryAction onClick={() => discoverDialog.open()}>
+                          Discover Org Members
+                        </Blankslate.PrimaryAction>
+                      )}
+                    </Blankslate>
                   </td>
                 </tr>
               )}

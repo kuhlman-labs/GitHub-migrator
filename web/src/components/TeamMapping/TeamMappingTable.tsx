@@ -8,6 +8,7 @@ import {
   Spinner,
   FormControl,
 } from '@primer/react';
+import { Blankslate } from '@primer/react/experimental';
 import { Button, BorderedButton, SuccessButton, PrimaryButton } from '../common/buttons';
 import {
   PeopleIcon,
@@ -866,10 +867,23 @@ export function TeamMappingTable() {
             })}
             {mappings.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-8 text-center">
-                  <span style={{ color: 'var(--fgColor-muted)' }}>
-                    No teams found. Run discovery to discover organization teams.
-                  </span>
+                <td colSpan={6} className="p-8">
+                  <Blankslate>
+                    <Blankslate.Visual>
+                      <PeopleIcon size={48} />
+                    </Blankslate.Visual>
+                    <Blankslate.Heading>No teams found</Blankslate.Heading>
+                    <Blankslate.Description>
+                      {search || filters.status || filters.sourceOrg
+                        ? 'Try adjusting your search or filters to find teams.'
+                        : 'No teams have been discovered yet. Start by discovering organization teams.'}
+                    </Blankslate.Description>
+                    {!search && !filters.status && !filters.sourceOrg && (
+                      <Blankslate.PrimaryAction onClick={() => discoverDialog.open()}>
+                        Discover Teams
+                      </Blankslate.PrimaryAction>
+                    )}
+                  </Blankslate>
                 </td>
               </tr>
             )}

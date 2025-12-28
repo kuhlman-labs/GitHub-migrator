@@ -332,9 +332,13 @@ export function Repositories() {
                   ? 'Try adjusting your filters to find repositories.'
                   : 'No repositories have been discovered yet. Start by discovering repositories from your organizations.'}
               </Blankslate.Description>
-              {activeFilterCount > 0 && (
+              {activeFilterCount > 0 ? (
                 <Blankslate.PrimaryAction onClick={clearAllFilters}>
                   Clear All Filters
+                </Blankslate.PrimaryAction>
+              ) : (
+                <Blankslate.PrimaryAction onClick={() => setShowDiscoverDialog(true)}>
+                  Discover Repos
                 </Blankslate.PrimaryAction>
               )}
             </Blankslate>
