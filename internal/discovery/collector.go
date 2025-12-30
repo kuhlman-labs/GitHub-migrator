@@ -28,6 +28,7 @@ type Collector struct {
 	sourceProvider  source.Provider
 	baseConfig      *github.ClientConfig // Base config for creating per-org clients (optional)
 	progressTracker ProgressTracker      // Optional progress tracker for UI visibility
+	sourceID        *int64               // Optional source ID to associate with discovered repos
 }
 
 // NewCollector creates a new repository collector
@@ -67,6 +68,16 @@ func (c *Collector) SetOrgDelay(delay time.Duration) {
 // SetProgressTracker sets the progress tracker for discovery operations
 func (c *Collector) SetProgressTracker(tracker ProgressTracker) {
 	c.progressTracker = tracker
+}
+
+// SetSourceID sets the source ID to associate with discovered repositories
+func (c *Collector) SetSourceID(sourceID *int64) {
+	c.sourceID = sourceID
+}
+
+// GetSourceID returns the current source ID (may be nil)
+func (c *Collector) GetSourceID() *int64 {
+	return c.sourceID
 }
 
 // getProgressTracker returns the progress tracker or a no-op if none is set
@@ -1186,6 +1197,11 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 			"has_oversized_commits", repo.HasOversizedCommits,
 			"has_long_refs", repo.HasLongRefs,
 			"has_blocking_files", repo.HasBlockingFiles)
+	}
+
+	// Associate with source if set
+	if c.sourceID != nil {
+		repo.SourceID = c.sourceID
 	}
 
 	// Save to database

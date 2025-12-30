@@ -6,6 +6,7 @@ import { ThemeProvider } from '@primer/react';
 import { Navigation } from './Navigation';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { AuthProvider } from '../../contexts/AuthContext';
+import { SourceProvider } from '../../contexts/SourceContext';
 
 // Mock the UserProfile component
 vi.mock('./UserProfile', () => ({
@@ -23,7 +24,9 @@ function createWrapper(initialEntries: string[] = ['/']) {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <ToastProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <SourceProvider>{children}</SourceProvider>
+            </AuthProvider>
           </ToastProvider>
         </ThemeProvider>
       </QueryClientProvider>

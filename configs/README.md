@@ -2,6 +2,28 @@
 
 Configuration templates for the GitHub Migrator application.
 
+## Multi-Source Support
+
+GitHub Migrator supports **multiple migration sources** that all migrate to a shared destination.
+You can configure sources in two ways:
+
+1. **Database-based sources** (Recommended) - Configure via the UI at `/sources`
+2. **Environment variables** (Legacy) - Single source via `.env` file
+
+### Database-based Sources (Multi-Source)
+
+After initial setup, navigate to the **Sources** page in the UI to add multiple GitHub or Azure DevOps sources. Each source stores its own connection credentials and can be managed independently.
+
+Benefits:
+- Configure multiple sources (e.g., GHES + ADO)
+- Manage sources via the web UI
+- Track repositories by source
+- No server restart required to add sources
+
+### Legacy Environment-Based Configuration
+
+For single-source setups, you can still use environment variables:
+
 ## Quick Start
 
 Choose templates based on your **source** system:

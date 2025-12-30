@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { api } from '../services/api';
 
 interface User {
@@ -9,6 +9,8 @@ interface User {
   email: string;
   avatar_url: string;
   roles?: string[];
+  source_id?: number;   // Present if user authenticated via a source
+  source_type?: string; // 'github' or 'azuredevops'
 }
 
 interface AuthConfig {
@@ -25,13 +27,25 @@ interface AuthConfig {
   };
 }
 
+/** Source available for authentication */
+export interface AuthSource {
+  id: number;
+  name: string;
+  type: 'github' | 'azuredevops';
+}
+
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   authEnabled: boolean;
   authConfig: AuthConfig | null;
-  login: () => void;
+  /** Sources with OAuth configured (for login page source selector) */
+  authSources: AuthSource[];
+  /** The source ID the user is currently authenticated against (null for destination auth) */
+  authenticatedSourceId: number | null;
+  /** Login with optional source ID (for source-scoped auth) */
+  login: (sourceId?: number) => void;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
 }
@@ -46,16 +60,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [authSources, setAuthSources] = useState<AuthSource[]>([]);
 
-  // Fetch auth configuration on mount
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const userData = await api.getCurrentUser();
+      setUser(userData);
+    } catch {
+      // Not authenticated or session expired
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Fetch auth configuration and sources on mount
   useEffect(() => {
     const fetchAuthConfig = async () => {
       try {
         const config = await api.getAuthConfig();
         setAuthConfig(config);
         
-        // If auth is enabled, try to get current user
+        // If auth is enabled, fetch available sources and current user
         if (config.enabled) {
+          // Fetch sources with OAuth configured
+          try {
+            const sources = await api.getAuthSources();
+            setAuthSources(sources || []);
+          } catch {
+            setAuthSources([]);
+          }
+          
           await fetchCurrentUser();
         } else {
           setIsLoading(false);
@@ -66,26 +101,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
 
     fetchAuthConfig();
+  }, [fetchCurrentUser]);
+
+  const login = useCallback((sourceId?: number) => {
+    // Redirect to backend OAuth login
+    if (sourceId) {
+      // Source-scoped login
+      window.location.href = `/api/v1/auth/login?source_id=${sourceId}`;
+    } else {
+      // Destination-based login (fallback)
+      window.location.href = '/api/v1/auth/login';
+    }
   }, []);
 
-  const fetchCurrentUser = async () => {
-    try {
-      const userData = await api.getCurrentUser();
-      setUser(userData);
-    } catch {
-      // Not authenticated or session expired
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const login = () => {
-    // Redirect to backend OAuth login
-    window.location.href = '/api/v1/auth/login';
-  };
-
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await api.logout();
       setUser(null);
@@ -96,13 +125,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       window.location.href = '/login';
     }
-  };
+  }, []);
 
-  const refreshAuth = async () => {
+  const refreshAuth = useCallback(async () => {
     if (authConfig?.enabled) {
       await fetchCurrentUser();
     }
-  };
+  }, [authConfig?.enabled, fetchCurrentUser]);
 
   const value: AuthContextType = {
     user,
@@ -110,6 +139,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isLoading,
     authEnabled: authConfig?.enabled || false,
     authConfig,
+    authSources,
+    authenticatedSourceId: user?.source_id ?? null,
     login,
     logout,
     refreshAuth,

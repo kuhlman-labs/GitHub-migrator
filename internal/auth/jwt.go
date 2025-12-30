@@ -27,8 +27,11 @@ type Claims struct {
 	Name        string   `json:"name"`
 	Email       string   `json:"email"`
 	AvatarURL   string   `json:"avatar_url"`
-	GitHubToken string   `json:"github_token"` // Encrypted
+	GitHubToken string   `json:"github_token"` // Encrypted OAuth token from source
 	Roles       []string `json:"roles,omitempty"`
+	// Source-scoped authentication fields
+	SourceID   *int64 `json:"source_id,omitempty"`   // Which source user authenticated against (nil for destination auth)
+	SourceType string `json:"source_type,omitempty"` // "github" or "azuredevops"
 	jwt.RegisteredClaims
 }
 
@@ -56,10 +59,21 @@ func NewJWTManager(secretKey string, sessionDurationHours int) (*JWTManager, err
 	}, nil
 }
 
+// SourceInfo contains optional source context for token generation
+type SourceInfo struct {
+	SourceID   int64
+	SourceType string // "github" or "azuredevops"
+}
+
 // GenerateToken creates a new JWT token for the user
 func (m *JWTManager) GenerateToken(user *GitHubUser, githubToken string) (string, error) {
-	// Encrypt GitHub token before storing in JWT
-	encryptedToken, err := m.encryptToken(githubToken)
+	return m.GenerateTokenWithSource(user, githubToken, nil)
+}
+
+// GenerateTokenWithSource creates a new JWT token for the user with optional source context
+func (m *JWTManager) GenerateTokenWithSource(user *GitHubUser, oauthToken string, sourceInfo *SourceInfo) (string, error) {
+	// Encrypt OAuth token before storing in JWT
+	encryptedToken, err := m.encryptToken(oauthToken)
 	if err != nil {
 		return "", fmt.Errorf("failed to encrypt token: %w", err)
 	}
@@ -79,6 +93,12 @@ func (m *JWTManager) GenerateToken(user *GitHubUser, githubToken string) (string
 			Issuer:    "github-migrator",
 			Subject:   user.Login,
 		},
+	}
+
+	// Add source context if provided
+	if sourceInfo != nil {
+		claims.SourceID = &sourceInfo.SourceID
+		claims.SourceType = sourceInfo.SourceType
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

@@ -30,11 +30,13 @@ type StartDiscoveryRequest struct {
 	Organization   string `json:"organization,omitempty"`
 	EnterpriseSlug string `json:"enterprise_slug,omitempty"`
 	Workers        int    `json:"workers,omitempty"`
+	SourceID       *int64 `json:"source_id,omitempty"` // Optional: associate discovered repos with a source
 }
 
 // StartProfilingRequest is the request body for starting repository profiling.
 type StartProfilingRequest struct {
 	Organization string `json:"organization"`
+	SourceID     *int64 `json:"source_id,omitempty"` // Optional: associate discovered repos with a source
 }
 
 // ===== User Mapping Handlers =====
@@ -130,6 +132,7 @@ type StartADODiscoveryRequest struct {
 	Organization string   `json:"organization"`
 	Projects     []string `json:"projects,omitempty"`
 	Workers      int      `json:"workers,omitempty"`
+	SourceID     *int64   `json:"source_id,omitempty"` // Optional: associate discovered repos with a source
 }
 
 // ===== Repository Handlers =====

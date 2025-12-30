@@ -13,9 +13,11 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/api"
 	"github.com/kuhlman-labs/github-migrator/internal/batch"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/logging"
 	"github.com/kuhlman-labs/github-migrator/internal/migration"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 	"github.com/kuhlman-labs/github-migrator/internal/worker"
 )
@@ -46,12 +48,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize ConfigService for dynamic configuration
+	cfgSvc, err := configsvc.New(db, cfg, logger)
+	if err != nil {
+		slog.Error("Failed to initialize config service", "error", err)
+		os.Exit(1)
+	}
+
+	// Migrate existing .env config to database if settings are empty
+	migrateEnvConfigToDatabase(db, cfg, logger)
+
 	// Initialize GitHub dual clients (PAT + optional App auth)
 	sourceDualClient := initializeSourceClient(cfg, logger)
 	destDualClient := initializeDestClient(cfg, logger)
 
 	// Create API server
 	server := api.NewServer(cfg, db, logger, sourceDualClient, destDualClient)
+
+	// Set ConfigService for dynamic settings management
+	server.SetConfigService(cfgSvc)
 
 	// Initialize migration executor and worker (if both clients are available)
 	migrationWorker := initializeMigrationWorker(cfg, sourceDualClient, destDualClient, db, logger)
@@ -416,4 +431,95 @@ func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualCli
 	slog.Info("Scheduler worker initialized - will check for scheduled batches every minute")
 
 	return schedulerWorker
+}
+
+// migrateEnvConfigToDatabase migrates existing .env configuration to the database settings table
+// This is called on startup to handle upgrades from the old single-source configuration
+func migrateEnvConfigToDatabase(db *storage.Database, cfg *config.Config, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Get current settings from database
+	settings, err := db.GetSettings(ctx)
+	if err != nil {
+		logger.Warn("Failed to get settings for migration check", "error", err)
+		return
+	}
+
+	// Only migrate if destination is not yet configured in database
+	if settings.HasDestination() {
+		logger.Debug("Destination already configured in database, skipping .env migration")
+		return
+	}
+
+	// Check if we have destination config in .env
+	if cfg.Destination.Token == "" && cfg.Destination.AppID == 0 {
+		logger.Debug("No destination configuration in .env to migrate")
+		return
+	}
+
+	logger.Info("Migrating destination configuration from .env to database")
+
+	// Build update request from .env config
+	req := &models.UpdateSettingsRequest{}
+
+	// Destination settings
+	if cfg.Destination.BaseURL != "" {
+		req.DestinationBaseURL = &cfg.Destination.BaseURL
+	}
+	if cfg.Destination.Token != "" {
+		req.DestinationToken = &cfg.Destination.Token
+	}
+	if cfg.Destination.AppID > 0 {
+		req.DestinationAppID = &cfg.Destination.AppID
+	}
+	if cfg.Destination.AppPrivateKey != "" {
+		req.DestinationAppPrivateKey = &cfg.Destination.AppPrivateKey
+	}
+	if cfg.Destination.AppInstallationID > 0 {
+		req.DestinationAppInstallationID = &cfg.Destination.AppInstallationID
+	}
+
+	// Migration settings
+	if cfg.Migration.Workers > 0 {
+		req.MigrationWorkers = &cfg.Migration.Workers
+	}
+	if cfg.Migration.PollIntervalSeconds > 0 {
+		req.MigrationPollIntervalSeconds = &cfg.Migration.PollIntervalSeconds
+	}
+	if cfg.Migration.DestRepoExistsAction != "" {
+		req.MigrationDestRepoExistsAction = &cfg.Migration.DestRepoExistsAction
+	}
+	if cfg.Migration.VisibilityHandling.PublicRepos != "" {
+		req.MigrationVisibilityPublic = &cfg.Migration.VisibilityHandling.PublicRepos
+	}
+	if cfg.Migration.VisibilityHandling.InternalRepos != "" {
+		req.MigrationVisibilityInternal = &cfg.Migration.VisibilityHandling.InternalRepos
+	}
+
+	// Auth settings
+	req.AuthEnabled = &cfg.Auth.Enabled
+	if cfg.Auth.SessionSecret != "" {
+		req.AuthSessionSecret = &cfg.Auth.SessionSecret
+	}
+	if cfg.Auth.SessionDurationHours > 0 {
+		req.AuthSessionDurationHours = &cfg.Auth.SessionDurationHours
+	}
+	if cfg.Auth.CallbackURL != "" {
+		req.AuthCallbackURL = &cfg.Auth.CallbackURL
+	}
+	if cfg.Auth.FrontendURL != "" {
+		req.AuthFrontendURL = &cfg.Auth.FrontendURL
+	}
+
+	// Apply the migration
+	if _, err := db.UpdateSettings(ctx, req); err != nil {
+		logger.Error("Failed to migrate .env config to database", "error", err)
+		return
+	}
+
+	logger.Info("Successfully migrated .env configuration to database",
+		"destination_base_url", cfg.Destination.BaseURL,
+		"migration_workers", cfg.Migration.Workers,
+		"auth_enabled", cfg.Auth.Enabled)
 }

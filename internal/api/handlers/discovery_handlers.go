@@ -55,6 +55,14 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		h.collector.SetWorkers(req.Workers)
 	}
 
+	// Set source ID if provided
+	if req.SourceID != nil {
+		h.collector.SetSourceID(req.SourceID)
+		h.logger.Info("Discovery will associate repos with source", "source_id", *req.SourceID)
+	} else {
+		h.collector.SetSourceID(nil)
+	}
+
 	// Determine discovery type and target
 	var discoveryType, target string
 	if req.EnterpriseSlug != "" {
@@ -227,6 +235,14 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set source ID if provided
+	if req.SourceID != nil {
+		h.collector.SetSourceID(req.SourceID)
+		h.logger.Info("Discovery will associate repos with source", "source_id", *req.SourceID)
+	} else {
+		h.collector.SetSourceID(nil)
+	}
+
 	// Start discovery asynchronously
 	go func() {
 		ctx := context.Background()
@@ -239,5 +255,6 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 		"message":      "Repository discovery started",
 		"organization": req.Organization,
 		"status":       models.DiscoveryStatusInProgress,
+		"source_id":    req.SourceID,
 	})
 }

@@ -68,8 +68,11 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 			collector.WithBaseConfig(*sourceBaseConfig)
 		}
 	}
+	handlerUtils := NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger)
+	handlerUtils.SetDatabase(db)
+
 	return &Handler{
-		HandlerUtils:   NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
+		HandlerUtils:   handlerUtils,
 		db:             db,
 		logger:         logger,
 		destDualClient: destDualClient,

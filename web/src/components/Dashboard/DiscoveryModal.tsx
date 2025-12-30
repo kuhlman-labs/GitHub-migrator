@@ -1,5 +1,6 @@
-import { Button, TextInput, Flash, FormControl } from '@primer/react';
+import { Button, TextInput, Flash, FormControl, Select } from '@primer/react';
 import { FormDialog } from '../common/FormDialog';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 export type DiscoveryType = 'organization' | 'enterprise' | 'ado-org' | 'ado-project';
 
@@ -18,8 +19,12 @@ export interface DiscoveryModalProps {
   setAdoProject: (project: string) => void;
   loading: boolean;
   error: string | null;
-  onStart: () => void;
+  onStart: (sourceId?: number) => void;
   onClose: () => void;
+  /** Optional: pre-selected source ID */
+  selectedSourceId?: number | null;
+  /** Optional: callback when source selection changes */
+  onSourceChange?: (sourceId: number | null) => void;
 }
 
 /**
@@ -43,19 +48,38 @@ export function DiscoveryModal({
   error,
   onStart,
   onClose,
+  selectedSourceId,
+  onSourceChange,
 }: DiscoveryModalProps) {
+  const { sources } = useSourceContext();
+  
+  // Filter sources by type matching the current sourceType
+  const availableSources = sources.filter(s => 
+    (sourceType === 'github' && s.type === 'github') ||
+    (sourceType === 'azuredevops' && s.type === 'azuredevops')
+  );
+  
   const isFormValid =
     (discoveryType === 'organization' && organization.trim()) ||
     (discoveryType === 'enterprise' && enterpriseSlug.trim()) ||
     (discoveryType === 'ado-org' && adoOrganization.trim()) ||
     (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim());
+  
+  const handleSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    onSourceChange?.(value ? parseInt(value, 10) : null);
+  };
+  
+  const handleStart = () => {
+    onStart(selectedSourceId ?? undefined);
+  };
 
   return (
     <FormDialog
       isOpen={isOpen}
       title="Start Repository Discovery"
       submitLabel={loading ? 'Starting...' : 'Start Discovery'}
-      onSubmit={onStart}
+      onSubmit={handleStart}
       onCancel={onClose}
       isLoading={loading}
       isSubmitDisabled={!isFormValid}
@@ -65,6 +89,28 @@ export function DiscoveryModal({
         <Flash variant="danger" className="mb-3">
           {error}
         </Flash>
+      )}
+
+      {/* Source Selection - show if multiple sources of this type exist */}
+      {availableSources.length > 1 && onSourceChange && (
+        <FormControl className="mb-3">
+          <FormControl.Label>Associate with Source</FormControl.Label>
+          <Select 
+            value={selectedSourceId?.toString() || ''} 
+            onChange={handleSourceChange}
+            disabled={loading}
+          >
+            <Select.Option value="">Default (use current config)</Select.Option>
+            {availableSources.map(source => (
+              <Select.Option key={source.id} value={source.id.toString()}>
+                {source.name} ({source.repository_count} repos)
+              </Select.Option>
+            ))}
+          </Select>
+          <FormControl.Caption>
+            Discovered repositories will be associated with this source.
+          </FormControl.Caption>
+        </FormControl>
       )}
 
       <FormControl className="mb-3">

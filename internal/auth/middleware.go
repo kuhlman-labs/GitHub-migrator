@@ -154,6 +154,25 @@ func GetClaimsFromContext(ctx context.Context) (*Claims, bool) {
 	return claims, ok
 }
 
+// GetSourceIDFromContext retrieves the authenticated source ID from context
+// Returns nil if user authenticated via destination OAuth (not source-scoped)
+func GetSourceIDFromContext(ctx context.Context) *int64 {
+	claims, ok := GetClaimsFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	return claims.SourceID
+}
+
+// GetSourceTypeFromContext retrieves the authenticated source type from context
+func GetSourceTypeFromContext(ctx context.Context) string {
+	claims, ok := GetClaimsFromContext(ctx)
+	if !ok {
+		return ""
+	}
+	return claims.SourceType
+}
+
 // ExtractBearerToken extracts a bearer token from the Authorization header
 func ExtractBearerToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")

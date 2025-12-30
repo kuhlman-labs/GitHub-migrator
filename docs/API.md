@@ -15,6 +15,7 @@ The GitHub Migrator provides a comprehensive REST API for managing repository di
 - [Configuration](#configuration)
 - [Authentication](#authentication)
 - [Setup](#setup)
+- [Sources](#sources)
 - [Discovery](#discovery)
 - [Repositories](#repositories)
 - [Organizations & Projects](#organizations--projects)
@@ -195,6 +196,158 @@ Validate database connection.
 ### POST /api/v1/setup/apply
 
 Apply configuration and write env file.
+
+---
+
+## Sources
+
+Multi-source configuration endpoints for managing GitHub and Azure DevOps migration sources.
+Sources allow configuring multiple source systems that all migrate to a shared destination.
+
+### GET /api/v1/sources
+
+List all configured sources.
+
+**Query Parameters:**
+- `active` (boolean, optional) - If `true`, only return active sources
+
+**Response 200 OK:**
+```json
+[
+  {
+    "id": 1,
+    "name": "GHES Production",
+    "type": "github",
+    "base_url": "https://github.company.com/api/v3",
+    "has_app_auth": false,
+    "is_active": true,
+    "repository_count": 150,
+    "last_sync_at": "2024-12-28T10:30:00Z",
+    "created_at": "2024-12-01T09:00:00Z",
+    "updated_at": "2024-12-28T10:30:00Z",
+    "masked_token": "ghp_...xxxx"
+  }
+]
+```
+
+### POST /api/v1/sources
+
+Create a new source.
+
+**Request Body:**
+```json
+{
+  "name": "GHES Production",
+  "type": "github",
+  "base_url": "https://github.company.com/api/v3",
+  "token": "ghp_xxxxxxxxxxxxxxxxxxxx",
+  "organization": "my-org"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| name | string | Yes | Unique, user-friendly name for this source |
+| type | string | Yes | Source type: `github` or `azuredevops` |
+| base_url | string | Yes | API base URL for the source |
+| token | string | Yes | Personal Access Token |
+| organization | string | ADO only | Required for Azure DevOps sources |
+| app_id | number | No | GitHub App ID for App authentication |
+| app_private_key | string | No | GitHub App private key |
+| app_installation_id | number | No | GitHub App installation ID |
+
+**Response 201 Created:**
+```json
+{
+  "id": 1,
+  "name": "GHES Production",
+  "type": "github",
+  "base_url": "https://github.company.com/api/v3",
+  "is_active": true,
+  "repository_count": 0,
+  "created_at": "2024-12-29T09:00:00Z",
+  "updated_at": "2024-12-29T09:00:00Z",
+  "masked_token": "ghp_...xxxx"
+}
+```
+
+### GET /api/v1/sources/{id}
+
+Get a single source by ID.
+
+**Response 200 OK:** Source object (same format as list response)
+
+### PUT /api/v1/sources/{id}
+
+Update an existing source.
+
+**Request Body:** Same as create, all fields optional
+
+**Response 200 OK:** Updated source object
+
+### DELETE /api/v1/sources/{id}
+
+Delete a source. Fails if repositories are associated with the source.
+
+**Response 204 No Content:** Success
+**Response 409 Conflict:** Source has associated repositories
+
+### POST /api/v1/sources/validate
+
+Validate a source connection with inline credentials.
+
+**Request Body:**
+```json
+{
+  "type": "github",
+  "base_url": "https://api.github.com",
+  "token": "ghp_xxxxxxxxxxxx",
+  "organization": "my-org"
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "valid": true,
+  "details": {
+    "authenticated_user": "admin",
+    "connection_status": "connected"
+  }
+}
+```
+
+### POST /api/v1/sources/{id}/validate
+
+Validate connection using stored source credentials.
+
+**Response 200 OK:** Same as inline validation
+
+### POST /api/v1/sources/{id}/set-active
+
+Set a source's active/inactive status.
+
+**Request Body:**
+```json
+{
+  "is_active": true
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "success": true,
+  "source_id": 1,
+  "is_active": true
+}
+```
+
+### GET /api/v1/sources/{id}/repositories
+
+Get all repositories associated with a source.
+
+**Response 200 OK:** Array of Repository objects
 
 ---
 

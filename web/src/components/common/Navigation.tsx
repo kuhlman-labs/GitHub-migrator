@@ -1,7 +1,9 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { TextInput } from '@primer/react';
-import { MarkGithubIcon, SearchIcon } from '@primer/octicons-react';
+import { MarkGithubIcon, SearchIcon, GearIcon } from '@primer/octicons-react';
+import { IconButton } from '@primer/react';
 import { UserProfile } from './UserProfile';
+import { SourceSelector } from './SourceSelector';
 
 export function Navigation() {
   const location = useLocation();
@@ -242,6 +244,9 @@ export function Navigation() {
           
             {/* Navigation End */}
           <div className="flex items-center gap-4">
+            {/* Source Selector */}
+            <SourceSelector />
+            
             {/* Context-Aware Global Search */}
             {searchContext.isSearchable && (
               <TextInput
@@ -252,6 +257,13 @@ export function Navigation() {
                 style={{ width: 300 }}
               />
             )}
+            <Link to="/settings">
+              <IconButton 
+                icon={GearIcon} 
+                aria-label="Settings"
+                variant="invisible"
+              />
+            </Link>
             <UserProfile />
           </div>
         </div>

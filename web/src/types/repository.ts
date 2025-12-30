@@ -7,6 +7,7 @@ export interface Repository {
   full_name: string;
   source: string;
   source_url: string;
+  source_id?: number; // Foreign key to sources table
   total_size: number;
   largest_file?: string;
   largest_file_size?: number;

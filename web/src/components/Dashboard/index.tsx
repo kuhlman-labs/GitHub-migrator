@@ -3,12 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { PrimaryButton } from '../common/buttons';
 import { useToast } from '../../contexts/ToastContext';
 import { Blankslate } from '@primer/react/experimental';
+import { Flash } from '@primer/react';
 import { RepoIcon, TelescopeIcon } from '@primer/octicons-react';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
-import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems, useDiscoveryProgress, useConfig } from '../../hooks/useQueries';
+import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems, useDiscoveryProgress, useConfig, useSetupProgress } from '../../hooks/useQueries';
 import { useStartDiscovery, useStartADODiscovery } from '../../hooks/useMutations';
+import { useSourceContext } from '../../contexts/SourceContext';
 import { KPISection } from './KPISection';
 import { ActionItemsPanel } from './ActionItemsPanel';
 import { GitHubOrganizationCard } from './GitHubOrganizationCard';
@@ -16,6 +18,7 @@ import { ADOOrganizationCard } from './ADOOrganizationCard';
 import { UpcomingBatchesTimeline } from './UpcomingBatchesTimeline';
 import { DiscoveryProgressCard, LastDiscoveryIndicator } from './DiscoveryProgressCard';
 import { DiscoveryModal, type DiscoveryType } from './DiscoveryModal';
+import { SetupProgress } from './SetupProgress';
 
 // Polling intervals based on activity level
 const POLLING_INTERVALS = {
@@ -33,7 +36,11 @@ export function Dashboard() {
   // Use React Query for config
   const { data: config } = useConfig();
   const { showSuccess } = useToast();
+  const { activeSource } = useSourceContext();
   const sourceType = config?.source_type || 'github';
+  
+  // Fetch setup progress for guided empty states
+  const { data: setupProgress } = useSetupProgress();
   
   // Track if there are active migrations to adjust polling intervals
   const [hasActiveMigrations, setHasActiveMigrations] = useState(false);
@@ -247,6 +254,24 @@ export function Dashboard() {
         </div>
       </div>
 
+
+      {/* Setup Progress - guided empty states for initial configuration */}
+      {setupProgress && !setupProgress.setup_complete && (
+        <SetupProgress
+          destinationConfigured={setupProgress.destination_configured}
+          sourcesConfigured={setupProgress.sources_configured}
+          sourceCount={setupProgress.source_count}
+          batchesCreated={setupProgress.batches_created}
+          batchCount={setupProgress.batch_count}
+        />
+      )}
+      
+      {/* Active Source Filter Indicator */}
+      {activeSource && (
+        <Flash variant="default" className="mb-4">
+          Showing data from: <strong>{activeSource.name}</strong> ({activeSource.type === 'github' ? 'GitHub' : 'Azure DevOps'})
+        </Flash>
+      )}
 
       {/* Discovery Progress Card - shown when discovery is active or recently completed */}
       {discoveryProgress && (

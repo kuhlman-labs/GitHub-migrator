@@ -45,6 +45,7 @@ type Repository struct {
 	FullName  string `json:"full_name" db:"full_name" gorm:"column:full_name;uniqueIndex;not null"` // org/repo
 	Source    string `json:"source" db:"source" gorm:"column:source;not null"`                      // "ghes", "gitlab", etc.
 	SourceURL string `json:"source_url" db:"source_url" gorm:"column:source_url;not null"`
+	SourceID  *int64 `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table
 
 	// Git properties
 	TotalSize          *int64     `json:"total_size,omitempty" db:"total_size" gorm:"column:total_size"`

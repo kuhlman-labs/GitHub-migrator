@@ -13,6 +13,7 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/source"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
@@ -25,7 +26,10 @@ type Server struct {
 	handler             *handlers.Handler
 	authHandler         *handlers.AuthHandler
 	adoHandler          *handlers.ADOHandler
+	sourceHandler       *handlers.SourceHandler
+	settingsHandler     *handlers.SettingsHandler
 	entraIDOAuthHandler *auth.EntraIDOAuthHandler
+	configSvc           *configsvc.Service
 	shutdownChan        chan struct{}
 }
 
@@ -106,6 +110,15 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		}
 	}
 
+	// Create source handler for multi-source management
+	sourceHandler := handlers.NewSourceHandler(db, logger)
+
+	// Wire up auth handler with source store for source-scoped authentication
+	if authHandler != nil {
+		authHandler.SetSourceStore(db)
+		logger.Info("Source-scoped authentication enabled")
+	}
+
 	return &Server{
 		config:              cfg,
 		db:                  db,
@@ -113,6 +126,7 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		handler:             mainHandler,
 		authHandler:         authHandler,
 		adoHandler:          adoHandler,
+		sourceHandler:       sourceHandler,
 		entraIDOAuthHandler: entraIDOAuthHandler,
 		shutdownChan:        make(chan struct{}),
 	}
@@ -121,6 +135,18 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 // ShutdownChan returns the shutdown channel for graceful server shutdown
 func (s *Server) ShutdownChan() chan struct{} {
 	return s.shutdownChan
+}
+
+// SetConfigService sets the dynamic configuration service and creates the settings handler
+func (s *Server) SetConfigService(configSvc *configsvc.Service) {
+	s.configSvc = configSvc
+	s.settingsHandler = handlers.NewSettingsHandler(s.db, s.logger, configSvc)
+	s.logger.Info("Settings handler initialized with ConfigService")
+}
+
+// GetConfigService returns the dynamic configuration service
+func (s *Server) GetConfigService() *configsvc.Service {
+	return s.configSvc
 }
 
 func (s *Server) Router() http.Handler {
@@ -139,6 +165,7 @@ func (s *Server) Router() http.Handler {
 		mux.HandleFunc("GET /api/v1/auth/login", s.authHandler.HandleLogin)
 		mux.HandleFunc("GET /api/v1/auth/callback", s.authHandler.HandleCallback)
 		mux.HandleFunc("GET /api/v1/auth/config", s.authHandler.HandleAuthConfig)
+		mux.HandleFunc("GET /api/v1/auth/sources", s.authHandler.HandleAuthSources)
 
 		// Protected auth endpoints (require authentication)
 		if authMiddleware != nil {
@@ -173,6 +200,14 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/setup/validate-database", setupHandler.ValidateDatabase)
 	mux.HandleFunc("POST /api/v1/setup/apply", setupHandler.ApplySetup)
 
+	// Settings endpoints (public for setup progress, protected for updates)
+	if s.settingsHandler != nil {
+		// Public endpoints for dashboard setup progress
+		mux.HandleFunc("GET /api/v1/settings/setup-progress", s.settingsHandler.GetSetupProgress)
+		mux.HandleFunc("GET /api/v1/settings", s.settingsHandler.GetSettings)
+		mux.HandleFunc("POST /api/v1/settings/destination/validate", s.settingsHandler.ValidateDestination)
+	}
+
 	// Helper to conditionally wrap with auth
 	protect := func(pattern string, handler http.HandlerFunc) {
 		if authMiddleware != nil {
@@ -180,6 +215,11 @@ func (s *Server) Router() http.Handler {
 		} else {
 			mux.HandleFunc(pattern, handler)
 		}
+	}
+
+	// Protected settings endpoints
+	if s.settingsHandler != nil {
+		protect("PUT /api/v1/settings", s.settingsHandler.UpdateSettings)
 	}
 
 	// Discovery endpoints
@@ -295,6 +335,17 @@ func (s *Server) Router() http.Handler {
 
 	// Self-service endpoints
 	protect("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)
+
+	// Source management endpoints (multi-source support)
+	protect("GET /api/v1/sources", s.sourceHandler.ListSources)
+	protect("POST /api/v1/sources", s.sourceHandler.CreateSource)
+	protect("POST /api/v1/sources/validate", s.sourceHandler.ValidateSource)
+	protect("GET /api/v1/sources/{id}", s.sourceHandler.GetSource)
+	protect("PUT /api/v1/sources/{id}", s.sourceHandler.UpdateSource)
+	protect("DELETE /api/v1/sources/{id}", s.sourceHandler.DeleteSource)
+	protect("POST /api/v1/sources/{id}/validate", s.sourceHandler.ValidateSource)
+	protect("POST /api/v1/sources/{id}/set-active", s.sourceHandler.SetSourceActive)
+	protect("GET /api/v1/sources/{id}/repositories", s.sourceHandler.GetSourceRepositories)
 
 	// Serve static frontend files for SPA
 	mux.HandleFunc("/", s.serveFrontend)

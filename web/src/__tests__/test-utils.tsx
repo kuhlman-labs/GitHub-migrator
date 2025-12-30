@@ -8,6 +8,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@primer/react';
 import { ToastProvider } from '../contexts/ToastContext';
+import { SourceProvider } from '../contexts/SourceContext';
 
 // Create a new QueryClient for each test to avoid shared state
 function createTestQueryClient() {
@@ -36,7 +37,9 @@ function AllProviders({ children }: AllProvidersProps) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <BrowserRouter>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            <SourceProvider>{children}</SourceProvider>
+          </ToastProvider>
         </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>

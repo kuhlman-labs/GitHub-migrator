@@ -1,0 +1,97 @@
+import { client } from './client';
+
+// Settings types
+export interface SettingsResponse {
+  id: number;
+  destination_base_url: string;
+  destination_token_configured: boolean;
+  destination_app_id?: number;
+  destination_app_key_configured: boolean;
+  destination_app_installation_id?: number;
+  migration_workers: number;
+  migration_poll_interval_seconds: number;
+  migration_dest_repo_exists_action: string;
+  migration_visibility_public: string;
+  migration_visibility_internal: string;
+  auth_enabled: boolean;
+  auth_session_secret_set: boolean;
+  auth_session_duration_hours: number;
+  auth_callback_url?: string;
+  auth_frontend_url: string;
+  destination_configured: boolean;
+  updated_at: string;
+}
+
+export interface SetupProgressResponse {
+  destination_configured: boolean;
+  sources_configured: boolean;
+  source_count: number;
+  batches_created: boolean;
+  batch_count: number;
+  setup_complete: boolean;
+}
+
+export interface UpdateSettingsRequest {
+  destination_base_url?: string;
+  destination_token?: string;
+  destination_app_id?: number;
+  destination_app_private_key?: string;
+  destination_app_installation_id?: number;
+  migration_workers?: number;
+  migration_poll_interval_seconds?: number;
+  migration_dest_repo_exists_action?: string;
+  migration_visibility_public?: string;
+  migration_visibility_internal?: string;
+  auth_enabled?: boolean;
+  auth_session_secret?: string;
+  auth_session_duration_hours?: number;
+  auth_callback_url?: string;
+  auth_frontend_url?: string;
+}
+
+export interface ValidateDestinationRequest {
+  base_url: string;
+  token: string;
+  app_id?: number;
+  app_private_key?: string;
+  app_installation_id?: number;
+}
+
+export interface ValidationResponse {
+  valid: boolean;
+  error?: string;
+  warnings?: string[];
+  details?: Record<string, unknown>;
+}
+
+// Get current settings (with sensitive data masked)
+export async function getSettings(): Promise<SettingsResponse> {
+  const response = await client.get<SettingsResponse>('/settings');
+  return response.data;
+}
+
+// Get setup progress for guided empty states
+export async function getSetupProgress(): Promise<SetupProgressResponse> {
+  const response = await client.get<SetupProgressResponse>('/settings/setup-progress');
+  return response.data;
+}
+
+// Update settings
+export async function updateSettings(request: UpdateSettingsRequest): Promise<SettingsResponse> {
+  const response = await client.put<SettingsResponse>('/settings', request);
+  return response.data;
+}
+
+// Validate destination connection
+export async function validateDestination(request: ValidateDestinationRequest): Promise<ValidationResponse> {
+  const response = await client.post<ValidationResponse>('/settings/destination/validate', request);
+  return response.data;
+}
+
+// Export as an object for consistency with other API modules
+export const settingsApi = {
+  getSettings,
+  getSetupProgress,
+  updateSettings,
+  validateDestination,
+};

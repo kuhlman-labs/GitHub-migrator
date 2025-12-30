@@ -320,6 +320,22 @@ export function useSetupStatus() {
   });
 }
 
+// Setup progress query for guided empty states
+export function useSetupProgress() {
+  return useQuery<{
+    destination_configured: boolean;
+    sources_configured: boolean;
+    source_count: number;
+    batches_created: boolean;
+    batch_count: number;
+    setup_complete: boolean;
+  }, Error>({
+    queryKey: ['setupProgress'],
+    queryFn: () => api.getSetupProgress(),
+    staleTime: 30000, // Refetch every 30 seconds
+  });
+}
+
 // Discovery progress query with polling
 export function useDiscoveryProgress(enabled = true) {
   return useQuery<DiscoveryProgress | null, Error>({

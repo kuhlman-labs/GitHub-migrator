@@ -112,3 +112,15 @@ export type {
   DiscoveryType,
   DiscoveryProgress,
 } from './common';
+
+// Source types (multi-source management)
+export type {
+  Source,
+  SourceType,
+  SourceFilter,
+  CreateSourceRequest,
+  UpdateSourceRequest,
+  ValidateSourceRequest,
+  SourceValidationResponse,
+  SetSourceActiveResponse,
+} from './source';
