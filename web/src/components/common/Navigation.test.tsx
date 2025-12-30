@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -5,12 +6,41 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@primer/react';
 import { Navigation } from './Navigation';
 import { ToastProvider } from '../../contexts/ToastContext';
-import { AuthProvider } from '../../contexts/AuthContext';
-import { SourceProvider } from '../../contexts/SourceContext';
 
 // Mock the UserProfile component
 vi.mock('./UserProfile', () => ({
   UserProfile: () => <div data-testid="user-profile">User Profile</div>,
+}));
+
+// Mock the SourceSelector component
+vi.mock('./SourceSelector', () => ({
+  SourceSelector: () => <div data-testid="source-selector">Source Selector</div>,
+}));
+
+// Mock AuthContext
+vi.mock('../../contexts/AuthContext', () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useAuth: () => ({
+    user: null,
+    isAuthenticated: false,
+    isLoading: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
+}));
+
+// Mock SourceContext
+vi.mock('../../contexts/SourceContext', () => ({
+  SourceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useSourceContext: () => ({
+    sources: [],
+    activeSourceFilter: 'all',
+    setActiveSourceFilter: vi.fn(),
+    activeSource: null,
+    isLoading: false,
+    error: null,
+    refetchSources: vi.fn(),
+  }),
 }));
 
 // Create a wrapper with custom initial route
@@ -24,9 +54,7 @@ function createWrapper(initialEntries: string[] = ['/']) {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <ToastProvider>
-            <AuthProvider>
-              <SourceProvider>{children}</SourceProvider>
-            </AuthProvider>
+            {children}
           </ToastProvider>
         </ThemeProvider>
       </QueryClientProvider>

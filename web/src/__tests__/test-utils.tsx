@@ -10,6 +10,19 @@ import { ThemeProvider } from '@primer/react';
 import { ToastProvider } from '../contexts/ToastContext';
 import { SourceProvider } from '../contexts/SourceContext';
 
+// Mock localStorage globally for tests
+if (typeof window !== 'undefined' && !window.localStorage) {
+  const localStorageMock = {
+    getItem: () => null,
+    setItem: () => undefined,
+    removeItem: () => undefined,
+    clear: () => undefined,
+    length: 0,
+    key: () => null,
+  };
+  Object.defineProperty(window, 'localStorage', { value: localStorageMock, writable: true });
+}
+
 // Create a new QueryClient for each test to avoid shared state
 function createTestQueryClient() {
   return new QueryClient({

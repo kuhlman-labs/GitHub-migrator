@@ -1,8 +1,23 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '../../__tests__/test-utils';
 import { Dashboard } from './index';
 import * as useQueriesModule from '../../hooks/useQueries';
 import * as useMutationsModule from '../../hooks/useMutations';
+
+// Mock the SourceContext
+vi.mock('../../contexts/SourceContext', () => ({
+  useSourceContext: vi.fn(() => ({
+    sources: [],
+    activeSourceFilter: 'all',
+    setActiveSourceFilter: vi.fn(),
+    activeSource: null,
+    isLoading: false,
+    error: null,
+    refetchSources: vi.fn(),
+  })),
+  SourceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 // Mock the hooks
 vi.mock('../../hooks/useQueries', () => ({
@@ -12,6 +27,7 @@ vi.mock('../../hooks/useQueries', () => ({
   useBatches: vi.fn(),
   useDashboardActionItems: vi.fn(),
   useDiscoveryProgress: vi.fn(),
+  useSetupProgress: vi.fn(),
 }));
 
 vi.mock('../../hooks/useMutations', () => ({
@@ -68,6 +84,21 @@ vi.mock('./ADOOrganizationCard', () => ({
     </div>
   ),
 }));
+
+vi.mock('./SetupProgress', () => ({
+  SetupProgress: () => (
+    <div data-testid="setup-progress">Setup Progress</div>
+  ),
+}));
+
+// Mock localStorage
+const localStorageMock = {
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+};
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
 describe('Dashboard', () => {
   const mockOrganizations = [
@@ -130,6 +161,17 @@ describe('Dashboard', () => {
     
     (useQueriesModule.useDiscoveryProgress as ReturnType<typeof vi.fn>).mockReturnValue({
       data: null,
+    });
+
+    (useQueriesModule.useSetupProgress as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        destination_configured: true,
+        sources_configured: true,
+        source_count: 1,
+        batches_created: false,
+        batch_count: 0,
+        setup_complete: true,
+      },
     });
     
     (useMutationsModule.useStartDiscovery as ReturnType<typeof vi.fn>).mockReturnValue({

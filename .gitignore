@@ -48,6 +48,7 @@ configs/config.local.yaml
 .DS_Store
 
 # Frontend
+web/go.mod
 web/node_modules/
 web/dist/
 web/.next/
