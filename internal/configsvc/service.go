@@ -206,4 +206,3 @@ func (cs *Service) GetDatabaseConfig() config.DatabaseConfig {
 func (cs *Service) GetServerPort() int {
 	return cs.staticConfig.Server.Port
 }
-

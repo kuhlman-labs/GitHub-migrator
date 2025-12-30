@@ -50,57 +50,8 @@ func (d *Database) UpdateSettings(ctx context.Context, req *models.UpdateSetting
 		return nil, err
 	}
 
-	// Apply updates (only non-nil fields)
-	if req.DestinationBaseURL != nil {
-		settings.DestinationBaseURL = *req.DestinationBaseURL
-	}
-	if req.DestinationToken != nil {
-		settings.DestinationToken = req.DestinationToken
-	}
-	if req.DestinationAppID != nil {
-		settings.DestinationAppID = req.DestinationAppID
-	}
-	if req.DestinationAppPrivateKey != nil {
-		settings.DestinationAppPrivateKey = req.DestinationAppPrivateKey
-	}
-	if req.DestinationAppInstallationID != nil {
-		settings.DestinationAppInstallationID = req.DestinationAppInstallationID
-	}
-
-	// Migration settings
-	if req.MigrationWorkers != nil {
-		settings.MigrationWorkers = *req.MigrationWorkers
-	}
-	if req.MigrationPollIntervalSeconds != nil {
-		settings.MigrationPollIntervalSeconds = *req.MigrationPollIntervalSeconds
-	}
-	if req.MigrationDestRepoExistsAction != nil {
-		settings.MigrationDestRepoExistsAction = *req.MigrationDestRepoExistsAction
-	}
-	if req.MigrationVisibilityPublic != nil {
-		settings.MigrationVisibilityPublic = *req.MigrationVisibilityPublic
-	}
-	if req.MigrationVisibilityInternal != nil {
-		settings.MigrationVisibilityInternal = *req.MigrationVisibilityInternal
-	}
-
-	// Auth settings
-	if req.AuthEnabled != nil {
-		settings.AuthEnabled = *req.AuthEnabled
-	}
-	if req.AuthSessionSecret != nil {
-		settings.AuthSessionSecret = req.AuthSessionSecret
-	}
-	if req.AuthSessionDurationHours != nil {
-		settings.AuthSessionDurationHours = *req.AuthSessionDurationHours
-	}
-	if req.AuthCallbackURL != nil {
-		settings.AuthCallbackURL = req.AuthCallbackURL
-	}
-	if req.AuthFrontendURL != nil {
-		settings.AuthFrontendURL = *req.AuthFrontendURL
-	}
-
+	// Apply updates from request
+	settings.ApplyUpdates(req)
 	settings.UpdatedAt = time.Now()
 
 	// Save updates
@@ -190,4 +141,3 @@ func (d *Database) IsDestinationConfigured(ctx context.Context) (bool, error) {
 	}
 	return settings.HasDestination(), nil
 }
-

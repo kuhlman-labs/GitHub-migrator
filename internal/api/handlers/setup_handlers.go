@@ -14,7 +14,6 @@ import (
 
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
-	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
@@ -234,7 +233,7 @@ func (h *SetupHandler) ValidateSource(w http.ResponseWriter, r *http.Request) {
 
 	switch strings.ToLower(req.Type) {
 	case models.SourceTypeGitHub:
-		response = h.validateGitHub(ctx, req.BaseURL, req.Token)
+		response = ValidateGitHubConnection(ctx, req.BaseURL, req.Token, h.logger)
 	case models.SourceTypeAzureDevOps:
 		response = h.validateAzureDevOps(ctx, req.BaseURL, req.Token, req.Organization)
 	default:
@@ -254,7 +253,7 @@ func (h *SetupHandler) ValidateDestination(w http.ResponseWriter, r *http.Reques
 	}
 
 	ctx := r.Context()
-	response := h.validateGitHub(ctx, req.BaseURL, req.Token)
+	response := ValidateGitHubConnection(ctx, req.BaseURL, req.Token, h.logger)
 
 	h.sendJSON(w, http.StatusOK, response)
 }
@@ -327,52 +326,6 @@ func (h *SetupHandler) ApplySetup(w http.ResponseWriter, r *http.Request) {
 		h.logger.Info("Triggering server shutdown for configuration reload...")
 		close(h.shutdownChan)
 	}()
-}
-
-// validateGitHub validates a GitHub connection
-func (h *SetupHandler) validateGitHub(ctx context.Context, baseURL, token string) ValidationResponse {
-	response := ValidationResponse{Details: make(map[string]any)}
-
-	// Create temporary GitHub client
-	client, err := github.NewClient(github.ClientConfig{
-		BaseURL: baseURL,
-		Token:   token,
-		Timeout: 10 * time.Second,
-		Logger:  h.logger,
-	})
-	if err != nil {
-		response.Valid = false
-		response.Error = fmt.Sprintf("Failed to create GitHub client: %v", err)
-		return response
-	}
-
-	// Test connection by getting authenticated user
-	user, _, err := client.REST().Users.Get(ctx, "")
-	if err != nil {
-		response.Valid = false
-		response.Error = fmt.Sprintf("Failed to connect to GitHub: %v", err)
-		return response
-	}
-
-	response.Valid = true
-	response.Details["username"] = user.GetLogin()
-	response.Details["user_id"] = user.GetID()
-	response.Details["base_url"] = baseURL
-
-	// Check rate limit
-	rateLimits, _, err := client.REST().RateLimit.Get(ctx)
-	if err == nil && rateLimits != nil && rateLimits.Core != nil {
-		response.Details["rate_limit_remaining"] = rateLimits.Core.Remaining
-		response.Details["rate_limit_total"] = rateLimits.Core.Limit
-
-		// Warn if rate limit is low
-		if rateLimits.Core.Remaining < 100 {
-			response.Warnings = append(response.Warnings,
-				fmt.Sprintf("Low rate limit remaining: %d/%d", rateLimits.Core.Remaining, rateLimits.Core.Limit))
-		}
-	}
-
-	return response
 }
 
 // validateAzureDevOps validates an Azure DevOps connection

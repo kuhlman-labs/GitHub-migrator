@@ -9,18 +9,18 @@ type Settings struct {
 	ID int64 `json:"id" db:"id" gorm:"primaryKey"`
 
 	// Destination GitHub configuration
-	DestinationBaseURL          string  `json:"destination_base_url" db:"destination_base_url" gorm:"column:destination_base_url;not null;default:'https://api.github.com'"`
-	DestinationToken            *string `json:"-" db:"destination_token" gorm:"column:destination_token"`
-	DestinationAppID            *int64  `json:"destination_app_id,omitempty" db:"destination_app_id" gorm:"column:destination_app_id"`
-	DestinationAppPrivateKey    *string `json:"-" db:"destination_app_private_key" gorm:"column:destination_app_private_key"`
+	DestinationBaseURL           string  `json:"destination_base_url" db:"destination_base_url" gorm:"column:destination_base_url;not null;default:'https://api.github.com'"`
+	DestinationToken             *string `json:"-" db:"destination_token" gorm:"column:destination_token"`
+	DestinationAppID             *int64  `json:"destination_app_id,omitempty" db:"destination_app_id" gorm:"column:destination_app_id"`
+	DestinationAppPrivateKey     *string `json:"-" db:"destination_app_private_key" gorm:"column:destination_app_private_key"`
 	DestinationAppInstallationID *int64  `json:"destination_app_installation_id,omitempty" db:"destination_app_installation_id" gorm:"column:destination_app_installation_id"`
 
 	// Migration settings
-	MigrationWorkers             int    `json:"migration_workers" db:"migration_workers" gorm:"column:migration_workers;not null;default:5"`
-	MigrationPollIntervalSeconds int    `json:"migration_poll_interval_seconds" db:"migration_poll_interval_seconds" gorm:"column:migration_poll_interval_seconds;not null;default:30"`
+	MigrationWorkers              int    `json:"migration_workers" db:"migration_workers" gorm:"column:migration_workers;not null;default:5"`
+	MigrationPollIntervalSeconds  int    `json:"migration_poll_interval_seconds" db:"migration_poll_interval_seconds" gorm:"column:migration_poll_interval_seconds;not null;default:30"`
 	MigrationDestRepoExistsAction string `json:"migration_dest_repo_exists_action" db:"migration_dest_repo_exists_action" gorm:"column:migration_dest_repo_exists_action;not null;default:'fail'"`
-	MigrationVisibilityPublic    string `json:"migration_visibility_public" db:"migration_visibility_public" gorm:"column:migration_visibility_public;not null;default:'private'"`
-	MigrationVisibilityInternal  string `json:"migration_visibility_internal" db:"migration_visibility_internal" gorm:"column:migration_visibility_internal;not null;default:'private'"`
+	MigrationVisibilityPublic     string `json:"migration_visibility_public" db:"migration_visibility_public" gorm:"column:migration_visibility_public;not null;default:'private'"`
+	MigrationVisibilityInternal   string `json:"migration_visibility_internal" db:"migration_visibility_internal" gorm:"column:migration_visibility_internal;not null;default:'private'"`
 
 	// Auth settings
 	AuthEnabled              bool    `json:"auth_enabled" db:"auth_enabled" gorm:"column:auth_enabled;not null;default:false"`
@@ -59,11 +59,11 @@ type SettingsResponse struct {
 	DestinationAppInstallationID *int64 `json:"destination_app_installation_id,omitempty"`
 
 	// Migration settings
-	MigrationWorkers             int    `json:"migration_workers"`
-	MigrationPollIntervalSeconds int    `json:"migration_poll_interval_seconds"`
+	MigrationWorkers              int    `json:"migration_workers"`
+	MigrationPollIntervalSeconds  int    `json:"migration_poll_interval_seconds"`
 	MigrationDestRepoExistsAction string `json:"migration_dest_repo_exists_action"`
-	MigrationVisibilityPublic    string `json:"migration_visibility_public"`
-	MigrationVisibilityInternal  string `json:"migration_visibility_internal"`
+	MigrationVisibilityPublic     string `json:"migration_visibility_public"`
+	MigrationVisibilityInternal   string `json:"migration_visibility_internal"`
 
 	// Auth settings (secrets masked)
 	AuthEnabled              bool   `json:"auth_enabled"`
@@ -95,11 +95,11 @@ func (s *Settings) ToResponse() *SettingsResponse {
 		DestinationAppInstallationID: s.DestinationAppInstallationID,
 
 		// Migration
-		MigrationWorkers:             s.MigrationWorkers,
-		MigrationPollIntervalSeconds: s.MigrationPollIntervalSeconds,
+		MigrationWorkers:              s.MigrationWorkers,
+		MigrationPollIntervalSeconds:  s.MigrationPollIntervalSeconds,
 		MigrationDestRepoExistsAction: s.MigrationDestRepoExistsAction,
-		MigrationVisibilityPublic:    s.MigrationVisibilityPublic,
-		MigrationVisibilityInternal:  s.MigrationVisibilityInternal,
+		MigrationVisibilityPublic:     s.MigrationVisibilityPublic,
+		MigrationVisibilityInternal:   s.MigrationVisibilityInternal,
 
 		// Auth
 		AuthEnabled:              s.AuthEnabled,
@@ -124,11 +124,11 @@ type UpdateSettingsRequest struct {
 	DestinationAppInstallationID *int64  `json:"destination_app_installation_id,omitempty"`
 
 	// Migration settings
-	MigrationWorkers             *int    `json:"migration_workers,omitempty"`
-	MigrationPollIntervalSeconds *int    `json:"migration_poll_interval_seconds,omitempty"`
+	MigrationWorkers              *int    `json:"migration_workers,omitempty"`
+	MigrationPollIntervalSeconds  *int    `json:"migration_poll_interval_seconds,omitempty"`
 	MigrationDestRepoExistsAction *string `json:"migration_dest_repo_exists_action,omitempty"`
-	MigrationVisibilityPublic    *string `json:"migration_visibility_public,omitempty"`
-	MigrationVisibilityInternal  *string `json:"migration_visibility_internal,omitempty"`
+	MigrationVisibilityPublic     *string `json:"migration_visibility_public,omitempty"`
+	MigrationVisibilityInternal   *string `json:"migration_visibility_internal,omitempty"`
 
 	// Auth settings
 	AuthEnabled              *bool   `json:"auth_enabled,omitempty"`
@@ -138,3 +138,66 @@ type UpdateSettingsRequest struct {
 	AuthFrontendURL          *string `json:"auth_frontend_url,omitempty"`
 }
 
+// ApplyUpdates applies non-nil fields from the update request to the settings
+func (s *Settings) ApplyUpdates(req *UpdateSettingsRequest) {
+	s.applyDestinationUpdates(req)
+	s.applyMigrationUpdates(req)
+	s.applyAuthUpdates(req)
+}
+
+// applyDestinationUpdates applies destination-related updates
+func (s *Settings) applyDestinationUpdates(req *UpdateSettingsRequest) {
+	if req.DestinationBaseURL != nil {
+		s.DestinationBaseURL = *req.DestinationBaseURL
+	}
+	if req.DestinationToken != nil {
+		s.DestinationToken = req.DestinationToken
+	}
+	if req.DestinationAppID != nil {
+		s.DestinationAppID = req.DestinationAppID
+	}
+	if req.DestinationAppPrivateKey != nil {
+		s.DestinationAppPrivateKey = req.DestinationAppPrivateKey
+	}
+	if req.DestinationAppInstallationID != nil {
+		s.DestinationAppInstallationID = req.DestinationAppInstallationID
+	}
+}
+
+// applyMigrationUpdates applies migration-related updates
+func (s *Settings) applyMigrationUpdates(req *UpdateSettingsRequest) {
+	if req.MigrationWorkers != nil {
+		s.MigrationWorkers = *req.MigrationWorkers
+	}
+	if req.MigrationPollIntervalSeconds != nil {
+		s.MigrationPollIntervalSeconds = *req.MigrationPollIntervalSeconds
+	}
+	if req.MigrationDestRepoExistsAction != nil {
+		s.MigrationDestRepoExistsAction = *req.MigrationDestRepoExistsAction
+	}
+	if req.MigrationVisibilityPublic != nil {
+		s.MigrationVisibilityPublic = *req.MigrationVisibilityPublic
+	}
+	if req.MigrationVisibilityInternal != nil {
+		s.MigrationVisibilityInternal = *req.MigrationVisibilityInternal
+	}
+}
+
+// applyAuthUpdates applies auth-related updates
+func (s *Settings) applyAuthUpdates(req *UpdateSettingsRequest) {
+	if req.AuthEnabled != nil {
+		s.AuthEnabled = *req.AuthEnabled
+	}
+	if req.AuthSessionSecret != nil {
+		s.AuthSessionSecret = req.AuthSessionSecret
+	}
+	if req.AuthSessionDurationHours != nil {
+		s.AuthSessionDurationHours = *req.AuthSessionDurationHours
+	}
+	if req.AuthCallbackURL != nil {
+		s.AuthCallbackURL = req.AuthCallbackURL
+	}
+	if req.AuthFrontendURL != nil {
+		s.AuthFrontendURL = *req.AuthFrontendURL
+	}
+}

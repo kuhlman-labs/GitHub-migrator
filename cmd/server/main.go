@@ -461,9 +461,31 @@ func migrateEnvConfigToDatabase(db *storage.Database, cfg *config.Config, logger
 	logger.Info("Migrating destination configuration from .env to database")
 
 	// Build update request from .env config
-	req := &models.UpdateSettingsRequest{}
+	req := buildSettingsRequestFromEnv(cfg)
 
-	// Destination settings
+	// Apply the migration
+	if _, err := db.UpdateSettings(ctx, req); err != nil {
+		logger.Error("Failed to migrate .env config to database", "error", err)
+		return
+	}
+
+	logger.Info("Successfully migrated .env configuration to database",
+		"destination_base_url", cfg.Destination.BaseURL,
+		"migration_workers", cfg.Migration.Workers,
+		"auth_enabled", cfg.Auth.Enabled)
+}
+
+// buildSettingsRequestFromEnv builds an UpdateSettingsRequest from the config
+func buildSettingsRequestFromEnv(cfg *config.Config) *models.UpdateSettingsRequest {
+	req := &models.UpdateSettingsRequest{}
+	applyDestinationConfig(req, cfg)
+	applyMigrationConfig(req, cfg)
+	applyAuthConfig(req, cfg)
+	return req
+}
+
+// applyDestinationConfig applies destination settings from config
+func applyDestinationConfig(req *models.UpdateSettingsRequest, cfg *config.Config) {
 	if cfg.Destination.BaseURL != "" {
 		req.DestinationBaseURL = &cfg.Destination.BaseURL
 	}
@@ -479,8 +501,10 @@ func migrateEnvConfigToDatabase(db *storage.Database, cfg *config.Config, logger
 	if cfg.Destination.AppInstallationID > 0 {
 		req.DestinationAppInstallationID = &cfg.Destination.AppInstallationID
 	}
+}
 
-	// Migration settings
+// applyMigrationConfig applies migration settings from config
+func applyMigrationConfig(req *models.UpdateSettingsRequest, cfg *config.Config) {
 	if cfg.Migration.Workers > 0 {
 		req.MigrationWorkers = &cfg.Migration.Workers
 	}
@@ -496,8 +520,10 @@ func migrateEnvConfigToDatabase(db *storage.Database, cfg *config.Config, logger
 	if cfg.Migration.VisibilityHandling.InternalRepos != "" {
 		req.MigrationVisibilityInternal = &cfg.Migration.VisibilityHandling.InternalRepos
 	}
+}
 
-	// Auth settings
+// applyAuthConfig applies auth settings from config
+func applyAuthConfig(req *models.UpdateSettingsRequest, cfg *config.Config) {
 	req.AuthEnabled = &cfg.Auth.Enabled
 	if cfg.Auth.SessionSecret != "" {
 		req.AuthSessionSecret = &cfg.Auth.SessionSecret
@@ -511,15 +537,4 @@ func migrateEnvConfigToDatabase(db *storage.Database, cfg *config.Config, logger
 	if cfg.Auth.FrontendURL != "" {
 		req.AuthFrontendURL = &cfg.Auth.FrontendURL
 	}
-
-	// Apply the migration
-	if _, err := db.UpdateSettings(ctx, req); err != nil {
-		logger.Error("Failed to migrate .env config to database", "error", err)
-		return
-	}
-
-	logger.Info("Successfully migrated .env configuration to database",
-		"destination_base_url", cfg.Destination.BaseURL,
-		"migration_workers", cfg.Migration.Workers,
-		"auth_enabled", cfg.Auth.Enabled)
 }
