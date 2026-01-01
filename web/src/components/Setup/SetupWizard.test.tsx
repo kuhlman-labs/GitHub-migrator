@@ -73,8 +73,9 @@ describe('SetupWizard', () => {
   it('shows SQLite as default database type', () => {
     render(<SetupWizard />);
 
-    // SQLite should be the default option
-    expect(screen.getByText(/SQLite.*Recommended/i)).toBeInTheDocument();
+    // SQLite should be the default option in the select
+    const select = screen.getByLabelText(/Database Type/i) as HTMLSelectElement;
+    expect(select.value).toBe('sqlite');
   });
 
   it('can navigate to step 2 after validating database', async () => {

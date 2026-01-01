@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { UnderlineNav, Heading, Text, Flash, Spinner } from '@primer/react';
-import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon } from '@primer/octicons-react';
+import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon, RepoIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../services/api/settings';
+import { SourcesSettings } from './SourcesSettings';
 import { DestinationSettings } from './DestinationSettings';
 import { MigrationSettings } from './MigrationSettings';
 import { AuthSettings } from './AuthSettings';
 import { useToast } from '../../contexts/ToastContext';
 import type { SettingsResponse, UpdateSettingsRequest } from '../../services/api/settings';
 
-type SettingsTab = 'destination' | 'migration' | 'auth';
+type SettingsTab = 'sources' | 'destination' | 'migration' | 'auth';
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('destination');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('sources');
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
 
@@ -61,12 +62,19 @@ export function SettingsPage() {
         <Heading as="h1" className="text-2xl">Settings</Heading>
       </div>
       <Text className="block mb-6" style={{ color: 'var(--fgColor-muted)' }}>
-        Configure destination, migration behavior, and authentication settings.
+        Configure sources, destination, migration behavior, and authentication.
         Changes are applied immediately without requiring a server restart.
       </Text>
 
       {/* Tabs */}
       <UnderlineNav aria-label="Settings">
+        <UnderlineNav.Item
+          aria-current={activeTab === 'sources' ? 'page' : undefined}
+          onClick={() => setActiveTab('sources')}
+          icon={RepoIcon}
+        >
+          Sources
+        </UnderlineNav.Item>
         <UnderlineNav.Item
           aria-current={activeTab === 'destination' ? 'page' : undefined}
           onClick={() => setActiveTab('destination')}
@@ -92,6 +100,9 @@ export function SettingsPage() {
 
       {/* Tab Content */}
       <div className="mt-6">
+        {activeTab === 'sources' && (
+          <SourcesSettings />
+        )}
         {activeTab === 'destination' && settings && (
           <DestinationSettings
             settings={settings}

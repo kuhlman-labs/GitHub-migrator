@@ -1,8 +1,24 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '../../__tests__/test-utils';
 import userEvent from '@testing-library/user-event';
 import { Analytics } from './index';
 import * as useQueriesModule from '../../hooks/useQueries';
+import * as SourceContextModule from '../../contexts/SourceContext';
+
+// Mock SourceContext
+vi.mock('../../contexts/SourceContext', () => ({
+  useSourceContext: vi.fn(() => ({
+    sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
+    activeSourceFilter: 'all',
+    setActiveSourceFilter: vi.fn(),
+    activeSource: null,
+    isLoading: false,
+    error: null,
+    refetchSources: vi.fn(),
+  })),
+  SourceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 // Mock recharts to avoid rendering issues in tests
 vi.mock('recharts', () => ({
@@ -100,6 +116,17 @@ describe('Analytics', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Reset SourceContext mock to default GitHub source
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
+      activeSourceFilter: 'all',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: null,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
+    });
     
     (useQueriesModule.useConfig as ReturnType<typeof vi.fn>).mockReturnValue({
       data: { source_type: 'github' },
@@ -322,8 +349,15 @@ describe('Analytics', () => {
   });
 
   it('should show ADO-specific labels for azuredevops source', async () => {
-    (useQueriesModule.useConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-      data: { source_type: 'azuredevops' },
+    // Mock SourceContext with ADO sources
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [{ id: 1, name: 'ADO Source', type: 'azuredevops' }],
+      activeSourceFilter: 'all',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: null,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
     });
     
     (useQueriesModule.useAnalytics as ReturnType<typeof vi.fn>).mockReturnValue({

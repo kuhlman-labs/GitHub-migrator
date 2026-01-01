@@ -4,11 +4,12 @@ import { render, screen, waitFor } from '../../__tests__/test-utils';
 import { Dashboard } from './index';
 import * as useQueriesModule from '../../hooks/useQueries';
 import * as useMutationsModule from '../../hooks/useMutations';
+import * as SourceContextModule from '../../contexts/SourceContext';
 
 // Mock the SourceContext
 vi.mock('../../contexts/SourceContext', () => ({
   useSourceContext: vi.fn(() => ({
-    sources: [],
+    sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
     activeSourceFilter: 'all',
     setActiveSourceFilter: vi.fn(),
     activeSource: null,
@@ -130,6 +131,17 @@ describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     
+    // Reset SourceContext mock to default GitHub source
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
+      activeSourceFilter: 'all',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: null,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
+    });
+    
     // Setup default mock implementations
     (useQueriesModule.useConfig as ReturnType<typeof vi.fn>).mockReturnValue({
       data: { source_type: 'github' },
@@ -235,8 +247,15 @@ describe('Dashboard', () => {
   });
 
   it('should render Azure DevOps organizations section for azuredevops source', async () => {
-    (useQueriesModule.useConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-      data: { source_type: 'azuredevops' },
+    // Mock SourceContext with ADO sources
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [{ id: 1, name: 'ADO Source', type: 'azuredevops' }],
+      activeSourceFilter: 'all',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: null,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
     });
     
     // Mock organizations with ADO data

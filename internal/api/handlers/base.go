@@ -162,6 +162,98 @@ func (h *Handler) handleContextError(ctx context.Context, err error, operation s
 	return false
 }
 
+// getCollectorForSource returns a collector for the given source ID.
+// If h.collector is already configured, it uses that.
+// Otherwise, it creates a collector dynamically from the source's credentials in the database.
+func (h *Handler) getCollectorForSource(sourceID *int64) (*discovery.Collector, error) {
+	// If we have a pre-configured collector, use it
+	if h.collector != nil {
+		return h.collector, nil
+	}
+
+	// No pre-configured collector - we need a source ID to create one dynamically
+	if sourceID == nil {
+		return nil, fmt.Errorf("no GitHub client configured and no source_id provided")
+	}
+
+	// Get the database - need to type assert to *storage.Database
+	db, ok := h.db.(*storage.Database)
+	if !ok {
+		return nil, fmt.Errorf("database type assertion failed - cannot create dynamic collector")
+	}
+
+	// Fetch the source from the database
+	ctx := context.Background()
+	src, err := db.GetSource(ctx, *sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source %d: %w", *sourceID, err)
+	}
+	if src == nil {
+		return nil, fmt.Errorf("source %d not found", *sourceID)
+	}
+
+	// Only GitHub sources are supported for discovery
+	if src.Type != models.SourceConfigTypeGitHub {
+		return nil, fmt.Errorf("source %d is not a GitHub source (type: %s)", *sourceID, src.Type)
+	}
+
+	// Create GitHub client configuration with proper timeout and retry settings
+	clientConfig := github.ClientConfig{
+		BaseURL:     src.BaseURL,
+		Token:       src.Token,
+		Timeout:     120 * time.Second, // Match server initialization
+		RetryConfig: github.DefaultRetryConfig(),
+		Logger:      h.logger,
+	}
+
+	// Add App credentials if configured
+	// Note: If AppInstallationID is nil/0, this creates a JWT-only client
+	// which can discover app installations across an enterprise
+	if src.HasAppAuth() {
+		clientConfig.AppID = *src.AppID
+		clientConfig.AppPrivateKey = *src.AppPrivateKey
+		if src.AppInstallationID != nil && *src.AppInstallationID > 0 {
+			clientConfig.AppInstallationID = *src.AppInstallationID
+			h.logger.Info("Creating client with GitHub App installation auth",
+				"source_id", *sourceID,
+				"app_id", *src.AppID,
+				"installation_id", *src.AppInstallationID)
+		} else {
+			// JWT-only mode for enterprise-wide discovery
+			h.logger.Info("Creating client with GitHub App JWT-only auth (enterprise mode)",
+				"source_id", *sourceID,
+				"app_id", *src.AppID)
+		}
+	}
+
+	// Create GitHub client
+	client, err := github.NewClient(clientConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub client for source %d: %w", *sourceID, err)
+	}
+
+	// Create source provider
+	sourceProvider, err := source.NewGitHubProvider(src.BaseURL, src.Token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create source provider for source %d: %w", *sourceID, err)
+	}
+
+	// Create collector
+	collector := discovery.NewCollector(client, db, h.logger, sourceProvider)
+
+	// Set source ID to associate discovered entities with this source
+	collector.SetSourceID(sourceID)
+
+	// Set base config for App auth if available
+	if src.HasAppAuth() {
+		collector.WithBaseConfig(clientConfig)
+	}
+
+	h.logger.Info("Created dynamic collector for source", "source_id", *sourceID, "source_name", src.Name)
+
+	return collector, nil
+}
+
 // PaginationParams holds parsed pagination parameters
 type PaginationParams struct {
 	Limit  int

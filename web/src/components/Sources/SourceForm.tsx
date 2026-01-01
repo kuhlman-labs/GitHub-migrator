@@ -8,7 +8,8 @@ import {
   Spinner,
   Text,
 } from '@primer/react';
-import { CheckCircleIcon, XCircleIcon, ChevronDownIcon, ChevronRightIcon } from '@primer/octicons-react';
+import { CheckCircleIcon, XCircleIcon, ChevronDownIcon, ChevronRightIcon, SyncIcon, CheckIcon, XIcon } from '@primer/octicons-react';
+import { SuccessButton, SecondaryButton, PrimaryButton } from '../common/buttons';
 import type { Source, CreateSourceRequest, UpdateSourceRequest, SourceType } from '../../types';
 import { sourcesApi } from '../../services/api/sources';
 
@@ -37,6 +38,10 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
     base_url: source?.base_url || getDefaultBaseUrl(initialType),
     token: '',
     organization: source?.organization || '',
+    // GitHub App fields for discovery operations
+    app_id: source?.app_id?.toString() || '',
+    app_private_key: '',
+    app_installation_id: '',
     // OAuth fields for user self-service (GitHub/GHES)
     oauth_client_id: '',
     oauth_client_secret: '',
@@ -49,6 +54,7 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [validationState, setValidationState] = useState<'idle' | 'validating' | 'success' | 'error'>('idle');
   const [validationMessage, setValidationMessage] = useState('');
+  const [showAppConfig, setShowAppConfig] = useState(source?.has_app_auth || false);
   const [showOAuthConfig, setShowOAuthConfig] = useState(false);
 
   const handleChange = (field: keyof typeof formData, value: string) => {
@@ -119,10 +125,17 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const handleSubmit = async () => {
     if (!validate()) return;
+
+    // Build GitHub App fields (only for GitHub sources)
+    const appFields = formData.type === 'github'
+      ? {
+          ...(formData.app_id && { app_id: parseInt(formData.app_id) }),
+          ...(formData.app_private_key && { app_private_key: formData.app_private_key }),
+          ...(formData.app_installation_id && { app_installation_id: parseInt(formData.app_installation_id) }),
+        }
+      : {};
 
     // Build OAuth fields based on type
     const oauthFields = formData.type === 'github'
@@ -142,6 +155,7 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           base_url: formData.base_url,
           ...(formData.token && { token: formData.token }),
           ...(formData.type === 'azuredevops' && { organization: formData.organization }),
+          ...appFields,
           ...oauthFields,
         }
       : {
@@ -150,14 +164,19 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           base_url: formData.base_url,
           token: formData.token,
           ...(formData.type === 'azuredevops' && { organization: formData.organization }),
+          ...appFields,
           ...oauthFields,
         };
 
     await onSubmit(data);
   };
 
+  const handleFormSubmit = () => {
+    handleSubmit();
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-y-4">
       {/* Name */}
       <FormControl>
         <FormControl.Label>Name</FormControl.Label>
@@ -203,7 +222,7 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
         )}
         <FormControl.Caption>
           {formData.type === 'github' 
-            ? 'API endpoint (use https://api.github.com for github.com)'
+            ? 'API endpoint (e.g., https://api.github.com for github.com or https://ghes.example.com/api/v3 for GHES)'
             : 'Azure DevOps organization URL'}
         </FormControl.Caption>
       </FormControl>
@@ -244,6 +263,92 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
             <FormControl.Validation variant="error">{errors.organization}</FormControl.Validation>
           )}
         </FormControl>
+      )}
+
+      {/* GitHub App Configuration (Optional, GitHub sources only) */}
+      {formData.type === 'github' && (
+        <div
+          className="rounded-lg border overflow-hidden"
+          style={{ borderColor: 'var(--borderColor-default)' }}
+        >
+          <button
+            type="button"
+            onClick={() => setShowAppConfig(!showAppConfig)}
+            className="w-full flex justify-between items-center p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            style={{ backgroundColor: 'var(--bgColor-muted)' }}
+          >
+            <div className="flex items-center gap-2">
+              {showAppConfig ? <ChevronDownIcon /> : <ChevronRightIcon />}
+              <Text className="font-semibold">GitHub App Configuration (Optional)</Text>
+            </div>
+            {source?.has_app_auth && (
+              <Text className="text-xs" style={{ color: 'var(--fgColor-success)' }}>✓ Configured</Text>
+            )}
+          </button>
+
+          {showAppConfig && (
+            <div 
+              className="p-3 border-t"
+              style={{ borderColor: 'var(--borderColor-default)' }}
+            >
+              <Text as="p" className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
+                Configure a GitHub App for enhanced rate limits and security during discovery operations.
+                The PAT above is still required for certain operations.
+              </Text>
+
+              <FormControl className="mb-3">
+                <FormControl.Label>App ID</FormControl.Label>
+                <TextInput
+                  type="number"
+                  value={formData.app_id}
+                  onChange={(e) => handleChange('app_id', e.target.value)}
+                  placeholder="123456"
+                  block
+                />
+                <FormControl.Caption>
+                  Find this in your GitHub App settings page.
+                </FormControl.Caption>
+              </FormControl>
+
+              <FormControl className="mb-3">
+                <FormControl.Label>
+                  Private Key {isEditing && '(leave blank to keep existing)'}
+                </FormControl.Label>
+                <textarea
+                  value={formData.app_private_key}
+                  onChange={(e) => handleChange('app_private_key', e.target.value)}
+                  placeholder={isEditing && source?.has_app_auth
+                    ? 'Private key is configured. Enter a new value to update.'
+                    : '-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----'}
+                  className="w-full p-2 rounded border font-mono text-sm"
+                  style={{ 
+                    backgroundColor: 'var(--bgColor-default)',
+                    borderColor: 'var(--borderColor-default)',
+                    color: 'var(--fgColor-default)',
+                    minHeight: '100px',
+                  }}
+                />
+                <Text as="p" className="text-xs mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+                  Generate a private key from your GitHub App settings and paste it here.
+                </Text>
+              </FormControl>
+
+              <FormControl>
+                <FormControl.Label>Installation ID</FormControl.Label>
+                <TextInput
+                  type="number"
+                  value={formData.app_installation_id}
+                  onChange={(e) => handleChange('app_installation_id', e.target.value)}
+                  placeholder="12345678"
+                  block
+                />
+                <FormControl.Caption>
+                  The installation ID from when the app was installed to your organization.
+                </FormControl.Caption>
+              </FormControl>
+            </div>
+          )}
+        </div>
       )}
 
       {/* OAuth Configuration (Optional) */}
@@ -350,41 +455,60 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
         )}
       </div>
 
-      {/* Test Connection */}
-      <div className="pt-2">
-        <Button
-          type="button"
-          onClick={handleTestConnection}
-          disabled={validationState === 'validating'}
-          variant="invisible"
-        >
-          {validationState === 'validating' ? (
-            <>
-              <Spinner size="small" /> Testing...
-            </>
-          ) : (
-            'Test Connection'
-          )}
-        </Button>
-        
-        {validationState === 'success' && (
-          <Flash variant="success" className="mt-2">
-            <CheckCircleIcon /> {validationMessage}
-          </Flash>
-        )}
-        {validationState === 'error' && (
-          <Flash variant="danger" className="mt-2">
-            <XCircleIcon /> {validationMessage}
-          </Flash>
-        )}
-      </div>
+      {/* Validation Result */}
+      {validationState === 'success' && (
+        <Flash variant="success">
+          <CheckCircleIcon /> {validationMessage}
+        </Flash>
+      )}
+      {validationState === 'error' && (
+        <Flash variant="danger">
+          <XCircleIcon /> {validationMessage}
+        </Flash>
+      )}
 
       {/* Form Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t" style={{ borderColor: 'var(--borderColor-muted)' }}>
+      <div className="flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--borderColor-muted)' }}>
+        {/* Test Connection Button - styled like DestinationSettings */}
+        {validationState === 'success' ? (
+          <SuccessButton
+            type="button"
+            onClick={handleTestConnection}
+            leadingVisual={CheckIcon}
+          >
+            Connected
+          </SuccessButton>
+        ) : validationState === 'error' ? (
+          <Button
+            type="button"
+            onClick={handleTestConnection}
+            variant="danger"
+            leadingVisual={XIcon}
+          >
+            Retry Test
+          </Button>
+        ) : (
+          <SecondaryButton
+            type="button"
+            onClick={handleTestConnection}
+            disabled={validationState === 'validating'}
+            leadingVisual={validationState === 'validating' ? Spinner : SyncIcon}
+          >
+            {validationState === 'validating' ? 'Testing...' : 'Test Connection'}
+          </SecondaryButton>
+        )}
+        
+        <div className="flex-1" />
+        
         <Button type="button" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" disabled={isSubmitting}>
+        <PrimaryButton 
+          type="button" 
+          onClick={handleFormSubmit} 
+          disabled={isSubmitting || validationState !== 'success'}
+          title={validationState !== 'success' ? 'Test connection before saving' : undefined}
+        >
           {isSubmitting ? (
             <>
               <Spinner size="small" /> Saving...
@@ -392,9 +516,9 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           ) : (
             isEditing ? 'Save Changes' : 'Create Source'
           )}
-        </Button>
+        </PrimaryButton>
       </div>
-    </form>
+    </div>
   );
 }
 

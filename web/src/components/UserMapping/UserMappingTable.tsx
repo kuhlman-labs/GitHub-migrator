@@ -749,7 +749,7 @@ export function UserMappingTable() {
         submitLabel={discoverOrgMembers.isPending ? 'Discovering...' : 'Discover'}
         onSubmit={() => {
           if (!discoverOrg.trim()) return;
-          discoverOrgMembers.mutate(discoverOrg.trim(), {
+          discoverOrgMembers.mutate({ organization: discoverOrg.trim() }, {
             onSuccess: (data) => {
               showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();

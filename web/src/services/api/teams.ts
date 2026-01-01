@@ -36,8 +36,11 @@ export const teamsApi = {
     return data;
   },
 
-  async discover(organization: string) {
-    const { data } = await client.post('/teams/discover', { organization });
+  async discover(organization: string, sourceId?: number) {
+    const { data } = await client.post('/teams/discover', { 
+      organization,
+      source_id: sourceId,
+    });
     return data;
   },
 

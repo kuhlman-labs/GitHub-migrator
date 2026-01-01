@@ -116,8 +116,7 @@ export function SetupProgress({
               : "Add GitHub or Azure DevOps sources to discover repositories for migration."
           }
           actionLabel="Add Source"
-          actionLink="/sources"
-          disabled={!destinationConfigured}
+          actionLink="/settings"
         />
 
         <SetupStep

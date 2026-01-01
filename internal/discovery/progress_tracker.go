@@ -28,6 +28,8 @@ type ProgressTracker interface {
 	RecordError(err error)
 	// GetProgressID returns the ID of the progress record
 	GetProgressID() int64
+	// GetProgress returns the current progress snapshot
+	GetProgress() *models.DiscoveryProgress
 }
 
 // DBProgressTracker implements ProgressTracker using database storage
@@ -58,6 +60,15 @@ func (t *DBProgressTracker) GetProgressID() int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.progress.ID
+}
+
+// GetProgress returns a copy of the current progress state
+func (t *DBProgressTracker) GetProgress() *models.DiscoveryProgress {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// Return a copy to avoid race conditions
+	progressCopy := *t.progress
+	return &progressCopy
 }
 
 // SetTotalOrgs sets the total number of organizations to process
@@ -184,12 +195,13 @@ func (t *DBProgressTracker) Flush() {
 // NoOpProgressTracker is a no-op implementation for when progress tracking is disabled
 type NoOpProgressTracker struct{}
 
-func (NoOpProgressTracker) SetTotalOrgs(int)            {}
-func (NoOpProgressTracker) StartOrg(string, int)        {}
-func (NoOpProgressTracker) CompleteOrg(string, int)     {}
-func (NoOpProgressTracker) SetTotalRepos(int)           {}
-func (NoOpProgressTracker) AddRepos(int)                {}
-func (NoOpProgressTracker) IncrementProcessedRepos(int) {}
-func (NoOpProgressTracker) SetPhase(string)             {}
-func (NoOpProgressTracker) RecordError(error)           {}
-func (NoOpProgressTracker) GetProgressID() int64        { return 0 }
+func (NoOpProgressTracker) SetTotalOrgs(int)                       {}
+func (NoOpProgressTracker) StartOrg(string, int)                   {}
+func (NoOpProgressTracker) CompleteOrg(string, int)                {}
+func (NoOpProgressTracker) SetTotalRepos(int)                      {}
+func (NoOpProgressTracker) AddRepos(int)                           {}
+func (NoOpProgressTracker) IncrementProcessedRepos(int)            {}
+func (NoOpProgressTracker) SetPhase(string)                        {}
+func (NoOpProgressTracker) RecordError(error)                      {}
+func (NoOpProgressTracker) GetProgressID() int64                   { return 0 }
+func (NoOpProgressTracker) GetProgress() *models.DiscoveryProgress { return nil }

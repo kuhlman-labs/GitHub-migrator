@@ -33,8 +33,11 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.collector == nil {
-		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
+	// Get or create collector for this source
+	collector, err := h.getCollectorForSource(req.SourceID)
+	if err != nil {
+		h.logger.Error("Failed to get collector for source", "error", err, "source_id", req.SourceID)
+		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
 		return
 	}
 
@@ -52,15 +55,15 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 
 	// Set workers if specified
 	if req.Workers > 0 {
-		h.collector.SetWorkers(req.Workers)
+		collector.SetWorkers(req.Workers)
 	}
 
 	// Set source ID if provided
 	if req.SourceID != nil {
-		h.collector.SetSourceID(req.SourceID)
+		collector.SetSourceID(req.SourceID)
 		h.logger.Info("Discovery will associate repos with source", "source_id", *req.SourceID)
 	} else {
-		h.collector.SetSourceID(nil)
+		collector.SetSourceID(nil)
 	}
 
 	// Determine discovery type and target
@@ -93,12 +96,12 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 
 	// Create progress tracker using the database (which implements storage.DiscoveryStore)
 	progressTracker := discovery.NewDBProgressTracker(h.db, h.logger, progress)
-	h.collector.SetProgressTracker(progressTracker)
+	collector.SetProgressTracker(progressTracker)
 
 	// Start discovery asynchronously based on type
 	if req.EnterpriseSlug != "" {
 		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
-			return h.collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug)
+			return collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug)
 		}, "enterprise", req.EnterpriseSlug)
 
 		h.sendJSON(w, http.StatusAccepted, map[string]any{
@@ -110,7 +113,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		})
 	} else {
 		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
-			return h.collector.DiscoverRepositories(ctx, req.Organization)
+			return collector.DiscoverRepositories(ctx, req.Organization)
 		}, "organization", req.Organization)
 
 		h.sendJSON(w, http.StatusAccepted, map[string]any{
@@ -230,23 +233,26 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.collector == nil {
-		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
+	// Get or create collector for this source
+	collector, err := h.getCollectorForSource(req.SourceID)
+	if err != nil {
+		h.logger.Error("Failed to get collector for source", "error", err, "source_id", req.SourceID)
+		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
 		return
 	}
 
 	// Set source ID if provided
 	if req.SourceID != nil {
-		h.collector.SetSourceID(req.SourceID)
+		collector.SetSourceID(req.SourceID)
 		h.logger.Info("Discovery will associate repos with source", "source_id", *req.SourceID)
 	} else {
-		h.collector.SetSourceID(nil)
+		collector.SetSourceID(nil)
 	}
 
 	// Start discovery asynchronously
 	go func() {
 		ctx := context.Background()
-		if err := h.collector.DiscoverRepositories(ctx, req.Organization); err != nil {
+		if err := collector.DiscoverRepositories(ctx, req.Organization); err != nil {
 			h.logger.Error("Repository discovery failed", "error", err, "org", req.Organization)
 		}
 	}()

@@ -13,12 +13,17 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
+// SourceClientProvider is a function that can create a source GitHub client for a given source ID.
+// Returns nil if source client cannot be created (e.g., source not found or not a GitHub source).
+type SourceClientProvider func(ctx context.Context, sourceID int64) (*github.Client, error)
+
 // TeamExecutor handles the execution of team migrations
 type TeamExecutor struct {
-	storage      *storage.Database
-	sourceClient *github.Client
-	destClient   *github.Client
-	logger       *slog.Logger
+	storage              *storage.Database
+	sourceClient         *github.Client // Legacy static source client (used if sourceClientProvider is nil)
+	sourceClientProvider SourceClientProvider
+	destClient           *github.Client
+	logger               *slog.Logger
 
 	// Execution state
 	mu        sync.Mutex
@@ -50,6 +55,31 @@ func NewTeamExecutor(storage *storage.Database, sourceClient, destClient *github
 		destClient:   destClient,
 		logger:       logger,
 	}
+}
+
+// SetSourceClientProvider sets a function that can dynamically create source clients based on source_id.
+// This enables multi-source support for team migrations.
+func (e *TeamExecutor) SetSourceClientProvider(provider SourceClientProvider) {
+	e.sourceClientProvider = provider
+}
+
+// getSourceClient returns the appropriate source client for the given source ID.
+// It first tries to use the dynamic provider if set, then falls back to the static client.
+func (e *TeamExecutor) getSourceClient(ctx context.Context, sourceID *int64) *github.Client {
+	// If we have a source client provider and a source ID, use it
+	if e.sourceClientProvider != nil && sourceID != nil {
+		client, err := e.sourceClientProvider(ctx, *sourceID)
+		if err != nil {
+			e.logger.Warn("Failed to get dynamic source client, falling back to static",
+				"source_id", *sourceID,
+				"error", err)
+		} else if client != nil {
+			return client
+		}
+	}
+
+	// Fall back to static source client
+	return e.sourceClient
 }
 
 // IsRunning returns true if a team migration is currently running
@@ -347,12 +377,15 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 
 	// Step 3.5: Refresh team-repo associations from source GitHub
 	// This ensures we have up-to-date associations even if repos were discovered after team discovery
-	if !dryRun && e.sourceClient != nil {
+	// Use dynamic source client if available, based on team mapping's source_id
+	sourceClient := e.getSourceClient(ctx, mapping.SourceID)
+	if !dryRun && sourceClient != nil {
 		e.logger.Debug("Refreshing team-repo associations from source GitHub",
 			"source_org", mapping.SourceOrg,
-			"team", mapping.SourceTeamSlug)
+			"team", mapping.SourceTeamSlug,
+			"source_id", mapping.SourceID)
 
-		teamRepos, err := e.sourceClient.ListTeamRepositories(ctx, mapping.SourceOrg, mapping.SourceTeamSlug)
+		teamRepos, err := sourceClient.ListTeamRepositories(ctx, mapping.SourceOrg, mapping.SourceTeamSlug)
 		if err != nil {
 			e.logger.Warn("Failed to list team repositories from source GitHub, using cached associations",
 				"error", err,
@@ -375,7 +408,7 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 				"associations_checked", len(teamRepos),
 				"associations_updated", associationsUpdated)
 		}
-	} else if !dryRun && e.sourceClient == nil {
+	} else if !dryRun && sourceClient == nil {
 		e.logger.Debug("Source client not available, using cached team-repo associations",
 			"team", mapping.SourceTeamSlug)
 	}

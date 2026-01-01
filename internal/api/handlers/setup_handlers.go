@@ -390,10 +390,10 @@ func (h *SetupHandler) validateSQLitePath(dsn string) ValidationResponse {
 		response.Error = fmt.Sprintf("Invalid directory: %v", err)
 		return response
 	}
-	// Ensure absDir is strictly within absSafeBaseDir using filepath.Rel
+	// Ensure absDir is within or equal to absSafeBaseDir using filepath.Rel
 	// This is more robust than HasPrefix and handles symlinks better
 	rel, err := filepath.Rel(absSafeBaseDir, absDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".") {
+	if err != nil || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+"..") {
 		response.Valid = false
 		response.Error = fmt.Sprintf("Database directory must be inside %s", safeBaseDir)
 		return response
@@ -481,7 +481,15 @@ func (h *SetupHandler) generateEnvFile(cfg SetupConfig) string {
 }
 
 // writeSourceConfig writes source configuration to the env file
+// Skips writing if token is empty or a placeholder (sources are now configured via Sources page)
 func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigData) {
+	// Skip source config if no real token is provided
+	// Sources are now managed via the Sources page, not the initial setup
+	if src.Token == "" || src.Token == "placeholder" {
+		sb.WriteString("# Source configuration - configure via Sources page after setup\n\n")
+		return
+	}
+
 	sb.WriteString("# Source Repository System Configuration\n")
 	sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_TYPE=%s\n", src.Type))
 	sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_BASE_URL=%s\n", src.BaseURL))
@@ -505,7 +513,15 @@ func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigDa
 }
 
 // writeDestinationConfig writes destination configuration to the env file
+// Skips writing if token is empty or a placeholder (destination is now configured via Settings page)
 func (h *SetupHandler) writeDestinationConfig(sb *strings.Builder, dest DestinationConfigData) {
+	// Skip destination config if no real token is provided
+	// Destination is now managed via the Settings page, not the initial setup
+	if dest.Token == "" || dest.Token == "placeholder" {
+		sb.WriteString("# Destination configuration - configure via Settings page after setup\n\n")
+		return
+	}
+
 	sb.WriteString("# Destination Repository System Configuration\n")
 	sb.WriteString("GHMIG_DESTINATION_TYPE=github\n")
 	sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_BASE_URL=%s\n", dest.BaseURL))

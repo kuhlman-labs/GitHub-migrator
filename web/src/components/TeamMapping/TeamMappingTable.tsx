@@ -995,7 +995,7 @@ export function TeamMappingTable() {
         submitLabel={discoverTeams.isPending ? 'Discovering...' : 'Discover'}
         onSubmit={() => {
           if (!discoverOrg.trim()) return;
-          discoverTeams.mutate(discoverOrg.trim(), {
+          discoverTeams.mutate({ organization: discoverOrg.trim() }, {
             onSuccess: (data) => {
               showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();

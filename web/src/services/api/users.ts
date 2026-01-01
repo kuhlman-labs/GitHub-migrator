@@ -27,8 +27,11 @@ export const usersApi = {
     return data;
   },
 
-  async discover(organization: string) {
-    const { data } = await client.post('/users/discover', { organization });
+  async discover(organization: string, sourceId?: number) {
+    const { data } = await client.post('/users/discover', { 
+      organization,
+      source_id: sourceId,
+    });
     return data;
   },
 

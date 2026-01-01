@@ -58,9 +58,16 @@ func main() {
 	// Migrate existing .env config to database if settings are empty
 	migrateEnvConfigToDatabase(db, cfg, logger)
 
+	// Reload ConfigService to pick up any migrated settings
+	if err := cfgSvc.Reload(); err != nil {
+		slog.Warn("Failed to reload config after migration", "error", err)
+	}
+
 	// Initialize GitHub dual clients (PAT + optional App auth)
+	// Try legacy config first, then fall back to database settings
+	// Note: sourceDualClient is only used for API handlers (discovery), not for migrations
 	sourceDualClient := initializeSourceClient(cfg, logger)
-	destDualClient := initializeDestClient(cfg, logger)
+	destDualClient := initializeDestClientWithFallback(cfg, cfgSvc, logger)
 
 	// Create API server
 	server := api.NewServer(cfg, db, logger, sourceDualClient, destDualClient)
@@ -68,8 +75,9 @@ func main() {
 	// Set ConfigService for dynamic settings management
 	server.SetConfigService(cfgSvc)
 
-	// Initialize migration executor and worker (if both clients are available)
-	migrationWorker := initializeMigrationWorker(cfg, sourceDualClient, destDualClient, db, logger)
+	// Initialize migration executor and worker (destination client required)
+	// Source clients are created dynamically per-source by ExecutorFactory
+	migrationWorker := initializeMigrationWorker(cfg, cfgSvc, destDualClient, db, logger)
 
 	// Initialize and start batch status updater
 	statusUpdater := initializeBatchStatusUpdater(db, logger)
@@ -81,7 +89,8 @@ func main() {
 	}
 
 	// Initialize and start scheduler worker for scheduled batches
-	schedulerWorker := initializeSchedulerWorker(cfg, sourceDualClient, destDualClient, db, logger)
+	// Uses ExecutorFactory for dynamic multi-source support
+	schedulerWorker := initializeSchedulerWorker(cfg, cfgSvc, destDualClient, db, logger)
 	if schedulerWorker != nil {
 		go schedulerWorker.Start(ctx)
 	}
@@ -165,6 +174,37 @@ func initializeDestClient(cfg *config.Config, logger *slog.Logger) *github.DualC
 	)
 }
 
+// initializeDestClientWithFallback initializes the destination client from legacy config,
+// falling back to database settings if legacy config is not present.
+func initializeDestClientWithFallback(cfg *config.Config, cfgSvc *configsvc.Service, logger *slog.Logger) *github.DualClient {
+	// Try legacy config first
+	if cfg.Destination.Token != "" && cfg.Destination.BaseURL != "" {
+		return initializeDestClient(cfg, logger)
+	}
+
+	// Fall back to database settings
+	destConfig := cfgSvc.GetDestinationConfig()
+	if !destConfig.Configured {
+		logger.Info("No destination configured in legacy config or database")
+		return nil
+	}
+
+	logger.Info("Initializing destination client from database settings",
+		"base_url", destConfig.BaseURL,
+		"has_app_auth", destConfig.AppID > 0)
+
+	return initializeGitHubDualClient(
+		destConfig.Token,
+		destConfig.BaseURL,
+		"github", // Destination is always GitHub
+		destConfig.AppID,
+		destConfig.AppPrivateKey,
+		destConfig.AppInstallationID,
+		"destination",
+		logger,
+	)
+}
+
 // initializeGitHubDualClient initializes a GitHub dual client with PAT and optional App auth
 func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, appPrivateKey string, appInstallationID int64, name string, logger *slog.Logger) *github.DualClient {
 	if token == "" || baseURL == "" || clientType != "github" {
@@ -213,100 +253,32 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 	return dualClient
 }
 
-// initializeMigrationWorker creates and starts the migration worker if configured
-//
-//nolint:gocyclo // Complexity is inherent to worker initialization logic
-func initializeMigrationWorker(cfg *config.Config, sourceDualClient, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
+// initializeMigrationWorker creates and starts the migration worker if configured.
+// Uses ExecutorFactory for dynamic multi-source support.
+func initializeMigrationWorker(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
 	// Destination client is always required for migrations
-	// Source client is only required for GitHub-to-GitHub migrations (ADO migrations don't need it)
 	if destDualClient == nil {
 		logger.Info("Migration worker not started - destination GitHub client not configured")
 		return nil
 	}
 
-	// For ADO sources, sourceDualClient will be nil - this is expected and supported
-	if sourceDualClient == nil && cfg.Source.Type == "azuredevops" {
-		logger.Info("Initializing migration worker for Azure DevOps source",
-			"source_type", cfg.Source.Type)
-	} else if sourceDualClient == nil {
-		logger.Warn("Migration worker not started - source client not configured and source is not Azure DevOps")
-		return nil
-	}
-
-	// Parse post-migration mode
-	var postMigMode migration.PostMigrationMode
-	switch cfg.Migration.PostMigrationMode {
-	case "never":
-		postMigMode = migration.PostMigrationNever
-	case "production_only":
-		postMigMode = migration.PostMigrationProductionOnly
-	case "dry_run_only":
-		postMigMode = migration.PostMigrationDryRunOnly
-	case "always":
-		postMigMode = migration.PostMigrationAlways
-	default:
-		postMigMode = migration.PostMigrationProductionOnly
-	}
-
-	// Parse destination repo exists action
-	var destRepoAction migration.DestinationRepoExistsAction
-	switch cfg.Migration.DestRepoExistsAction {
-	case "fail":
-		destRepoAction = migration.DestinationRepoExistsFail
-	case "skip":
-		destRepoAction = migration.DestinationRepoExistsSkip
-	case "delete":
-		destRepoAction = migration.DestinationRepoExistsDelete
-	default:
-		destRepoAction = migration.DestinationRepoExistsFail
-	}
-
-	// Parse visibility handling configuration
-	visibilityHandling := migration.VisibilityHandling{
-		PublicRepos:   cfg.Migration.VisibilityHandling.PublicRepos,
-		InternalRepos: cfg.Migration.VisibilityHandling.InternalRepos,
-	}
-
-	// Create migration executor with PAT clients (required for migrations per GitHub API)
-	// For ADO sources, sourceDualClient will be nil - pass nil SourceClient to executor
-	var sourceClient *github.Client
-	if sourceDualClient != nil {
-		sourceClient = sourceDualClient.MigrationClient()
-	}
-
-	logger.Info("Creating migration executor",
-		"source_type", cfg.Source.Type,
-		"has_source_client", sourceClient != nil,
-		"has_source_token", cfg.Source.Token != "",
-		"source_url", cfg.Source.BaseURL,
-		"visibility_public_to", visibilityHandling.PublicRepos,
-		"visibility_internal_to", visibilityHandling.InternalRepos)
-	executor, err := migration.NewExecutor(migration.ExecutorConfig{
-		SourceClient:         sourceClient,
-		SourceToken:          cfg.Source.Token,   // ADO PAT for ADO sources, GitHub PAT for GitHub sources
-		SourceURL:            cfg.Source.BaseURL, // GitHub base URL or ADO org URL (e.g., https://dev.azure.com/org)
-		DestClient:           destDualClient.MigrationClient(),
-		Storage:              db,
-		Logger:               logger,
-		PostMigrationMode:    postMigMode,
-		DestRepoExistsAction: destRepoAction,
-		VisibilityHandling:   visibilityHandling,
-	})
+	// Create executor factory for dynamic multi-source support
+	executorFactory, err := createExecutorFactory(cfg, cfgSvc, destDualClient, db, logger)
 	if err != nil {
-		slog.Error("Failed to create migration executor", "error", err)
+		slog.Error("Failed to create executor factory", "error", err)
 		return nil
 	}
 
-	slog.Info("Migration executor created")
+	slog.Info("Migration executor factory created")
 
-	// Create and start migration worker
+	// Create and start migration worker with factory
 	pollInterval := time.Duration(cfg.Migration.PollIntervalSeconds) * time.Second
 	migrationWorker, err := worker.NewMigrationWorker(worker.WorkerConfig{
-		Executor:     executor,
-		Storage:      db,
-		Logger:       logger,
-		PollInterval: pollInterval,
-		Workers:      cfg.Migration.Workers,
+		ExecutorFactory: executorFactory,
+		Storage:         db,
+		Logger:          logger,
+		PollInterval:    pollInterval,
+		Workers:         cfg.Migration.Workers,
 	})
 	if err != nil {
 		slog.Error("Failed to create migration worker", "error", err)
@@ -327,6 +299,62 @@ func initializeMigrationWorker(cfg *config.Config, sourceDualClient, destDualCli
 	return migrationWorker
 }
 
+// createExecutorFactory creates an executor factory with the shared configuration.
+// Uses ConfigService for dynamic settings from database, falling back to static config.
+func createExecutorFactory(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) (*migration.ExecutorFactory, error) {
+	// Get migration settings from database (via ConfigService) if available
+	migCfg := cfgSvc.GetMigrationConfig()
+
+	// Parse post-migration mode (still from static config as it's not in DB settings yet)
+	var postMigMode migration.PostMigrationMode
+	switch cfg.Migration.PostMigrationMode {
+	case "never":
+		postMigMode = migration.PostMigrationNever
+	case "production_only":
+		postMigMode = migration.PostMigrationProductionOnly
+	case "dry_run_only":
+		postMigMode = migration.PostMigrationDryRunOnly
+	case "always":
+		postMigMode = migration.PostMigrationAlways
+	default:
+		postMigMode = migration.PostMigrationProductionOnly
+	}
+
+	// Parse destination repo exists action from database settings
+	var destRepoAction migration.DestinationRepoExistsAction
+	switch migCfg.DestRepoExistsAction {
+	case "fail":
+		destRepoAction = migration.DestinationRepoExistsFail
+	case "skip":
+		destRepoAction = migration.DestinationRepoExistsSkip
+	case "delete":
+		destRepoAction = migration.DestinationRepoExistsDelete
+	default:
+		destRepoAction = migration.DestinationRepoExistsFail
+	}
+
+	// Parse visibility handling from database settings
+	visibilityHandling := migration.VisibilityHandling{
+		PublicRepos:   migCfg.VisibilityPublic,
+		InternalRepos: migCfg.VisibilityInternal,
+	}
+
+	logger.Info("Creating migration executor factory",
+		"visibility_public_to", visibilityHandling.PublicRepos,
+		"visibility_internal_to", visibilityHandling.InternalRepos,
+		"post_migration_mode", postMigMode,
+		"dest_repo_exists_action", destRepoAction)
+
+	return migration.NewExecutorFactory(migration.ExecutorFactoryConfig{
+		Storage:              db,
+		DestClient:           destDualClient.MigrationClient(),
+		Logger:               logger,
+		PostMigrationMode:    postMigMode,
+		DestRepoExistsAction: destRepoAction,
+		VisibilityHandling:   visibilityHandling,
+	})
+}
+
 // initializeBatchStatusUpdater creates the batch status updater service
 func initializeBatchStatusUpdater(db *storage.Database, logger *slog.Logger) *batch.StatusUpdater {
 	statusUpdater, err := batch.NewStatusUpdater(batch.StatusUpdaterConfig{
@@ -343,82 +371,27 @@ func initializeBatchStatusUpdater(db *storage.Database, logger *slog.Logger) *ba
 	return statusUpdater
 }
 
-// initializeSchedulerWorker creates the scheduler worker for scheduled batches
-func initializeSchedulerWorker(cfg *config.Config, sourceDualClient, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.SchedulerWorker {
+// initializeSchedulerWorker creates the scheduler worker for scheduled batches.
+// Uses ExecutorFactory for dynamic multi-source support.
+func initializeSchedulerWorker(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.SchedulerWorker {
 	// Destination client is always required
-	// Source client is only required for GitHub-to-GitHub migrations (ADO migrations don't need it)
 	if destDualClient == nil {
 		logger.Info("Scheduler worker not started - destination GitHub client not configured")
 		return nil
 	}
 
-	// For ADO sources, sourceDualClient will be nil - this is expected and supported
-	if sourceDualClient == nil && cfg.Source.Type == "azuredevops" {
-		logger.Info("Initializing scheduler worker for Azure DevOps source",
-			"source_type", cfg.Source.Type)
-	} else if sourceDualClient == nil {
-		logger.Warn("Scheduler worker not started - source client not configured and source is not Azure DevOps")
-		return nil
-	}
-
-	// Create migration executor (required for batch orchestrator)
-	var postMigMode migration.PostMigrationMode
-	switch cfg.Migration.PostMigrationMode {
-	case "never":
-		postMigMode = migration.PostMigrationNever
-	case "production_only":
-		postMigMode = migration.PostMigrationProductionOnly
-	case "dry_run_only":
-		postMigMode = migration.PostMigrationDryRunOnly
-	case "always":
-		postMigMode = migration.PostMigrationAlways
-	default:
-		postMigMode = migration.PostMigrationProductionOnly
-	}
-
-	var destRepoAction migration.DestinationRepoExistsAction
-	switch cfg.Migration.DestRepoExistsAction {
-	case "fail":
-		destRepoAction = migration.DestinationRepoExistsFail
-	case "skip":
-		destRepoAction = migration.DestinationRepoExistsSkip
-	case "delete":
-		destRepoAction = migration.DestinationRepoExistsDelete
-	default:
-		destRepoAction = migration.DestinationRepoExistsFail
-	}
-
-	visibilityHandlingScheduler := migration.VisibilityHandling{
-		PublicRepos:   cfg.Migration.VisibilityHandling.PublicRepos,
-		InternalRepos: cfg.Migration.VisibilityHandling.InternalRepos,
-	}
-
-	// Handle nil source client for ADO sources
-	var sourceClientForScheduler *github.Client
-	if sourceDualClient != nil {
-		sourceClientForScheduler = sourceDualClient.MigrationClient()
-	}
-
-	executor, err := migration.NewExecutor(migration.ExecutorConfig{
-		SourceClient:         sourceClientForScheduler,
-		SourceToken:          cfg.Source.Token,   // ADO PAT for ADO sources
-		SourceURL:            cfg.Source.BaseURL, // GitHub base URL or ADO org URL
-		DestClient:           destDualClient.MigrationClient(),
-		Storage:              db,
-		Logger:               logger,
-		PostMigrationMode:    postMigMode,
-		DestRepoExistsAction: destRepoAction,
-		VisibilityHandling:   visibilityHandlingScheduler,
-	})
+	// Create executor factory for dynamic multi-source support
+	executorFactory, err := createExecutorFactory(cfg, cfgSvc, destDualClient, db, logger)
 	if err != nil {
-		slog.Error("Failed to create executor for scheduler", "error", err)
+		slog.Error("Failed to create executor factory for scheduler", "error", err)
 		return nil
 	}
 
 	// Create orchestrator (which internally creates scheduler and organizer)
+	// The factory implements MigrationExecutor interface
 	orchestrator, err := batch.NewOrchestrator(batch.OrchestratorConfig{
 		Storage:  db,
-		Executor: executor,
+		Executor: executorFactory,
 		Logger:   logger,
 	})
 	if err != nil {

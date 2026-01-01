@@ -415,6 +415,7 @@ func (d *Database) GetUserMappingSourceOrgs(ctx context.Context) ([]string, erro
 // CreateUserMappingFromUser creates a user mapping from a discovered user
 func (d *Database) CreateUserMappingFromUser(ctx context.Context, user *models.GitHubUser) error {
 	mapping := &models.UserMapping{
+		SourceID:      user.SourceID, // Copy source_id for multi-source support
 		SourceLogin:   user.Login,
 		SourceEmail:   user.Email,
 		SourceName:    user.Name,
@@ -427,21 +428,23 @@ func (d *Database) CreateUserMappingFromUser(ctx context.Context, user *models.G
 }
 
 // SyncUserMappingsFromUsers creates user mappings for all discovered users that don't have one
-// Also populates source_org from user_org_memberships
+// Also populates source_org from user_org_memberships and source_id from the user
 func (d *Database) SyncUserMappingsFromUsers(ctx context.Context) (int64, error) {
 	// Find users without mappings and create mappings for them
 	// Also get the primary org (first alphabetically) from user_org_memberships
 	type userWithOrg struct {
+		SourceID   *int64 `gorm:"column:source_id"`
 		Login      string
 		Email      *string
 		Name       *string
-		PrimaryOrg *string
+		PrimaryOrg *string `gorm:"column:primary_org"`
 	}
 
 	var usersWithOrgs []userWithOrg
 	err := d.db.WithContext(ctx).
 		Raw(`
 			SELECT 
+				u.source_id,
 				u.login,
 				u.email,
 				u.name,
@@ -467,6 +470,7 @@ func (d *Database) SyncUserMappingsFromUsers(ctx context.Context) (int64, error)
 	now := time.Now()
 	for _, user := range usersWithOrgs {
 		mappings = append(mappings, &models.UserMapping{
+			SourceID:      user.SourceID, // Copy source_id for multi-source support
 			SourceLogin:   user.Login,
 			SourceEmail:   user.Email,
 			SourceName:    user.Name,

@@ -114,14 +114,17 @@ func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.collector == nil {
-		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
+	// Get or create collector for this source
+	collector, err := h.getCollectorForSource(req.SourceID)
+	if err != nil {
+		h.logger.Error("Failed to get collector for source", "error", err, "source_id", req.SourceID)
+		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
 		return
 	}
 
 	// Run discovery synchronously since it provides immediate feedback
 	ctx := r.Context()
-	teamsDiscovered, membersDiscovered, err := h.collector.DiscoverTeamsOnly(ctx, req.Organization)
+	teamsDiscovered, membersDiscovered, err := collector.DiscoverTeamsOnly(ctx, req.Organization)
 	if err != nil {
 		if h.handleContextError(ctx, err, "discover teams", r) {
 			return
@@ -852,6 +855,7 @@ func findUnmappedTeamRefs(teamRefs []string, mappingMap map[string]*models.TeamM
 
 // getOrCreateTeamExecutor returns the singleton team executor, creating it if necessary.
 // Returns nil if the destination client is not configured.
+// Configures dynamic source client provider for multi-source support.
 func (h *Handler) getOrCreateTeamExecutor() *migration.TeamExecutor {
 	teamExecutorMu.Lock()
 	defer teamExecutorMu.Unlock()
@@ -874,9 +878,70 @@ func (h *Handler) getOrCreateTeamExecutor() *migration.TeamExecutor {
 			return nil
 		}
 		teamExecutor = migration.NewTeamExecutor(db, sourceClient, destClient, h.logger)
+
+		// Set up dynamic source client provider for multi-source support
+		teamExecutor.SetSourceClientProvider(h.createSourceClientProvider(db))
 	}
 
 	return teamExecutor
+}
+
+// createSourceClientProvider creates a function that can dynamically create source clients
+// for a given source ID. This enables multi-source team migration support.
+func (h *Handler) createSourceClientProvider(db *storage.Database) migration.SourceClientProvider {
+	return func(ctx context.Context, sourceID int64) (*github.Client, error) {
+		// Fetch the source from the database
+		source, err := db.GetSource(ctx, sourceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get source %d: %w", sourceID, err)
+		}
+		if source == nil {
+			return nil, fmt.Errorf("source %d not found", sourceID)
+		}
+
+		// Only GitHub sources are supported for team operations
+		if source.Type != models.SourceConfigTypeGitHub {
+			h.logger.Debug("Source is not GitHub, skipping dynamic client creation",
+				"source_id", sourceID,
+				"source_type", source.Type)
+			return nil, nil
+		}
+
+		// Check if source is active
+		if !source.IsActive {
+			return nil, fmt.Errorf("source %s (ID: %d) is not active", source.Name, sourceID)
+		}
+
+		// Create GitHub client configuration
+		clientConfig := github.ClientConfig{
+			BaseURL:     source.BaseURL,
+			Token:       source.Token,
+			Timeout:     120 * time.Second,
+			RetryConfig: github.DefaultRetryConfig(),
+			Logger:      h.logger,
+		}
+
+		// Add App credentials if configured
+		if source.HasAppAuth() {
+			clientConfig.AppID = *source.AppID
+			clientConfig.AppPrivateKey = *source.AppPrivateKey
+			if source.AppInstallationID != nil && *source.AppInstallationID > 0 {
+				clientConfig.AppInstallationID = *source.AppInstallationID
+			}
+		}
+
+		// Create GitHub client
+		client, err := github.NewClient(clientConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GitHub client for source %d: %w", sourceID, err)
+		}
+
+		h.logger.Debug("Created dynamic source client for team operations",
+			"source_id", sourceID,
+			"source_name", source.Name)
+
+		return client, nil
+	}
 }
 
 // ExecuteTeamMigration handles POST /api/v1/team-mappings/execute

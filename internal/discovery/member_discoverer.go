@@ -16,8 +16,9 @@ import (
 // MemberDiscoverer handles discovery of organization members.
 // It is a focused component extracted from the larger Collector struct.
 type MemberDiscoverer struct {
-	storage *storage.Database
-	logger  *slog.Logger
+	storage  *storage.Database
+	logger   *slog.Logger
+	sourceID *int64 // Optional source ID for multi-source support
 }
 
 // NewMemberDiscoverer creates a new MemberDiscoverer.
@@ -26,6 +27,11 @@ func NewMemberDiscoverer(storage *storage.Database, logger *slog.Logger) *Member
 		storage: storage,
 		logger:  logger,
 	}
+}
+
+// SetSourceID sets the source ID to associate with discovered users
+func (d *MemberDiscoverer) SetSourceID(sourceID *int64) {
+	d.sourceID = sourceID
 }
 
 // MemberDiscoveryResult contains the results of member discovery.
@@ -54,6 +60,7 @@ func (d *MemberDiscoverer) DiscoverOrgMembers(ctx context.Context, org string, c
 
 	for _, member := range members {
 		user := &models.GitHubUser{
+			SourceID:       d.sourceID, // Associate with source for multi-source support
 			Login:          member.Login,
 			Name:           member.Name,
 			Email:          member.Email,

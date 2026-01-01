@@ -6,7 +6,7 @@ import type { DiscoveryProgress, Organization, Project, GitHubTeam } from '../..
 
 export const discoveryApi = {
   // GitHub Discovery
-  async start(params: { organization?: string; enterprise_slug?: string; workers?: number }) {
+  async start(params: { organization?: string; enterprise_slug?: string; workers?: number; source_id?: number }) {
     const { data } = await client.post('/discovery/start', params);
     return data;
   },

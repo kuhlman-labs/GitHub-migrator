@@ -74,14 +74,17 @@ func (h *Handler) DiscoverOrgMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.collector == nil {
-		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub client"))
+	// Get or create collector for this source
+	collector, err := h.getCollectorForSource(req.SourceID)
+	if err != nil {
+		h.logger.Error("Failed to get collector for source", "error", err, "source_id", req.SourceID)
+		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
 		return
 	}
 
 	// Run discovery synchronously since it's typically fast for org members
 	ctx := r.Context()
-	discovered, err := h.collector.DiscoverOrgMembersOnly(ctx, req.Organization)
+	discovered, err := collector.DiscoverOrgMembersOnly(ctx, req.Organization)
 	if err != nil {
 		if h.handleContextError(ctx, err, "discover org members", r) {
 			return

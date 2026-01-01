@@ -309,6 +309,7 @@ func (d *Database) DeleteAllTeamMappings(ctx context.Context) error {
 // CreateTeamMappingFromTeam creates a team mapping from a discovered team
 func (d *Database) CreateTeamMappingFromTeam(ctx context.Context, team *models.GitHubTeam) error {
 	mapping := &models.TeamMapping{
+		SourceID:       team.SourceID, // Copy source_id from discovered team for multi-source support
 		SourceOrg:      team.Organization,
 		SourceTeamSlug: team.Slug,
 		SourceTeamName: &team.Name,
@@ -344,6 +345,7 @@ func (d *Database) SyncTeamMappingsFromTeams(ctx context.Context) (int64, error)
 	now := time.Now()
 	for _, team := range teams {
 		mappings = append(mappings, &models.TeamMapping{
+			SourceID:       team.SourceID, // Copy source_id from discovered team for multi-source support
 			SourceOrg:      team.Organization,
 			SourceTeamSlug: team.Slug,
 			SourceTeamName: &team.Name,

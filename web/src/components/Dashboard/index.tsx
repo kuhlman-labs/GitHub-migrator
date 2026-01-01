@@ -36,8 +36,20 @@ export function Dashboard() {
   // Use React Query for config
   const { data: config } = useConfig();
   const { showSuccess } = useToast();
-  const { activeSource } = useSourceContext();
-  const sourceType = config?.source_type || 'github';
+  const { activeSource, sources } = useSourceContext();
+  
+  // Derive source types from configured sources
+  // If a specific source is selected, use its type; otherwise look at all sources
+  const hasGitHubSources = sources.some(s => s.type === 'github');
+  const hasADOSources = sources.some(s => s.type === 'azuredevops');
+  
+  // Determine the primary source type for display
+  // If a specific source is active, use its type
+  // Otherwise, if we have mixed sources, default to github; if only ADO, use azuredevops
+  const sourceType = activeSource?.type 
+    || (hasADOSources && !hasGitHubSources ? 'azuredevops' : 'github')
+    || config?.source_type 
+    || 'github';
   
   // Fetch setup progress for guided empty states
   const { data: setupProgress } = useSetupProgress();
@@ -137,10 +149,10 @@ export function Dashboard() {
     setLocalStorageVersion(v => v + 1);
   };
 
-  // Compute default discovery type based on source type
+  // Compute default discovery type based on configured sources
   const defaultDiscoveryType = useMemo<DiscoveryType>(() => 
-    config?.source_type === 'azuredevops' ? 'ado-org' : 'organization',
-    [config?.source_type]
+    sourceType === 'azuredevops' ? 'ado-org' : 'organization',
+    [sourceType]
   );
   
 
@@ -173,8 +185,37 @@ export function Dashboard() {
     setDiscoveryError(null);
 
     try {
+      // Determine which source to use for discovery
+      // Priority: active source > single configured source > undefined (will fail if no legacy config)
+      const gitHubSources = sources.filter(s => s.type === 'github');
+      const adoSources = sources.filter(s => s.type === 'azuredevops');
+      
+      let sourceId: number | undefined;
+      if (activeSource?.id) {
+        sourceId = activeSource.id;
+      } else if (effectiveDiscoveryType === 'organization' || effectiveDiscoveryType === 'enterprise') {
+        // For GitHub discovery, use the single GitHub source if only one exists
+        if (gitHubSources.length === 1) {
+          sourceId = gitHubSources[0].id;
+        } else if (gitHubSources.length > 1) {
+          setDiscoveryError('Multiple GitHub sources configured. Please select a source from the dropdown.');
+          return;
+        }
+      } else if (effectiveDiscoveryType === 'ado-org' || effectiveDiscoveryType === 'ado-project') {
+        // For ADO discovery, use the single ADO source if only one exists
+        if (adoSources.length === 1) {
+          sourceId = adoSources[0].id;
+        } else if (adoSources.length > 1) {
+          setDiscoveryError('Multiple Azure DevOps sources configured. Please select a source from the dropdown.');
+          return;
+        }
+      }
+      
       if (effectiveDiscoveryType === 'enterprise') {
-        await startDiscoveryMutation.mutateAsync({ enterprise_slug: enterpriseSlug.trim() });
+        await startDiscoveryMutation.mutateAsync({ 
+          enterprise_slug: enterpriseSlug.trim(),
+          source_id: sourceId
+        });
         showSuccess(`Enterprise discovery started for ${enterpriseSlug}`);
         setEnterpriseSlug('');
       } else if (effectiveDiscoveryType === 'ado-org') {
@@ -190,7 +231,10 @@ export function Dashboard() {
         setAdoOrganization('');
         setAdoProject('');
       } else {
-        await startDiscoveryMutation.mutateAsync({ organization: organization.trim() });
+        await startDiscoveryMutation.mutateAsync({ 
+          organization: organization.trim(),
+          source_id: sourceId
+        });
         showSuccess(`Discovery started for ${organization}`);
         setOrganization('');
       }
@@ -299,7 +343,8 @@ export function Dashboard() {
       {/* Upcoming Batches Timeline */}
       <UpcomingBatchesTimeline batches={batches} isLoading={batchesLoading} />
 
-      {/* Organizations Section */}
+      {/* Organizations Section - only show when sources are configured */}
+      {setupProgress?.sources_configured && (
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>
           {sourceType === 'azuredevops' ? 'Azure DevOps Organizations' : 'GitHub Organizations'}
@@ -380,6 +425,7 @@ export function Dashboard() {
           </>
         )}
       </div>
+      )}
 
       {/* Discovery Modal - reuse existing modal from original Dashboard */}
       <DiscoveryModal

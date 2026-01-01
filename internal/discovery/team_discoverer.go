@@ -14,9 +14,10 @@ import (
 // TeamDiscoverer handles discovery of teams and their members.
 // It is a focused component extracted from the larger Collector struct.
 type TeamDiscoverer struct {
-	storage *storage.Database
-	logger  *slog.Logger
-	workers int
+	storage  *storage.Database
+	logger   *slog.Logger
+	workers  int
+	sourceID *int64 // Optional source ID to associate with discovered teams
 }
 
 // NewTeamDiscoverer creates a new TeamDiscoverer.
@@ -29,6 +30,11 @@ func NewTeamDiscoverer(storage *storage.Database, logger *slog.Logger, workers i
 		logger:  logger,
 		workers: workers,
 	}
+}
+
+// SetSourceID sets the source ID to associate with discovered teams and users
+func (d *TeamDiscoverer) SetSourceID(sourceID *int64) {
+	d.sourceID = sourceID
 }
 
 // teamResult holds the result of processing a single team
@@ -184,6 +190,7 @@ func (d *TeamDiscoverer) processTeamFull(ctx context.Context, workerID int, org 
 
 	// Save the team
 	team := &models.GitHubTeam{
+		SourceID:     d.sourceID, // Associate with source for multi-source support
 		Organization: org,
 		Slug:         teamInfo.Slug,
 		Name:         teamInfo.Name,
@@ -278,6 +285,7 @@ func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup
 			"team", teamInfo.Slug)
 
 		team := &models.GitHubTeam{
+			SourceID:     d.sourceID, // Associate with source for multi-source support
 			Organization: org,
 			Slug:         teamInfo.Slug,
 			Name:         teamInfo.Name,
@@ -319,6 +327,7 @@ func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup
 			TeamID:         team.ID,
 			Members:        teamMembers,
 			SourceInstance: sourceInstance,
+			SourceID:       d.sourceID, // Pass source ID for multi-source support
 		})
 		result.memberCount = saveResult.SavedCount
 

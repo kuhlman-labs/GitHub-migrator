@@ -7,7 +7,7 @@ import { BorderedButton } from '../common/buttons';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDuration } from '../../utils/format';
-import { useAnalytics, useConfig } from '../../hooks/useQueries';
+import { useAnalytics } from '../../hooks/useQueries';
 import { FilterBar } from './FilterBar';
 import { MigrationTrendChart } from './MigrationTrendChart';
 import { ComplexityChart } from './ComplexityChart';
@@ -15,6 +15,7 @@ import { KPICard } from './KPICard';
 import { getRepositoriesUrl } from '../../utils/filters';
 import { api } from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
+import { useSourceContext } from '../../contexts/SourceContext';
 import { handleApiError } from '../../utils/errorHandler';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -40,9 +41,12 @@ export function Analytics() {
   const [selectedBatch, setSelectedBatch] = useState('');
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
 
-  // Use React Query for config
-  const { data: config } = useConfig();
-  const sourceType = config?.source_type || 'github';
+  // Derive sourceType from configured sources
+  const { sources, activeSource } = useSourceContext();
+  const hasGitHubSources = sources.some(s => s.type === 'github');
+  const hasADOSources = sources.some(s => s.type === 'azuredevops');
+  const sourceType = activeSource?.type 
+    || (hasADOSources && !hasGitHubSources ? 'azuredevops' : 'github');
 
   const { data: analytics, isLoading, isFetching } = useAnalytics({
     organization: selectedOrganization || undefined,

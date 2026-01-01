@@ -1,8 +1,24 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../__tests__/test-utils';
 import { UnifiedFilterSidebar } from './UnifiedFilterSidebar';
 import type { RepositoryFilters } from '../../types';
 import * as useQueriesModule from '../../hooks/useQueries';
+import * as SourceContextModule from '../../contexts/SourceContext';
+
+// Mock SourceContext
+vi.mock('../../contexts/SourceContext', () => ({
+  useSourceContext: vi.fn(() => ({
+    sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
+    activeSourceFilter: 'all',
+    setActiveSourceFilter: vi.fn(),
+    activeSource: null,
+    isLoading: false,
+    error: null,
+    refetchSources: vi.fn(),
+  })),
+  SourceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 // Mock the hooks
 vi.mock('../../hooks/useQueries', () => ({
@@ -675,16 +691,16 @@ describe('UnifiedFilterSidebar with Azure DevOps', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Override useConfig to return azure devops
-    vi.mocked(useQueriesModule.useConfig).mockReturnValue({
-      data: { source_type: 'azuredevops' },
+    // Mock SourceContext with ADO sources
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [{ id: 1, name: 'ADO Source', type: 'azuredevops' }],
+      activeSourceFilter: 'all',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: null,
       isLoading: false,
       error: null,
-      isError: false,
-      isPending: false,
-      isSuccess: true,
-      status: 'success',
-    } as ReturnType<typeof useQueriesModule.useConfig>);
+      refetchSources: vi.fn(),
+    });
   });
 
   it('should render ADO-specific features', async () => {

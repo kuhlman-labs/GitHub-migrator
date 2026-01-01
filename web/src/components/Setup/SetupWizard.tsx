@@ -145,29 +145,56 @@ export function SetupWizard() {
             After initial setup, you can configure sources and destination from the dashboard.
           </Text>
 
-          <Flash className="mb-6">
-            <Text>
-              <strong>Quick Start:</strong> SQLite is perfect for getting started quickly.
-              You can migrate to PostgreSQL or SQL Server later if needed.
-            </Text>
-          </Flash>
-
           <FormControl required className="mb-4">
             <FormControl.Label>Database Type</FormControl.Label>
             <Select
               value={dbType}
               onChange={(e) => handleDbTypeChange(e.target.value as 'sqlite' | 'postgres' | 'sqlserver')}
             >
-              <Select.Option value="sqlite">SQLite (Recommended for Quick Start)</Select.Option>
+              <Select.Option value="sqlite">SQLite</Select.Option>
               <Select.Option value="postgres">PostgreSQL</Select.Option>
               <Select.Option value="sqlserver">SQL Server</Select.Option>
             </Select>
-            <FormControl.Caption>
-              {dbType === 'sqlite' && 'SQLite stores data in a local file. No additional setup required.'}
-              {dbType === 'postgres' && 'PostgreSQL is recommended for production deployments.'}
-              {dbType === 'sqlserver' && 'SQL Server is ideal for Microsoft-centric environments.'}
-            </FormControl.Caption>
           </FormControl>
+
+          {/* Database type guidance */}
+          <div 
+            className="mb-6 p-4 rounded-lg text-sm"
+            style={{ 
+              backgroundColor: 'var(--bgColor-muted)',
+              border: '1px solid var(--borderColor-default)',
+            }}
+          >
+            {dbType === 'sqlite' && (
+              <>
+                <Text as="p" className="font-semibold mb-2">SQLite - Single User / Evaluation</Text>
+                <Text as="p" style={{ color: 'var(--fgColor-muted)' }}>
+                  Best for: Single-user setups, quick evaluations, or small teams (1-3 people).
+                  Data is stored in a local file with zero configuration. Not recommended for 
+                  concurrent users or production workloads with high write volumes.
+                </Text>
+              </>
+            )}
+            {dbType === 'postgres' && (
+              <>
+                <Text as="p" className="font-semibold mb-2">PostgreSQL - Production Recommended</Text>
+                <Text as="p" style={{ color: 'var(--fgColor-muted)' }}>
+                  Best for: Production deployments, multiple concurrent users, and large-scale migrations.
+                  Provides robust transaction support, better concurrency handling, and is the recommended 
+                  choice for teams and enterprise use.
+                </Text>
+              </>
+            )}
+            {dbType === 'sqlserver' && (
+              <>
+                <Text as="p" className="font-semibold mb-2">SQL Server - Microsoft Environments</Text>
+                <Text as="p" style={{ color: 'var(--fgColor-muted)' }}>
+                  Best for: Organizations with existing SQL Server infrastructure or Azure SQL Database.
+                  Ideal for Microsoft-centric environments with existing DBA support and backup procedures.
+                </Text>
+              </>
+            )}
+          </div>
 
           <FormControl required className="mb-4">
             <FormControl.Label>

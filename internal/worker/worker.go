@@ -14,11 +14,11 @@ import (
 
 // MigrationWorker polls for queued repositories and executes migrations
 type MigrationWorker struct {
-	executor     *migration.Executor
-	storage      *storage.Database
-	logger       *slog.Logger
-	pollInterval time.Duration
-	workers      int
+	executorFactory *migration.ExecutorFactory
+	storage         *storage.Database
+	logger          *slog.Logger
+	pollInterval    time.Duration
+	workers         int
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -29,17 +29,17 @@ type MigrationWorker struct {
 
 // WorkerConfig configures the migration worker
 type WorkerConfig struct {
-	Executor     *migration.Executor
-	Storage      *storage.Database
-	Logger       *slog.Logger
-	PollInterval time.Duration
-	Workers      int // Number of parallel migration workers
+	ExecutorFactory *migration.ExecutorFactory
+	Storage         *storage.Database
+	Logger          *slog.Logger
+	PollInterval    time.Duration
+	Workers         int // Number of parallel migration workers
 }
 
 // NewMigrationWorker creates a new migration worker
 func NewMigrationWorker(cfg WorkerConfig) (*MigrationWorker, error) {
-	if cfg.Executor == nil {
-		return nil, fmt.Errorf("executor is required")
+	if cfg.ExecutorFactory == nil {
+		return nil, fmt.Errorf("executor factory is required")
 	}
 	if cfg.Storage == nil {
 		return nil, fmt.Errorf("storage is required")
@@ -55,12 +55,12 @@ func NewMigrationWorker(cfg WorkerConfig) (*MigrationWorker, error) {
 	}
 
 	return &MigrationWorker{
-		executor:     cfg.Executor,
-		storage:      cfg.Storage,
-		logger:       cfg.Logger,
-		pollInterval: cfg.PollInterval,
-		workers:      cfg.Workers,
-		active:       make(map[int64]bool),
+		executorFactory: cfg.ExecutorFactory,
+		storage:         cfg.Storage,
+		logger:          cfg.Logger,
+		pollInterval:    cfg.PollInterval,
+		workers:         cfg.Workers,
+		active:          make(map[int64]bool),
 	}, nil
 }
 
@@ -268,10 +268,11 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 		// Continue with migration anyway
 	}
 
-	// Execute the migration using the unified strategy-based executor
-	// The executor automatically selects the appropriate strategy (GitHub or ADO)
+	// Execute the migration using the executor factory
+	// The factory dynamically creates/caches executors per source and
+	// the executor automatically selects the appropriate strategy (GitHub or ADO)
 	// based on the repository's source type
-	err := w.executor.ExecuteWithStrategy(ctx, repo, batch, dryRun)
+	err := w.executorFactory.ExecuteWithStrategy(ctx, repo, batch, dryRun)
 
 	if err != nil {
 		w.logger.Error("Migration failed",

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FormControl, TextInput, Button, Flash, Text, Heading } from '@primer/react';
-import { CheckCircleIcon, XCircleIcon, SyncIcon } from '@primer/octicons-react';
+import { CheckCircleIcon, XCircleIcon, SyncIcon, CheckIcon, XIcon } from '@primer/octicons-react';
+import { SuccessButton, SecondaryButton } from '../common/buttons';
 import { useMutation } from '@tanstack/react-query';
 import { settingsApi, type SettingsResponse, type UpdateSettingsRequest, type ValidationResponse } from '../../services/api/settings';
 
@@ -64,7 +65,7 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
       <Heading as="h2" className="text-lg mb-2">Destination GitHub</Heading>
       <Text className="block mb-6" style={{ color: 'var(--fgColor-muted)' }}>
         Configure the destination GitHub instance where repositories will be migrated to.
-        This is typically GitHub.com or a GitHub Enterprise Server instance.
+        Supported destinations are GitHub.com (GHEC) and GHEC with data residency.
       </Text>
 
       {/* Status indicator */}
@@ -89,7 +90,7 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
             monospace
           />
           <FormControl.Caption>
-            Use https://api.github.com for GitHub.com, or your GHES API URL (e.g., https://github.company.com/api/v3)
+            Use https://api.github.com for GitHub.com, or a GHEC data residency URL (e.g., https://api.fabrikam.ghe.com)
           </FormControl.Caption>
         </FormControl>
 
@@ -199,13 +200,32 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
 
         {/* Actions */}
         <div className="flex gap-3 pt-4">
-          <Button
-            onClick={() => validateMutation.mutate()}
-            disabled={!baseURL || validateMutation.isPending}
-            leadingVisual={SyncIcon}
-          >
-            {validateMutation.isPending ? 'Testing...' : 'Test Connection'}
-          </Button>
+          {validateMutation.data?.valid ? (
+            <SuccessButton
+              onClick={() => validateMutation.mutate()}
+              disabled={!baseURL || validateMutation.isPending}
+              leadingVisual={CheckIcon}
+            >
+              Connected
+            </SuccessButton>
+          ) : validateMutation.data && !validateMutation.data.valid ? (
+            <Button
+              onClick={() => validateMutation.mutate()}
+              disabled={!baseURL || validateMutation.isPending}
+              leadingVisual={XIcon}
+              variant="danger"
+            >
+              {validateMutation.isPending ? 'Testing...' : 'Retry Test'}
+            </Button>
+          ) : (
+            <SecondaryButton
+              onClick={() => validateMutation.mutate()}
+              disabled={!baseURL || validateMutation.isPending}
+              leadingVisual={SyncIcon}
+            >
+              {validateMutation.isPending ? 'Testing...' : 'Test Connection'}
+            </SecondaryButton>
+          )}
           <Button
             variant="primary"
             onClick={handleSave}

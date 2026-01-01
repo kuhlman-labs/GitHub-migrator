@@ -483,11 +483,11 @@ describe('useMutations hooks', () => {
       });
 
       await act(async () => {
-        result.current.mutate('test-org');
+        result.current.mutate({ organization: 'test-org' });
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(mockApi.discoverOrgMembers).toHaveBeenCalledWith('test-org');
+      expect(mockApi.discoverOrgMembers).toHaveBeenCalledWith('test-org', undefined);
     });
   });
 
@@ -500,11 +500,11 @@ describe('useMutations hooks', () => {
       });
 
       await act(async () => {
-        result.current.mutate('test-org');
+        result.current.mutate({ organization: 'test-org' });
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(mockApi.discoverTeams).toHaveBeenCalledWith('test-org');
+      expect(mockApi.discoverTeams).toHaveBeenCalledWith('test-org', undefined);
     });
   });
 

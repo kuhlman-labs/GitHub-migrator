@@ -6,8 +6,9 @@ import { api } from '../../services/api';
 import { FilterSection } from '../BatchManagement/FilterSection';
 import { OrganizationSelector } from '../BatchManagement/OrganizationSelector';
 import { useToast } from '../../contexts/ToastContext';
+import { useSourceContext } from '../../contexts/SourceContext';
 import { handleApiError } from '../../utils/errorHandler';
-import { useConfig, useOrganizations } from '../../hooks/useQueries';
+import { useOrganizations } from '../../hooks/useQueries';
 
 interface UnifiedFilterSidebarProps {
   filters: RepositoryFilters;
@@ -76,13 +77,16 @@ export function UnifiedFilterSidebar({
   hideProject = false 
 }: UnifiedFilterSidebarProps) {
   const { showError } = useToast();
+  const { sources, activeSource } = useSourceContext();
   
-  // React Query hooks for config and organizations
-  const { data: config } = useConfig();
+  // React Query hooks for organizations
   const { data: organizationData, isLoading: loadingOrgs } = useOrganizations();
   
-  // Derive sourceType and organizations from React Query data
-  const sourceType = config?.source_type || 'github';
+  // Derive sourceType from configured sources
+  const hasGitHubSources = sources.some(s => s.type === 'github');
+  const hasADOSources = sources.some(s => s.type === 'azuredevops');
+  const sourceType = activeSource?.type 
+    || (hasADOSources && !hasGitHubSources ? 'azuredevops' : 'github');
   const organizations = useMemo(() => {
     return (organizationData || []).map(org => org.organization);
   }, [organizationData]);

@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { Flash, Spinner } from '@primer/react';
-import { PlusIcon, AlertIcon } from '@primer/octicons-react';
+import { Heading, Text, Flash, Spinner } from '@primer/react';
+import { PlusIcon, RepoIcon, AlertIcon } from '@primer/octicons-react';
 import { useSources } from '../../contexts/SourceContext';
-import { SourceCard } from './SourceCard';
-import { SourceForm } from './SourceForm';
+import { SourceCard } from '../Sources/SourceCard';
+import { SourceForm } from '../Sources/SourceForm';
 import { FormDialog } from '../common/FormDialog';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
-import { Button } from '../common/buttons';
+import { PrimaryButton, Button } from '../common/buttons';
 import type { Source, CreateSourceRequest, UpdateSourceRequest } from '../../types';
 
 /**
- * Sources management page.
- * Displays all configured sources and allows CRUD operations.
+ * Sources configuration panel for the Settings page.
+ * Allows managing migration sources (GitHub/Azure DevOps) inline with other settings.
  */
-export function SourcesPage() {
+export function SourcesSettings() {
   const {
     sources,
     isLoading,
@@ -102,7 +102,6 @@ export function SourcesPage() {
   };
 
   const handleValidate = async (source: Source) => {
-    // Validation started for source: source.id
     setValidationResult(null);
 
     try {
@@ -118,45 +117,39 @@ export function SourcesPage() {
         success: false,
         message: err instanceof Error ? err.message : 'Validation failed',
       });
-    } finally {
-      // Validation completed
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex items-center justify-center py-12">
         <Spinner size="large" />
       </div>
     );
   }
 
-  return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--fgColor-default)' }}>
-            Migration Sources
-          </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
-            Configure and manage your GitHub and Azure DevOps sources
-          </p>
-        </div>
-        <Button variant="primary" onClick={handleOpenCreate}>
-          <PlusIcon /> Add Source
+  if (error) {
+    return (
+      <Flash variant="danger">
+        <AlertIcon /> Failed to load sources: {error.message}
+        <Button variant="invisible" size="small" onClick={refetchSources} className="ml-2">
+          Retry
         </Button>
-      </div>
+      </Flash>
+    );
+  }
 
-      {/* Error state */}
-      {error && (
-        <Flash variant="danger" className="mb-4">
-          <AlertIcon /> Failed to load sources: {error.message}
-          <Button variant="invisible" size="small" onClick={refetchSources} className="ml-2">
-            Retry
-          </Button>
-        </Flash>
-      )}
+  return (
+    <div className="max-w-4xl">
+      <div className="flex items-center justify-between mb-2">
+        <Heading as="h2" className="text-lg">Migration Sources</Heading>
+        <PrimaryButton onClick={handleOpenCreate} leadingVisual={PlusIcon}>
+          Add Source
+        </PrimaryButton>
+      </div>
+      <Text className="block mb-6" style={{ color: 'var(--fgColor-muted)' }}>
+        Configure GitHub or Azure DevOps sources to discover repositories for migration.
+      </Text>
 
       {/* Validation result */}
       {validationResult && (
@@ -168,7 +161,7 @@ export function SourcesPage() {
         </Flash>
       )}
 
-      {/* Empty state */}
+      {/* Sources List */}
       {sources.length === 0 ? (
         <div 
           className="rounded-lg border p-12 text-center"
@@ -177,19 +170,23 @@ export function SourcesPage() {
             borderColor: 'var(--borderColor-default)',
           }}
         >
-          <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>
+          <div className="flex justify-center mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+            <RepoIcon size={40} />
+          </div>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--fgColor-default)' }}>
             No sources configured
-          </h2>
-          <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+          </h3>
+          <p className="text-sm mb-6" style={{ color: 'var(--fgColor-muted)' }}>
             Add a GitHub or Azure DevOps source to start discovering repositories for migration.
           </p>
-          <Button variant="primary" onClick={handleOpenCreate}>
-            <PlusIcon /> Add Your First Source
-          </Button>
+          <div className="flex justify-center">
+            <PrimaryButton onClick={handleOpenCreate} leadingVisual={PlusIcon}>
+              Add Your First Source
+            </PrimaryButton>
+          </div>
         </div>
       ) : (
-        /* Sources Grid */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
           {sources.map((source) => (
             <SourceCard
               key={source.id}
@@ -257,4 +254,3 @@ export function SourcesPage() {
     </div>
   );
 }
-

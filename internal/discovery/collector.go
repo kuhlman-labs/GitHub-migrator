@@ -244,6 +244,7 @@ func (c *Collector) DiscoverOrgMembersOnly(ctx context.Context, org string) (int
 
 	for _, member := range members {
 		user := &models.GitHubUser{
+			SourceID:       c.sourceID, // Associate with source for multi-source support
 			Login:          member.Login,
 			Name:           member.Name,
 			Email:          member.Email,
@@ -381,6 +382,7 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 			"team", teamInfo.Slug)
 
 		team := &models.GitHubTeam{
+			SourceID:     c.sourceID, // Associate with source for multi-source support
 			Organization: org,
 			Slug:         teamInfo.Slug,
 			Name:         teamInfo.Name,
@@ -428,6 +430,7 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 			TeamID:         team.ID,
 			Members:        teamMembers,
 			SourceInstance: sourceInstance,
+			SourceID:       c.sourceID, // Pass source ID for multi-source support
 		})
 		result.memberCount = saveResult.SavedCount
 
@@ -499,7 +502,9 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 
 		// Set total repos upfront for accurate progress tracking
 		tracker := c.getProgressTracker()
-		tracker.SetTotalRepos(totalRepos)
+		if totalRepos > 0 {
+			tracker.SetTotalRepos(totalRepos)
+		}
 	}
 
 	// Collect repositories from all organizations
@@ -509,6 +514,14 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 	// If not using per-org clients, create a single shared profiler
 	if !useAppInstallations {
 		profiler = NewProfiler(c.client, c.logger)
+	}
+
+	// Track whether we have an upfront total count
+	// This is used to determine if we need to increment total as we discover
+	hasUpfrontTotalPAT := false
+	if !useAppInstallations {
+		tracker := c.getProgressTracker()
+		hasUpfrontTotalPAT = tracker.GetProgress().TotalRepos > 0
 	}
 
 	if useAppInstallations {
@@ -561,7 +574,10 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 				"organization", org,
 				"count", len(repos))
 
-			// Note: Total repos was set upfront via ListEnterpriseOrganizationsWithCounts
+			// If we didn't get upfront counts, add repos as we discover them
+			if !hasUpfrontTotalPAT && len(repos) > 0 {
+				tracker.AddRepos(len(repos))
+			}
 
 			// Load package cache for this organization using org-specific profiler
 			if err := orgProfiler.LoadPackageCache(ctx, org); err != nil {
@@ -719,7 +735,13 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 	// Pre-fetch repo counts for all orgs to set accurate total upfront
 	orgClients, totalRepos := c.prefetchOrgClientsAndCounts(ctx, orgs, orgInstallations)
 	c.logger.Info("Pre-fetched total repository count", "enterprise", enterpriseSlug, "total_repos", totalRepos)
-	tracker.SetTotalRepos(totalRepos)
+
+	// Track whether we got a valid upfront count
+	// If totalRepos is 0, we'll increment it as we discover repos
+	hasUpfrontTotal := totalRepos > 0
+	if hasUpfrontTotal {
+		tracker.SetTotalRepos(totalRepos)
+	}
 
 	for i, org := range orgs {
 		c.logger.Info("Processing organization",
@@ -764,7 +786,10 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 			"organization", org,
 			"count", len(repos))
 
-		// Note: Total repos was set upfront via pre-fetch phase
+		// If we didn't get upfront counts, add repos as we discover them
+		if !hasUpfrontTotal && len(repos) > 0 {
+			tracker.AddRepos(len(repos))
+		}
 		tracker.SetPhase(models.PhaseProfilingRepos)
 
 		// Load package cache for this organization
@@ -1407,6 +1432,7 @@ func (c *Collector) teamDiscoveryWorker(ctx context.Context, wg *sync.WaitGroup,
 
 		// Save the team to the database
 		team := &models.GitHubTeam{
+			SourceID:     c.sourceID, // Associate with source for multi-source support
 			Organization: org,
 			Slug:         teamInfo.Slug,
 			Name:         teamInfo.Name,
@@ -1542,6 +1568,7 @@ func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *
 
 	for _, member := range members {
 		user := &models.GitHubUser{
+			SourceID:       c.sourceID, // Associate with source for multi-source support
 			Login:          member.Login,
 			Name:           member.Name,
 			Email:          member.Email,
