@@ -286,7 +286,7 @@ func (d *Database) applyListScopes(query *gorm.DB, filters map[string]any) *gorm
 	return query
 }
 
-// applyCoreFilters applies basic filters: status, batch_id, source, visibility, search
+// applyCoreFilters applies basic filters: status, batch_id, source_id, source, visibility, search
 func applyCoreFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 	if status, ok := filters["status"]; ok {
 		query = query.Scopes(WithStatus(status))
@@ -294,6 +294,11 @@ func applyCoreFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 
 	if batchID, ok := filters["batch_id"].(int64); ok {
 		query = query.Scopes(WithBatchID(batchID))
+	}
+
+	// Multi-source filter
+	if sourceID, ok := filters["source_id"].(int64); ok {
+		query = query.Scopes(WithSourceID(sourceID))
 	}
 
 	if source, ok := filters["source"].(string); ok {

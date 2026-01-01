@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
@@ -126,6 +127,14 @@ func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
 	if h.sourceType == models.SourceTypeAzureDevOps {
 		projects, err := h.db.GetADOProjects(ctx, "")
 		if err != nil {
@@ -164,7 +173,8 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgStats, err := h.db.GetOrganizationStats(ctx)
+	// Use filtered query with source_id support
+	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, "", "", "", sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get organization stats", r) {
 			return

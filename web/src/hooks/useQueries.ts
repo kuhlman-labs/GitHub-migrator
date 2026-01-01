@@ -32,10 +32,15 @@ interface PollingOptions {
 }
 
 // Organization queries
-export function useOrganizations(options?: PollingOptions) {
+interface OrganizationQueryOptions extends PollingOptions {
+  /** Filter by source ID for multi-source support */
+  sourceId?: number;
+}
+
+export function useOrganizations(options?: OrganizationQueryOptions) {
   return useQuery<Organization[], Error>({
-    queryKey: ['organizations'],
-    queryFn: () => api.listOrganizations(),
+    queryKey: ['organizations', options?.sourceId],
+    queryFn: () => api.listOrganizations(options?.sourceId),
     refetchInterval: options?.refetchInterval,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
@@ -75,7 +80,11 @@ export function useADOProjects(organization?: string) {
 }
 
 // Repository queries
-export function useRepositories(filters: RepositoryFilters = {}) {
+interface RepositoryQueryFilters extends RepositoryFilters {
+  source_id?: number;
+}
+
+export function useRepositories(filters: RepositoryQueryFilters = {}) {
   return useQuery<{ repositories: Repository[]; total?: number }, Error>({
     queryKey: ['repositories', filters],
     queryFn: () => api.listRepositories(filters),
@@ -109,6 +118,7 @@ interface AnalyticsFilters {
   organization?: string;
   project?: string;
   batch_id?: string;
+  source_id?: number;
 }
 
 export function useAnalytics(filters: AnalyticsFilters = {}, options?: PollingOptions) {
@@ -149,10 +159,14 @@ export function useBatchRepositories(batchId: number | null, options?: PollingOp
 }
 
 // Migration history queries
-export function useMigrationHistory() {
+interface MigrationHistoryFilters {
+  sourceId?: number;
+}
+
+export function useMigrationHistory(filters: MigrationHistoryFilters = {}) {
   return useQuery<{ migrations: MigrationHistoryEntry[]; total: number }, Error>({
-    queryKey: ['migrationHistory'],
-    queryFn: () => api.getMigrationHistoryList(),
+    queryKey: ['migrationHistory', filters.sourceId],
+    queryFn: () => api.getMigrationHistoryList(filters.sourceId),
   });
 }
 
@@ -177,6 +191,7 @@ export function useDashboardActionItems(options?: PollingOptions) {
 // User queries
 interface UserFilters {
   source_instance?: string;
+  source_id?: number;
   limit?: number;
   offset?: number;
 }
@@ -188,10 +203,10 @@ export function useUsers(filters: UserFilters = {}) {
   });
 }
 
-export function useUserStats() {
+export function useUserStats(sourceId?: number) {
   return useQuery<UserStats, Error>({
-    queryKey: ['userStats'],
-    queryFn: () => api.getUserStats(),
+    queryKey: ['userStats', sourceId],
+    queryFn: () => api.getUserStats(sourceId),
   });
 }
 
@@ -199,6 +214,7 @@ export function useUserStats() {
 interface UserMappingFilters {
   status?: string;
   source_org?: string;
+  source_id?: number;
   has_destination?: boolean;
   has_mannequin?: boolean;
   reclaim_status?: string;
@@ -214,10 +230,10 @@ export function useUserMappings(filters: UserMappingFilters = {}) {
   });
 }
 
-export function useUserMappingStats(sourceOrg?: string) {
+export function useUserMappingStats(sourceOrg?: string, sourceId?: number) {
   return useQuery<UserMappingStats, Error>({
-    queryKey: ['userMappingStats', sourceOrg || 'all'],
-    queryFn: () => api.getUserMappingStats(sourceOrg),
+    queryKey: ['userMappingStats', sourceOrg || 'all', sourceId],
+    queryFn: () => api.getUserMappingStats(sourceOrg, sourceId),
   });
 }
 
@@ -237,10 +253,10 @@ export function useUserDetail(login: string | null) {
 }
 
 // Team queries
-export function useTeams(organization?: string) {
+export function useTeams(organization?: string, sourceId?: number) {
   return useQuery<GitHubTeam[], Error>({
-    queryKey: ['teams', organization],
-    queryFn: () => api.listTeams(organization),
+    queryKey: ['teams', organization, sourceId],
+    queryFn: () => api.listTeams(organization, sourceId),
   });
 }
 
@@ -256,6 +272,7 @@ export function useTeamMembers(org: string, teamSlug: string) {
 interface TeamMappingFilters {
   source_org?: string;
   destination_org?: string;
+  source_id?: number;
   status?: string;
   has_destination?: boolean;
   search?: string;
@@ -270,10 +287,10 @@ export function useTeamMappings(filters: TeamMappingFilters = {}) {
   });
 }
 
-export function useTeamMappingStats(organization?: string) {
+export function useTeamMappingStats(organization?: string, sourceId?: number) {
   return useQuery<TeamMappingStats, Error>({
-    queryKey: ['teamMappingStats', organization || 'all'],
-    queryFn: () => api.getTeamMappingStats(organization),
+    queryKey: ['teamMappingStats', organization || 'all', sourceId],
+    queryFn: () => api.getTeamMappingStats(organization, sourceId),
   });
 }
 

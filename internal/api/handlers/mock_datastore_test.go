@@ -452,7 +452,7 @@ func (m *MockDataStore) GetOrganizationStats(_ context.Context) ([]*storage.Orga
 	return []*storage.OrganizationStats{}, nil
 }
 
-func (m *MockDataStore) GetOrganizationStatsFiltered(_ context.Context, _, _, _ string) ([]*storage.OrganizationStats, error) {
+func (m *MockDataStore) GetOrganizationStatsFiltered(_ context.Context, _, _, _ string, _ *int64) ([]*storage.OrganizationStats, error) {
 	return []*storage.OrganizationStats{}, nil
 }
 

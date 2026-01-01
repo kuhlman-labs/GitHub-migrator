@@ -52,6 +52,7 @@ export function Analytics() {
     organization: selectedOrganization || undefined,
     project: selectedProject || undefined,
     batch_id: selectedBatch || undefined,
+    source_id: activeSource?.id,
   });
 
   // Calculate days until completion (must be before early returns to satisfy rules of hooks)

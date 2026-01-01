@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { FormControl, TextInput, ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
@@ -18,13 +18,21 @@ import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { exportToCSV, exportToExcel, exportToJSON, getTimestampedFilename } from '../../utils/export';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 export function Repositories() {
   const { showError, showSuccess } = useToast();
+  const { activeSource } = useSourceContext();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Parse filters from URL
   const urlFilters = searchParamsToFilters(searchParams);
+  
+  // Merge URL filters with active source filter
+  const filtersWithSource = useMemo(() => ({
+    ...urlFilters,
+    source_id: activeSource?.id,
+  }), [urlFilters, activeSource?.id]);
   
   const [currentPage, setCurrentPage] = useState(1);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -34,8 +42,8 @@ export function Repositories() {
   const [discoverOrg, setDiscoverOrg] = useState('');
   const pageSize = 12;
   
-  // Fetch repositories with filters
-  const { data, isLoading, isFetching} = useRepositories(urlFilters);
+  // Fetch repositories with filters (including source filter)
+  const { data, isLoading, isFetching} = useRepositories(filtersWithSource);
   const discoverRepositories = useDiscoverRepositories();
   const repositories = data?.repositories || [];
 

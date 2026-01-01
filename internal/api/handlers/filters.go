@@ -13,6 +13,7 @@ type RepositoryFilters struct {
 	// Core filters
 	Status       []string `json:"status,omitempty"`
 	BatchID      *int64   `json:"batch_id,omitempty"`
+	SourceID     *int64   `json:"source_id,omitempty"` // Filter by multi-source ID
 	Source       string   `json:"source,omitempty"`
 	Organization []string `json:"organization,omitempty"`
 	Team         []string `json:"team,omitempty"`
@@ -85,6 +86,9 @@ func ParseRepositoryFilters(r *http.Request) *RepositoryFilters {
 
 	// Parse batch_id
 	f.BatchID = parseInt64Ptr(q.Get("batch_id"))
+
+	// Parse source_id (multi-source filter)
+	f.SourceID = parseInt64Ptr(q.Get("source_id"))
 
 	// Parse source
 	f.Source = q.Get("source")
@@ -178,6 +182,10 @@ func (f *RepositoryFilters) addCoreFiltersToMap(m map[string]any) {
 
 	if f.BatchID != nil {
 		m["batch_id"] = *f.BatchID
+	}
+
+	if f.SourceID != nil {
+		m["source_id"] = *f.SourceID
 	}
 
 	if f.Source != "" {

@@ -63,18 +63,23 @@ export function Dashboard() {
   
   // Fetch all dashboard data with React Query polling
   // Use faster polling when discovery is in progress to show real-time updates
+  // Filter by active source when one is selected
   const { data: organizations = [], isLoading: orgsLoading, isFetching: orgsFetching } = useOrganizations({
+    sourceId: activeSource?.id,
     refetchInterval: isDiscoveryInProgress 
       ? POLLING_INTERVALS.orgsDiscovery 
       : POLLING_INTERVALS.orgsIdle,
   });
-  const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching } = useAnalytics({}, {
-    refetchInterval: isDiscoveryInProgress
-      ? POLLING_INTERVALS.analyticsDiscovery
-      : hasActiveMigrations 
-        ? POLLING_INTERVALS.analyticsActive 
-        : POLLING_INTERVALS.analyticsIdle,
-  });
+  const { data: analytics, isLoading: analyticsLoading, isFetching: analyticsFetching } = useAnalytics(
+    { source_id: activeSource?.id }, 
+    {
+      refetchInterval: isDiscoveryInProgress
+        ? POLLING_INTERVALS.analyticsDiscovery
+        : hasActiveMigrations 
+          ? POLLING_INTERVALS.analyticsActive 
+          : POLLING_INTERVALS.analyticsIdle,
+    }
+  );
   
   // Update active migrations state when analytics changes
   // This is the standard React pattern for syncing state with derived values
@@ -312,9 +317,16 @@ export function Dashboard() {
       
       {/* Active Source Filter Indicator */}
       {activeSource && (
-        <Flash variant="default" className="mb-4">
-          Showing data from: <strong>{activeSource.name}</strong> ({activeSource.type === 'github' ? 'GitHub' : 'Azure DevOps'})
-        </Flash>
+        <div 
+          className="mb-4 px-4 py-3 rounded-md border text-sm"
+          style={{
+            backgroundColor: 'transparent',
+            borderColor: 'var(--borderColor-default)',
+            color: 'var(--fgColor-muted)',
+          }}
+        >
+          Showing data from: <strong style={{ color: 'var(--fgColor-default)' }}>{activeSource.name}</strong> ({activeSource.type === 'github' ? 'GitHub' : 'Azure DevOps'})
+        </div>
       )}
 
       {/* Discovery Progress Card - shown when discovery is active or recently completed */}

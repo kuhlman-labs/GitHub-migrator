@@ -19,6 +19,7 @@ function AzureDevOpsIcon({ size = 24 }: { size?: number }) {
       height={size} 
       viewBox="0 0 18 18" 
       xmlns="http://www.w3.org/2000/svg"
+      style={{ display: 'inline-block', verticalAlign: 'text-bottom' }}
     >
       <defs>
         <linearGradient id="ado-gradient" x1="9" y1="16.97" x2="9" y2="1.03" gradientUnits="userSpaceOnUse">

@@ -50,6 +50,7 @@ import { FormDialog } from '../common/FormDialog';
 import { TeamDetailPanel } from './TeamDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -269,6 +270,7 @@ interface TeamMappingFilters extends Record<string, unknown> {
 
 export function TeamMappingTable() {
   const { showError, showSuccess } = useToast();
+  const { activeSource } = useSourceContext();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<TeamMappingFilters>({
@@ -295,11 +297,12 @@ export function TeamMappingTable() {
     search: search || undefined,
     status: filters.status || undefined,
     source_org: filters.sourceOrg || undefined,
+    source_id: activeSource?.id,
     limit,
     offset,
   });
 
-  const { data: stats } = useTeamMappingStats(filters.sourceOrg || undefined);
+  const { data: stats } = useTeamMappingStats(filters.sourceOrg || undefined, activeSource?.id);
   const { data: migrationStatus } = useTeamMigrationStatus();
   const { data: sourceOrgsData } = useTeamSourceOrgs();
   const sourceOrgs = sourceOrgsData || [];

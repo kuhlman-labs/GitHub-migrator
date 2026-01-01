@@ -47,8 +47,9 @@ export const migrationsApi = {
     return data;
   },
 
-  async getHistoryList(): Promise<{ migrations: MigrationHistoryEntry[]; total: number }> {
-    const { data } = await client.get('/migrations/history');
+  async getHistoryList(sourceId?: number): Promise<{ migrations: MigrationHistoryEntry[]; total: number }> {
+    const params = sourceId !== undefined ? { source_id: sourceId } : undefined;
+    const { data } = await client.get('/migrations/history', { params });
     return data;
   },
 

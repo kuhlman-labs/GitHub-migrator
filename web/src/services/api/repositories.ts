@@ -13,7 +13,7 @@ import type {
 } from '../../types';
 
 export const repositoriesApi = {
-  async list(filters?: RepositoryFilters): Promise<RepositoryListResponse> {
+  async list(filters?: RepositoryFilters & { source_id?: number }): Promise<RepositoryListResponse> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params: Record<string, any> = { ...filters };
 

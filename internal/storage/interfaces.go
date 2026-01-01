@@ -130,7 +130,7 @@ type AnalyticsStore interface {
 	// GetOrganizationStats returns statistics grouped by organization.
 	GetOrganizationStats(ctx context.Context) ([]*OrganizationStats, error)
 	// GetOrganizationStatsFiltered returns filtered organization statistics.
-	GetOrganizationStatsFiltered(ctx context.Context, org, project, batchFilter string) ([]*OrganizationStats, error)
+	GetOrganizationStatsFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*OrganizationStats, error)
 	// GetProjectStatsFiltered returns filtered project statistics.
 	GetProjectStatsFiltered(ctx context.Context, org, project, batchFilter string) ([]*OrganizationStats, error)
 	// GetMigrationCompletionStatsByOrgFiltered returns migration completion by org.

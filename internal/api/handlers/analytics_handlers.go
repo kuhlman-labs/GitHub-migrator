@@ -23,6 +23,14 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
+	
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
 
 	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
 	if err != nil {
@@ -78,7 +86,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		estimatedCompletionDate = stringPtr(completionDate.Format("2006-01-02"))
 	}
 
-	orgStats, _ := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	orgStats, _ := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	var projectStats []*storage.OrganizationStats
 	if h.sourceType == models.SourceTypeAzureDevOps {
 		projectStats, _ = h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)

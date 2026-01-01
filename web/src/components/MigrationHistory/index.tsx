@@ -12,9 +12,11 @@ import { Pagination } from '../common/Pagination';
 import { useToast } from '../../contexts/ToastContext';
 import { formatDate, formatDuration } from '../../utils/format';
 import { useMigrationHistory } from '../../hooks/useQueries';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 export function MigrationHistory() {
-  const { data, isLoading, isFetching } = useMigrationHistory();
+  const { activeSource } = useSourceContext();
+  const { data, isLoading, isFetching } = useMigrationHistory({ sourceId: activeSource?.id });
   const migrations = data?.migrations || [];
   const { showError } = useToast();
   const [searchParams] = useSearchParams();

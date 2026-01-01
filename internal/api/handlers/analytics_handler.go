@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
@@ -41,6 +42,14 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
+	
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
 
 	// Get status distribution
 	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -59,7 +68,7 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 	}
 
 	// Get organization breakdown
-	orgStats, err := h.analyticsStore.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	orgStats, err := h.analyticsStore.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get organization stats", "error", err)
 		// Continue without org stats
@@ -144,6 +153,14 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
+	
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
 
 	// Get status stats
 	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
@@ -166,7 +183,7 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 	}
 
 	// Get organization stats
-	orgStats, err := h.analyticsStore.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	orgStats, err := h.analyticsStore.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get organization stats", "error", err)
 		orgStats = nil

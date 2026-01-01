@@ -1,6 +1,5 @@
 import { ActionMenu, ActionList, Button, Spinner, Text, Flash } from '@primer/react';
 import { 
-  TriangleDownIcon, 
   MarkGithubIcon, 
   GlobeIcon,
   ShieldLockIcon,
@@ -20,6 +19,7 @@ function AzureDevOpsIcon({ size = 16 }: { size?: number }) {
       height={size} 
       viewBox="0 0 18 18" 
       xmlns="http://www.w3.org/2000/svg"
+      style={{ display: 'inline-block', verticalAlign: 'text-bottom' }}
     >
       <defs>
         <linearGradient id="ado-gradient-selector" x1="9" y1="16.97" x2="9" y2="1.03" gradientUnits="userSpaceOnUse">
@@ -115,19 +115,20 @@ export function SourceSelector() {
         <ActionMenu.Button
           variant="invisible"
           size="small"
-          className="flex items-center gap-1 font-medium"
+          className="font-medium"
           style={{ color: 'var(--fgColor-default)' }}
         >
-          {activeSource ? (
-            <SourceIcon type={activeSource.type} />
-          ) : (
-            <GlobeIcon />
-          )}
-          <span className="hidden sm:inline">{buttonLabel}</span>
-          {needsAuth && (
-            <AlertIcon size={12} className="text-attention-fg" />
-          )}
-          <TriangleDownIcon size={12} />
+          <span className="flex items-center gap-1.5">
+            {activeSource ? (
+              <SourceIcon type={activeSource.type} />
+            ) : (
+              <GlobeIcon size={16} />
+            )}
+            <span className="hidden sm:inline">{buttonLabel}</span>
+            {needsAuth && (
+              <AlertIcon size={12} className="text-attention-fg" />
+            )}
+          </span>
         </ActionMenu.Button>
 
         <ActionMenu.Overlay width="medium">

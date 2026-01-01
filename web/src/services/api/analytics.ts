@@ -5,7 +5,7 @@ import { client } from './client';
 import type { Analytics, ExecutiveReport, DashboardActionItems } from '../../types';
 
 export const analyticsApi = {
-  async getSummary(filters?: { organization?: string; batch_id?: string }): Promise<Analytics> {
+  async getSummary(filters?: { organization?: string; project?: string; batch_id?: string; source_id?: number }): Promise<Analytics> {
     const { data } = await client.get('/analytics/summary', { params: filters });
     return data;
   },

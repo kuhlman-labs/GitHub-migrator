@@ -551,6 +551,15 @@ func (d *Database) buildBatchFilter(batchFilter string) (string, []any) {
 	return " AND r.batch_id = ?", []any{batchID}
 }
 
+// buildSourceFilter builds the source_id filter clause using parameterized queries
+// Returns the SQL fragment and any additional arguments to append
+func (d *Database) buildSourceFilter(sourceID *int64) (string, []any) {
+	if sourceID == nil {
+		return "", nil
+	}
+	return " AND r.source_id = ?", []any{*sourceID}
+}
+
 // buildProjectFilter builds SQL filter for ADO project (ado_project field)
 func (d *Database) buildProjectFilter(projectFilter string) (string, []any) {
 	if projectFilter == "" {
@@ -728,11 +737,12 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 }
 
 // GetOrganizationStatsFiltered returns organization stats with batch filter
-func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*OrganizationStats, error) {
+func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*OrganizationStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific string functions via DialectDialer interface
 	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
@@ -750,13 +760,15 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 			%s
 			%s
 			%s
+			%s
 		GROUP BY org, status
 		ORDER BY total DESC, org ASC
-	`, extractOrg, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL)
+	`, extractOrg, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	type OrgStatusResult struct {

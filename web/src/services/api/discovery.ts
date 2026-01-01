@@ -48,8 +48,12 @@ export const discoveryApi = {
   },
 
   // Organizations
-  async listOrganizations(): Promise<Organization[]> {
-    const { data } = await client.get('/organizations');
+  async listOrganizations(sourceId?: number): Promise<Organization[]> {
+    const params: Record<string, string> = {};
+    if (sourceId !== undefined) {
+      params.source_id = String(sourceId);
+    }
+    const { data } = await client.get('/organizations', { params });
     return data;
   },
 
@@ -63,8 +67,11 @@ export const discoveryApi = {
     return data;
   },
 
-  async listTeams(organization?: string): Promise<GitHubTeam[]> {
-    const { data } = await client.get('/teams', { params: { organization } });
+  async listTeams(organization?: string, sourceId?: number): Promise<GitHubTeam[]> {
+    const params: Record<string, string | number> = {};
+    if (organization) params.organization = organization;
+    if (sourceId !== undefined) params.source_id = sourceId;
+    const { data } = await client.get('/teams', { params });
     return data;
   },
 };

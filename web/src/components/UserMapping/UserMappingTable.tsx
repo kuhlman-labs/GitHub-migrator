@@ -47,6 +47,7 @@ import { FallbackAvatar } from '../common/FallbackAvatar';
 import { UserDetailPanel } from './UserDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -91,6 +92,7 @@ interface UserMappingFilters extends Record<string, unknown> {
 
 export function UserMappingTable() {
   const { showError, showSuccess } = useToast();
+  const { activeSource } = useSourceContext();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<UserMappingFilters>({
@@ -118,11 +120,12 @@ export function UserMappingTable() {
     search: search || undefined,
     status: filters.status || undefined,
     source_org: filters.sourceOrg || undefined,
+    source_id: activeSource?.id,
     limit,
     offset,
   });
 
-  const { data: stats } = useUserMappingStats(filters.sourceOrg || undefined);
+  const { data: stats } = useUserMappingStats(filters.sourceOrg || undefined, activeSource?.id);
   const { data: sourceOrgsData } = useUserMappingSourceOrgs();
   const updateMapping = useUpdateUserMapping();
   const deleteMapping = useDeleteUserMapping();
