@@ -22,7 +22,7 @@ export function useStartADODiscovery() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (params: { organization?: string; project?: string; workers?: number }) => api.startADODiscovery(params),
+    mutationFn: (params: { organization?: string; project?: string; workers?: number; source_id?: number }) => api.startADODiscovery(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['discoveryProgress'] });
       queryClient.invalidateQueries({ queryKey: ['adoDiscoveryStatus'] });

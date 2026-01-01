@@ -224,13 +224,17 @@ export function Dashboard() {
         showSuccess(`Enterprise discovery started for ${enterpriseSlug}`);
         setEnterpriseSlug('');
       } else if (effectiveDiscoveryType === 'ado-org') {
-        await startADODiscoveryMutation.mutateAsync({ organization: adoOrganization.trim() });
+        await startADODiscoveryMutation.mutateAsync({ 
+          organization: adoOrganization.trim(),
+          source_id: sourceId,
+        });
         showSuccess(`ADO organization discovery started for ${adoOrganization}`);
         setAdoOrganization('');
       } else if (effectiveDiscoveryType === 'ado-project') {
         await startADODiscoveryMutation.mutateAsync({ 
           organization: adoOrganization.trim(), 
-          project: adoProject.trim() 
+          project: adoProject.trim(),
+          source_id: sourceId,
         });
         showSuccess(`ADO project discovery started for ${adoOrganization}/${adoProject}`);
         setAdoOrganization('');

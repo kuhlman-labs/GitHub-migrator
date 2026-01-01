@@ -326,12 +326,11 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/analytics/detailed-discovery-report/export", s.handler.ExportDetailedDiscoveryReport)
 
 	// Azure DevOps specific endpoints
-	if s.adoHandler != nil {
-		protect("POST /api/v1/ado/discover", s.adoHandler.StartADODiscovery)
-		protect("GET /api/v1/ado/discovery/status", s.adoHandler.ADODiscoveryStatus)
-		protect("GET /api/v1/ado/projects", s.adoHandler.ListADOProjects)
-		protect("GET /api/v1/ado/projects/{organization}/{project}", s.adoHandler.GetADOProject)
-	}
+	// These handlers support both static (legacy) and dynamic (database-configured) sources
+	protect("POST /api/v1/ado/discover", s.handler.StartADODiscoveryDynamic)
+	protect("GET /api/v1/ado/discovery/status", s.handler.ADODiscoveryStatusDynamic)
+	protect("GET /api/v1/ado/projects", s.handler.ListADOProjectsDynamic)
+	protect("GET /api/v1/ado/projects/{organization}/{project}", s.handler.GetADOProjectDynamic)
 
 	// Self-service endpoints
 	protect("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)

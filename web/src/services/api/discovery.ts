@@ -25,7 +25,7 @@ export const discoveryApi = {
   },
 
   // Azure DevOps Discovery
-  async startADO(params: { organization?: string; project?: string; workers?: number }) {
+  async startADO(params: { organization?: string; project?: string; workers?: number; source_id?: number }) {
     const { data } = await client.post('/ado/discover', params);
     return data;
   },

@@ -20,7 +20,8 @@ type ADOCollector struct {
 	logger   *slog.Logger
 	provider any // Will be source.Provider
 	profiler *ADOProfiler
-	workers  int // Number of parallel workers
+	workers  int    // Number of parallel workers
+	sourceID *int64 // Multi-source ID to associate with discovered entities
 }
 
 // NewADOCollector creates a new Azure DevOps collector
@@ -40,6 +41,11 @@ func (c *ADOCollector) SetWorkers(workers int) {
 	if workers > 0 {
 		c.workers = workers
 	}
+}
+
+// SetSourceID sets the source ID to associate with discovered repositories
+func (c *ADOCollector) SetSourceID(sourceID *int64) {
+	c.sourceID = sourceID
 }
 
 // DiscoverADOOrganization discovers all projects and repositories in an Azure DevOps organization
@@ -253,6 +259,7 @@ func (c *ADOCollector) adoWorker(ctx context.Context, wg *sync.WaitGroup, worker
 		repo := &models.Repository{
 			FullName:        fullName,
 			Source:          "azuredevops",
+			SourceID:        c.sourceID, // Associate with multi-source
 			SourceURL:       getRemoteURL(adoRepo),
 			Status:          string(models.StatusPending),
 			Visibility:      projectVisibility, // Use project-level visibility from ADO
@@ -362,6 +369,7 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 	repoModel := &models.Repository{
 		FullName:        fullName,
 		Source:          "azuredevops",
+		SourceID:        c.sourceID, // Associate with multi-source
 		SourceURL:       getRemoteURL(repo),
 		Status:          string(models.StatusPending),
 		DiscoveredAt:    now,

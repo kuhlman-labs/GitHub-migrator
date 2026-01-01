@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/discovery"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
@@ -254,6 +255,71 @@ func (h *Handler) getCollectorForSource(sourceID *int64) (*discovery.Collector, 
 	return collector, nil
 }
 
+// getADOCollectorForSource returns an ADO collector for the given source ID.
+// It creates a collector dynamically from the source's credentials in the database.
+func (h *Handler) getADOCollectorForSource(sourceID *int64) (*discovery.ADOCollector, *azuredevops.Client, error) {
+	// No source ID means we can't create a dynamic collector
+	if sourceID == nil {
+		return nil, nil, fmt.Errorf("no source_id provided for ADO discovery")
+	}
+
+	// Get the database - need to type assert to *storage.Database
+	db, ok := h.db.(*storage.Database)
+	if !ok {
+		return nil, nil, fmt.Errorf("database type assertion failed - cannot create dynamic ADO collector")
+	}
+
+	// Fetch the source from the database
+	ctx := context.Background()
+	src, err := db.GetSource(ctx, *sourceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get source %d: %w", *sourceID, err)
+	}
+	if src == nil {
+		return nil, nil, fmt.Errorf("source %d not found", *sourceID)
+	}
+
+	// Only Azure DevOps sources are supported for ADO discovery
+	if src.Type != models.SourceConfigTypeAzureDevOps {
+		return nil, nil, fmt.Errorf("source %d is not an Azure DevOps source (type: %s)", *sourceID, src.Type)
+	}
+
+	// Create Azure DevOps client
+	adoClient, err := azuredevops.NewClient(azuredevops.ClientConfig{
+		OrganizationURL:     src.BaseURL,
+		PersonalAccessToken: src.Token,
+		Logger:              h.logger,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create ADO client for source %d: %w", *sourceID, err)
+	}
+
+	// Extract organization from base URL (e.g., https://dev.azure.com/myorg -> myorg)
+	var orgName string
+	if src.Organization != nil && *src.Organization != "" {
+		orgName = *src.Organization
+	} else {
+		// Try to extract from base URL
+		orgName = extractADOOrganization(src.BaseURL)
+	}
+
+	// Create source provider
+	adoProvider, err := source.NewAzureDevOpsProvider(orgName, src.Token, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create ADO provider for source %d: %w", *sourceID, err)
+	}
+
+	// Create ADO collector
+	adoCollector := discovery.NewADOCollector(adoClient, db, h.logger, adoProvider)
+
+	// Set source ID to associate discovered entities with this source
+	adoCollector.SetSourceID(sourceID)
+
+	h.logger.Info("Created dynamic ADO collector for source", "source_id", *sourceID, "source_name", src.Name)
+
+	return adoCollector, adoClient, nil
+}
+
 // PaginationParams holds parsed pagination parameters
 type PaginationParams struct {
 	Limit  int
@@ -453,4 +519,29 @@ func formatVisibilityForDisplay(visibility string) string {
 	default:
 		return visibility
 	}
+}
+
+// extractADOOrganization extracts the organization name from an Azure DevOps URL.
+// Supports: https://dev.azure.com/myorg or https://myorg.visualstudio.com
+func extractADOOrganization(baseURL string) string {
+	// Handle https://dev.azure.com/myorg format
+	if strings.Contains(baseURL, "dev.azure.com") {
+		parts := strings.Split(strings.TrimSuffix(baseURL, "/"), "/")
+		if len(parts) >= 4 {
+			return parts[3] // https://dev.azure.com/myorg -> myorg
+		}
+	}
+
+	// Handle https://myorg.visualstudio.com format
+	if strings.Contains(baseURL, ".visualstudio.com") {
+		// Extract subdomain
+		trimmed := strings.TrimPrefix(baseURL, "https://")
+		trimmed = strings.TrimPrefix(trimmed, "http://")
+		if idx := strings.Index(trimmed, "."); idx > 0 {
+			return trimmed[:idx]
+		}
+	}
+
+	// Fallback: return the URL as-is (might be a custom URL)
+	return baseURL
 }

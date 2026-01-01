@@ -264,3 +264,213 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 		"source_id":    req.SourceID,
 	})
 }
+
+// StartADODiscoveryDynamic handles POST /api/v1/ado/discover when no static ADO handler is configured.
+// It creates a dynamic ADO collector from the database source configuration.
+func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Request) {
+	// If we have a pre-configured ADO handler, delegate to it
+	if h.adoHandler != nil {
+		h.adoHandler.StartADODiscovery(w, r)
+		return
+	}
+
+	var req StartADODiscoveryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, ErrInvalidJSON)
+		return
+	}
+
+	if req.Organization == "" {
+		WriteError(w, ErrMissingField.WithField("organization"))
+		return
+	}
+
+	if req.SourceID == nil {
+		WriteError(w, ErrMissingField.WithField("source_id").WithDetails("source_id is required when no static ADO configuration is present"))
+		return
+	}
+
+	if req.Workers <= 0 {
+		req.Workers = 5 // default
+	}
+
+	// Get or create ADO collector for this source
+	adoCollector, _, err := h.getADOCollectorForSource(req.SourceID)
+	if err != nil {
+		h.logger.Error("Failed to get ADO collector for source", "error", err, "source_id", req.SourceID)
+		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
+		return
+	}
+
+	// Set workers
+	adoCollector.SetWorkers(req.Workers)
+
+	// Start discovery asynchronously based on scope
+	if len(req.Projects) == 0 {
+		// Discover entire organization
+		h.logger.Info("Starting ADO organization discovery (dynamic)",
+			"organization", req.Organization,
+			"workers", req.Workers,
+			"source_id", *req.SourceID)
+
+		go func() {
+			ctx := context.Background()
+			if err := adoCollector.DiscoverADOOrganization(ctx, req.Organization); err != nil {
+				h.logger.Error("ADO organization discovery failed",
+					"organization", req.Organization,
+					"error", err)
+			} else {
+				h.logger.Info("ADO organization discovery completed", "organization", req.Organization)
+			}
+		}()
+
+		h.sendJSON(w, http.StatusAccepted, map[string]any{
+			"message":      "ADO organization discovery started",
+			"organization": req.Organization,
+			"type":         "organization",
+			"source_id":    *req.SourceID,
+		})
+	} else {
+		// Discover specific projects
+		h.logger.Info("Starting ADO project discovery (dynamic)",
+			"organization", req.Organization,
+			"projects", req.Projects,
+			"workers", req.Workers,
+			"source_id", *req.SourceID)
+
+		go func() {
+			ctx := context.Background()
+			for _, project := range req.Projects {
+				if err := adoCollector.DiscoverADOProject(ctx, req.Organization, project); err != nil {
+					h.logger.Error("Failed to discover ADO project",
+						"organization", req.Organization,
+						"project", project,
+						"error", err)
+					// Continue with other projects
+				} else {
+					h.logger.Info("ADO project discovery completed",
+						"organization", req.Organization,
+						"project", project)
+				}
+			}
+		}()
+
+		h.sendJSON(w, http.StatusAccepted, map[string]any{
+			"message":      "ADO project discovery started",
+			"organization": req.Organization,
+			"projects":     req.Projects,
+			"type":         "project",
+			"source_id":    *req.SourceID,
+		})
+	}
+}
+
+// ADODiscoveryStatusDynamic handles GET /api/v1/ado/discovery/status when no static ADO handler is configured.
+func (h *Handler) ADODiscoveryStatusDynamic(w http.ResponseWriter, r *http.Request) {
+	// If we have a pre-configured ADO handler, delegate to it
+	if h.adoHandler != nil {
+		h.adoHandler.ADODiscoveryStatus(w, r)
+		return
+	}
+
+	ctx := r.Context()
+	organization := r.URL.Query().Get("organization")
+
+	// Count ADO repositories from the database
+	filters := map[string]any{
+		"source": "azuredevops",
+	}
+	if organization != "" {
+		filters["ado_organization"] = organization
+	}
+
+	repos, err := h.db.ListRepositories(ctx, filters)
+	if err != nil {
+		WriteError(w, ErrDatabaseFetch.WithDetails("ADO repositories"))
+		return
+	}
+
+	// Aggregate stats
+	totalRepos := len(repos)
+	pendingCount := 0
+	completedCount := 0
+	failedCount := 0
+
+	for _, repo := range repos {
+		switch repo.Status {
+		case string(models.StatusPending):
+			pendingCount++
+		case string(models.StatusComplete), string(models.StatusMigrationComplete):
+			completedCount++
+		case string(models.StatusMigrationFailed):
+			failedCount++
+		}
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]any{
+		"organization":    organization,
+		"total_repos":     totalRepos,
+		"pending_count":   pendingCount,
+		"completed_count": completedCount,
+		"failed_count":    failedCount,
+		"status":          "completed", // Discovery is synchronous, so it's always completed when we query
+	})
+}
+
+// ListADOProjectsDynamic handles GET /api/v1/ado/projects when no static ADO handler is configured.
+func (h *Handler) ListADOProjectsDynamic(w http.ResponseWriter, r *http.Request) {
+	// If we have a pre-configured ADO handler, delegate to it
+	if h.adoHandler != nil {
+		h.adoHandler.ListADOProjects(w, r)
+		return
+	}
+
+	ctx := r.Context()
+	organization := r.URL.Query().Get("organization")
+
+	// Query projects from database
+	projects, err := h.db.GetADOProjects(ctx, organization)
+	if err != nil {
+		WriteError(w, ErrDatabaseFetch.WithDetails("ADO projects"))
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]any{
+		"projects": projects,
+		"total":    len(projects),
+	})
+}
+
+// GetADOProjectDynamic handles GET /api/v1/ado/projects/{organization}/{project} when no static ADO handler is configured.
+func (h *Handler) GetADOProjectDynamic(w http.ResponseWriter, r *http.Request) {
+	// If we have a pre-configured ADO handler, delegate to it
+	if h.adoHandler != nil {
+		h.adoHandler.GetADOProject(w, r)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Extract organization and project from URL path
+	org := r.PathValue("organization")
+	project := r.PathValue("project")
+
+	if org == "" || project == "" {
+		WriteError(w, ErrMissingField.WithDetails("organization and project are required"))
+		return
+	}
+
+	// Get project from database
+	projectData, err := h.db.GetADOProject(ctx, org, project)
+	if err != nil {
+		WriteError(w, ErrDatabaseFetch.WithDetails("ADO project"))
+		return
+	}
+
+	if projectData == nil {
+		WriteError(w, ErrNotFound.WithDetails(fmt.Sprintf("Project %s/%s not found", org, project)))
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, projectData)
+}
