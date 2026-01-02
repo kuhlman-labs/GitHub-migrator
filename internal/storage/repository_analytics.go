@@ -22,6 +22,9 @@ type OrganizationStats struct {
 	MigrationProgressPercent int            `json:"migration_progress_percentage"`
 	Enterprise               *string        `json:"enterprise,omitempty"`       // GitHub Enterprise name
 	ADOOrganization          *string        `json:"ado_organization,omitempty"` // Azure DevOps organization
+	SourceID                 *int64         `json:"source_id,omitempty"`        // Source ID for multi-source support
+	SourceName               *string        `json:"source_name,omitempty"`      // Display name of the source
+	SourceType               *string        `json:"source_type,omitempty"`      // Type of source (github or azuredevops)
 }
 
 // GetOrganizationStats returns repository counts grouped by organization
@@ -799,26 +802,30 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific string functions via DialectDialer interface
-	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
-	findSlash := d.dialect.FindCharPosition("full_name", "/")
+	extractOrg := d.dialect.ExtractOrgFromFullName("r.full_name")
+	findSlash := d.dialect.FindCharPosition("r.full_name", "/")
 
-	// Group by organization (extracted from full_name) and status
-	// For both GitHub and ADO, this gives us organization-level stats
+	// Group by organization (extracted from full_name), source, and status
+	// Join with sources table to get source name and type
 	query := fmt.Sprintf(`
 		SELECT 
 			%s as org,
-			source,
+			r.source,
+			r.source_id,
+			s.name as source_name,
+			s.type as source_type,
 			COUNT(*) as total,
-			status,
+			r.status,
 			COUNT(*) as status_count
 		FROM repositories r
+		LEFT JOIN sources s ON r.source_id = s.id
 		WHERE %s > 0
-			AND status != 'wont_migrate'
+			AND r.status != 'wont_migrate'
 			%s
 			%s
 			%s
 			%s
-		GROUP BY org, source, status
+		GROUP BY org, r.source, r.source_id, s.name, s.type, r.status
 		ORDER BY total DESC, org ASC
 	`, extractOrg, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
 
@@ -831,6 +838,9 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	type OrgStatusResult struct {
 		Org         string
 		Source      string
+		SourceID    *int64
+		SourceName  *string
+		SourceType  *string
 		Total       int
 		Status      string
 		StatusCount int
@@ -843,20 +853,30 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 	}
 
 	// Build organization stats map
-	// For GitHub: key is org name (extracted from full_name)
-	// For ADO: key is ADO organization name (extracted from full_name, e.g., "ado-org/project/repo" -> "ado-org")
-	// This provides organization-level grouping for all sources
-	orgMap := make(map[string]*OrganizationStats)
+	// Key by org + source_id to handle same org name across different sources
+	// For GitHub: key is org name + source_id
+	// For ADO: key is ADO organization name + source_id
+	type orgSourceKey struct {
+		Org      string
+		SourceID int64
+	}
+	orgMap := make(map[orgSourceKey]*OrganizationStats)
 	for _, result := range results {
-		// Always use the org extracted from full_name as the key
-		// This gives us the ADO organization for ADO repos, and the GitHub org for GitHub repos
-		mapKey := result.Org
+		// Use org + source_id as key to distinguish same org across different sources
+		sourceIDForKey := int64(0)
+		if result.SourceID != nil {
+			sourceIDForKey = *result.SourceID
+		}
+		mapKey := orgSourceKey{Org: result.Org, SourceID: sourceIDForKey}
 
 		if _, exists := orgMap[mapKey]; !exists {
 			orgMap[mapKey] = &OrganizationStats{
-				Organization: mapKey,
+				Organization: result.Org,
 				TotalRepos:   0,
 				StatusCounts: make(map[string]int),
+				SourceID:     result.SourceID,
+				SourceName:   result.SourceName,
+				SourceType:   result.SourceType,
 			}
 			// For ADO, store the organization name in ADOOrganization as well
 			if result.Source == "azuredevops" {

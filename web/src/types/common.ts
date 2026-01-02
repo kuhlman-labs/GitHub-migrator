@@ -18,6 +18,12 @@ export interface Organization {
   failed_count: number;
   pending_count: number;
   migration_progress_percentage: number;
+  /** Source ID for multi-source support */
+  source_id?: number;
+  /** Display name of the source */
+  source_name?: string;
+  /** Type of source (github or azuredevops) */
+  source_type?: 'github' | 'azuredevops';
 }
 
 export interface Project {

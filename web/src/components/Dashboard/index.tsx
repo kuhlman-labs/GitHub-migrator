@@ -283,14 +283,52 @@ export function Dashboard() {
   // Group ADO projects by organization
   const groupedADOOrgs = useMemo(() => 
     adoOrgs.reduce((acc, org) => {
-      const adoOrgName = org.ado_organization || 'Unknown';
-      if (!acc[adoOrgName]) {
-        acc[adoOrgName] = [];
-      }
-      acc[adoOrgName].push(org);
-      return acc;
+        const adoOrgName = org.ado_organization || 'Unknown';
+        if (!acc[adoOrgName]) {
+          acc[adoOrgName] = [];
+        }
+        acc[adoOrgName].push(org);
+        return acc;
     }, {} as Record<string, typeof adoOrgs>),
     [adoOrgs]
+  );
+
+  // Aggregate ADO orgs for "All Sources" view (simple org cards like GitHub)
+  const aggregatedADOOrgs = useMemo(() => 
+    Object.entries(groupedADOOrgs).map(([adoOrgName, projects]) => {
+      // Merge status_counts from all projects
+      const mergedStatusCounts: Record<string, number> = {};
+      projects.forEach(p => {
+        if (p.status_counts) {
+          Object.entries(p.status_counts).forEach(([status, count]) => {
+            mergedStatusCounts[status] = (mergedStatusCounts[status] || 0) + count;
+          });
+        }
+      });
+      
+      const totalRepos = projects.reduce((sum, p) => sum + p.total_repos, 0);
+      const migrated = projects.reduce((sum, p) => sum + p.migrated_count, 0);
+      
+      // Get source info from first project (all projects in same ADO org should be from same source)
+      const firstProject = projects[0];
+      
+      return {
+        organization: adoOrgName,
+        ado_organization: adoOrgName,
+        total_repos: totalRepos,
+        status_counts: mergedStatusCounts,
+        migrated_count: migrated,
+        in_progress_count: projects.reduce((sum, p) => sum + p.in_progress_count, 0),
+        failed_count: projects.reduce((sum, p) => sum + p.failed_count, 0),
+        pending_count: projects.reduce((sum, p) => sum + p.pending_count, 0),
+        migration_progress_percentage: totalRepos > 0 ? Math.floor((migrated * 100) / totalRepos) : 0,
+        // Include source info from the projects
+        source_id: firstProject?.source_id,
+        source_name: firstProject?.source_name,
+        source_type: firstProject?.source_type || 'azuredevops' as const,
+      };
+    }),
+    [groupedADOOrgs]
   );
   
   // Determine what to show based on source filter and available data
@@ -379,37 +417,37 @@ export function Dashboard() {
       {/* Organizations Section - only show when sources are configured */}
       {setupProgress?.sources_configured && (
         <>
-          {orgsLoading ? (
+        {orgsLoading ? (
             <div className="mb-6">
-              <LoadingSpinner />
+          <LoadingSpinner />
             </div>
-          ) : filteredOrgs.length === 0 ? (
+        ) : filteredOrgs.length === 0 ? (
             <div className="mb-6">
-              <Blankslate>
-                <Blankslate.Visual>
-                  <RepoIcon size={48} />
-                </Blankslate.Visual>
-                <Blankslate.Heading>
-                  {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
-                </Blankslate.Heading>
-                <Blankslate.Description>
-                  {searchTerm 
-                    ? 'No organizations match your search. Try a different search term.'
-                    : sourceType === 'azuredevops'
-                      ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
-                      : 'Get started by discovering repositories from your GitHub organizations.'}
-                </Blankslate.Description>
-                {!searchTerm && (
-                  <Blankslate.PrimaryAction onClick={() => {
-                    setDiscoveryType(defaultDiscoveryType);
-                    setShowDiscoveryModal(true);
-                  }}>
-                    Start Discovery
-                  </Blankslate.PrimaryAction>
-                )}
-              </Blankslate>
-            </div>
-          ) : (
+          <Blankslate>
+            <Blankslate.Visual>
+              <RepoIcon size={48} />
+            </Blankslate.Visual>
+            <Blankslate.Heading>
+              {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
+            </Blankslate.Heading>
+            <Blankslate.Description>
+              {searchTerm 
+                ? 'No organizations match your search. Try a different search term.'
+                : sourceType === 'azuredevops'
+                  ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
+                  : 'Get started by discovering repositories from your GitHub organizations.'}
+            </Blankslate.Description>
+            {!searchTerm && (
+              <Blankslate.PrimaryAction onClick={() => {
+                setDiscoveryType(defaultDiscoveryType);
+                setShowDiscoveryModal(true);
+              }}>
+                Start Discovery
+              </Blankslate.PrimaryAction>
+            )}
+          </Blankslate>
+          </div>
+        ) : (
             <>
               {/* GitHub Organizations Section */}
               {showGitHubSection && (
@@ -433,23 +471,23 @@ export function Dashboard() {
                   {gitHubOrgs.length === 0 ? (
                     <Flash>No GitHub organizations discovered yet. Start discovery to find repositories.</Flash>
                   ) : (
-                    <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                         {(showAllSources ? gitHubOrgs : paginatedOrgs).map((org) => (
-                          <GitHubOrganizationCard key={org.organization} organization={org} />
-                        ))}
-                      </div>
+                <GitHubOrganizationCard key={org.organization} organization={org} />
+              ))}
+            </div>
                       {!showAllSources && totalItems > pageSize && (
-                        <Pagination
-                          currentPage={currentPage}
-                          totalItems={totalItems}
-                          pageSize={pageSize}
-                          onPageChange={setCurrentPage}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
+              <Pagination
+                currentPage={currentPage}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+              />
+            )}
+          </>
+        )}
+      </div>
               )}
 
               {/* Azure DevOps Organizations Section */}
@@ -460,16 +498,36 @@ export function Dashboard() {
                   </h2>
                   <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                     {adoOrgs.length > 0 ? (
-                      <>
-                        Showing {Object.keys(groupedADOOrgs).length} {Object.keys(groupedADOOrgs).length === 1 ? 'organization' : 'organizations'} with {adoOrgs.length} {adoOrgs.length === 1 ? 'project' : 'projects'} and {adoOrgs.reduce((sum, org) => sum + org.total_repos, 0)} total repositories
-                      </>
+                      showAllSources ? (
+                        // All Sources view: show org count only
+                        <>
+                          Showing {aggregatedADOOrgs.length} {aggregatedADOOrgs.length === 1 ? 'organization' : 'organizations'} with {adoOrgs.reduce((sum, org) => sum + org.total_repos, 0)} total repositories
+                        </>
+                      ) : (
+                        // Specific source view: show org + project count
+                        <>
+                          Showing {Object.keys(groupedADOOrgs).length} {Object.keys(groupedADOOrgs).length === 1 ? 'organization' : 'organizations'} with {adoOrgs.length} {adoOrgs.length === 1 ? 'project' : 'projects'} and {adoOrgs.reduce((sum, org) => sum + org.total_repos, 0)} total repositories
+                        </>
+                      )
                     ) : (
                       'No Azure DevOps organizations found'
                     )}
                   </div>
                   {adoOrgs.length === 0 ? (
                     <Flash>No Azure DevOps organizations discovered yet. Start discovery to find repositories.</Flash>
+                  ) : showAllSources ? (
+                    // All Sources view: show simple org cards (like GitHub orgs)
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {aggregatedADOOrgs.map((org) => (
+                        <GitHubOrganizationCard 
+                          key={org.organization} 
+                          organization={org}
+                          linkParam="ado_organization"
+                        />
+                      ))}
+                    </div>
                   ) : (
+                    // Specific source view: show detailed project breakdown
                     <div className="space-y-6">
                       {Object.entries(groupedADOOrgs).map(([adoOrgName, projects]) => (
                         <ADOOrganizationCard 

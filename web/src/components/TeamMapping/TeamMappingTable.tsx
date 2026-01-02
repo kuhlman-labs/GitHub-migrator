@@ -709,16 +709,16 @@ export function TeamMappingTable() {
                     {mapping.source_id && (
                       <SourceTypeIcon sourceId={mapping.source_id} size={14} />
                     )}
-                    <div>
-                      <div className="font-medium">
-                        <span style={{ color: 'var(--fgColor-muted)' }}>{org}/</span>
-                        {slug}
-                      </div>
-                      {name && (
-                        <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-                          {name}
-                        </span>
-                      )}
+                  <div>
+                    <div className="font-medium">
+                      <span style={{ color: 'var(--fgColor-muted)' }}>{org}/</span>
+                      {slug}
+                    </div>
+                    {name && (
+                      <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                        {name}
+                      </span>
+                    )}
                     </div>
                   </div>
                 </td>

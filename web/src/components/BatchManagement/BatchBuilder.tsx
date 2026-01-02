@@ -15,6 +15,7 @@ import { ImportPreview, type ValidationGroup } from './ImportPreview';
 import { BatchMetadataForm } from './BatchMetadataForm';
 import { BatchSummaryPanel } from './BatchSummaryPanel';
 import type { ImportParseResult } from '../../utils/import';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 interface BatchBuilderProps {
   batch?: Batch; // If provided, we're editing; otherwise creating
@@ -30,6 +31,7 @@ interface BatchResponse extends Batch {
 
 export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const isEditMode = !!batch;
+  const { activeSource } = useSourceContext();
 
   // Batch metadata - ensure all inputs start with defined values (never undefined)
   const [batchName, setBatchName] = useState('');
@@ -151,11 +153,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, batch]);
 
-  // Load available repositories
+  // Load available repositories when filters or active source changes
   useEffect(() => {
     loadAvailableRepos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters, activeSource?.id]);
 
   const loadCurrentBatchRepos = async () => {
     // Handle nested batch structure
@@ -184,7 +186,12 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const loadAvailableRepos = async () => {
     setAvailableLoading(true);
     try {
-      const response = await api.listRepositories(filters);
+      // Include source_id filter if a specific source is selected
+      const filtersWithSource = {
+        ...filters,
+        ...(activeSource?.id ? { source_id: activeSource.id } : {}),
+      };
+      const response = await api.listRepositories(filtersWithSource);
       const repos = Array.isArray(response) ? response : (response.repositories || []);
       
       // Always update repos
@@ -315,7 +322,10 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     
     try {
       // Fetch all repositories matching the filters (without pagination)
-      const filtersWithoutPagination = { ...filters };
+      const filtersWithoutPagination = { 
+        ...filters,
+        ...(activeSource?.id ? { source_id: activeSource.id } : {}),
+      };
       delete filtersWithoutPagination.limit;
       delete filtersWithoutPagination.offset;
       

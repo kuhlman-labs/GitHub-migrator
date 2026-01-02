@@ -124,6 +124,7 @@ func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
 
 // ListOrganizations handles GET /api/v1/organizations
 // Returns GitHub organizations or ADO projects depending on source type
+// Supports multi-source environments via source_id parameter
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -135,8 +136,21 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.sourceType == models.SourceTypeAzureDevOps {
-		projects, err := h.db.GetADOProjects(ctx, "")
+	// Determine source type - either from specific source or global config
+	sourceType := h.sourceType
+	if sourceID != nil {
+		// Look up the source to determine its type
+		source, err := h.db.GetSource(ctx, *sourceID)
+		if err != nil {
+			h.logger.Warn("Failed to get source for ID, using global source type", "source_id", *sourceID, "error", err)
+		} else if source != nil {
+			sourceType = source.Type
+		}
+	}
+
+	// For ADO sources, return projects grouped by ADO organization
+	if sourceType == models.SourceTypeAzureDevOps {
+		projects, err := h.db.GetADOProjectsFiltered(ctx, "", sourceID)
 		if err != nil {
 			if h.handleContextError(ctx, err, "get ADO projects", r) {
 				return
@@ -146,9 +160,19 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Get source info if we have a source ID
+		var sourceName, sourceTypeStr *string
+		if sourceID != nil {
+			source, err := h.db.GetSource(ctx, *sourceID)
+			if err == nil && source != nil {
+				sourceName = &source.Name
+				sourceTypeStr = &source.Type
+			}
+		}
+
 		projectStats := make([]any, 0, len(projects))
 		for _, project := range projects {
-			repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
+			repoCount, err := h.db.CountRepositoriesByADOProjectFiltered(ctx, project.Organization, project.Name, sourceID)
 			if err != nil {
 				h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
 				repoCount = 0
@@ -166,6 +190,9 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 				"failed_count":                  stats.failedCount,
 				"pending_count":                 stats.pendingCount,
 				"migration_progress_percentage": stats.migrationProgressPercentage,
+				"source_id":                     sourceID,
+				"source_name":                   sourceName,
+				"source_type":                   sourceTypeStr,
 			})
 		}
 
@@ -173,7 +200,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use filtered query with source_id support
+	// For GitHub sources, use filtered query with source_id support
 	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, "", "", "", sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get organization stats", r) {

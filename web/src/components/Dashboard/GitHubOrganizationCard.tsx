@@ -2,12 +2,15 @@ import { Link } from 'react-router-dom';
 import { Label, ProgressBar } from '@primer/react';
 import { AlertIcon, CheckCircleIcon } from '@primer/octicons-react';
 import { Organization } from '../../types';
+import { SourceBadge } from '../common/SourceBadge';
 
 interface GitHubOrganizationCardProps {
   organization: Organization;
+  /** Query parameter to use for the link (defaults to 'organization', use 'ado_organization' for ADO orgs) */
+  linkParam?: 'organization' | 'ado_organization';
 }
 
-export function GitHubOrganizationCard({ organization }: GitHubOrganizationCardProps) {
+export function GitHubOrganizationCard({ organization, linkParam = 'organization' }: GitHubOrganizationCardProps) {
   const getProgressColor = (percentage: number): 'success.emphasis' | 'attention.emphasis' | 'default' => {
     if (percentage >= 80) return 'success.emphasis';
     if (percentage >= 40) return 'attention.emphasis';
@@ -16,10 +19,15 @@ export function GitHubOrganizationCard({ organization }: GitHubOrganizationCardP
 
   const hasFailures = organization.failed_count > 0;
   const progressPercentage = organization.migration_progress_percentage;
+  
+  // Use source info from organization data, falling back to inferred type from linkParam
+  const sourceType = organization.source_type || (linkParam === 'ado_organization' ? 'azuredevops' : 'github');
+  // Use source name from data, or fall back to generic type name
+  const sourceName = organization.source_name || (sourceType === 'github' ? 'GitHub' : 'Azure DevOps');
 
   return (
     <Link
-      to={`/repositories?organization=${encodeURIComponent(organization.organization)}`}
+      to={`/repositories?${linkParam}=${encodeURIComponent(organization.organization)}`}
       className="block rounded-lg border transition-all hover:shadow-lg p-6"
       style={{
         backgroundColor: 'var(--bgColor-default)',
@@ -27,16 +35,25 @@ export function GitHubOrganizationCard({ organization }: GitHubOrganizationCardP
         boxShadow: 'var(--shadow-resting-small)',
       }}
     >
-      {/* Header */}
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold mb-2 truncate" style={{ color: 'var(--fgColor-default)' }}>
-          {organization.organization}
-        </h3>
-        {organization.enterprise && (
-          <Label variant="accent" size="small">
-            Enterprise: {organization.enterprise}
-          </Label>
-        )}
+      {/* Header with Source Badge */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-lg font-semibold mb-2 truncate" style={{ color: 'var(--fgColor-default)' }}>
+            {organization.organization}
+          </h3>
+          {organization.enterprise && (
+            <Label variant="accent" size="small">
+              Enterprise: {organization.enterprise}
+            </Label>
+          )}
+        </div>
+        <div className="flex-shrink-0 ml-3">
+          <SourceBadge 
+            sourceType={sourceType} 
+            sourceName={sourceName}
+            size="small" 
+          />
+        </div>
       </div>
 
       {/* Total Repos */}
