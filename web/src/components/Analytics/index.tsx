@@ -237,10 +237,22 @@ export function Analytics() {
             title="Total Repositories"
             value={analytics.total_repositories}
             color="blue"
-            tooltip="Total number of repositories discovered across all sources"
+            tooltip={
+              isAllSources && hasMultipleSources
+                ? "Total number of repositories discovered across all sources"
+                : sourceType === 'azuredevops'
+                  ? "Total number of repositories discovered in Azure DevOps"
+                  : "Total number of repositories discovered in GitHub"
+            }
           />
           <KPICard
-            title="Source Groups"
+            title={
+              isAllSources && hasMultipleSources 
+                ? 'Source Groups' 
+                : sourceType === 'azuredevops' 
+                  ? 'Projects' 
+                  : 'Organizations'
+            }
             value={analytics.organization_stats?.length || 0}
             color="purple"
             subtitle={
@@ -248,7 +260,13 @@ export function Analytics() {
                 ? 'Across all sources' 
                 : activeSource?.name || 'Source groups'
             }
-            tooltip="Number of source groups (organizations, projects, etc.) with repositories"
+            tooltip={
+              isAllSources && hasMultipleSources
+                ? "Number of source groups (organizations, projects, etc.) with repositories"
+                : sourceType === 'azuredevops'
+                  ? "Number of Azure DevOps projects with repositories"
+                  : "Number of GitHub organizations with repositories"
+            }
           />
           <KPICard
             title="High Complexity"
@@ -359,21 +377,40 @@ export function Analytics() {
               : analytics.organization_stats;
             
             if (!stats || stats.length === 0) return null;
+
+            // Determine terminology based on source context
+            const groupLabel = isAllSources && hasMultipleSources 
+              ? 'Source Group' 
+              : sourceType === 'azuredevops' 
+                ? 'Project' 
+                : 'Organization';
+            
+            const sectionTitle = isAllSources && hasMultipleSources 
+              ? 'Source Group Breakdown' 
+              : sourceType === 'azuredevops' 
+                ? 'Project Breakdown' 
+                : 'Organization Breakdown';
+            
+            const sectionDescription = isAllSources && hasMultipleSources
+              ? 'Repository count and distribution across source groups, useful for workload allocation and team coordination.'
+              : sourceType === 'azuredevops'
+                ? 'Repository count and distribution across Azure DevOps projects, useful for workload allocation and team coordination.'
+                : 'Repository count and distribution across GitHub organizations, useful for workload allocation and team coordination.';
             
             return (
               <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
                 <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>
-                  Source Group Breakdown
+                  {sectionTitle}
                 </h3>
                 <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-                  Repository count and distribution across source groups, useful for workload allocation and team coordination.
+                  {sectionDescription}
                 </p>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
                     <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
-                          Source Group
+                          {groupLabel}
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                           Repositories
@@ -464,7 +501,11 @@ export function Analytics() {
               : (sourceType === 'azuredevops' ? adoFeatures : githubFeatures)
                   .filter(feature => feature.count && feature.count > 0);
 
-            const featureDescription = 'Features detected across repositories that may require special migration handling, including CI/CD workflows, security configurations, and advanced settings.';
+            const featureDescription = isAllSources && hasMultipleSources
+              ? 'Features detected across repositories that may require special migration handling, including CI/CD workflows, security configurations, and advanced settings.'
+              : sourceType === 'azuredevops'
+                ? 'Azure DevOps features detected including pipelines, boards, wikis, and other project artifacts that may require special migration handling.'
+                : 'GitHub features detected including Actions workflows, security configurations, branch protections, and other settings that may require special migration handling.';
 
             return features.length > 0 ? (
               <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
@@ -626,20 +667,40 @@ export function Analytics() {
         </div>
 
         {/* Migration Progress by Organization */}
-        {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (
+        {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (() => {
+          // Determine terminology based on source context
+          const progressGroupLabel = isAllSources && hasMultipleSources 
+            ? 'Source Group' 
+            : sourceType === 'azuredevops' 
+              ? 'Project' 
+              : 'Organization';
+          
+          const progressSectionTitle = isAllSources && hasMultipleSources 
+            ? 'Migration Progress by Source Group' 
+            : sourceType === 'azuredevops' 
+              ? 'Migration Progress by Project' 
+              : 'Migration Progress by Organization';
+          
+          const progressDescription = isAllSources && hasMultipleSources
+            ? 'Detailed migration status breakdown by source group, showing completion rates and identifying areas requiring attention.'
+            : sourceType === 'azuredevops'
+              ? 'Detailed migration status breakdown by Azure DevOps project, showing completion rates and identifying areas requiring attention.'
+              : 'Detailed migration status breakdown by GitHub organization, showing completion rates and identifying areas requiring attention.';
+          
+          return (
           <div className="rounded-lg shadow-sm p-6 mb-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
             <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>
-              Migration Progress by Source Group
+              {progressSectionTitle}
             </h3>
             <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              Detailed migration status breakdown by source group, showing completion rates and identifying areas requiring attention.
+              {progressDescription}
             </p>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
                 <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
-                      Source Group
+                      {progressGroupLabel}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       Total
@@ -709,7 +770,8 @@ export function Analytics() {
               </table>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Performance Metrics Card */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
