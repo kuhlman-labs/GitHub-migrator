@@ -724,6 +724,10 @@ func (m *MockDataStore) GetADOProjects(_ context.Context, org string) ([]models.
 	return result, nil
 }
 
+func (m *MockDataStore) GetADOProjectsFiltered(_ context.Context, org string, _ *int64) ([]models.ADOProject, error) {
+	return m.GetADOProjects(context.Background(), org)
+}
+
 func (m *MockDataStore) GetADOProject(_ context.Context, org, projectName string) (*models.ADOProject, error) {
 	key := fmt.Sprintf("%s/%s", org, projectName)
 	m.mu.RLock()
@@ -743,6 +747,10 @@ func (m *MockDataStore) SaveADOProject(_ context.Context, project *models.ADOPro
 }
 
 func (m *MockDataStore) CountRepositoriesByADOProject(_ context.Context, _, _ string) (int, error) {
+	return 0, nil
+}
+
+func (m *MockDataStore) CountRepositoriesByADOProjectFiltered(_ context.Context, _, _ string, _ *int64) (int, error) {
 	return 0, nil
 }
 

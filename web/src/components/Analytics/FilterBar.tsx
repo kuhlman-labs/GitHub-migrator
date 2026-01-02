@@ -13,6 +13,7 @@ interface FilterBarProps {
   onBatchChange: (batch: string) => void;
   sourceType?: 'github' | 'azuredevops';
   isAllSources?: boolean;
+  sourceId?: number;
 }
 
 export function FilterBar({
@@ -24,9 +25,12 @@ export function FilterBar({
   onBatchChange,
   sourceType = 'github',
   isAllSources = false,
+  sourceId,
 }: FilterBarProps) {
   const { data: organizations } = useOrganizations();
-  const { data: projects } = useProjects();
+  // Only fetch projects when viewing a specific ADO source (not all sources)
+  const shouldFetchProjects = sourceType === 'azuredevops' && !isAllSources;
+  const { data: projects } = useProjects(shouldFetchProjects ? sourceId : undefined);
   const { data: batches } = useBatches();
 
   // Search state for each dropdown
@@ -176,8 +180,8 @@ export function FilterBar({
           </ActionMenu>
         </div>
 
-        {/* Project Filter - Show when projects exist in data */}
-        {projects && projects.length > 0 && (
+        {/* Project Filter - Show only for ADO sources with projects */}
+        {shouldFetchProjects && projects && projects.length > 0 && (
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
               Project

@@ -201,6 +201,7 @@ export function Analytics() {
         onBatchChange={setSelectedBatch}
         sourceType={sourceType}
         isAllSources={!activeSource}
+        sourceId={activeSource?.id}
       />
 
       {/* Tabs Navigation */}
@@ -253,7 +254,13 @@ export function Analytics() {
                   ? 'Projects' 
                   : 'Organizations'
             }
-            value={analytics.organization_stats?.length || 0}
+            value={
+              isAllSources && hasMultipleSources
+                ? analytics.organization_stats?.length || 0
+                : sourceType === 'azuredevops'
+                  ? analytics.project_stats?.length || 0
+                  : analytics.organization_stats?.length || 0
+            }
             color="purple"
             subtitle={
               isAllSources 

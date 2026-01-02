@@ -56,10 +56,10 @@ export function useConfig() {
 }
 
 // Project queries
-export function useProjects() {
+export function useProjects(sourceId?: number) {
   return useQuery<Project[], Error>({
-    queryKey: ['projects'],
-    queryFn: () => api.listProjects(),
+    queryKey: ['projects', sourceId],
+    queryFn: () => api.listProjects(sourceId),
   });
 }
 

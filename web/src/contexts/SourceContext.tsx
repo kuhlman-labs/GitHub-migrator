@@ -3,6 +3,8 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, Re
 import { sourcesApi } from '../services/api/sources';
 import type { Source, SourceFilter } from '../types';
 
+const STORAGE_KEY = 'github-migrator-source-filter';
+
 interface SourceContextType {
   /** All configured sources */
   sources: Source[];
@@ -27,6 +29,34 @@ interface SourceProviderProps {
 }
 
 /**
+ * Get saved source filter from localStorage
+ */
+function getSavedFilter(): SourceFilter {
+  try {
+    const savedFilter = localStorage.getItem(STORAGE_KEY);
+    if (savedFilter) {
+      if (savedFilter === 'all') return 'all';
+      const parsed = parseInt(savedFilter, 10);
+      if (!isNaN(parsed)) return parsed;
+    }
+  } catch {
+    // localStorage might not be available
+  }
+  return 'all';
+}
+
+/**
+ * Save source filter to localStorage
+ */
+function saveFilter(filter: SourceFilter): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(filter));
+  } catch {
+    // localStorage might not be available
+  }
+}
+
+/**
  * SourceProvider manages the global state for migration sources.
  * It provides:
  * - List of all configured sources
@@ -35,9 +65,12 @@ interface SourceProviderProps {
  */
 export function SourceProvider({ children }: SourceProviderProps) {
   const [sources, setSources] = useState<Source[]>([]);
-  const [activeSourceFilter, setActiveSourceFilter] = useState<SourceFilter>('all');
+  // Initialize from localStorage synchronously to avoid flash
+  const [activeSourceFilter, setActiveSourceFilter] = useState<SourceFilter>(getSavedFilter);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // Track if we've done initial validation after sources load
+  const hasValidatedRef = useRef(false);
   
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -74,12 +107,28 @@ export function SourceProvider({ children }: SourceProviderProps) {
     };
   }, [fetchSources]);
 
+  // Validate saved filter once sources are loaded
+  useEffect(() => {
+    if (!isLoading && sources.length > 0 && !hasValidatedRef.current) {
+      hasValidatedRef.current = true;
+      // Check if saved source ID still exists
+      if (activeSourceFilter !== 'all') {
+        const exists = sources.some(s => s.id === activeSourceFilter);
+        if (!exists) {
+          console.warn(`Saved source ID ${activeSourceFilter} no longer exists, resetting to 'all'`);
+          setActiveSourceFilter('all');
+          saveFilter('all');
+        }
+      }
+    }
+  }, [isLoading, sources, activeSourceFilter]);
+
   // Get the currently selected source (null if 'all' is selected)
   const activeSource = activeSourceFilter === 'all' 
     ? null 
     : sources.find(s => s.id === activeSourceFilter) || null;
 
-  // Handle source filter changes
+  // Handle source filter changes - validates and persists
   const handleSetActiveSourceFilter = useCallback((filter: SourceFilter) => {
     // Validate that the source exists if it's an ID
     if (filter !== 'all') {
@@ -87,26 +136,13 @@ export function SourceProvider({ children }: SourceProviderProps) {
       if (!exists) {
         console.warn(`Source with ID ${filter} not found, defaulting to 'all'`);
         setActiveSourceFilter('all');
+        saveFilter('all');
         return;
       }
     }
     setActiveSourceFilter(filter);
+    saveFilter(filter);
   }, [sources]);
-
-  // Persist filter to localStorage
-  useEffect(() => {
-    const savedFilter = localStorage.getItem('github-migrator-source-filter');
-    if (savedFilter) {
-      const parsed = savedFilter === 'all' ? 'all' : parseInt(savedFilter, 10);
-      if (parsed === 'all' || !isNaN(parsed as number)) {
-        setActiveSourceFilter(parsed);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('github-migrator-source-filter', String(activeSourceFilter));
-  }, [activeSourceFilter]);
 
   const value: SourceContextType = {
     sources,

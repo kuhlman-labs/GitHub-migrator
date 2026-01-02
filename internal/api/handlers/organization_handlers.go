@@ -189,15 +189,21 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 
 // ListProjects handles GET /api/v1/projects
 // Returns ADO projects with repository counts and status breakdown
+// Supports optional source_id filter for multi-source environments
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	if h.sourceType != models.SourceTypeAzureDevOps {
-		h.sendJSON(w, http.StatusOK, []any{})
-		return
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
 	}
 
-	projects, err := h.db.GetADOProjects(ctx, "")
+	// Get ADO projects - in multi-source environments, always try to get projects
+	// The GetADOProjects query will only return results if there are ADO repos
+	projects, err := h.db.GetADOProjectsFiltered(ctx, "", sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get ADO projects", r) {
 			return
@@ -209,7 +215,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 	projectStats := make([]any, 0, len(projects))
 	for _, project := range projects {
-		repoCount, err := h.db.CountRepositoriesByADOProject(ctx, project.Organization, project.Name)
+		repoCount, err := h.db.CountRepositoriesByADOProjectFiltered(ctx, project.Organization, project.Name, sourceID)
 		if err != nil {
 			h.logger.Warn("Failed to count repositories for project", "project", project.Name, "error", err)
 			repoCount = 0

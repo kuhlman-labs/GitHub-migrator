@@ -57,8 +57,9 @@ export const discoveryApi = {
     return data;
   },
 
-  async listProjects(): Promise<Project[]> {
-    const { data } = await client.get('/projects');
+  async listProjects(sourceId?: number): Promise<Project[]> {
+    const params = sourceId !== undefined ? { source_id: sourceId } : undefined;
+    const { data } = await client.get('/projects', { params });
     return data;
   },
 

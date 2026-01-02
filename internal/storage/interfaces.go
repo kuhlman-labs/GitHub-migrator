@@ -223,12 +223,16 @@ type TeamMappingStore interface {
 type ADOStore interface {
 	// GetADOProjects retrieves ADO projects for an organization.
 	GetADOProjects(ctx context.Context, org string) ([]models.ADOProject, error)
+	// GetADOProjectsFiltered retrieves ADO projects with optional source_id filtering.
+	GetADOProjectsFiltered(ctx context.Context, org string, sourceID *int64) ([]models.ADOProject, error)
 	// GetADOProject retrieves a single ADO project.
 	GetADOProject(ctx context.Context, org, projectName string) (*models.ADOProject, error)
 	// SaveADOProject creates or updates an ADO project.
 	SaveADOProject(ctx context.Context, project *models.ADOProject) error
 	// CountRepositoriesByADOProject counts repositories in an ADO project.
 	CountRepositoriesByADOProject(ctx context.Context, org, project string) (int, error)
+	// CountRepositoriesByADOProjectFiltered counts repositories in an ADO project with source filtering.
+	CountRepositoriesByADOProjectFiltered(ctx context.Context, org, project string, sourceID *int64) (int, error)
 	// CountRepositoriesByADOOrganization counts repositories in an ADO organization.
 	CountRepositoriesByADOOrganization(ctx context.Context, org string) (int, error)
 	// CountTFVCRepositories counts TFVC repositories.
