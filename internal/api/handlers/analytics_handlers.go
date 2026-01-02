@@ -451,12 +451,20 @@ func (h *Handler) ExportDetailedDiscoveryReport(w http.ResponseWriter, r *http.R
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
+	// Parse source_id filter
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
 	if format != formatCSV && format != formatJSON {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid format. Must be 'csv' or 'json'"))
 		return
 	}
 
-	filters := buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter)
+	filters := buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter, sourceID)
 	repos, err := h.db.ListRepositories(ctx, filters)
 	if err != nil {
 		h.logger.Error("Failed to list repositories", "error", err)
@@ -515,7 +523,7 @@ func (h *Handler) exportMigrationHistoryJSON(w http.ResponseWriter, migrations [
 
 // Helper functions for report export
 
-func buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter string) map[string]any {
+func buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter string, sourceID *int64) map[string]any {
 	filters := make(map[string]any)
 	if orgFilter != "" {
 		filters["organization"] = orgFilter
@@ -528,6 +536,9 @@ func buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter string) m
 		if err == nil {
 			filters["batch_id"] = batchID
 		}
+	}
+	if sourceID != nil {
+		filters["source_id"] = *sourceID
 	}
 	return filters
 }
