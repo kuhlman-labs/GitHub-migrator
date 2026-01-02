@@ -44,6 +44,7 @@ import { Pagination } from '../common/Pagination';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { FormDialog } from '../common/FormDialog';
 import { FallbackAvatar } from '../common/FallbackAvatar';
+import { SourceTypeIcon } from '../common/SourceBadge';
 import { UserDetailPanel } from './UserDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
@@ -209,11 +210,12 @@ export function UserMappingTable() {
 
   const handleExport = useCallback(async () => {
     try {
-      const blob = await api.exportUserMappings(filters.status || undefined);
+      const blob = await api.exportUserMappings(filters.status || undefined, activeSource?.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'user-mappings.csv';
+      const sourceSuffix = activeSource ? `_${activeSource.name.replace(/\s+/g, '_')}` : '';
+      a.download = `user-mappings${sourceSuffix}.csv`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -221,7 +223,7 @@ export function UserMappingTable() {
     } catch (error) {
       handleApiError(error, showError, 'Failed to export mappings');
     }
-  }, [filters.status, showError]);
+  }, [filters.status, activeSource, showError]);
 
   const handleImport = useCallback(async (file?: File) => {
     if (!file) return;
@@ -542,6 +544,9 @@ export function UserMappingTable() {
                   >
                     <td className="p-3">
                       <div className="flex items-center gap-2">
+                        {mapping.source_id && (
+                          <SourceTypeIcon sourceId={mapping.source_id} size={14} />
+                        )}
                         <FallbackAvatar src={mapping.avatar_url} login={login} size={24} />
                         <div>
                           <div className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{login}</div>

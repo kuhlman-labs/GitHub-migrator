@@ -91,8 +91,8 @@ type MigrationHistoryStore interface {
 	UpdateMigrationHistory(ctx context.Context, id int64, status string, errorMsg *string) error
 	// CreateMigrationLog creates a new migration log entry.
 	CreateMigrationLog(ctx context.Context, log *models.MigrationLog) error
-	// GetCompletedMigrations retrieves all completed migrations.
-	GetCompletedMigrations(ctx context.Context) ([]*CompletedMigration, error)
+	// GetCompletedMigrations retrieves all completed migrations, optionally filtered by source.
+	GetCompletedMigrations(ctx context.Context, sourceID *int64) ([]*CompletedMigration, error)
 }
 
 // DependencyStore defines operations for repository dependencies.
@@ -104,7 +104,7 @@ type DependencyStore interface {
 	// GetDependentRepositories retrieves repositories that depend on a given repository.
 	GetDependentRepositories(ctx context.Context, dependencyFullName string) ([]*models.Repository, error)
 	// GetAllLocalDependencyPairs retrieves all local dependency relationships.
-	GetAllLocalDependencyPairs(ctx context.Context, dependencyTypes []string) ([]DependencyPair, error)
+	GetAllLocalDependencyPairs(ctx context.Context, dependencyTypes []string, sourceID *int64) ([]DependencyPair, error)
 }
 
 // AnalyticsStore defines operations for analytics and statistics.
@@ -112,31 +112,31 @@ type AnalyticsStore interface {
 	// GetRepositoryStatsByStatus returns repository counts grouped by status.
 	GetRepositoryStatsByStatus(ctx context.Context) (map[string]int, error)
 	// GetRepositoryStatsByStatusFiltered returns filtered repository counts by status.
-	GetRepositoryStatsByStatusFiltered(ctx context.Context, org, project, batchFilter string) (map[string]int, error)
+	GetRepositoryStatsByStatusFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) (map[string]int, error)
 	// GetComplexityDistribution returns complexity score distribution.
-	GetComplexityDistribution(ctx context.Context, org, project, batchFilter string) ([]*ComplexityDistribution, error)
+	GetComplexityDistribution(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*ComplexityDistribution, error)
 	// GetSizeDistributionFiltered returns repository size distribution.
-	GetSizeDistributionFiltered(ctx context.Context, org, project, batchFilter string) ([]*SizeDistribution, error)
+	GetSizeDistributionFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*SizeDistribution, error)
 	// GetFeatureStatsFiltered returns feature usage statistics.
-	GetFeatureStatsFiltered(ctx context.Context, org, project, batchFilter string) (*FeatureStats, error)
+	GetFeatureStatsFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) (*FeatureStats, error)
 	// GetMigrationVelocity returns migration velocity metrics.
-	GetMigrationVelocity(ctx context.Context, org, project, batchFilter string, days int) (*MigrationVelocity, error)
+	GetMigrationVelocity(ctx context.Context, org, project, batchFilter string, sourceID *int64, days int) (*MigrationVelocity, error)
 	// GetMigrationTimeSeries returns migration time series data.
-	GetMigrationTimeSeries(ctx context.Context, org, project, batchFilter string) ([]*MigrationTimeSeriesPoint, error)
+	GetMigrationTimeSeries(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*MigrationTimeSeriesPoint, error)
 	// GetAverageMigrationTime returns average migration duration.
-	GetAverageMigrationTime(ctx context.Context, org, project, batchFilter string) (float64, error)
+	GetAverageMigrationTime(ctx context.Context, org, project, batchFilter string, sourceID *int64) (float64, error)
 	// GetMedianMigrationTime returns median migration duration.
-	GetMedianMigrationTime(ctx context.Context, org, project, batchFilter string) (float64, error)
+	GetMedianMigrationTime(ctx context.Context, org, project, batchFilter string, sourceID *int64) (float64, error)
 	// GetOrganizationStats returns statistics grouped by organization.
 	GetOrganizationStats(ctx context.Context) ([]*OrganizationStats, error)
 	// GetOrganizationStatsFiltered returns filtered organization statistics.
 	GetOrganizationStatsFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*OrganizationStats, error)
 	// GetProjectStatsFiltered returns filtered project statistics.
-	GetProjectStatsFiltered(ctx context.Context, org, project, batchFilter string) ([]*OrganizationStats, error)
+	GetProjectStatsFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*OrganizationStats, error)
 	// GetMigrationCompletionStatsByOrgFiltered returns migration completion by org.
-	GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, org, project, batchFilter string) ([]*MigrationCompletionStats, error)
+	GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*MigrationCompletionStats, error)
 	// GetMigrationCompletionStatsByProjectFiltered returns migration completion by project.
-	GetMigrationCompletionStatsByProjectFiltered(ctx context.Context, org, project, batchFilter string) ([]*MigrationCompletionStats, error)
+	GetMigrationCompletionStatsByProjectFiltered(ctx context.Context, org, project, batchFilter string, sourceID *int64) ([]*MigrationCompletionStats, error)
 	// GetDistinctOrganizations returns all unique organizations.
 	GetDistinctOrganizations(ctx context.Context) ([]string, error)
 	// GetDashboardActionItems returns action items for the dashboard.
@@ -154,7 +154,7 @@ type UserStore interface {
 	// GetUserStats returns user statistics.
 	GetUserStats(ctx context.Context) (map[string]any, error)
 	// GetUsersWithMappingsStats returns user mapping statistics.
-	GetUsersWithMappingsStats(ctx context.Context, org string) (map[string]any, error)
+	GetUsersWithMappingsStats(ctx context.Context, org string, sourceID *int) (map[string]any, error)
 	// GetUserOrgMemberships retrieves organization memberships for a user.
 	GetUserOrgMemberships(ctx context.Context, login string) ([]*models.UserOrgMembership, error)
 	// GetUserMappingSourceOrgs returns source organizations for user mappings.
@@ -190,7 +190,7 @@ type TeamStore interface {
 	// GetTeamSourceOrgs returns source organizations for teams.
 	GetTeamSourceOrgs(ctx context.Context) ([]string, error)
 	// GetTeamsWithMappingsStats returns team mapping statistics.
-	GetTeamsWithMappingsStats(ctx context.Context, org string) (map[string]any, error)
+	GetTeamsWithMappingsStats(ctx context.Context, org string, sourceID *int) (map[string]any, error)
 	// GetTeamMembersByOrgAndSlug retrieves team members.
 	GetTeamMembersByOrgAndSlug(ctx context.Context, org, slug string) ([]*models.GitHubTeamMember, error)
 	// GetTeamDetail retrieves detailed team information.
@@ -259,6 +259,14 @@ type DiscoveryStore interface {
 	MarkDiscoveryFailed(id int64, errorMsg string) error
 }
 
+// SourceStore defines operations for migration sources.
+type SourceStore interface {
+	// GetSource retrieves a source by ID.
+	GetSource(ctx context.Context, id int64) (*models.Source, error)
+	// UpdateSourceRepositoryCount updates the cached repository count and last sync time for a source.
+	UpdateSourceRepositoryCount(ctx context.Context, id int64) error
+}
+
 // SetupStore defines operations for setup status.
 type SetupStore interface {
 	// GetSetupStatus retrieves the current setup status.
@@ -289,6 +297,7 @@ var (
 	_ UserMappingStore      = (*Database)(nil)
 	_ TeamStore             = (*Database)(nil)
 	_ TeamMappingStore      = (*Database)(nil)
+	_ SourceStore           = (*Database)(nil)
 	_ ADOStore              = (*Database)(nil)
 	_ DiscoveryStore        = (*Database)(nil)
 	_ SetupStore            = (*Database)(nil)

@@ -25,7 +25,7 @@ export const analyticsApi = {
 
   async exportExecutiveReport(
     format: 'csv' | 'json',
-    filters?: { organization?: string; batch_id?: string }
+    filters?: { organization?: string; batch_id?: string; source_id?: number }
   ): Promise<Blob> {
     const { data } = await client.get('/analytics/executive-report/export', {
       params: { format, ...filters },
@@ -36,7 +36,7 @@ export const analyticsApi = {
 
   async exportDetailedDiscoveryReport(
     format: 'csv' | 'json',
-    filters?: { organization?: string; project?: string; batch_id?: string }
+    filters?: { organization?: string; project?: string; batch_id?: string; source_id?: number }
   ): Promise<Blob> {
     const { data } = await client.get('/analytics/detailed-discovery-report/export', {
       params: { format, ...filters },

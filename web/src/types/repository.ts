@@ -290,6 +290,7 @@ export interface DependencyGraphNode {
   status: string;
   depends_on_count: number;
   depended_by_count: number;
+  source_id?: number; // Added for multi-source support
 }
 
 export interface DependencyGraphEdge {

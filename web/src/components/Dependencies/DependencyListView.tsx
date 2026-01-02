@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import type { DependencyGraphNode, DependencyGraphEdge } from '../../types';
 import { Badge } from '../common/Badge';
+import { SourceTypeIcon } from '../common/SourceBadge';
 import { Pagination } from '../common/Pagination';
 
 interface DependencyListViewProps {
@@ -358,13 +359,18 @@ export function DependencyListView({ nodes, edges, allNodes, totalNodes, current
                         </button>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <Link
-                          to={`/repository/${encodeURIComponent(node.full_name)}`}
-                          className="text-sm font-medium hover:underline"
-                          style={{ color: 'var(--fgColor-accent)' }}
-                        >
-                          {node.full_name}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          {node.source_id && (
+                            <SourceTypeIcon sourceId={node.source_id} size={14} />
+                          )}
+                          <Link
+                            to={`/repository/${encodeURIComponent(node.full_name)}`}
+                            className="text-sm font-medium hover:underline"
+                            style={{ color: 'var(--fgColor-accent)' }}
+                          >
+                            {node.full_name}
+                          </Link>
+                        </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                         {node.organization}

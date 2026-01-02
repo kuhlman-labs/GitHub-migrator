@@ -9,6 +9,7 @@ import type { MigrationHistoryEntry } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
+import { SourceTypeIcon } from '../common/SourceBadge';
 import { useToast } from '../../contexts/ToastContext';
 import { formatDate, formatDuration } from '../../utils/format';
 import { useMigrationHistory } from '../../hooks/useQueries';
@@ -29,13 +30,14 @@ export function MigrationHistory() {
   const handleExport = async (format: 'csv' | 'json') => {
     setExporting(true);
     try {
-      const blob = await api.exportMigrationHistory(format);
+      const blob = await api.exportMigrationHistory(format, activeSource?.id);
       
       // Create download link
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `migration_history.${format}`;
+      const sourceSuffix = activeSource ? `_${activeSource.name.replace(/\s+/g, '_')}` : '';
+      a.download = `migration_history${sourceSuffix}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -205,19 +207,24 @@ function MigrationRow({ migration }: { migration: MigrationHistoryEntry }) {
   return (
     <tr className="hover:opacity-80 transition-opacity">
       <td className="px-6 py-4 whitespace-nowrap">
-        <div className="flex flex-col">
-          <div className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>{migration.full_name}</div>
-          {migration.destination_url && (
-            <a
-              href={migration.destination_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs hover:underline"
-              style={{ color: 'var(--fgColor-accent)' }}
-            >
-              View destination →
-            </a>
+        <div className="flex items-center gap-2">
+          {migration.source_id && (
+            <SourceTypeIcon sourceId={migration.source_id} size={14} />
           )}
+          <div className="flex flex-col">
+            <div className="text-sm font-medium" style={{ color: 'var(--fgColor-default)' }}>{migration.full_name}</div>
+            {migration.destination_url && (
+              <a
+                href={migration.destination_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs hover:underline"
+                style={{ color: 'var(--fgColor-accent)' }}
+              >
+                View destination →
+              </a>
+            )}
+          </div>
         </div>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--fgColor-muted)' }}>

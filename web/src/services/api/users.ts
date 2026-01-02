@@ -95,9 +95,9 @@ export const usersApi = {
     return data;
   },
 
-  async exportMappings(status?: string): Promise<Blob> {
+  async exportMappings(status?: string, sourceId?: number): Promise<Blob> {
     const { data } = await client.get('/user-mappings/export', {
-      params: { status },
+      params: { status, source_id: sourceId },
       responseType: 'blob',
     });
     return data;

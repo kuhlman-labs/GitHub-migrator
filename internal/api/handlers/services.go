@@ -83,6 +83,9 @@ type DataStore interface {
 	storage.TeamStore
 	storage.TeamMappingStore
 
+	// Source stores
+	storage.SourceStore
+
 	// Platform-specific stores
 	storage.ADOStore
 	storage.DiscoveryStore

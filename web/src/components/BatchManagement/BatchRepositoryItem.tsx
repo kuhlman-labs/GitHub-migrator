@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '@primer/react';
 import type { Repository, Batch } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
+import { SourceTypeIcon } from '../common/SourceBadge';
 import { formatBytes } from '../../utils/format';
 
 export interface BatchRepositoryItemProps {
@@ -64,9 +65,12 @@ export function BatchRepositoryItem({
         className="flex-1 min-w-0"
       >
         <div
-          className="font-semibold transition-colors"
+          className="font-semibold transition-colors flex items-center gap-2"
           style={{ color: 'var(--fgColor-default)' }}
         >
+          {repository.source_id && (
+            <SourceTypeIcon sourceId={repository.source_id} size={14} />
+          )}
           {repository.full_name}
         </div>
         <div className="text-sm mt-1 space-y-0.5" style={{ color: 'var(--fgColor-muted)' }}>

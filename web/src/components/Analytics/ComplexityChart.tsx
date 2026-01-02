@@ -47,12 +47,12 @@ export function ComplexityChart({ data, source = 'all' }: ComplexityChartProps) 
 
   // Dynamic description based on source
   const getDescription = () => {
-    if (source === 'azuredevops') {
-      return 'Repositories categorized by ADO → GitHub migration complexity factors including TFVC detection, pipeline types, Azure Boards, wikis, and test plans.';
-    } else if (source === 'github') {
-      return 'Repositories categorized by GitHub migration complexity factors including size, LFS, submodules, environments, secrets, and more.';
+    if (source === 'all') {
+      return 'Repositories categorized by migration complexity factors including repository size, CI/CD configurations, security settings, and source-specific features.';
+    } else if (source === 'azuredevops') {
+      return 'Repositories categorized by migration complexity factors including TFVC detection, pipeline types, boards, wikis, and test plans.';
     } else {
-      return 'Repositories categorized by migration complexity. Scoring varies by source: GitHub factors include size, LFS, and environments; Azure DevOps includes TFVC, pipelines, and boards.';
+      return 'Repositories categorized by migration complexity factors including size, LFS, submodules, environments, secrets, and more.';
     }
   };
 

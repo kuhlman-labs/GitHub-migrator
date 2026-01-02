@@ -102,7 +102,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 	if req.EnterpriseSlug != "" {
 		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
 			return collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug)
-		}, "enterprise", req.EnterpriseSlug)
+		}, "enterprise", req.EnterpriseSlug, req.SourceID)
 
 		h.sendJSON(w, http.StatusAccepted, map[string]any{
 			"message":     "Enterprise discovery started",
@@ -114,7 +114,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 	} else {
 		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
 			return collector.DiscoverRepositories(ctx, req.Organization)
-		}, "organization", req.Organization)
+		}, "organization", req.Organization, req.SourceID)
 
 		h.sendJSON(w, http.StatusAccepted, map[string]any{
 			"message":      "Discovery started",
@@ -127,7 +127,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 // runDiscoveryAsync executes a discovery operation asynchronously and updates progress
-func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgressTracker, discoverFn func(context.Context) error, discoveryType, target string) {
+func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgressTracker, discoverFn func(context.Context) error, discoveryType, target string, sourceID *int64) {
 	ctx := context.Background()
 	if err := discoverFn(ctx); err != nil {
 		h.logger.Error("Discovery failed", "error", err, "type", discoveryType, "target", target)
@@ -137,6 +137,18 @@ func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgr
 	} else {
 		if dbErr := h.db.MarkDiscoveryComplete(progressID); dbErr != nil {
 			h.logger.Error("Failed to mark discovery as complete", "error", dbErr)
+		}
+
+		// Update source repository count and last sync time if source ID is provided
+		if sourceID != nil {
+			if err := h.db.UpdateSourceRepositoryCount(ctx, *sourceID); err != nil {
+				h.logger.Error("Failed to update source repository count",
+					"error", err,
+					"source_id", *sourceID)
+			} else {
+				h.logger.Info("Updated source repository count after discovery",
+					"source_id", *sourceID)
+			}
 		}
 	}
 	tracker.Flush()
@@ -321,6 +333,16 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 					"error", err)
 			} else {
 				h.logger.Info("ADO organization discovery completed", "organization", req.Organization)
+
+				// Update source repository count and last sync time
+				if err := h.db.UpdateSourceRepositoryCount(ctx, *req.SourceID); err != nil {
+					h.logger.Error("Failed to update source repository count",
+						"error", err,
+						"source_id", *req.SourceID)
+				} else {
+					h.logger.Info("Updated source repository count after ADO discovery",
+						"source_id", *req.SourceID)
+				}
 			}
 		}()
 
@@ -352,6 +374,16 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 						"organization", req.Organization,
 						"project", project)
 				}
+			}
+
+			// Update source repository count and last sync time after all projects are done
+			if err := h.db.UpdateSourceRepositoryCount(ctx, *req.SourceID); err != nil {
+				h.logger.Error("Failed to update source repository count",
+					"error", err,
+					"source_id", *req.SourceID)
+			} else {
+				h.logger.Info("Updated source repository count after ADO project discovery",
+					"source_id", *req.SourceID)
 			}
 		}()
 

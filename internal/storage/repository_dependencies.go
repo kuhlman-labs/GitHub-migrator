@@ -190,8 +190,8 @@ type DependencyPair struct {
 
 // GetAllLocalDependencyPairs returns all local dependency relationships for the dependency graph
 // It returns pairs where both the source and target repositories exist in the database
-// Optionally filters by dependency types
-func (d *Database) GetAllLocalDependencyPairs(ctx context.Context, dependencyTypes []string) ([]DependencyPair, error) {
+// Optionally filters by dependency types and source_id
+func (d *Database) GetAllLocalDependencyPairs(ctx context.Context, dependencyTypes []string, sourceID *int64) ([]DependencyPair, error) {
 	query := d.db.WithContext(ctx).
 		Model(&models.RepositoryDependency{}).
 		Select("r.full_name as source_repo, rd.dependency_full_name as target_repo, rd.dependency_type, rd.dependency_url, r.source_url as source_repo_url").
@@ -202,6 +202,11 @@ func (d *Database) GetAllLocalDependencyPairs(ctx context.Context, dependencyTyp
 	// Add dependency type filter if specified
 	if len(dependencyTypes) > 0 {
 		query = query.Where("rd.dependency_type IN ?", dependencyTypes)
+	}
+
+	// Add source_id filter if specified
+	if sourceID != nil {
+		query = query.Where("r.source_id = ?", *sourceID)
 	}
 
 	var results []DependencyPair

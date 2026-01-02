@@ -108,7 +108,7 @@ export const teamsApi = {
     return data;
   },
 
-  async exportMappings(filters?: { status?: string; source_org?: string }): Promise<Blob> {
+  async exportMappings(filters?: { status?: string; source_org?: string; source_id?: number }): Promise<Blob> {
     const { data } = await client.get('/team-mappings/export', {
       params: filters,
       responseType: 'blob',

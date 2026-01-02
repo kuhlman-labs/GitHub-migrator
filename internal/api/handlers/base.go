@@ -284,17 +284,7 @@ func (h *Handler) getADOCollectorForSource(sourceID *int64) (*discovery.ADOColle
 		return nil, nil, fmt.Errorf("source %d is not an Azure DevOps source (type: %s)", *sourceID, src.Type)
 	}
 
-	// Create Azure DevOps client
-	adoClient, err := azuredevops.NewClient(azuredevops.ClientConfig{
-		OrganizationURL:     src.BaseURL,
-		PersonalAccessToken: src.Token,
-		Logger:              h.logger,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create ADO client for source %d: %w", *sourceID, err)
-	}
-
-	// Extract organization from base URL (e.g., https://dev.azure.com/myorg -> myorg)
+	// Extract organization name from base URL or use stored organization field
 	var orgName string
 	if src.Organization != nil && *src.Organization != "" {
 		orgName = *src.Organization
@@ -303,19 +293,56 @@ func (h *Handler) getADOCollectorForSource(sourceID *int64) (*discovery.ADOColle
 		orgName = extractADOOrganization(src.BaseURL)
 	}
 
-	// Create source provider
-	adoProvider, err := source.NewAzureDevOpsProvider(orgName, src.Token, "")
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create ADO provider for source %d: %w", *sourceID, err)
+	if orgName == "" {
+		return nil, nil, fmt.Errorf("source %d: could not determine Azure DevOps organization. Please ensure the organization field is set or the base URL includes the organization (e.g., https://dev.azure.com/your-org)", *sourceID)
 	}
+
+	// Build the full organization URL by combining base URL and organization
+	// If the organization is already in the URL, use it as-is; otherwise append it
+	orgURL := src.BaseURL
+	if !strings.Contains(src.BaseURL, orgName) {
+		orgURL = strings.TrimSuffix(src.BaseURL, "/") + "/" + orgName
+	}
+
+	h.logger.Info("Creating ADO client for source",
+		"source_id", *sourceID,
+		"source_name", src.Name,
+		"base_url", src.BaseURL,
+		"organization", orgName,
+		"org_url", orgURL)
+
+	// Create Azure DevOps client
+	adoClient, err := azuredevops.NewClient(azuredevops.ClientConfig{
+		OrganizationURL:     orgURL,
+		PersonalAccessToken: src.Token,
+		Logger:              h.logger,
+	})
+	if err != nil {
+		h.logger.Error("Failed to create ADO client",
+			"source_id", *sourceID,
+			"base_url", src.BaseURL,
+			"organization", orgName,
+			"org_url", orgURL,
+			"error", err)
+		return nil, nil, fmt.Errorf("failed to create ADO client for source %d: %w", *sourceID, err)
+	}
+
+	// Create source provider
+	adoProvider, provErr := source.NewAzureDevOpsProvider(orgName, src.Token, "")
+	if provErr != nil {
+		return nil, nil, fmt.Errorf("failed to create ADO provider for source %d: %w", *sourceID, provErr)
+	}
+
+	h.logger.Info("Created dynamic ADO collector",
+		"source_id", *sourceID,
+		"source_name", src.Name,
+		"organization", orgName)
 
 	// Create ADO collector
 	adoCollector := discovery.NewADOCollector(adoClient, db, h.logger, adoProvider)
 
 	// Set source ID to associate discovered entities with this source
 	adoCollector.SetSourceID(sourceID)
-
-	h.logger.Info("Created dynamic ADO collector for source", "source_id", *sourceID, "source_name", src.Name)
 
 	return adoCollector, adoClient, nil
 }

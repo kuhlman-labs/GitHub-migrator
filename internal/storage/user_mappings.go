@@ -93,6 +93,7 @@ type UserMappingFilters struct {
 	ReclaimStatus  string // Filter by reclaim_status
 	SourceOrg      string // Filter by source_org
 	Search         string // Search in source_login, source_email, destination_login
+	SourceID       *int   // Filter by source ID (multi-source support)
 	Limit          int
 	Offset         int
 }
@@ -139,6 +140,10 @@ func (d *Database) ListUserMappings(ctx context.Context, filters UserMappingFilt
 			"source_login LIKE ? OR source_email LIKE ? OR destination_login LIKE ? OR source_name LIKE ?",
 			searchPattern, searchPattern, searchPattern, searchPattern,
 		)
+	}
+
+	if filters.SourceID != nil {
+		query = query.Where("source_id = ?", *filters.SourceID)
 	}
 
 	// Get total count

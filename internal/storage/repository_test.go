@@ -1703,7 +1703,7 @@ func TestGetCompletedMigrations(t *testing.T) {
 	createRepoWithHistory(t, db, ctx, "test/failed", string(models.StatusMigrationFailed))
 
 	// Get completed migrations (includes complete, failed, and rolled_back)
-	migrations, err := db.GetCompletedMigrations(ctx)
+	migrations, err := db.GetCompletedMigrations(ctx, nil)
 	if err != nil {
 		t.Fatalf("Failed to get completed migrations: %v", err)
 	}

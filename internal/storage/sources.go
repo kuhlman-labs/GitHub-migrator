@@ -154,7 +154,7 @@ func (d *Database) UpdateSourceLastSync(ctx context.Context, id int64) error {
 	return nil
 }
 
-// UpdateSourceRepositoryCount updates the cached repository count for a source
+// UpdateSourceRepositoryCount updates the cached repository count and last sync time for a source
 func (d *Database) UpdateSourceRepositoryCount(ctx context.Context, id int64) error {
 	// Count repositories with this source_id
 	var count int64
@@ -163,11 +163,13 @@ func (d *Database) UpdateSourceRepositoryCount(ctx context.Context, id int64) er
 		return fmt.Errorf("failed to count repositories: %w", err)
 	}
 
+	now := time.Now()
 	result := d.db.WithContext(ctx).Model(&models.Source{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"repository_count": count,
-			"updated_at":       time.Now(),
+			"last_sync_at":     now,
+			"updated_at":       now,
 		})
 
 	if result.Error != nil {

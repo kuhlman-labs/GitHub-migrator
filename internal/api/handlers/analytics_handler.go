@@ -42,7 +42,7 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
-	
+
 	// Parse source_id filter for multi-source support
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
@@ -52,7 +52,7 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 	}
 
 	// Get status distribution
-	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get status stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to get analytics summary")
@@ -76,7 +76,7 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 	}
 
 	// Get complexity distribution
-	complexityDist, err := h.analyticsStore.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
+	complexityDist, err := h.analyticsStore.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get complexity distribution", "error", err)
 		// Continue without complexity stats
@@ -100,8 +100,16 @@ func (h *AnalyticsHandler) GetMigrationProgress(w http.ResponseWriter, r *http.R
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
 	// Get status stats
-	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get status stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to get migration progress")
@@ -118,7 +126,7 @@ func (h *AnalyticsHandler) GetMigrationProgress(w http.ResponseWriter, r *http.R
 	}
 
 	// Get time series data
-	timeSeries, err := h.analyticsStore.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter)
+	timeSeries, err := h.analyticsStore.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get time series data", "error", err)
 		// Continue without time series
@@ -126,7 +134,7 @@ func (h *AnalyticsHandler) GetMigrationProgress(w http.ResponseWriter, r *http.R
 	}
 
 	// Get velocity
-	velocity, err := h.analyticsStore.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 7)
+	velocity, err := h.analyticsStore.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, sourceID, 7)
 	if err != nil {
 		h.logger.Error("Failed to get velocity", "error", err)
 		// Continue without velocity
@@ -153,7 +161,7 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
-	
+
 	// Parse source_id filter for multi-source support
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
@@ -163,7 +171,7 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 	}
 
 	// Get status stats
-	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	statusStats, err := h.analyticsStore.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get status stats", "error", err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to get executive report")
@@ -190,21 +198,21 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 	}
 
 	// Get velocity
-	velocity, err := h.analyticsStore.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 7)
+	velocity, err := h.analyticsStore.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, sourceID, 7)
 	if err != nil {
 		h.logger.Error("Failed to get velocity", "error", err)
 		velocity = nil
 	}
 
 	// Get average migration time
-	avgTime, err := h.analyticsStore.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	avgTime, err := h.analyticsStore.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get average migration time", "error", err)
 		avgTime = 0
 	}
 
 	// Get median migration time
-	medianTime, err := h.analyticsStore.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	medianTime, err := h.analyticsStore.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get median migration time", "error", err)
 		medianTime = 0

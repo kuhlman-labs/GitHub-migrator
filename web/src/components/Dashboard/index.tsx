@@ -269,17 +269,34 @@ export function Dashboard() {
   const isLoading = orgsLoading || analyticsLoading || batchesLoading || actionItemsLoading;
   const isFetching = orgsFetching || analyticsFetching || batchesFetching || actionItemsFetching;
 
+  // Separate organizations by source type for "All Sources" view
+  const gitHubOrgs = useMemo(() => 
+    filteredOrgs.filter(org => !org.ado_organization), 
+    [filteredOrgs]
+  );
+  
+  const adoOrgs = useMemo(() => 
+    filteredOrgs.filter(org => !!org.ado_organization),
+    [filteredOrgs]
+  );
+  
   // Group ADO projects by organization
-  const groupedADOOrgs = sourceType === 'azuredevops' 
-    ? filteredOrgs.reduce((acc, org) => {
-        const adoOrgName = org.ado_organization || 'Unknown';
-        if (!acc[adoOrgName]) {
-          acc[adoOrgName] = [];
-        }
-        acc[adoOrgName].push(org);
-        return acc;
-      }, {} as Record<string, typeof filteredOrgs>)
-    : {};
+  const groupedADOOrgs = useMemo(() => 
+    adoOrgs.reduce((acc, org) => {
+      const adoOrgName = org.ado_organization || 'Unknown';
+      if (!acc[adoOrgName]) {
+        acc[adoOrgName] = [];
+      }
+      acc[adoOrgName].push(org);
+      return acc;
+    }, {} as Record<string, typeof adoOrgs>),
+    [adoOrgs]
+  );
+  
+  // Determine what to show based on source filter and available data
+  const showAllSources = activeSource === null;
+  const showGitHubSection = showAllSources ? gitHubOrgs.length > 0 : sourceType === 'github';
+  const showADOSection = showAllSources ? adoOrgs.length > 0 : sourceType === 'azuredevops';
 
   return (
     <div className="relative">
@@ -361,86 +378,113 @@ export function Dashboard() {
 
       {/* Organizations Section - only show when sources are configured */}
       {setupProgress?.sources_configured && (
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>
-          {sourceType === 'azuredevops' ? 'Azure DevOps Organizations' : 'GitHub Organizations'}
-        </h2>
-        <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-          {sourceType === 'azuredevops' ? (
-            totalItems > 0 ? (
-              <>
-                Showing {Object.keys(groupedADOOrgs).length} {Object.keys(groupedADOOrgs).length === 1 ? 'organization' : 'organizations'} with {totalItems} {totalItems === 1 ? 'project' : 'projects'} and {totalRepos} total repositories
-              </>
-            ) : (
-              'No organizations found'
-            )
-          ) : (
-            totalItems > 0 ? (
-              <>
-                Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {totalItems === 1 ? 'organization' : 'organizations'} with {totalRepos} total repositories
-              </>
-            ) : (
-              'No organizations found'
-            )
-          )}
-        </div>
-
-        {orgsLoading ? (
-          <LoadingSpinner />
-        ) : filteredOrgs.length === 0 ? (
-          <Blankslate>
-            <Blankslate.Visual>
-              <RepoIcon size={48} />
-            </Blankslate.Visual>
-            <Blankslate.Heading>
-              {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
-            </Blankslate.Heading>
-            <Blankslate.Description>
-              {searchTerm 
-                ? 'No organizations match your search. Try a different search term.'
-                : sourceType === 'azuredevops'
-                  ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
-                  : 'Get started by discovering repositories from your GitHub organizations.'}
-            </Blankslate.Description>
-            {!searchTerm && (
-              <Blankslate.PrimaryAction onClick={() => {
-                setDiscoveryType(defaultDiscoveryType);
-                setShowDiscoveryModal(true);
-              }}>
-                Start Discovery
-              </Blankslate.PrimaryAction>
-            )}
-          </Blankslate>
-        ) : sourceType === 'azuredevops' ? (
-          // Azure DevOps: Show organizations containing projects
-          <div className="space-y-6">
-            {Object.entries(groupedADOOrgs).map(([adoOrgName, projects]) => (
-              <ADOOrganizationCard 
-                key={adoOrgName} 
-                adoOrgName={adoOrgName} 
-                projects={projects} 
-              />
-            ))}
-          </div>
-        ) : (
-          // GitHub: Show organizations with pagination
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-              {paginatedOrgs.map((org) => (
-                <GitHubOrganizationCard key={org.organization} organization={org} />
-              ))}
+        <>
+          {orgsLoading ? (
+            <div className="mb-6">
+              <LoadingSpinner />
             </div>
-            {totalItems > pageSize && (
-              <Pagination
-                currentPage={currentPage}
-                totalItems={totalItems}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
-              />
-            )}
-          </>
-        )}
-      </div>
+          ) : filteredOrgs.length === 0 ? (
+            <div className="mb-6">
+              <Blankslate>
+                <Blankslate.Visual>
+                  <RepoIcon size={48} />
+                </Blankslate.Visual>
+                <Blankslate.Heading>
+                  {sourceType === 'azuredevops' ? 'No Azure DevOps organizations discovered yet' : 'No organizations discovered yet'}
+                </Blankslate.Heading>
+                <Blankslate.Description>
+                  {searchTerm 
+                    ? 'No organizations match your search. Try a different search term.'
+                    : sourceType === 'azuredevops'
+                      ? 'Get started by discovering repositories from your Azure DevOps organizations and projects.'
+                      : 'Get started by discovering repositories from your GitHub organizations.'}
+                </Blankslate.Description>
+                {!searchTerm && (
+                  <Blankslate.PrimaryAction onClick={() => {
+                    setDiscoveryType(defaultDiscoveryType);
+                    setShowDiscoveryModal(true);
+                  }}>
+                    Start Discovery
+                  </Blankslate.PrimaryAction>
+                )}
+              </Blankslate>
+            </div>
+          ) : (
+            <>
+              {/* GitHub Organizations Section */}
+              {showGitHubSection && (
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>
+                    GitHub Organizations
+                  </h2>
+                  <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                    {gitHubOrgs.length > 0 ? (
+                      <>
+                        {showAllSources ? (
+                          <>Showing {gitHubOrgs.length} {gitHubOrgs.length === 1 ? 'organization' : 'organizations'} with {gitHubOrgs.reduce((sum, org) => sum + org.total_repos, 0)} total repositories</>
+                        ) : (
+                          <>Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {totalItems === 1 ? 'organization' : 'organizations'} with {totalRepos} total repositories</>
+                        )}
+                      </>
+                    ) : (
+                      'No GitHub organizations found'
+                    )}
+                  </div>
+                  {gitHubOrgs.length === 0 ? (
+                    <Flash>No GitHub organizations discovered yet. Start discovery to find repositories.</Flash>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                        {(showAllSources ? gitHubOrgs : paginatedOrgs).map((org) => (
+                          <GitHubOrganizationCard key={org.organization} organization={org} />
+                        ))}
+                      </div>
+                      {!showAllSources && totalItems > pageSize && (
+                        <Pagination
+                          currentPage={currentPage}
+                          totalItems={totalItems}
+                          pageSize={pageSize}
+                          onPageChange={setCurrentPage}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Azure DevOps Organizations Section */}
+              {showADOSection && (
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--fgColor-default)' }}>
+                    Azure DevOps Organizations
+                  </h2>
+                  <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                    {adoOrgs.length > 0 ? (
+                      <>
+                        Showing {Object.keys(groupedADOOrgs).length} {Object.keys(groupedADOOrgs).length === 1 ? 'organization' : 'organizations'} with {adoOrgs.length} {adoOrgs.length === 1 ? 'project' : 'projects'} and {adoOrgs.reduce((sum, org) => sum + org.total_repos, 0)} total repositories
+                      </>
+                    ) : (
+                      'No Azure DevOps organizations found'
+                    )}
+                  </div>
+                  {adoOrgs.length === 0 ? (
+                    <Flash>No Azure DevOps organizations discovered yet. Start discovery to find repositories.</Flash>
+                  ) : (
+                    <div className="space-y-6">
+                      {Object.entries(groupedADOOrgs).map(([adoOrgName, projects]) => (
+                        <ADOOrganizationCard 
+                          key={adoOrgName} 
+                          adoOrgName={adoOrgName} 
+                          projects={projects} 
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </>
       )}
 
       {/* Discovery Modal - reuse existing modal from original Dashboard */}

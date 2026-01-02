@@ -31,6 +31,7 @@ export interface TeamMapping {
   name: string;
   description?: string;
   privacy: string;
+  source_id?: number; // Added for multi-source support
   destination_org?: string;
   destination_team_slug?: string;
   destination_team_name?: string;
@@ -128,6 +129,7 @@ export interface TeamDetail {
   name: string;
   description?: string;
   privacy: string;
+  source_id?: number; // Added for multi-source support
   discovered_at: string;
   members: TeamDetailMember[];
   repositories: TeamDetailRepository[];

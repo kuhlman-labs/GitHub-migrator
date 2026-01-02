@@ -44,7 +44,7 @@ func (m *MockHistoryStore) CreateMigrationLog(_ context.Context, _ *models.Migra
 	return nil
 }
 
-func (m *MockHistoryStore) GetCompletedMigrations(_ context.Context) ([]*storage.CompletedMigration, error) {
+func (m *MockHistoryStore) GetCompletedMigrations(_ context.Context, _ *int64) ([]*storage.CompletedMigration, error) {
 	return nil, nil
 }
 
@@ -87,7 +87,7 @@ func (m *MockDepStore) GetDependentRepositories(_ context.Context, dependencyFul
 	return m.dependents[dependencyFullName], nil
 }
 
-func (m *MockDepStore) GetAllLocalDependencyPairs(_ context.Context, _ []string) ([]storage.DependencyPair, error) {
+func (m *MockDepStore) GetAllLocalDependencyPairs(_ context.Context, _ []string, _ *int64) ([]storage.DependencyPair, error) {
 	return nil, nil
 }
 

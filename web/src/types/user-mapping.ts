@@ -28,6 +28,7 @@ export interface UserMapping {
   email?: string;
   avatar_url?: string;
   source_instance: string;
+  source_id?: number; // Added for multi-source support
   source_org?: string;
   destination_login?: string;
   mapping_status: UserMappingStatus;
@@ -128,6 +129,7 @@ export interface UserDetail {
   email?: string;
   avatar_url?: string;
   source_instance: string;
+  source_id?: number; // Added for multi-source support
   discovered_at: string;
   updated_at: string;
   stats: UserContributionStats;

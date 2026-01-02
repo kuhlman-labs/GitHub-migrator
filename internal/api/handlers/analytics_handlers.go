@@ -23,7 +23,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
-	
+
 	// Parse source_id filter for multi-source support
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
@@ -32,7 +32,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("analytics"))
@@ -57,26 +57,26 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		successRate = float64(migrated) / float64(migrated+failed) * 100
 	}
 
-	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
+	complexityDistribution, err := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get complexity distribution", "error", err)
 		complexityDistribution = []*storage.ComplexityDistribution{}
 	}
 
-	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
+	migrationVelocity, err := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, sourceID, 30)
 	if err != nil {
 		h.logger.Error("Failed to get migration velocity", "error", err)
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
 
-	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter)
+	migrationTimeSeries, err := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get migration time series", "error", err)
 		migrationTimeSeries = []*storage.MigrationTimeSeriesPoint{}
 	}
 
-	avgMigrationTime, _ := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
-	medianMigrationTime, _ := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	avgMigrationTime, _ := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	medianMigrationTime, _ := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 
 	var estimatedCompletionDate *string
 	remaining := total - migrated
@@ -89,17 +89,17 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	orgStats, _ := h.db.GetOrganizationStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	var projectStats []*storage.OrganizationStats
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		projectStats, _ = h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		projectStats, _ = h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	}
 
-	sizeDistribution, _ := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
-	featureStats, _ := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	sizeDistribution, _ := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	featureStats, _ := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 
 	var migrationCompletionStats []*storage.MigrationCompletionStats
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	} else {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	}
 
 	summary := map[string]any{
@@ -127,7 +127,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMigrationProgress handles GET /api/v1/analytics/progress
-// Supports optional query parameters: organization, project, batch_id
+// Supports optional query parameters: organization, project, batch_id, source_id
 func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -136,7 +136,15 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get repository stats", r) {
 			return
@@ -167,7 +175,15 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
-	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
+	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get repository stats", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("analytics"))
@@ -192,13 +208,13 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		successRate = float64(migrated) / float64(migrated+failed) * 100
 	}
 
-	migrationVelocity, _ := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
+	migrationVelocity, _ := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, sourceID, 30)
 	if migrationVelocity == nil {
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
-	migrationTimeSeries, _ := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter)
-	avgMigrationTime, _ := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
-	medianMigrationTime, _ := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	migrationTimeSeries, _ := h.db.GetMigrationTimeSeries(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	avgMigrationTime, _ := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	medianMigrationTime, _ := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 
 	var estimatedCompletionDate *string
 	var daysRemaining int
@@ -212,14 +228,14 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 
 	var migrationCompletionStats []*storage.MigrationCompletionStats
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	} else {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	}
 
-	complexityDistribution, _ := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
-	sizeDistribution, _ := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
-	featureStats, _ := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	complexityDistribution, _ := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	sizeDistribution, _ := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	featureStats, _ := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if featureStats == nil {
 		featureStats = &storage.FeatureStats{}
 	}
@@ -324,12 +340,20 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
 
+	// Parse source_id filter for multi-source support
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
 	if format != formatCSV && format != formatJSON {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid format. Must be 'csv' or 'json'"))
 		return
 	}
 
-	stats, _ := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	stats, _ := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 
 	total := 0
 	for status, count := range stats {
@@ -349,12 +373,12 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		successRate = float64(migrated) / float64(migrated+failed) * 100
 	}
 
-	migrationVelocity, _ := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, 30)
+	migrationVelocity, _ := h.db.GetMigrationVelocity(ctx, orgFilter, projectFilter, batchFilter, sourceID, 30)
 	if migrationVelocity == nil {
 		migrationVelocity = &storage.MigrationVelocity{}
 	}
-	avgMigrationTime, _ := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
-	medianMigrationTime, _ := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter)
+	avgMigrationTime, _ := h.db.GetAverageMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	medianMigrationTime, _ := h.db.GetMedianMigrationTime(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 
 	var estimatedCompletionDate string
 	var daysRemaining int
@@ -368,14 +392,14 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 
 	var migrationCompletionStats []*storage.MigrationCompletionStats
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	} else {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter)
+		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	}
 
-	complexityDistribution, _ := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter)
-	sizeDistribution, _ := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter)
-	featureStats, _ := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter)
+	complexityDistribution, _ := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	sizeDistribution, _ := h.db.GetSizeDistributionFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	featureStats, _ := h.db.GetFeatureStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if featureStats == nil {
 		featureStats = &storage.FeatureStats{}
 	}

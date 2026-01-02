@@ -169,7 +169,8 @@ export function Repositories() {
       return;
     }
 
-    const baseName = 'repositories';
+    const sourceSuffix = activeSource ? `_${activeSource.name.replace(/\s+/g, '_')}` : '';
+    const baseName = `repositories${sourceSuffix}`;
     
     try {
       switch (format) {

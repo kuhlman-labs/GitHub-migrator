@@ -47,6 +47,7 @@ import { api } from '../../services/api';
 import { Pagination } from '../common/Pagination';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { FormDialog } from '../common/FormDialog';
+import { SourceTypeIcon } from '../common/SourceBadge';
 import { TeamDetailPanel } from './TeamDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
@@ -391,11 +392,13 @@ export function TeamMappingTable() {
       const blob = await api.exportTeamMappings({
         status: filters.status || undefined,
         source_org: filters.sourceOrg || undefined,
+        source_id: activeSource?.id,
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'team-mappings.csv';
+      const sourceSuffix = activeSource ? `_${activeSource.name.replace(/\s+/g, '_')}` : '';
+      a.download = `team-mappings${sourceSuffix}.csv`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -403,7 +406,7 @@ export function TeamMappingTable() {
     } catch (error) {
       handleApiError(error, showError, 'Failed to export mappings');
     }
-  }, [filters.status, filters.sourceOrg, showError]);
+  }, [filters.status, filters.sourceOrg, activeSource, showError]);
 
   const handleImport = useCallback(async (file: File) => {
     try {
@@ -702,16 +705,21 @@ export function TeamMappingTable() {
                 onClick={() => handleTeamClick(org, slug)}
               >
                 <td className="p-3">
-                  <div>
-                    <div className="font-medium">
-                      <span style={{ color: 'var(--fgColor-muted)' }}>{org}/</span>
-                      {slug}
-                    </div>
-                    {name && (
-                      <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
-                        {name}
-                      </span>
+                  <div className="flex items-center gap-2">
+                    {mapping.source_id && (
+                      <SourceTypeIcon sourceId={mapping.source_id} size={14} />
                     )}
+                    <div>
+                      <div className="font-medium">
+                        <span style={{ color: 'var(--fgColor-muted)' }}>{org}/</span>
+                        {slug}
+                      </div>
+                      {name && (
+                        <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                          {name}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="p-3 text-center">

@@ -34,6 +34,7 @@ export interface MigrationHistoryEntry {
   full_name: string;
   source_url: string;
   destination_url?: string;
+  source_id?: number; // Added for multi-source support
   status: string;
   started_at?: string;
   completed_at?: string;

@@ -53,8 +53,13 @@ export const migrationsApi = {
     return data;
   },
 
-  async exportHistory(format: 'csv' | 'json'): Promise<Blob> {
-    const { data } = await client.get(`/migrations/history/export?format=${format}`, {
+  async exportHistory(format: 'csv' | 'json', sourceId?: number): Promise<Blob> {
+    const params: Record<string, string | number> = { format };
+    if (sourceId !== undefined) {
+      params.source_id = sourceId;
+    }
+    const { data } = await client.get('/migrations/history/export', {
+      params,
       responseType: 'blob',
     });
     return data;

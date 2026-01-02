@@ -1,4 +1,5 @@
 import type { Repository } from '../../types';
+import { SourceTypeIcon } from '../common/SourceBadge';
 import { formatBytes } from '../../utils/format';
 
 interface RepositoryListItemProps {
@@ -129,6 +130,9 @@ export function RepositoryListItem({ repository, selected, disabled, onToggle }:
       <div className="flex-1 min-w-0">
         {/* Header with repo name and complexity badge */}
         <div className="flex items-center gap-2 mb-2">
+          {repository.source_id && (
+            <SourceTypeIcon sourceId={repository.source_id} size={14} />
+          )}
           <span className="font-semibold truncate text-sm" style={{ color: 'var(--fgColor-default)' }}>
             {repository.full_name}
           </span>

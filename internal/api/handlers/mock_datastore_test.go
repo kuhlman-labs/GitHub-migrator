@@ -368,7 +368,7 @@ func (m *MockDataStore) CreateMigrationLog(_ context.Context, log *models.Migrat
 	return nil
 }
 
-func (m *MockDataStore) GetCompletedMigrations(_ context.Context) ([]*storage.CompletedMigration, error) {
+func (m *MockDataStore) GetCompletedMigrations(_ context.Context, _ *int64) ([]*storage.CompletedMigration, error) {
 	return []*storage.CompletedMigration{}, nil
 }
 
@@ -398,7 +398,7 @@ func (m *MockDataStore) GetDependentRepositories(_ context.Context, _ string) ([
 	return []*models.Repository{}, nil
 }
 
-func (m *MockDataStore) GetAllLocalDependencyPairs(_ context.Context, _ []string) ([]storage.DependencyPair, error) {
+func (m *MockDataStore) GetAllLocalDependencyPairs(_ context.Context, _ []string, _ *int64) ([]storage.DependencyPair, error) {
 	return []storage.DependencyPair{}, nil
 }
 
@@ -416,35 +416,35 @@ func (m *MockDataStore) GetRepositoryStatsByStatus(_ context.Context) (map[strin
 	return stats, nil
 }
 
-func (m *MockDataStore) GetRepositoryStatsByStatusFiltered(_ context.Context, _, _, _ string) (map[string]int, error) {
+func (m *MockDataStore) GetRepositoryStatsByStatusFiltered(_ context.Context, _, _, _ string, _ *int64) (map[string]int, error) {
 	return m.GetRepositoryStatsByStatus(context.Background())
 }
 
-func (m *MockDataStore) GetComplexityDistribution(_ context.Context, _, _, _ string) ([]*storage.ComplexityDistribution, error) {
+func (m *MockDataStore) GetComplexityDistribution(_ context.Context, _, _, _ string, _ *int64) ([]*storage.ComplexityDistribution, error) {
 	return []*storage.ComplexityDistribution{}, nil
 }
 
-func (m *MockDataStore) GetSizeDistributionFiltered(_ context.Context, _, _, _ string) ([]*storage.SizeDistribution, error) {
+func (m *MockDataStore) GetSizeDistributionFiltered(_ context.Context, _, _, _ string, _ *int64) ([]*storage.SizeDistribution, error) {
 	return []*storage.SizeDistribution{}, nil
 }
 
-func (m *MockDataStore) GetFeatureStatsFiltered(_ context.Context, _, _, _ string) (*storage.FeatureStats, error) {
+func (m *MockDataStore) GetFeatureStatsFiltered(_ context.Context, _, _, _ string, _ *int64) (*storage.FeatureStats, error) {
 	return &storage.FeatureStats{}, nil
 }
 
-func (m *MockDataStore) GetMigrationVelocity(_ context.Context, _, _, _ string, _ int) (*storage.MigrationVelocity, error) {
+func (m *MockDataStore) GetMigrationVelocity(_ context.Context, _, _, _ string, _ *int64, _ int) (*storage.MigrationVelocity, error) {
 	return &storage.MigrationVelocity{}, nil
 }
 
-func (m *MockDataStore) GetMigrationTimeSeries(_ context.Context, _, _, _ string) ([]*storage.MigrationTimeSeriesPoint, error) {
+func (m *MockDataStore) GetMigrationTimeSeries(_ context.Context, _, _, _ string, _ *int64) ([]*storage.MigrationTimeSeriesPoint, error) {
 	return []*storage.MigrationTimeSeriesPoint{}, nil
 }
 
-func (m *MockDataStore) GetAverageMigrationTime(_ context.Context, _, _, _ string) (float64, error) {
+func (m *MockDataStore) GetAverageMigrationTime(_ context.Context, _, _, _ string, _ *int64) (float64, error) {
 	return 0, nil
 }
 
-func (m *MockDataStore) GetMedianMigrationTime(_ context.Context, _, _, _ string) (float64, error) {
+func (m *MockDataStore) GetMedianMigrationTime(_ context.Context, _, _, _ string, _ *int64) (float64, error) {
 	return 0, nil
 }
 
@@ -456,15 +456,15 @@ func (m *MockDataStore) GetOrganizationStatsFiltered(_ context.Context, _, _, _ 
 	return []*storage.OrganizationStats{}, nil
 }
 
-func (m *MockDataStore) GetProjectStatsFiltered(_ context.Context, _, _, _ string) ([]*storage.OrganizationStats, error) {
+func (m *MockDataStore) GetProjectStatsFiltered(_ context.Context, _, _, _ string, _ *int64) ([]*storage.OrganizationStats, error) {
 	return []*storage.OrganizationStats{}, nil
 }
 
-func (m *MockDataStore) GetMigrationCompletionStatsByOrgFiltered(_ context.Context, _, _, _ string) ([]*storage.MigrationCompletionStats, error) {
+func (m *MockDataStore) GetMigrationCompletionStatsByOrgFiltered(_ context.Context, _, _, _ string, _ *int64) ([]*storage.MigrationCompletionStats, error) {
 	return []*storage.MigrationCompletionStats{}, nil
 }
 
-func (m *MockDataStore) GetMigrationCompletionStatsByProjectFiltered(_ context.Context, _, _, _ string) ([]*storage.MigrationCompletionStats, error) {
+func (m *MockDataStore) GetMigrationCompletionStatsByProjectFiltered(_ context.Context, _, _, _ string, _ *int64) ([]*storage.MigrationCompletionStats, error) {
 	return []*storage.MigrationCompletionStats{}, nil
 }
 
@@ -523,7 +523,7 @@ func (m *MockDataStore) GetUserStats(_ context.Context) (map[string]any, error) 
 	return map[string]any{"total": len(m.Users)}, nil
 }
 
-func (m *MockDataStore) GetUsersWithMappingsStats(_ context.Context, _ string) (map[string]any, error) {
+func (m *MockDataStore) GetUsersWithMappingsStats(_ context.Context, _ string, _ *int) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
@@ -611,7 +611,7 @@ func (m *MockDataStore) GetTeamSourceOrgs(_ context.Context) ([]string, error) {
 	return []string{}, nil
 }
 
-func (m *MockDataStore) GetTeamsWithMappingsStats(_ context.Context, _ string) (map[string]any, error) {
+func (m *MockDataStore) GetTeamsWithMappingsStats(_ context.Context, _ string, _ *int) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
@@ -795,6 +795,27 @@ func (m *MockDataStore) MarkDiscoveryComplete(_ int64) error {
 }
 
 func (m *MockDataStore) MarkDiscoveryFailed(_ int64, _ string) error {
+	return nil
+}
+
+// ============================================================================
+// Source Operations
+// ============================================================================
+
+func (m *MockDataStore) GetSource(_ context.Context, id int64) (*models.Source, error) {
+	// Simple mock implementation - returns a basic source
+	return &models.Source{
+		ID:              id,
+		Name:            fmt.Sprintf("Source %d", id),
+		Type:            "github",
+		BaseURL:         "https://api.github.com",
+		IsActive:        true,
+		RepositoryCount: 0,
+	}, nil
+}
+
+func (m *MockDataStore) UpdateSourceRepositoryCount(_ context.Context, _ int64) error {
+	// Mock implementation - does nothing
 	return nil
 }
 

@@ -127,6 +127,13 @@ func (h *Handler) ListUserMappings(w http.ResponseWriter, r *http.Request) {
 		SourceOrg: r.URL.Query().Get("source_org"),
 	}
 
+	// Parse source_id for multi-source filtering
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
+			filters.SourceID = &sid
+		}
+	}
+
 	// Parse pagination
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
@@ -159,13 +166,21 @@ func (h *Handler) ListUserMappings(w http.ResponseWriter, r *http.Request) {
 
 // GetUserMappingStats handles GET /api/v1/user-mappings/stats
 // Returns summary statistics for users with mapping status
-// Supports optional ?source_org= query parameter to filter by org
+// Supports optional ?source_org= and ?source_id= query parameters to filter
 func (h *Handler) GetUserMappingStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	orgFilter := r.URL.Query().Get("source_org")
 
-	stats, err := h.db.GetUsersWithMappingsStats(ctx, orgFilter)
+	// Parse source_id for multi-source filtering
+	var sourceID *int
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
+			sourceID = &sid
+		}
+	}
+
+	stats, err := h.db.GetUsersWithMappingsStats(ctx, orgFilter, sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get user mapping stats", r) {
 			return
@@ -582,6 +597,13 @@ func (h *Handler) ExportUserMappings(w http.ResponseWriter, r *http.Request) {
 	// Apply filters if provided
 	if status := r.URL.Query().Get("status"); status != "" {
 		filters.Status = status
+	}
+
+	// Parse source_id filter
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.Atoi(sourceIDStr); err == nil {
+			filters.SourceID = &id
+		}
 	}
 
 	mappings, _, err := h.db.ListUserMappings(ctx, filters)

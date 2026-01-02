@@ -837,7 +837,15 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	migrations, err := h.db.GetCompletedMigrations(ctx)
+	// Parse source_id filter
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
+	migrations, err := h.db.GetCompletedMigrations(ctx, sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get migration history", r) {
 			return
@@ -863,7 +871,15 @@ func (h *Handler) ExportMigrationHistory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	migrations, err := h.db.GetCompletedMigrations(ctx)
+	// Parse source_id filter
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			sourceID = &id
+		}
+	}
+
+	migrations, err := h.db.GetCompletedMigrations(ctx, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get migration history for export", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("migration history"))

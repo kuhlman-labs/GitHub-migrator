@@ -48,6 +48,13 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 		Search:       r.URL.Query().Get("search"),
 	}
 
+	// Parse source_id for multi-source filtering
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
+			filters.SourceID = &sid
+		}
+	}
+
 	// Parse pagination
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
@@ -80,13 +87,21 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 
 // GetTeamMappingStats handles GET /api/v1/team-mappings/stats
 // Returns summary statistics for teams with mapping status
-// Supports optional ?organization= query parameter to filter by org
+// Supports optional ?organization= and ?source_id= query parameters to filter
 func (h *Handler) GetTeamMappingStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	orgFilter := r.URL.Query().Get("organization")
 
-	stats, err := h.db.GetTeamsWithMappingsStats(ctx, orgFilter)
+	// Parse source_id for multi-source filtering
+	var sourceID *int
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
+			sourceID = &sid
+		}
+	}
+
+	stats, err := h.db.GetTeamsWithMappingsStats(ctx, orgFilter, sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get team mapping stats", r) {
 			return
@@ -521,6 +536,12 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	}
 	if sourceOrg := r.URL.Query().Get("source_org"); sourceOrg != "" {
 		filters.Organization = sourceOrg
+	}
+	// Parse source_id filter
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.Atoi(sourceIDStr); err == nil {
+			filters.SourceID = &id
+		}
 	}
 
 	// Use ListTeamsWithMappings to get discovered teams (from github_teams)
@@ -1018,7 +1039,7 @@ func (h *Handler) GetTeamMigrationStatus(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Get mapping stats (all orgs for migration status)
-	mappingStats, err := h.db.GetTeamsWithMappingsStats(ctx, "")
+	mappingStats, err := h.db.GetTeamsWithMappingsStats(ctx, "", nil)
 	if err != nil {
 		h.logger.Warn("Failed to get team mapping stats", "error", err)
 		mappingStats = map[string]any{}
