@@ -117,6 +117,11 @@ export function Dashboard() {
   const [adoOrganization, setAdoOrganization] = useState('');
   const [adoProject, setAdoProject] = useState('');
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  // For All Sources mode - track which source is selected in the discovery modal
+  const [modalSelectedSourceId, setModalSelectedSourceId] = useState<number | null>(null);
+  
+  // Determine if we're in "All Sources" mode (no active source filter)
+  const isAllSourcesMode = !activeSource;
 
   // Persist dismissed state in localStorage, keyed by discovery ID
   const dismissedDiscoveryKey = 'dismissedDiscoveryId';
@@ -166,6 +171,12 @@ export function Dashboard() {
     // Use the effective discovery type (fallback to default if null)
     const effectiveDiscoveryType = discoveryType ?? defaultDiscoveryType;
     
+    // In All Sources mode, a source must be selected from the modal
+    if (isAllSourcesMode && !modalSelectedSourceId) {
+      setDiscoveryError('Please select a source to discover from');
+      return;
+    }
+    
     // Validate input based on discovery type
     if (effectiveDiscoveryType === 'organization' && !organization.trim()) {
       setDiscoveryError('Organization name is required');
@@ -191,12 +202,16 @@ export function Dashboard() {
 
     try {
       // Determine which source to use for discovery
-      // Priority: active source > single configured source > undefined (will fail if no legacy config)
+      // Priority: modal selection (All Sources mode) > active source > single configured source
       const gitHubSources = sources.filter(s => s.type === 'github');
       const adoSources = sources.filter(s => s.type === 'azuredevops');
       
       let sourceId: number | undefined;
-      if (activeSource?.id) {
+      
+      // In All Sources mode, use the selected source from the modal
+      if (isAllSourcesMode && modalSelectedSourceId) {
+        sourceId = modalSelectedSourceId;
+      } else if (activeSource?.id) {
         sourceId = activeSource.id;
       } else if (effectiveDiscoveryType === 'organization' || effectiveDiscoveryType === 'enterprise') {
         // For GitHub discovery, use the single GitHub source if only one exists
@@ -249,6 +264,8 @@ export function Dashboard() {
       }
       
       setShowDiscoveryModal(false);
+      // Reset modal state after successful discovery
+      setModalSelectedSourceId(null);
     } catch (error) {
       setDiscoveryError(error instanceof Error ? error.message : 'Failed to start discovery');
     }
@@ -570,7 +587,11 @@ export function Dashboard() {
           setEnterpriseSlug('');
           setAdoOrganization('');
           setAdoProject('');
+          setModalSelectedSourceId(null);
         }}
+        isAllSourcesMode={isAllSourcesMode}
+        selectedSourceId={modalSelectedSourceId}
+        onSourceChange={setModalSelectedSourceId}
       />
     </div>
   );

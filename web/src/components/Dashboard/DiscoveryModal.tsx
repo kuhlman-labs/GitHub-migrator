@@ -1,11 +1,13 @@
 import { Button, TextInput, Flash, FormControl, Select } from '@primer/react';
 import { FormDialog } from '../common/FormDialog';
 import { useSourceContext } from '../../contexts/SourceContext';
+import { SourceBadge } from '../common/SourceBadge';
 
 export type DiscoveryType = 'organization' | 'enterprise' | 'ado-org' | 'ado-project';
 
 export interface DiscoveryModalProps {
   isOpen: boolean;
+  /** The source type - can be derived from selected source when in All Sources mode */
   sourceType: 'github' | 'azuredevops';
   discoveryType: DiscoveryType;
   setDiscoveryType: (type: DiscoveryType | null) => void;
@@ -25,11 +27,14 @@ export interface DiscoveryModalProps {
   selectedSourceId?: number | null;
   /** Optional: callback when source selection changes */
   onSourceChange?: (sourceId: number | null) => void;
+  /** Whether "All Sources" is selected (no active source filter) */
+  isAllSourcesMode?: boolean;
 }
 
 /**
  * Modal for starting repository discovery.
  * Supports GitHub (organization/enterprise) and Azure DevOps (organization/project).
+ * When in "All Sources" mode, shows a source selector to pick which source to discover from.
  */
 export function DiscoveryModal({
   isOpen,
@@ -50,24 +55,53 @@ export function DiscoveryModal({
   onClose,
   selectedSourceId,
   onSourceChange,
+  isAllSourcesMode = false,
 }: DiscoveryModalProps) {
   const { sources } = useSourceContext();
   
-  // Filter sources by type matching the current sourceType
-  const availableSources = sources.filter(s => 
-    (sourceType === 'github' && s.type === 'github') ||
-    (sourceType === 'azuredevops' && s.type === 'azuredevops')
-  );
+  // Get the selected source object
+  const selectedSource = selectedSourceId ? sources.find(s => s.id === selectedSourceId) : null;
   
-  const isFormValid =
+  // Determine effective source type from selected source or prop
+  const effectiveSourceType = selectedSource?.type || sourceType;
+  
+  // In "All Sources" mode, show all active sources
+  // Otherwise, filter sources by the current source type
+  const availableSources = isAllSourcesMode 
+    ? sources.filter(s => s.is_active)
+    : sources.filter(s => 
+        s.is_active && (
+          (sourceType === 'github' && s.type === 'github') ||
+          (sourceType === 'azuredevops' && s.type === 'azuredevops')
+        )
+      );
+  
+  // In All Sources mode, a source must be selected
+  const sourceSelected = !isAllSourcesMode || selectedSourceId != null;
+  
+  const isFormValid = sourceSelected && (
     (discoveryType === 'organization' && organization.trim()) ||
     (discoveryType === 'enterprise' && enterpriseSlug.trim()) ||
     (discoveryType === 'ado-org' && adoOrganization.trim()) ||
-    (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim());
+    (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim())
+  );
   
   const handleSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
-    onSourceChange?.(value ? parseInt(value, 10) : null);
+    const newSourceId = value ? parseInt(value, 10) : null;
+    onSourceChange?.(newSourceId);
+    
+    // When source changes, reset discovery type to match the new source type
+    if (newSourceId) {
+      const newSource = sources.find(s => s.id === newSourceId);
+      if (newSource) {
+        if (newSource.type === 'github' && (discoveryType === 'ado-org' || discoveryType === 'ado-project')) {
+          setDiscoveryType('organization');
+        } else if (newSource.type === 'azuredevops' && (discoveryType === 'organization' || discoveryType === 'enterprise')) {
+          setDiscoveryType('ado-org');
+        }
+      }
+    }
   };
   
   const handleStart = () => {
@@ -91,8 +125,27 @@ export function DiscoveryModal({
         </Flash>
       )}
 
-      {/* Source Selection - show if multiple sources of this type exist */}
-      {availableSources.length > 1 && onSourceChange && (
+      {/* Source Selection - Required in All Sources mode, optional otherwise */}
+      {isAllSourcesMode ? (
+        <FormControl className="mb-3" required>
+          <FormControl.Label>Select Source</FormControl.Label>
+          <Select 
+            value={selectedSourceId?.toString() || ''} 
+            onChange={handleSourceChange}
+            disabled={loading}
+          >
+            <Select.Option value="">Choose a source...</Select.Option>
+            {availableSources.map(source => (
+              <Select.Option key={source.id} value={source.id.toString()}>
+                {source.name} ({source.repository_count} repos)
+              </Select.Option>
+            ))}
+          </Select>
+          <FormControl.Caption>
+            Select which source to discover repositories from.
+          </FormControl.Caption>
+        </FormControl>
+      ) : availableSources.length > 1 && onSourceChange ? (
         <FormControl className="mb-3">
           <FormControl.Label>Associate with Source</FormControl.Label>
           <Select 
@@ -111,135 +164,162 @@ export function DiscoveryModal({
             Discovered repositories will be associated with this source.
           </FormControl.Caption>
         </FormControl>
-      )}
-
-      <FormControl className="mb-3">
-        <FormControl.Label>Discovery Type</FormControl.Label>
-        <div className="flex gap-2">
-          {sourceType === 'github' ? (
-            <>
-              <Button
-                type="button"
-                variant={discoveryType === 'organization' ? 'primary' : 'default'}
-                onClick={() => setDiscoveryType('organization')}
-                disabled={loading}
-                style={{ flex: 1 }}
-              >
-                Organization
-              </Button>
-              <Button
-                type="button"
-                variant={discoveryType === 'enterprise' ? 'primary' : 'default'}
-                onClick={() => setDiscoveryType('enterprise')}
-                disabled={loading}
-                style={{ flex: 1 }}
-              >
-                Enterprise
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                type="button"
-                variant={discoveryType === 'ado-org' ? 'primary' : 'default'}
-                onClick={() => setDiscoveryType('ado-org')}
-                disabled={loading}
-                style={{ flex: 1 }}
-              >
-                Organization
-              </Button>
-              <Button
-                type="button"
-                variant={discoveryType === 'ado-project' ? 'primary' : 'default'}
-                onClick={() => setDiscoveryType('ado-project')}
-                disabled={loading}
-                style={{ flex: 1 }}
-              >
-                Project
-              </Button>
-            </>
-          )}
+      ) : null}
+      
+      {/* Show selected source info in All Sources mode */}
+      {isAllSourcesMode && selectedSource && (
+        <div className="mb-3 p-3 rounded-md" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
+          <div className="flex items-center gap-2">
+            <SourceBadge sourceType={selectedSource.type} sourceName={selectedSource.name} size="small" />
+            <span className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+              {selectedSource.type === 'github' ? 'GitHub' : 'Azure DevOps'} source
+            </span>
+          </div>
         </div>
-      </FormControl>
+      )}
 
-      {discoveryType === 'organization' && (
-        <FormControl className="mb-3" required>
-          <FormControl.Label>Organization Name</FormControl.Label>
-          <TextInput
-            value={organization}
-            onChange={(e) => setOrganization(e.target.value)}
-            placeholder="e.g., your-github-org"
-            disabled={loading}
-            autoFocus
-            required
-          />
-          <FormControl.Caption>
-            Enter the GitHub organization name to discover all repositories.
-          </FormControl.Caption>
+      {/* Only show discovery type options when a source is selected (in All Sources mode) or always (in single source mode) */}
+      {(!isAllSourcesMode || selectedSourceId) && (
+        <FormControl className="mb-3">
+          <FormControl.Label>Discovery Type</FormControl.Label>
+          <div className="flex gap-2">
+            {effectiveSourceType === 'github' ? (
+              <>
+                <Button
+                  type="button"
+                  variant={discoveryType === 'organization' ? 'primary' : 'default'}
+                  onClick={() => setDiscoveryType('organization')}
+                  disabled={loading}
+                  style={{ flex: 1 }}
+                >
+                  Organization
+                </Button>
+                <Button
+                  type="button"
+                  variant={discoveryType === 'enterprise' ? 'primary' : 'default'}
+                  onClick={() => setDiscoveryType('enterprise')}
+                  disabled={loading}
+                  style={{ flex: 1 }}
+                >
+                  Enterprise
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant={discoveryType === 'ado-org' ? 'primary' : 'default'}
+                  onClick={() => setDiscoveryType('ado-org')}
+                  disabled={loading}
+                  style={{ flex: 1 }}
+                >
+                  Organization
+                </Button>
+                <Button
+                  type="button"
+                  variant={discoveryType === 'ado-project' ? 'primary' : 'default'}
+                  onClick={() => setDiscoveryType('ado-project')}
+                  disabled={loading}
+                  style={{ flex: 1 }}
+                >
+                  Project
+                </Button>
+              </>
+            )}
+          </div>
         </FormControl>
       )}
 
-      {discoveryType === 'enterprise' && (
-        <FormControl className="mb-3" required>
-          <FormControl.Label>Enterprise Slug</FormControl.Label>
-          <TextInput
-            value={enterpriseSlug}
-            onChange={(e) => setEnterpriseSlug(e.target.value)}
-            placeholder="e.g., your-enterprise-slug"
-            disabled={loading}
-            autoFocus
-            required
-          />
-          <FormControl.Caption>
-            Enter the GitHub Enterprise slug to discover repositories across all
-            organizations.
-          </FormControl.Caption>
-        </FormControl>
-      )}
+      {/* Only show input fields when a source is selected (in All Sources mode) or always (in single source mode) */}
+      {(!isAllSourcesMode || selectedSourceId) && (
+        <>
+          {discoveryType === 'organization' && (
+            <FormControl className="mb-3" required>
+              <FormControl.Label>Organization Name</FormControl.Label>
+              <TextInput
+                value={organization}
+                onChange={(e) => setOrganization(e.target.value)}
+                placeholder="e.g., your-github-org"
+                disabled={loading}
+                autoFocus
+                required
+              />
+              <FormControl.Caption>
+                Enter the GitHub organization name to discover all repositories.
+              </FormControl.Caption>
+            </FormControl>
+          )}
 
-      {discoveryType === 'ado-org' && (
-        <FormControl className="mb-3" required>
-          <FormControl.Label>Azure DevOps Organization</FormControl.Label>
-          <TextInput
-            value={adoOrganization}
-            onChange={(e) => setAdoOrganization(e.target.value)}
-            placeholder="e.g., your-ado-org"
-            disabled={loading}
-            autoFocus
-            required
-          />
-          <FormControl.Caption>
-            Discover all projects and repositories in this Azure DevOps organization.
-          </FormControl.Caption>
-        </FormControl>
-      )}
+          {discoveryType === 'enterprise' && (
+            <FormControl className="mb-3" required>
+              <FormControl.Label>Enterprise Slug</FormControl.Label>
+              <TextInput
+                value={enterpriseSlug}
+                onChange={(e) => setEnterpriseSlug(e.target.value)}
+                placeholder="e.g., your-enterprise-slug"
+                disabled={loading}
+                autoFocus
+                required
+              />
+              <FormControl.Caption>
+                Enter the GitHub Enterprise slug to discover repositories across all
+                organizations.
+              </FormControl.Caption>
+            </FormControl>
+          )}
 
-      {discoveryType === 'ado-project' && (
-        <div className="space-y-3 mb-3">
-          <FormControl required>
-            <FormControl.Label>Azure DevOps Organization</FormControl.Label>
-            <TextInput
-              value={adoOrganization}
-              onChange={(e) => setAdoOrganization(e.target.value)}
-              placeholder="e.g., your-ado-org"
-              disabled={loading}
-              required
-            />
-          </FormControl>
-          <FormControl required>
-            <FormControl.Label>Project Name</FormControl.Label>
-            <TextInput
-              value={adoProject}
-              onChange={(e) => setAdoProject(e.target.value)}
-              placeholder="e.g., your-project"
-              disabled={loading}
-              autoFocus
-              required
-            />
-            <FormControl.Caption>
-              Discover repositories in a specific Azure DevOps project.
-            </FormControl.Caption>
-          </FormControl>
+          {discoveryType === 'ado-org' && (
+            <FormControl className="mb-3" required>
+              <FormControl.Label>Azure DevOps Organization</FormControl.Label>
+              <TextInput
+                value={adoOrganization}
+                onChange={(e) => setAdoOrganization(e.target.value)}
+                placeholder="e.g., your-ado-org"
+                disabled={loading}
+                autoFocus
+                required
+              />
+              <FormControl.Caption>
+                Discover all projects and repositories in this Azure DevOps organization.
+              </FormControl.Caption>
+            </FormControl>
+          )}
+
+          {discoveryType === 'ado-project' && (
+            <div className="space-y-3 mb-3">
+              <FormControl required>
+                <FormControl.Label>Azure DevOps Organization</FormControl.Label>
+                <TextInput
+                  value={adoOrganization}
+                  onChange={(e) => setAdoOrganization(e.target.value)}
+                  placeholder="e.g., your-ado-org"
+                  disabled={loading}
+                  required
+                />
+              </FormControl>
+              <FormControl required>
+                <FormControl.Label>Project Name</FormControl.Label>
+                <TextInput
+                  value={adoProject}
+                  onChange={(e) => setAdoProject(e.target.value)}
+                  placeholder="e.g., your-project"
+                  disabled={loading}
+                  autoFocus
+                  required
+                />
+                <FormControl.Caption>
+                  Discover repositories in a specific Azure DevOps project.
+                </FormControl.Caption>
+              </FormControl>
+            </div>
+          )}
+        </>
+      )}
+      
+      {/* Prompt to select a source first in All Sources mode */}
+      {isAllSourcesMode && !selectedSourceId && (
+        <div className="text-center py-4" style={{ color: 'var(--fgColor-muted)' }}>
+          <p className="text-sm">Please select a source to configure discovery options.</p>
         </div>
       )}
     </FormDialog>
