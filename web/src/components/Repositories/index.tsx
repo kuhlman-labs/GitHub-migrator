@@ -132,6 +132,18 @@ export function Repositories() {
     if (urlFilters.has_webhooks) count++;
     if (urlFilters.visibility) count++;
     if (urlFilters.sort_by && urlFilters.sort_by !== 'name') count++;
+    // ADO-specific filters
+    if (urlFilters.ado_has_pipelines) count++;
+    if (urlFilters.ado_has_ghas) count++;
+    if (urlFilters.ado_has_wiki) count++;
+    if (urlFilters.ado_yaml_pipeline_count) count++;
+    if (urlFilters.ado_classic_pipeline_count) count++;
+    if (urlFilters.ado_pull_request_count) count++;
+    if (urlFilters.ado_work_item_count) count++;
+    if (urlFilters.ado_branch_policy_count) count++;
+    if (urlFilters.ado_test_plan_count) count++;
+    if (urlFilters.ado_package_feed_count) count++;
+    if (urlFilters.ado_service_hook_count) count++;
     return count;
   };
 
