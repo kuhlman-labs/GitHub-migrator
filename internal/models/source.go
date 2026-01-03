@@ -31,15 +31,9 @@ type Source struct {
 	AppPrivateKey     *string `json:"-" db:"app_private_key" gorm:"column:app_private_key;type:text"` // Excluded from JSON
 	AppInstallationID *int64  `json:"app_installation_id,omitempty" db:"app_installation_id" gorm:"column:app_installation_id"`
 
-	// OAuth configuration (optional, enables user self-service authentication)
-	// For GitHub/GHES sources
-	OAuthClientID     *string `json:"-" db:"oauth_client_id" gorm:"column:oauth_client_id"`
-	OAuthClientSecret *string `json:"-" db:"oauth_client_secret" gorm:"column:oauth_client_secret"`
-
-	// For Azure DevOps sources (Entra ID OAuth)
-	EntraTenantID     *string `json:"-" db:"entra_tenant_id" gorm:"column:entra_tenant_id"`
-	EntraClientID     *string `json:"-" db:"entra_client_id" gorm:"column:entra_client_id"`
-	EntraClientSecret *string `json:"-" db:"entra_client_secret" gorm:"column:entra_client_secret"`
+	// Note: Source-specific OAuth fields have been removed.
+	// Authentication is now destination-centric (GitHub OAuth only).
+	// See internal/auth/README.md for the authorization model.
 
 	// Status
 	IsActive bool `json:"is_active" db:"is_active" gorm:"column:is_active;default:true;index"`
@@ -147,17 +141,10 @@ func (s *Source) HasAppAuth() bool {
 	return s.AppID != nil && *s.AppID > 0 && s.AppPrivateKey != nil && *s.AppPrivateKey != ""
 }
 
-// HasOAuth returns true if OAuth is configured for this source (enables user self-service)
+// HasOAuth always returns false since source-specific OAuth has been removed.
+// Authentication is now destination-centric (GitHub OAuth only).
+// Deprecated: This method is kept for backward compatibility but always returns false.
 func (s *Source) HasOAuth() bool {
-	if s.IsGitHub() {
-		return s.OAuthClientID != nil && *s.OAuthClientID != "" &&
-			s.OAuthClientSecret != nil && *s.OAuthClientSecret != ""
-	}
-	if s.IsAzureDevOps() {
-		return s.EntraTenantID != nil && *s.EntraTenantID != "" &&
-			s.EntraClientID != nil && *s.EntraClientID != "" &&
-			s.EntraClientSecret != nil && *s.EntraClientSecret != ""
-	}
 	return false
 }
 
@@ -179,7 +166,6 @@ type SourceResponse struct {
 	Organization    *string    `json:"organization,omitempty"`
 	EnterpriseSlug  *string    `json:"enterprise_slug,omitempty"`
 	HasAppAuth      bool       `json:"has_app_auth"`
-	HasOAuth        bool       `json:"has_oauth"` // True if OAuth is configured for user self-service
 	AppID           *int64     `json:"app_id,omitempty"`
 	IsActive        bool       `json:"is_active"`
 	RepositoryCount int        `json:"repository_count"`
@@ -199,7 +185,6 @@ func (s *Source) ToResponse() *SourceResponse {
 		Organization:    s.Organization,
 		EnterpriseSlug:  s.EnterpriseSlug,
 		HasAppAuth:      s.HasAppAuth(),
-		HasOAuth:        s.HasOAuth(),
 		AppID:           s.AppID,
 		IsActive:        s.IsActive,
 		RepositoryCount: s.RepositoryCount,

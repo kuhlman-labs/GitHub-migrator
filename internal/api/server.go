@@ -172,6 +172,7 @@ func (s *Server) Router() http.Handler {
 			mux.Handle("POST /api/v1/auth/logout", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleLogout)))
 			mux.Handle("GET /api/v1/auth/user", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleCurrentUser)))
 			mux.Handle("POST /api/v1/auth/refresh", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleRefreshToken)))
+			mux.Handle("GET /api/v1/auth/authorization-status", authMiddleware.RequireAuth(http.HandlerFunc(s.handler.HandleAuthorizationStatus)))
 		}
 	}
 

@@ -174,7 +174,7 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusAccepted,
 		},
 		{
-			name:         "auth enabled - non-admin cannot start migration",
+			name:         "auth enabled - self-service allowed by default",
 			authEnabled:  true,
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
@@ -192,7 +192,7 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 				http.NotFound(w, r)
 			},
 			requestBody:    `{"full_names": ["test-org/test-repo"], "dry_run": true}`,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusAccepted, // Self-service allowed by default in destination-centric auth model
 		},
 	}
 
@@ -294,7 +294,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:         "auth enabled - non-admin cannot perform action",
+			name:         "auth enabled - self-service allowed by default",
 			authEnabled:  true,
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
@@ -311,7 +311,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 				http.NotFound(w, r)
 			},
 			requestBody:    `{}`,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusOK, // Self-service allowed by default in destination-centric auth model
 		},
 	}
 
@@ -422,7 +422,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:         "auth enabled - cannot add repos without permission",
+			name:         "auth enabled - self-service allowed by default",
 			authEnabled:  true,
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
@@ -435,7 +435,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 				http.NotFound(w, r)
 			},
 			requestBody:    `{"repository_ids": [3]}`,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusOK, // Self-service allowed by default in destination-centric auth model
 		},
 	}
 

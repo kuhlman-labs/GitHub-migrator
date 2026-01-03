@@ -170,11 +170,48 @@ Settings are applied in order (later overrides earlier):
 
 ---
 
+## Authentication Configuration
+
+GitHub Migrator uses **destination-centric authentication**. All users authenticate via GitHub OAuth against the destination GitHub instance. This simplifies multi-source setups by not requiring OAuth configuration for each source.
+
+### Authorization Tiers
+
+The system implements three authorization tiers:
+
+| Tier | Name | Who | Capabilities |
+|------|------|-----|-------------|
+| 1 | Admin | Enterprise Admins, Migration Team Members | Full migration rights - any repository |
+| 2 | Self-Service | Users with completed identity mapping | Can migrate repos they admin on source |
+| 3 | Read-Only | All authenticated users | View status and history only |
+
+### Example Configuration
+
+```bash
+# Enable authentication
+GHMIG_AUTH_ENABLED=true
+GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID=Iv1.YourClientID
+GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET=YourClientSecret
+GHMIG_AUTH_CALLBACK_URL=http://localhost:8080/api/v1/auth/callback
+GHMIG_AUTH_FRONTEND_URL=http://localhost:3000
+GHMIG_AUTH_SESSION_SECRET=your-secure-random-string
+
+# Tier 1: Full migration rights for migration team
+GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS=my-org/migration-admins
+
+# Tier 2: Require identity mapping for self-service
+GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_IDENTITY_MAPPING_FOR_SELF_SERVICE=true
+```
+
+For detailed authentication documentation, see [internal/auth/README.md](../internal/auth/README.md).
+
+---
+
 ## Additional Resources
 
 - [Deployment Guide](../docs/deployment/) - Docker, Azure, Kubernetes
 - [Operations Guide](../docs/OPERATIONS.md) - Authentication, workflows, troubleshooting
 - [API Documentation](../docs/API.md) - REST API reference
+- [Authentication Guide](../internal/auth/README.md) - Destination-centric auth model
 
 ---
 

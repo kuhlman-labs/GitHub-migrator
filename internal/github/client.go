@@ -478,6 +478,57 @@ func (c *Client) ListAppInstallations(ctx context.Context) (map[string]int64, er
 	return installations, nil
 }
 
+// CheckCollaboratorPermission checks if a user has admin permission on a repository
+// This is used for identity-mapped self-service authorization
+func (c *Client) CheckCollaboratorPermission(ctx context.Context, owner, repo, username string) (bool, error) {
+	c.logger.Debug("Checking collaborator permission",
+		"owner", owner,
+		"repo", repo,
+		"username", username)
+
+	var permLevel *github.RepositoryPermissionLevel
+	err := c.retryer.Do(ctx, "CheckCollaboratorPermission", func(ctx context.Context) error {
+		var resp *github.Response
+		var err error
+		permLevel, resp, err = c.rest.Repositories.GetPermissionLevel(ctx, owner, repo, username)
+		if err != nil {
+			return WrapError(err, "CheckCollaboratorPermission", c.baseURL)
+		}
+
+		// Update rate limits
+		if resp != nil && resp.Rate.Limit > 0 {
+			c.rateLimiter.UpdateLimits(
+				resp.Rate.Remaining,
+				resp.Rate.Limit,
+				resp.Rate.Reset.Time,
+			)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return false, err
+	}
+
+	if permLevel == nil || permLevel.Permission == nil {
+		c.logger.Debug("No permission level returned", "owner", owner, "repo", repo, "username", username)
+		return false, nil
+	}
+
+	// Permission levels: admin, write, read, none
+	permission := *permLevel.Permission
+	hasAdmin := permission == "admin"
+
+	c.logger.Debug("Collaborator permission check result",
+		"owner", owner,
+		"repo", repo,
+		"username", username,
+		"permission", permission,
+		"has_admin", hasAdmin)
+
+	return hasAdmin, nil
+}
+
 // GetRateLimiter returns the rate limiter
 func (c *Client) GetRateLimiter() *RateLimiter {
 	return c.rateLimiter

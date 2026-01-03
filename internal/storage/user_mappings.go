@@ -85,6 +85,24 @@ func (d *Database) GetUserMappingByID(ctx context.Context, id int64) (*models.Us
 	return &mapping, nil
 }
 
+// GetUserMappingByDestinationLogin retrieves a user mapping by destination login (GitHub username)
+// This is used for destination-centric authorization to find a user's source identity
+func (d *Database) GetUserMappingByDestinationLogin(ctx context.Context, destinationLogin string) (*models.UserMapping, error) {
+	var mapping models.UserMapping
+	err := d.db.WithContext(ctx).
+		Where("destination_login = ?", destinationLogin).
+		First(&mapping).Error
+
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user mapping by destination login: %w", err)
+	}
+
+	return &mapping, nil
+}
+
 // UserMappingFilters defines filters for listing user mappings
 type UserMappingFilters struct {
 	Status         string // Filter by mapping_status

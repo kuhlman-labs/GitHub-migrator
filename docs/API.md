@@ -55,16 +55,27 @@ Get application configuration for the frontend.
 ```json
 {
   "source_type": "github",
-  "auth_enabled": true,
-  "entraid_enabled": false
+  "auth_enabled": true
 }
 ```
+
+Note: The `entraid_enabled` field has been removed. All authentication now uses destination-centric GitHub OAuth.
 
 ---
 
 ## Authentication
 
-GitHub Migrator supports OAuth authentication via GitHub and Microsoft Entra ID.
+GitHub Migrator uses **destination-centric authentication** via GitHub OAuth. All users authenticate against the destination GitHub instance, regardless of which source systems they are migrating from.
+
+### Authorization Tiers
+
+The system implements three authorization tiers:
+
+| Tier | Name | Capabilities |
+|------|------|-------------|
+| 1 | Admin | Full migration rights - can migrate any repository |
+| 2 | Self-Service | Can migrate repos where mapped source identity is admin |
+| 3 | Read-Only | Can view status and history, cannot initiate migrations |
 
 ### GET /api/v1/auth/login
 
@@ -93,6 +104,34 @@ Get authentication configuration.
   "login_url": "/api/v1/auth/login"
 }
 ```
+
+### GET /api/v1/auth/authorization-status
+
+Get the current user's authorization tier and permissions. Requires authentication.
+
+**Response 200 OK:**
+```json
+{
+  "auth_enabled": true,
+  "tier": "SelfService",
+  "reason": "User has self-service access. Identity mapping is required.",
+  "permissions": {
+    "can_migrate_all_repos": false,
+    "can_migrate_own_repos": true,
+    "has_completed_identity_mapping": true
+  },
+  "upgrade_path": {
+    "action": "complete_identity_mapping",
+    "reason": "Complete identity mapping to enable self-service migrations."
+  }
+}
+```
+
+**Tier Values:**
+- `Admin` - Tier 1: Full migration rights
+- `SelfService` - Tier 2: Can migrate own repos (with identity mapping if required)
+- `ReadOnly` - Tier 3: View-only access
+- `Unauthorized` - Not authenticated
 
 ### POST /api/v1/auth/logout
 

@@ -402,3 +402,384 @@ func TestIsTeamMember(t *testing.T) {
 		t.Error("Expected user to not be team member")
 	}
 }
+
+// Tests for destination-centric authorization tiers
+
+func TestGetUserAuthorizationTier_EnterpriseAdmin(t *testing.T) {
+	// Create mock GitHub API server that returns enterprise admin status
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/graphql" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"enterprise": map[string]any{
+						"slug":          "test-enterprise",
+						"viewerIsAdmin": true,
+					},
+				},
+			})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.AuthConfig{
+		AuthorizationRules: config.AuthorizationRules{
+			RequireEnterpriseSlug:            "test-enterprise",
+			AllowEnterpriseAdminMigrations:   true,
+			RequireIdentityMappingForSelfService: true,
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	authorizer := NewAuthorizer(cfg, logger, server.URL)
+
+	user := &GitHubUser{
+		ID:    12345,
+		Login: "testuser",
+	}
+
+	tierInfo, err := authorizer.GetUserAuthorizationTier(context.Background(), user, "test-token")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if tierInfo.Tier != TierAdmin {
+		t.Errorf("Expected TierAdmin, got %s", tierInfo.Tier)
+	}
+	if tierInfo.TierName != "Full Migration Rights" {
+		t.Errorf("Expected 'Full Migration Rights', got %s", tierInfo.TierName)
+	}
+	if !tierInfo.Permissions.CanMigrateAllRepos {
+		t.Error("Expected CanMigrateAllRepos to be true")
+	}
+	if !tierInfo.Permissions.CanManageSources {
+		t.Error("Expected CanManageSources to be true")
+	}
+}
+
+func TestGetUserAuthorizationTier_MigrationTeamMember(t *testing.T) {
+	// Create mock GitHub API server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/orgs/myorg/teams/migration-admins/memberships/testuser" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+			})
+		} else if r.URL.Path == "/graphql" {
+			// Enterprise admin check - user is not admin
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"enterprise": map[string]any{
+						"slug":          "test-enterprise",
+						"viewerIsAdmin": false,
+					},
+				},
+			})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.AuthConfig{
+		AuthorizationRules: config.AuthorizationRules{
+			RequireEnterpriseSlug:            "test-enterprise",
+			AllowEnterpriseAdminMigrations:   true,
+			MigrationAdminTeams:              []string{"myorg/migration-admins"},
+			RequireIdentityMappingForSelfService: true,
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	authorizer := NewAuthorizer(cfg, logger, server.URL)
+
+	user := &GitHubUser{
+		ID:    12345,
+		Login: "testuser",
+	}
+
+	tierInfo, err := authorizer.GetUserAuthorizationTier(context.Background(), user, "test-token")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if tierInfo.Tier != TierAdmin {
+		t.Errorf("Expected TierAdmin, got %s", tierInfo.Tier)
+	}
+	if tierInfo.Reason != "Migration admin team member" {
+		t.Errorf("Expected reason 'Migration admin team member', got %s", tierInfo.Reason)
+	}
+}
+
+func TestGetUserAuthorizationTier_OrgAdmin(t *testing.T) {
+	// Create mock GitHub API server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user/memberships/orgs" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"organization": map[string]string{"login": "test-org"},
+					"state":        "active",
+				},
+			})
+		} else if r.URL.Path == "/user/memberships/orgs/test-org" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+				"role":  "admin",
+			})
+		} else if r.URL.Path == "/graphql" {
+			// Enterprise admin check - user is not admin
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"enterprise": map[string]any{
+						"slug":          "test-enterprise",
+						"viewerIsAdmin": false,
+					},
+				},
+			})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.AuthConfig{
+		AuthorizationRules: config.AuthorizationRules{
+			RequireEnterpriseSlug:            "test-enterprise",
+			AllowEnterpriseAdminMigrations:   true,
+			AllowOrgAdminMigrations:          true,
+			RequireIdentityMappingForSelfService: true,
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	authorizer := NewAuthorizer(cfg, logger, server.URL)
+
+	user := &GitHubUser{
+		ID:    12345,
+		Login: "testuser",
+	}
+
+	tierInfo, err := authorizer.GetUserAuthorizationTier(context.Background(), user, "test-token")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if tierInfo.Tier != TierAdmin {
+		t.Errorf("Expected TierAdmin, got %s", tierInfo.Tier)
+	}
+	if tierInfo.Reason != "Organization administrator (test-org)" {
+		t.Errorf("Expected reason containing 'Organization administrator', got %s", tierInfo.Reason)
+	}
+}
+
+func TestGetUserAuthorizationTier_SelfService(t *testing.T) {
+	// Create mock GitHub API server - user has no admin privileges
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user/memberships/orgs" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"organization": map[string]string{"login": "test-org"},
+					"state":        "active",
+				},
+			})
+		} else if r.URL.Path == "/user/memberships/orgs/test-org" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+				"role":  "member", // Not admin
+			})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.AuthConfig{
+		AuthorizationRules: config.AuthorizationRules{
+			AllowOrgAdminMigrations:          true,
+			RequireIdentityMappingForSelfService: false, // Self-service without identity mapping
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	authorizer := NewAuthorizer(cfg, logger, server.URL)
+
+	user := &GitHubUser{
+		ID:    12345,
+		Login: "testuser",
+	}
+
+	tierInfo, err := authorizer.GetUserAuthorizationTier(context.Background(), user, "test-token")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if tierInfo.Tier != TierSelfService {
+		t.Errorf("Expected TierSelfService, got %s", tierInfo.Tier)
+	}
+	if tierInfo.TierName != "Self-Service" {
+		t.Errorf("Expected 'Self-Service', got %s", tierInfo.TierName)
+	}
+	if !tierInfo.Permissions.CanMigrateOwnRepos {
+		t.Error("Expected CanMigrateOwnRepos to be true")
+	}
+	if tierInfo.Permissions.CanMigrateAllRepos {
+		t.Error("Expected CanMigrateAllRepos to be false")
+	}
+}
+
+func TestGetUserAuthorizationTier_ReadOnly(t *testing.T) {
+	// Create mock GitHub API server - user has no admin privileges
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user/memberships/orgs" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"organization": map[string]string{"login": "test-org"},
+					"state":        "active",
+				},
+			})
+		} else if r.URL.Path == "/user/memberships/orgs/test-org" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"state": "active",
+				"role":  "member", // Not admin
+			})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.AuthConfig{
+		AuthorizationRules: config.AuthorizationRules{
+			AllowOrgAdminMigrations:          true,
+			RequireIdentityMappingForSelfService: true, // Requires identity mapping
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	authorizer := NewAuthorizer(cfg, logger, server.URL)
+
+	user := &GitHubUser{
+		ID:    12345,
+		Login: "testuser",
+	}
+
+	tierInfo, err := authorizer.GetUserAuthorizationTier(context.Background(), user, "test-token")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if tierInfo.Tier != TierReadOnly {
+		t.Errorf("Expected TierReadOnly, got %s", tierInfo.Tier)
+	}
+	if tierInfo.TierName != "Read-Only" {
+		t.Errorf("Expected 'Read-Only', got %s", tierInfo.TierName)
+	}
+	if tierInfo.Permissions.CanMigrateOwnRepos {
+		t.Error("Expected CanMigrateOwnRepos to be false")
+	}
+	if tierInfo.Permissions.CanMigrateAllRepos {
+		t.Error("Expected CanMigrateAllRepos to be false")
+	}
+	if !tierInfo.Permissions.CanViewRepos {
+		t.Error("Expected CanViewRepos to be true")
+	}
+}
+
+func TestCheckDestinationMigrationRights_AllTiers(t *testing.T) {
+	tests := []struct {
+		name           string
+		serverHandler  func(w http.ResponseWriter, r *http.Request)
+		cfg            *config.AuthConfig
+		expectedAccess bool
+	}{
+		{
+			name: "enterprise admin has access",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/graphql" {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]any{
+						"data": map[string]any{
+							"enterprise": map[string]any{
+								"slug":          "test-enterprise",
+								"viewerIsAdmin": true,
+							},
+						},
+					})
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+				}
+			},
+			cfg: &config.AuthConfig{
+				AuthorizationRules: config.AuthorizationRules{
+					RequireEnterpriseSlug:          "test-enterprise",
+					AllowEnterpriseAdminMigrations: true,
+				},
+			},
+			expectedAccess: true,
+		},
+		{
+			name: "migration team member has access",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/orgs/myorg/teams/migrators/memberships/testuser" {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]string{"state": "active"})
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+				}
+			},
+			cfg: &config.AuthConfig{
+				AuthorizationRules: config.AuthorizationRules{
+					MigrationAdminTeams: []string{"myorg/migrators"},
+				},
+			},
+			expectedAccess: true,
+		},
+		{
+			name: "regular user has no full access",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/user/memberships/orgs" {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode([]map[string]any{})
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+				}
+			},
+			cfg: &config.AuthConfig{
+				AuthorizationRules: config.AuthorizationRules{
+					AllowOrgAdminMigrations:          true,
+					RequireIdentityMappingForSelfService: true,
+				},
+			},
+			expectedAccess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(tt.serverHandler))
+			defer server.Close()
+
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			authorizer := NewAuthorizer(tt.cfg, logger, server.URL)
+
+			user := &GitHubUser{
+				ID:    12345,
+				Login: "testuser",
+			}
+
+			hasAccess, _, err := authorizer.CheckDestinationMigrationRights(context.Background(), user, "test-token")
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if hasAccess != tt.expectedAccess {
+				t.Errorf("Expected access=%v, got %v", tt.expectedAccess, hasAccess)
+			}
+		})
+	}
+}

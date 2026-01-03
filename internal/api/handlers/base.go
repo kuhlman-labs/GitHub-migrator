@@ -120,12 +120,25 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		"auth_enabled": h.authConfig != nil && h.authConfig.Enabled,
 	}
 
-	// Add Entra ID enabled flag if auth is enabled
-	if h.authConfig != nil && h.authConfig.Enabled {
-		response["entraid_enabled"] = h.authConfig.EntraIDEnabled
+	h.sendJSON(w, http.StatusOK, response)
+}
+
+// HandleAuthorizationStatus handles GET /api/v1/auth/authorization-status
+// Returns the current user's authorization tier and permissions
+func (h *Handler) HandleAuthorizationStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
-	h.sendJSON(w, http.StatusOK, response)
+	status, err := h.GetUserAuthorizationStatus(r.Context())
+	if err != nil {
+		h.logger.Error("Failed to get authorization status", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, status)
 }
 
 // sendJSON sends a JSON response

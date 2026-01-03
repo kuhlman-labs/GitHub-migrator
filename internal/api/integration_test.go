@@ -460,6 +460,105 @@ func TestIntegration_SourcesUpdateAndDelete(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, getW.Code)
 }
 
+// TestIntegration_AuthorizationStatus tests the authorization status endpoint
+func TestIntegration_AuthorizationStatus(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create a mock GitHub server for authorization checks
+	mockGitHub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Return empty responses - no special permissions
+		switch r.URL.Path {
+		case "/user/memberships/orgs":
+			json.NewEncoder(w).Encode([]any{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockGitHub.Close()
+
+	// Test 1: Auth disabled - endpoint is not registered (returns 404)
+	t.Run("auth disabled returns not found", func(t *testing.T) {
+		cfg := &config.Config{
+			Auth: config.AuthConfig{
+				Enabled: false,
+			},
+		}
+		server := NewServer(cfg, db, logger, nil, nil)
+		router := server.Router()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/authorization-status", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		// When auth is disabled, the authorization-status endpoint is not registered
+		assert.Equal(t, http.StatusNotFound, w.Code,
+			"expected 404 when auth is disabled, got %d: %s", w.Code, w.Body.String())
+	})
+
+	// Test 2: Auth enabled - unauthenticated should be denied
+	t.Run("auth enabled unauthenticated returns unauthorized", func(t *testing.T) {
+		cfg := &config.Config{
+			Auth: config.AuthConfig{
+				Enabled:       true,
+				SessionSecret: "test-secret-key-for-integration-testing",
+			},
+		}
+		server := NewServer(cfg, db, logger, nil, nil)
+		router := server.Router()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/authorization-status", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "expected 401 for unauthenticated request")
+	})
+}
+
+// TestIntegration_AuthorizationTierConfiguration tests different authorization configurations
+func TestIntegration_AuthorizationTierConfiguration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	_ = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Test authorization rules configuration
+	t.Run("migration admin teams configuration", func(t *testing.T) {
+		cfg := &config.Config{
+			Auth: config.AuthConfig{
+				Enabled: true,
+				AuthorizationRules: config.AuthorizationRules{
+					MigrationAdminTeams:               []string{"my-org/migration-admins"},
+					AllowOrgAdminMigrations:           true,
+					RequireIdentityMappingForSelfService: false,
+				},
+			},
+		}
+
+		// Verify config is correctly applied
+		assert.Len(t, cfg.Auth.AuthorizationRules.MigrationAdminTeams, 1)
+		assert.Equal(t, "my-org/migration-admins", cfg.Auth.AuthorizationRules.MigrationAdminTeams[0])
+		assert.True(t, cfg.Auth.AuthorizationRules.AllowOrgAdminMigrations)
+		assert.False(t, cfg.Auth.AuthorizationRules.RequireIdentityMappingForSelfService)
+	})
+
+	t.Run("identity mapping for self-service configuration", func(t *testing.T) {
+		cfg := &config.Config{
+			Auth: config.AuthConfig{
+				Enabled: true,
+				AuthorizationRules: config.AuthorizationRules{
+					RequireIdentityMappingForSelfService: true,
+				},
+			},
+		}
+
+		assert.True(t, cfg.Auth.AuthorizationRules.RequireIdentityMappingForSelfService)
+	})
+}
+
 // TestIntegration_SourceWithRepositories tests source-repository relationship
 func TestIntegration_SourceWithRepositories(t *testing.T) {
 	db := setupTestDB(t)

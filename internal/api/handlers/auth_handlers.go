@@ -55,268 +55,17 @@ func (h *AuthHandler) SetSourceStore(store SourceStore) {
 }
 
 // HandleLogin initiates OAuth login flow
-// Accepts optional query param: ?source_id=123
+// Uses destination-centric authentication (GitHub OAuth only)
 func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	sourceID, err := auth.GetSourceIDFromRequest(r)
-	if err != nil {
-		h.logger.Error("Invalid source_id", "error", err)
-		http.Error(w, "Invalid source_id parameter", http.StatusBadRequest)
-		return
-	}
-
-	// If source_id is specified, use source-scoped OAuth
-	if sourceID > 0 && h.sourceStore != nil {
-		h.handleSourceLogin(w, r, sourceID)
-		return
-	}
-
-	// Fall back to destination OAuth (existing behavior)
+	// Use destination OAuth only - source-specific OAuth has been removed
 	h.oauthHandler.HandleLogin(w, r)
 }
 
-// handleSourceLogin initiates OAuth flow for a specific source
-func (h *AuthHandler) handleSourceLogin(w http.ResponseWriter, r *http.Request, sourceID int64) {
-	ctx := r.Context()
-
-	// Get source from database
-	source, err := h.sourceStore.GetSource(ctx, sourceID)
-	if err != nil {
-		h.logger.Error("Failed to get source", "error", err, "source_id", sourceID)
-		http.Error(w, "Failed to get source", http.StatusInternalServerError)
-		return
-	}
-	if source == nil {
-		http.Error(w, "Source not found", http.StatusNotFound)
-		return
-	}
-
-	// Verify source has OAuth configured
-	if !source.HasOAuth() {
-		h.logger.Warn("Source does not have OAuth configured", "source_id", sourceID, "source_name", source.Name)
-		http.Error(w, "Source does not have OAuth configured", http.StatusBadRequest)
-		return
-	}
-
-	// Create source OAuth handler
-	sourceOAuth, err := auth.NewSourceOAuthHandler(source, h.callbackURL, h.logger)
-	if err != nil {
-		h.logger.Error("Failed to create source OAuth handler", "error", err, "source_id", sourceID)
-		http.Error(w, "Failed to initialize OAuth", http.StatusInternalServerError)
-		return
-	}
-
-	// Generate state with source ID encoded
-	state, err := auth.EncodeSourceState(sourceID)
-	if err != nil {
-		h.logger.Error("Failed to generate state", "error", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Store state in cookie for CSRF protection
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    state,
-		Path:     "/",
-		MaxAge:   600, // 10 minutes
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-	})
-
-	// Redirect to OAuth provider
-	authURL := sourceOAuth.GetAuthURL(state)
-	h.logger.Debug("Redirecting to source OAuth", "source_id", sourceID, "source_name", source.Name)
-	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
-}
-
 // HandleCallback handles OAuth callback
+// Uses destination-centric authentication (GitHub OAuth only)
 func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	// Get state from cookie
-	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil {
-		h.logger.Error("Missing state cookie", "error", err)
-		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
-		return
-	}
-
-	// Verify state matches
-	state := r.URL.Query().Get("state")
-	if state == "" || state != stateCookie.Value {
-		h.logger.Error("State mismatch", "expected", stateCookie.Value, "got", state)
-		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
-		return
-	}
-
-	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
-
-	// Try to decode source state (new format)
-	sourceState, err := auth.DecodeSourceState(state)
-	if err == nil && sourceState.SourceID > 0 {
-		// Source-scoped callback
-		h.handleSourceCallback(w, r, sourceState.SourceID)
-		return
-	}
-
-	// Fall back to destination OAuth callback (legacy format)
-	h.handleDestinationCallback(w, r)
-}
-
-// handleSourceCallback handles OAuth callback for source-scoped auth
-func (h *AuthHandler) handleSourceCallback(w http.ResponseWriter, r *http.Request, sourceID int64) {
-	ctx := r.Context()
-
-	// Get source from database
-	source, err := h.sourceStore.GetSource(ctx, sourceID)
-	if err != nil {
-		h.logger.Error("Failed to get source for callback", "error", err, "source_id", sourceID)
-		http.Error(w, "Failed to get source", http.StatusInternalServerError)
-		return
-	}
-	if source == nil {
-		h.logger.Error("Source not found for callback", "source_id", sourceID)
-		http.Error(w, "Source not found", http.StatusBadRequest)
-		return
-	}
-
-	// Create source OAuth handler
-	sourceOAuth, err := auth.NewSourceOAuthHandler(source, h.callbackURL, h.logger)
-	if err != nil {
-		h.logger.Error("Failed to create source OAuth handler", "error", err)
-		http.Error(w, "Failed to process callback", http.StatusInternalServerError)
-		return
-	}
-
-	// Exchange code for token
-	code := r.URL.Query().Get("code")
-	if code == "" {
-		h.logger.Error("Missing authorization code")
-		http.Error(w, "Missing authorization code", http.StatusBadRequest)
-		return
-	}
-
-	token, err := sourceOAuth.ExchangeCode(ctx, code)
-	if err != nil {
-		h.logger.Error("Failed to exchange code", "error", err)
-		http.Error(w, "Failed to authenticate", http.StatusInternalServerError)
-		return
-	}
-
-	// Get user info
-	user, err := sourceOAuth.GetUser(ctx, token.AccessToken)
-	if err != nil {
-		h.logger.Error("Failed to get user info", "error", err)
-		http.Error(w, "Failed to get user info", http.StatusInternalServerError)
-		return
-	}
-
-	h.logger.Info("User authenticated via source", "login", user.Login, "source_id", sourceID, "source_name", source.Name)
-
-	// For source-scoped auth, we don't use the global authorization rules
-	// The user just needs to have authenticated with the source
-	// Permission checks happen at the repository level
-
-	// Generate JWT with source info
-	sourceInfo := &auth.SourceInfo{
-		SourceID:   sourceID,
-		SourceType: source.Type,
-	}
-	jwtToken, err := h.jwtManager.GenerateTokenWithSource(user, token.AccessToken, sourceInfo)
-	if err != nil {
-		h.logger.Error("Failed to generate token", "error", err, "user", user.Login)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	// Set cookie with JWT
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    jwtToken,
-		Path:     "/",
-		MaxAge:   h.config.SessionDurationHours * 3600,
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-	})
-
-	h.logger.Info("User logged in via source", "user", user.Login, "source_id", sourceID)
-
-	// Redirect to frontend
-	redirectURL := h.config.FrontendURL
-	if redirectURL == "" {
-		redirectURL = "/"
-	}
-	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
-}
-
-// handleDestinationCallback handles OAuth callback for destination-based auth (legacy)
-func (h *AuthHandler) handleDestinationCallback(w http.ResponseWriter, r *http.Request) {
-	// Process OAuth callback using the legacy handler
+	// Use destination OAuth callback only - source-specific OAuth has been removed
 	h.oauthHandler.HandleCallback(w, r)
-
-	// Get user and token from context
-	user, ok := auth.GetGitHubUserFromContext(r.Context())
-	if !ok {
-		h.logger.Error("Failed to get user from context")
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
-		return
-	}
-
-	githubToken, ok := auth.GetTokenFromContext(r.Context())
-	if !ok {
-		h.logger.Error("Failed to get token from context")
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
-		return
-	}
-
-	// Check authorization using global rules
-	authResult, err := h.authorizer.Authorize(r.Context(), user, githubToken)
-	if err != nil {
-		h.logger.Error("Authorization check failed", "error", err, "user", user.Login)
-		http.Error(w, "Authorization check failed", http.StatusInternalServerError)
-		return
-	}
-
-	if !authResult.Authorized {
-		h.logger.Warn("User not authorized", "user", user.Login, "reason", authResult.Reason)
-		h.renderAccessDenied(w, authResult.Reason)
-		return
-	}
-
-	// Generate JWT token (no source info for destination auth)
-	token, err := h.jwtManager.GenerateToken(user, githubToken)
-	if err != nil {
-		h.logger.Error("Failed to generate token", "error", err, "user", user.Login)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	// Set cookie with JWT
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    token,
-		Path:     "/",
-		MaxAge:   h.config.SessionDurationHours * 3600,
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-	})
-
-	h.logger.Info("User logged in successfully", "user", user.Login)
-
-	// Redirect to frontend URL
-	redirectURL := h.config.FrontendURL
-	if redirectURL == "" {
-		redirectURL = "/"
-	}
-	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }
 
 // renderAccessDenied renders an access denied HTML page
@@ -515,38 +264,34 @@ func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleAuthSources returns list of sources with OAuth configured (for login page)
+// Note: Source-specific OAuth has been removed. This endpoint now always returns an empty array.
+// It is kept for backward compatibility with the frontend.
 func (h *AuthHandler) HandleAuthSources(w http.ResponseWriter, r *http.Request) {
-	if h.sourceStore == nil {
-		// No source store configured, return empty list
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode([]any{}); err != nil {
-			h.logger.Error("Failed to encode empty sources response", "error", err)
-		}
+	// Source-specific OAuth has been removed in favor of destination-centric auth
+	// Always return an empty array for backward compatibility
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode([]any{}); err != nil {
+		h.logger.Error("Failed to encode empty sources response", "error", err)
+	}
+}
+
+// HandleAuthorizationStatus returns the current user's authorization tier and details
+// This endpoint allows users to check their authorization level and what actions they can perform
+func (h *AuthHandler) HandleAuthorizationStatus(w http.ResponseWriter, r *http.Request, handlerUtils *HandlerUtils) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	ctx := r.Context()
-	sources, err := h.sourceStore.ListSources(ctx)
+	status, err := handlerUtils.GetUserAuthorizationStatus(r.Context())
 	if err != nil {
-		h.logger.Error("Failed to list sources", "error", err)
-		http.Error(w, "Failed to list sources", http.StatusInternalServerError)
+		h.logger.Error("Failed to get authorization status", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	// Filter to only sources with OAuth configured
-	var authSources []map[string]any
-	for _, source := range sources {
-		if source.HasOAuth() && source.IsActive {
-			authSources = append(authSources, map[string]any{
-				"id":   source.ID,
-				"name": source.Name,
-				"type": source.Type,
-			})
-		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(authSources); err != nil {
-		h.logger.Error("Failed to encode auth sources response", "error", err)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		h.logger.Error("Failed to encode authorization status response", "error", err)
 	}
 }
