@@ -23,7 +23,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	orgFilter := r.URL.Query().Get("organization")
 	projectFilter := r.URL.Query().Get("project")
 	batchFilter := r.URL.Query().Get("batch_id")
-	
+
 	// Parse source_id filter for multi-source support
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
@@ -98,7 +98,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	// The project-based stats will be used for ADO sources, org-based for GitHub
 	migrationCompletionStatsByOrg, _ := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	migrationCompletionStatsByProject, _ := h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
-	
+
 	// Use project-based stats if we have ADO projects, otherwise use org-based
 	var migrationCompletionStats []*storage.MigrationCompletionStats
 	if len(projectStats) > 0 && len(migrationCompletionStatsByProject) > 0 {

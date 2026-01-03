@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { FormControl, TextInput, Button, Text, Heading, Flash, Box, ActionList, Label, Spinner } from '@primer/react';
-import { AlertIcon, ShieldCheckIcon, ShieldLockIcon, PersonIcon, EyeIcon, ChevronDownIcon, ChevronRightIcon, LinkExternalIcon } from '@primer/octicons-react';
+import { useState } from 'react';
+import { FormControl, TextInput, Button, Text, Heading, Flash, Label, Spinner, Checkbox } from '@primer/react';
+import { AlertIcon, ShieldCheckIcon, ShieldLockIcon, PersonIcon, EyeIcon, ChevronDownIcon, ChevronRightIcon, LinkExternalIcon, PeopleIcon } from '@primer/octicons-react';
 import { useQuery } from '@tanstack/react-query';
 import type { SettingsResponse, UpdateSettingsRequest } from '../../services/api/settings';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,11 +38,28 @@ interface AuthorizationStatus {
 export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) {
   const { user, isAuthenticated } = useAuth();
   const [authEnabled, setAuthEnabled] = useState(settings.auth_enabled);
+  const [oauthClientId, setOAuthClientId] = useState(settings.auth_github_oauth_client_id || '');
+  const [oauthClientSecret, setOAuthClientSecret] = useState('');
   const [sessionSecret, setSessionSecret] = useState('');
   const [sessionDuration, setSessionDuration] = useState(settings.auth_session_duration_hours);
   const [callbackURL, setCallbackURL] = useState(settings.auth_callback_url || '');
   const [frontendURL, setFrontendURL] = useState(settings.auth_frontend_url);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
+  const [showAuthorizationRules, setShowAuthorizationRules] = useState(true);
+
+  // Authorization rules state
+  const [migrationAdminTeams, setMigrationAdminTeams] = useState(
+    settings.authorization_rules?.migration_admin_teams?.join(', ') || ''
+  );
+  const [allowOrgAdminMigrations, setAllowOrgAdminMigrations] = useState(
+    settings.authorization_rules?.allow_org_admin_migrations || false
+  );
+  const [allowEnterpriseAdminMigrations, setAllowEnterpriseAdminMigrations] = useState(
+    settings.authorization_rules?.allow_enterprise_admin_migrations || false
+  );
+  const [requireIdentityMappingForSelfService, setRequireIdentityMappingForSelfService] = useState(
+    settings.authorization_rules?.require_identity_mapping_for_self_service || false
+  );
 
   // Fetch authorization status
   const { data: authStatus, isLoading: isLoadingStatus } = useQuery<AuthorizationStatus>({
@@ -66,6 +83,14 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
       auth_frontend_url: frontendURL,
     };
 
+    // Include OAuth settings
+    if (oauthClientId) {
+      updates.auth_github_oauth_client_id = oauthClientId;
+    }
+    if (oauthClientSecret) {
+      updates.auth_github_oauth_client_secret = oauthClientSecret;
+    }
+
     // Only include secrets if changed
     if (sessionSecret) {
       updates.auth_session_secret = sessionSecret;
@@ -74,24 +99,32 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
       updates.auth_callback_url = callbackURL;
     }
 
+    // Include authorization rules
+    updates.authorization_rules = {
+      migration_admin_teams: migrationAdminTeams
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s !== ''),
+      allow_org_admin_migrations: allowOrgAdminMigrations,
+      allow_enterprise_admin_migrations: allowEnterpriseAdminMigrations,
+      require_identity_mapping_for_self_service: requireIdentityMappingForSelfService,
+    };
+
     onSave(updates);
   };
 
   const hasChanges = 
     authEnabled !== settings.auth_enabled ||
+    oauthClientId !== (settings.auth_github_oauth_client_id || '') ||
+    oauthClientSecret !== '' ||
     sessionSecret !== '' ||
     sessionDuration !== settings.auth_session_duration_hours ||
     callbackURL !== (settings.auth_callback_url || '') ||
-    frontendURL !== settings.auth_frontend_url;
-
-  const getTierColor = (tier: string) => {
-    switch (tier) {
-      case 'admin': return 'success';
-      case 'self_service': return 'accent';
-      case 'read_only': return 'secondary';
-      default: return 'secondary';
-    }
-  };
+    frontendURL !== settings.auth_frontend_url ||
+    migrationAdminTeams !== (settings.authorization_rules?.migration_admin_teams?.join(', ') || '') ||
+    allowOrgAdminMigrations !== (settings.authorization_rules?.allow_org_admin_migrations || false) ||
+    allowEnterpriseAdminMigrations !== (settings.authorization_rules?.allow_enterprise_admin_migrations || false) ||
+    requireIdentityMappingForSelfService !== (settings.authorization_rules?.require_identity_mapping_for_self_service || false);
 
   const getTierIcon = (tier: string) => {
     switch (tier) {
@@ -111,11 +144,11 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
 
       {/* Current User Authorization Status */}
       {settings.auth_enabled && isAuthenticated && (
-        <Box
+        <div
           className="p-4 rounded-lg border mb-6"
-          sx={{
-            backgroundColor: 'canvas.subtle',
-            borderColor: 'border.default',
+          style={{
+            backgroundColor: 'var(--bgColor-muted)',
+            borderColor: 'var(--borderColor-default)',
           }}
         >
           <Heading as="h3" className="text-base mb-3 flex items-center gap-2">
@@ -131,15 +164,13 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
           ) : authStatus ? (
             <div className="space-y-4">
               {/* Authorization Tier Display */}
-              <Box
-                className="p-4 rounded-lg"
-                sx={{
-                  backgroundColor: authStatus.tier === 'admin' ? 'success.subtle' : 
-                                   authStatus.tier === 'self_service' ? 'accent.subtle' : 'neutral.subtle',
-                  borderWidth: 1,
-                  borderStyle: 'solid',
-                  borderColor: authStatus.tier === 'admin' ? 'success.muted' : 
-                               authStatus.tier === 'self_service' ? 'accent.muted' : 'border.default',
+              <div
+                className="p-4 rounded-lg border"
+                style={{
+                  backgroundColor: authStatus.tier === 'admin' ? 'var(--bgColor-success-muted)' : 
+                                   authStatus.tier === 'self_service' ? 'var(--bgColor-accent-muted)' : 'var(--bgColor-muted)',
+                  borderColor: authStatus.tier === 'admin' ? 'var(--borderColor-success-muted)' : 
+                               authStatus.tier === 'self_service' ? 'var(--borderColor-accent-muted)' : 'var(--borderColor-default)',
                 }}
               >
                 <div className="flex items-center gap-3 mb-2">
@@ -167,7 +198,7 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
                     You can view repositories and migration status but cannot initiate migrations.
                   </Text>
                 )}
-              </Box>
+              </div>
 
               {/* Identity Mapping Status */}
               {authStatus.identity_mapping && (
@@ -222,13 +253,13 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
               Unable to load authorization status. Please refresh the page.
             </Flash>
           )}
-        </Box>
+        </div>
       )}
 
       {/* How Authorization Works */}
-      <Box
+      <div
         className="rounded-lg border mb-6 overflow-hidden"
-        sx={{ borderColor: 'border.default' }}
+        style={{ borderColor: 'var(--borderColor-default)' }}
       >
         <button
           className="w-full p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -304,7 +335,7 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
             )}
           </div>
         )}
-      </Box>
+      </div>
 
       {/* Auth Toggle */}
       <Heading as="h3" className="text-base mb-3">Authentication Settings</Heading>
@@ -337,15 +368,56 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
 
       {authEnabled && (
         <>
-          {!settings.auth_session_secret_set && (
+          {!settings.auth_github_oauth_client_secret_set && (
             <Flash variant="warning" className="mb-4">
-              <AlertIcon /> A session secret is required for authentication. Please set one below.
+              <AlertIcon /> GitHub OAuth is not configured. Please set up your OAuth App credentials below.
             </Flash>
           )}
 
+          {/* GitHub OAuth Configuration */}
+          <Heading as="h3" className="text-base mb-3 mt-6">GitHub OAuth App</Heading>
+          <Text className="block mb-4" style={{ color: 'var(--fgColor-muted)' }}>
+            Create an OAuth App in your GitHub organization's settings: 
+            Settings → Developer settings → OAuth Apps
+          </Text>
+
+          <div className="space-y-4 mb-6">
+            <FormControl>
+              <FormControl.Label>OAuth Client ID</FormControl.Label>
+              <TextInput
+                value={oauthClientId}
+                onChange={(e) => setOAuthClientId(e.target.value)}
+                placeholder="Iv1.xxxxxxxxxxxxxxxxx"
+                block
+                monospace
+              />
+              <FormControl.Caption>
+                The Client ID from your GitHub OAuth App.
+              </FormControl.Caption>
+            </FormControl>
+
+            <FormControl>
+              <FormControl.Label>OAuth Client Secret {settings.auth_github_oauth_client_secret_set && '(leave blank to keep existing)'}</FormControl.Label>
+              <TextInput
+                type="password"
+                value={oauthClientSecret}
+                onChange={(e) => setOAuthClientSecret(e.target.value)}
+                placeholder={settings.auth_github_oauth_client_secret_set ? '••••••••••••••••' : 'Enter client secret'}
+                block
+                monospace
+              />
+              <FormControl.Caption>
+                The Client Secret from your GitHub OAuth App.
+              </FormControl.Caption>
+            </FormControl>
+          </div>
+
+          {/* Session Configuration */}
+          <Heading as="h3" className="text-base mb-3">Session Settings</Heading>
+
           <div className="space-y-4">
             <FormControl>
-              <FormControl.Label>Session Secret</FormControl.Label>
+              <FormControl.Label>Session Secret {settings.auth_session_secret_set && '(leave blank to keep existing)'}</FormControl.Label>
               <TextInput
                 type="password"
                 value={sessionSecret}
@@ -407,12 +479,102 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
             </FormControl>
           </div>
 
-          <Flash className="mt-6" variant="default">
+          <Flash className="mt-6 mb-6" variant="default">
             <Text>
               <strong>Destination-Centric Auth:</strong> Users authenticate with GitHub (the destination)
               using a single OAuth flow. Authorization is determined by their GitHub roles and identity mapping status.
             </Text>
           </Flash>
+
+          {/* Authorization Rules Configuration */}
+          <div
+            className="rounded-lg border overflow-hidden"
+            style={{ borderColor: 'var(--borderColor-default)' }}
+          >
+            <button
+              className="w-full p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+              onClick={() => setShowAuthorizationRules(!showAuthorizationRules)}
+              style={{ backgroundColor: 'var(--bgColor-muted)', border: 'none', textAlign: 'left' }}
+            >
+              <div className="flex items-center gap-2">
+                <PeopleIcon size={20} />
+                <Text className="font-semibold">Authorization Rules</Text>
+              </div>
+              {showAuthorizationRules ? <ChevronDownIcon size={20} /> : <ChevronRightIcon size={20} />}
+            </button>
+
+            {showAuthorizationRules && (
+              <div className="p-4 space-y-4" style={{ backgroundColor: 'var(--bgColor-default)' }}>
+                <Text className="block" style={{ color: 'var(--fgColor-muted)' }}>
+                  Configure who can perform migrations. These settings determine which users get
+                  Tier 1 (full migration) access and how Tier 2 (self-service) access works.
+                </Text>
+
+                {/* Migration Admin Teams */}
+                <FormControl>
+                  <FormControl.Label>Migration Admin Teams (Tier 1)</FormControl.Label>
+                  <TextInput
+                    value={migrationAdminTeams}
+                    onChange={(e) => setMigrationAdminTeams(e.target.value)}
+                    placeholder="org/team-slug, another-org/team"
+                    block
+                    monospace
+                  />
+                  <FormControl.Caption>
+                    Comma-separated list of GitHub teams (format: "org/team-slug") whose members
+                    will have full migration rights. Leave empty to disable.
+                  </FormControl.Caption>
+                </FormControl>
+
+                {/* Allow Org Admin Migrations */}
+                <FormControl>
+                  <Checkbox
+                    checked={allowOrgAdminMigrations}
+                    onChange={(e) => setAllowOrgAdminMigrations(e.target.checked)}
+                  />
+                  <FormControl.Label>
+                    Allow Organization Admins to have full migration rights (Tier 1)
+                  </FormControl.Label>
+                  <FormControl.Caption>
+                    When enabled, users who are admins of any GitHub organization can migrate any repository.
+                  </FormControl.Caption>
+                </FormControl>
+
+                {/* Allow Enterprise Admin Migrations */}
+                <FormControl>
+                  <Checkbox
+                    checked={allowEnterpriseAdminMigrations}
+                    onChange={(e) => setAllowEnterpriseAdminMigrations(e.target.checked)}
+                  />
+                  <FormControl.Label>
+                    Allow Enterprise Admins to have full migration rights (Tier 1)
+                  </FormControl.Label>
+                  <FormControl.Caption>
+                    When enabled, GitHub Enterprise administrators can migrate any repository.
+                  </FormControl.Caption>
+                </FormControl>
+
+                {/* Require Identity Mapping for Self-Service */}
+                <div className="pt-4 mt-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
+                  <Text className="font-semibold block mb-3">Self-Service Access (Tier 2)</Text>
+                  <FormControl>
+                    <Checkbox
+                      checked={requireIdentityMappingForSelfService}
+                      onChange={(e) => setRequireIdentityMappingForSelfService(e.target.checked)}
+                    />
+                    <FormControl.Label>
+                      Require identity mapping for self-service migrations
+                    </FormControl.Label>
+                    <FormControl.Caption>
+                      When enabled, users must complete identity mapping (linking their source and destination 
+                      accounts) before they can migrate repositories they administer on the source.
+                      When disabled, any authenticated user can attempt self-service migrations.
+                    </FormControl.Caption>
+                  </FormControl>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
 

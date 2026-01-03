@@ -253,10 +253,10 @@ func TestGetUserAuthorizationStatus_ReadOnlyUser(t *testing.T) {
 
 // MockDataStoreForHandlerUtils is a minimal mock for testing handler utils
 type MockDataStoreForHandlerUtils struct {
-	userMappings   map[string]*models.UserMapping
-	repositories   map[string]*models.Repository
-	sources        map[int64]*models.Source
-	returnError    error
+	userMappings map[string]*models.UserMapping
+	repositories map[string]*models.Repository
+	sources      map[int64]*models.Source
+	returnError  error
 }
 
 func NewMockDataStoreForHandlerUtils() *MockDataStoreForHandlerUtils {
@@ -299,4 +299,3 @@ func (m *MockDataStoreForHandlerUtils) GetSource(ctx context.Context, id int64) 
 	}
 	return source, nil
 }
-

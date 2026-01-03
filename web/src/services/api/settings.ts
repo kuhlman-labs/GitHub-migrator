@@ -1,5 +1,13 @@
 import { client } from './client';
 
+// Authorization rules response
+export interface AuthorizationRulesResponse {
+  migration_admin_teams: string[];
+  allow_org_admin_migrations: boolean;
+  allow_enterprise_admin_migrations: boolean;
+  require_identity_mapping_for_self_service: boolean;
+}
+
 // Settings types
 export interface SettingsResponse {
   id: number;
@@ -14,10 +22,13 @@ export interface SettingsResponse {
   migration_visibility_public: string;
   migration_visibility_internal: string;
   auth_enabled: boolean;
+  auth_github_oauth_client_id?: string;
+  auth_github_oauth_client_secret_set: boolean;
   auth_session_secret_set: boolean;
   auth_session_duration_hours: number;
   auth_callback_url?: string;
   auth_frontend_url: string;
+  authorization_rules: AuthorizationRulesResponse;
   destination_configured: boolean;
   updated_at: string;
 }
@@ -29,6 +40,14 @@ export interface SetupProgressResponse {
   batches_created: boolean;
   batch_count: number;
   setup_complete: boolean;
+}
+
+// Update authorization rules request
+export interface UpdateAuthorizationRulesRequest {
+  migration_admin_teams?: string[];
+  allow_org_admin_migrations?: boolean;
+  allow_enterprise_admin_migrations?: boolean;
+  require_identity_mapping_for_self_service?: boolean;
 }
 
 export interface UpdateSettingsRequest {
@@ -43,10 +62,13 @@ export interface UpdateSettingsRequest {
   migration_visibility_public?: string;
   migration_visibility_internal?: string;
   auth_enabled?: boolean;
+  auth_github_oauth_client_id?: string;
+  auth_github_oauth_client_secret?: string;
   auth_session_secret?: string;
   auth_session_duration_hours?: number;
   auth_callback_url?: string;
   auth_frontend_url?: string;
+  authorization_rules?: UpdateAuthorizationRulesRequest;
 }
 
 export interface ValidateDestinationRequest {

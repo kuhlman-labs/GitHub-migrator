@@ -16,13 +16,13 @@ import (
 // HandlerUtils provides shared utility functions for handlers.
 // This is used to avoid code duplication across domain-specific handlers.
 type HandlerUtils struct {
-	authConfig        *config.AuthConfig
-	destBaseURL       string // Destination GitHub API URL for authorization checks
-	sourceDualClient  *github.DualClient
-	sourceBaseConfig  *github.ClientConfig
-	sourceBaseURL     string
-	logger            *slog.Logger
-	db                *storage.Database // For source lookups and identity mapping
+	authConfig       *config.AuthConfig
+	destBaseURL      string // Destination GitHub API URL for authorization checks
+	sourceDualClient *github.DualClient
+	sourceBaseConfig *github.ClientConfig
+	sourceBaseURL    string
+	logger           *slog.Logger
+	db               *storage.Database // For source lookups and identity mapping
 }
 
 // NewHandlerUtils creates a new HandlerUtils instance.

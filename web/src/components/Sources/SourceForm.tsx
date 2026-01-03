@@ -56,7 +56,6 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
   const [validationState, setValidationState] = useState<'idle' | 'validating' | 'success' | 'error'>('idle');
   const [validationMessage, setValidationMessage] = useState('');
   const [showAppConfig, setShowAppConfig] = useState(source?.has_app_auth || false);
-  const [showOAuthConfig, setShowOAuthConfig] = useState(false);
   // Track if connection-critical fields were modified during edit (token, base_url, or organization for ADO)
   const [connectionFieldsChanged, setConnectionFieldsChanged] = useState(false);
 
@@ -391,110 +390,6 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           )}
         </div>
       )}
-
-      {/* OAuth Configuration (Optional) */}
-      <div
-        className="rounded-lg border overflow-hidden mt-4"
-        style={{ borderColor: 'var(--borderColor-default)' }}
-      >
-        <button
-          type="button"
-          onClick={() => setShowOAuthConfig(!showOAuthConfig)}
-          className="w-full flex justify-between items-center p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-          style={{ backgroundColor: 'var(--bgColor-muted)' }}
-        >
-          <div className="flex items-center gap-2">
-            {showOAuthConfig ? <ChevronDownIcon /> : <ChevronRightIcon />}
-            <Text className="font-semibold">OAuth Configuration (Optional)</Text>
-          </div>
-          {source?.has_oauth && (
-            <Text className="text-xs" style={{ color: 'var(--fgColor-success)' }}>✓ Configured</Text>
-          )}
-        </button>
-
-        {showOAuthConfig && (
-          <div 
-            className="p-3 border-t"
-            style={{ borderColor: 'var(--borderColor-default)' }}
-          >
-            <Text as="p" className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
-              Configure OAuth to enable user self-service authentication. Users will be able to log in via this source 
-              and prove their repository access permissions.
-            </Text>
-
-            {formData.type === 'github' ? (
-              <>
-                <FormControl className="mb-3">
-                  <FormControl.Label>OAuth Client ID</FormControl.Label>
-                  <TextInput
-                    value={formData.oauth_client_id}
-                    onChange={(e) => handleChange('oauth_client_id', e.target.value)}
-                    placeholder="GitHub OAuth App Client ID"
-                    block
-                  />
-                  <FormControl.Caption>
-                    Create an OAuth App at: Settings → Developer settings → OAuth Apps
-                  </FormControl.Caption>
-                </FormControl>
-
-                <FormControl>
-                  <FormControl.Label>
-                    OAuth Client Secret {isEditing && '(leave blank to keep existing)'}
-                  </FormControl.Label>
-                  <TextInput
-                    type="password"
-                    value={formData.oauth_client_secret}
-                    onChange={(e) => handleChange('oauth_client_secret', e.target.value)}
-                    placeholder={isEditing ? '••••••••' : 'GitHub OAuth App Client Secret'}
-                    block
-                  />
-                </FormControl>
-              </>
-            ) : (
-              <>
-                <FormControl className="mb-3">
-                  <FormControl.Label>Entra ID Tenant ID</FormControl.Label>
-                  <TextInput
-                    value={formData.entra_tenant_id}
-                    onChange={(e) => handleChange('entra_tenant_id', e.target.value)}
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    block
-                  />
-                  <FormControl.Caption>
-                    Your Microsoft Entra ID (Azure AD) tenant ID
-                  </FormControl.Caption>
-                </FormControl>
-
-                <FormControl className="mb-3">
-                  <FormControl.Label>Entra ID Client ID</FormControl.Label>
-                  <TextInput
-                    value={formData.entra_client_id}
-                    onChange={(e) => handleChange('entra_client_id', e.target.value)}
-                    placeholder="App registration client ID"
-                    block
-                  />
-                  <FormControl.Caption>
-                    Register an app in Microsoft Entra ID with Azure DevOps API permissions
-                  </FormControl.Caption>
-                </FormControl>
-
-                <FormControl>
-                  <FormControl.Label>
-                    Entra ID Client Secret {isEditing && '(leave blank to keep existing)'}
-                  </FormControl.Label>
-                  <TextInput
-                    type="password"
-                    value={formData.entra_client_secret}
-                    onChange={(e) => handleChange('entra_client_secret', e.target.value)}
-                    placeholder={isEditing ? '••••••••' : 'App registration client secret'}
-                    block
-                  />
-                </FormControl>
-              </>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* Validation Result */}
       {validationState === 'success' && (

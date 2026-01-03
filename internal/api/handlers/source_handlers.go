@@ -34,8 +34,8 @@ type CreateSourceRequest struct {
 	Type              string `json:"type"` // github or azuredevops
 	BaseURL           string `json:"base_url"`
 	Token             string `json:"token"`
-	Organization      string `json:"organization,omitempty"`      // Required for Azure DevOps
-	EnterpriseSlug    string `json:"enterprise_slug,omitempty"`   // Optional for GitHub Enterprise
+	Organization      string `json:"organization,omitempty"`    // Required for Azure DevOps
+	EnterpriseSlug    string `json:"enterprise_slug,omitempty"` // Optional for GitHub Enterprise
 	AppID             *int64 `json:"app_id,omitempty"`
 	AppPrivateKey     string `json:"app_private_key,omitempty"`
 	AppInstallationID *int64 `json:"app_installation_id,omitempty"`

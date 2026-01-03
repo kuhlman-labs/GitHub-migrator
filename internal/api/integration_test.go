@@ -531,8 +531,8 @@ func TestIntegration_AuthorizationTierConfiguration(t *testing.T) {
 			Auth: config.AuthConfig{
 				Enabled: true,
 				AuthorizationRules: config.AuthorizationRules{
-					MigrationAdminTeams:               []string{"my-org/migration-admins"},
-					AllowOrgAdminMigrations:           true,
+					MigrationAdminTeams:                  []string{"my-org/migration-admins"},
+					AllowOrgAdminMigrations:              true,
 					RequireIdentityMappingForSelfService: false,
 				},
 			},

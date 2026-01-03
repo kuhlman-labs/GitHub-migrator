@@ -136,10 +136,10 @@ type AuthorizationRules struct {
 	RequireEnterpriseSlug       string   `mapstructure:"require_enterprise_slug"`
 
 	// Destination-centric authorization (who can migrate repositories)
-	MigrationAdminTeams              []string `mapstructure:"migration_admin_teams"`               // Teams with full migration rights (format: "org/team-slug")
-	AllowOrgAdminMigrations          bool     `mapstructure:"allow_org_admin_migrations"`          // Allow destination org admins to migrate any repo
-	AllowEnterpriseAdminMigrations   bool     `mapstructure:"allow_enterprise_admin_migrations"`   // Allow destination enterprise admins to migrate any repo
-	RequireIdentityMappingForSelfService bool `mapstructure:"require_identity_mapping_for_self_service"` // Require identity mapping for self-service (default: true)
+	MigrationAdminTeams                  []string `mapstructure:"migration_admin_teams"`                     // Teams with full migration rights (format: "org/team-slug")
+	AllowOrgAdminMigrations              bool     `mapstructure:"allow_org_admin_migrations"`                // Allow destination org admins to migrate any repo
+	AllowEnterpriseAdminMigrations       bool     `mapstructure:"allow_enterprise_admin_migrations"`         // Allow destination enterprise admins to migrate any repo
+	RequireIdentityMappingForSelfService bool     `mapstructure:"require_identity_mapping_for_self_service"` // Require identity mapping for self-service (default: true)
 
 	// Deprecated: Use MigrationAdminTeams instead
 	PrivilegedTeams []string `mapstructure:"privileged_teams"`

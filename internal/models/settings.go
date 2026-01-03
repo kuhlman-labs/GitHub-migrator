@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Settings represents the application settings stored in the database.
 // These settings can be updated at runtime without requiring a server restart.
@@ -23,11 +26,19 @@ type Settings struct {
 	MigrationVisibilityInternal   string `json:"migration_visibility_internal" db:"migration_visibility_internal" gorm:"column:migration_visibility_internal;not null;default:'private'"`
 
 	// Auth settings
-	AuthEnabled              bool    `json:"auth_enabled" db:"auth_enabled" gorm:"column:auth_enabled;not null;default:false"`
-	AuthSessionSecret        *string `json:"-" db:"auth_session_secret" gorm:"column:auth_session_secret"`
-	AuthSessionDurationHours int     `json:"auth_session_duration_hours" db:"auth_session_duration_hours" gorm:"column:auth_session_duration_hours;not null;default:24"`
-	AuthCallbackURL          *string `json:"auth_callback_url,omitempty" db:"auth_callback_url" gorm:"column:auth_callback_url"`
-	AuthFrontendURL          string  `json:"auth_frontend_url" db:"auth_frontend_url" gorm:"column:auth_frontend_url;not null;default:'http://localhost:3000'"`
+	AuthEnabled                 bool    `json:"auth_enabled" db:"auth_enabled" gorm:"column:auth_enabled;not null;default:false"`
+	AuthGitHubOAuthClientID     *string `json:"auth_github_oauth_client_id,omitempty" db:"auth_github_oauth_client_id" gorm:"column:auth_github_oauth_client_id"`
+	AuthGitHubOAuthClientSecret *string `json:"-" db:"auth_github_oauth_client_secret" gorm:"column:auth_github_oauth_client_secret"`
+	AuthSessionSecret           *string `json:"-" db:"auth_session_secret" gorm:"column:auth_session_secret"`
+	AuthSessionDurationHours    int     `json:"auth_session_duration_hours" db:"auth_session_duration_hours" gorm:"column:auth_session_duration_hours;not null;default:24"`
+	AuthCallbackURL             *string `json:"auth_callback_url,omitempty" db:"auth_callback_url" gorm:"column:auth_callback_url"`
+	AuthFrontendURL             string  `json:"auth_frontend_url" db:"auth_frontend_url" gorm:"column:auth_frontend_url;not null;default:'http://localhost:3000'"`
+
+	// Authorization rules (stored as comma-separated for arrays)
+	AuthMigrationAdminTeams                  *string `json:"auth_migration_admin_teams,omitempty" db:"auth_migration_admin_teams" gorm:"column:auth_migration_admin_teams"`
+	AuthAllowOrgAdminMigrations              bool    `json:"auth_allow_org_admin_migrations" db:"auth_allow_org_admin_migrations" gorm:"column:auth_allow_org_admin_migrations;not null;default:false"`
+	AuthAllowEnterpriseAdminMigrations       bool    `json:"auth_allow_enterprise_admin_migrations" db:"auth_allow_enterprise_admin_migrations" gorm:"column:auth_allow_enterprise_admin_migrations;not null;default:false"`
+	AuthRequireIdentityMappingForSelfService bool    `json:"auth_require_identity_mapping_for_self_service" db:"auth_require_identity_mapping_for_self_service" gorm:"column:auth_require_identity_mapping_for_self_service;not null;default:false"`
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"column:created_at"`
@@ -45,6 +56,14 @@ func (s *Settings) HasDestination() bool {
 	hasApp := s.DestinationAppID != nil && *s.DestinationAppID > 0 &&
 		s.DestinationAppPrivateKey != nil && *s.DestinationAppPrivateKey != ""
 	return hasToken || hasApp
+}
+
+// getStringOrEmpty returns the string value or empty string if nil
+func getStringOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // SettingsResponse is the API response for settings (with sensitive data masked)
@@ -66,15 +85,28 @@ type SettingsResponse struct {
 	MigrationVisibilityInternal   string `json:"migration_visibility_internal"`
 
 	// Auth settings (secrets masked)
-	AuthEnabled              bool   `json:"auth_enabled"`
-	AuthSessionSecretSet     bool   `json:"auth_session_secret_set"`
-	AuthSessionDurationHours int    `json:"auth_session_duration_hours"`
-	AuthCallbackURL          string `json:"auth_callback_url,omitempty"`
-	AuthFrontendURL          string `json:"auth_frontend_url"`
+	AuthEnabled                    bool   `json:"auth_enabled"`
+	AuthGitHubOAuthClientID        string `json:"auth_github_oauth_client_id,omitempty"`
+	AuthGitHubOAuthClientSecretSet bool   `json:"auth_github_oauth_client_secret_set"`
+	AuthSessionSecretSet           bool   `json:"auth_session_secret_set"`
+	AuthSessionDurationHours       int    `json:"auth_session_duration_hours"`
+	AuthCallbackURL                string `json:"auth_callback_url,omitempty"`
+	AuthFrontendURL                string `json:"auth_frontend_url"`
+
+	// Authorization rules
+	AuthorizationRules AuthorizationRulesResponse `json:"authorization_rules"`
 
 	// Status
 	DestinationConfigured bool      `json:"destination_configured"`
 	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+// AuthorizationRulesResponse is the API response for authorization rules
+type AuthorizationRulesResponse struct {
+	MigrationAdminTeams                  []string `json:"migration_admin_teams"`
+	AllowOrgAdminMigrations              bool     `json:"allow_org_admin_migrations"`
+	AllowEnterpriseAdminMigrations       bool     `json:"allow_enterprise_admin_migrations"`
+	RequireIdentityMappingForSelfService bool     `json:"require_identity_mapping_for_self_service"`
 }
 
 // ToResponse converts Settings to a safe API response with masked secrets
@@ -82,6 +114,20 @@ func (s *Settings) ToResponse() *SettingsResponse {
 	callbackURL := ""
 	if s.AuthCallbackURL != nil {
 		callbackURL = *s.AuthCallbackURL
+	}
+
+	// Parse migration admin teams from comma-separated string
+	var migrationAdminTeams []string
+	if s.AuthMigrationAdminTeams != nil && *s.AuthMigrationAdminTeams != "" {
+		for _, team := range strings.Split(*s.AuthMigrationAdminTeams, ",") {
+			team = strings.TrimSpace(team)
+			if team != "" {
+				migrationAdminTeams = append(migrationAdminTeams, team)
+			}
+		}
+	}
+	if migrationAdminTeams == nil {
+		migrationAdminTeams = []string{}
 	}
 
 	return &SettingsResponse{
@@ -102,11 +148,21 @@ func (s *Settings) ToResponse() *SettingsResponse {
 		MigrationVisibilityInternal:   s.MigrationVisibilityInternal,
 
 		// Auth
-		AuthEnabled:              s.AuthEnabled,
-		AuthSessionSecretSet:     s.AuthSessionSecret != nil && *s.AuthSessionSecret != "",
-		AuthSessionDurationHours: s.AuthSessionDurationHours,
-		AuthCallbackURL:          callbackURL,
-		AuthFrontendURL:          s.AuthFrontendURL,
+		AuthEnabled:                    s.AuthEnabled,
+		AuthGitHubOAuthClientID:        getStringOrEmpty(s.AuthGitHubOAuthClientID),
+		AuthGitHubOAuthClientSecretSet: s.AuthGitHubOAuthClientSecret != nil && *s.AuthGitHubOAuthClientSecret != "",
+		AuthSessionSecretSet:           s.AuthSessionSecret != nil && *s.AuthSessionSecret != "",
+		AuthSessionDurationHours:       s.AuthSessionDurationHours,
+		AuthCallbackURL:                callbackURL,
+		AuthFrontendURL:                s.AuthFrontendURL,
+
+		// Authorization rules
+		AuthorizationRules: AuthorizationRulesResponse{
+			MigrationAdminTeams:                  migrationAdminTeams,
+			AllowOrgAdminMigrations:              s.AuthAllowOrgAdminMigrations,
+			AllowEnterpriseAdminMigrations:       s.AuthAllowEnterpriseAdminMigrations,
+			RequireIdentityMappingForSelfService: s.AuthRequireIdentityMappingForSelfService,
+		},
 
 		// Status
 		DestinationConfigured: s.HasDestination(),
@@ -131,11 +187,24 @@ type UpdateSettingsRequest struct {
 	MigrationVisibilityInternal   *string `json:"migration_visibility_internal,omitempty"`
 
 	// Auth settings
-	AuthEnabled              *bool   `json:"auth_enabled,omitempty"`
-	AuthSessionSecret        *string `json:"auth_session_secret,omitempty"`
-	AuthSessionDurationHours *int    `json:"auth_session_duration_hours,omitempty"`
-	AuthCallbackURL          *string `json:"auth_callback_url,omitempty"`
-	AuthFrontendURL          *string `json:"auth_frontend_url,omitempty"`
+	AuthEnabled                 *bool   `json:"auth_enabled,omitempty"`
+	AuthGitHubOAuthClientID     *string `json:"auth_github_oauth_client_id,omitempty"`
+	AuthGitHubOAuthClientSecret *string `json:"auth_github_oauth_client_secret,omitempty"`
+	AuthSessionSecret           *string `json:"auth_session_secret,omitempty"`
+	AuthSessionDurationHours    *int    `json:"auth_session_duration_hours,omitempty"`
+	AuthCallbackURL             *string `json:"auth_callback_url,omitempty"`
+	AuthFrontendURL             *string `json:"auth_frontend_url,omitempty"`
+
+	// Authorization rules
+	AuthorizationRules *UpdateAuthorizationRulesRequest `json:"authorization_rules,omitempty"`
+}
+
+// UpdateAuthorizationRulesRequest is the request to update authorization rules
+type UpdateAuthorizationRulesRequest struct {
+	MigrationAdminTeams                  []string `json:"migration_admin_teams,omitempty"`
+	AllowOrgAdminMigrations              *bool    `json:"allow_org_admin_migrations,omitempty"`
+	AllowEnterpriseAdminMigrations       *bool    `json:"allow_enterprise_admin_migrations,omitempty"`
+	RequireIdentityMappingForSelfService *bool    `json:"require_identity_mapping_for_self_service,omitempty"`
 }
 
 // ApplyUpdates applies non-nil fields from the update request to the settings
@@ -188,6 +257,12 @@ func (s *Settings) applyAuthUpdates(req *UpdateSettingsRequest) {
 	if req.AuthEnabled != nil {
 		s.AuthEnabled = *req.AuthEnabled
 	}
+	if req.AuthGitHubOAuthClientID != nil {
+		s.AuthGitHubOAuthClientID = req.AuthGitHubOAuthClientID
+	}
+	if req.AuthGitHubOAuthClientSecret != nil {
+		s.AuthGitHubOAuthClientSecret = req.AuthGitHubOAuthClientSecret
+	}
 	if req.AuthSessionSecret != nil {
 		s.AuthSessionSecret = req.AuthSessionSecret
 	}
@@ -199,5 +274,22 @@ func (s *Settings) applyAuthUpdates(req *UpdateSettingsRequest) {
 	}
 	if req.AuthFrontendURL != nil {
 		s.AuthFrontendURL = *req.AuthFrontendURL
+	}
+
+	// Apply authorization rules updates
+	if req.AuthorizationRules != nil {
+		if req.AuthorizationRules.MigrationAdminTeams != nil {
+			teamsStr := strings.Join(req.AuthorizationRules.MigrationAdminTeams, ",")
+			s.AuthMigrationAdminTeams = &teamsStr
+		}
+		if req.AuthorizationRules.AllowOrgAdminMigrations != nil {
+			s.AuthAllowOrgAdminMigrations = *req.AuthorizationRules.AllowOrgAdminMigrations
+		}
+		if req.AuthorizationRules.AllowEnterpriseAdminMigrations != nil {
+			s.AuthAllowEnterpriseAdminMigrations = *req.AuthorizationRules.AllowEnterpriseAdminMigrations
+		}
+		if req.AuthorizationRules.RequireIdentityMappingForSelfService != nil {
+			s.AuthRequireIdentityMappingForSelfService = *req.AuthorizationRules.RequireIdentityMappingForSelfService
+		}
 	}
 }
