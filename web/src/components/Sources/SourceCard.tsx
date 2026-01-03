@@ -142,6 +142,11 @@ export function SourceCard({ source, onEdit, onDelete, onValidate }: SourceCardP
             Organization: <span style={{ color: 'var(--fgColor-default)' }}>{source.organization}</span>
           </div>
         )}
+        {source.enterprise_slug && (
+          <div className="text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+            Enterprise Slug: <span style={{ color: 'var(--fgColor-default)' }}>{source.enterprise_slug}</span>
+          </div>
+        )}
       </div>
 
       {/* Stats */}

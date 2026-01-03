@@ -38,6 +38,7 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
     base_url: source?.base_url || getDefaultBaseUrl(initialType),
     token: '',
     organization: source?.organization || '',
+    enterprise_slug: source?.enterprise_slug || '',
     // GitHub App fields for discovery operations
     app_id: source?.app_id?.toString() || '',
     app_private_key: '',
@@ -56,6 +57,8 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
   const [validationMessage, setValidationMessage] = useState('');
   const [showAppConfig, setShowAppConfig] = useState(source?.has_app_auth || false);
   const [showOAuthConfig, setShowOAuthConfig] = useState(false);
+  // Track if connection-critical fields were modified during edit (token, base_url, or organization for ADO)
+  const [connectionFieldsChanged, setConnectionFieldsChanged] = useState(false);
 
   const handleChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => {
@@ -71,7 +74,17 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
       return updated;
     });
     setErrors(prev => ({ ...prev, [field]: '' }));
-    setValidationState('idle');
+    
+    // Track connection-critical field changes during edit
+    // These fields affect connectivity and require re-testing
+    const connectionCriticalFields = ['token', 'base_url', 'organization'];
+    if (isEditing && connectionCriticalFields.includes(field) && value.trim() !== '') {
+      setConnectionFieldsChanged(true);
+      setValidationState('idle'); // Reset validation since connection params changed
+    } else if (!connectionCriticalFields.includes(field)) {
+      // For non-critical fields (name, enterprise_slug), just reset validation state
+      setValidationState('idle');
+    }
   };
 
   const validate = (): boolean => {
@@ -109,7 +122,10 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
         type: formData.type,
         base_url: formData.base_url,
         token: isEditing ? (formData.token || source?.masked_token || '') : formData.token,
-        organization: formData.organization || undefined,
+        // Only include organization for ADO sources
+        ...(formData.type === 'azuredevops' && { organization: formData.organization || undefined }),
+        // Only include enterprise_slug for GitHub sources
+        ...(formData.type === 'github' && { enterprise_slug: formData.enterprise_slug || undefined }),
       });
 
       if (result.valid) {
@@ -154,7 +170,10 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           name: formData.name,
           base_url: formData.base_url,
           ...(formData.token && { token: formData.token }),
+          // For ADO, organization is required
           ...(formData.type === 'azuredevops' && { organization: formData.organization }),
+          // For GitHub, only include enterprise_slug (organization not needed)
+          ...(formData.type === 'github' && formData.enterprise_slug && { enterprise_slug: formData.enterprise_slug }),
           ...appFields,
           ...oauthFields,
         }
@@ -163,7 +182,10 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           type: formData.type,
           base_url: formData.base_url,
           token: formData.token,
+          // For ADO, organization is required
           ...(formData.type === 'azuredevops' && { organization: formData.organization }),
+          // For GitHub, only include enterprise_slug (organization not needed)
+          ...(formData.type === 'github' && formData.enterprise_slug && { enterprise_slug: formData.enterprise_slug }),
           ...appFields,
           ...oauthFields,
         };
@@ -249,7 +271,23 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
         )}
       </FormControl>
 
-      {/* Organization (ADO only) */}
+      {/* Enterprise Slug (GitHub only, optional) */}
+      {formData.type === 'github' && (
+        <FormControl>
+          <FormControl.Label>Enterprise Slug (Optional)</FormControl.Label>
+          <TextInput
+            value={formData.enterprise_slug}
+            onChange={(e) => handleChange('enterprise_slug', e.target.value)}
+            placeholder="e.g., your-enterprise-slug"
+            block
+          />
+          <FormControl.Caption>
+            Pre-populate enterprise slug for enterprise-wide discovery. If specified, enterprise discovery will use this as the default.
+          </FormControl.Caption>
+        </FormControl>
+      )}
+
+      {/* Organization (ADO only - required) */}
       {formData.type === 'azuredevops' && (
         <FormControl>
           <FormControl.Label>Organization</FormControl.Label>
@@ -262,6 +300,9 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           {errors.organization && (
             <FormControl.Validation variant="error">{errors.organization}</FormControl.Validation>
           )}
+          <FormControl.Caption>
+            Required for Azure DevOps. Will be used as the default for discovery.
+          </FormControl.Caption>
         </FormControl>
       )}
 
@@ -498,6 +539,13 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
           </SecondaryButton>
         )}
         
+        {/* Show helpful message about connection test requirement */}
+        {isEditing && !connectionFieldsChanged && validationState === 'idle' && (
+          <div className="flex items-center text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+            Connection test optional (no connection settings changed)
+          </div>
+        )}
+        
         <div className="flex-1" />
         
         <Button type="button" onClick={onCancel}>
@@ -506,8 +554,16 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
         <PrimaryButton 
           type="button" 
           onClick={handleFormSubmit} 
-          disabled={isSubmitting || validationState !== 'success'}
-          title={validationState !== 'success' ? 'Test connection before saving' : undefined}
+          disabled={
+            isSubmitting || 
+            // Require connection test only for new sources or when connection fields changed during edit
+            ((!isEditing || connectionFieldsChanged) && validationState !== 'success')
+          }
+          title={
+            (!isEditing || connectionFieldsChanged) && validationState !== 'success' 
+              ? 'Test connection before saving' 
+              : undefined
+          }
         >
           {isSubmitting ? (
             <>

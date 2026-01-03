@@ -34,7 +34,8 @@ type CreateSourceRequest struct {
 	Type              string `json:"type"` // github or azuredevops
 	BaseURL           string `json:"base_url"`
 	Token             string `json:"token"`
-	Organization      string `json:"organization,omitempty"` // Required for Azure DevOps
+	Organization      string `json:"organization,omitempty"`      // Required for Azure DevOps
+	EnterpriseSlug    string `json:"enterprise_slug,omitempty"`   // Optional for GitHub Enterprise
 	AppID             *int64 `json:"app_id,omitempty"`
 	AppPrivateKey     string `json:"app_private_key,omitempty"`
 	AppInstallationID *int64 `json:"app_installation_id,omitempty"`
@@ -46,6 +47,7 @@ type UpdateSourceRequest struct {
 	BaseURL           *string `json:"base_url,omitempty"`
 	Token             *string `json:"token,omitempty"`
 	Organization      *string `json:"organization,omitempty"`
+	EnterpriseSlug    *string `json:"enterprise_slug,omitempty"`
 	AppID             *int64  `json:"app_id,omitempty"`
 	AppPrivateKey     *string `json:"app_private_key,omitempty"`
 	AppInstallationID *int64  `json:"app_installation_id,omitempty"`
@@ -118,6 +120,9 @@ func (h *SourceHandler) CreateSource(w http.ResponseWriter, r *http.Request) {
 
 	if req.Organization != "" {
 		source.Organization = &req.Organization
+	}
+	if req.EnterpriseSlug != "" {
+		source.EnterpriseSlug = &req.EnterpriseSlug
 	}
 	if req.AppID != nil {
 		source.AppID = req.AppID
@@ -217,6 +222,9 @@ func (h *SourceHandler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Organization != nil {
 		source.Organization = req.Organization
+	}
+	if req.EnterpriseSlug != nil {
+		source.EnterpriseSlug = req.EnterpriseSlug
 	}
 	if req.AppID != nil {
 		source.AppID = req.AppID

@@ -333,7 +333,8 @@ export function useSetupStatus() {
     queryKey: ['setupStatus'],
     queryFn: () => api.getSetupStatus(),
     staleTime: Infinity, // Only fetch once per session unless invalidated
-    retry: 1, // Only retry once on failure
+    retry: 3, // Retry up to 3 times to handle temporary connection issues (e.g., backend restart)
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000), // Exponential backoff: 1s, 2s, 4s (max 5s)
   });
 }
 

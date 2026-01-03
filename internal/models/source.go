@@ -20,10 +20,11 @@ type Source struct {
 	Name string `json:"name" db:"name" gorm:"column:name;uniqueIndex;not null"` // User-friendly name (e.g., "GHES Production", "ADO Main")
 
 	// Connection configuration
-	Type         string  `json:"type" db:"type" gorm:"column:type;not null;index"`                    // "github" or "azuredevops"
-	BaseURL      string  `json:"base_url" db:"base_url" gorm:"column:base_url;not null"`              // API base URL
-	Token        string  `json:"-" db:"token" gorm:"column:token;not null"`                           // PAT token (excluded from JSON serialization)
-	Organization *string `json:"organization,omitempty" db:"organization" gorm:"column:organization"` // Required for Azure DevOps
+	Type           string  `json:"type" db:"type" gorm:"column:type;not null;index"`                             // "github" or "azuredevops"
+	BaseURL        string  `json:"base_url" db:"base_url" gorm:"column:base_url;not null"`                       // API base URL
+	Token          string  `json:"-" db:"token" gorm:"column:token;not null"`                                    // PAT token (excluded from JSON serialization)
+	Organization   *string `json:"organization,omitempty" db:"organization" gorm:"column:organization"`          // Required for Azure DevOps (top-level container)
+	EnterpriseSlug *string `json:"enterprise_slug,omitempty" db:"enterprise_slug" gorm:"column:enterprise_slug"` // Optional for GitHub (top-level container for enterprise discovery)
 
 	// GitHub App authentication (optional, for enhanced discovery)
 	AppID             *int64  `json:"app_id,omitempty" db:"app_id" gorm:"column:app_id"`
@@ -108,6 +109,26 @@ func (s *Source) Validate() error {
 		s.Organization = &org
 	}
 
+	// Trim enterprise slug if provided for GitHub sources
+	if s.Type == SourceConfigTypeGitHub && s.EnterpriseSlug != nil {
+		slug := strings.TrimSpace(*s.EnterpriseSlug)
+		if slug == "" {
+			s.EnterpriseSlug = nil // Clear if empty after trimming
+		} else {
+			s.EnterpriseSlug = &slug
+		}
+	}
+
+	// Trim organization if provided for GitHub sources (optional for GitHub)
+	if s.Type == SourceConfigTypeGitHub && s.Organization != nil {
+		org := strings.TrimSpace(*s.Organization)
+		if org == "" {
+			s.Organization = nil // Clear if empty after trimming
+		} else {
+			s.Organization = &org
+		}
+	}
+
 	return nil
 }
 
@@ -156,6 +177,7 @@ type SourceResponse struct {
 	Type            string     `json:"type"`
 	BaseURL         string     `json:"base_url"`
 	Organization    *string    `json:"organization,omitempty"`
+	EnterpriseSlug  *string    `json:"enterprise_slug,omitempty"`
 	HasAppAuth      bool       `json:"has_app_auth"`
 	HasOAuth        bool       `json:"has_oauth"` // True if OAuth is configured for user self-service
 	AppID           *int64     `json:"app_id,omitempty"`
@@ -175,6 +197,7 @@ func (s *Source) ToResponse() *SourceResponse {
 		Type:            s.Type,
 		BaseURL:         s.BaseURL,
 		Organization:    s.Organization,
+		EnterpriseSlug:  s.EnterpriseSlug,
 		HasAppAuth:      s.HasAppAuth(),
 		HasOAuth:        s.HasOAuth(),
 		AppID:           s.AppID,

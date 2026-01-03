@@ -101,6 +101,8 @@ export function SetupWizard() {
         auth: { enabled: false },
       });
       // Configuration saved successfully, show restart instructions
+      // Store completion hint in localStorage to help with backend restart detection
+      localStorage.setItem('setup_completed_hint', 'true');
       setRestartingServer(true);
     } catch (error) {
       handleApiError(error, showError, 'Failed to apply configuration');

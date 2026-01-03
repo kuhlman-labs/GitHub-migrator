@@ -14,6 +14,7 @@ export interface Source {
   type: SourceType;
   base_url: string;
   organization?: string;
+  enterprise_slug?: string;  // Optional for GitHub Enterprise discovery
   has_app_auth: boolean;
   has_oauth: boolean;  // True if OAuth is configured for user self-service
   app_id?: number;
@@ -34,6 +35,7 @@ export interface CreateSourceRequest {
   base_url: string;
   token: string;
   organization?: string;
+  enterprise_slug?: string;  // Optional for GitHub Enterprise discovery
   app_id?: number;
   app_private_key?: string;
   app_installation_id?: number;
@@ -54,6 +56,7 @@ export interface UpdateSourceRequest {
   base_url?: string;
   token?: string;
   organization?: string;
+  enterprise_slug?: string;  // Optional for GitHub Enterprise discovery
   app_id?: number;
   app_private_key?: string;
   app_installation_id?: number;
@@ -76,6 +79,7 @@ export interface ValidateSourceRequest {
   base_url?: string;
   token?: string;
   organization?: string;
+  enterprise_slug?: string;  // Optional for GitHub Enterprise discovery
 }
 
 /**

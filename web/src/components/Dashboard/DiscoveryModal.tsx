@@ -87,17 +87,20 @@ export function DiscoveryModal({
     (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim())
   );
   
-  // Pre-populate organization field when modal opens or source changes
+  // Pre-populate organization/enterprise fields when modal opens or source changes
   useEffect(() => {
-    if (isOpen && selectedSource?.organization) {
+    if (isOpen && selectedSource) {
       // Only pre-populate if the field is currently empty to avoid overwriting user input
-      if (selectedSource.type === 'azuredevops' && !adoOrganization) {
+      if (selectedSource.type === 'azuredevops' && selectedSource.organization && !adoOrganization) {
         setAdoOrganization(selectedSource.organization);
-      } else if (selectedSource.type === 'github' && !organization) {
-        setOrganization(selectedSource.organization);
+      } else if (selectedSource.type === 'github') {
+        // For GitHub, only pre-populate enterprise slug (not organization)
+        if (selectedSource.enterprise_slug && !enterpriseSlug) {
+          setEnterpriseSlug(selectedSource.enterprise_slug);
+        }
       }
     }
-  }, [isOpen, selectedSource, organization, adoOrganization, setOrganization, setAdoOrganization]);
+  }, [isOpen, selectedSource, adoOrganization, enterpriseSlug, setAdoOrganization, setEnterpriseSlug]);
 
   const handleSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
@@ -105,24 +108,19 @@ export function DiscoveryModal({
     onSourceChange?.(newSourceId);
     
     // When source changes, reset discovery type to match the new source type
-    // and pre-populate organization field if available in source config
+    // and pre-populate enterprise/organization fields if available in source config
     if (newSourceId) {
       const newSource = sources.find(s => s.id === newSourceId);
       if (newSource) {
-        // Pre-populate organization from source configuration
-        if (newSource.organization) {
-          if (newSource.type === 'azuredevops') {
-            setAdoOrganization(newSource.organization);
-          } else if (newSource.type === 'github') {
-            setOrganization(newSource.organization);
-          }
-        } else {
-          // Clear organization fields if source doesn't have one configured
-          if (newSource.type === 'azuredevops') {
-            setAdoOrganization('');
-          } else if (newSource.type === 'github') {
-            setOrganization('');
-          }
+        // Pre-populate fields from source configuration
+        if (newSource.type === 'azuredevops') {
+          // ADO: pre-populate organization (required field)
+          setAdoOrganization(newSource.organization || '');
+        } else if (newSource.type === 'github') {
+          // GitHub: only pre-populate enterprise slug (organization is not a source-level config)
+          setEnterpriseSlug(newSource.enterprise_slug || '');
+          // Clear organization field for fresh input
+          setOrganization('');
         }
         
         // Reset discovery type to match the new source type
@@ -133,9 +131,11 @@ export function DiscoveryModal({
         }
       }
     } else {
-      // Clear organization fields when no source is selected
+      // Clear all fields when no source is selected
       setOrganization('');
+      setEnterpriseSlug('');
       setAdoOrganization('');
+      setAdoProject('');
     }
   };
   

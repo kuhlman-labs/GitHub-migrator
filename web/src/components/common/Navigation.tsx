@@ -242,29 +242,36 @@ export function Navigation() {
               </div>
           </div>
           
-            {/* Navigation End */}
+            {/* Navigation End - Right Side Utilities */}
           <div className="flex items-center gap-4">
-            {/* Source Selector */}
-            <SourceSelector />
+            {/* Content Filters (always before utility icons) */}
+            <div className="flex items-center gap-3">
+              {/* Source Selector - content filter, shown before settings */}
+              <SourceSelector />
+              
+              {/* Context-Aware Global Search - content filter */}
+              {searchContext.isSearchable && (
+                <TextInput
+                  leadingVisual={SearchIcon}
+                  placeholder={searchContext.placeholder}
+                  value={currentSearch}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  style={{ width: 300 }}
+                />
+              )}
+            </div>
             
-            {/* Context-Aware Global Search */}
-            {searchContext.isSearchable && (
-              <TextInput
-                leadingVisual={SearchIcon}
-                placeholder={searchContext.placeholder}
-                value={currentSearch}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                style={{ width: 300 }}
-              />
-            )}
-            <Link to="/settings">
-              <IconButton 
-                icon={GearIcon} 
-                aria-label="Settings"
-                variant="invisible"
-              />
-            </Link>
-            <UserProfile />
+            {/* Utility Icons (fixed position on right) */}
+            <div className="flex items-center gap-2">
+              <Link to="/settings">
+                <IconButton 
+                  icon={GearIcon} 
+                  aria-label="Settings"
+                  variant="invisible"
+                />
+              </Link>
+              <UserProfile />
+            </div>
           </div>
         </div>
       </div>

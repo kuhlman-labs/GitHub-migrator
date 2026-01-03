@@ -82,16 +82,28 @@ function SetupCheck({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  // Show loading state
+  // Show loading state (with retry happening in background)
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-        Loading...
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: '100vh',
+        gap: '16px'
+      }}>
+        <div>Loading...</div>
+        {isError && (
+          <div style={{ fontSize: '14px', color: 'var(--fgColor-muted)', textAlign: 'center', maxWidth: '400px' }}>
+            Connecting to server... (retrying)
+          </div>
+        )}
       </div>
     );
   }
 
-  // Redirect to setup if not complete or if we couldn't fetch status
+  // Redirect to setup if not complete or if we couldn't fetch status after all retries
   if (isError || !setupStatus?.setup_completed) {
     return <Navigate to="/setup" replace />;
   }
