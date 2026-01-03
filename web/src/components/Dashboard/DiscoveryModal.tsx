@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Button, TextInput, Flash, FormControl, Select } from '@primer/react';
 import { FormDialog } from '../common/FormDialog';
 import { useSourceContext } from '../../contexts/SourceContext';
@@ -86,21 +87,55 @@ export function DiscoveryModal({
     (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim())
   );
   
+  // Pre-populate organization field when modal opens or source changes
+  useEffect(() => {
+    if (isOpen && selectedSource?.organization) {
+      // Only pre-populate if the field is currently empty to avoid overwriting user input
+      if (selectedSource.type === 'azuredevops' && !adoOrganization) {
+        setAdoOrganization(selectedSource.organization);
+      } else if (selectedSource.type === 'github' && !organization) {
+        setOrganization(selectedSource.organization);
+      }
+    }
+  }, [isOpen, selectedSource, organization, adoOrganization, setOrganization, setAdoOrganization]);
+
   const handleSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     const newSourceId = value ? parseInt(value, 10) : null;
     onSourceChange?.(newSourceId);
     
     // When source changes, reset discovery type to match the new source type
+    // and pre-populate organization field if available in source config
     if (newSourceId) {
       const newSource = sources.find(s => s.id === newSourceId);
       if (newSource) {
+        // Pre-populate organization from source configuration
+        if (newSource.organization) {
+          if (newSource.type === 'azuredevops') {
+            setAdoOrganization(newSource.organization);
+          } else if (newSource.type === 'github') {
+            setOrganization(newSource.organization);
+          }
+        } else {
+          // Clear organization fields if source doesn't have one configured
+          if (newSource.type === 'azuredevops') {
+            setAdoOrganization('');
+          } else if (newSource.type === 'github') {
+            setOrganization('');
+          }
+        }
+        
+        // Reset discovery type to match the new source type
         if (newSource.type === 'github' && (discoveryType === 'ado-org' || discoveryType === 'ado-project')) {
           setDiscoveryType('organization');
         } else if (newSource.type === 'azuredevops' && (discoveryType === 'organization' || discoveryType === 'enterprise')) {
           setDiscoveryType('ado-org');
         }
       }
+    } else {
+      // Clear organization fields when no source is selected
+      setOrganization('');
+      setAdoOrganization('');
     }
   };
   
