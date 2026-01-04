@@ -50,7 +50,7 @@ const defaultSettings: SettingsResponse = {
     require_enterprise_membership: false,
     require_enterprise_slug: '',
     privileged_teams: [],
-    migration_admin_teams: [],
+    migration_admin_teams: ['myorg/migration-admins'], // Tier 1 group for tests
     allow_org_admin_migrations: false,
     allow_enterprise_admin_migrations: false,
     require_identity_mapping_for_self_service: false,

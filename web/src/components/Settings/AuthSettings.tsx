@@ -150,8 +150,13 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
     if (!settings.destination_enterprise_slug) {
       return 'Configure destination enterprise slug in Destination Settings first';
     }
-    if (!hasTier1AccessConfigured()) {
-      return 'Configure at least one Tier 1 admin group (Admin Teams, Org Admins, or Enterprise Admins) to prevent lockout';
+    return undefined;
+  };
+
+  // Check if save should be blocked due to missing Tier 1 configuration
+  const getSaveBlockReason = (): string | undefined => {
+    if (authEnabled && !hasTier1AccessConfigured()) {
+      return 'At least one Tier 1 admin group must be configured when authentication is enabled';
     }
     return undefined;
   };
@@ -387,13 +392,13 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
         </Flash>
       )}
 
-      {/* Check if at least one Tier 1 group is configured */}
-      {!authEnabled && settings.destination_enterprise_slug && !hasTier1AccessConfigured() && (
-        <Flash variant="warning" className="mb-4">
+      {/* Warning when auth is enabled but no Tier 1 admin group is configured */}
+      {authEnabled && !hasTier1AccessConfigured() && (
+        <Flash variant="danger" className="mb-4">
           <AlertIcon />
           <Text className="ml-2">
-            <strong>Prerequisite:</strong> Configure at least one Tier 1 admin group before enabling authentication.
-            Without this, no one will be able to initiate migrations. Set one of:
+            <strong>Configuration Required:</strong> At least one Tier 1 admin group must be configured when authentication is enabled.
+            Without this, no one will be able to initiate migrations. Configure one of the following below:
             <ul className="list-disc ml-6 mt-1">
               <li>Migration Admin Teams (org/team format)</li>
               <li>Allow Organization Admin Migrations</li>
@@ -652,7 +657,8 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
         <Button
           variant="primary"
           onClick={handleSave}
-          disabled={!hasChanges || isSaving}
+          disabled={!hasChanges || isSaving || !!getSaveBlockReason()}
+          title={getSaveBlockReason()}
         >
           {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
