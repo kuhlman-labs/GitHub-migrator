@@ -135,6 +135,27 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
     }
   };
 
+  // Check if at least one Tier 1 (Admin) access path is configured
+  // This prevents accidentally enabling auth with no way for anyone to migrate
+  const hasTier1AccessConfigured = () => {
+    const hasAdminTeams = migrationAdminTeams.split(',').map(s => s.trim()).filter(s => s !== '').length > 0;
+    const hasOrgAdminAccess = allowOrgAdminMigrations;
+    const hasEnterpriseAdminAccess = allowEnterpriseAdminMigrations && settings.destination_enterprise_slug;
+    
+    return hasAdminTeams || hasOrgAdminAccess || hasEnterpriseAdminAccess;
+  };
+
+  // Get reason why auth cannot be enabled
+  const getAuthEnableBlockReason = (): string | undefined => {
+    if (!settings.destination_enterprise_slug) {
+      return 'Configure destination enterprise slug in Destination Settings first';
+    }
+    if (!hasTier1AccessConfigured()) {
+      return 'Configure at least one Tier 1 admin group (Admin Teams, Org Admins, or Enterprise Admins) to prevent lockout';
+    }
+    return undefined;
+  };
+
   return (
     <div className="max-w-2xl">
       <Heading as="h2" className="text-lg mb-2">Authentication & Authorization</Heading>
@@ -365,6 +386,22 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
           </Text>
         </Flash>
       )}
+
+      {/* Check if at least one Tier 1 group is configured */}
+      {!authEnabled && settings.destination_enterprise_slug && !hasTier1AccessConfigured() && (
+        <Flash variant="warning" className="mb-4">
+          <AlertIcon />
+          <Text className="ml-2">
+            <strong>Prerequisite:</strong> Configure at least one Tier 1 admin group before enabling authentication.
+            Without this, no one will be able to initiate migrations. Set one of:
+            <ul className="list-disc ml-6 mt-1">
+              <li>Migration Admin Teams (org/team format)</li>
+              <li>Allow Organization Admin Migrations</li>
+              <li>Allow Enterprise Admin Migrations</li>
+            </ul>
+          </Text>
+        </Flash>
+      )}
       
       <div 
         className="p-4 rounded-lg border mb-6 flex items-center justify-between"
@@ -388,10 +425,8 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
           variant={authEnabled ? 'danger' : 'primary'}
           size="small"
           onClick={() => setAuthEnabled(!authEnabled)}
-          disabled={!authEnabled && !settings.destination_enterprise_slug}
-          title={!authEnabled && !settings.destination_enterprise_slug 
-            ? 'Configure destination enterprise slug in Destination Settings first' 
-            : undefined}
+          disabled={!authEnabled && !!getAuthEnableBlockReason()}
+          title={!authEnabled ? getAuthEnableBlockReason() : undefined}
         >
           {authEnabled ? 'Disable' : 'Enable'}
         </Button>
