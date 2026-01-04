@@ -549,12 +549,10 @@ func generateSourceName(cfg *config.Config) string {
 	}
 
 	// Remove path suffix (e.g., /api/v3 for GHES)
-	if idx := 0; idx < len(hostname) {
-		for i, c := range hostname {
-			if c == '/' {
-				hostname = hostname[:i]
-				break
-			}
+	for i, c := range hostname {
+		if c == '/' {
+			hostname = hostname[:i]
+			break
 		}
 	}
 

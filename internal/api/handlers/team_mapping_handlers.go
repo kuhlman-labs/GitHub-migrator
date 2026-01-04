@@ -110,7 +110,8 @@ func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get or create collector for this source
-	collector, err := h.getCollectorForSource(req.SourceID)
+	ctx := r.Context()
+	collector, err := h.getCollectorForSource(ctx, req.SourceID)
 	if err != nil {
 		h.logger.Error("Failed to get collector for source", "error", err, "source_id", req.SourceID)
 		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
@@ -118,7 +119,6 @@ func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run discovery synchronously since it provides immediate feedback
-	ctx := r.Context()
 	teamsDiscovered, membersDiscovered, err := collector.DiscoverTeamsOnly(ctx, req.Organization)
 	if err != nil {
 		if h.handleContextError(ctx, err, "discover teams", r) {

@@ -34,7 +34,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get or create collector for this source
-	collector, err := h.getCollectorForSource(req.SourceID)
+	collector, err := h.getCollectorForSource(r.Context(), req.SourceID)
 	if err != nil {
 		h.logger.Error("Failed to get collector for source", "error", err, "source_id", req.SourceID)
 		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
@@ -246,7 +246,7 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get or create collector for this source
-	collector, err := h.getCollectorForSource(req.SourceID)
+	collector, err := h.getCollectorForSource(r.Context(), req.SourceID)
 	if err != nil {
 		h.logger.Error("Failed to get collector for source", "error", err, "source_id", req.SourceID)
 		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
@@ -307,7 +307,7 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get or create ADO collector for this source
-	adoCollector, _, err := h.getADOCollectorForSource(req.SourceID)
+	adoCollector, _, err := h.getADOCollectorForSource(r.Context(), req.SourceID)
 	if err != nil {
 		h.logger.Error("Failed to get ADO collector for source", "error", err, "source_id", req.SourceID)
 		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))

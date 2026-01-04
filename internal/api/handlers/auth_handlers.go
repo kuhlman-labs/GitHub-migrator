@@ -87,11 +87,21 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	authResult, err := h.authorizer.Authorize(r.Context(), user, token)
 	if err != nil {
 		h.logger.Error("Authorization check failed", "user", user.Login, "error", err)
-		// Don't fail login, but log the error - user gets minimal permissions
+		// Treat authorization errors as unauthorized - fail secure
+		frontendURL := h.config.FrontendURL
+		if frontendURL == "" {
+			frontendURL = "http://localhost:3000"
+		}
+		http.Redirect(w, r, frontendURL+"/login?error=authorization_failed", http.StatusFound)
+		return
 	}
 
-	if authResult != nil && !authResult.Authorized {
-		h.logger.Warn("User not authorized", "user", user.Login, "reason", authResult.Reason)
+	if authResult == nil || !authResult.Authorized {
+		reason := "unknown"
+		if authResult != nil {
+			reason = authResult.Reason
+		}
+		h.logger.Warn("User not authorized", "user", user.Login, "reason", reason)
 		// Redirect to frontend with error
 		frontendURL := h.config.FrontendURL
 		if frontendURL == "" {

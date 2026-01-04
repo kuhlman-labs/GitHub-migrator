@@ -179,7 +179,7 @@ func (h *Handler) handleContextError(ctx context.Context, err error, operation s
 // getCollectorForSource returns a collector for the given source ID.
 // If h.collector is already configured, it uses that.
 // Otherwise, it creates a collector dynamically from the source's credentials in the database.
-func (h *Handler) getCollectorForSource(sourceID *int64) (*discovery.Collector, error) {
+func (h *Handler) getCollectorForSource(ctx context.Context, sourceID *int64) (*discovery.Collector, error) {
 	// If we have a pre-configured collector, use it
 	if h.collector != nil {
 		return h.collector, nil
@@ -196,8 +196,7 @@ func (h *Handler) getCollectorForSource(sourceID *int64) (*discovery.Collector, 
 		return nil, fmt.Errorf("database type assertion failed - cannot create dynamic collector")
 	}
 
-	// Fetch the source from the database
-	ctx := context.Background()
+	// Fetch the source from the database using request context
 	src, err := db.GetSource(ctx, *sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source %d: %w", *sourceID, err)
@@ -270,7 +269,7 @@ func (h *Handler) getCollectorForSource(sourceID *int64) (*discovery.Collector, 
 
 // getADOCollectorForSource returns an ADO collector for the given source ID.
 // It creates a collector dynamically from the source's credentials in the database.
-func (h *Handler) getADOCollectorForSource(sourceID *int64) (*discovery.ADOCollector, *azuredevops.Client, error) {
+func (h *Handler) getADOCollectorForSource(ctx context.Context, sourceID *int64) (*discovery.ADOCollector, *azuredevops.Client, error) {
 	// No source ID means we can't create a dynamic collector
 	if sourceID == nil {
 		return nil, nil, fmt.Errorf("no source_id provided for ADO discovery")
@@ -282,8 +281,7 @@ func (h *Handler) getADOCollectorForSource(sourceID *int64) (*discovery.ADOColle
 		return nil, nil, fmt.Errorf("database type assertion failed - cannot create dynamic ADO collector")
 	}
 
-	// Fetch the source from the database
-	ctx := context.Background()
+	// Fetch the source from the database using request context
 	src, err := db.GetSource(ctx, *sourceID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get source %d: %w", *sourceID, err)
