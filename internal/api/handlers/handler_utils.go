@@ -114,22 +114,27 @@ func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName s
 	return u.checkIdentityMappedAccess(ctx, user, repoFullName)
 }
 
-// checkIdentityMappedAccess checks if a user can access a repository via identity mapping
+// checkIdentityMappedAccess checks if a user can access a repository via identity mapping (Tier 2: Self-Service)
 // The user's destination GitHub account must be mapped to a source identity,
-// and that source identity must have admin access on the repository
+// and that source identity must have admin access on the repository.
+//
+// Authorization behavior:
+// - If RequireIdentityMappingForSelfService is false: User falls to Tier 3 (Read-Only) - no self-service access
+// - If RequireIdentityMappingForSelfService is true: User can achieve Tier 2 by completing identity mapping
 func (u *HandlerUtils) checkIdentityMappedAccess(ctx context.Context, user *auth.GitHubUser, repoFullName string) error {
 	rules := u.authConfig.AuthorizationRules
 
-	// Check if identity mapping is required
+	// Check if self-service tier is enabled via identity mapping requirement
 	if !rules.RequireIdentityMappingForSelfService {
-		// Identity mapping not required - allow self-service without verification
-		u.logger.Debug("Identity mapping not required, allowing self-service access",
+		// Self-service tier is disabled - user falls to Tier 3 (Read-Only)
+		// Only Tier 1 (Admin) users can initiate migrations when self-service is disabled
+		u.logger.Debug("Self-service tier disabled (identity mapping not required), user is Read-Only",
 			"user", user.Login,
 			"repo", repoFullName)
-		return nil
+		return fmt.Errorf("you have read-only access; only administrators can initiate migrations when self-service is disabled")
 	}
 
-	// Identity mapping is required - look up user's source identity
+	// Self-service tier is enabled - identity mapping is required
 	if u.db == nil {
 		return fmt.Errorf("self-service migrations require identity mapping, but the system is not configured correctly")
 	}
