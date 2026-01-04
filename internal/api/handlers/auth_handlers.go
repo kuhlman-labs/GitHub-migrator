@@ -11,6 +11,9 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+// defaultFrontendURL is the default frontend URL when not configured
+const defaultFrontendURL = "http://localhost:3000"
+
 // SourceStore interface for source lookups (to avoid tight coupling)
 type SourceStore interface {
 	GetSource(ctx context.Context, id int64) (*models.Source, error)
@@ -90,7 +93,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		// Treat authorization errors as unauthorized - fail secure
 		frontendURL := h.config.FrontendURL
 		if frontendURL == "" {
-			frontendURL = "http://localhost:3000"
+			frontendURL = defaultFrontendURL
 		}
 		http.Redirect(w, r, frontendURL+"/login?error=authorization_failed", http.StatusFound)
 		return
@@ -105,7 +108,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		// Redirect to frontend with error
 		frontendURL := h.config.FrontendURL
 		if frontendURL == "" {
-			frontendURL = "http://localhost:3000"
+			frontendURL = defaultFrontendURL
 		}
 		http.Redirect(w, r, frontendURL+"/login?error=unauthorized", http.StatusFound)
 		return
@@ -135,7 +138,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Redirect to frontend
 	frontendURL := h.config.FrontendURL
 	if frontendURL == "" {
-		frontendURL = "http://localhost:3000"
+		frontendURL = defaultFrontendURL
 	}
 	http.Redirect(w, r, frontendURL, http.StatusFound)
 }
