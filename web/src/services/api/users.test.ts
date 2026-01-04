@@ -55,7 +55,7 @@ describe('usersApi', () => {
 
       const result = await usersApi.getStats();
 
-      expect(mockClient.get).toHaveBeenCalledWith('/users/stats');
+      expect(mockClient.get).toHaveBeenCalledWith('/users/stats', { params: undefined });
       expect(result).toEqual(mockStats);
     });
   });

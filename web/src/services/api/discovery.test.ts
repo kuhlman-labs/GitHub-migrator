@@ -154,7 +154,7 @@ describe('discoveryApi', () => {
 
       const result = await discoveryApi.listOrganizations();
 
-      expect(mockClient.get).toHaveBeenCalledWith('/organizations');
+      expect(mockClient.get).toHaveBeenCalledWith('/organizations', { params: {} });
       expect(result).toEqual(mockOrgs);
     });
   });
@@ -166,7 +166,7 @@ describe('discoveryApi', () => {
 
       const result = await discoveryApi.listProjects();
 
-      expect(mockClient.get).toHaveBeenCalledWith('/projects');
+      expect(mockClient.get).toHaveBeenCalledWith('/projects', { params: undefined });
       expect(result).toEqual(mockProjects);
     });
   });

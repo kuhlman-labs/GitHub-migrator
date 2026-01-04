@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../__tests__/test-utils';
 import { UnifiedFilterSidebar } from './UnifiedFilterSidebar';
 import type { RepositoryFilters } from '../../types';
-import * as useQueriesModule from '../../hooks/useQueries';
 import * as SourceContextModule from '../../contexts/SourceContext';
 
 // Mock SourceContext

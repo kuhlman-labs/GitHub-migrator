@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
@@ -413,4 +415,42 @@ func (u *HandlerUtils) GetClientForOrg(ctx context.Context, org string) (*github
 
 	// Use the existing API client (PAT or App with installation ID)
 	return u.sourceDualClient.APIClient(), nil
+}
+
+// getMappingStatsWithFilters is a helper to reduce duplication in stats handlers.
+// It parses the source_id filter from the request and returns it.
+func getMappingStatsWithFilters(r *http.Request) *int {
+	var sourceID *int
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
+			sourceID = &sid
+		}
+	}
+	return sourceID
+}
+
+// handleMappingStatsRequest is a generic helper for handling mapping stats requests
+// to reduce code duplication between team and user mapping stats handlers.
+func (h *Handler) handleMappingStatsRequest(
+	w http.ResponseWriter,
+	r *http.Request,
+	orgQueryParam string,
+	entityType string,
+	getStatsFn func(ctx context.Context, orgFilter string, sourceID *int) (interface{}, error),
+) {
+	ctx := r.Context()
+	orgFilter := r.URL.Query().Get(orgQueryParam)
+	sourceID := getMappingStatsWithFilters(r)
+
+	stats, err := getStatsFn(ctx, orgFilter, sourceID)
+	if err != nil {
+		if h.handleContextError(ctx, err, "get "+entityType+" mapping stats", r) {
+			return
+		}
+		h.logger.Error("Failed to get "+entityType+" mapping stats", "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails(entityType+" mapping stats"))
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, stats)
 }

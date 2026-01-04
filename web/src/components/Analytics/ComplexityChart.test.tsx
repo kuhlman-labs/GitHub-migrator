@@ -46,19 +46,19 @@ describe('ComplexityChart', () => {
   it('renders description for GitHub source', () => {
     render(<ComplexityChart data={mockData} source="github" />);
 
-    expect(screen.getByText(/GitHub migration complexity factors/)).toBeInTheDocument();
+    expect(screen.getByText(/complexity factors including size, LFS, submodules/)).toBeInTheDocument();
   });
 
   it('renders description for Azure DevOps source', () => {
     render(<ComplexityChart data={mockData} source="azuredevops" />);
 
-    expect(screen.getByText(/ADO → GitHub migration complexity factors/)).toBeInTheDocument();
+    expect(screen.getByText(/TFVC detection, pipeline types, boards, wikis/)).toBeInTheDocument();
   });
 
   it('renders description for all sources', () => {
     render(<ComplexityChart data={mockData} source="all" />);
 
-    expect(screen.getByText(/Scoring varies by source/)).toBeInTheDocument();
+    expect(screen.getByText(/repository size, CI\/CD configurations, security settings/)).toBeInTheDocument();
   });
 
   it('renders the bar chart', () => {

@@ -331,6 +331,19 @@ describe('Dashboard', () => {
   });
 
   it('should show organization count and repo totals', async () => {
+    const githubSource = { id: 1, name: 'GitHub Source', type: 'github' as const };
+    
+    // Set activeSource to trigger pagination display
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [githubSource],
+      activeSourceFilter: '1',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: githubSource,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
+    });
+    
     render(<Dashboard />);
     
     await waitFor(() => {

@@ -75,7 +75,7 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 		var mapKey string
 		var orgStat *OrganizationStats
 
-		if result.Source == "azuredevops" && result.ADOProject != nil {
+		if result.Source == models.SourceTypeAzureDevOps && result.ADOProject != nil {
 			// For ADO: key is project name, org goes in ADOOrganization field
 			mapKey = *result.ADOProject
 			if _, exists := orgMap[mapKey]; !exists {
@@ -879,7 +879,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 				SourceType:   result.SourceType,
 			}
 			// For ADO, store the organization name in ADOOrganization as well
-			if result.Source == "azuredevops" {
+			if result.Source == models.SourceTypeAzureDevOps {
 				orgMap[mapKey].ADOOrganization = &result.Org
 			}
 		}

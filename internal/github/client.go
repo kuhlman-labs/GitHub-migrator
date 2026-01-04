@@ -517,7 +517,7 @@ func (c *Client) CheckCollaboratorPermission(ctx context.Context, owner, repo, u
 
 	// Permission levels: admin, write, read, none
 	permission := *permLevel.Permission
-	hasAdmin := permission == "admin"
+	hasAdmin := permission == PermissionAdmin
 
 	c.logger.Debug("Collaborator permission check result",
 		"owner", owner,

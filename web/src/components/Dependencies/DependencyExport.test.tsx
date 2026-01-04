@@ -131,7 +131,7 @@ describe('DependencyExport', () => {
     fireEvent.click(screen.getByText('Export All as CSV'));
 
     await waitFor(() => {
-      expect(api.exportDependencies).toHaveBeenCalledWith('csv');
+      expect(api.exportDependencies).toHaveBeenCalledWith('csv', { source_id: undefined });
     });
   });
 
@@ -155,7 +155,7 @@ describe('DependencyExport', () => {
     fireEvent.click(screen.getByText('Export All as JSON'));
 
     await waitFor(() => {
-      expect(api.exportDependencies).toHaveBeenCalledWith('json');
+      expect(api.exportDependencies).toHaveBeenCalledWith('json', { source_id: undefined });
     });
   });
 

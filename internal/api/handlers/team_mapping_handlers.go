@@ -89,29 +89,9 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 // Returns summary statistics for teams with mapping status
 // Supports optional ?organization= and ?source_id= query parameters to filter
 func (h *Handler) GetTeamMappingStats(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	orgFilter := r.URL.Query().Get("organization")
-
-	// Parse source_id for multi-source filtering
-	var sourceID *int
-	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
-		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
-			sourceID = &sid
-		}
-	}
-
-	stats, err := h.db.GetTeamsWithMappingsStats(ctx, orgFilter, sourceID)
-	if err != nil {
-		if h.handleContextError(ctx, err, "get team mapping stats", r) {
-			return
-		}
-		h.logger.Error("Failed to get team mapping stats", "error", err)
-		WriteError(w, ErrDatabaseFetch.WithDetails("team mapping stats"))
-		return
-	}
-
-	h.sendJSON(w, http.StatusOK, stats)
+	h.handleMappingStatsRequest(w, r, "organization", "team", func(ctx context.Context, orgFilter string, sourceID *int) (interface{}, error) {
+		return h.db.GetTeamsWithMappingsStats(ctx, orgFilter, sourceID)
+	})
 }
 
 // DiscoverTeams handles POST /api/v1/teams/discover

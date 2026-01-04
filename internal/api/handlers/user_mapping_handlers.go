@@ -168,29 +168,9 @@ func (h *Handler) ListUserMappings(w http.ResponseWriter, r *http.Request) {
 // Returns summary statistics for users with mapping status
 // Supports optional ?source_org= and ?source_id= query parameters to filter
 func (h *Handler) GetUserMappingStats(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	orgFilter := r.URL.Query().Get("source_org")
-
-	// Parse source_id for multi-source filtering
-	var sourceID *int
-	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
-		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
-			sourceID = &sid
-		}
-	}
-
-	stats, err := h.db.GetUsersWithMappingsStats(ctx, orgFilter, sourceID)
-	if err != nil {
-		if h.handleContextError(ctx, err, "get user mapping stats", r) {
-			return
-		}
-		h.logger.Error("Failed to get user mapping stats", "error", err)
-		WriteError(w, ErrDatabaseFetch.WithDetails("user mapping stats"))
-		return
-	}
-
-	h.sendJSON(w, http.StatusOK, stats)
+	h.handleMappingStatsRequest(w, r, "source_org", "user", func(ctx context.Context, orgFilter string, sourceID *int) (interface{}, error) {
+		return h.db.GetUsersWithMappingsStats(ctx, orgFilter, sourceID)
+	})
 }
 
 // GetUserDetail handles GET /api/v1/user-mappings/{login}

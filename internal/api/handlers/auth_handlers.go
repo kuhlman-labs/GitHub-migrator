@@ -68,63 +68,6 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	h.oauthHandler.HandleCallback(w, r)
 }
 
-// renderAccessDenied renders an access denied HTML page
-func (h *AuthHandler) renderAccessDenied(w http.ResponseWriter, reason string) {
-	w.Header().Set("Content-Type", "text/html")
-	w.WriteHeader(http.StatusForbidden)
-	htmlContent := `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Access Denied</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #0d1117;
-            color: #c9d1d9;
-        }
-        .container {
-            text-align: center;
-            max-width: 500px;
-            padding: 2rem;
-        }
-        h1 {
-            color: #f85149;
-            margin-bottom: 1rem;
-        }
-        p {
-            margin-bottom: 1.5rem;
-            line-height: 1.6;
-        }
-        a {
-            color: #58a6ff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Access Denied</h1>
-        <p>` + reason + `</p>
-        <p>Please contact your administrator if you believe you should have access.</p>
-        <a href="/">Return to Home</a>
-    </div>
-</body>
-</html>
-	`
-	if _, err := w.Write([]byte(htmlContent)); err != nil {
-		h.logger.Error("Failed to write access denied response", "error", err)
-	}
-}
-
 // HandleLogout logs out the user
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	// Get user from context for logging

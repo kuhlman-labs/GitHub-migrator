@@ -161,7 +161,7 @@ type AuthorizationRulesData struct {
 	RequireEnterpriseAdmin      bool     `json:"require_enterprise_admin,omitempty"`      // Require GitHub Enterprise admin role
 	RequireEnterpriseMembership bool     `json:"require_enterprise_membership,omitempty"` // Require enterprise membership
 	EnterpriseSlug              string   `json:"enterprise_slug,omitempty"`               // Enterprise slug
-	PrivilegedTeams             []string `json:"privileged_teams,omitempty"`              // Privileged teams with full access
+	MigrationAdminTeams         []string `json:"migration_admin_teams,omitempty"`         // Teams with full migration access
 }
 
 type LoggingConfigData struct {
@@ -667,9 +667,9 @@ func (h *SetupHandler) writeAuthorizationRules(sb *strings.Builder, rules *Autho
 		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG=%s\n", rules.EnterpriseSlug))
 	}
 
-	if len(rules.PrivilegedTeams) > 0 {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS=%s\n",
-			strings.Join(rules.PrivilegedTeams, ",")))
+	if len(rules.MigrationAdminTeams) > 0 {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS=%s\n",
+			strings.Join(rules.MigrationAdminTeams, ",")))
 	}
 }
 

@@ -47,13 +47,13 @@ func (p *PermissionChecker) HasFullAccess(ctx context.Context, user *GitHubUser,
 		}
 	}
 
-	// Check if user is member of a privileged team
-	if len(p.config.AuthorizationRules.PrivilegedTeams) > 0 {
-		isMember, err := p.authorizer.CheckTeamMembership(ctx, user.Login, p.config.AuthorizationRules.PrivilegedTeams, token)
+	// Check if user is member of a migration admin team
+	if len(p.config.AuthorizationRules.MigrationAdminTeams) > 0 {
+		isMember, err := p.authorizer.CheckTeamMembership(ctx, user.Login, p.config.AuthorizationRules.MigrationAdminTeams, token)
 		if err != nil {
-			p.logger.Warn("Failed to check privileged team membership", "user", user.Login, "error", err)
+			p.logger.Warn("Failed to check migration admin team membership", "user", user.Login, "error", err)
 		} else if isMember {
-			p.logger.Debug("User has full access as privileged team member", "user", user.Login)
+			p.logger.Debug("User has full access as migration admin team member", "user", user.Login)
 			return true, nil
 		}
 	}

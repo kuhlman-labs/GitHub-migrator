@@ -349,12 +349,14 @@ describe('Analytics', () => {
   });
 
   it('should show ADO-specific labels for azuredevops source', async () => {
-    // Mock SourceContext with ADO sources
+    const adoSource = { id: 1, name: 'ADO Source', type: 'azuredevops' as const };
+    
+    // Mock SourceContext with ADO sources and activeSource set
     (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
-      sources: [{ id: 1, name: 'ADO Source', type: 'azuredevops' }],
-      activeSourceFilter: 'all',
+      sources: [adoSource],
+      activeSourceFilter: '1',
       setActiveSourceFilter: vi.fn(),
-      activeSource: null,
+      activeSource: adoSource,
       isLoading: false,
       error: null,
       refetchSources: vi.fn(),

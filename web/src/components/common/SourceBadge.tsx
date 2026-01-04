@@ -1,5 +1,6 @@
 import { Tooltip } from '@primer/react';
 import { MarkGithubIcon } from '@primer/octicons-react';
+import { useState } from 'react';
 import { useSourceContext } from '../../contexts/SourceContext';
 import type { SourceType } from '../../types';
 
@@ -121,8 +122,10 @@ export function SourceBadge({
   // Get size configuration
   const config = SIZE_CONFIG[size];
   
-  // Generate unique ID for SVG gradient
-  const uniqueId = `badge-${sourceId || 'static'}-${Math.random().toString(36).substr(2, 9)}`;
+  // Generate unique ID for SVG gradient (generated once on mount)
+  const [uniqueId] = useState(
+    () => `badge-${sourceId || 'static'}-${Math.random().toString(36).substr(2, 9)}`
+  );
   
   // Badge background color based on source type
   const bgColor = displayType === 'github' 

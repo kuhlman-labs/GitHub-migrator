@@ -20,8 +20,10 @@ export function Setup() {
   const { data: setupStatus, isError, refetch } = useSetupStatus();
   
   // If we know setup was completed before and we're getting errors, we're probably waiting for backend restart
+  // This is a legitimate use of setState in effect to synchronize with external API state
   useEffect(() => {
     if (wasSetupCompleted && isError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWaitingForBackend(true);
     }
   }, [wasSetupCompleted, isError]);
@@ -43,7 +45,7 @@ export function Setup() {
           // Backend is back but setup not complete, show wizard
           setWaitingForBackend(false);
         }
-      } catch (error) {
+      } catch {
         // Still can't connect, keep polling
         console.debug('Waiting for backend to reconnect...');
       }
