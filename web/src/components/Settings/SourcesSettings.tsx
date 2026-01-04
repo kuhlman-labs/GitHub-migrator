@@ -13,7 +13,11 @@ import type { Source, CreateSourceRequest, UpdateSourceRequest } from '../../typ
  * Sources configuration panel for the Settings page.
  * Allows managing migration sources (GitHub/Azure DevOps) inline with other settings.
  */
-export function SourcesSettings() {
+interface SourcesSettingsProps {
+  readOnly?: boolean;
+}
+
+export function SourcesSettings({ readOnly = false }: SourcesSettingsProps) {
   const {
     sources,
     isLoading,
@@ -143,9 +147,11 @@ export function SourcesSettings() {
     <div className="max-w-4xl">
       <div className="flex items-center justify-between mb-2">
         <Heading as="h2" className="text-lg">Migration Sources</Heading>
-        <PrimaryButton onClick={handleOpenCreate} leadingVisual={PlusIcon}>
-          Add Source
-        </PrimaryButton>
+        {!readOnly && (
+          <PrimaryButton onClick={handleOpenCreate} leadingVisual={PlusIcon}>
+            Add Source
+          </PrimaryButton>
+        )}
       </div>
       <Text className="block mb-6" style={{ color: 'var(--fgColor-muted)' }}>
         Configure GitHub or Azure DevOps sources to discover repositories for migration.
@@ -194,6 +200,7 @@ export function SourcesSettings() {
               onEdit={handleOpenEdit}
               onDelete={handleOpenDelete}
               onValidate={handleValidate}
+              readOnly={readOnly}
             />
           ))}
         </div>

@@ -9,6 +9,7 @@ interface AuthSettingsProps {
   settings: SettingsResponse;
   onSave: (updates: UpdateSettingsRequest) => void;
   isSaving: boolean;
+  readOnly?: boolean;
 }
 
 // Authorization status response from the API
@@ -35,7 +36,7 @@ interface AuthorizationStatus {
   };
 }
 
-export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) {
+export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: AuthSettingsProps) {
   const { user, isAuthenticated } = useAuth();
   const [authEnabled, setAuthEnabled] = useState(settings.auth_enabled);
   const [oauthClientId, setOAuthClientId] = useState(settings.auth_github_oauth_client_id || '');
@@ -653,8 +654,8 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
         <Button
           variant="primary"
           onClick={handleSave}
-          disabled={!hasChanges || isSaving || !!getSaveBlockReason()}
-          title={getSaveBlockReason()}
+          disabled={!hasChanges || isSaving || !!getSaveBlockReason() || readOnly}
+          title={readOnly ? 'Administrator access required to modify settings' : getSaveBlockReason()}
         >
           {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>

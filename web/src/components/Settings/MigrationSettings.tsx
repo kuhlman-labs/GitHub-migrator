@@ -6,9 +6,10 @@ interface MigrationSettingsProps {
   settings: SettingsResponse;
   onSave: (updates: UpdateSettingsRequest) => void;
   isSaving: boolean;
+  readOnly?: boolean;
 }
 
-export function MigrationSettings({ settings, onSave, isSaving }: MigrationSettingsProps) {
+export function MigrationSettings({ settings, onSave, isSaving, readOnly = false }: MigrationSettingsProps) {
   const [workers, setWorkers] = useState(settings.migration_workers);
   const [pollInterval, setPollInterval] = useState(settings.migration_poll_interval_seconds);
   const [destRepoAction, setDestRepoAction] = useState(settings.migration_dest_repo_exists_action);
@@ -149,7 +150,8 @@ export function MigrationSettings({ settings, onSave, isSaving }: MigrationSetti
           <Button
             variant="primary"
             onClick={handleSave}
-            disabled={!hasChanges || isSaving}
+            disabled={!hasChanges || isSaving || readOnly}
+            title={readOnly ? 'Administrator access required to modify settings' : undefined}
           >
             {isSaving ? 'Saving...' : 'Save Changes'}
           </Button>

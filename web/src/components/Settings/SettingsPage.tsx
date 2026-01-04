@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { UnderlineNav, Heading, Text, Flash, Spinner } from '@primer/react';
-import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon, RepoIcon } from '@primer/octicons-react';
+import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon, RepoIcon, AlertIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../services/api/settings';
+import { configApi } from '../../services/api/config';
 import { SourcesSettings } from './SourcesSettings';
 import { DestinationSettings } from './DestinationSettings';
 import { MigrationSettings } from './MigrationSettings';
 import { AuthSettings } from './AuthSettings';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import type { SettingsResponse, UpdateSettingsRequest } from '../../services/api/settings';
+import { AxiosError } from 'axios';
 
 type SettingsTab = 'sources' | 'destination' | 'migration' | 'auth';
 
@@ -16,6 +19,17 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('sources');
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
+  const { authEnabled } = useAuth();
+
+  // Fetch authorization status to check if user is admin
+  const { data: authStatus } = useQuery({
+    queryKey: ['authorizationStatus'],
+    queryFn: configApi.getAuthorizationStatus,
+    enabled: authEnabled, // Only fetch if auth is enabled
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  const isAdmin = !authEnabled || authStatus?.tier === 'admin';
 
   // Fetch current settings
   const { data: settings, isLoading, error } = useQuery<SettingsResponse, Error>({
@@ -31,8 +45,13 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['setupProgress'] });
       showSuccess('Settings saved successfully');
     },
-    onError: (error: Error) => {
-      showError(`Failed to save settings: ${error.message}`);
+    onError: (error: Error | AxiosError) => {
+      // Handle 403 Forbidden specifically
+      if (error instanceof AxiosError && error.response?.status === 403) {
+        showError('Access denied: Only administrators can modify settings');
+      } else {
+        showError(`Failed to save settings: ${error.message}`);
+      }
     },
   });
 
@@ -65,6 +84,19 @@ export function SettingsPage() {
         Configure sources, destination, migration behavior, and authentication.
         Changes are applied immediately without requiring a server restart.
       </Text>
+
+      {/* Non-admin warning */}
+      {authEnabled && !isAdmin && (
+        <Flash variant="warning" className="mb-4">
+          <div className="flex items-center gap-2">
+            <AlertIcon size={16} />
+            <Text>
+              <strong>Read-Only Access:</strong> Only Tier 1 administrators can modify settings.
+              You can view the current configuration but cannot make changes.
+            </Text>
+          </div>
+        </Flash>
+      )}
 
       {/* Tabs */}
       <UnderlineNav aria-label="Settings">
@@ -101,13 +133,14 @@ export function SettingsPage() {
       {/* Tab Content */}
       <div className="mt-6">
         {activeTab === 'sources' && (
-          <SourcesSettings />
+          <SourcesSettings readOnly={!isAdmin} />
         )}
         {activeTab === 'destination' && settings && (
           <DestinationSettings
             settings={settings}
             onSave={(updates) => updateMutation.mutate(updates)}
             isSaving={updateMutation.isPending}
+            readOnly={!isAdmin}
           />
         )}
         {activeTab === 'migration' && settings && (
@@ -115,6 +148,7 @@ export function SettingsPage() {
             settings={settings}
             onSave={(updates) => updateMutation.mutate(updates)}
             isSaving={updateMutation.isPending}
+            readOnly={!isAdmin}
           />
         )}
         {activeTab === 'auth' && settings && (
@@ -122,6 +156,7 @@ export function SettingsPage() {
             settings={settings}
             onSave={(updates) => updateMutation.mutate(updates)}
             isSaving={updateMutation.isPending}
+            readOnly={!isAdmin}
           />
         )}
       </div>

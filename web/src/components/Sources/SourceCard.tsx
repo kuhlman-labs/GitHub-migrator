@@ -43,12 +43,13 @@ interface SourceCardProps {
   onEdit: (source: Source) => void;
   onDelete: (source: Source) => void;
   onValidate: (source: Source) => void;
+  readOnly?: boolean;
 }
 
 /**
  * Card component displaying a single migration source.
  */
-export function SourceCard({ source, onEdit, onDelete, onValidate }: SourceCardProps) {
+export function SourceCard({ source, onEdit, onDelete, onValidate, readOnly = false }: SourceCardProps) {
   const typeLabel = source.type === 'github' ? 'GitHub' : 'Azure DevOps';
   const typeVariant = source.type === 'github' ? 'accent' : 'done';
 
@@ -108,20 +109,24 @@ export function SourceCard({ source, onEdit, onDelete, onValidate }: SourceCardP
             size="small"
             onClick={() => onValidate(source)}
           />
-          <IconButton
-            aria-label="Edit source"
-            icon={PencilIcon}
-            variant="invisible"
-            size="small"
-            onClick={() => onEdit(source)}
-          />
-          <IconButton
-            aria-label="Delete source"
-            icon={TrashIcon}
-            variant="invisible"
-            size="small"
-            onClick={() => onDelete(source)}
-          />
+          {!readOnly && (
+            <>
+              <IconButton
+                aria-label="Edit source"
+                icon={PencilIcon}
+                variant="invisible"
+                size="small"
+                onClick={() => onEdit(source)}
+              />
+              <IconButton
+                aria-label="Delete source"
+                icon={TrashIcon}
+                variant="invisible"
+                size="small"
+                onClick={() => onDelete(source)}
+              />
+            </>
+          )}
         </div>
       </div>
 

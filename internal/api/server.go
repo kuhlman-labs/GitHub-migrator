@@ -238,9 +238,20 @@ func (s *Server) Router() http.Handler {
 		}
 	}
 
-	// Protected settings endpoints
+	// Helper for admin-only endpoints (requires Tier 1 authorization)
+	// This chains RequireAuth -> RequireAdmin for endpoints that modify system configuration
+	adminOnly := func(pattern string, handler http.HandlerFunc) {
+		if authMiddleware != nil {
+			// Chain: RequireAuth validates authentication, RequireAdmin validates Tier 1 access
+			mux.Handle(pattern, authMiddleware.RequireAuth(authMiddleware.RequireAdmin(handler)))
+		} else {
+			mux.HandleFunc(pattern, handler)
+		}
+	}
+
+	// Admin-only settings endpoints (requires Tier 1 access)
 	if s.settingsHandler != nil {
-		protect("PUT /api/v1/settings", s.settingsHandler.UpdateSettings)
+		adminOnly("PUT /api/v1/settings", s.settingsHandler.UpdateSettings)
 	}
 
 	// Discovery endpoints
@@ -357,15 +368,17 @@ func (s *Server) Router() http.Handler {
 	protect("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)
 
 	// Source management endpoints (multi-source support)
+	// Read operations - accessible to all authenticated users
 	protect("GET /api/v1/sources", s.sourceHandler.ListSources)
-	protect("POST /api/v1/sources", s.sourceHandler.CreateSource)
-	protect("POST /api/v1/sources/validate", s.sourceHandler.ValidateSource)
 	protect("GET /api/v1/sources/{id}", s.sourceHandler.GetSource)
-	protect("PUT /api/v1/sources/{id}", s.sourceHandler.UpdateSource)
-	protect("DELETE /api/v1/sources/{id}", s.sourceHandler.DeleteSource)
-	protect("POST /api/v1/sources/{id}/validate", s.sourceHandler.ValidateSource)
-	protect("POST /api/v1/sources/{id}/set-active", s.sourceHandler.SetSourceActive)
 	protect("GET /api/v1/sources/{id}/repositories", s.sourceHandler.GetSourceRepositories)
+	protect("POST /api/v1/sources/validate", s.sourceHandler.ValidateSource)
+	protect("POST /api/v1/sources/{id}/validate", s.sourceHandler.ValidateSource)
+	// Write operations - require Tier 1 (Admin) access
+	adminOnly("POST /api/v1/sources", s.sourceHandler.CreateSource)
+	adminOnly("PUT /api/v1/sources/{id}", s.sourceHandler.UpdateSource)
+	adminOnly("DELETE /api/v1/sources/{id}", s.sourceHandler.DeleteSource)
+	adminOnly("POST /api/v1/sources/{id}/set-active", s.sourceHandler.SetSourceActive)
 
 	// Serve static frontend files for SPA
 	mux.HandleFunc("/", s.serveFrontend)

@@ -9,9 +9,10 @@ interface DestinationSettingsProps {
   settings: SettingsResponse;
   onSave: (updates: UpdateSettingsRequest) => void;
   isSaving: boolean;
+  readOnly?: boolean;
 }
 
-export function DestinationSettings({ settings, onSave, isSaving }: DestinationSettingsProps) {
+export function DestinationSettings({ settings, onSave, isSaving, readOnly = false }: DestinationSettingsProps) {
   const [baseURL, setBaseURL] = useState(settings.destination_base_url);
   const [token, setToken] = useState('');
   const [appId, setAppId] = useState(settings.destination_app_id?.toString() || '');
@@ -255,7 +256,8 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
           <Button
             variant="primary"
             onClick={handleSave}
-            disabled={!hasChanges || isSaving}
+            disabled={!hasChanges || isSaving || readOnly}
+            title={readOnly ? 'Administrator access required to modify settings' : undefined}
           >
             {isSaving ? 'Saving...' : 'Save Changes'}
           </Button>
