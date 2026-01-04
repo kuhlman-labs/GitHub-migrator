@@ -132,7 +132,9 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-			sourceID = &id
+				// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
 		}
 	}
 
@@ -161,12 +163,17 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Get source info if we have a source ID
+		// Declare string values in outer scope to avoid dangling pointers
 		var sourceName, sourceTypeStr *string
+		var sourceNameVal, sourceTypeVal string
 		if sourceID != nil {
 			source, err := h.db.GetSource(ctx, *sourceID)
 			if err == nil && source != nil {
-				sourceName = &source.Name
-				sourceTypeStr = &source.Type
+				// Copy values to outer scope variables, then take their addresses
+				sourceNameVal = source.Name
+				sourceTypeVal = source.Type
+				sourceName = &sourceNameVal
+				sourceTypeStr = &sourceTypeVal
 			}
 		}
 
@@ -224,7 +231,9 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-			sourceID = &id
+			// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
 		}
 	}
 

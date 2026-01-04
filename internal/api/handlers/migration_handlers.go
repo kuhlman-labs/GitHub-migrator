@@ -841,7 +841,9 @@ func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-			sourceID = &id
+				// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
 		}
 	}
 
@@ -875,7 +877,9 @@ func (h *Handler) ExportMigrationHistory(w http.ResponseWriter, r *http.Request)
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-			sourceID = &id
+				// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
 		}
 	}
 
