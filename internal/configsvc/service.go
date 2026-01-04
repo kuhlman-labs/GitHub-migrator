@@ -101,6 +101,7 @@ type DestinationConfig struct {
 	AppID             int64
 	AppPrivateKey     string
 	AppInstallationID int64
+	EnterpriseSlug    string
 	Configured        bool
 }
 
@@ -125,6 +126,9 @@ func (cs *Service) GetDestinationConfig() DestinationConfig {
 	}
 	if cs.settings.DestinationAppInstallationID != nil {
 		cfg.AppInstallationID = *cs.settings.DestinationAppInstallationID
+	}
+	if cs.settings.DestinationEnterpriseSlug != nil {
+		cfg.EnterpriseSlug = *cs.settings.DestinationEnterpriseSlug
 	}
 
 	return cfg
@@ -195,6 +199,94 @@ func (cs *Service) IsAuthEnabled() bool {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.settings.AuthEnabled
+}
+
+// GetEnterpriseSlug returns the destination enterprise slug from database settings.
+// This is used for enterprise admin authorization checks.
+// Returns empty string if not configured.
+func (cs *Service) GetEnterpriseSlug() string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	if cs.settings.DestinationEnterpriseSlug != nil {
+		return *cs.settings.DestinationEnterpriseSlug
+	}
+	return ""
+}
+
+// GetEffectiveAuthConfig returns an AuthConfig that merges static config with database settings.
+// The enterprise slug is taken from database if set, otherwise from static config.
+func (cs *Service) GetEffectiveAuthConfig() config.AuthConfig {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	// Start with static config
+	effectiveCfg := cs.staticConfig.Auth
+
+	// Override enterprise slug from database if set
+	if cs.settings.DestinationEnterpriseSlug != nil && *cs.settings.DestinationEnterpriseSlug != "" {
+		effectiveCfg.AuthorizationRules.RequireEnterpriseSlug = *cs.settings.DestinationEnterpriseSlug
+	}
+
+	// Override authorization rules from database settings
+	effectiveCfg.AuthorizationRules.AllowOrgAdminMigrations = cs.settings.AuthAllowOrgAdminMigrations
+	effectiveCfg.AuthorizationRules.AllowEnterpriseAdminMigrations = cs.settings.AuthAllowEnterpriseAdminMigrations
+	effectiveCfg.AuthorizationRules.RequireIdentityMappingForSelfService = cs.settings.AuthRequireIdentityMappingForSelfService
+
+	// Parse migration admin teams from database
+	if cs.settings.AuthMigrationAdminTeams != nil && *cs.settings.AuthMigrationAdminTeams != "" {
+		teams := []string{}
+		for _, team := range splitAndTrim(*cs.settings.AuthMigrationAdminTeams, ",") {
+			if team != "" {
+				teams = append(teams, team)
+			}
+		}
+		effectiveCfg.AuthorizationRules.MigrationAdminTeams = teams
+	}
+
+	return effectiveCfg
+}
+
+// splitAndTrim splits a string by separator and trims whitespace from each part
+func splitAndTrim(s string, sep string) []string {
+	parts := []string{}
+	for _, part := range splitString(s, sep) {
+		trimmed := trimSpace(part)
+		if trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return parts
+}
+
+// splitString is a simple string split (avoiding strings import for minimal dependencies)
+func splitString(s string, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	result := []string{}
+	start := 0
+	for i := 0; i <= len(s)-len(sep); i++ {
+		if s[i:i+len(sep)] == sep {
+			result = append(result, s[start:i])
+			start = i + len(sep)
+			i += len(sep) - 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
+// trimSpace trims whitespace from a string
+func trimSpace(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
+		end--
+	}
+	return s[start:end]
 }
 
 // GetDatabaseConfig returns the static database configuration (requires restart to change)

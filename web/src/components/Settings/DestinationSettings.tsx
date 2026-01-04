@@ -19,6 +19,7 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
   const [appInstallationId, setAppInstallationId] = useState(
     settings.destination_app_installation_id?.toString() || ''
   );
+  const [enterpriseSlug, setEnterpriseSlug] = useState(settings.destination_enterprise_slug || '');
   const [showAppConfig, setShowAppConfig] = useState(
     settings.destination_app_id !== undefined && settings.destination_app_id > 0
   );
@@ -51,6 +52,9 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
       if (appInstallationId) updates.destination_app_installation_id = parseInt(appInstallationId);
     }
 
+    // Enterprise slug (empty string clears it)
+    updates.destination_enterprise_slug = enterpriseSlug || undefined;
+
     onSave(updates);
   };
 
@@ -58,7 +62,8 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
     token !== '' || 
     appPrivateKey !== '' ||
     appId !== (settings.destination_app_id?.toString() || '') ||
-    appInstallationId !== (settings.destination_app_installation_id?.toString() || '');
+    appInstallationId !== (settings.destination_app_installation_id?.toString() || '') ||
+    enterpriseSlug !== (settings.destination_enterprise_slug || '');
 
   return (
     <div className="max-w-2xl">
@@ -71,11 +76,17 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
       {/* Status indicator */}
       {settings.destination_configured ? (
         <Flash variant="success" className="mb-4">
-          <CheckCircleIcon /> Destination is configured and ready for migrations.
+          <div className="flex items-center gap-2">
+            <CheckCircleIcon size={16} />
+            <Text weight="medium">Destination is configured and ready for migrations.</Text>
+          </div>
         </Flash>
       ) : (
         <Flash variant="warning" className="mb-4">
-          <XCircleIcon /> Destination is not configured. Please add your GitHub credentials.
+          <div className="flex items-center gap-2">
+            <XCircleIcon size={16} />
+            <Text weight="medium">Destination is not configured. Please add your GitHub credentials.</Text>
+          </div>
         </Flash>
       )}
 
@@ -179,6 +190,21 @@ export function DestinationSettings({ settings, onSave, isSaving }: DestinationS
             </div>
           )}
         </div>
+
+        {/* Enterprise Slug (Optional) */}
+        <FormControl>
+          <FormControl.Label>Enterprise Slug (Optional)</FormControl.Label>
+          <TextInput
+            value={enterpriseSlug}
+            onChange={(e) => setEnterpriseSlug(e.target.value)}
+            placeholder="e.g., my-enterprise"
+            block
+          />
+          <FormControl.Caption>
+            The slug of your GitHub Enterprise. Required for enterprise admin authorization checks.
+            Find this in your GitHub Enterprise settings URL.
+          </FormControl.Caption>
+        </FormControl>
 
         {/* Validation Result */}
         {validateMutation.data && (

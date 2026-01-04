@@ -87,27 +87,6 @@ describe('DependencyExport', () => {
     expect(screen.getByText(/Summary \(2 repos\)/)).toBeInTheDocument();
   });
 
-  // Skip: Menu backdrop behavior changed and no longer has a backdrop element
-  it.skip('closes menu when clicking backdrop', () => {
-    render(
-      <DependencyExport
-        filteredNodes={mockNodes}
-        filteredEdges={mockEdges}
-        hasActiveFilters={false}
-        hasFilteredData={true}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /Export/i }));
-    expect(screen.getByText('Summary')).toBeInTheDocument();
-
-    // Click the backdrop
-    const backdrop = document.querySelector('.fixed.inset-0');
-    fireEvent.click(backdrop!);
-
-    expect(screen.queryByText('Export Summary as CSV')).not.toBeInTheDocument();
-  });
-
   it('exports all as CSV when button clicked', async () => {
     const mockBlob = new Blob(['test'], { type: 'text/csv' });
     (api.exportDependencies as ReturnType<typeof vi.fn>).mockResolvedValue(mockBlob);

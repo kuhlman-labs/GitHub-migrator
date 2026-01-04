@@ -17,6 +17,7 @@ type Settings struct {
 	DestinationAppID             *int64  `json:"destination_app_id,omitempty" db:"destination_app_id" gorm:"column:destination_app_id"`
 	DestinationAppPrivateKey     *string `json:"-" db:"destination_app_private_key" gorm:"column:destination_app_private_key"`
 	DestinationAppInstallationID *int64  `json:"destination_app_installation_id,omitempty" db:"destination_app_installation_id" gorm:"column:destination_app_installation_id"`
+	DestinationEnterpriseSlug    *string `json:"destination_enterprise_slug,omitempty" db:"destination_enterprise_slug" gorm:"column:destination_enterprise_slug"`
 
 	// Migration settings
 	MigrationWorkers              int    `json:"migration_workers" db:"migration_workers" gorm:"column:migration_workers;not null;default:5"`
@@ -71,11 +72,12 @@ type SettingsResponse struct {
 	ID int64 `json:"id"`
 
 	// Destination GitHub configuration (token masked)
-	DestinationBaseURL           string `json:"destination_base_url"`
-	DestinationTokenConfigured   bool   `json:"destination_token_configured"`
-	DestinationAppID             *int64 `json:"destination_app_id,omitempty"`
-	DestinationAppKeyConfigured  bool   `json:"destination_app_key_configured"`
-	DestinationAppInstallationID *int64 `json:"destination_app_installation_id,omitempty"`
+	DestinationBaseURL           string  `json:"destination_base_url"`
+	DestinationTokenConfigured   bool    `json:"destination_token_configured"`
+	DestinationAppID             *int64  `json:"destination_app_id,omitempty"`
+	DestinationAppKeyConfigured  bool    `json:"destination_app_key_configured"`
+	DestinationAppInstallationID *int64  `json:"destination_app_installation_id,omitempty"`
+	DestinationEnterpriseSlug    *string `json:"destination_enterprise_slug,omitempty"`
 
 	// Migration settings
 	MigrationWorkers              int    `json:"migration_workers"`
@@ -139,6 +141,7 @@ func (s *Settings) ToResponse() *SettingsResponse {
 		DestinationAppID:             s.DestinationAppID,
 		DestinationAppKeyConfigured:  s.DestinationAppPrivateKey != nil && *s.DestinationAppPrivateKey != "",
 		DestinationAppInstallationID: s.DestinationAppInstallationID,
+		DestinationEnterpriseSlug:    s.DestinationEnterpriseSlug,
 
 		// Migration
 		MigrationWorkers:              s.MigrationWorkers,
@@ -178,6 +181,7 @@ type UpdateSettingsRequest struct {
 	DestinationAppID             *int64  `json:"destination_app_id,omitempty"`
 	DestinationAppPrivateKey     *string `json:"destination_app_private_key,omitempty"`
 	DestinationAppInstallationID *int64  `json:"destination_app_installation_id,omitempty"`
+	DestinationEnterpriseSlug    *string `json:"destination_enterprise_slug,omitempty"`
 
 	// Migration settings
 	MigrationWorkers              *int    `json:"migration_workers,omitempty"`
@@ -230,6 +234,9 @@ func (s *Settings) applyDestinationUpdates(req *UpdateSettingsRequest) {
 	}
 	if req.DestinationAppInstallationID != nil {
 		s.DestinationAppInstallationID = req.DestinationAppInstallationID
+	}
+	if req.DestinationEnterpriseSlug != nil {
+		s.DestinationEnterpriseSlug = req.DestinationEnterpriseSlug
 	}
 }
 

@@ -87,6 +87,26 @@ export function DiscoveryModal({
     (discoveryType === 'ado-project' && adoOrganization.trim() && adoProject.trim())
   );
   
+  // Auto-select source when there's only one available
+  useEffect(() => {
+    if (isOpen && isAllSourcesMode && availableSources.length === 1 && !selectedSourceId) {
+      const onlySource = availableSources[0];
+      onSourceChange?.(onlySource.id);
+      
+      // Also set the appropriate discovery type for this source
+      if (onlySource.type === 'azuredevops') {
+        setDiscoveryType('ado-org');
+        setAdoOrganization(onlySource.organization || '');
+      } else {
+        // Default to enterprise discovery for GitHub sources
+        setDiscoveryType('enterprise');
+        if (onlySource.enterprise_slug) {
+          setEnterpriseSlug(onlySource.enterprise_slug);
+        }
+      }
+    }
+  }, [isOpen, isAllSourcesMode, availableSources, selectedSourceId, onSourceChange, setDiscoveryType, setAdoOrganization, setEnterpriseSlug]);
+
   // Pre-populate organization/enterprise fields when modal opens or source changes
   useEffect(() => {
     if (isOpen && selectedSource) {
@@ -124,8 +144,9 @@ export function DiscoveryModal({
         }
         
         // Reset discovery type to match the new source type
+        // Default to enterprise for GitHub sources
         if (newSource.type === 'github' && (discoveryType === 'ado-org' || discoveryType === 'ado-project')) {
-          setDiscoveryType('organization');
+          setDiscoveryType('enterprise');
         } else if (newSource.type === 'azuredevops' && (discoveryType === 'organization' || discoveryType === 'enterprise')) {
           setDiscoveryType('ado-org');
         }

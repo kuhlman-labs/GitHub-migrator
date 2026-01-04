@@ -104,14 +104,6 @@ describe('ConfirmationDialog', () => {
       expect(onCancel).toHaveBeenCalledTimes(1);
     });
 
-    // Skip: popover polyfill interferes with Escape key in jsdom
-    it.skip('should call onCancel when Escape key is pressed', () => {
-      const onCancel = vi.fn();
-      render(<ConfirmationDialog {...defaultProps} onCancel={onCancel} />);
-
-      fireEvent.keyDown(document, { key: 'Escape' });
-      expect(onCancel).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('loading state', () => {
@@ -129,15 +121,6 @@ describe('ConfirmationDialog', () => {
     it('should disable close button when loading', () => {
       render(<ConfirmationDialog {...defaultProps} isLoading={true} />);
       expect(screen.getByLabelText('Close')).toBeDisabled();
-    });
-
-    // Skip: popover polyfill interferes with Escape key in jsdom
-    it.skip('should not call onCancel on Escape when loading', () => {
-      const onCancel = vi.fn();
-      render(<ConfirmationDialog {...defaultProps} onCancel={onCancel} isLoading={true} />);
-
-      fireEvent.keyDown(document, { key: 'Escape' });
-      expect(onCancel).not.toHaveBeenCalled();
     });
 
     it('should not call onCancel on backdrop click when loading', () => {

@@ -138,9 +138,24 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
   return (
     <div className="max-w-2xl">
       <Heading as="h2" className="text-lg mb-2">Authentication & Authorization</Heading>
-      <Text className="block mb-6" style={{ color: 'var(--fgColor-muted)' }}>
+      <Text className="block mb-4" style={{ color: 'var(--fgColor-muted)' }}>
         Configure authentication and understand your authorization level for performing migrations.
       </Text>
+
+      <div 
+        className="mb-6 p-3 rounded-md border"
+        style={{ 
+          backgroundColor: 'transparent', 
+          borderColor: 'rgba(46, 160, 67, 0.5)',
+          borderWidth: '1px',
+          borderStyle: 'solid',
+        }}
+      >
+        <Text style={{ color: 'var(--fgColor-default)' }}>
+          <strong>GitHub Authentication:</strong> Users authenticate to the destination GitHub environment 
+          via OAuth. Authorization is based on their GitHub roles and identity mapping status.
+        </Text>
+      </div>
 
       {/* Current User Authorization Status */}
       {settings.auth_enabled && isAuthenticated && (
@@ -478,13 +493,6 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
               </FormControl.Caption>
             </FormControl>
           </div>
-
-          <Flash className="mt-6 mb-6" variant="default">
-            <Text>
-              <strong>Destination-Centric Auth:</strong> Users authenticate with GitHub (the destination)
-              using a single OAuth flow. Authorization is determined by their GitHub roles and identity mapping status.
-            </Text>
-          </Flash>
 
           {/* Authorization Rules Configuration */}
           <div

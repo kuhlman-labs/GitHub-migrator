@@ -160,8 +160,9 @@ export function Dashboard() {
   };
 
   // Compute default discovery type based on configured sources
+  // Default to enterprise for GitHub sources (most common use case)
   const defaultDiscoveryType = useMemo<DiscoveryType>(() => 
-    sourceType === 'azuredevops' ? 'ado-org' : 'organization',
+    sourceType === 'azuredevops' ? 'ado-org' : 'enterprise',
     [sourceType]
   );
   

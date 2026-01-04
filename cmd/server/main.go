@@ -58,6 +58,9 @@ func main() {
 	// Migrate existing .env config to database if settings are empty
 	migrateEnvConfigToDatabase(db, cfg, logger)
 
+	// Migrate legacy source config from .env to sources table
+	migrateEnvSourceToDatabase(db, cfg, logger)
+
 	// Reload ConfigService to pick up any migrated settings
 	if err := cfgSvc.Reload(); err != nil {
 		slog.Warn("Failed to reload config after migration", "error", err)
@@ -446,6 +449,121 @@ func migrateEnvConfigToDatabase(db *storage.Database, cfg *config.Config, logger
 		"destination_base_url", cfg.Destination.BaseURL,
 		"migration_workers", cfg.Migration.Workers,
 		"auth_enabled", cfg.Auth.Enabled)
+}
+
+// migrateEnvSourceToDatabase migrates legacy source configuration from .env to the sources table.
+// This enables users who configured the app via .env to see their source in the UI and avoid
+// the "Add Migration Sources" step in the setup wizard.
+func migrateEnvSourceToDatabase(db *storage.Database, cfg *config.Config, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Check if we already have sources configured in the database
+	sources, err := db.ListSources(ctx)
+	if err != nil {
+		logger.Warn("Failed to list sources for migration check", "error", err)
+		return
+	}
+
+	if len(sources) > 0 {
+		logger.Debug("Sources already configured in database, skipping .env source migration")
+		return
+	}
+
+	// Check if we have source config in .env
+	// Source is considered configured if we have a token (PAT) or app credentials
+	hasToken := cfg.Source.Token != ""
+	hasAppAuth := cfg.Source.AppID > 0 && cfg.Source.AppPrivateKey != ""
+	if !hasToken && !hasAppAuth {
+		logger.Debug("No source configuration in .env to migrate")
+		return
+	}
+
+	// For Azure DevOps, organization is required
+	if cfg.Source.Type == models.SourceConfigTypeAzureDevOps && cfg.Source.Organization == "" {
+		logger.Debug("Azure DevOps source in .env is missing required organization, skipping migration")
+		return
+	}
+
+	logger.Info("Migrating source configuration from .env to database")
+
+	// Build source from .env config
+	source := &models.Source{
+		Name:     generateSourceName(cfg),
+		Type:     cfg.Source.Type,
+		BaseURL:  cfg.Source.BaseURL,
+		Token:    cfg.Source.Token,
+		IsActive: true,
+	}
+
+	// Set optional fields
+	if cfg.Source.Organization != "" {
+		source.Organization = &cfg.Source.Organization
+	}
+	if cfg.Source.AppID > 0 {
+		source.AppID = &cfg.Source.AppID
+	}
+	if cfg.Source.AppPrivateKey != "" {
+		source.AppPrivateKey = &cfg.Source.AppPrivateKey
+	}
+	if cfg.Source.AppInstallationID > 0 {
+		source.AppInstallationID = &cfg.Source.AppInstallationID
+	}
+
+	// Create the source in the database
+	if err := db.CreateSource(ctx, source); err != nil {
+		logger.Error("Failed to migrate .env source to database", "error", err)
+		return
+	}
+
+	logger.Info("Successfully migrated .env source configuration to database",
+		"source_name", source.Name,
+		"source_type", source.Type,
+		"base_url", source.BaseURL,
+		"has_app_auth", source.HasAppAuth())
+}
+
+// generateSourceName creates a user-friendly name for a migrated source based on its configuration
+func generateSourceName(cfg *config.Config) string {
+	// Use organization name if available
+	if cfg.Source.Organization != "" {
+		return cfg.Source.Organization
+	}
+
+	// Extract hostname from base URL for a meaningful name
+	baseURL := cfg.Source.BaseURL
+	if baseURL == "https://api.github.com" {
+		return "GitHub.com"
+	}
+	if baseURL == "https://dev.azure.com" {
+		return "Azure DevOps"
+	}
+
+	// For GitHub Enterprise Server or other instances, try to extract hostname
+	// Remove protocol prefix
+	hostname := baseURL
+	if idx := len("https://"); len(hostname) > idx && hostname[:idx] == "https://" {
+		hostname = hostname[idx:]
+	} else if idx := len("http://"); len(hostname) > idx && hostname[:idx] == "http://" {
+		hostname = hostname[idx:]
+	}
+
+	// Remove path suffix (e.g., /api/v3 for GHES)
+	if idx := 0; idx < len(hostname) {
+		for i, c := range hostname {
+			if c == '/' {
+				hostname = hostname[:i]
+				break
+			}
+		}
+	}
+
+	if hostname != "" {
+		return hostname
+	}
+
+	// Fallback
+	return "Primary Source"
 }
 
 // buildSettingsRequestFromEnv builds an UpdateSettingsRequest from the config

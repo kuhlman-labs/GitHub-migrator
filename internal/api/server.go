@@ -141,6 +141,12 @@ func (s *Server) ShutdownChan() chan struct{} {
 func (s *Server) SetConfigService(configSvc *configsvc.Service) {
 	s.configSvc = configSvc
 	s.settingsHandler = handlers.NewSettingsHandler(s.db, s.logger, configSvc)
+
+	// Also set configSvc on the main handler for effective auth config
+	if s.handler != nil {
+		s.handler.SetConfigService(configSvc)
+	}
+
 	s.logger.Info("Settings handler initialized with ConfigService")
 }
 
@@ -156,7 +162,15 @@ func (s *Server) Router() http.Handler {
 	var authMiddleware *auth.Middleware
 	if s.config.Auth.Enabled && s.authHandler != nil {
 		jwtManager, _ := auth.NewJWTManager(s.config.Auth.SessionSecret, s.config.Auth.SessionDurationHours)
-		authorizer := auth.NewAuthorizer(&s.config.Auth, s.logger, s.config.Source.BaseURL)
+		// Use effective auth config which merges static config with database settings
+		// This allows enterprise slug and authorization rules to be configured via UI
+		var effectiveAuthCfg config.AuthConfig
+		if s.configSvc != nil {
+			effectiveAuthCfg = s.configSvc.GetEffectiveAuthConfig()
+		} else {
+			effectiveAuthCfg = s.config.Auth
+		}
+		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, s.config.Source.BaseURL)
 		authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
 	}
 

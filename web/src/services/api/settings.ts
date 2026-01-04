@@ -16,6 +16,7 @@ export interface SettingsResponse {
   destination_app_id?: number;
   destination_app_key_configured: boolean;
   destination_app_installation_id?: number;
+  destination_enterprise_slug?: string;
   migration_workers: number;
   migration_poll_interval_seconds: number;
   migration_dest_repo_exists_action: string;
@@ -56,6 +57,7 @@ export interface UpdateSettingsRequest {
   destination_app_id?: number;
   destination_app_private_key?: string;
   destination_app_installation_id?: number;
+  destination_enterprise_slug?: string;
   migration_workers?: number;
   migration_poll_interval_seconds?: number;
   migration_dest_repo_exists_action?: string;

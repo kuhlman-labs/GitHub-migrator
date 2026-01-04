@@ -606,7 +606,7 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			allRepos = append(allRepos, repos...)
 
 			// Discover teams and their repository associations for this org
-			// Note: Not changing phase here since profiling happens after all orgs
+			tracker.SetPhase(models.PhaseDiscoveringTeams)
 			c.logger.Info("Discovering teams for organization",
 				"enterprise", enterpriseSlug,
 				"organization", org)
@@ -619,6 +619,7 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			}
 
 			// Discover organization members
+			tracker.SetPhase(models.PhaseDiscoveringMembers)
 			c.logger.Info("Discovering organization members",
 				"enterprise", enterpriseSlug,
 				"organization", org)

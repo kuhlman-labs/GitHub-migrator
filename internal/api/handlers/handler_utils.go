@@ -10,6 +10,7 @@ import (
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
@@ -24,7 +25,8 @@ type HandlerUtils struct {
 	sourceBaseConfig *github.ClientConfig
 	sourceBaseURL    string
 	logger           *slog.Logger
-	db               *storage.Database // For source lookups and identity mapping
+	db               *storage.Database  // For source lookups and identity mapping
+	configSvc        *configsvc.Service // For dynamic config (enterprise slug, auth rules)
 }
 
 // NewHandlerUtils creates a new HandlerUtils instance.
@@ -54,6 +56,22 @@ func (u *HandlerUtils) SetDestinationBaseURL(destBaseURL string) {
 	u.destBaseURL = destBaseURL
 }
 
+// SetConfigService sets the config service for dynamic config access
+func (u *HandlerUtils) SetConfigService(configSvc *configsvc.Service) {
+	u.configSvc = configSvc
+}
+
+// getEffectiveAuthConfig returns the auth config with database settings merged in
+func (u *HandlerUtils) getEffectiveAuthConfig() *config.AuthConfig {
+	// If we have configSvc, use the effective config which includes database settings
+	if u.configSvc != nil {
+		effectiveCfg := u.configSvc.GetEffectiveAuthConfig()
+		return &effectiveCfg
+	}
+	// Fall back to static config
+	return u.authConfig
+}
+
 // CheckRepositoryAccess validates that the user has access to migrate a specific repository.
 // Uses the destination-centric authorization model:
 // - Tier 1 (Admin): Full access to all repos
@@ -77,7 +95,7 @@ func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName s
 	if destURL == "" {
 		destURL = "https://api.github.com"
 	}
-	authorizer := auth.NewAuthorizer(u.authConfig, u.logger, destURL)
+	authorizer := auth.NewAuthorizer(u.getEffectiveAuthConfig(), u.logger, destURL)
 
 	// Check for Tier 1: Full migration rights
 	hasFullAccess, reason, err := authorizer.CheckDestinationMigrationRights(ctx, user, token)
@@ -293,7 +311,7 @@ func (u *HandlerUtils) GetUserAuthorizationStatus(ctx context.Context) (*UserAut
 	if destURL == "" {
 		destURL = "https://api.github.com"
 	}
-	authorizer := auth.NewAuthorizer(u.authConfig, u.logger, destURL)
+	authorizer := auth.NewAuthorizer(u.getEffectiveAuthConfig(), u.logger, destURL)
 
 	tierInfo, err := authorizer.GetUserAuthorizationTier(ctx, user, token)
 	if err != nil {
