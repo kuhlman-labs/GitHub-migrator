@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
@@ -77,7 +78,7 @@ func TestCheckRepositoryAccess_AdminTier(t *testing.T) {
 	}
 }
 
-func TestCheckRepositoryAccess_SelfServiceNoMappingRequired(t *testing.T) {
+func TestCheckRepositoryAccess_SelfServiceDisabled_GivesReadOnly(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// User is not in any admin team or org admin
@@ -93,7 +94,7 @@ func TestCheckRepositoryAccess_SelfServiceNoMappingRequired(t *testing.T) {
 	cfg := &config.AuthConfig{
 		Enabled: true,
 		AuthorizationRules: config.AuthorizationRules{
-			RequireIdentityMappingForSelfService: false, // Self-service without identity mapping
+			RequireIdentityMappingForSelfService: false, // Self-service disabled - only admins can migrate
 		},
 	}
 	utils := NewHandlerUtils(cfg, nil, nil, "", testLogger())
@@ -103,9 +104,13 @@ func TestCheckRepositoryAccess_SelfServiceNoMappingRequired(t *testing.T) {
 	user := &auth.GitHubUser{ID: 123, Login: "testuser"}
 	ctx := createAuthContext(user, "test-token")
 
+	// When self-service is disabled, non-admin users get read-only access (should get error)
 	err := utils.CheckRepositoryAccess(ctx, "someorg/somerepo")
-	if err != nil {
-		t.Errorf("Expected no error when identity mapping is not required, got: %v", err)
+	if err == nil {
+		t.Errorf("Expected error when self-service is disabled and user is not admin, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "read-only access") {
+		t.Errorf("Expected read-only access error, got: %v", err)
 	}
 }
 

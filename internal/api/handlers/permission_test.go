@@ -135,6 +135,7 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 	tests := []struct {
 		name           string
 		authEnabled    bool
+		authRules      config.AuthorizationRules
 		contextUser    *auth.GitHubUser
 		contextToken   string
 		mockGitHub     func(w http.ResponseWriter, r *http.Request)
@@ -151,8 +152,9 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusAccepted,
 		},
 		{
-			name:         "auth enabled - repo admin can start migration",
+			name:         "auth enabled - org admin can start migration when allowed",
 			authEnabled:  true,
+			authRules:    config.AuthorizationRules{AllowOrgAdminMigrations: true},
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +176,7 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusAccepted,
 		},
 		{
-			name:         "auth enabled - self-service allowed by default",
+			name:         "auth enabled - self-service disabled by default gives read-only",
 			authEnabled:  true,
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
@@ -192,7 +194,7 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 				http.NotFound(w, r)
 			},
 			requestBody:    `{"full_names": ["test-org/test-repo"], "dry_run": true}`,
-			expectedStatus: http.StatusAccepted, // Self-service allowed by default in destination-centric auth model
+			expectedStatus: http.StatusForbidden, // Self-service disabled by default - only admins can migrate
 		},
 	}
 
@@ -202,10 +204,12 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(tt.mockGitHub))
 			defer server.Close()
 
-			// Create handler
-			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
+			// Create handler with per-test authorization rules
+			cfg := &config.AuthConfig{Enabled: tt.authEnabled, AuthorizationRules: tt.authRules}
+			handlerUtils := NewHandlerUtils(cfg, nil, nil, server.URL, logger)
+			handlerUtils.SetDestinationBaseURL(server.URL) // Set destination URL for auth checks
 			handler := &Handler{
-				HandlerUtils: NewHandlerUtils(cfg, nil, nil, server.URL, logger),
+				HandlerUtils: handlerUtils,
 				db:           db,
 				logger:       logger,
 			}
@@ -262,6 +266,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 	tests := []struct {
 		name           string
 		authEnabled    bool
+		authRules      config.AuthorizationRules
 		contextUser    *auth.GitHubUser
 		contextToken   string
 		mockGitHub     func(w http.ResponseWriter, r *http.Request)
@@ -278,11 +283,19 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:         "auth enabled - repo admin can perform action",
+			name:         "auth enabled - org admin can perform action when allowed",
 			authEnabled:  true,
+			authRules:    config.AuthorizationRules{AllowOrgAdminMigrations: true},
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/user/memberships/orgs" {
+					resp := []map[string]any{
+						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
+					}
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
 				if r.URL.Path == "/user/memberships/orgs/test-org" {
 					resp := map[string]any{"state": "active", "role": "admin"}
 					json.NewEncoder(w).Encode(resp)
@@ -294,7 +307,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:         "auth enabled - self-service allowed by default",
+			name:         "auth enabled - self-service disabled by default gives read-only",
 			authEnabled:  true,
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
@@ -311,7 +324,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 				http.NotFound(w, r)
 			},
 			requestBody:    `{}`,
-			expectedStatus: http.StatusOK, // Self-service allowed by default in destination-centric auth model
+			expectedStatus: http.StatusForbidden, // Self-service disabled by default - only admins can migrate
 		},
 	}
 
@@ -321,10 +334,12 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(tt.mockGitHub))
 			defer server.Close()
 
-			// Create handler
-			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
+			// Create handler with per-test authorization rules
+			cfg := &config.AuthConfig{Enabled: tt.authEnabled, AuthorizationRules: tt.authRules}
+			handlerUtils := NewHandlerUtils(cfg, nil, nil, server.URL, logger)
+			handlerUtils.SetDestinationBaseURL(server.URL) // Set destination URL for auth checks
 			handler := &Handler{
-				HandlerUtils: NewHandlerUtils(cfg, nil, nil, server.URL, logger),
+				HandlerUtils: handlerUtils,
 				db:           db,
 				logger:       logger,
 			}
@@ -383,6 +398,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 	tests := []struct {
 		name           string
 		authEnabled    bool
+		authRules      config.AuthorizationRules
 		contextUser    *auth.GitHubUser
 		contextToken   string
 		mockGitHub     func(w http.ResponseWriter, r *http.Request)
@@ -399,8 +415,9 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:         "auth enabled - org admin can add repos",
+			name:         "auth enabled - org admin can add repos when allowed",
 			authEnabled:  true,
+			authRules:    config.AuthorizationRules{AllowOrgAdminMigrations: true},
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
@@ -422,7 +439,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:         "auth enabled - self-service allowed by default",
+			name:         "auth enabled - self-service disabled by default gives read-only",
 			authEnabled:  true,
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
@@ -435,7 +452,7 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 				http.NotFound(w, r)
 			},
 			requestBody:    `{"repository_ids": [3]}`,
-			expectedStatus: http.StatusOK, // Self-service allowed by default in destination-centric auth model
+			expectedStatus: http.StatusForbidden, // Self-service disabled by default - only admins can migrate
 		},
 	}
 
@@ -445,10 +462,12 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(tt.mockGitHub))
 			defer server.Close()
 
-			// Create handler
-			cfg := &config.AuthConfig{Enabled: tt.authEnabled}
+			// Create handler with per-test authorization rules
+			cfg := &config.AuthConfig{Enabled: tt.authEnabled, AuthorizationRules: tt.authRules}
+			handlerUtils := NewHandlerUtils(cfg, nil, nil, server.URL, logger)
+			handlerUtils.SetDestinationBaseURL(server.URL) // Set destination URL for auth checks
 			handler := &Handler{
-				HandlerUtils: NewHandlerUtils(cfg, nil, nil, server.URL, logger),
+				HandlerUtils: handlerUtils,
 				db:           db,
 				logger:       logger,
 			}
