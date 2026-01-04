@@ -59,14 +59,20 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	}
 
 	// Create auth handler if enabled
+	// Uses destination-centric authentication - users authenticate against the destination GitHub instance
 	var authHandler *handlers.AuthHandler
 	if cfg.Auth.Enabled {
 		var err error
-		authHandler, err = handlers.NewAuthHandler(&cfg.Auth, logger, cfg.Source.BaseURL)
+		// Use destination URL for OAuth and authorization checks (destination-centric auth)
+		destBaseURL := cfg.Destination.BaseURL
+		if destBaseURL == "" {
+			destBaseURL = "https://api.github.com" // Default to github.com
+		}
+		authHandler, err = handlers.NewAuthHandler(&cfg.Auth, logger, destBaseURL)
 		if err != nil {
 			logger.Error("Failed to create auth handler", "error", err)
 		} else {
-			logger.Info("Authentication enabled")
+			logger.Info("Authentication enabled", "destination_url", destBaseURL)
 		}
 	}
 

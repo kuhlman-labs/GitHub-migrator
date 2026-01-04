@@ -64,8 +64,70 @@ func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 // HandleCallback handles OAuth callback
 // Uses destination-centric authentication (GitHub OAuth only)
 func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	// Use destination OAuth callback only - source-specific OAuth has been removed
+	// Use destination OAuth callback - validates state, exchanges code, gets user info
 	h.oauthHandler.HandleCallback(w, r)
+
+	// Get user and token from context (set by oauthHandler)
+	user, ok := auth.GetGitHubUserFromContext(r.Context())
+	if !ok {
+		// oauthHandler already sent error response
+		return
+	}
+
+	token, ok := auth.GetTokenFromContext(r.Context())
+	if !ok {
+		h.logger.Error("Missing token in context after OAuth callback")
+		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Info("OAuth callback successful", "user", user.Login)
+
+	// Perform authorization check using destination-centric auth
+	authResult, err := h.authorizer.Authorize(r.Context(), user, token)
+	if err != nil {
+		h.logger.Error("Authorization check failed", "user", user.Login, "error", err)
+		// Don't fail login, but log the error - user gets minimal permissions
+	}
+
+	if authResult != nil && !authResult.Authorized {
+		h.logger.Warn("User not authorized", "user", user.Login, "reason", authResult.Reason)
+		// Redirect to frontend with error
+		frontendURL := h.config.FrontendURL
+		if frontendURL == "" {
+			frontendURL = "http://localhost:3000"
+		}
+		http.Redirect(w, r, frontendURL+"/login?error=unauthorized", http.StatusFound)
+		return
+	}
+
+	// Generate JWT token (includes encrypted OAuth token for API calls)
+	jwtToken, err := h.jwtManager.GenerateToken(user, token)
+	if err != nil {
+		h.logger.Error("Failed to generate JWT token", "user", user.Login, "error", err)
+		http.Error(w, "Failed to generate session token", http.StatusInternalServerError)
+		return
+	}
+
+	// Set auth_token cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    jwtToken,
+		Path:     "/",
+		MaxAge:   h.config.SessionDurationHours * 3600,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	h.logger.Info("User authenticated successfully", "user", user.Login)
+
+	// Redirect to frontend
+	frontendURL := h.config.FrontendURL
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+	http.Redirect(w, r, frontendURL, http.StatusFound)
 }
 
 // HandleLogout logs out the user
