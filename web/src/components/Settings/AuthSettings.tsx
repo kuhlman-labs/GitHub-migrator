@@ -354,6 +354,18 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
 
       {/* Auth Toggle */}
       <Heading as="h3" className="text-base mb-3">Authentication Settings</Heading>
+      
+      {/* Check if destination enterprise slug is configured */}
+      {!authEnabled && !settings.destination_enterprise_slug && (
+        <Flash variant="warning" className="mb-4">
+          <AlertIcon />
+          <Text className="ml-2">
+            <strong>Prerequisite:</strong> Authentication requires the destination enterprise slug to be configured.
+            Please set the Enterprise Slug in <a href="/settings" style={{ textDecoration: 'underline' }}>Destination Settings</a> first.
+          </Text>
+        </Flash>
+      )}
+      
       <div 
         className="p-4 rounded-lg border mb-6 flex items-center justify-between"
         style={{ 
@@ -376,6 +388,10 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
           variant={authEnabled ? 'danger' : 'primary'}
           size="small"
           onClick={() => setAuthEnabled(!authEnabled)}
+          disabled={!authEnabled && !settings.destination_enterprise_slug}
+          title={!authEnabled && !settings.destination_enterprise_slug 
+            ? 'Configure destination enterprise slug in Destination Settings first' 
+            : undefined}
         >
           {authEnabled ? 'Disable' : 'Enable'}
         </Button>
