@@ -65,8 +65,10 @@ func (u *HandlerUtils) SetConfigService(configSvc *configsvc.Service) {
 func (u *HandlerUtils) getEffectiveAuthConfig() *config.AuthConfig {
 	// If we have configSvc, use the effective config which includes database settings
 	if u.configSvc != nil {
-		effectiveCfg := u.configSvc.GetEffectiveAuthConfig()
-		return &effectiveCfg
+		// Allocate on heap explicitly to avoid returning pointer to local variable
+		effectiveCfg := new(config.AuthConfig)
+		*effectiveCfg = u.configSvc.GetEffectiveAuthConfig()
+		return effectiveCfg
 	}
 	// Fall back to static config
 	return u.authConfig
