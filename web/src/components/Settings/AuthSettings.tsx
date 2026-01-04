@@ -392,22 +392,6 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
         </Flash>
       )}
 
-      {/* Warning when auth is enabled but no Tier 1 admin group is configured */}
-      {authEnabled && !hasTier1AccessConfigured() && (
-        <Flash variant="danger" className="mb-4">
-          <AlertIcon />
-          <Text className="ml-2">
-            <strong>Configuration Required:</strong> At least one Tier 1 admin group must be configured when authentication is enabled.
-            Without this, no one will be able to initiate migrations. Configure one of the following below:
-            <ul className="list-disc ml-6 mt-1">
-              <li>Migration Admin Teams (org/team format)</li>
-              <li>Allow Organization Admin Migrations</li>
-              <li>Allow Enterprise Admin Migrations</li>
-            </ul>
-          </Text>
-        </Flash>
-      )}
-      
       <div 
         className="p-4 rounded-lg border mb-6 flex items-center justify-between"
         style={{ 
@@ -549,6 +533,18 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
               </FormControl.Caption>
             </FormControl>
           </div>
+
+          {/* Warning when auth is enabled but no Tier 1 admin group is configured */}
+          {authEnabled && !hasTier1AccessConfigured() && (
+            <Flash variant="danger" className="mb-4">
+              <div className="flex items-center gap-2">
+                <AlertIcon size={16} />
+                <Text>
+                  <strong>Configuration Required:</strong> Enable at least one Tier 1 admin group below to allow migrations.
+                </Text>
+              </div>
+            </Flash>
+          )}
 
           {/* Authorization Rules Configuration */}
           <div
