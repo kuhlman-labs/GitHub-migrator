@@ -562,7 +562,7 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
                   </FormControl.Caption>
                 </FormControl>
 
-                {/* Require Identity Mapping for Self-Service */}
+                {/* Enable Self-Service Migrations */}
                 <div className="pt-4 mt-4 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
                   <Text className="font-semibold block mb-3">Self-Service Access (Tier 2)</Text>
                   <FormControl>
@@ -571,12 +571,12 @@ export function AuthSettings({ settings, onSave, isSaving }: AuthSettingsProps) 
                       onChange={(e) => setRequireIdentityMappingForSelfService(e.target.checked)}
                     />
                     <FormControl.Label>
-                      Require identity mapping for self-service migrations
+                      Enable self-service migrations
                     </FormControl.Label>
                     <FormControl.Caption>
-                      When enabled, users must complete identity mapping (linking their source and destination 
-                      accounts) before they can migrate repositories they administer on the source.
-                      When disabled, any authenticated user can attempt self-service migrations.
+                      When enabled, users who complete identity mapping (linking their source and destination 
+                      accounts) can migrate repositories where their source identity has admin access.
+                      When disabled, only Tier 1 administrators can initiate migrations.
                     </FormControl.Caption>
                   </FormControl>
                 </div>
