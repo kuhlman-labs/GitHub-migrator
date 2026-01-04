@@ -28,7 +28,7 @@ func (h *Handler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}
@@ -147,7 +147,7 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}
@@ -188,7 +188,7 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}
@@ -355,7 +355,7 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}
@@ -468,7 +468,7 @@ func (h *Handler) ExportDetailedDiscoveryReport(w http.ResponseWriter, r *http.R
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}

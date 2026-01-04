@@ -47,7 +47,7 @@ func (h *AnalyticsHandler) GetAnalyticsSummary(w http.ResponseWriter, r *http.Re
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}
@@ -106,7 +106,7 @@ func (h *AnalyticsHandler) GetMigrationProgress(w http.ResponseWriter, r *http.R
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}
@@ -170,7 +170,7 @@ func (h *AnalyticsHandler) GetExecutiveReport(w http.ResponseWriter, r *http.Req
 	var sourceID *int64
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
-				// Allocate on heap to avoid dangling pointer when if block exits
+			// Allocate on heap to avoid dangling pointer when if block exits
 			sourceID = new(int64)
 			*sourceID = id
 		}
