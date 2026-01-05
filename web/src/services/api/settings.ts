@@ -88,6 +88,24 @@ export interface ValidationResponse {
   details?: Record<string, unknown>;
 }
 
+// Team validation types
+export interface TeamValidationResult {
+  team: string;
+  valid: boolean;
+  error?: string;
+}
+
+export interface ValidateTeamsRequest {
+  teams: string[];
+}
+
+export interface ValidateTeamsResponse {
+  valid: boolean;
+  teams: TeamValidationResult[];
+  invalid_teams?: string[];
+  error_message?: string;
+}
+
 // Get current settings (with sensitive data masked)
 export async function getSettings(): Promise<SettingsResponse> {
   const response = await client.get<SettingsResponse>('/settings');
@@ -112,10 +130,17 @@ export async function validateDestination(request: ValidateDestinationRequest): 
   return response.data;
 }
 
+// Validate that teams exist in the destination GitHub instance
+export async function validateTeams(teams: string[]): Promise<ValidateTeamsResponse> {
+  const response = await client.post<ValidateTeamsResponse>('/settings/teams/validate', { teams });
+  return response.data;
+}
+
 // Export as an object for consistency with other API modules
 export const settingsApi = {
   getSettings,
   getSetupProgress,
   updateSettings,
   validateDestination,
+  validateTeams,
 };

@@ -227,6 +227,7 @@ func (s *Server) Router() http.Handler {
 		mux.HandleFunc("GET /api/v1/settings/setup-progress", s.settingsHandler.GetSetupProgress)
 		mux.HandleFunc("GET /api/v1/settings", s.settingsHandler.GetSettings)
 		mux.HandleFunc("POST /api/v1/settings/destination/validate", s.settingsHandler.ValidateDestination)
+		mux.HandleFunc("POST /api/v1/settings/teams/validate", s.settingsHandler.ValidateTeams)
 	}
 
 	// Helper to conditionally wrap with auth

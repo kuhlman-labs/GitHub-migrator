@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { FormControl, TextInput, Button, Text, Heading, Flash, Label, Spinner, Checkbox } from '@primer/react';
-import { AlertIcon, ShieldCheckIcon, ShieldLockIcon, PersonIcon, EyeIcon, ChevronDownIcon, ChevronRightIcon, LinkExternalIcon, PeopleIcon } from '@primer/octicons-react';
+import { FormControl, TextInput, Textarea, Button, Text, Heading, Flash, Label, Spinner, Checkbox } from '@primer/react';
+import { AlertIcon, ShieldCheckIcon, ShieldLockIcon, PersonIcon, EyeIcon, ChevronDownIcon, ChevronRightIcon, LinkExternalIcon, PeopleIcon, CheckCircleIcon } from '@primer/octicons-react';
 import { useQuery } from '@tanstack/react-query';
-import type { SettingsResponse, UpdateSettingsRequest } from '../../services/api/settings';
+import type { SettingsResponse, UpdateSettingsRequest, ValidateTeamsResponse } from '../../services/api/settings';
+import { settingsApi } from '../../services/api/settings';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface AuthSettingsProps {
@@ -62,6 +63,11 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
     settings.authorization_rules?.require_identity_mapping_for_self_service || false
   );
 
+  // Team validation state
+  const [teamValidation, setTeamValidation] = useState<ValidateTeamsResponse | null>(null);
+  const [isValidatingTeams, setIsValidatingTeams] = useState(false);
+  const [teamsValidated, setTeamsValidated] = useState(false); // Tracks if teams have been validated since last change
+
   // Fetch authorization status
   const { data: authStatus, isLoading: isLoadingStatus } = useQuery<AuthorizationStatus>({
     queryKey: ['authorizationStatus'],
@@ -77,7 +83,63 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
     enabled: isAuthenticated && settings.auth_enabled,
   });
 
-  const handleSave = () => {
+  // Parse teams from comma-separated string
+  const parseTeams = (teamsStr: string): string[] => {
+    return teamsStr
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s !== '');
+  };
+
+  // Validate teams against destination GitHub instance
+  const handleValidateTeams = async () => {
+    const teams = parseTeams(migrationAdminTeams);
+    if (teams.length === 0) {
+      setTeamValidation({ valid: true, teams: [] });
+      setTeamsValidated(true);
+      return;
+    }
+
+    setIsValidatingTeams(true);
+    try {
+      const result = await settingsApi.validateTeams(teams);
+      setTeamValidation(result);
+      setTeamsValidated(true);
+    } catch (error) {
+      setTeamValidation({
+        valid: false,
+        teams: [],
+        error_message: error instanceof Error ? error.message : 'Failed to validate teams',
+      });
+      setTeamsValidated(true);
+    } finally {
+      setIsValidatingTeams(false);
+    }
+  };
+
+  // Handle team input change - reset validation state
+  const handleTeamsChange = (value: string) => {
+    setMigrationAdminTeams(value);
+    setTeamsValidated(false);
+    setTeamValidation(null);
+  };
+
+  const handleSave = async () => {
+    // If teams are specified but not validated, validate first
+    const teams = parseTeams(migrationAdminTeams);
+    if (teams.length > 0 && !teamsValidated) {
+      await handleValidateTeams();
+      // Check if validation was successful
+      if (teamValidation && !teamValidation.valid) {
+        return;
+      }
+    }
+
+    // If teams validation failed, don't save
+    if (teamValidation && !teamValidation.valid) {
+      return;
+    }
+
     const updates: UpdateSettingsRequest = {
       auth_enabled: authEnabled,
       auth_session_duration_hours: sessionDuration,
@@ -102,10 +164,7 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
 
     // Include authorization rules
     updates.authorization_rules = {
-      migration_admin_teams: migrationAdminTeams
-        .split(',')
-        .map(s => s.trim())
-        .filter(s => s !== ''),
+      migration_admin_teams: teams,
       allow_org_admin_migrations: allowOrgAdminMigrations,
       allow_enterprise_admin_migrations: allowEnterpriseAdminMigrations,
       require_identity_mapping_for_self_service: requireIdentityMappingForSelfService,
@@ -154,11 +213,23 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
     return undefined;
   };
 
-  // Check if save should be blocked due to missing Tier 1 configuration
+  // Check if save should be blocked due to missing Tier 1 configuration or team validation
   const getSaveBlockReason = (): string | undefined => {
     if (authEnabled && !hasTier1AccessConfigured()) {
       return 'At least one Tier 1 admin group must be configured when authentication is enabled';
     }
+    
+    // Check if teams need validation
+    const teams = parseTeams(migrationAdminTeams);
+    if (teams.length > 0 && !teamsValidated) {
+      return 'Click "Validate" to verify teams exist before saving';
+    }
+    
+    // Check if team validation failed
+    if (teamValidation && !teamValidation.valid) {
+      return 'Fix team validation errors before saving';
+    }
+    
     return undefined;
   };
 
@@ -574,16 +645,84 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
                 {/* Migration Admin Teams */}
                 <FormControl>
                   <FormControl.Label>Migration Admin Teams (Tier 1)</FormControl.Label>
-                  <TextInput
+                  <Textarea
                     value={migrationAdminTeams}
-                    onChange={(e) => setMigrationAdminTeams(e.target.value)}
-                    placeholder="org/team-slug, another-org/team"
+                    onChange={(e) => handleTeamsChange(e.target.value)}
+                    placeholder={"org/team-slug, another-org/team"}
+                    rows={3}
+                    resize="vertical"
                     block
-                    monospace
+                    disabled={readOnly}
+                    style={{ fontFamily: 'var(--fontStack-monospace)' }}
+                    validationStatus={
+                      teamValidation
+                        ? teamValidation.valid
+                          ? 'success'
+                          : 'error'
+                        : undefined
+                    }
                   />
+                  <div className="mt-2 flex items-center gap-3">
+                    <Button
+                      onClick={handleValidateTeams}
+                      disabled={readOnly || isValidatingTeams || parseTeams(migrationAdminTeams).length === 0}
+                      variant={teamsValidated && teamValidation?.valid ? 'default' : 'primary'}
+                      title="Validate that these teams exist in the destination GitHub instance"
+                      leadingVisual={
+                        isValidatingTeams 
+                          ? () => <Spinner size="small" /> 
+                          : teamsValidated && teamValidation?.valid 
+                            ? CheckCircleIcon 
+                            : undefined
+                      }
+                    >
+                      {isValidatingTeams ? 'Validating...' : teamsValidated && teamValidation?.valid ? 'Validated' : 'Validate'}
+                    </Button>
+                    {parseTeams(migrationAdminTeams).length > 0 && (
+                      <Text style={{ color: 'var(--fgColor-muted)', fontSize: '12px' }}>
+                        {parseTeams(migrationAdminTeams).length} team(s) specified
+                      </Text>
+                    )}
+                  </div>
+                  
+                  {/* Validation feedback */}
+                  {teamValidation && !teamValidation.valid && (
+                    <Flash variant="danger" className="mt-2">
+                      <div className="flex items-start gap-2">
+                        <AlertIcon size={16} className="mt-0.5 flex-shrink-0" />
+                        <div>
+                          <Text className="block font-medium">Teams not found in destination</Text>
+                          <Text className="block text-sm mt-1" style={{ color: 'var(--fgColor-muted)' }}>
+                            {teamValidation.error_message || 'One or more teams could not be found.'}
+                          </Text>
+                          {teamValidation.invalid_teams && teamValidation.invalid_teams.length > 0 && (
+                            <ul className="list-disc ml-4 mt-1 text-sm">
+                              {teamValidation.invalid_teams.map((team) => (
+                                <li key={team}>{team}</li>
+                              ))}
+                            </ul>
+                          )}
+                          <Text className="block text-sm mt-2" style={{ color: 'var(--fgColor-muted)' }}>
+                            Please verify the team names and organization slugs are correct.
+                          </Text>
+                        </div>
+                      </div>
+                    </Flash>
+                  )}
+                  
+                  {teamsValidated && teamValidation?.valid && parseTeams(migrationAdminTeams).length > 0 && (
+                    <Flash variant="success" className="mt-2">
+                      <div className="flex items-center gap-2">
+                        <CheckCircleIcon size={16} />
+                        <Text>All {teamValidation.teams.length} team(s) validated successfully.</Text>
+                      </div>
+                    </Flash>
+                  )}
+                  
                   <FormControl.Caption>
                     Comma-separated list of GitHub teams (format: "org/team-slug") whose members
                     will have full migration rights. Leave empty to disable.
+                    <strong className="block mt-1">Teams must be validated before saving.</strong>
                   </FormControl.Caption>
                 </FormControl>
 

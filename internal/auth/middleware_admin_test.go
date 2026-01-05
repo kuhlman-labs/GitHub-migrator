@@ -185,9 +185,9 @@ func TestRequireAdmin_NonAdminUser(t *testing.T) {
 
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			AllowEnterpriseAdminMigrations:         true,
-			RequireEnterpriseSlug:                  "test-enterprise",
-			RequireIdentityMappingForSelfService:   true, // This makes non-admins Tier 2
+			AllowEnterpriseAdminMigrations:       true,
+			RequireEnterpriseSlug:                "test-enterprise",
+			RequireIdentityMappingForSelfService: true, // This makes non-admins Tier 2
 		},
 	}
 	authorizer := NewAuthorizer(cfg, logger, server.URL)
@@ -451,4 +451,3 @@ func TestRequireAdmin_ChainedWithRequireAuth(t *testing.T) {
 		t.Error("expected handler to be called for authenticated admin user")
 	}
 }
-
