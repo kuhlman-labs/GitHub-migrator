@@ -67,6 +67,10 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
   const [teamValidation, setTeamValidation] = useState<ValidateTeamsResponse | null>(null);
   const [isValidatingTeams, setIsValidatingTeams] = useState(false);
   const [teamsValidated, setTeamsValidated] = useState(false); // Tracks if teams have been validated since last change
+  
+  // Track the original teams value to determine if validation is needed
+  const originalTeams = settings.authorization_rules?.migration_admin_teams?.join(', ') || '';
+  const teamsHaveChanged = migrationAdminTeams !== originalTeams;
 
   // Fetch authorization status
   const { data: authStatus, isLoading: isLoadingStatus } = useQuery<AuthorizationStatus>({
@@ -219,15 +223,17 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
       return 'At least one Tier 1 admin group must be configured when authentication is enabled';
     }
     
-    // Check if teams need validation
-    const teams = parseTeams(migrationAdminTeams);
-    if (teams.length > 0 && !teamsValidated) {
-      return 'Click "Validate" to verify teams exist before saving';
-    }
-    
-    // Check if team validation failed
-    if (teamValidation && !teamValidation.valid) {
-      return 'Fix team validation errors before saving';
+    // Only require validation if teams have been changed from the original value
+    if (teamsHaveChanged) {
+      const teams = parseTeams(migrationAdminTeams);
+      if (teams.length > 0 && !teamsValidated) {
+        return 'Click "Validate" to verify teams exist before saving';
+      }
+      
+      // Check if team validation failed
+      if (teamValidation && !teamValidation.valid) {
+        return 'Fix team validation errors before saving';
+      }
     }
     
     return undefined;

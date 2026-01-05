@@ -187,7 +187,7 @@ describe('AuthSettings', () => {
     // Note: The exact behavior depends on CSS, but we're testing the toggle works
   });
 
-  it('calls onSave when save button is clicked', () => {
+  it('calls onSave when save button is clicked', async () => {
     const onSave = vi.fn();
     
     render(
@@ -203,7 +203,10 @@ describe('AuthSettings', () => {
     // Click save
     fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
 
-    expect(onSave).toHaveBeenCalled();
+    // Wait for async handleSave to complete
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalled();
+    });
   });
 
   it('disables save button when no changes', () => {
