@@ -810,12 +810,12 @@ func TestGetDestinationRepoNameWithADO(t *testing.T) {
 		expectedName string
 	}{
 		{
-			name: "ADO repo - extracts last part",
+			name: "ADO repo - uses project-repo pattern",
 			repo: &models.Repository{
 				FullName:   "my-org/my-project/my-repo",
 				ADOProject: &adoProject,
 			},
-			expectedName: "my-repo",
+			expectedName: "my-project-my-repo", // project-repo pattern to avoid conflicts
 		},
 		{
 			name: "ADO repo with spaces in name",
@@ -823,7 +823,7 @@ func TestGetDestinationRepoNameWithADO(t *testing.T) {
 				FullName:   "my-org/my-project/my awesome repo",
 				ADOProject: &adoProject,
 			},
-			expectedName: "my-awesome-repo",
+			expectedName: "my-project-my-awesome-repo", // spaces replaced with hyphens
 		},
 		{
 			name: "ADO repo with destination full name - overrides",
@@ -832,7 +832,7 @@ func TestGetDestinationRepoNameWithADO(t *testing.T) {
 				ADOProject:          &adoProject,
 				DestinationFullName: ptrString("dest-org/new-name"),
 			},
-			expectedName: "new-name",
+			expectedName: "new-name", // explicit destination always wins
 		},
 		{
 			name: "Non-ADO repo - uses source name",

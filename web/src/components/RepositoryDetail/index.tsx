@@ -235,7 +235,8 @@ export function RepositoryDetail() {
                 </li>
                 <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
                 <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-                  {repository.full_name.split('/').slice(1).join('/')}
+                  {/* Show only the repo name (last part), since org and project are shown separately */}
+                  {repository.full_name.split('/').pop()}
                 </li>
               </>
             ) : (

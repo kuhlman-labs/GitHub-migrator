@@ -285,22 +285,22 @@ func TestADORepoNameExtraction(t *testing.T) {
 		expectedName string
 	}{
 		{
-			name:         "standard ADO format org/project/repo",
+			name:         "standard ADO format org/project/repo - uses project-repo pattern",
 			fullName:     "MyOrg/MyProject/MyRepo",
 			adoProject:   &adoProject,
-			expectedName: "MyRepo",
+			expectedName: "MyProject-MyRepo", // project-repo pattern to avoid naming conflicts
 		},
 		{
 			name:         "ADO repo with spaces",
 			fullName:     "MyOrg/MyProject/My Awesome Repo",
 			adoProject:   &adoProject,
-			expectedName: "My-Awesome-Repo",
+			expectedName: "MyProject-My-Awesome-Repo", // spaces replaced with hyphens
 		},
 		{
-			name:         "ADO repo with multiple path segments",
+			name:         "ADO repo with multiple path segments - uses last as repo",
 			fullName:     "Org/Project/SubFolder/Repo",
 			adoProject:   &adoProject,
-			expectedName: "Repo",
+			expectedName: "Project-Repo", // takes index 1 for project and last for repo
 		},
 		{
 			name:         "non-ADO repo (no ADO project)",
@@ -312,7 +312,7 @@ func TestADORepoNameExtraction(t *testing.T) {
 			name:         "empty ADO project pointer - falls back to source name",
 			fullName:     "org/project/repo",
 			adoProject:   ptrString(""),
-			expectedName: "project/repo", // Empty ADO project goes through non-ADO path which uses Name()
+			expectedName: "project-repo", // Empty ADO project goes through non-ADO path; sanitizeRepoName replaces slashes
 		},
 	}
 

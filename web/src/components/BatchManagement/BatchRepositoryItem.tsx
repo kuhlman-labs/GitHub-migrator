@@ -3,7 +3,7 @@ import { Button } from '@primer/react';
 import type { Repository, Batch } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import { SourceTypeIcon } from '../common/SourceBadge';
-import { formatBytes } from '../../utils/format';
+import { formatBytes, computeBatchDefaultDestination } from '../../utils/format';
 
 export interface BatchRepositoryItemProps {
   repository: Repository;
@@ -30,9 +30,10 @@ export function BatchRepositoryItem({
   let isDefaultDestination = false;
 
   // Calculate what the batch default destination would be for this repository
-  const sourceRepoName = repository.full_name.split('/')[1];
+  // For ADO repos: uses project-repo pattern (e.g., "dest-org/DevOps-Terraform")
+  // For GitHub repos: uses just the repo name (e.g., "dest-org/repo")
   const batchDefaultDestination = batch?.destination_org
-    ? `${batch.destination_org}/${sourceRepoName}`
+    ? computeBatchDefaultDestination(batch.destination_org, repository.full_name, repository.ado_project)
     : null;
 
   // Check if repo has a custom destination
