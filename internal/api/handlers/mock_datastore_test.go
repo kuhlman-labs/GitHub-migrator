@@ -286,13 +286,16 @@ func (m *MockDataStore) RemoveRepositoriesFromBatch(_ context.Context, _ int64, 
 	return nil
 }
 
-func (m *MockDataStore) UpdateBatchProgress(_ context.Context, batchID int64, status string, startedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error {
+func (m *MockDataStore) UpdateBatchProgress(_ context.Context, batchID int64, status string, startedAt, dryRunStartedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if batch := m.Batches[batchID]; batch != nil {
 		batch.Status = status
 		if startedAt != nil {
 			batch.StartedAt = startedAt
+		}
+		if dryRunStartedAt != nil {
+			batch.DryRunStartedAt = dryRunStartedAt
 		}
 		if lastDryRunAt != nil {
 			batch.LastDryRunAt = lastDryRunAt

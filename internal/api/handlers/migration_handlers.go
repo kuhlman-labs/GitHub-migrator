@@ -743,7 +743,8 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		h.logger.Info("Starting dry run for batch", "batch_id", batch.ID)
 
 		now := time.Now()
-		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, &now, nil); err != nil {
+		// For dry runs: set dryRunStartedAt and lastDryRunAt, NOT startedAt
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, nil, &now, &now, nil); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 
@@ -773,7 +774,8 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		h.logger.Info("Starting production migration for batch", "batch_id", batch.ID)
 
 		now := time.Now()
-		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, nil, &now); err != nil {
+		// For production migrations: set startedAt and lastMigrationAttemptAt, NOT dryRunStartedAt
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, nil, nil, &now); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 

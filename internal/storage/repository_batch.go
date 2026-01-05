@@ -134,7 +134,7 @@ func (d *Database) UpdateBatchMigrationAttemptTimestamp(ctx context.Context, bat
 
 // UpdateBatchProgress updates batch status and operational timestamps without affecting user-configured fields using GORM
 // This preserves scheduled_at and other user-set fields while updating execution state
-func (d *Database) UpdateBatchProgress(ctx context.Context, batchID int64, status string, startedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error {
+func (d *Database) UpdateBatchProgress(ctx context.Context, batchID int64, status string, startedAt, dryRunStartedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error {
 	updates := map[string]any{
 		"status": status,
 	}
@@ -142,6 +142,9 @@ func (d *Database) UpdateBatchProgress(ctx context.Context, batchID int64, statu
 	// Only update timestamps if provided (COALESCE behavior)
 	if startedAt != nil {
 		updates["started_at"] = startedAt
+	}
+	if dryRunStartedAt != nil {
+		updates["dry_run_started_at"] = dryRunStartedAt
 	}
 	if lastDryRunAt != nil {
 		updates["last_dry_run_at"] = lastDryRunAt

@@ -70,7 +70,9 @@ type BatchWriter interface {
 	// RemoveRepositoriesFromBatch removes repositories from a batch.
 	RemoveRepositoriesFromBatch(ctx context.Context, batchID int64, repoIDs []int64) error
 	// UpdateBatchProgress updates batch progress tracking.
-	UpdateBatchProgress(ctx context.Context, batchID int64, status string, startedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error
+	// For dry runs: set dryRunStartedAt and lastDryRunAt, leave startedAt and lastMigrationAttemptAt nil
+	// For production migrations: set startedAt and lastMigrationAttemptAt, leave dryRunStartedAt and lastDryRunAt nil
+	UpdateBatchProgress(ctx context.Context, batchID int64, status string, startedAt, dryRunStartedAt, lastDryRunAt, lastMigrationAttemptAt *time.Time) error
 }
 
 // BatchStore combines read and write operations for batches.

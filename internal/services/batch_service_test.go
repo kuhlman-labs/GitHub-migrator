@@ -73,7 +73,7 @@ func (m *MockBatchStore) RemoveRepositoriesFromBatch(_ context.Context, _ int64,
 	return nil
 }
 
-func (m *MockBatchStore) UpdateBatchProgress(_ context.Context, _ int64, _ string, _, _, _ *time.Time) error {
+func (m *MockBatchStore) UpdateBatchProgress(_ context.Context, _ int64, _ string, _, _, _, _ *time.Time) error {
 	return nil
 }
 
