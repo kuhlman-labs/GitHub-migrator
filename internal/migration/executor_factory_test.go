@@ -343,16 +343,18 @@ func TestExecutorFactory_DefaultConfiguration(t *testing.T) {
 		t.Errorf("Expected default PostMigrationMode to be ProductionOnly, got %s", factory.postMigrationMode)
 	}
 
-	if factory.destRepoExistsAction != DestinationRepoExistsFail {
-		t.Errorf("Expected default DestRepoExistsAction to be Fail, got %s", factory.destRepoExistsAction)
+	// Use getter methods since fields are now named differently
+	if factory.getDestRepoExistsAction() != DestinationRepoExistsFail {
+		t.Errorf("Expected default DestRepoExistsAction to be Fail, got %s", factory.getDestRepoExistsAction())
 	}
 
-	if factory.visibilityHandling.PublicRepos != models.VisibilityPrivate {
-		t.Errorf("Expected default PublicRepos visibility to be private, got %s", factory.visibilityHandling.PublicRepos)
+	visHandling := factory.getVisibilityHandling()
+	if visHandling.PublicRepos != models.VisibilityPrivate {
+		t.Errorf("Expected default PublicRepos visibility to be private, got %s", visHandling.PublicRepos)
 	}
 
-	if factory.visibilityHandling.InternalRepos != models.VisibilityPrivate {
-		t.Errorf("Expected default InternalRepos visibility to be private, got %s", factory.visibilityHandling.InternalRepos)
+	if visHandling.InternalRepos != models.VisibilityPrivate {
+		t.Errorf("Expected default InternalRepos visibility to be private, got %s", visHandling.InternalRepos)
 	}
 }
 

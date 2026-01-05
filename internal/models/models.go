@@ -550,6 +550,39 @@ func (r *Repository) Name() string {
 	return r.FullName
 }
 
+// DestinationRepoName returns the appropriate destination repository name for GitHub.
+// For ADO repos (org/project/repo format), returns "project-repo" pattern to preserve
+// project context and avoid naming conflicts.
+// For GitHub repos (org/repo format), returns just the repo name.
+// Spaces and slashes are replaced with hyphens for GitHub compatibility.
+func (r *Repository) DestinationRepoName() string {
+	// For ADO repos, use project-repo pattern
+	if r.ADOProject != nil && *r.ADOProject != "" {
+		parts := strings.Split(r.FullName, "/")
+		if len(parts) >= 3 {
+			project := sanitizeRepoName(parts[1])
+			repoName := sanitizeRepoName(parts[len(parts)-1])
+			return project + "-" + repoName
+		}
+	}
+
+	// For GitHub repos (org/repo format), use just the repo name
+	parts := strings.Split(r.FullName, "/")
+	if len(parts) >= 2 {
+		return sanitizeRepoName(parts[len(parts)-1])
+	}
+
+	// Fallback: sanitize the full name
+	return sanitizeRepoName(r.FullName)
+}
+
+// sanitizeRepoName replaces slashes and spaces with hyphens for GitHub compatibility
+func sanitizeRepoName(name string) string {
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, " ", "-")
+	return name
+}
+
 // RepositoryDependency represents a dependency relationship between repositories
 // Used for batch planning to understand which repositories should be migrated together
 type RepositoryDependency struct {

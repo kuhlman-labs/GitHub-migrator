@@ -157,6 +157,30 @@ func (cs *Service) GetMigrationConfig() MigrationConfig {
 	}
 }
 
+// GetDestRepoExistsAction returns the current action for existing destination repos.
+// Implements migration.MigrationConfigProvider interface.
+func (cs *Service) GetDestRepoExistsAction() string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.settings.MigrationDestRepoExistsAction
+}
+
+// GetVisibilityPublic returns how to handle public repos.
+// Implements migration.MigrationConfigProvider interface.
+func (cs *Service) GetVisibilityPublic() string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.settings.MigrationVisibilityPublic
+}
+
+// GetVisibilityInternal returns how to handle internal repos.
+// Implements migration.MigrationConfigProvider interface.
+func (cs *Service) GetVisibilityInternal() string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.settings.MigrationVisibilityInternal
+}
+
 // AuthConfig contains authentication configuration
 type AuthConfig struct {
 	Enabled              bool

@@ -518,11 +518,8 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		} else {
 			updatedCount := 0
 			for _, repo := range repos {
-				parts := strings.Split(repo.FullName, "/")
-				if len(parts) != 2 {
-					continue
-				}
-				repoName := parts[1]
+				// Use DestinationRepoName() which properly handles both GitHub (org/repo) and ADO (org/project/repo) formats
+				repoName := repo.DestinationRepoName()
 
 				// Case 1: Setting destination_org for the first time - initialize repos without destinations
 				if oldDestinationOrg == "" && newDestinationOrg != "" {
@@ -730,7 +727,8 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 		needsUpdate := false
 
 		if batch.DestinationOrg != nil && *batch.DestinationOrg != "" && repo.DestinationFullName == nil {
-			destinationFullName := fmt.Sprintf("%s/%s", *batch.DestinationOrg, repo.Name())
+			// Use DestinationRepoName() which properly handles both GitHub (org/repo) and ADO (org/project/repo) formats
+			destinationFullName := fmt.Sprintf("%s/%s", *batch.DestinationOrg, repo.DestinationRepoName())
 			repo.DestinationFullName = &destinationFullName
 			needsUpdate = true
 		}

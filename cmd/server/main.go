@@ -355,6 +355,7 @@ func createExecutorFactory(cfg *config.Config, cfgSvc *configsvc.Service, destDu
 		PostMigrationMode:    postMigMode,
 		DestRepoExistsAction: destRepoAction,
 		VisibilityHandling:   visibilityHandling,
+		ConfigProvider:       cfgSvc, // Dynamic config provider for live setting updates
 	})
 }
 

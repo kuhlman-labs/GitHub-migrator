@@ -12,16 +12,31 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
+// MigrationConfigProvider provides migration configuration dynamically.
+// This interface allows the factory to read settings at execution time
+// rather than caching them at creation time.
+type MigrationConfigProvider interface {
+	// GetDestRepoExistsAction returns the current action for existing destination repos
+	GetDestRepoExistsAction() string
+	// GetVisibilityPublic returns how to handle public repos
+	GetVisibilityPublic() string
+	// GetVisibilityInternal returns how to handle internal repos
+	GetVisibilityInternal() string
+}
+
 // ExecutorFactory creates and caches source-specific migration executors.
 // It enables multi-source migrations by dynamically creating executors
 // based on each repository's source_id.
 type ExecutorFactory struct {
-	storage              *storage.Database
-	destClient           *github.Client
-	logger               *slog.Logger
-	postMigrationMode    PostMigrationMode
-	destRepoExistsAction DestinationRepoExistsAction
-	visibilityHandling   VisibilityHandling
+	storage           *storage.Database
+	destClient        *github.Client
+	logger            *slog.Logger
+	postMigrationMode PostMigrationMode
+	configProvider    MigrationConfigProvider // Dynamic config provider (optional)
+
+	// Static fallback values used when no configProvider is set
+	staticDestRepoExistsAction DestinationRepoExistsAction
+	staticVisibilityHandling   VisibilityHandling
 
 	// Cache of executors per source ID
 	executorCache map[int64]*Executor
@@ -36,6 +51,7 @@ type ExecutorFactoryConfig struct {
 	PostMigrationMode    PostMigrationMode
 	DestRepoExistsAction DestinationRepoExistsAction
 	VisibilityHandling   VisibilityHandling
+	ConfigProvider       MigrationConfigProvider // Optional: provides dynamic settings
 }
 
 // NewExecutorFactory creates a new executor factory
@@ -50,7 +66,7 @@ func NewExecutorFactory(cfg ExecutorFactoryConfig) (*ExecutorFactory, error) {
 		return nil, fmt.Errorf("logger is required")
 	}
 
-	// Apply defaults
+	// Apply defaults for static fallback values
 	postMigMode := cfg.PostMigrationMode
 	if postMigMode == "" {
 		postMigMode = PostMigrationProductionOnly
@@ -70,18 +86,48 @@ func NewExecutorFactory(cfg ExecutorFactoryConfig) (*ExecutorFactory, error) {
 	}
 
 	return &ExecutorFactory{
-		storage:              cfg.Storage,
-		destClient:           cfg.DestClient,
-		logger:               cfg.Logger,
-		postMigrationMode:    postMigMode,
-		destRepoExistsAction: destRepoAction,
-		visibilityHandling:   visibilityHandling,
-		executorCache:        make(map[int64]*Executor),
+		storage:                    cfg.Storage,
+		destClient:                 cfg.DestClient,
+		logger:                     cfg.Logger,
+		postMigrationMode:          postMigMode,
+		configProvider:             cfg.ConfigProvider,
+		staticDestRepoExistsAction: destRepoAction,
+		staticVisibilityHandling:   visibilityHandling,
+		executorCache:              make(map[int64]*Executor),
 	}, nil
 }
 
+// getDestRepoExistsAction returns the current destination repo exists action,
+// reading from the dynamic config provider if available.
+func (f *ExecutorFactory) getDestRepoExistsAction() DestinationRepoExistsAction {
+	if f.configProvider != nil {
+		switch f.configProvider.GetDestRepoExistsAction() {
+		case "fail":
+			return DestinationRepoExistsFail
+		case "skip":
+			return DestinationRepoExistsSkip
+		case "delete":
+			return DestinationRepoExistsDelete
+		}
+	}
+	return f.staticDestRepoExistsAction
+}
+
+// getVisibilityHandling returns the current visibility handling settings,
+// reading from the dynamic config provider if available.
+func (f *ExecutorFactory) getVisibilityHandling() VisibilityHandling {
+	if f.configProvider != nil {
+		return VisibilityHandling{
+			PublicRepos:   f.configProvider.GetVisibilityPublic(),
+			InternalRepos: f.configProvider.GetVisibilityInternal(),
+		}
+	}
+	return f.staticVisibilityHandling
+}
+
 // GetExecutorForRepository returns an executor configured for the repository's source.
-// It caches executors per source to avoid recreating clients for each migration.
+// Executors are created fresh for each migration to ensure they use current settings.
+// Source client connections are still efficiently reused via the GitHub client pool.
 func (f *ExecutorFactory) GetExecutorForRepository(ctx context.Context, repo *models.Repository) (*Executor, error) {
 	// Check if repository has a source_id
 	if repo.SourceID == nil {
@@ -89,26 +135,6 @@ func (f *ExecutorFactory) GetExecutorForRepository(ctx context.Context, repo *mo
 	}
 
 	sourceID := *repo.SourceID
-
-	// Check cache first
-	f.cacheMu.RLock()
-	if executor, exists := f.executorCache[sourceID]; exists {
-		f.cacheMu.RUnlock()
-		f.logger.Debug("Using cached executor for source",
-			"source_id", sourceID,
-			"repo", repo.FullName)
-		return executor, nil
-	}
-	f.cacheMu.RUnlock()
-
-	// Need to create a new executor - acquire write lock
-	f.cacheMu.Lock()
-	defer f.cacheMu.Unlock()
-
-	// Double-check after acquiring write lock
-	if executor, exists := f.executorCache[sourceID]; exists {
-		return executor, nil
-	}
 
 	// Fetch source from database
 	source, err := f.storage.GetSource(ctx, sourceID)
@@ -124,33 +150,33 @@ func (f *ExecutorFactory) GetExecutorForRepository(ctx context.Context, repo *mo
 		return nil, fmt.Errorf("source %s (ID: %d) is not active", source.Name, sourceID)
 	}
 
-	// Create executor based on source type
+	// Create executor with current settings (read dynamically)
+	// This ensures settings changes (like dest_repo_exists_action) take effect immediately
 	executor, err := f.createExecutorForSource(source)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create executor for source %s: %w", source.Name, err)
 	}
 
-	// Cache the executor
-	f.executorCache[sourceID] = executor
-
-	f.logger.Info("Created new executor for source",
+	f.logger.Debug("Created executor for source with current settings",
 		"source_id", sourceID,
 		"source_name", source.Name,
 		"source_type", source.Type,
-		"repo", repo.FullName)
+		"repo", repo.FullName,
+		"dest_repo_exists_action", f.getDestRepoExistsAction())
 
 	return executor, nil
 }
 
 // createExecutorForSource creates a new executor for the given source
 func (f *ExecutorFactory) createExecutorForSource(source *models.Source) (*Executor, error) {
+	// Read settings dynamically to pick up any changes
 	cfg := ExecutorConfig{
 		DestClient:           f.destClient,
 		Storage:              f.storage,
 		Logger:               f.logger,
 		PostMigrationMode:    f.postMigrationMode,
-		DestRepoExistsAction: f.destRepoExistsAction,
-		VisibilityHandling:   f.visibilityHandling,
+		DestRepoExistsAction: f.getDestRepoExistsAction(),
+		VisibilityHandling:   f.getVisibilityHandling(),
 	}
 
 	if source.IsGitHub() {
