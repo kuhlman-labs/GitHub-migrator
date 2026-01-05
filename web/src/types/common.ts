@@ -229,7 +229,7 @@ export type DiscoveryPhase =
   | 'completed';
 
 export type DiscoveryStatus = 'in_progress' | 'completed' | 'failed' | 'none';
-export type DiscoveryType = 'enterprise' | 'organization' | 'repository';
+export type DiscoveryType = 'enterprise' | 'organization' | 'repository' | 'ado_organization' | 'ado_project';
 
 export interface DiscoveryProgress {
   id: number;

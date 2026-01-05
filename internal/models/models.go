@@ -803,6 +803,9 @@ const (
 	DiscoveryTypeEnterprise   = "enterprise"
 	DiscoveryTypeOrganization = "organization"
 	DiscoveryTypeRepository   = "repository"
+	// ADO discovery types
+	DiscoveryTypeADOOrganization = "ado_organization"
+	DiscoveryTypeADOProject      = "ado_project"
 )
 
 // DiscoveryProgress tracks the progress of a discovery operation

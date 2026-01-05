@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UnderlineNav, Heading, Text, Flash, Spinner } from '@primer/react';
-import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon, RepoIcon, AlertIcon } from '@primer/octicons-react';
+import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon, RepoIcon, AlertIcon, LogIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../services/api/settings';
 import { configApi } from '../../services/api/config';
@@ -8,12 +8,13 @@ import { SourcesSettings } from './SourcesSettings';
 import { DestinationSettings } from './DestinationSettings';
 import { MigrationSettings } from './MigrationSettings';
 import { AuthSettings } from './AuthSettings';
+import { LoggingSettings } from './LoggingSettings';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import type { SettingsResponse, UpdateSettingsRequest } from '../../services/api/settings';
 import { AxiosError } from 'axios';
 
-type SettingsTab = 'sources' | 'destination' | 'migration' | 'auth';
+type SettingsTab = 'sources' | 'destination' | 'migration' | 'auth' | 'logging';
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('sources');
@@ -50,7 +51,7 @@ export function SettingsPage() {
       if (error instanceof AxiosError && error.response?.status === 403) {
         showError('Access denied: Only administrators can modify settings');
       } else {
-        showError(`Failed to save settings: ${error.message}`);
+      showError(`Failed to save settings: ${error.message}`);
       }
     },
   });
@@ -128,6 +129,13 @@ export function SettingsPage() {
         >
           Authentication
         </UnderlineNav.Item>
+        <UnderlineNav.Item
+          aria-current={activeTab === 'logging' ? 'page' : undefined}
+          onClick={() => setActiveTab('logging')}
+          icon={LogIcon}
+        >
+          Logging
+        </UnderlineNav.Item>
       </UnderlineNav>
 
       {/* Tab Content */}
@@ -158,6 +166,9 @@ export function SettingsPage() {
             isSaving={updateMutation.isPending}
             readOnly={!isAdmin}
           />
+        )}
+        {activeTab === 'logging' && (
+          <LoggingSettings readOnly={!isAdmin} />
         )}
       </div>
     </div>

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/discovery"
@@ -306,6 +307,16 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 		req.Workers = 5 // default
 	}
 
+	// Check for existing in-progress discovery
+	existingProgress, err := h.db.GetActiveDiscoveryProgress()
+	if err != nil {
+		h.logger.Error("Failed to check for active discovery", "error", err)
+	}
+	if existingProgress != nil {
+		WriteError(w, ErrConflict.WithDetails("Another discovery is already in progress"))
+		return
+	}
+
 	// Get or create ADO collector for this source
 	adoCollector, _, err := h.getADOCollectorForSource(r.Context(), req.SourceID)
 	if err != nil {
@@ -317,13 +328,48 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 	// Set workers
 	adoCollector.SetWorkers(req.Workers)
 
+	// Determine discovery type and target
+	var discoveryType, target string
+	var totalOrgs int
+	if len(req.Projects) == 0 {
+		discoveryType = models.DiscoveryTypeADOOrganization
+		target = req.Organization
+		totalOrgs = 1 // Will be updated when projects are enumerated
+	} else {
+		discoveryType = models.DiscoveryTypeADOProject
+		target = req.Organization + "/" + strings.Join(req.Projects, ",")
+		totalOrgs = len(req.Projects)
+	}
+
+	// Create progress record
+	progress := &models.DiscoveryProgress{
+		DiscoveryType: discoveryType,
+		Target:        target,
+		TotalOrgs:     totalOrgs,
+	}
+
+	if err := h.db.CreateDiscoveryProgress(progress); err != nil {
+		if errors.Is(err, storage.ErrDiscoveryInProgress) {
+			WriteError(w, ErrConflict.WithDetails(err.Error()))
+			return
+		}
+		h.logger.Error("Failed to create discovery progress", "error", err)
+		WriteError(w, ErrDatabaseUpdate.WithDetails("discovery progress initialization"))
+		return
+	}
+
+	// Create progress tracker and attach to collector
+	progressTracker := discovery.NewDBProgressTracker(h.db, h.logger, progress)
+	adoCollector.SetProgressTracker(progressTracker)
+
 	// Start discovery asynchronously based on scope
 	if len(req.Projects) == 0 {
 		// Discover entire organization
 		h.logger.Info("Starting ADO organization discovery (dynamic)",
 			"organization", req.Organization,
 			"workers", req.Workers,
-			"source_id", *req.SourceID)
+			"source_id", *req.SourceID,
+			"progress_id", progress.ID)
 
 		go func() {
 			ctx := context.Background()
@@ -331,8 +377,14 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 				h.logger.Error("ADO organization discovery failed",
 					"organization", req.Organization,
 					"error", err)
+				if markErr := h.db.MarkDiscoveryFailed(progress.ID, err.Error()); markErr != nil {
+					h.logger.Error("Failed to mark discovery as failed", "error", markErr)
+				}
 			} else {
 				h.logger.Info("ADO organization discovery completed", "organization", req.Organization)
+				if markErr := h.db.MarkDiscoveryComplete(progress.ID); markErr != nil {
+					h.logger.Error("Failed to mark discovery as complete", "error", markErr)
+				}
 
 				// Update source repository count and last sync time
 				if err := h.db.UpdateSourceRepositoryCount(ctx, *req.SourceID); err != nil {
@@ -351,6 +403,7 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 			"organization": req.Organization,
 			"type":         "organization",
 			"source_id":    *req.SourceID,
+			"progress_id":  progress.ID,
 		})
 	} else {
 		// Discover specific projects
@@ -358,21 +411,37 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 			"organization", req.Organization,
 			"projects", req.Projects,
 			"workers", req.Workers,
-			"source_id", *req.SourceID)
+			"source_id", *req.SourceID,
+			"progress_id", progress.ID)
 
 		go func() {
 			ctx := context.Background()
-			for _, project := range req.Projects {
+			var lastErr error
+			for i, project := range req.Projects {
+				progressTracker.StartOrg(project, i)
 				if err := adoCollector.DiscoverADOProject(ctx, req.Organization, project); err != nil {
 					h.logger.Error("Failed to discover ADO project",
 						"organization", req.Organization,
 						"project", project,
 						"error", err)
+					progressTracker.RecordError(err)
+					lastErr = err
 					// Continue with other projects
 				} else {
 					h.logger.Info("ADO project discovery completed",
 						"organization", req.Organization,
 						"project", project)
+				}
+				progressTracker.CompleteOrg(project, 0)
+			}
+
+			if lastErr != nil {
+				if markErr := h.db.MarkDiscoveryFailed(progress.ID, lastErr.Error()); markErr != nil {
+					h.logger.Error("Failed to mark discovery as failed", "error", markErr)
+				}
+			} else {
+				if markErr := h.db.MarkDiscoveryComplete(progress.ID); markErr != nil {
+					h.logger.Error("Failed to mark discovery as complete", "error", markErr)
 				}
 			}
 
@@ -393,6 +462,7 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 			"projects":     req.Projects,
 			"type":         "project",
 			"source_id":    *req.SourceID,
+			"progress_id":  progress.ID,
 		})
 	}
 }

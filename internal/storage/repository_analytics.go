@@ -912,6 +912,14 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 		stats = append(stats, stat)
 	}
 
+	// Sort by total repos (descending), then by organization name (ascending) for consistent ordering
+	sort.Slice(stats, func(i, j int) bool {
+		if stats[i].TotalRepos == stats[j].TotalRepos {
+			return stats[i].Organization < stats[j].Organization
+		}
+		return stats[i].TotalRepos > stats[j].TotalRepos
+	})
+
 	return stats, nil
 }
 

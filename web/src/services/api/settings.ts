@@ -106,6 +106,17 @@ export interface ValidateTeamsResponse {
   error_message?: string;
 }
 
+// Logging settings types
+export interface LoggingSettingsResponse {
+  debug_enabled: boolean;
+  current_level: string;
+  default_level: string;
+}
+
+export interface UpdateLoggingRequest {
+  debug_enabled?: boolean;
+}
+
 // Get current settings (with sensitive data masked)
 export async function getSettings(): Promise<SettingsResponse> {
   const response = await client.get<SettingsResponse>('/settings');
@@ -136,6 +147,18 @@ export async function validateTeams(teams: string[]): Promise<ValidateTeamsRespo
   return response.data;
 }
 
+// Get logging settings
+export async function getLoggingSettings(): Promise<LoggingSettingsResponse> {
+  const response = await client.get<LoggingSettingsResponse>('/settings/logging');
+  return response.data;
+}
+
+// Update logging settings
+export async function updateLoggingSettings(request: UpdateLoggingRequest): Promise<LoggingSettingsResponse> {
+  const response = await client.put<LoggingSettingsResponse>('/settings/logging', request);
+  return response.data;
+}
+
 // Export as an object for consistency with other API modules
 export const settingsApi = {
   getSettings,
@@ -143,4 +166,6 @@ export const settingsApi = {
   updateSettings,
   validateDestination,
   validateTeams,
+  getLoggingSettings,
+  updateLoggingSettings,
 };

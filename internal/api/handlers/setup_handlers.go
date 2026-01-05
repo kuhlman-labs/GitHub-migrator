@@ -390,15 +390,15 @@ func (h *SetupHandler) validateSQLitePath(dsn string) ValidationResponse {
 		response.Error = fmt.Sprintf("Invalid directory: %v", err)
 		return response
 	}
-	// Ensure absDir is a subdirectory of absSafeBaseDir using filepath.Rel
+	// Ensure absDir is within absSafeBaseDir using filepath.Rel
 	// This is more robust than HasPrefix and handles symlinks better
 	rel, err := filepath.Rel(absSafeBaseDir, absDir)
 	// Reject if:
 	// - Error computing relative path
-	// - rel == "." means absDir equals absSafeBaseDir (must be a subdirectory, not the base itself)
 	// - rel starts with ".." means absDir is outside absSafeBaseDir
 	// - rel contains "/.." means path traversal within the path
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+"..") {
+	// Note: rel == "." is valid - it means the file is directly in the safe base directory
+	if err != nil || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+"..") {
 		response.Valid = false
 		response.Error = fmt.Sprintf("Database directory must be inside %s", safeBaseDir)
 		return response

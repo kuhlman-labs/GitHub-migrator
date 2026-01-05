@@ -54,6 +54,22 @@ describe('DiscoveryProgressCard', () => {
       expect(screen.getByText('Org 3 of 5: org-3')).toBeInTheDocument();
     });
 
+    it('should show total orgs when current_org is empty (batch profiling)', () => {
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({
+            total_orgs: 5,
+            processed_orgs: 0,
+            current_org: '', // Empty during batch profiling
+            phase: 'profiling_repos',
+          })}
+        />
+      );
+
+      expect(screen.getByText('5 organizations')).toBeInTheDocument();
+      expect(screen.getByText('Profiling repositories...')).toBeInTheDocument();
+    });
+
     it('should show error count when errors exist', () => {
       render(<DiscoveryProgressCard progress={createProgress({ error_count: 3 })} />);
 
@@ -111,7 +127,24 @@ describe('DiscoveryProgressCard', () => {
         />
       );
 
-      expect(screen.getByText(/Discovered 50 repositories across 1 organization$/)).toBeInTheDocument();
+      // For GitHub discovery, uses "org" singular
+      expect(screen.getByText(/Discovered 50 repositories across 1 org$/)).toBeInTheDocument();
+    });
+
+    it('should use project terminology for ADO discovery', () => {
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({
+            status: 'completed',
+            discovery_type: 'ado_organization',
+            processed_repos: 50,
+            processed_orgs: 3,
+          })}
+        />
+      );
+
+      // For ADO discovery, uses "projects" plural
+      expect(screen.getByText(/Discovered 50 repositories across 3 projects$/)).toBeInTheDocument();
     });
   });
 

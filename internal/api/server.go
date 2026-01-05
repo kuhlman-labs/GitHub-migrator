@@ -253,6 +253,9 @@ func (s *Server) Router() http.Handler {
 	// Admin-only settings endpoints (requires Tier 1 access)
 	if s.settingsHandler != nil {
 		adminOnly("PUT /api/v1/settings", s.settingsHandler.UpdateSettings)
+		// Logging settings - admin only for security (turning on debug could expose sensitive info)
+		protect("GET /api/v1/settings/logging", s.settingsHandler.GetLoggingSettings)
+		adminOnly("PUT /api/v1/settings/logging", s.settingsHandler.UpdateLoggingSettings)
 	}
 
 	// Discovery endpoints

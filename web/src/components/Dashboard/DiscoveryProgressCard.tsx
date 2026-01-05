@@ -53,7 +53,28 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
       : 'Discovery in Progress';
 
   // Format the discovery type for display
-  const typeLabel = progress.discovery_type.charAt(0).toUpperCase() + progress.discovery_type.slice(1);
+  const formatDiscoveryType = (type: string): string => {
+    switch (type) {
+      case 'enterprise':
+        return 'Enterprise';
+      case 'organization':
+        return 'Organization';
+      case 'repository':
+        return 'Repository';
+      case 'ado_organization':
+        return 'ADO Organization';
+      case 'ado_project':
+        return 'ADO Project';
+      default:
+        return type.charAt(0).toUpperCase() + type.slice(1);
+    }
+  };
+  const typeLabel = formatDiscoveryType(progress.discovery_type);
+
+  // Determine if this is an ADO discovery (use "projects" terminology)
+  const isADODiscovery = progress.discovery_type.startsWith('ado_');
+  const orgLabel = isADODiscovery ? 'project' : 'org';
+  const orgsLabel = isADODiscovery ? 'projects' : 'organizations';
 
   return (
     <div className="p-4 rounded-lg border" style={cardStyle}>
@@ -87,9 +108,14 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
           
           <div className="flex justify-between text-sm mb-1">
             <span style={{ color: 'var(--fgColor-muted)' }}>
-              {progress.total_orgs > 1 
-                ? `Org ${progress.processed_orgs + 1} of ${progress.total_orgs}: ${progress.current_org}`
-                : `Processing: ${progress.current_org || progress.target}`
+              {/* Show org/project progress only when current_org is set */}
+              {progress.current_org 
+                ? (progress.total_orgs > 1 
+                    ? `${isADODiscovery ? 'Project' : 'Org'} ${progress.processed_orgs + 1} of ${progress.total_orgs}: ${progress.current_org}`
+                    : `Processing: ${progress.current_org}`)
+                : (progress.total_orgs > 1 
+                    ? `${progress.total_orgs} ${orgsLabel}`
+                    : `Processing: ${progress.target}`)
               }
             </span>
             <span style={{ color: 'var(--fgColor-muted)' }}>
@@ -106,7 +132,7 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
       {isComplete && (
         <div className="text-sm">
           <p style={{ color: 'var(--fgColor-muted)' }}>
-            Discovered {progress.processed_repos} repositories across {progress.processed_orgs} organization{progress.processed_orgs !== 1 ? 's' : ''}
+            Discovered {progress.processed_repos} repositories across {progress.processed_orgs} {progress.processed_orgs !== 1 ? orgsLabel : orgLabel}
           </p>
           {progress.completed_at && (
             <p className="mt-1" style={{ color: 'var(--fgColor-muted)' }}>

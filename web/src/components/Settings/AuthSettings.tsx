@@ -617,11 +617,11 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
             <Flash variant="danger" className="mb-4">
               <div className="flex items-center gap-2">
                 <AlertIcon size={16} />
-                <Text>
+            <Text>
                   <strong>Configuration Required:</strong> Enable at least one Tier 1 admin group below to allow migrations.
-                </Text>
+            </Text>
               </div>
-            </Flash>
+          </Flash>
           )}
 
           {/* Authorization Rules Configuration */}

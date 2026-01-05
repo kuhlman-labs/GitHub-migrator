@@ -642,7 +642,9 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			"total_repos", len(allRepos))
 
 		// Set phase to profiling before batch processing
+		// Clear CurrentOrg since we're profiling repos from all orgs together
 		tracker.SetPhase(models.PhaseProfilingRepos)
+		tracker.ClearCurrentOrg()
 
 		if err := c.processRepositoriesWithProfilerTracked(ctx, allRepos, profiler, tracker); err != nil {
 			// Mark remaining orgs as complete even on error

@@ -334,6 +334,13 @@ func (e *Executor) unlockSourceRepository(ctx context.Context, repo *models.Repo
 func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Repository) error {
 	e.logger.Info("Refreshing repository characteristics before migration", "repo", repo.FullName)
 
+	// For ADO sources, sourceClient is nil - skip GitHub-specific discovery
+	// ADO repositories don't support the same API calls for discovery
+	if e.sourceClient == nil {
+		e.logger.Debug("Skipping pre-migration discovery for non-GitHub source", "repo", repo.FullName)
+		return nil
+	}
+
 	// Get repository from source API
 	var sourceRepo *ghapi.Repository
 	var err error

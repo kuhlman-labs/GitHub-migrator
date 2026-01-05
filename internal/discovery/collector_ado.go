@@ -15,13 +15,14 @@ import (
 
 // ADOCollector wraps an ADO client for discovery operations
 type ADOCollector struct {
-	client   *azuredevops.Client
-	storage  any // Will be *storage.Database
-	logger   *slog.Logger
-	provider any // Will be source.Provider
-	profiler *ADOProfiler
-	workers  int    // Number of parallel workers
-	sourceID *int64 // Multi-source ID to associate with discovered entities
+	client          *azuredevops.Client
+	storage         any // Will be *storage.Database
+	logger          *slog.Logger
+	provider        any // Will be source.Provider
+	profiler        *ADOProfiler
+	workers         int             // Number of parallel workers
+	sourceID        *int64          // Multi-source ID to associate with discovered entities
+	progressTracker ProgressTracker // Progress tracker for discovery updates
 }
 
 // NewADOCollector creates a new Azure DevOps collector
@@ -48,21 +49,47 @@ func (c *ADOCollector) SetSourceID(sourceID *int64) {
 	c.sourceID = sourceID
 }
 
+// SetProgressTracker sets the progress tracker for discovery updates
+func (c *ADOCollector) SetProgressTracker(tracker ProgressTracker) {
+	c.progressTracker = tracker
+}
+
+// getTracker returns the progress tracker, or a no-op tracker if none is set
+func (c *ADOCollector) getTracker() ProgressTracker {
+	if c.progressTracker != nil {
+		return c.progressTracker
+	}
+	return NoOpProgressTracker{}
+}
+
 // DiscoverADOOrganization discovers all projects and repositories in an Azure DevOps organization
 func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization string) error {
 	c.logger.Info("Starting Azure DevOps organization discovery", "organization", organization)
+	tracker := c.getTracker()
 
 	// Get all projects in the organization
+	tracker.SetPhase(models.PhaseListingRepos)
 	projects, err := c.client.GetProjects(ctx)
 	if err != nil {
+		tracker.RecordError(err)
 		return fmt.Errorf("failed to get projects: %w", err)
 	}
+
+	// Count valid projects for progress tracking (ADO projects = GitHub orgs in terminology)
+	validProjects := 0
+	for _, p := range projects {
+		if p.Name != nil {
+			validProjects++
+		}
+	}
+	tracker.SetTotalOrgs(validProjects)
 
 	c.logger.Info("Found projects in organization",
 		"organization", organization,
 		"count", len(projects))
 
 	// Process each project
+	projectIndex := 0
 	for _, project := range projects {
 		if project.Name == nil {
 			c.logger.Warn("Skipping project with nil name")
@@ -70,6 +97,7 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 		}
 
 		projectName := *project.Name
+		tracker.StartOrg(projectName, projectIndex) // Treat ADO projects like GitHub orgs
 		c.logger.Info("Discovering project", "project", projectName)
 
 		// Save project to database
@@ -98,7 +126,9 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 				c.logger.Error("Failed to save ADO project",
 					"project", projectName,
 					"error", err)
+				tracker.RecordError(err)
 				// Continue with next project
+				projectIndex++
 				continue
 			}
 		}
@@ -110,13 +140,16 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 			projectVisibility = string(*project.Visibility)
 		}
 
-		if err := c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, projectVisibility); err != nil {
+		repoCount, err := c.discoverADOProjectWithVisibilityTracked(ctx, organization, projectName, projectVisibility, tracker)
+		if err != nil {
 			c.logger.Error("Failed to discover project",
 				"project", projectName,
 				"error", err)
+			tracker.RecordError(err)
 			// Continue with next project
-			continue
 		}
+		tracker.CompleteOrg(projectName, repoCount)
+		projectIndex++
 	}
 
 	c.logger.Info("Azure DevOps organization discovery complete",
@@ -137,13 +170,21 @@ func (c *ADOCollector) DiscoverADOOrganization(ctx context.Context, organization
 
 // DiscoverADOProject discovers all repositories in a specific Azure DevOps project
 func (c *ADOCollector) DiscoverADOProject(ctx context.Context, organization, projectName string) error {
+	tracker := c.getTracker()
+
+	// For single project discovery, set up progress tracking
+	tracker.SetTotalOrgs(1)
+	tracker.StartOrg(projectName, 0)
+
 	// Get project details to fetch visibility
 	project, err := c.client.GetProject(ctx, projectName)
 	if err != nil {
 		c.logger.Warn("Failed to get project details, using default visibility",
 			"project", projectName,
 			"error", err)
-		return c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, "private")
+		repoCount, discErr := c.discoverADOProjectWithVisibilityTracked(ctx, organization, projectName, "private", tracker)
+		tracker.CompleteOrg(projectName, repoCount)
+		return discErr
 	}
 
 	projectVisibility := "private" // Default to private
@@ -151,21 +192,36 @@ func (c *ADOCollector) DiscoverADOProject(ctx context.Context, organization, pro
 		projectVisibility = string(*project.Visibility)
 	}
 
-	return c.DiscoverADOProjectWithVisibility(ctx, organization, projectName, projectVisibility)
+	repoCount, err := c.discoverADOProjectWithVisibilityTracked(ctx, organization, projectName, projectVisibility, tracker)
+	tracker.CompleteOrg(projectName, repoCount)
+	return err
 }
 
 // DiscoverADOProjectWithVisibility discovers all repositories in a specific Azure DevOps project with known visibility
+// This is the public API that doesn't require a tracker (uses internal tracker if set)
 func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, organization, projectName, projectVisibility string) error {
+	_, err := c.discoverADOProjectWithVisibilityTracked(ctx, organization, projectName, projectVisibility, c.getTracker())
+	return err
+}
+
+// discoverADOProjectWithVisibilityTracked is the internal implementation with progress tracking
+func (c *ADOCollector) discoverADOProjectWithVisibilityTracked(ctx context.Context, organization, projectName, projectVisibility string, tracker ProgressTracker) (int, error) {
 	c.logger.Info("Starting Azure DevOps project discovery",
 		"organization", organization,
 		"project", projectName,
 		"visibility", projectVisibility)
 
 	// Get all repositories in the project
+	tracker.SetPhase(models.PhaseListingRepos)
 	repos, err := c.client.GetRepositories(ctx, projectName)
 	if err != nil {
-		return fmt.Errorf("failed to get repositories: %w", err)
+		tracker.RecordError(err)
+		return 0, fmt.Errorf("failed to get repositories: %w", err)
 	}
+
+	// Update repo count for progress tracking
+	tracker.AddRepos(len(repos))
+	tracker.SetPhase(models.PhaseProfilingRepos)
 
 	c.logger.Info("Found repositories in project",
 		"project", projectName,
@@ -173,8 +229,8 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 		"workers", c.workers)
 
 	// Process repositories in parallel using worker pool
-	if err := c.processADORepositoriesInParallel(ctx, organization, projectName, projectVisibility, repos); err != nil {
-		return fmt.Errorf("failed to process repositories: %w", err)
+	if err := c.processADORepositoriesInParallelTracked(ctx, organization, projectName, projectVisibility, repos, tracker); err != nil {
+		return len(repos), fmt.Errorf("failed to process repositories: %w", err)
 	}
 
 	c.logger.Info("Azure DevOps project discovery complete",
@@ -190,11 +246,16 @@ func (c *ADOCollector) DiscoverADOProjectWithVisibility(ctx context.Context, org
 		}
 	}
 
-	return nil
+	return len(repos), nil
 }
 
 // processADORepositoriesInParallel processes ADO repositories in parallel using worker pool
 func (c *ADOCollector) processADORepositoriesInParallel(ctx context.Context, organization, projectName, projectVisibility string, repos []git.GitRepository) error {
+	return c.processADORepositoriesInParallelTracked(ctx, organization, projectName, projectVisibility, repos, c.getTracker())
+}
+
+// processADORepositoriesInParallelTracked processes ADO repositories in parallel with progress tracking
+func (c *ADOCollector) processADORepositoriesInParallelTracked(ctx context.Context, organization, projectName, projectVisibility string, repos []git.GitRepository, tracker ProgressTracker) error {
 	jobs := make(chan *git.GitRepository, len(repos))
 	errors := make(chan error, len(repos))
 	var wg sync.WaitGroup
@@ -202,7 +263,7 @@ func (c *ADOCollector) processADORepositoriesInParallel(ctx context.Context, org
 	// Start workers
 	for i := 0; i < c.workers; i++ {
 		wg.Add(1)
-		go c.adoWorker(ctx, &wg, i, organization, projectName, projectVisibility, jobs, errors)
+		go c.adoWorkerTracked(ctx, &wg, i, organization, projectName, projectVisibility, jobs, errors, tracker)
 	}
 
 	// Send jobs (send pointers to avoid copies)
@@ -236,6 +297,11 @@ func (c *ADOCollector) processADORepositoriesInParallel(ctx context.Context, org
 
 // adoWorker processes ADO repositories from the jobs channel
 func (c *ADOCollector) adoWorker(ctx context.Context, wg *sync.WaitGroup, workerID int, organization, projectName, projectVisibility string, jobs <-chan *git.GitRepository, errors chan<- error) {
+	c.adoWorkerTracked(ctx, wg, workerID, organization, projectName, projectVisibility, jobs, errors, c.getTracker())
+}
+
+// adoWorkerTracked processes ADO repositories from the jobs channel with progress tracking
+func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup, workerID int, organization, projectName, projectVisibility string, jobs <-chan *git.GitRepository, errors chan<- error, tracker ProgressTracker) {
 	defer wg.Done()
 
 	for adoRepo := range jobs {
@@ -243,6 +309,7 @@ func (c *ADOCollector) adoWorker(ctx context.Context, wg *sync.WaitGroup, worker
 			c.logger.Warn("Skipping repository with nil name",
 				"worker_id", workerID,
 				"project", projectName)
+			tracker.IncrementProcessedRepos(1) // Still count as processed
 			continue
 		}
 
@@ -322,6 +389,8 @@ func (c *ADOCollector) adoWorker(ctx context.Context, wg *sync.WaitGroup, worker
 					"repo", repoName,
 					"error", err)
 				errors <- err
+				tracker.RecordError(err)
+				tracker.IncrementProcessedRepos(1) // Still count as processed
 				continue
 			}
 		}
@@ -331,6 +400,9 @@ func (c *ADOCollector) adoWorker(ctx context.Context, wg *sync.WaitGroup, worker
 			"project", projectName,
 			"repo", repoName,
 			"is_git", repo.ADOIsGit)
+
+		// Update progress
+		tracker.IncrementProcessedRepos(1)
 	}
 }
 

@@ -16,6 +16,8 @@ type ProgressTracker interface {
 	StartOrg(org string, index int)
 	// CompleteOrg signals that processing of an organization has completed
 	CompleteOrg(org string, repoCount int)
+	// ClearCurrentOrg clears the current org (used during batch profiling across all orgs)
+	ClearCurrentOrg()
 	// SetTotalRepos sets the total number of repositories to process
 	SetTotalRepos(total int)
 	// AddRepos adds to the total repo count (for incremental discovery)
@@ -111,6 +113,18 @@ func (t *DBProgressTracker) CompleteOrg(org string, repoCount int) {
 	}
 }
 
+// ClearCurrentOrg clears the current org (used during batch profiling across all orgs)
+func (t *DBProgressTracker) ClearCurrentOrg() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.progress.CurrentOrg = ""
+
+	if err := t.db.UpdateDiscoveryProgress(t.progress); err != nil {
+		t.logger.Warn("Failed to clear current org", "error", err)
+	}
+}
+
 // SetTotalRepos sets the total number of repositories to process
 func (t *DBProgressTracker) SetTotalRepos(total int) {
 	t.mu.Lock()
@@ -198,6 +212,7 @@ type NoOpProgressTracker struct{}
 func (NoOpProgressTracker) SetTotalOrgs(int)                       {}
 func (NoOpProgressTracker) StartOrg(string, int)                   {}
 func (NoOpProgressTracker) CompleteOrg(string, int)                {}
+func (NoOpProgressTracker) ClearCurrentOrg()                       {}
 func (NoOpProgressTracker) SetTotalRepos(int)                      {}
 func (NoOpProgressTracker) AddRepos(int)                           {}
 func (NoOpProgressTracker) IncrementProcessedRepos(int)            {}

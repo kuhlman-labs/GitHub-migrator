@@ -148,9 +148,9 @@ export function SourcesSettings({ readOnly = false }: SourcesSettingsProps) {
       <div className="flex items-center justify-between mb-2">
         <Heading as="h2" className="text-lg">Migration Sources</Heading>
         {!readOnly && (
-          <PrimaryButton onClick={handleOpenCreate} leadingVisual={PlusIcon}>
-            Add Source
-          </PrimaryButton>
+        <PrimaryButton onClick={handleOpenCreate} leadingVisual={PlusIcon}>
+          Add Source
+        </PrimaryButton>
         )}
       </div>
       <Text className="block mb-6" style={{ color: 'var(--fgColor-muted)' }}>

@@ -11,6 +11,7 @@ import (
 
 	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
 	ghClient "github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/logging"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
@@ -327,6 +328,70 @@ func (h *SettingsHandler) validateTeamsExistence(ctx context.Context, baseURL, t
 	}
 
 	return results, invalidTeams
+}
+
+// LoggingSettingsResponse represents the current logging configuration
+type LoggingSettingsResponse struct {
+	DebugEnabled bool   `json:"debug_enabled"`
+	CurrentLevel string `json:"current_level"`
+	DefaultLevel string `json:"default_level"`
+}
+
+// UpdateLoggingRequest represents a request to update logging settings
+type UpdateLoggingRequest struct {
+	DebugEnabled *bool `json:"debug_enabled,omitempty"`
+}
+
+// GetLoggingSettings handles GET /api/v1/settings/logging
+// Returns current logging configuration
+func (h *SettingsHandler) GetLoggingSettings(w http.ResponseWriter, _ *http.Request) {
+	manager := logging.GetLogLevelManager()
+	if manager == nil {
+		h.sendJSON(w, http.StatusOK, LoggingSettingsResponse{
+			DebugEnabled: false,
+			CurrentLevel: "info",
+			DefaultLevel: "info",
+		})
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, LoggingSettingsResponse{
+		DebugEnabled: manager.IsDebugEnabled(),
+		CurrentLevel: manager.GetLevel(),
+		DefaultLevel: manager.GetDefaultLevel(),
+	})
+}
+
+// UpdateLoggingSettings handles PUT /api/v1/settings/logging
+// Updates logging configuration at runtime
+func (h *SettingsHandler) UpdateLoggingSettings(w http.ResponseWriter, r *http.Request) {
+	var req UpdateLoggingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	manager := logging.GetLogLevelManager()
+	if manager == nil {
+		http.Error(w, "Logging manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	if req.DebugEnabled != nil {
+		manager.SetDebugEnabled(*req.DebugEnabled)
+		if *req.DebugEnabled {
+			h.logger.Info("Debug logging enabled via settings")
+		} else {
+			h.logger.Info("Debug logging disabled via settings, reset to default level",
+				"default_level", manager.GetDefaultLevel())
+		}
+	}
+
+	h.sendJSON(w, http.StatusOK, LoggingSettingsResponse{
+		DebugEnabled: manager.IsDebugEnabled(),
+		CurrentLevel: manager.GetLevel(),
+		DefaultLevel: manager.GetDefaultLevel(),
+	})
 }
 
 func (h *SettingsHandler) sendJSON(w http.ResponseWriter, statusCode int, data any) {
