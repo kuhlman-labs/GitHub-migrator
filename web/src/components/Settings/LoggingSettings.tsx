@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { FormControl, Checkbox, Text, Heading, Flash, Label } from '@primer/react';
 import { AlertIcon, SyncIcon, CheckCircleIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,15 +17,6 @@ export function LoggingSettings({ readOnly = false }: LoggingSettingsProps) {
     refetchInterval: 30000, // Refresh every 30s to stay in sync
   });
 
-  const [debugEnabled, setDebugEnabled] = useState(false);
-
-  // Sync local state with server state
-  useEffect(() => {
-    if (loggingSettings) {
-      setDebugEnabled(loggingSettings.debug_enabled);
-    }
-  }, [loggingSettings]);
-
   const updateMutation = useMutation({
     mutationFn: (enabled: boolean) => 
       settingsApi.updateLoggingSettings({ debug_enabled: enabled }),
@@ -35,12 +25,18 @@ export function LoggingSettings({ readOnly = false }: LoggingSettingsProps) {
     },
   });
 
+  // Derive debug state from server state - no local state needed
+  const debugEnabled = loggingSettings?.debug_enabled ?? false;
+
   const handleToggle = (checked: boolean) => {
-    setDebugEnabled(checked);
+    // Optimistically update the cache before mutation completes
+    queryClient.setQueryData<LoggingSettingsResponse>(['loggingSettings'], (old) => 
+      old ? { ...old, debug_enabled: checked } : old
+    );
     updateMutation.mutate(checked);
   };
 
-  const hasUnsavedChanges = loggingSettings && debugEnabled !== loggingSettings.debug_enabled;
+  const hasUnsavedChanges = updateMutation.isPending;
 
   if (isLoading) {
     return (

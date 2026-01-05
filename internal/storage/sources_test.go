@@ -7,6 +7,7 @@ import (
 
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/stretchr/testify/require"
 )
 
 // createTestSource creates a minimal source for testing
@@ -132,9 +133,7 @@ func TestGetSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get source: %v", err)
 	}
-	if retrieved == nil {
-		t.Fatal("expected source but got nil")
-	}
+	require.NotNil(t, retrieved, "expected source but got nil")
 	if retrieved.Name != source.Name {
 		t.Errorf("name mismatch: got %q, want %q", retrieved.Name, source.Name)
 	}
@@ -166,9 +165,7 @@ func TestGetSourceByName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get source by name: %v", err)
 	}
-	if retrieved == nil {
-		t.Fatal("expected source but got nil")
-	}
+	require.NotNil(t, retrieved, "expected source but got nil")
 	if retrieved.ID != source.ID {
 		t.Errorf("ID mismatch: got %d, want %d", retrieved.ID, source.ID)
 	}

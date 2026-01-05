@@ -13,6 +13,14 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+// Log level string constants
+const (
+	LevelInfo  = "info"
+	LevelDebug = "debug"
+	LevelWarn  = "warn"
+	LevelError = "error"
+)
+
 // LogLevelManager provides runtime log level control
 type LogLevelManager struct {
 	levelVar     *slog.LevelVar
@@ -32,7 +40,7 @@ func GetLogLevelManager() *LogLevelManager {
 // GetLevel returns the current log level as a string
 func (m *LogLevelManager) GetLevel() string {
 	if m == nil || m.levelVar == nil {
-		return "info"
+		return LevelInfo
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -42,7 +50,7 @@ func (m *LogLevelManager) GetLevel() string {
 // GetDefaultLevel returns the default log level from configuration
 func (m *LogLevelManager) GetDefaultLevel() string {
 	if m == nil {
-		return "info"
+		return LevelInfo
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -97,15 +105,15 @@ func (m *LogLevelManager) ResetToDefault() {
 func levelToString(level slog.Level) string {
 	switch level {
 	case slog.LevelDebug:
-		return "debug"
+		return LevelDebug
 	case slog.LevelInfo:
-		return "info"
+		return LevelInfo
 	case slog.LevelWarn:
-		return "warn"
+		return LevelWarn
 	case slog.LevelError:
-		return "error"
+		return LevelError
 	default:
-		return "info"
+		return LevelInfo
 	}
 }
 
@@ -160,13 +168,13 @@ func NewLogger(cfg config.LoggingConfig) *slog.Logger {
 
 func parseLevel(level string) slog.Level {
 	switch level {
-	case "debug":
+	case LevelDebug:
 		return slog.LevelDebug
-	case "info":
+	case LevelInfo:
 		return slog.LevelInfo
-	case "warn":
+	case LevelWarn:
 		return slog.LevelWarn
-	case "error":
+	case LevelError:
 		return slog.LevelError
 	default:
 		return slog.LevelInfo

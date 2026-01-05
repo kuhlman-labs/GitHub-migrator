@@ -249,11 +249,6 @@ func (c *ADOCollector) discoverADOProjectWithVisibilityTracked(ctx context.Conte
 	return len(repos), nil
 }
 
-// processADORepositoriesInParallel processes ADO repositories in parallel using worker pool
-func (c *ADOCollector) processADORepositoriesInParallel(ctx context.Context, organization, projectName, projectVisibility string, repos []git.GitRepository) error {
-	return c.processADORepositoriesInParallelTracked(ctx, organization, projectName, projectVisibility, repos, c.getTracker())
-}
-
 // processADORepositoriesInParallelTracked processes ADO repositories in parallel with progress tracking
 func (c *ADOCollector) processADORepositoriesInParallelTracked(ctx context.Context, organization, projectName, projectVisibility string, repos []git.GitRepository, tracker ProgressTracker) error {
 	jobs := make(chan *git.GitRepository, len(repos))
@@ -293,11 +288,6 @@ func (c *ADOCollector) processADORepositoriesInParallelTracked(ctx context.Conte
 	}
 
 	return nil
-}
-
-// adoWorker processes ADO repositories from the jobs channel
-func (c *ADOCollector) adoWorker(ctx context.Context, wg *sync.WaitGroup, workerID int, organization, projectName, projectVisibility string, jobs <-chan *git.GitRepository, errors chan<- error) {
-	c.adoWorkerTracked(ctx, wg, workerID, organization, projectName, projectVisibility, jobs, errors, c.getTracker())
 }
 
 // adoWorkerTracked processes ADO repositories from the jobs channel with progress tracking
