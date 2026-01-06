@@ -484,6 +484,9 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpriseSlug string) error {
 	c.logger.Info("Starting enterprise-wide repository discovery", "enterprise", enterpriseSlug)
 
+	// Get progress tracker early so we can update it during rate limit waits
+	tracker := c.getProgressTracker()
+
 	// Check if we need to use per-org clients (GitHub App without installation ID)
 	useAppInstallations := c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0
 
@@ -496,7 +499,13 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 		c.logger.Info("Using GitHub App Installations API to discover organizations",
 			"app_id", c.baseConfig.AppID)
 
-		installations, err := c.client.ListAppInstallations(ctx)
+		// Wrap in rate limit handling so progress tracker shows waiting state
+		var installations map[string]int64
+		err := c.retryWithRateLimitHandling(ctx, tracker, "list app installations", func() error {
+			var listErr error
+			installations, listErr = c.client.ListAppInstallations(ctx)
+			return listErr
+		})
 		if err != nil {
 			return fmt.Errorf("failed to list app installations: %w", err)
 		}
@@ -512,7 +521,13 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 	} else {
 		// Use enterprise GraphQL API (requires installation token or PAT with enterprise access)
 		// Get orgs with repo counts for accurate upfront progress tracking
-		orgInfos, err := c.client.ListEnterpriseOrganizationsWithCounts(ctx, enterpriseSlug)
+		// Wrap in rate limit handling so progress tracker shows waiting state
+		var orgInfos []github.EnterpriseOrgInfo
+		err := c.retryWithRateLimitHandling(ctx, tracker, "list enterprise organizations", func() error {
+			var listErr error
+			orgInfos, listErr = c.client.ListEnterpriseOrganizationsWithCounts(ctx, enterpriseSlug)
+			return listErr
+		})
 		if err != nil {
 			return fmt.Errorf("failed to list enterprise organizations: %w", err)
 		}
@@ -531,7 +546,6 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			"total_repos", totalRepos)
 
 		// Set total repos upfront for accurate progress tracking
-		tracker := c.getProgressTracker()
 		if totalRepos > 0 {
 			tracker.SetTotalRepos(totalRepos)
 		}
@@ -550,7 +564,6 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 	// This is used to determine if we need to increment total as we discover
 	hasUpfrontTotalPAT := false
 	if !useAppInstallations {
-		tracker := c.getProgressTracker()
 		hasUpfrontTotalPAT = tracker.GetProgress().TotalRepos > 0
 	}
 
@@ -567,7 +580,6 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 		// Sequential processing for PAT/shared client mode
 		// Each org goes through all phases sequentially (same as GitHub App mode):
 		// Listing → Profiling → Teams → Members → Complete
-		tracker := c.getProgressTracker()
 		tracker.SetTotalOrgs(len(orgs))
 
 		// Note: Total repos was already set upfront if available (hasUpfrontTotalPAT)
