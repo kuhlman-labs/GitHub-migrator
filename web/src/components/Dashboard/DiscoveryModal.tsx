@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { Button, TextInput, Flash, FormControl } from '@primer/react';
 import { FormDialog } from '../common/FormDialog';
-import { DiscoverySourceSelector, useSourceSelection } from '../common/DiscoverySourceSelector';
+import { DiscoverySourceSelector } from '../common/DiscoverySourceSelector';
+import { useSourceSelection } from '../../hooks/useSourceSelection';
 import { useSourceContext } from '../../contexts/SourceContext';
 
 export type DiscoveryType = 'organization' | 'enterprise' | 'ado-org' | 'ado-project';
