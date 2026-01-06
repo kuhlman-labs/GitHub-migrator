@@ -226,6 +226,7 @@ export type DiscoveryPhase =
   | 'profiling_repos'
   | 'discovering_teams'
   | 'discovering_members'
+  | 'waiting_for_rate_limit'
   | 'completed';
 
 export type DiscoveryStatus = 'in_progress' | 'completed' | 'failed' | 'none';

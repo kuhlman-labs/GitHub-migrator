@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/go-github/v75/github"
 )
@@ -660,6 +661,109 @@ func TestIsRetryableError_StreamErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsRetryableError(tt.err); got != tt.want {
 				t.Errorf("IsRetryableError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsRateLimitBlockedError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "rate limit blocked error",
+			err:  errors.New("GET https://api.github.com/orgs/test/repos?per_page=100: 403 API rate limit of 5000 still exceeded until 2026-01-06 11:39:25 -0500 EST, not making remote request. [rate reset in 1m56s]"),
+			want: true,
+		},
+		{
+			name: "regular error",
+			err:  errors.New("something went wrong"),
+			want: false,
+		},
+		{
+			name: "rate limit error without blocked pattern",
+			err:  ErrRateLimitExceeded,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsRateLimitBlockedError(tt.err); got != tt.want {
+				t.Errorf("IsRateLimitBlockedError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseRateLimitResetTime(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		wantHasTime    bool
+		wantDurationOK bool
+	}{
+		{
+			name:           "nil error",
+			err:            nil,
+			wantHasTime:    false,
+			wantDurationOK: false,
+		},
+		{
+			name:           "error with rate reset in 1m56s",
+			err:            errors.New("403 API rate limit exceeded until 2026-01-06. [rate reset in 1m56s]"),
+			wantHasTime:    true,
+			wantDurationOK: true,
+		},
+		{
+			name:           "error with rate reset in 30s",
+			err:            errors.New("Rate limit hit [rate reset in 30s]"),
+			wantHasTime:    true,
+			wantDurationOK: true,
+		},
+		{
+			name:           "error with rate reset in 2m",
+			err:            errors.New("Rate limit [rate reset in 2m]"),
+			wantHasTime:    true,
+			wantDurationOK: true,
+		},
+		{
+			name:           "error without rate reset time",
+			err:            errors.New("Rate limit exceeded"),
+			wantHasTime:    false,
+			wantDurationOK: false,
+		},
+		{
+			name:           "regular error",
+			err:            errors.New("something went wrong"),
+			wantHasTime:    false,
+			wantDurationOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetTime, hasTime := ParseRateLimitResetTime(tt.err)
+			if hasTime != tt.wantHasTime {
+				t.Errorf("ParseRateLimitResetTime() hasTime = %v, want %v", hasTime, tt.wantHasTime)
+			}
+			if tt.wantHasTime && tt.wantDurationOK {
+				// Verify the reset time is in the future (within reason)
+				now := time.Now()
+				if resetTime.Before(now) {
+					t.Errorf("ParseRateLimitResetTime() returned past time %v, expected future time", resetTime)
+				}
+				// Should be within 5 minutes of now (for reasonable durations)
+				if resetTime.After(now.Add(5 * time.Minute)) {
+					t.Logf("ParseRateLimitResetTime() returned time %v which is more than 5 minutes in the future", resetTime)
+				}
 			}
 		})
 	}

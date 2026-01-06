@@ -7,6 +7,7 @@ const phaseLabels: Record<DiscoveryPhase, string> = {
   profiling_repos: 'Profiling repositories...',
   discovering_teams: 'Discovering teams...',
   discovering_members: 'Discovering members...',
+  waiting_for_rate_limit: 'Waiting for rate limit reset...',
   completed: 'Completed',
 };
 
@@ -23,6 +24,7 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
   const isComplete = progress.status === 'completed';
   const isFailed = progress.status === 'failed';
   const isInProgress = progress.status === 'in_progress';
+  const isWaitingForRateLimit = progress.phase === 'waiting_for_rate_limit';
 
   // Determine card styling based on status using CSS variables for dark mode compatibility
   const cardStyle = {
@@ -30,12 +32,16 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
       ? 'var(--borderColor-danger-muted, var(--color-danger-muted))' 
       : isComplete 
         ? 'var(--borderColor-success-muted, var(--color-success-muted))' 
-        : 'var(--borderColor-accent-muted, var(--color-accent-muted))',
+        : isWaitingForRateLimit
+          ? 'var(--borderColor-attention-muted, var(--color-attention-muted))'
+          : 'var(--borderColor-accent-muted, var(--color-accent-muted))',
     backgroundColor: isFailed 
       ? 'var(--bgColor-danger-muted, var(--color-danger-subtle))' 
       : isComplete 
         ? 'var(--bgColor-success-muted, var(--color-success-subtle))' 
-        : 'var(--bgColor-accent-muted, var(--color-accent-subtle))',
+        : isWaitingForRateLimit
+          ? 'var(--bgColor-attention-muted, var(--color-attention-subtle))'
+          : 'var(--bgColor-accent-muted, var(--color-accent-subtle))',
   };
 
   // Get the icon based on status (wrapped in span for color styling)
@@ -43,14 +49,18 @@ export function DiscoveryProgressCard({ progress, onDismiss }: DiscoveryProgress
     ? <span style={{ color: 'var(--fgColor-danger)' }}><XCircleIcon size={16} /></span>
     : isComplete 
       ? <span style={{ color: 'var(--fgColor-success)' }}><CheckCircleIcon size={16} /></span>
-      : <span className="animate-spin" style={{ color: 'var(--fgColor-accent)', display: 'inline-flex' }}><SyncIcon size={16} /></span>;
+      : isWaitingForRateLimit
+        ? <span style={{ color: 'var(--fgColor-attention)' }}><AlertIcon size={16} /></span>
+        : <span className="animate-spin" style={{ color: 'var(--fgColor-accent)', display: 'inline-flex' }}><SyncIcon size={16} /></span>;
 
   // Get status text
   const statusText = isFailed 
     ? 'Discovery Failed' 
     : isComplete 
       ? 'Discovery Complete' 
-      : 'Discovery in Progress';
+      : isWaitingForRateLimit
+        ? 'Rate Limited - Waiting'
+        : 'Discovery in Progress';
 
   // Format the discovery type for display
   const formatDiscoveryType = (type: string): string => {

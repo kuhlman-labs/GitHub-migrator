@@ -817,11 +817,12 @@ func (t *TeamMapping) DestinationFullSlug() string {
 
 // Discovery progress phase constants
 const (
-	PhaseListingRepos       = "listing_repos"
-	PhaseProfilingRepos     = "profiling_repos"
-	PhaseDiscoveringTeams   = "discovering_teams"
-	PhaseDiscoveringMembers = "discovering_members"
-	PhaseCompleted          = "completed"
+	PhaseListingRepos        = "listing_repos"
+	PhaseProfilingRepos      = "profiling_repos"
+	PhaseDiscoveringTeams    = "discovering_teams"
+	PhaseDiscoveringMembers  = "discovering_members"
+	PhaseWaitingForRateLimit = "waiting_for_rate_limit"
+	PhaseCompleted           = "completed"
 )
 
 // Discovery progress status constants

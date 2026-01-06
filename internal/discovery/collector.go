@@ -909,7 +909,13 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 }
 
 // listAllRepositoriesWithClient lists all repositories for an organization using a specific client
+// This method handles rate limit errors by waiting and retrying
 func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org string, client *github.Client) ([]*ghapi.Repository, error) {
+	return c.listAllRepositoriesWithClientTracked(ctx, org, client, c.getProgressTracker())
+}
+
+// listAllRepositoriesWithClientTracked lists all repositories with progress tracking for rate limits
+func (c *Collector) listAllRepositoriesWithClientTracked(ctx context.Context, org string, client *github.Client, tracker ProgressTracker) ([]*ghapi.Repository, error) {
 	var allRepos []*ghapi.Repository
 	opts := &ghapi.RepositoryListByOrgOptions{
 		ListOptions: ghapi.ListOptions{PerPage: 100},
@@ -918,6 +924,14 @@ func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org strin
 	for {
 		repos, resp, err := client.REST().Repositories.ListByOrg(ctx, org, opts)
 		if err != nil {
+			// Check if this is a rate limit error that we should wait for
+			if github.IsRateLimitBlockedError(err) || github.IsRateLimitError(err) || github.IsSecondaryRateLimitError(err) {
+				if waitErr := c.waitForRateLimitReset(ctx, err, tracker); waitErr != nil {
+					return nil, fmt.Errorf("failed to list repositories (rate limit wait failed): %w", waitErr)
+				}
+				// Retry the same page after waiting
+				continue
+			}
 			return nil, fmt.Errorf("failed to list repositories: %w", err)
 		}
 
@@ -930,6 +944,70 @@ func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org strin
 	}
 
 	return allRepos, nil
+}
+
+// waitForRateLimitReset waits for the rate limit to reset, updating progress tracker
+// rateLimitResetBuffer is the additional time to wait after the rate limit reset time
+// to ensure the rate limit is actually reset before making the next request.
+// GitHub's rate limit reset times can have slight delays, so we add a safety margin.
+const rateLimitResetBuffer = 5 * time.Second
+
+func (c *Collector) waitForRateLimitReset(ctx context.Context, err error, tracker ProgressTracker) error {
+	// Parse reset time from error if available
+	resetTime, hasResetTime := github.ParseRateLimitResetTime(err)
+
+	var waitDuration time.Duration
+	if hasResetTime {
+		waitDuration = time.Until(resetTime)
+		// Add buffer to ensure rate limit is actually reset before retrying
+		// This prevents hitting the rate limit again due to timing discrepancies
+		waitDuration += rateLimitResetBuffer
+	} else if github.IsSecondaryRateLimitError(err) {
+		// Secondary rate limits typically require 60 seconds wait
+		waitDuration = 60 * time.Second
+	} else {
+		// Default wait time if we can't parse the reset time
+		waitDuration = 60 * time.Second
+	}
+
+	// Ensure minimum wait of 10 seconds and maximum of 15 minutes
+	if waitDuration < 10*time.Second {
+		waitDuration = 10 * time.Second
+	}
+	if waitDuration > 15*time.Minute {
+		waitDuration = 15 * time.Minute
+	}
+
+	c.logger.Warn("Rate limit exceeded, waiting for reset",
+		"wait_duration", waitDuration,
+		"reset_time", resetTime,
+		"error", err)
+
+	// Save the previous phase to restore after waiting
+	previousPhase := ""
+	if progress := tracker.GetProgress(); progress != nil {
+		previousPhase = progress.Phase
+	}
+
+	// Update tracker to show waiting for rate limit
+	tracker.SetPhase(models.PhaseWaitingForRateLimit)
+
+	// Wait for the rate limit to reset
+	select {
+	case <-ctx.Done():
+		// Restore previous phase before returning
+		if previousPhase != "" {
+			tracker.SetPhase(previousPhase)
+		}
+		return fmt.Errorf("context cancelled while waiting for rate limit: %w", ctx.Err())
+	case <-time.After(waitDuration):
+		c.logger.Info("Rate limit wait complete, resuming discovery")
+		// Restore previous phase
+		if previousPhase != "" {
+			tracker.SetPhase(previousPhase)
+		}
+		return nil
+	}
 }
 
 // listAllRepositories lists all repositories for an organization with pagination
