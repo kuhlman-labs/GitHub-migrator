@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
@@ -139,6 +140,83 @@ func TestSetWorkers(t *testing.T) {
 	collector.SetWorkers(-5)
 	if collector.workers != 10 {
 		t.Errorf("Expected workers to remain 10, got %d", collector.workers)
+	}
+}
+
+func TestWaitForRateLimitReset(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL:     "https://api.github.com",
+		Token:       "test-token",
+		RetryConfig: github.DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, nil, logger, mockProvider)
+
+	// Create a mock progress tracker
+	tracker := NoOpProgressTracker{}
+
+	tests := []struct {
+		name           string
+		err            error
+		contextTimeout time.Duration
+		expectError    bool
+	}{
+		{
+			name:           "blocked rate limit with short reset time",
+			err:            errors.New("403 API rate limit exceeded [rate reset in 1s]"),
+			contextTimeout: 20 * time.Second, // Should complete within 10s (min wait) + buffer
+			expectError:    false,
+		},
+		{
+			name:           "context cancellation during wait",
+			err:            errors.New("403 API rate limit exceeded [rate reset in 5m]"),
+			contextTimeout: 100 * time.Millisecond, // Very short timeout
+			expectError:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), tt.contextTimeout)
+			defer cancel()
+
+			start := time.Now()
+			err := collector.waitForRateLimitReset(ctx, tt.err, tracker)
+			elapsed := time.Since(start)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("waitForRateLimitReset() error = nil, want error")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("waitForRateLimitReset() error = %v, want nil", err)
+				}
+				// Should have waited at least MinRateLimitWait (10 seconds)
+				if elapsed < 10*time.Second {
+					t.Errorf("waitForRateLimitReset() waited %v, expected at least 10s", elapsed)
+				}
+			}
+		})
+	}
+}
+
+func TestRateLimitResetBuffer(t *testing.T) {
+	// Verify the buffer constant is set appropriately
+	if rateLimitResetBuffer < 1*time.Second {
+		t.Errorf("rateLimitResetBuffer = %v, should be at least 1 second", rateLimitResetBuffer)
+	}
+	if rateLimitResetBuffer > 30*time.Second {
+		t.Errorf("rateLimitResetBuffer = %v, should not be more than 30 seconds", rateLimitResetBuffer)
 	}
 }
 
