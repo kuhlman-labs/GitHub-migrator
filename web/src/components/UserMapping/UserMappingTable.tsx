@@ -45,6 +45,7 @@ import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { FormDialog } from '../common/FormDialog';
 import { FallbackAvatar } from '../common/FallbackAvatar';
 import { SourceTypeIcon } from '../common/SourceBadge';
+import { DiscoverySourceSelector, useSourceSelection } from '../common/DiscoverySourceSelector';
 import { UserDetailPanel } from './UserDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
@@ -94,6 +95,7 @@ interface UserMappingFilters extends Record<string, unknown> {
 export function UserMappingTable() {
   const { showError, showSuccess } = useToast();
   const { activeSource } = useSourceContext();
+  const { isAllSourcesMode } = useSourceSelection();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<UserMappingFilters>({
@@ -115,6 +117,8 @@ export function UserMappingTable() {
   const [destinationOrg, setDestinationOrg] = useState('');
   const [emuShortcode, setEmuShortcode] = useState('');
   const [discoverOrg, setDiscoverOrg] = useState('');
+  const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
+  
   
 
   const { data, isLoading, error, refetch } = useUserMappings({
@@ -756,12 +760,22 @@ export function UserMappingTable() {
         title="Discover Organization Members"
         submitLabel={discoverOrgMembers.isPending ? 'Discovering...' : 'Discover'}
         onSubmit={() => {
+          // Validate source selection in All Sources mode
+          if (isAllSourcesMode && !discoverSourceId) {
+            showError('Please select a source');
+            return;
+          }
           if (!discoverOrg.trim()) return;
-          discoverOrgMembers.mutate({ organization: discoverOrg.trim() }, {
+          
+          discoverOrgMembers.mutate({ 
+            organization: discoverOrg.trim(),
+            source_id: discoverSourceId ?? activeSource?.id,
+          }, {
             onSuccess: (data) => {
               showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();
               setDiscoverOrg('');
+              setDiscoverSourceId(null);
             },
             onError: (error) => {
               showError(error instanceof Error ? error.message : 'Discovery failed');
@@ -771,25 +785,55 @@ export function UserMappingTable() {
         onCancel={() => {
           discoverDialog.close();
           setDiscoverOrg('');
+          setDiscoverSourceId(null);
         }}
         isLoading={discoverOrgMembers.isPending}
-        isSubmitDisabled={!discoverOrg.trim()}
+        isSubmitDisabled={!discoverOrg.trim() || (isAllSourcesMode && !discoverSourceId)}
       >
         <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-          Discover all members from a GitHub organization. This will fetch org members and create user mappings for mannequin matching.
+          Discover all members from an organization. This will fetch org members and create user mappings for mannequin matching.
         </p>
-        <FormControl>
-          <FormControl.Label>Source Organization</FormControl.Label>
-          <TextInput
-            value={discoverOrg}
-            onChange={(e) => setDiscoverOrg(e.target.value)}
-            placeholder="e.g., my-org"
-            block
-          />
-          <FormControl.Caption>
-            Enter the source GitHub organization name
-          </FormControl.Caption>
-        </FormControl>
+        
+        {/* Source Selection */}
+        <DiscoverySourceSelector
+          selectedSourceId={discoverSourceId}
+          onSourceChange={(sourceId, source) => {
+            setDiscoverSourceId(sourceId);
+            // Pre-populate organization from source config
+            if (source?.organization) {
+              setDiscoverOrg(source.organization);
+            } else {
+              setDiscoverOrg('');
+            }
+          }}
+          required={isAllSourcesMode}
+          disabled={discoverOrgMembers.isPending}
+          label="Select Source"
+          defaultCaption="Select which source to discover members from."
+        />
+        
+        {/* Only show organization field when source is selected (in All Sources mode) or always (in single source mode) */}
+        {(!isAllSourcesMode || discoverSourceId) && (
+          <FormControl>
+            <FormControl.Label>Source Organization</FormControl.Label>
+            <TextInput
+              value={discoverOrg}
+              onChange={(e) => setDiscoverOrg(e.target.value)}
+              placeholder="e.g., my-org"
+              block
+            />
+            <FormControl.Caption>
+              Enter the source organization name to discover members from
+            </FormControl.Caption>
+          </FormControl>
+        )}
+        
+        {/* Prompt to select a source first in All Sources mode */}
+        {isAllSourcesMode && !discoverSourceId && (
+          <div className="text-center py-4" style={{ color: 'var(--fgColor-muted)' }}>
+            <p className="text-sm">Please select a source to configure discovery options.</p>
+          </div>
+        )}
       </FormDialog>
 
       {/* Destination Org Dialog */}

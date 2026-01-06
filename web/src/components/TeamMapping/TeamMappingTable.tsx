@@ -48,6 +48,7 @@ import { Pagination } from '../common/Pagination';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { FormDialog } from '../common/FormDialog';
 import { SourceTypeIcon } from '../common/SourceBadge';
+import { DiscoverySourceSelector, useSourceSelection } from '../common/DiscoverySourceSelector';
 import { TeamDetailPanel } from './TeamDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
@@ -272,6 +273,7 @@ interface TeamMappingFilters extends Record<string, unknown> {
 export function TeamMappingTable() {
   const { showError, showSuccess } = useToast();
   const { activeSource } = useSourceContext();
+  const { isAllSourcesMode } = useSourceSelection();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<TeamMappingFilters>({
@@ -286,6 +288,7 @@ export function TeamMappingTable() {
   const [selectedTeam, setSelectedTeam] = useState<{ org: string; slug: string } | null>(null);
   const [dryRun, setDryRun] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
+  const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
   
   // Dialog state using shared hooks
   const executeDialog = useDialogState();
@@ -293,6 +296,7 @@ export function TeamMappingTable() {
   const discoverDialog = useDialogState();
   const resetDialog = useDialogState();
   const deleteDialog = useDialogState<{ org: string; slug: string }>();
+  
 
   const { data, isLoading, error, refetch } = useTeamMappings({
     search: search || undefined,
@@ -1005,12 +1009,22 @@ export function TeamMappingTable() {
         title="Discover Teams"
         submitLabel={discoverTeams.isPending ? 'Discovering...' : 'Discover'}
         onSubmit={() => {
+          // Validate source selection in All Sources mode
+          if (isAllSourcesMode && !discoverSourceId) {
+            showError('Please select a source');
+            return;
+          }
           if (!discoverOrg.trim()) return;
-          discoverTeams.mutate({ organization: discoverOrg.trim() }, {
+          
+          discoverTeams.mutate({ 
+            organization: discoverOrg.trim(),
+            source_id: discoverSourceId ?? activeSource?.id,
+          }, {
             onSuccess: (data) => {
               showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();
               setDiscoverOrg('');
+              setDiscoverSourceId(null);
             },
             onError: (error) => {
               showError(error instanceof Error ? error.message : 'Discovery failed');
@@ -1020,25 +1034,55 @@ export function TeamMappingTable() {
         onCancel={() => {
           discoverDialog.close();
           setDiscoverOrg('');
+          setDiscoverSourceId(null);
         }}
         isLoading={discoverTeams.isPending}
-        isSubmitDisabled={!discoverOrg.trim()}
+        isSubmitDisabled={!discoverOrg.trim() || (isAllSourcesMode && !discoverSourceId)}
       >
         <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-          Discover all teams from a GitHub organization. This will fetch teams, their members, and create team mappings.
+          Discover all teams from an organization. This will fetch teams, their members, and create team mappings.
         </p>
-        <FormControl>
-          <FormControl.Label>Source Organization</FormControl.Label>
-          <TextInput
-            value={discoverOrg}
-            onChange={(e) => setDiscoverOrg(e.target.value)}
-            placeholder="e.g., my-org"
-            block
-          />
-          <FormControl.Caption>
-            Enter the source GitHub organization name
-          </FormControl.Caption>
-        </FormControl>
+        
+        {/* Source Selection */}
+        <DiscoverySourceSelector
+          selectedSourceId={discoverSourceId}
+          onSourceChange={(sourceId, source) => {
+            setDiscoverSourceId(sourceId);
+            // Pre-populate organization from source config
+            if (source?.organization) {
+              setDiscoverOrg(source.organization);
+            } else {
+              setDiscoverOrg('');
+            }
+          }}
+          required={isAllSourcesMode}
+          disabled={discoverTeams.isPending}
+          label="Select Source"
+          defaultCaption="Select which source to discover teams from."
+        />
+        
+        {/* Only show organization field when source is selected (in All Sources mode) or always (in single source mode) */}
+        {(!isAllSourcesMode || discoverSourceId) && (
+          <FormControl>
+            <FormControl.Label>Source Organization</FormControl.Label>
+            <TextInput
+              value={discoverOrg}
+              onChange={(e) => setDiscoverOrg(e.target.value)}
+              placeholder="e.g., my-org"
+              block
+            />
+            <FormControl.Caption>
+              Enter the source organization name to discover teams from
+            </FormControl.Caption>
+          </FormControl>
+        )}
+        
+        {/* Prompt to select a source first in All Sources mode */}
+        {isAllSourcesMode && !discoverSourceId && (
+          <div className="text-center py-4" style={{ color: 'var(--fgColor-muted)' }}>
+            <p className="text-sm">Please select a source to configure discovery options.</p>
+          </div>
+        )}
       </FormDialog>
 
       {/* Delete Mapping Dialog */}

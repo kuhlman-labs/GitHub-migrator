@@ -1,16 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FormControl, TextInput, ActionMenu, ActionList } from '@primer/react';
+import { ActionMenu, ActionList } from '@primer/react';
 import { Blankslate } from '@primer/react/experimental';
 import { RepoIcon, DownloadIcon, SquareIcon, XIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { Button, BorderedButton, PrimaryButton } from '../common/buttons';
-import { FormDialog } from '../common/FormDialog';
 import type { RepositoryFilters } from '../../types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
 import { useRepositories } from '../../hooks/useQueries';
-import { useDiscoverRepositories } from '../../hooks/useMutations';
+import { useStartDiscovery, useStartADODiscovery } from '../../hooks/useMutations';
 import { searchParamsToFilters, filtersToSearchParams } from '../../utils/filters';
 import { UnifiedFilterSidebar } from '../common/UnifiedFilterSidebar';
 import { RepositoryCard } from './RepositoryCard';
@@ -19,10 +18,11 @@ import { exportToCSV, exportToExcel, exportToJSON, getTimestampedFilename } from
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
 import { useSourceContext } from '../../contexts/SourceContext';
+import { DiscoveryModal, type DiscoveryType } from '../Dashboard/DiscoveryModal';
 
 export function Repositories() {
   const { showError, showSuccess } = useToast();
-  const { activeSource } = useSourceContext();
+  const { activeSource, sources } = useSourceContext();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Parse filters from URL
@@ -38,14 +38,40 @@ export function Repositories() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<Set<number>>(new Set());
+  
+  // Discovery modal state
   const [showDiscoverDialog, setShowDiscoverDialog] = useState(false);
-  const [discoverOrg, setDiscoverOrg] = useState('');
+  const [discoveryType, setDiscoveryType] = useState<DiscoveryType | null>(null);
+  const [organization, setOrganization] = useState('');
+  const [enterpriseSlug, setEnterpriseSlug] = useState('');
+  const [adoOrganization, setAdoOrganization] = useState('');
+  const [adoProject, setAdoProject] = useState('');
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [modalSelectedSourceId, setModalSelectedSourceId] = useState<number | null>(null);
+  
   const pageSize = 12;
+  
+  // Derive source type for discovery modal
+  const hasGitHubSources = sources.some(s => s.type === 'github');
+  const hasADOSources = sources.some(s => s.type === 'azuredevops');
+  const isAllSourcesMode = !activeSource;
+  
+  // Determine the source type for the modal
+  const sourceType = activeSource?.type 
+    || (hasADOSources && !hasGitHubSources ? 'azuredevops' : 'github');
+  
+  // Default discovery type based on source type
+  const defaultDiscoveryType = useMemo((): DiscoveryType => {
+    return sourceType === 'azuredevops' ? 'ado-org' : 'enterprise';
+  }, [sourceType]);
   
   // Fetch repositories with filters (including source filter)
   const { data, isLoading, isFetching} = useRepositories(filtersWithSource);
-  const discoverRepositories = useDiscoverRepositories();
+  const startDiscovery = useStartDiscovery();
+  const startADODiscovery = useStartADODiscovery();
   const repositories = data?.repositories || [];
+  
+  const isDiscoveryPending = startDiscovery.isPending || startADODiscovery.isPending;
 
   // Selection helpers
   const toggleRepositorySelection = (id: number) => {
@@ -329,11 +355,21 @@ export function Repositories() {
 
                 {/* Discover Repos Button */}
                 <PrimaryButton
-                  onClick={() => setShowDiscoverDialog(true)}
+                  onClick={() => {
+                    // Reset modal state when opening
+                    setDiscoveryType(defaultDiscoveryType);
+                    setOrganization('');
+                    setEnterpriseSlug('');
+                    setAdoOrganization('');
+                    setAdoProject('');
+                    setDiscoveryError(null);
+                    setModalSelectedSourceId(activeSource?.id ?? null);
+                    setShowDiscoverDialog(true);
+                  }}
                   leadingVisual={RepoIcon}
-                  disabled={discoverRepositories.isPending}
+                  disabled={isDiscoveryPending}
                 >
-                  {discoverRepositories.isPending ? 'Discovering...' : 'Discover Repos'}
+                  {isDiscoveryPending ? 'Discovering...' : 'Discover Repos'}
                 </PrimaryButton>
               </div>
             </div>
@@ -358,7 +394,16 @@ export function Repositories() {
                   Clear All Filters
                 </Blankslate.PrimaryAction>
               ) : (
-                <Blankslate.PrimaryAction onClick={() => setShowDiscoverDialog(true)}>
+                <Blankslate.PrimaryAction onClick={() => {
+                  setDiscoveryType(defaultDiscoveryType);
+                  setOrganization('');
+                  setEnterpriseSlug('');
+                  setAdoOrganization('');
+                  setAdoProject('');
+                  setDiscoveryError(null);
+                  setModalSelectedSourceId(activeSource?.id ?? null);
+                  setShowDiscoverDialog(true);
+                }}>
                   Discover Repos
                 </Blankslate.PrimaryAction>
               )}
@@ -399,46 +444,86 @@ export function Repositories() {
       )}
 
       {/* Discover Repos Dialog */}
-      <FormDialog
+      <DiscoveryModal
         isOpen={showDiscoverDialog}
-        title="Discover Repositories"
-        submitLabel={discoverRepositories.isPending ? 'Discovering...' : 'Discover'}
-        onSubmit={() => {
-          if (!discoverOrg.trim()) return;
-          discoverRepositories.mutate(discoverOrg.trim(), {
-            onSuccess: (data) => {
-              showSuccess(data.message || 'Discovery started!');
-              setDiscoverOrg('');
-              setShowDiscoverDialog(false);
-            },
-            onError: (error) => {
-              showError(error instanceof Error ? error.message : 'Discovery failed');
-            },
-          });
+        sourceType={sourceType}
+        discoveryType={discoveryType ?? defaultDiscoveryType}
+        setDiscoveryType={setDiscoveryType}
+        organization={organization}
+        setOrganization={setOrganization}
+        enterpriseSlug={enterpriseSlug}
+        setEnterpriseSlug={setEnterpriseSlug}
+        adoOrganization={adoOrganization}
+        setAdoOrganization={setAdoOrganization}
+        adoProject={adoProject}
+        setAdoProject={setAdoProject}
+        loading={isDiscoveryPending}
+        error={discoveryError}
+        selectedSourceId={modalSelectedSourceId}
+        onSourceChange={setModalSelectedSourceId}
+        isAllSourcesMode={isAllSourcesMode}
+        onStart={(sourceId) => {
+          const effectiveDiscoveryType = discoveryType ?? defaultDiscoveryType;
+          setDiscoveryError(null);
+          
+          // Determine source ID for the API call
+          const gitHubSources = sources.filter(s => s.type === 'github');
+          const adoSources = sources.filter(s => s.type === 'azuredevops');
+          
+          let finalSourceId: number | undefined = sourceId;
+          
+          if (!finalSourceId) {
+            if (activeSource?.id) {
+              finalSourceId = activeSource.id;
+            } else if (effectiveDiscoveryType === 'organization' || effectiveDiscoveryType === 'enterprise') {
+              if (gitHubSources.length === 1) {
+                finalSourceId = gitHubSources[0].id;
+              } else if (gitHubSources.length > 1) {
+                setDiscoveryError('Multiple GitHub sources configured. Please select a source.');
+                return;
+              }
+            } else if (effectiveDiscoveryType === 'ado-org' || effectiveDiscoveryType === 'ado-project') {
+              if (adoSources.length === 1) {
+                finalSourceId = adoSources[0].id;
+              } else if (adoSources.length > 1) {
+                setDiscoveryError('Multiple Azure DevOps sources configured. Please select a source.');
+                return;
+              }
+            }
+          }
+          
+          if (effectiveDiscoveryType === 'organization' || effectiveDiscoveryType === 'enterprise') {
+            startDiscovery.mutate({
+              organization: effectiveDiscoveryType === 'organization' ? organization.trim() : undefined,
+              enterprise_slug: effectiveDiscoveryType === 'enterprise' ? enterpriseSlug.trim() : undefined,
+              source_id: finalSourceId,
+            }, {
+              onSuccess: () => {
+                showSuccess('Repository discovery started!');
+                setShowDiscoverDialog(false);
+              },
+              onError: (error) => {
+                setDiscoveryError(error instanceof Error ? error.message : 'Discovery failed');
+              },
+            });
+          } else {
+            startADODiscovery.mutate({
+              organization: adoOrganization.trim(),
+              project: effectiveDiscoveryType === 'ado-project' ? adoProject.trim() : undefined,
+              source_id: finalSourceId,
+            }, {
+              onSuccess: () => {
+                showSuccess('Azure DevOps discovery started!');
+                setShowDiscoverDialog(false);
+              },
+              onError: (error) => {
+                setDiscoveryError(error instanceof Error ? error.message : 'Discovery failed');
+              },
+            });
+          }
         }}
-        onCancel={() => {
-          setShowDiscoverDialog(false);
-          setDiscoverOrg('');
-        }}
-        isLoading={discoverRepositories.isPending}
-        isSubmitDisabled={!discoverOrg.trim()}
-      >
-        <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-          Discover all repositories from a GitHub organization. This will start repository discovery and profiling.
-        </p>
-        <FormControl>
-          <FormControl.Label>Source Organization</FormControl.Label>
-          <TextInput
-            value={discoverOrg}
-            onChange={(e) => setDiscoverOrg(e.target.value)}
-            placeholder="e.g., my-org"
-            block
-          />
-          <FormControl.Caption>
-            Enter the GitHub organization to discover repositories from
-          </FormControl.Caption>
-        </FormControl>
-      </FormDialog>
+        onClose={() => setShowDiscoverDialog(false)}
+      />
     </div>
   );
 }
