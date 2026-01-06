@@ -91,6 +91,9 @@ type DataStore interface {
 	storage.DiscoveryStore
 	storage.SetupStore
 
+	// Settings store
+	storage.SettingsStore
+
 	// Database access
 	storage.DatabaseAccess
 }

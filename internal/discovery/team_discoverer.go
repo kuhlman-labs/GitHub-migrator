@@ -114,7 +114,7 @@ func (d *TeamDiscoverer) DiscoverTeams(ctx context.Context, org string, client *
 	return nil
 }
 
-// DiscoverTeamsOnly discovers only teams and their members without repository associations.
+// DiscoverTeamsOnly discovers teams, their members, and repository associations.
 // Returns (teams saved, members saved, error).
 func (d *TeamDiscoverer) DiscoverTeamsOnly(ctx context.Context, org string, client *github.Client, sourceInstance string) (int, int, error) {
 	d.logger.Info("Starting teams-only discovery", "organization", org)
@@ -272,7 +272,7 @@ func (d *TeamDiscoverer) processTeamFull(ctx context.Context, workerID int, org 
 	return result
 }
 
-// teamsOnlyWorker processes teams without repository associations.
+// teamsOnlyWorker processes teams including repository associations.
 func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, workerID int, org string, client *github.Client, sourceInstance string, jobs <-chan *github.TeamInfo, results chan<- teamResult) {
 	defer wg.Done()
 
@@ -305,6 +305,38 @@ func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup
 			continue
 		}
 		result.teamSaved = true
+
+		// List repositories for this team
+		teamRepos, err := client.ListTeamRepositories(ctx, org, teamInfo.Slug)
+		if err != nil {
+			d.logger.Warn("Failed to list repositories for team",
+				"worker_id", workerID,
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			// Don't return - continue with members
+		} else {
+			d.logger.Debug("Found repositories for team",
+				"worker_id", workerID,
+				"organization", org,
+				"team", teamInfo.Slug,
+				"count", len(teamRepos))
+
+			// Save team-repository associations
+			for _, teamRepo := range teamRepos {
+				if err := d.storage.SaveTeamRepository(ctx, team.ID, teamRepo.FullName, teamRepo.Permission); err != nil {
+					d.logger.Warn("Failed to save team-repository association",
+						"worker_id", workerID,
+						"organization", org,
+						"team", teamInfo.Slug,
+						"repo", teamRepo.FullName,
+						"error", err)
+					// Continue with other repos even if one fails
+				} else {
+					result.repoCount++
+				}
+			}
+		}
 
 		// List and save team members
 		teamMembers, err := client.ListTeamMembersGraphQL(ctx, org, teamInfo.Slug)

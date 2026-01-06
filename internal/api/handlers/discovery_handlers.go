@@ -54,9 +54,20 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set workers if specified
-	if req.Workers > 0 {
-		collector.SetWorkers(req.Workers)
+	// Set workers: use request value if provided, otherwise use settings value
+	workers := req.Workers
+	if workers <= 0 {
+		// Get workers from settings
+		settings, err := h.db.GetSettings(r.Context())
+		if err != nil {
+			h.logger.Warn("Failed to get settings for workers count, using default", "error", err)
+		} else if settings.MigrationWorkers > 0 {
+			workers = settings.MigrationWorkers
+		}
+	}
+	if workers > 0 {
+		collector.SetWorkers(workers)
+		h.logger.Debug("Discovery workers configured", "workers", workers)
 	}
 
 	// Set source ID if provided
@@ -371,7 +382,21 @@ func (h *Handler) getADOCollector(ctx context.Context, w http.ResponseWriter, re
 		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
 		return nil, err
 	}
-	adoCollector.SetWorkers(req.Workers)
+	// Set workers: use request value if provided, otherwise use settings value
+	workers := req.Workers
+	if workers <= 0 {
+		// Get workers from settings
+		settings, err := h.db.GetSettings(ctx)
+		if err != nil {
+			h.logger.Warn("Failed to get settings for workers count, using default", "error", err)
+		} else if settings.MigrationWorkers > 0 {
+			workers = settings.MigrationWorkers
+		}
+	}
+	if workers > 0 {
+		adoCollector.SetWorkers(workers)
+		h.logger.Debug("ADO discovery workers configured", "workers", workers)
+	}
 	return adoCollector, nil
 }
 

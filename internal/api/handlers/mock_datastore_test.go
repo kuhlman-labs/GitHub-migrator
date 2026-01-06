@@ -875,5 +875,13 @@ func (m *MockDataStore) UpdateRepositoryStatus(ctx context.Context, fullName str
 	return nil
 }
 
+// GetSettings returns mock settings with default values
+func (m *MockDataStore) GetSettings(ctx context.Context) (*models.Settings, error) {
+	return &models.Settings{
+		ID:               1,
+		MigrationWorkers: 5, // Default workers for tests
+	}, nil
+}
+
 // Compile-time check that MockDataStore implements DataStore
 var _ DataStore = (*MockDataStore)(nil)

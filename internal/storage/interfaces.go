@@ -281,6 +281,12 @@ type SetupStore interface {
 	MarkSetupComplete() error
 }
 
+// SettingsStore defines operations for application settings.
+type SettingsStore interface {
+	// GetSettings retrieves the application settings.
+	GetSettings(ctx context.Context) (*models.Settings, error)
+}
+
 // DatabaseAccess provides low-level database access.
 type DatabaseAccess interface {
 	// DB returns the underlying GORM database connection.
@@ -306,6 +312,7 @@ var (
 	_ SourceStore           = (*Database)(nil)
 	_ ADOStore              = (*Database)(nil)
 	_ DiscoveryStore        = (*Database)(nil)
+	_ SettingsStore         = (*Database)(nil)
 	_ SetupStore            = (*Database)(nil)
 	_ DatabaseAccess        = (*Database)(nil)
 )

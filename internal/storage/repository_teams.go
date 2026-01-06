@@ -66,7 +66,8 @@ func (d *Database) SaveTeamRepository(ctx context.Context, teamID int64, repoFul
 
 	if err == gorm.ErrRecordNotFound {
 		// Repository not found in our database - skip it
-		// This can happen if the team has access to repos we haven't discovered
+		// This can happen if the team has access to repos we haven't discovered yet
+		// The calling code in collector.go logs the repo count found for the team
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("failed to find repository: %w", err)
