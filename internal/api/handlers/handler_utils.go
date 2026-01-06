@@ -448,7 +448,9 @@ func getMappingStatsWithFilters(r *http.Request) *int {
 	var sourceID *int
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
-			sourceID = &sid
+			// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int)
+			*sourceID = sid
 		}
 	}
 	return sourceID

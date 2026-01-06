@@ -51,7 +51,9 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 	// Parse source_id for multi-source filtering
 	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
 		if sid, err := strconv.Atoi(sourceIDStr); err == nil {
-			filters.SourceID = &sid
+			// Allocate on heap to avoid dangling pointer when if block exits
+			filters.SourceID = new(int)
+			*filters.SourceID = sid
 		}
 	}
 
