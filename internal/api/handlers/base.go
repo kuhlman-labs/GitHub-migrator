@@ -184,17 +184,17 @@ func (h *Handler) handleContextError(ctx context.Context, err error, operation s
 }
 
 // getCollectorForSource returns a collector for the given source ID.
-// If h.collector is already configured, it uses that.
-// Otherwise, it creates a collector dynamically from the source's credentials in the database.
+// If a sourceID is provided, it creates a collector dynamically from the source's credentials.
+// Only falls back to h.collector when no sourceID is given (legacy mode).
 func (h *Handler) getCollectorForSource(ctx context.Context, sourceID *int64) (*discovery.Collector, error) {
-	// If we have a pre-configured collector, use it
-	if h.collector != nil {
-		return h.collector, nil
-	}
-
-	// No pre-configured collector - we need a source ID to create one dynamically
+	// If sourceID is provided, always use that source's credentials
+	// This ensures consistency between the credentials used and the source ID assigned to repos
 	if sourceID == nil {
-		return nil, fmt.Errorf("no GitHub client configured and no source_id provided")
+		// No source ID - fall back to pre-configured collector if available
+		if h.collector != nil {
+			return h.collector, nil
+		}
+		return nil, fmt.Errorf("no source_id provided and no legacy collector configured")
 	}
 
 	// Get the database - need to type assert to *storage.Database

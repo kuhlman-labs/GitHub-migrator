@@ -237,11 +237,21 @@ func (h *Handler) GetExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		estimatedCompletionDate = stringPtr(completionDate.Format("2006-01-02"))
 	}
 
+	// Fetch project stats to determine if we're dealing with ADO data
+	// This supports multi-source environments where different sources may be ADO or GitHub
+	projectStats, _ := h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+
+	// Fetch both org-based and project-based migration completion stats
+	// The project-based stats will be used for ADO sources, org-based for GitHub
+	migrationCompletionStatsByOrg, _ := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	migrationCompletionStatsByProject, _ := h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+
+	// Use project-based stats if we have ADO projects, otherwise use org-based
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == models.SourceTypeAzureDevOps {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	if len(projectStats) > 0 && len(migrationCompletionStatsByProject) > 0 {
+		migrationCompletionStats = migrationCompletionStatsByProject
 	} else {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+		migrationCompletionStats = migrationCompletionStatsByOrg
 	}
 
 	complexityDistribution, _ := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter, sourceID)
@@ -403,11 +413,21 @@ func (h *Handler) ExportExecutiveReport(w http.ResponseWriter, r *http.Request) 
 		estimatedCompletionDate = completionDate.Format("2006-01-02")
 	}
 
+	// Fetch project stats to determine if we're dealing with ADO data
+	// This supports multi-source environments where different sources may be ADO or GitHub
+	projectStats, _ := h.db.GetProjectStatsFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+
+	// Fetch both org-based and project-based migration completion stats
+	// The project-based stats will be used for ADO sources, org-based for GitHub
+	migrationCompletionStatsByOrg, _ := h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	migrationCompletionStatsByProject, _ := h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+
+	// Use project-based stats if we have ADO projects, otherwise use org-based
 	var migrationCompletionStats []*storage.MigrationCompletionStats
-	if h.sourceType == models.SourceTypeAzureDevOps {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByProjectFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+	if len(projectStats) > 0 && len(migrationCompletionStatsByProject) > 0 {
+		migrationCompletionStats = migrationCompletionStatsByProject
 	} else {
-		migrationCompletionStats, _ = h.db.GetMigrationCompletionStatsByOrgFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
+		migrationCompletionStats = migrationCompletionStatsByOrg
 	}
 
 	complexityDistribution, _ := h.db.GetComplexityDistribution(ctx, orgFilter, projectFilter, batchFilter, sourceID)

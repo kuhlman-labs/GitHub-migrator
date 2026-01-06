@@ -153,6 +153,7 @@ func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgr
 		h.discoveryMu.Lock()
 		delete(h.discoveryCancel, progressID)
 		h.discoveryMu.Unlock()
+		cancel()
 		tracker.Flush()
 	}()
 
