@@ -1010,6 +1010,42 @@ func (c *Collector) waitForRateLimitReset(ctx context.Context, err error, tracke
 	}
 }
 
+// isRateLimitError checks if an error is any type of rate limit error
+func (c *Collector) isRateLimitError(err error) bool {
+	return github.IsRateLimitBlockedError(err) || github.IsRateLimitError(err) || github.IsSecondaryRateLimitError(err)
+}
+
+// retryWithRateLimitHandling executes a function and retries on rate limit errors
+// This is a general-purpose retry wrapper for operations that may hit rate limits
+func (c *Collector) retryWithRateLimitHandling(ctx context.Context, tracker ProgressTracker, operation string, fn func() error) error {
+	maxRetries := 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+
+		// Check if this is a rate limit error
+		if c.isRateLimitError(err) {
+			c.logger.Warn("Rate limit hit, waiting before retry",
+				"operation", operation,
+				"attempt", attempt,
+				"max_retries", maxRetries,
+				"error", err)
+
+			if waitErr := c.waitForRateLimitReset(ctx, err, tracker); waitErr != nil {
+				return fmt.Errorf("%s failed (rate limit wait failed): %w", operation, waitErr)
+			}
+			// Continue to retry after waiting
+			continue
+		}
+
+		// Non-rate-limit error, return immediately
+		return err
+	}
+	return fmt.Errorf("%s failed after %d retries due to rate limits", operation, maxRetries)
+}
+
 // listAllRepositories lists all repositories for an organization with pagination
 // Uses the collector's default client
 // nolint:unused // Convenience method for testing and future use
@@ -1148,7 +1184,9 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 	// Profile GitHub features via API (no clone needed)
 	// Note: Don't save users for destination profiling, only source discovery
 	profiler := NewProfiler(c.client, c.logger)
-	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
+	if err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "profile destination features for "+repo.FullName, func() error {
+		return profiler.ProfileFeatures(ctx, repo)
+	}); err != nil {
 		c.logger.Warn("Failed to profile destination features",
 			"repo", repo.FullName,
 			"error", err)
@@ -1321,7 +1359,10 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 		}
 	}
 
-	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
+	// Profile features with rate limit retry
+	if err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "profile features for "+repo.FullName, func() error {
+		return profiler.ProfileFeatures(ctx, repo)
+	}); err != nil {
 		c.logger.Warn("Failed to profile features",
 			"repo", repo.FullName,
 			"error", err)
@@ -1643,8 +1684,13 @@ func (c *Collector) teamDiscoveryWorker(ctx context.Context, wg *sync.WaitGroup,
 func (c *Collector) discoverTeams(ctx context.Context, org string, client *github.Client) error {
 	c.logger.Info("Discovering teams for organization", "organization", org)
 
-	// List all teams in the organization
-	teams, err := client.ListOrganizationTeams(ctx, org)
+	// List all teams in the organization with rate limit retry
+	var teams []*github.TeamInfo
+	err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "list teams", func() error {
+		var listErr error
+		teams, listErr = client.ListOrganizationTeams(ctx, org)
+		return listErr
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list teams: %w", err)
 	}
@@ -1668,7 +1714,13 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *github.Client) error {
 	c.logger.Info("Discovering organization members", "organization", org)
 
-	members, err := client.ListOrgMembers(ctx, org)
+	// List org members with rate limit retry
+	var members []*github.OrgMember
+	err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "list org members", func() error {
+		var listErr error
+		members, listErr = client.ListOrgMembers(ctx, org)
+		return listErr
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list org members: %w", err)
 	}

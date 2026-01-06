@@ -220,6 +220,128 @@ func TestRateLimitResetBuffer(t *testing.T) {
 	}
 }
 
+func TestRetryWithRateLimitHandling(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL:     "https://api.github.com",
+		Token:       "test-token",
+		RetryConfig: github.DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, nil, logger, mockProvider)
+
+	tracker := NoOpProgressTracker{}
+
+	tests := []struct {
+		name         string
+		fn           func() error
+		expectError  bool
+		expectedCall int
+	}{
+		{
+			name: "successful operation",
+			fn: func() error {
+				return nil
+			},
+			expectError:  false,
+			expectedCall: 1,
+		},
+		{
+			name: "non-rate-limit error fails immediately",
+			fn: func() error {
+				return errors.New("some other error")
+			},
+			expectError:  true,
+			expectedCall: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			callCount := 0
+			testFn := func() error {
+				callCount++
+				return tt.fn()
+			}
+
+			err := collector.retryWithRateLimitHandling(context.Background(), tracker, "test", testFn)
+
+			if tt.expectError && err == nil {
+				t.Error("retryWithRateLimitHandling() expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("retryWithRateLimitHandling() unexpected error: %v", err)
+			}
+			if callCount != tt.expectedCall {
+				t.Errorf("retryWithRateLimitHandling() called function %d times, expected %d", callCount, tt.expectedCall)
+			}
+		})
+	}
+}
+
+func TestIsRateLimitError(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	cfg := github.ClientConfig{
+		BaseURL:     "https://api.github.com",
+		Token:       "test-token",
+		RetryConfig: github.DefaultRetryConfig(),
+		Logger:      logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, nil, logger, mockProvider)
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "blocked rate limit error",
+			err:  errors.New("403 API rate limit of 5000 still exceeded until 2026-01-06 13:03:34 -0500 EST, not making remote request. [rate reset in 31m24s]"),
+			want: true,
+		},
+		{
+			name: "secondary rate limit error",
+			err:  errors.New("You have exceeded a secondary rate limit"),
+			want: true,
+		},
+		{
+			name: "regular error",
+			err:  errors.New("some other error"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := collector.isRateLimitError(tt.err)
+			if got != tt.want {
+				t.Errorf("isRateLimitError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProfileRepository_SaveToDatabase(t *testing.T) {
 	// Create test database
 	dbCfg := config.DatabaseConfig{
