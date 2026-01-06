@@ -262,6 +262,7 @@ func (s *Server) Router() http.Handler {
 	protect("POST /api/v1/discovery/start", s.handler.StartDiscovery)
 	protect("GET /api/v1/discovery/status", s.handler.DiscoveryStatus)
 	protect("GET /api/v1/discovery/progress", s.handler.GetDiscoveryProgress)
+	protect("POST /api/v1/discovery/cancel", s.handler.CancelDiscovery)
 
 	// Repository endpoints
 	// Note: Using {fullName...} trailing wildcard to capture full repo name including slashes (e.g., "org/repo")

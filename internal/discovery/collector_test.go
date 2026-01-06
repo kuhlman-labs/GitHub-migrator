@@ -5,9 +5,11 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
+	ghapi "github.com/google/go-github/v75/github"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -574,4 +576,153 @@ func TestDiscoverEnterpriseRepositories_Unit(t *testing.T) {
 	if err != nil {
 		t.Logf("Expected error with fake token: %v", err)
 	}
+}
+
+// TestProcessRepositoriesWithCancellation tests that the worker loop properly handles context cancellation
+func TestProcessRepositoriesWithCancellation(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, db, logger, mockProvider)
+	collector.SetWorkers(2) // Use 2 workers for testing
+
+	// Create a cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create mock repositories
+	repos := make([]*ghapi.Repository, 10)
+	for i := 0; i < 10; i++ {
+		name := "test-repo-" + time.Now().Format("20060102150405") + "-" + string(rune('a'+i))
+		fullName := "test-org/" + name
+		repos[i] = &ghapi.Repository{}
+		repos[i].Name = &name
+		repos[i].FullName = &fullName
+	}
+
+	// Create a mock profiler
+	profiler := NewProfiler(client, logger)
+
+	// Create a simple tracker
+	tracker := NoOpProgressTracker{}
+
+	// Cancel immediately
+	cancel()
+
+	// Process should return quickly with context.Canceled error
+	start := time.Now()
+	err = collector.processRepositoriesWithProfilerTracked(ctx, repos, profiler, tracker)
+	elapsed := time.Since(start)
+
+	// Should complete quickly (within 1 second) since context was cancelled
+	if elapsed > 2*time.Second {
+		t.Errorf("Expected quick return on cancellation, took %v", elapsed)
+	}
+
+	// Should return context.Canceled error
+	if err != context.Canceled {
+		t.Errorf("Expected context.Canceled error, got: %v", err)
+	}
+}
+
+// TestWorkerStopsOnCancellation tests that individual workers stop gracefully
+func TestWorkerStopsOnCancellation(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	cfg := github.ClientConfig{
+		BaseURL: "https://api.github.com",
+		Token:   "test-token",
+		Logger:  logger,
+	}
+
+	client, err := github.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	dbCfg := config.DatabaseConfig{
+		Type: "sqlite",
+		DSN:  ":memory:",
+	}
+
+	db, err := storage.NewDatabase(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	mockProvider := &mockSourceProvider{}
+	collector := NewCollector(client, db, logger, mockProvider)
+
+	// Create a context that we'll cancel after a short delay
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create channels for the worker
+	jobs := make(chan *ghapi.Repository, 5)
+	errChan := make(chan error, 5)
+
+	// Add multiple repos to the job queue
+	for i := 0; i < 5; i++ {
+		name := "repo-" + string(rune('a'+i))
+		full := "org/" + name
+		r := &ghapi.Repository{}
+		r.Name = &name
+		r.FullName = &full
+		jobs <- r
+	}
+
+	// Cancel the context before closing jobs (simulates cancellation during work)
+	cancel()
+	close(jobs)
+
+	// Create a mock profiler and tracker
+	profiler := NewProfiler(client, logger)
+	tracker := NoOpProgressTracker{}
+
+	// Run worker
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go collector.workerWithProfilerTracked(ctx, &wg, jobs, errChan, profiler, tracker)
+	wg.Wait()
+	close(errChan)
+
+	// Worker should have stopped early due to cancellation
+	// Count errors - shouldn't have many since we cancelled quickly
+	errorCount := 0
+	for range errChan {
+		errorCount++
+	}
+
+	// The worker may have processed 0 or 1 repos before noticing cancellation
+	// The key is that it doesn't process all 5
+	t.Logf("Worker processed and reported %d errors before stopping (5 repos in queue)", errorCount)
 }

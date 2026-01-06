@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
@@ -44,6 +45,10 @@ type Handler struct {
 	collector      *discovery.Collector
 	sourceType     string      // Source type: models.SourceTypeGitHub or models.SourceTypeAzureDevOps
 	adoHandler     *ADOHandler // ADO-specific handler (set by server if ADO is configured)
+
+	// Discovery cancellation tracking
+	discoveryCancel map[int64]context.CancelFunc // progressID -> cancel function
+	discoveryMu     sync.RWMutex                 // protects discoveryCancel
 }
 
 // SetADOHandler sets the ADO handler reference for delegating ADO operations
@@ -73,12 +78,13 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 	handlerUtils.SetDatabase(db)
 
 	return &Handler{
-		HandlerUtils:   handlerUtils,
-		db:             db,
-		logger:         logger,
-		destDualClient: destDualClient,
-		collector:      collector,
-		sourceType:     sourceType,
+		HandlerUtils:    handlerUtils,
+		db:              db,
+		logger:          logger,
+		destDualClient:  destDualClient,
+		collector:       collector,
+		sourceType:      sourceType,
+		discoveryCancel: make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -89,12 +95,13 @@ func NewHandlerWithDataStore(db DataStore, logger *slog.Logger, sourceDualClient
 	// Note: collector requires *storage.Database, so it's nil when using MockDataStore
 	// Tests that need the collector should use NewHandler with a real database
 	return &Handler{
-		HandlerUtils:   NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
-		db:             db,
-		logger:         logger,
-		destDualClient: destDualClient,
-		collector:      nil,
-		sourceType:     sourceType,
+		HandlerUtils:    NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
+		db:              db,
+		logger:          logger,
+		destDualClient:  destDualClient,
+		collector:       nil,
+		sourceType:      sourceType,
+		discoveryCancel: make(map[int64]context.CancelFunc),
 	}
 }
 

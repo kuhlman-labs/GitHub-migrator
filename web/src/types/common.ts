@@ -227,9 +227,10 @@ export type DiscoveryPhase =
   | 'discovering_teams'
   | 'discovering_members'
   | 'waiting_for_rate_limit'
+  | 'cancelling'
   | 'completed';
 
-export type DiscoveryStatus = 'in_progress' | 'completed' | 'failed' | 'none';
+export type DiscoveryStatus = 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'none';
 export type DiscoveryType = 'enterprise' | 'organization' | 'repository' | 'ado_organization' | 'ado_project';
 
 export interface DiscoveryProgress {

@@ -822,6 +822,7 @@ const (
 	PhaseDiscoveringTeams    = "discovering_teams"
 	PhaseDiscoveringMembers  = "discovering_members"
 	PhaseWaitingForRateLimit = "waiting_for_rate_limit"
+	PhaseCancelling          = "cancelling"
 	PhaseCompleted           = "completed"
 )
 
@@ -830,6 +831,7 @@ const (
 	DiscoveryStatusInProgress = "in_progress"
 	DiscoveryStatusCompleted  = "completed"
 	DiscoveryStatusFailed     = "failed"
+	DiscoveryStatusCancelled  = "cancelled"
 )
 
 // Discovery type constants

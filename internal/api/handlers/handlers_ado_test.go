@@ -29,7 +29,7 @@ func setupTestADOHandler(t *testing.T) (*ADOHandler, *Handler) {
 	adoProvider := NewMockSourceProvider(source.ProviderAzureDevOps)
 
 	adoHandler := &ADOHandler{
-		Handler:      *baseHandler,
+		Handler:      baseHandler,
 		adoClient:    nil, // Will be checked in handler to skip discovery
 		adoProvider:  adoProvider,
 		adoCollector: nil, // Will be checked in handler to skip discovery

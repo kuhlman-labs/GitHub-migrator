@@ -17,7 +17,7 @@ import (
 
 // ADOHandler contains Azure DevOps-specific HTTP handlers
 type ADOHandler struct {
-	Handler
+	*Handler
 	adoClient    *azuredevops.Client
 	adoProvider  source.Provider
 	adoCollector *discovery.ADOCollector // Specialized collector for ADO
@@ -27,7 +27,7 @@ type ADOHandler struct {
 func NewADOHandler(baseHandler *Handler, adoClient *azuredevops.Client, adoProvider source.Provider) *ADOHandler {
 	adoCollector := discovery.NewADOCollector(adoClient, baseHandler.db, baseHandler.logger, adoProvider)
 	return &ADOHandler{
-		Handler:      *baseHandler,
+		Handler:      baseHandler,
 		adoClient:    adoClient,
 		adoProvider:  adoProvider,
 		adoCollector: adoCollector,

@@ -105,6 +105,7 @@ func (d *Database) DeleteCompletedDiscoveryProgress() error {
 	result := d.db.Where("status IN ?", []string{
 		models.DiscoveryStatusCompleted,
 		models.DiscoveryStatusFailed,
+		models.DiscoveryStatusCancelled,
 	}).Delete(&models.DiscoveryProgress{})
 
 	if result.Error != nil {
@@ -149,6 +150,28 @@ func (d *Database) MarkDiscoveryFailed(id int64, errorMsg string) error {
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to mark discovery failed: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("discovery progress with id %d not found", id)
+	}
+
+	return nil
+}
+
+// MarkDiscoveryCancelled marks a discovery as cancelled
+func (d *Database) MarkDiscoveryCancelled(id int64) error {
+	now := time.Now()
+	result := d.db.Model(&models.DiscoveryProgress{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"status":       models.DiscoveryStatusCancelled,
+			"completed_at": now,
+			"phase":        models.PhaseCancelling,
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to mark discovery cancelled: %w", result.Error)
 	}
 
 	if result.RowsAffected == 0 {

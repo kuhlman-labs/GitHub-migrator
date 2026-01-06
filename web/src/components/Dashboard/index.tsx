@@ -9,7 +9,7 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { Pagination } from '../common/Pagination';
 import { useOrganizations, useAnalytics, useBatches, useDashboardActionItems, useDiscoveryProgress, useConfig, useSetupProgress } from '../../hooks/useQueries';
-import { useStartDiscovery, useStartADODiscovery } from '../../hooks/useMutations';
+import { useStartDiscovery, useStartADODiscovery, useCancelDiscovery } from '../../hooks/useMutations';
 import { useSourceContext } from '../../contexts/SourceContext';
 import { KPISection } from './KPISection';
 import { ActionItemsPanel } from './ActionItemsPanel';
@@ -97,6 +97,7 @@ export function Dashboard() {
   
   const startDiscoveryMutation = useStartDiscovery();
   const startADODiscoveryMutation = useStartADODiscovery();
+  const cancelDiscoveryMutation = useCancelDiscovery();
   const [searchParams] = useSearchParams();
   
   const searchTerm = searchParams.get('search') || '';
@@ -409,7 +410,7 @@ export function Dashboard() {
       {/* Discovery Progress Card - shown when discovery is active or recently completed */}
       {discoveryProgress && (
         <div className="mb-4">
-          {discoveryProgress.status === 'completed' && discoveryBannerDismissed ? (
+          {(discoveryProgress.status === 'completed' || discoveryProgress.status === 'cancelled') && discoveryBannerDismissed ? (
             <LastDiscoveryIndicator 
               progress={discoveryProgress} 
               onExpand={handleExpandDiscoveryBanner}
@@ -418,6 +419,8 @@ export function Dashboard() {
             <DiscoveryProgressCard 
               progress={discoveryProgress} 
               onDismiss={handleDismissDiscoveryBanner}
+              onCancel={() => cancelDiscoveryMutation.mutate()}
+              isCancelling={cancelDiscoveryMutation.isPending}
             />
           )}
         </div>

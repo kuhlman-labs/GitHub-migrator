@@ -34,6 +34,7 @@ vi.mock('../../hooks/useQueries', () => ({
 vi.mock('../../hooks/useMutations', () => ({
   useStartDiscovery: vi.fn(),
   useStartADODiscovery: vi.fn(),
+  useCancelDiscovery: vi.fn(),
 }));
 
 // Mock child components to simplify testing
@@ -193,6 +194,11 @@ describe('Dashboard', () => {
     
     (useMutationsModule.useStartADODiscovery as ReturnType<typeof vi.fn>).mockReturnValue({
       mutateAsync: vi.fn(),
+      isPending: false,
+    });
+
+    (useMutationsModule.useCancelDiscovery as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: vi.fn(),
       isPending: false,
     });
   });

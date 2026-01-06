@@ -809,6 +809,10 @@ func (m *MockDataStore) MarkDiscoveryFailed(_ int64, _ string) error {
 	return nil
 }
 
+func (m *MockDataStore) MarkDiscoveryCancelled(_ int64) error {
+	return nil
+}
+
 // ============================================================================
 // Source Operations
 // ============================================================================

@@ -1077,15 +1077,33 @@ func (c *Collector) processRepositoriesWithProfilerTracked(ctx context.Context, 
 		go c.workerWithProfilerTracked(ctx, &wg, jobs, errors, profiler, tracker)
 	}
 
-	// Send jobs
+	// Send jobs - stop if context is cancelled (graceful cancellation)
+	sentCount := 0
 	for _, repo := range repos {
-		jobs <- repo
+		select {
+		case <-ctx.Done():
+			c.logger.Info("Discovery cancelled, stopping job dispatch",
+				"sent", sentCount,
+				"total", len(repos))
+			close(jobs)
+			wg.Wait()
+			close(errors)
+			return ctx.Err()
+		case jobs <- repo:
+			sentCount++
+		}
 	}
 	close(jobs)
 
 	// Wait for completion
 	wg.Wait()
 	close(errors)
+
+	// Check if cancelled during processing
+	if ctx.Err() != nil {
+		c.logger.Info("Discovery cancelled during processing")
+		return ctx.Err()
+	}
 
 	// Collect errors
 	var errs []error
@@ -1111,12 +1129,25 @@ func (c *Collector) workerWithProfilerTracked(ctx context.Context, wg *sync.Wait
 	defer wg.Done()
 
 	for repo := range jobs {
+		// Check for cancellation before starting a new repo (graceful cancellation)
+		// This allows the current repo to finish before stopping
+		select {
+		case <-ctx.Done():
+			c.logger.Debug("Worker stopping due to cancellation", "last_repo", repo.GetFullName())
+			return
+		default:
+			// Continue processing
+		}
+
 		if err := c.ProfileRepositoryWithProfiler(ctx, repo, profiler); err != nil {
-			c.logger.Error("Failed to profile repository",
-				"repo", repo.GetFullName(),
-				"error", err)
-			errors <- err
-			tracker.RecordError(err)
+			// Don't log context cancellation as an error
+			if ctx.Err() == nil {
+				c.logger.Error("Failed to profile repository",
+					"repo", repo.GetFullName(),
+					"error", err)
+				errors <- err
+				tracker.RecordError(err)
+			}
 		}
 		// Increment processed repos counter (even on error, it was attempted)
 		tracker.IncrementProcessedRepos(1)

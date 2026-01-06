@@ -178,6 +178,150 @@ describe('DiscoveryProgressCard', () => {
     });
   });
 
+  describe('cancelled state', () => {
+    it('should render cancelled status', () => {
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({
+            status: 'cancelled',
+            processed_repos: 50,
+            total_repos: 100,
+            completed_at: '2024-01-15T10:30:00Z',
+          })}
+        />
+      );
+
+      expect(screen.getByText('Discovery Cancelled')).toBeInTheDocument();
+    });
+
+    it('should show progress before cancellation', () => {
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({
+            status: 'cancelled',
+            processed_repos: 50,
+            total_repos: 100,
+          })}
+        />
+      );
+
+      expect(screen.getByText(/Discovery was cancelled after processing 50 of 100 repositories/)).toBeInTheDocument();
+    });
+
+    it('should show dismiss button when onDismiss provided', () => {
+      const onDismiss = vi.fn();
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({ status: 'cancelled' })}
+          onDismiss={onDismiss}
+        />
+      );
+
+      const dismissButton = screen.getByLabelText('Dismiss');
+      expect(dismissButton).toBeInTheDocument();
+      
+      fireEvent.click(dismissButton);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('cancelling phase', () => {
+    it('should show cancelling status when phase is cancelling', () => {
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({
+            status: 'in_progress',
+            phase: 'cancelling',
+          })}
+        />
+      );
+
+      expect(screen.getByText('Cancelling Discovery...')).toBeInTheDocument();
+      expect(screen.getByText('Cancelling...')).toBeInTheDocument();
+    });
+
+    it('should show cancelling status when isCancelling prop is true', () => {
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({ status: 'in_progress' })}
+          isCancelling={true}
+        />
+      );
+
+      expect(screen.getByText('Cancelling Discovery...')).toBeInTheDocument();
+    });
+  });
+
+  describe('cancel button', () => {
+    it('should show cancel button when in progress and onCancel provided', () => {
+      const onCancel = vi.fn();
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({ status: 'in_progress' })}
+          onCancel={onCancel}
+        />
+      );
+
+      const cancelButton = screen.getByRole('button', { name: /cancel/i });
+      expect(cancelButton).toBeInTheDocument();
+    });
+
+    it('should call onCancel when cancel button is clicked', () => {
+      const onCancel = vi.fn();
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({ status: 'in_progress' })}
+          onCancel={onCancel}
+        />
+      );
+
+      const cancelButton = screen.getByRole('button', { name: /cancel/i });
+      fireEvent.click(cancelButton);
+      expect(onCancel).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not show cancel button when isCancelling is true', () => {
+      const onCancel = vi.fn();
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({ status: 'in_progress' })}
+          onCancel={onCancel}
+          isCancelling={true}
+        />
+      );
+
+      // When cancelling is in progress, the cancel button should be hidden
+      // and the status should show "Cancelling Discovery..."
+      expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
+      expect(screen.getByText('Cancelling Discovery...')).toBeInTheDocument();
+    });
+
+    it('should not show cancel button when not in progress', () => {
+      const onCancel = vi.fn();
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({ status: 'completed' })}
+          onCancel={onCancel}
+        />
+      );
+
+      expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
+    });
+
+    it('should not show cancel button when phase is cancelling', () => {
+      const onCancel = vi.fn();
+      render(
+        <DiscoveryProgressCard
+          progress={createProgress({ status: 'in_progress', phase: 'cancelling' })}
+          onCancel={onCancel}
+        />
+      );
+
+      // Should show "Cancelling..." but not the clickable Cancel button
+      expect(screen.queryByRole('button', { name: /^cancel$/i })).not.toBeInTheDocument();
+    });
+  });
+
   describe('discovery types', () => {
     it('should format full discovery type', () => {
       render(<DiscoveryProgressCard progress={createProgress({ discovery_type: 'full' })} />);

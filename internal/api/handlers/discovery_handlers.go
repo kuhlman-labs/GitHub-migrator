@@ -140,13 +140,46 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 
 // runDiscoveryAsync executes a discovery operation asynchronously and updates progress
 func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgressTracker, discoverFn func(context.Context) error, discoveryType, target string, sourceID *int64) {
-	ctx := context.Background()
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Register cancel function for this discovery
+	h.discoveryMu.Lock()
+	h.discoveryCancel[progressID] = cancel
+	h.discoveryMu.Unlock()
+
+	// Clean up when done
+	defer func() {
+		h.discoveryMu.Lock()
+		delete(h.discoveryCancel, progressID)
+		h.discoveryMu.Unlock()
+		tracker.Flush()
+	}()
+
 	if err := discoverFn(ctx); err != nil {
+		// Check if this was a cancellation
+		if ctx.Err() == context.Canceled {
+			h.logger.Info("Discovery cancelled", "type", discoveryType, "target", target)
+			if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+				h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+			}
+			return
+		}
+
 		h.logger.Error("Discovery failed", "error", err, "type", discoveryType, "target", target)
 		if dbErr := h.db.MarkDiscoveryFailed(progressID, err.Error()); dbErr != nil {
 			h.logger.Error("Failed to mark discovery as failed", "error", dbErr)
 		}
 	} else {
+		// Check if cancelled even on success (rare but possible)
+		if ctx.Err() == context.Canceled {
+			h.logger.Info("Discovery cancelled", "type", discoveryType, "target", target)
+			if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+				h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+			}
+			return
+		}
+
 		if dbErr := h.db.MarkDiscoveryComplete(progressID); dbErr != nil {
 			h.logger.Error("Failed to mark discovery as complete", "error", dbErr)
 		}
@@ -163,7 +196,6 @@ func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgr
 			}
 		}
 	}
-	tracker.Flush()
 }
 
 // DiscoveryStatus handles GET /api/v1/discovery/status
@@ -240,6 +272,50 @@ func (h *Handler) GetDiscoveryProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, progress)
+}
+
+// CancelDiscovery handles POST /api/v1/discovery/cancel
+// Cancels the currently running discovery, allowing workers to finish their current repo
+func (h *Handler) CancelDiscovery(w http.ResponseWriter, r *http.Request) {
+	// Get active discovery progress
+	progress, err := h.db.GetActiveDiscoveryProgress()
+	if err != nil {
+		h.logger.Error("Failed to get active discovery progress", "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery progress"))
+		return
+	}
+
+	if progress == nil {
+		WriteError(w, ErrNotFound.WithDetails("No active discovery to cancel"))
+		return
+	}
+
+	// Look up the cancel function
+	h.discoveryMu.RLock()
+	cancel, exists := h.discoveryCancel[progress.ID]
+	h.discoveryMu.RUnlock()
+
+	if !exists {
+		// Discovery might have just finished or wasn't started by this handler instance
+		WriteError(w, ErrNotFound.WithDetails("Discovery cancel function not found - discovery may have already completed"))
+		return
+	}
+
+	// Update phase to show cancelling in progress
+	if err := h.db.UpdateDiscoveryPhase(progress.ID, models.PhaseCancelling); err != nil {
+		h.logger.Warn("Failed to update discovery phase to cancelling", "error", err)
+	}
+
+	// Trigger cancellation - this will cause workers to stop picking up new repos
+	h.logger.Info("Cancelling discovery", "progress_id", progress.ID, "target", progress.Target)
+	cancel()
+
+	h.sendJSON(w, http.StatusOK, map[string]any{
+		"message":     "Discovery cancellation initiated",
+		"progress_id": progress.ID,
+		"target":      progress.Target,
+		"status":      "cancelling",
+	})
 }
 
 // DiscoverRepositories handles POST /api/v1/repositories/discover

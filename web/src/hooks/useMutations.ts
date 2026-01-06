@@ -33,6 +33,19 @@ export function useStartADODiscovery() {
   });
 }
 
+// Cancel discovery mutation
+export function useCancelDiscovery() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => api.cancelDiscovery(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['discoveryProgress'] });
+      queryClient.invalidateQueries({ queryKey: ['discoveryStatus'] });
+    },
+  });
+}
+
 // Standalone Discovery mutations (per entity type)
 export function useDiscoverRepositories() {
   const queryClient = useQueryClient();

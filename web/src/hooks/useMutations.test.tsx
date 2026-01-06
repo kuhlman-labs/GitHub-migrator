@@ -3,6 +3,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   useStartDiscovery,
+  useCancelDiscovery,
   useStartADODiscovery,
   useDiscoverRepositories,
   useDiscoverOrgMembers,
@@ -36,6 +37,7 @@ import { api } from '../services/api';
 vi.mock('../services/api', () => ({
   api: {
     startDiscovery: vi.fn(),
+    cancelDiscovery: vi.fn(),
     startADODiscovery: vi.fn(),
     discoverRepositories: vi.fn(),
     discoverOrgMembers: vi.fn(),
@@ -81,6 +83,7 @@ function createWrapper() {
 describe('useMutations hooks', () => {
   const mockApi = api as unknown as {
     startDiscovery: ReturnType<typeof vi.fn>;
+    cancelDiscovery: ReturnType<typeof vi.fn>;
     startADODiscovery: ReturnType<typeof vi.fn>;
     discoverRepositories: ReturnType<typeof vi.fn>;
     discoverOrgMembers: ReturnType<typeof vi.fn>;
@@ -127,6 +130,42 @@ describe('useMutations hooks', () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(mockApi.startDiscovery).toHaveBeenCalledWith({ organization: 'my-org' });
+    });
+  });
+
+  describe('useCancelDiscovery', () => {
+    it('should cancel discovery', async () => {
+      mockApi.cancelDiscovery.mockResolvedValue({ 
+        message: 'Discovery cancellation initiated',
+        progress_id: 1,
+        status: 'cancelling',
+      });
+
+      const { result } = renderHook(() => useCancelDiscovery(), {
+        wrapper: createWrapper(),
+      });
+
+      await act(async () => {
+        result.current.mutate();
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(mockApi.cancelDiscovery).toHaveBeenCalled();
+    });
+
+    it('should handle cancellation errors', async () => {
+      mockApi.cancelDiscovery.mockRejectedValue(new Error('No active discovery to cancel'));
+
+      const { result } = renderHook(() => useCancelDiscovery(), {
+        wrapper: createWrapper(),
+      });
+
+      await act(async () => {
+        result.current.mutate();
+      });
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(result.current.error?.message).toBe('No active discovery to cancel');
     });
   });
 

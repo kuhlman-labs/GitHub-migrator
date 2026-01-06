@@ -24,6 +24,11 @@ export const discoveryApi = {
     return data;
   },
 
+  async cancel() {
+    const { data } = await client.post('/discovery/cancel');
+    return data;
+  },
+
   // Azure DevOps Discovery
   async startADO(params: { organization?: string; project?: string; workers?: number; source_id?: number }) {
     const { data } = await client.post('/ado/discover', params);

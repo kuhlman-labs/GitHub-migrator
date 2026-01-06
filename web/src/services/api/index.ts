@@ -40,6 +40,7 @@ export const api = {
   startDiscovery: discoveryApi.start,
   getDiscoveryStatus: discoveryApi.getStatus,
   getDiscoveryProgress: discoveryApi.getProgress,
+  cancelDiscovery: discoveryApi.cancel,
   discoverRepositories: repositoriesApi.discover,
   discoverOrgMembers: usersApi.discover,
   discoverTeams: teamsApi.discover,
