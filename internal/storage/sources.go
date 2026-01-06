@@ -227,3 +227,224 @@ func (d *Database) GetSourcesByType(ctx context.Context, sourceType string) ([]*
 
 	return sources, nil
 }
+
+// SourceDeletionPreview contains counts of all data that will be deleted when a source is deleted
+type SourceDeletionPreview struct {
+	SourceID              int64  `json:"source_id"`
+	SourceName            string `json:"source_name"`
+	RepositoryCount       int64  `json:"repository_count"`
+	MigrationHistoryCount int64  `json:"migration_history_count"`
+	MigrationLogCount     int64  `json:"migration_log_count"`
+	DependencyCount       int64  `json:"dependency_count"`
+	TeamRepositoryCount   int64  `json:"team_repository_count"`
+	BatchRepositoryCount  int64  `json:"batch_repository_count"`
+	TeamCount             int64  `json:"team_count"`
+	UserCount             int64  `json:"user_count"`
+	UserMappingCount      int64  `json:"user_mapping_count"`
+	TeamMappingCount      int64  `json:"team_mapping_count"`
+	TotalAffectedRecords  int64  `json:"total_affected_records"`
+}
+
+// GetSourceDeletionPreview returns counts of all data that would be deleted if the source is deleted
+func (d *Database) GetSourceDeletionPreview(ctx context.Context, sourceID int64) (*SourceDeletionPreview, error) {
+	preview := &SourceDeletionPreview{SourceID: sourceID}
+
+	// Get the source name
+	var source models.Source
+	if err := d.db.WithContext(ctx).Select("name").First(&source, sourceID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("source not found")
+		}
+		return nil, fmt.Errorf("failed to get source: %w", err)
+	}
+	preview.SourceName = source.Name
+
+	// Get repository IDs for this source (needed for cascading counts)
+	var repoIDs []int64
+	if err := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Where("source_id = ?", sourceID).
+		Pluck("id", &repoIDs).Error; err != nil {
+		return nil, fmt.Errorf("failed to get repository IDs: %w", err)
+	}
+	preview.RepositoryCount = int64(len(repoIDs))
+
+	// Count data linked through repositories
+	if len(repoIDs) > 0 {
+		// Migration history
+		if err := d.db.WithContext(ctx).Model(&models.MigrationHistory{}).
+			Where("repository_id IN ?", repoIDs).
+			Count(&preview.MigrationHistoryCount).Error; err != nil {
+			return nil, fmt.Errorf("failed to count migration history: %w", err)
+		}
+
+		// Migration logs
+		if err := d.db.WithContext(ctx).Model(&models.MigrationLog{}).
+			Where("repository_id IN ?", repoIDs).
+			Count(&preview.MigrationLogCount).Error; err != nil {
+			return nil, fmt.Errorf("failed to count migration logs: %w", err)
+		}
+
+		// Repository dependencies
+		if err := d.db.WithContext(ctx).Model(&models.RepositoryDependency{}).
+			Where("repository_id IN ?", repoIDs).
+			Count(&preview.DependencyCount).Error; err != nil {
+			return nil, fmt.Errorf("failed to count dependencies: %w", err)
+		}
+
+		// Team-repository associations
+		if err := d.db.WithContext(ctx).Model(&models.GitHubTeamRepository{}).
+			Where("repository_id IN ?", repoIDs).
+			Count(&preview.TeamRepositoryCount).Error; err != nil {
+			return nil, fmt.Errorf("failed to count team repositories: %w", err)
+		}
+
+		// Count repositories in batches (batch_id is stored in repository, not a separate table)
+		if err := d.db.WithContext(ctx).Model(&models.Repository{}).
+			Where("id IN ? AND batch_id IS NOT NULL", repoIDs).
+			Count(&preview.BatchRepositoryCount).Error; err != nil {
+			return nil, fmt.Errorf("failed to count batch repositories: %w", err)
+		}
+	}
+
+	// Count data directly linked to source
+	// Teams
+	if err := d.db.WithContext(ctx).Model(&models.GitHubTeam{}).
+		Where("source_id = ?", sourceID).
+		Count(&preview.TeamCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to count teams: %w", err)
+	}
+
+	// Users
+	if err := d.db.WithContext(ctx).Model(&models.GitHubUser{}).
+		Where("source_id = ?", sourceID).
+		Count(&preview.UserCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to count users: %w", err)
+	}
+
+	// User mappings
+	if err := d.db.WithContext(ctx).Model(&models.UserMapping{}).
+		Where("source_id = ?", sourceID).
+		Count(&preview.UserMappingCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to count user mappings: %w", err)
+	}
+
+	// Team mappings
+	if err := d.db.WithContext(ctx).Model(&models.TeamMapping{}).
+		Where("source_id = ?", sourceID).
+		Count(&preview.TeamMappingCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to count team mappings: %w", err)
+	}
+
+	// Calculate total
+	preview.TotalAffectedRecords = preview.RepositoryCount +
+		preview.MigrationHistoryCount +
+		preview.MigrationLogCount +
+		preview.DependencyCount +
+		preview.TeamRepositoryCount +
+		preview.BatchRepositoryCount +
+		preview.TeamCount +
+		preview.UserCount +
+		preview.UserMappingCount +
+		preview.TeamMappingCount
+
+	return preview, nil
+}
+
+// DeleteSourceCascade deletes a source and all related data in a transaction
+// This includes: repositories, migration history/logs, dependencies, team associations,
+// batch associations, teams, users, user mappings, and team mappings
+func (d *Database) DeleteSourceCascade(ctx context.Context, sourceID int64) error {
+	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// First, get all repository IDs for this source
+		var repoIDs []int64
+		if err := tx.Model(&models.Repository{}).
+			Where("source_id = ?", sourceID).
+			Pluck("id", &repoIDs).Error; err != nil {
+			return fmt.Errorf("failed to get repository IDs: %w", err)
+		}
+
+		// Delete data linked through repositories
+		if len(repoIDs) > 0 {
+			// Delete migration logs first (references migration_history)
+			if err := tx.Where("repository_id IN ?", repoIDs).
+				Delete(&models.MigrationLog{}).Error; err != nil {
+				return fmt.Errorf("failed to delete migration logs: %w", err)
+			}
+
+			// Delete migration history
+			if err := tx.Where("repository_id IN ?", repoIDs).
+				Delete(&models.MigrationHistory{}).Error; err != nil {
+				return fmt.Errorf("failed to delete migration history: %w", err)
+			}
+
+			// Delete repository dependencies
+			if err := tx.Where("repository_id IN ?", repoIDs).
+				Delete(&models.RepositoryDependency{}).Error; err != nil {
+				return fmt.Errorf("failed to delete dependencies: %w", err)
+			}
+
+			// Delete team-repository associations
+			if err := tx.Where("repository_id IN ?", repoIDs).
+				Delete(&models.GitHubTeamRepository{}).Error; err != nil {
+				return fmt.Errorf("failed to delete team repositories: %w", err)
+			}
+
+			// Delete repositories (batch_id is a FK on the repository, so deleting the repo handles it)
+			if err := tx.Where("source_id = ?", sourceID).
+				Delete(&models.Repository{}).Error; err != nil {
+				return fmt.Errorf("failed to delete repositories: %w", err)
+			}
+		}
+
+		// Delete data directly linked to source
+		// Delete team members first (references github_teams)
+		var teamIDs []int64
+		if err := tx.Model(&models.GitHubTeam{}).
+			Where("source_id = ?", sourceID).
+			Pluck("id", &teamIDs).Error; err != nil {
+			return fmt.Errorf("failed to get team IDs: %w", err)
+		}
+
+		if len(teamIDs) > 0 {
+			if err := tx.Where("team_id IN ?", teamIDs).
+				Delete(&models.GitHubTeamMember{}).Error; err != nil {
+				return fmt.Errorf("failed to delete team members: %w", err)
+			}
+		}
+
+		// Delete teams
+		if err := tx.Where("source_id = ?", sourceID).
+			Delete(&models.GitHubTeam{}).Error; err != nil {
+			return fmt.Errorf("failed to delete teams: %w", err)
+		}
+
+		// Delete users
+		if err := tx.Where("source_id = ?", sourceID).
+			Delete(&models.GitHubUser{}).Error; err != nil {
+			return fmt.Errorf("failed to delete users: %w", err)
+		}
+
+		// Delete user mappings
+		if err := tx.Where("source_id = ?", sourceID).
+			Delete(&models.UserMapping{}).Error; err != nil {
+			return fmt.Errorf("failed to delete user mappings: %w", err)
+		}
+
+		// Delete team mappings
+		if err := tx.Where("source_id = ?", sourceID).
+			Delete(&models.TeamMapping{}).Error; err != nil {
+			return fmt.Errorf("failed to delete team mappings: %w", err)
+		}
+
+		// Finally, delete the source itself
+		result := tx.Delete(&models.Source{}, sourceID)
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete source: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("source not found")
+		}
+
+		return nil
+	})
+}

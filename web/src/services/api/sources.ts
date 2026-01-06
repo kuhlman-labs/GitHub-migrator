@@ -10,6 +10,7 @@ import type {
   ValidateSourceRequest,
   SourceValidationResponse,
   SetSourceActiveResponse,
+  SourceDeletionPreview,
 } from '../../types/source';
 import type { Repository } from '../../types';
 
@@ -50,10 +51,26 @@ export const sourcesApi = {
 
   /**
    * Delete a source.
-   * Will fail if there are repositories associated with the source.
+   * By default, will fail if there are repositories associated with the source.
+   * Use force=true with the correct source name confirmation for cascade deletion.
    */
-  async delete(id: number): Promise<void> {
-    await client.delete(`/sources/${id}`);
+  async delete(id: number, options?: { force?: boolean; confirm?: string }): Promise<void> {
+    const params: Record<string, string> = {};
+    if (options?.force) {
+      params.force = 'true';
+    }
+    if (options?.confirm) {
+      params.confirm = options.confirm;
+    }
+    await client.delete(`/sources/${id}`, { params });
+  },
+
+  /**
+   * Get a preview of data that will be deleted when a source is cascade deleted.
+   */
+  async getDeletionPreview(id: number): Promise<SourceDeletionPreview> {
+    const { data } = await client.get<SourceDeletionPreview>(`/sources/${id}/deletion-preview`);
+    return data;
   },
 
   /**

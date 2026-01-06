@@ -434,3 +434,173 @@ func TestSourceResponseMasksToken(t *testing.T) {
 		t.Errorf("Expected masked token 'ghp_...7890', got '%s'", response.MaskedToken)
 	}
 }
+
+func TestGetSourceDeletionPreviewHandler(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+	sourceHandler := NewSourceHandler(db, h.logger)
+
+	source := createTestSourceModel("Preview Handler Test", models.SourceConfigTypeGitHub)
+	if err := db.CreateSource(ctx, source); err != nil {
+		t.Fatalf("Failed to create source: %v", err)
+	}
+
+	t.Run("existing source", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sources/1/deletion-preview", nil)
+		req.SetPathValue("id", "1")
+		w := httptest.NewRecorder()
+
+		sourceHandler.GetSourceDeletionPreview(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
+		}
+
+		var preview map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&preview); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		// Verify response structure
+		if _, ok := preview["source_id"]; !ok {
+			t.Error("Expected source_id in response")
+		}
+		if _, ok := preview["source_name"]; !ok {
+			t.Error("Expected source_name in response")
+		}
+		if _, ok := preview["repository_count"]; !ok {
+			t.Error("Expected repository_count in response")
+		}
+		if _, ok := preview["total_affected_records"]; !ok {
+			t.Error("Expected total_affected_records in response")
+		}
+	})
+
+	t.Run("non-existent source", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sources/999/deletion-preview", nil)
+		req.SetPathValue("id", "999")
+		w := httptest.NewRecorder()
+
+		sourceHandler.GetSourceDeletionPreview(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+		}
+	})
+
+	t.Run("invalid id", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sources/invalid/deletion-preview", nil)
+		req.SetPathValue("id", "invalid")
+		w := httptest.NewRecorder()
+
+		sourceHandler.GetSourceDeletionPreview(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}
+
+func TestDeleteSourceWithForce(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+	sourceHandler := NewSourceHandler(db, h.logger)
+
+	t.Run("force delete with correct confirmation", func(t *testing.T) {
+		source := createTestSourceModel("Force Delete Test", models.SourceConfigTypeGitHub)
+		if err := db.CreateSource(ctx, source); err != nil {
+			t.Fatalf("Failed to create source: %v", err)
+		}
+
+		// Create a repository for this source to test cascade
+		repo := &models.Repository{
+			FullName:  "org/force-delete-repo",
+			Source:    "ghes",
+			SourceURL: "https://github.com/org/force-delete-repo",
+			SourceID:  &source.ID,
+			Status:    "pending",
+		}
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("Failed to create repository: %v", err)
+		}
+
+		// Standard delete should fail (has repos)
+		reqFail := httptest.NewRequest(http.MethodDelete, "/api/v1/sources/1", nil)
+		reqFail.SetPathValue("id", "1")
+		wFail := httptest.NewRecorder()
+		sourceHandler.DeleteSource(wFail, reqFail)
+		if wFail.Code != http.StatusConflict {
+			t.Errorf("Expected conflict for standard delete, got %d", wFail.Code)
+		}
+
+		// Force delete with correct confirmation should succeed
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/sources/1?force=true&confirm=Force+Delete+Test", nil)
+		req.SetPathValue("id", "1")
+		w := httptest.NewRecorder()
+
+		sourceHandler.DeleteSource(w, req)
+
+		if w.Code != http.StatusNoContent {
+			t.Errorf("Expected status %d, got %d: %s", http.StatusNoContent, w.Code, w.Body.String())
+		}
+
+		// Verify source is deleted
+		deleted, _ := db.GetSource(ctx, source.ID)
+		if deleted != nil {
+			t.Error("Expected source to be deleted")
+		}
+
+		// Verify repository is deleted
+		deletedRepo, _ := db.GetRepository(ctx, "org/force-delete-repo")
+		if deletedRepo != nil {
+			t.Error("Expected repository to be cascade deleted")
+		}
+	})
+}
+
+func TestDeleteSourceForceRequiresConfirmation(t *testing.T) {
+	h, db := setupTestHandler(t)
+	ctx := context.Background()
+	sourceHandler := NewSourceHandler(db, h.logger)
+
+	source := createTestSourceModel("Confirm Required Test", models.SourceConfigTypeGitHub)
+	if err := db.CreateSource(ctx, source); err != nil {
+		t.Fatalf("Failed to create source: %v", err)
+	}
+
+	t.Run("force delete without confirmation", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/sources/1?force=true", nil)
+		req.SetPathValue("id", "1")
+		w := httptest.NewRecorder()
+
+		sourceHandler.DeleteSource(w, req)
+
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("Expected status %d, got %d: %s", http.StatusUnprocessableEntity, w.Code, w.Body.String())
+		}
+
+		// Verify source still exists
+		existing, _ := db.GetSource(ctx, source.ID)
+		if existing == nil {
+			t.Error("Source should not be deleted without confirmation")
+		}
+	})
+
+	t.Run("force delete with wrong confirmation", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/sources/1?force=true&confirm=Wrong+Name", nil)
+		req.SetPathValue("id", "1")
+		w := httptest.NewRecorder()
+
+		sourceHandler.DeleteSource(w, req)
+
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("Expected status %d, got %d: %s", http.StatusUnprocessableEntity, w.Code, w.Body.String())
+		}
+
+		// Verify source still exists
+		existing, _ := db.GetSource(ctx, source.ID)
+		if existing == nil {
+			t.Error("Source should not be deleted with wrong confirmation")
+		}
+	})
+}

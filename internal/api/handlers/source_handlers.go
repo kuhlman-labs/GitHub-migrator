@@ -77,7 +77,7 @@ func (h *SourceHandler) ListSources(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Check for active-only filter
-	activeOnly := r.URL.Query().Get("active") == "true"
+	activeOnly := r.URL.Query().Get("active") == boolTrue
 
 	var sources []*models.Source
 	var err error
@@ -257,6 +257,9 @@ func (h *SourceHandler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteSource handles DELETE /api/v1/sources/{id}
+// Supports optional query parameters:
+//   - force=true: Enable cascade deletion of all related data
+//   - confirm={sourceName}: Required when force=true, must match the source name exactly
 func (h *SourceHandler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -278,7 +281,30 @@ func (h *SourceHandler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete source
+	// Check for force delete mode
+	forceDelete := r.URL.Query().Get("force") == boolTrue
+	confirmName := r.URL.Query().Get("confirm")
+
+	if forceDelete {
+		// Validate confirmation parameter
+		if confirmName != source.Name {
+			WriteError(w, ErrValidationFailed.WithDetails("confirmation name must match the source name exactly"))
+			return
+		}
+
+		// Perform cascade delete
+		if err := h.db.DeleteSourceCascade(ctx, id); err != nil {
+			h.logger.Error("Failed to cascade delete source", "error", err, "source_id", id)
+			WriteError(w, ErrDatabaseDelete.WithDetails("source cascade deletion failed"))
+			return
+		}
+
+		h.logger.Info("Source cascade deleted", "source_id", id, "name", source.Name)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Standard delete (fails if repositories exist)
 	if err := h.db.DeleteSource(ctx, id); err != nil {
 		h.logger.Error("Failed to delete source", "error", err, "source_id", id)
 
@@ -418,6 +444,31 @@ func (h *SourceHandler) GetSourceRepositories(w http.ResponseWriter, r *http.Req
 	}
 
 	WriteJSON(w, http.StatusOK, repos)
+}
+
+// GetSourceDeletionPreview handles GET /api/v1/sources/{id}/deletion-preview
+// Returns counts of all data that would be deleted if the source is cascade deleted
+func (h *SourceHandler) GetSourceDeletionPreview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id, err := h.parseSourceID(r)
+	if err != nil {
+		WriteError(w, ErrInvalidID.WithDetails("source ID"))
+		return
+	}
+
+	preview, err := h.db.GetSourceDeletionPreview(ctx, id)
+	if err != nil {
+		h.logger.Error("Failed to get deletion preview", "error", err, "source_id", id)
+		if strings.Contains(err.Error(), "not found") {
+			WriteError(w, ErrNotFound.WithDetails("source"))
+			return
+		}
+		WriteError(w, ErrDatabaseFetch.WithDetails("deletion preview"))
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, preview)
 }
 
 // parseSourceID extracts the source ID from the URL path

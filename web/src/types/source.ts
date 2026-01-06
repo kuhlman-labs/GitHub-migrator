@@ -107,3 +107,22 @@ export interface SetSourceActiveResponse {
   is_active: boolean;
 }
 
+/**
+ * Preview of data that will be deleted when a source is cascade deleted.
+ */
+export interface SourceDeletionPreview {
+  source_id: number;
+  source_name: string;
+  repository_count: number;
+  migration_history_count: number;
+  migration_log_count: number;
+  dependency_count: number;
+  team_repository_count: number;
+  batch_repository_count: number;
+  team_count: number;
+  user_count: number;
+  user_mapping_count: number;
+  team_mapping_count: number;
+  total_affected_records: number;
+}
+

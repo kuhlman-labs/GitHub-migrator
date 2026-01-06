@@ -572,6 +572,271 @@ func TestSourceModel(t *testing.T) {
 	})
 }
 
+func TestGetSourceDeletionPreview(t *testing.T) {
+	db := setupSourcesTestDB(t)
+	ctx := context.Background()
+
+	// Create source
+	source := createTestSource("Preview Test Source", models.SourceConfigTypeGitHub)
+	if err := db.CreateSource(ctx, source); err != nil {
+		t.Fatalf("failed to create source: %v", err)
+	}
+
+	// Create repositories for this source
+	for i := 0; i < 3; i++ {
+		repo := createTestRepository(fmt.Sprintf("org/preview-repo-%d", i))
+		repo.SourceID = &source.ID
+		repo.Status = string(models.StatusPending)
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("failed to create repository: %v", err)
+		}
+	}
+
+	// Create user with this source
+	user := &models.GitHubUser{
+		SourceID:       &source.ID,
+		Login:          "testuser",
+		SourceInstance: "github.example.com",
+	}
+	if err := db.db.WithContext(ctx).Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	// Create user mapping with this source
+	userMapping := &models.UserMapping{
+		SourceID:      &source.ID,
+		SourceLogin:   "testuser",
+		MappingStatus: string(models.UserMappingStatusUnmapped),
+	}
+	if err := db.db.WithContext(ctx).Create(userMapping).Error; err != nil {
+		t.Fatalf("failed to create user mapping: %v", err)
+	}
+
+	// Create team with this source
+	team := &models.GitHubTeam{
+		SourceID:     &source.ID,
+		Organization: "test-org",
+		Slug:         "test-team",
+		Name:         "Test Team",
+	}
+	if err := db.db.WithContext(ctx).Create(team).Error; err != nil {
+		t.Fatalf("failed to create team: %v", err)
+	}
+
+	// Create team mapping with this source
+	teamMapping := &models.TeamMapping{
+		SourceID:       &source.ID,
+		SourceOrg:      "test-org",
+		SourceTeamSlug: "test-team",
+		MappingStatus:  "unmapped",
+	}
+	if err := db.db.WithContext(ctx).Create(teamMapping).Error; err != nil {
+		t.Fatalf("failed to create team mapping: %v", err)
+	}
+
+	// Get deletion preview
+	preview, err := db.GetSourceDeletionPreview(ctx, source.ID)
+	if err != nil {
+		t.Fatalf("failed to get deletion preview: %v", err)
+	}
+
+	// Verify counts
+	if preview.SourceID != source.ID {
+		t.Errorf("expected source ID %d, got %d", source.ID, preview.SourceID)
+	}
+	if preview.SourceName != source.Name {
+		t.Errorf("expected source name %q, got %q", source.Name, preview.SourceName)
+	}
+	if preview.RepositoryCount != 3 {
+		t.Errorf("expected 3 repositories, got %d", preview.RepositoryCount)
+	}
+	if preview.UserCount != 1 {
+		t.Errorf("expected 1 user, got %d", preview.UserCount)
+	}
+	if preview.UserMappingCount != 1 {
+		t.Errorf("expected 1 user mapping, got %d", preview.UserMappingCount)
+	}
+	if preview.TeamCount != 1 {
+		t.Errorf("expected 1 team, got %d", preview.TeamCount)
+	}
+	if preview.TeamMappingCount != 1 {
+		t.Errorf("expected 1 team mapping, got %d", preview.TeamMappingCount)
+	}
+	if preview.TotalAffectedRecords < 7 {
+		t.Errorf("expected at least 7 affected records, got %d", preview.TotalAffectedRecords)
+	}
+}
+
+func TestGetSourceDeletionPreviewEmptySource(t *testing.T) {
+	db := setupSourcesTestDB(t)
+	ctx := context.Background()
+
+	// Create source with no associated data
+	source := createTestSource("Empty Source", models.SourceConfigTypeGitHub)
+	if err := db.CreateSource(ctx, source); err != nil {
+		t.Fatalf("failed to create source: %v", err)
+	}
+
+	// Get deletion preview
+	preview, err := db.GetSourceDeletionPreview(ctx, source.ID)
+	if err != nil {
+		t.Fatalf("failed to get deletion preview: %v", err)
+	}
+
+	// Verify all counts are zero
+	if preview.RepositoryCount != 0 {
+		t.Errorf("expected 0 repositories, got %d", preview.RepositoryCount)
+	}
+	if preview.UserCount != 0 {
+		t.Errorf("expected 0 users, got %d", preview.UserCount)
+	}
+	if preview.TeamCount != 0 {
+		t.Errorf("expected 0 teams, got %d", preview.TeamCount)
+	}
+	if preview.TotalAffectedRecords != 0 {
+		t.Errorf("expected 0 affected records, got %d", preview.TotalAffectedRecords)
+	}
+}
+
+func TestGetSourceDeletionPreviewNotFound(t *testing.T) {
+	db := setupSourcesTestDB(t)
+	ctx := context.Background()
+
+	// Try to get preview for non-existent source
+	_, err := db.GetSourceDeletionPreview(ctx, 99999)
+	if err == nil {
+		t.Error("expected error for non-existent source")
+	}
+}
+
+func TestDeleteSourceCascade(t *testing.T) {
+	db := setupSourcesTestDB(t)
+	ctx := context.Background()
+
+	// Create source
+	source := createTestSource("Cascade Delete Test", models.SourceConfigTypeGitHub)
+	if err := db.CreateSource(ctx, source); err != nil {
+		t.Fatalf("failed to create source: %v", err)
+	}
+
+	// Create repositories for this source
+	var repoIDs []int64
+	for i := 0; i < 2; i++ {
+		repo := createTestRepository(fmt.Sprintf("org/cascade-repo-%d", i))
+		repo.SourceID = &source.ID
+		repo.Status = string(models.StatusPending)
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("failed to create repository: %v", err)
+		}
+		repoIDs = append(repoIDs, repo.ID)
+	}
+
+	// Create migration history for one of the repositories
+	history := &models.MigrationHistory{
+		RepositoryID: repoIDs[0],
+		Status:       "completed",
+		Phase:        "finished",
+	}
+	if _, err := db.CreateMigrationHistory(ctx, history); err != nil {
+		t.Fatalf("failed to create migration history: %v", err)
+	}
+
+	// Create user with this source
+	user := &models.GitHubUser{
+		SourceID:       &source.ID,
+		Login:          "cascadeuser",
+		SourceInstance: "github.example.com",
+	}
+	if err := db.db.WithContext(ctx).Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	// Create team with this source
+	team := &models.GitHubTeam{
+		SourceID:     &source.ID,
+		Organization: "cascade-org",
+		Slug:         "cascade-team",
+		Name:         "Cascade Team",
+	}
+	if err := db.db.WithContext(ctx).Create(team).Error; err != nil {
+		t.Fatalf("failed to create team: %v", err)
+	}
+
+	// Create team member
+	member := &models.GitHubTeamMember{
+		TeamID: team.ID,
+		Login:  "cascademember",
+		Role:   "member",
+	}
+	if err := db.db.WithContext(ctx).Create(member).Error; err != nil {
+		t.Fatalf("failed to create team member: %v", err)
+	}
+
+	// Perform cascade delete
+	if err := db.DeleteSourceCascade(ctx, source.ID); err != nil {
+		t.Fatalf("failed to cascade delete source: %v", err)
+	}
+
+	// Verify source is deleted
+	retrieved, err := db.GetSource(ctx, source.ID)
+	if err != nil {
+		t.Fatalf("unexpected error checking source: %v", err)
+	}
+	if retrieved != nil {
+		t.Error("expected source to be deleted")
+	}
+
+	// Verify repositories are deleted
+	for _, repoID := range repoIDs {
+		repo, err := db.GetRepositoryByID(ctx, repoID)
+		if err != nil {
+			t.Fatalf("unexpected error checking repo: %v", err)
+		}
+		if repo != nil {
+			t.Errorf("expected repository %d to be deleted", repoID)
+		}
+	}
+
+	// Verify users are deleted
+	var userCount int64
+	db.db.WithContext(ctx).Model(&models.GitHubUser{}).Where("login = ?", "cascadeuser").Count(&userCount)
+	if userCount != 0 {
+		t.Error("expected user to be deleted")
+	}
+
+	// Verify teams are deleted
+	var teamCount int64
+	db.db.WithContext(ctx).Model(&models.GitHubTeam{}).Where("slug = ?", "cascade-team").Count(&teamCount)
+	if teamCount != 0 {
+		t.Error("expected team to be deleted")
+	}
+
+	// Verify team members are deleted
+	var memberCount int64
+	db.db.WithContext(ctx).Model(&models.GitHubTeamMember{}).Where("login = ?", "cascademember").Count(&memberCount)
+	if memberCount != 0 {
+		t.Error("expected team member to be deleted")
+	}
+
+	// Verify migration history is deleted
+	var historyCount int64
+	db.db.WithContext(ctx).Model(&models.MigrationHistory{}).Where("repository_id = ?", repoIDs[0]).Count(&historyCount)
+	if historyCount != 0 {
+		t.Error("expected migration history to be deleted")
+	}
+}
+
+func TestDeleteSourceCascadeNotFound(t *testing.T) {
+	db := setupSourcesTestDB(t)
+	ctx := context.Background()
+
+	// Try to cascade delete non-existent source
+	err := db.DeleteSourceCascade(ctx, 99999)
+	if err == nil {
+		t.Error("expected error for non-existent source")
+	}
+}
+
 func setupSourcesTestDB(t *testing.T) *Database {
 	t.Helper()
 	cfg := config.DatabaseConfig{

@@ -4,8 +4,8 @@ import { PlusIcon, RepoIcon, AlertIcon } from '@primer/octicons-react';
 import { useSources } from '../../contexts/SourceContext';
 import { SourceCard } from '../Sources/SourceCard';
 import { SourceForm } from '../Sources/SourceForm';
+import { SourceDeletionDialog } from '../Sources/SourceDeletionDialog';
 import { FormDialog } from '../common/FormDialog';
-import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { PrimaryButton, Button } from '../common/buttons';
 import type { Source, CreateSourceRequest, UpdateSourceRequest } from '../../types';
 
@@ -38,8 +38,6 @@ export function SourcesSettings({ readOnly = false }: SourcesSettingsProps) {
     isOpen: false,
     source: null,
   });
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [validationResult, setValidationResult] = useState<{ sourceId: number; success: boolean; message: string } | null>(null);
 
@@ -81,28 +79,17 @@ export function SourcesSettings({ readOnly = false }: SourcesSettingsProps) {
 
   const handleOpenDelete = (source: Source) => {
     setDeleteDialog({ isOpen: true, source });
-    setDeleteError(null);
   };
 
   const handleCloseDelete = () => {
     setDeleteDialog({ isOpen: false, source: null });
-    setDeleteError(null);
   };
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (force: boolean, confirmName?: string) => {
     if (!deleteDialog.source) return;
 
-    setIsDeleting(true);
-    setDeleteError(null);
-
-    try {
-      await deleteSource(deleteDialog.source.id);
-      handleCloseDelete();
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete source');
-    } finally {
-      setIsDeleting(false);
-    }
+    await deleteSource(deleteDialog.source.id, force ? { force, confirm: confirmName } : undefined);
+    handleCloseDelete();
   };
 
   const handleValidate = async (source: Source) => {
@@ -231,32 +218,11 @@ export function SourcesSettings({ readOnly = false }: SourcesSettingsProps) {
       </FormDialog>
 
       {/* Delete Confirmation Dialog */}
-      <ConfirmationDialog
+      <SourceDeletionDialog
         isOpen={deleteDialog.isOpen}
-        title="Delete Source"
-        message={
-          <>
-            {deleteError && (
-              <Flash variant="danger" className="mb-4">
-                {deleteError}
-              </Flash>
-            )}
-            <p className="mb-4">
-              Are you sure you want to delete <strong>{deleteDialog.source?.name}</strong>?
-            </p>
-            {deleteDialog.source && deleteDialog.source.repository_count > 0 && (
-              <Flash variant="warning" className="mb-4">
-                <AlertIcon /> This source has {deleteDialog.source.repository_count} associated repositories.
-                You must reassign or remove them before deleting the source.
-              </Flash>
-            )}
-          </>
-        }
-        confirmLabel="Delete Source"
-        variant="danger"
+        source={deleteDialog.source}
         onConfirm={handleConfirmDelete}
         onCancel={handleCloseDelete}
-        isLoading={isDeleting}
       />
     </div>
   );

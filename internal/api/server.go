@@ -377,6 +377,7 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/sources", s.sourceHandler.ListSources)
 	protect("GET /api/v1/sources/{id}", s.sourceHandler.GetSource)
 	protect("GET /api/v1/sources/{id}/repositories", s.sourceHandler.GetSourceRepositories)
+	protect("GET /api/v1/sources/{id}/deletion-preview", s.sourceHandler.GetSourceDeletionPreview)
 	protect("POST /api/v1/sources/validate", s.sourceHandler.ValidateSource)
 	protect("POST /api/v1/sources/{id}/validate", s.sourceHandler.ValidateSource)
 	// Write operations - require Tier 1 (Admin) access

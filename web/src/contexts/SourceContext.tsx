@@ -192,8 +192,8 @@ export function useSources() {
     return source;
   }, [refetchSources]);
 
-  const deleteSource = useCallback(async (id: number) => {
-    await sourcesApi.delete(id);
+  const deleteSource = useCallback(async (id: number, options?: { force?: boolean; confirm?: string }) => {
+    await sourcesApi.delete(id, options);
     await refetchSources();
   }, [refetchSources]);
 

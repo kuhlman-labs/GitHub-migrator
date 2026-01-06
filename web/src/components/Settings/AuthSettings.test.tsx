@@ -11,6 +11,19 @@ vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
+// Mock the settings API
+const mockValidateTeams = vi.fn();
+vi.mock('../../services/api/settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/api/settings')>();
+  return {
+    ...actual,
+    settingsApi: {
+      ...actual.settingsApi,
+      validateTeams: (...args: Parameters<typeof mockValidateTeams>) => mockValidateTeams(...args),
+    },
+  };
+});
+
 // Mock fetch for authorization status
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -99,6 +112,11 @@ describe('AuthSettings', () => {
         } as Response);
       }
       return Promise.reject(new Error(`Unexpected fetch call to ${url}`));
+    });
+    // Default mock for validateTeams - returns valid
+    mockValidateTeams.mockResolvedValue({
+      valid: true,
+      teams: [{ slug: 'myorg/migration-admins', exists: true }],
     });
   });
 

@@ -128,12 +128,61 @@ describe('sourcesApi', () => {
   });
 
   describe('delete', () => {
-    it('should delete a source', async () => {
+    it('should delete a source without options', async () => {
       mockClient.delete.mockResolvedValue({ data: {} });
 
       await sourcesApi.delete(1);
 
-      expect(mockClient.delete).toHaveBeenCalledWith('/sources/1');
+      expect(mockClient.delete).toHaveBeenCalledWith('/sources/1', { params: {} });
+    });
+
+    it('should delete a source with force option', async () => {
+      mockClient.delete.mockResolvedValue({ data: {} });
+
+      await sourcesApi.delete(1, { force: true, confirm: 'Test Source' });
+
+      expect(mockClient.delete).toHaveBeenCalledWith('/sources/1', {
+        params: { force: 'true', confirm: 'Test Source' },
+      });
+    });
+
+    it('should not include confirm param when not provided', async () => {
+      mockClient.delete.mockResolvedValue({ data: {} });
+
+      await sourcesApi.delete(1, { force: true });
+
+      expect(mockClient.delete).toHaveBeenCalledWith('/sources/1', {
+        params: { force: 'true' },
+      });
+    });
+  });
+
+  describe('getDeletionPreview', () => {
+    it('should fetch deletion preview for a source', async () => {
+      const mockPreview = {
+        source_id: 1,
+        source_name: 'Test Source',
+        repository_count: 10,
+        migration_history_count: 50,
+        migration_log_count: 200,
+        dependency_count: 5,
+        team_repository_count: 3,
+        batch_repository_count: 8,
+        team_count: 2,
+        user_count: 15,
+        user_mapping_count: 15,
+        team_mapping_count: 2,
+        total_affected_records: 310,
+      };
+
+      mockClient.get.mockResolvedValue({ data: mockPreview });
+
+      const result = await sourcesApi.getDeletionPreview(1);
+
+      expect(mockClient.get).toHaveBeenCalledWith('/sources/1/deletion-preview');
+      expect(result).toEqual(mockPreview);
+      expect(result.repository_count).toBe(10);
+      expect(result.total_affected_records).toBe(310);
     });
   });
 
