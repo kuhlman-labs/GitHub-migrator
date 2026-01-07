@@ -102,13 +102,13 @@ func TestProfileFeatures_Integration(t *testing.T) {
 	// Verify some basic fields were populated
 	// Note: These may vary based on the actual repository state
 	t.Logf("Profiled repository: %s", repo.FullName)
-	t.Logf("Has Wiki: %v", repo.HasWiki)
-	t.Logf("Has Pages: %v", repo.HasPages)
-	t.Logf("Has Actions: %v", repo.HasActions)
-	t.Logf("Contributors: %d", repo.ContributorCount)
-	t.Logf("Issues: %d (open: %d)", repo.IssueCount, repo.OpenIssueCount)
-	t.Logf("Pull Requests: %d (open: %d)", repo.PullRequestCount, repo.OpenPRCount)
-	t.Logf("Tags: %d", repo.TagCount)
+	t.Logf("Has Wiki: %v", repo.HasWiki())
+	t.Logf("Has Pages: %v", repo.HasPages())
+	t.Logf("Has Actions: %v", repo.HasActions())
+	t.Logf("Contributors: %d", repo.GetContributorCount())
+	t.Logf("Issues: %d (open: %d)", repo.GetIssueCount(), repo.GetOpenIssueCount())
+	t.Logf("Pull Requests: %d (open: %d)", repo.GetPullRequestCount(), repo.GetOpenPRCount())
+	t.Logf("Tags: %d", repo.GetTagCount())
 }
 
 func TestProfileWikiContent(t *testing.T) {
@@ -136,21 +136,27 @@ func TestProfileWikiContent(t *testing.T) {
 	}{
 		{
 			name: "Wiki feature disabled",
-			repo: &models.Repository{
-				FullName:  "test/repo",
-				SourceURL: "https://github.com/test/repo",
-				HasWiki:   false,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName:  "test/repo",
+					SourceURL: "https://github.com/test/repo",
+				}
+				r.SetHasWiki(false)
+				return r
+			}(),
 			expectedHasWiki: false,
 			description:     "Wiki feature disabled should remain false",
 		},
 		{
 			name: "Wiki enabled but URL construction",
-			repo: &models.Repository{
-				FullName:  "test/repo",
-				SourceURL: "https://github.com/test/repo.git",
-				HasWiki:   true,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName:  "test/repo",
+					SourceURL: "https://github.com/test/repo.git",
+				}
+				r.SetHasWiki(true)
+				return r
+			}(),
 			expectedHasWiki: false, // Will be false if wiki doesn't exist or has no content
 			description:     "Wiki enabled but no content should be set to false",
 		},
@@ -159,7 +165,7 @@ func TestProfileWikiContent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			profiler.profileWikiContent(ctx, tt.repo)
-			t.Logf("%s: HasWiki = %v", tt.description, tt.repo.HasWiki)
+			t.Logf("%s: HasWiki = %v", tt.description, tt.repo.HasWiki())
 		})
 	}
 }
@@ -254,7 +260,7 @@ func TestProfilePackages(t *testing.T) {
 		FullName: "octocat/Hello-World",
 	}
 	profiler.profilePackages(ctx, "octocat", "Hello-World", repo)
-	t.Logf("Repository HasPackages field (from REST API cache): %v", repo.HasPackages)
+	t.Logf("Repository HasPackages field (from REST API cache): %v", repo.HasPackages())
 }
 
 func TestLoadPackageCache(t *testing.T) {
@@ -300,5 +306,5 @@ func TestLoadPackageCache(t *testing.T) {
 		FullName: "octocat/test-repo",
 	}
 	profiler.profilePackages(ctx, "octocat", "test-repo", repo)
-	t.Logf("Repository HasPackages (from cache): %v", repo.HasPackages)
+	t.Logf("Repository HasPackages (from cache): %v", repo.HasPackages())
 }

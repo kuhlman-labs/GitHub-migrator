@@ -32,7 +32,8 @@ func (s *ADOMigrationStrategy) Name() string {
 // SupportsRepository returns true if this is an Azure DevOps source repository.
 // ADO repositories are identified by having an ADO project set.
 func (s *ADOMigrationStrategy) SupportsRepository(repo *models.Repository) bool {
-	return repo.ADOProject != nil && *repo.ADOProject != ""
+	adoProject := repo.GetADOProject()
+	return adoProject != nil && *adoProject != ""
 }
 
 // ValidateSource validates that the ADO PAT can access the source repository.

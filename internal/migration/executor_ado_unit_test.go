@@ -319,9 +319,9 @@ func TestADORepoNameExtraction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &models.Repository{
-				FullName:   tt.fullName,
-				ADOProject: tt.adoProject,
+				FullName: tt.fullName,
 			}
+			repo.SetADOProject(tt.adoProject)
 
 			result := executor.getDestinationRepoName(repo)
 			if result != tt.expectedName {

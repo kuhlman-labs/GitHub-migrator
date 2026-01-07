@@ -446,15 +446,16 @@ func TestSelfServiceMigrationBatchAssignmentHandler(t *testing.T) {
 	totalSize := int64(1024)
 	defaultBranch := testMainBranch
 	repo := &models.Repository{
-		FullName:      "test-org/test-repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/test-org/test-repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
+		FullName:     "test-org/test-repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test-org/test-repo",
+		Status:       string(models.StatusPending),
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
 
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)

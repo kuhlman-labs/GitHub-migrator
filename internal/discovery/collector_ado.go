@@ -326,14 +326,14 @@ func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup,
 		}
 
 		// Set ADO-specific fields
-		repo.ADOProject = &projectName
+		repo.SetADOProject(&projectName)
 
 		// Check if this is a Git repository (vs TFVC)
 		if adoRepo.Id != nil {
 			// Git repos have an ID, TFVC repos don't
-			repo.ADOIsGit = true
+			repo.SetADOIsGit(true)
 		} else {
-			repo.ADOIsGit = false
+			repo.SetADOIsGit(false)
 			// Mark TFVC repos for remediation
 			repo.Status = string(models.StatusRemediationRequired)
 			c.logger.Warn("TFVC repository detected - requires conversion",
@@ -344,7 +344,7 @@ func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup,
 		// Set default branch if available
 		if adoRepo.DefaultBranch != nil {
 			defaultBranch := *adoRepo.DefaultBranch
-			repo.DefaultBranch = &defaultBranch
+			repo.SetDefaultBranch(&defaultBranch)
 		}
 
 		// Set repo size if available
@@ -352,7 +352,7 @@ func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup,
 			// Safe conversion: ADO repository sizes are reasonable and won't overflow int64
 			//#nosec G115 -- ADO Size is in bytes, repository sizes won't exceed int64 max
 			size := int64(*adoRepo.Size)
-			repo.TotalSize = &size
+			repo.SetTotalSize(&size)
 		}
 
 		// Profile repository with ADO profiler
@@ -389,7 +389,7 @@ func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup,
 			"worker_id", workerID,
 			"project", projectName,
 			"repo", repoName,
-			"is_git", repo.ADOIsGit)
+			"is_git", repo.GetADOIsGit())
 
 		// Update progress
 		tracker.IncrementProcessedRepos(1)
@@ -440,14 +440,14 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 	}
 
 	// Set ADO-specific fields
-	repoModel.ADOProject = &projectName
+	repoModel.SetADOProject(&projectName)
 
 	// Check if this is a Git repository (vs TFVC)
 	if repo.Id != nil {
 		// Git repos have an ID, TFVC repos don't
-		repoModel.ADOIsGit = true
+		repoModel.SetADOIsGit(true)
 	} else {
-		repoModel.ADOIsGit = false
+		repoModel.SetADOIsGit(false)
 		// Mark TFVC repos for remediation
 		repoModel.Status = string(models.StatusRemediationRequired)
 		c.logger.Warn("TFVC repository detected - requires conversion",
@@ -457,7 +457,7 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 	// Set default branch if available
 	if repo.DefaultBranch != nil {
 		defaultBranch := *repo.DefaultBranch
-		repoModel.DefaultBranch = &defaultBranch
+		repoModel.SetDefaultBranch(&defaultBranch)
 	}
 
 	// Set repo size if available
@@ -465,7 +465,7 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 		// Safe conversion: ADO repository sizes are reasonable and won't overflow int64
 		//#nosec G115 -- ADO Size is in bytes, repository sizes won't exceed int64 max
 		size := int64(*repo.Size)
-		repoModel.TotalSize = &size
+		repoModel.SetTotalSize(&size)
 	}
 
 	// Profile repository with ADO profiler

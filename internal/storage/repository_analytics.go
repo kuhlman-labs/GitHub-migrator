@@ -30,23 +30,24 @@ type OrganizationStats struct {
 // GetOrganizationStats returns repository counts grouped by organization
 func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationStats, error) {
 	// Use dialect-specific string functions via DialectDialer interface
-	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
-	findSlash := d.dialect.FindCharPosition("full_name", "/")
+	extractOrg := d.dialect.ExtractOrgFromFullName("r.full_name")
+	findSlash := d.dialect.FindCharPosition("r.full_name", "/")
 
 	// For ADO repos, we need to extract both org and project
 	// full_name format: "org/project/repo" for ADO, "org/repo" for GitHub
 	query := fmt.Sprintf(`
 		SELECT 
 			%s as org,
-			source,
-			ado_project,
+			r.source,
+			a.project as ado_project,
 			COUNT(*) as total,
-			status,
+			r.status,
 			COUNT(*) as status_count
-		FROM repositories
+		FROM repositories r
+		LEFT JOIN repository_ado_properties a ON r.id = a.repository_id
 		WHERE %s > 0
-		AND status != 'wont_migrate'
-		GROUP BY org, source, ado_project, status
+		AND r.status != 'wont_migrate'
+		GROUP BY org, r.source, a.project, r.status
 		ORDER BY total DESC, org ASC
 	`, extractOrg, findSlash)
 
@@ -156,13 +157,14 @@ func (d *Database) GetSizeDistribution(ctx context.Context) ([]*SizeDistribution
 		FROM (
 			SELECT 
 				CASE 
-					WHEN total_size IS NULL THEN 'unknown'
-					WHEN total_size < 104857600 THEN 'small'
-					WHEN total_size < 1073741824 THEN 'medium'
-					WHEN total_size < 5368709120 THEN 'large'
+					WHEN gp.total_size IS NULL THEN 'unknown'
+					WHEN gp.total_size < 104857600 THEN 'small'
+					WHEN gp.total_size < 1073741824 THEN 'medium'
+					WHEN gp.total_size < 5368709120 THEN 'large'
 					ELSE 'very_large'
 				END as category
-			FROM repositories
+			FROM repositories r
+			LEFT JOIN repository_git_properties gp ON r.id = gp.repository_id
 		) categorized
 		GROUP BY category
 		ORDER BY 
@@ -234,48 +236,53 @@ type FeatureStats struct {
 func (d *Database) GetFeatureStats(ctx context.Context) (*FeatureStats, error) {
 	query := `
 		SELECT 
-			-- GitHub features
-			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
-			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
-			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
-			SUM(CASE WHEN has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
-			SUM(CASE WHEN has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
-			SUM(CASE WHEN has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
-			SUM(CASE WHEN has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
-			SUM(CASE WHEN has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
-			SUM(CASE WHEN has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
-			SUM(CASE WHEN has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
-			SUM(CASE WHEN has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
-			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
-			SUM(CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
-			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
-			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
-			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
-		SUM(CASE WHEN environment_count > 0 THEN 1 ELSE 0 END) as environments_count,
-		SUM(CASE WHEN secret_count > 0 THEN 1 ELSE 0 END) as secrets_count,
-		SUM(CASE WHEN variable_count > 0 THEN 1 ELSE 0 END) as variables_count,
+			-- GitHub features (from repositories table)
+			SUM(CASE WHEN r.is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN r.is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
+			-- Git properties (from repository_git_properties table)
+			SUM(CASE WHEN gp.has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN gp.has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN gp.has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
+			-- Features (from repository_features table)
+			SUM(CASE WHEN f.has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN f.has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN f.has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN f.has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN f.has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN f.has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
+			SUM(CASE WHEN f.branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			SUM(CASE WHEN f.has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
+			SUM(CASE WHEN f.has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN f.has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN f.has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN f.has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN f.has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN f.has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN f.webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+			SUM(CASE WHEN f.environment_count > 0 THEN 1 ELSE 0 END) as environments_count,
+			SUM(CASE WHEN f.secret_count > 0 THEN 1 ELSE 0 END) as secrets_count,
+			SUM(CASE WHEN f.variable_count > 0 THEN 1 ELSE 0 END) as variables_count,
 			
-		-- Azure DevOps features (only count for ADO sources)
-		SUM(CASE WHEN source = 'azuredevops' AND ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+			-- Azure DevOps features (from repository_ado_properties table, only count for ADO sources)
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND a.service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
 			
-		COUNT(*) as total
-	FROM repositories
+			COUNT(*) as total
+		FROM repositories r
+		LEFT JOIN repository_git_properties gp ON r.id = gp.repository_id
+		LEFT JOIN repository_features f ON r.id = f.repository_id
+		LEFT JOIN repository_ado_properties a ON r.id = a.repository_id
 `
 
 	// Use GORM Raw() for analytics query
@@ -314,14 +321,16 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, pro
 		FROM (
 			SELECT 
 				CASE 
-					WHEN COALESCE(complexity_score, 0) <= 5 THEN 'simple'
-					WHEN complexity_score <= 10 THEN 'medium'
-					WHEN complexity_score <= 17 THEN 'complex'
+					WHEN COALESCE(v.complexity_score, 0) <= 5 THEN 'simple'
+					WHEN v.complexity_score <= 10 THEN 'medium'
+					WHEN v.complexity_score <= 17 THEN 'complex'
 					ELSE 'very_complex'
 				END as category
 			FROM repositories r
+			LEFT JOIN repository_validation v ON r.id = v.repository_id
+			LEFT JOIN repository_ado_properties a ON r.id = a.repository_id
 			WHERE 1=1
-				AND status != 'wont_migrate'
+				AND r.status != 'wont_migrate'
 				` + orgFilterSQL + `
 				` + projectFilterSQL + `
 				` + batchFilterSQL + `
@@ -608,12 +617,12 @@ func (d *Database) buildSourceFilter(sourceID *int64) (string, []any) {
 	return " AND r.source_id = ?", []any{*sourceID}
 }
 
-// buildProjectFilter builds SQL filter for ADO project (ado_project field)
+// buildProjectFilter builds SQL filter for ADO project (project field in repository_ado_properties)
 func (d *Database) buildProjectFilter(projectFilter string) (string, []any) {
 	if projectFilter == "" {
 		return "", nil
 	}
-	return " AND r.ado_project = ?", []any{projectFilter}
+	return " AND a.project = ?", []any{projectFilter}
 }
 
 // GetRepositoryStatsByStatusFiltered returns repository counts by status with filters
@@ -625,14 +634,15 @@ func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFi
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	query := `
-		SELECT status, COUNT(*) as count
+		SELECT r.status, COUNT(*) as count
 		FROM repositories r
+		LEFT JOIN repository_ado_properties a ON r.id = a.repository_id
 		WHERE 1=1
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
 			` + sourceFilterSQL + `
-		GROUP BY status
+		GROUP BY r.status
 	`
 
 	// Combine all arguments
@@ -678,15 +688,16 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, p
 		FROM (
 			SELECT 
 				CASE 
-					WHEN total_size IS NULL THEN 'unknown'
-					WHEN total_size < 104857600 THEN 'small'
-					WHEN total_size < 1073741824 THEN 'medium'
-					WHEN total_size < 5368709120 THEN 'large'
+					WHEN gp.total_size IS NULL THEN 'unknown'
+					WHEN gp.total_size < 104857600 THEN 'small'
+					WHEN gp.total_size < 1073741824 THEN 'medium'
+					WHEN gp.total_size < 5368709120 THEN 'large'
 					ELSE 'very_large'
 				END as category
 			FROM repositories r
+			LEFT JOIN repository_git_properties gp ON r.id = gp.repository_id
 			WHERE 1=1
-				AND status != 'wont_migrate'
+				AND r.status != 'wont_migrate'
 				` + orgFilterSQL + `
 				` + projectFilterSQL + `
 				` + batchFilterSQL + `
@@ -728,55 +739,58 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 
 	query := `
 		SELECT 
-			-- GitHub features
-			SUM(CASE WHEN is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
-			SUM(CASE WHEN is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
-			SUM(CASE WHEN has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
-			SUM(CASE WHEN has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
-			SUM(CASE WHEN has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
-			SUM(CASE WHEN has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
-			SUM(CASE WHEN has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
-			SUM(CASE WHEN has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
-			SUM(CASE WHEN has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
-			SUM(CASE WHEN has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
-			SUM(CASE WHEN has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
-			SUM(CASE WHEN branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
-			SUM(CASE WHEN has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
-			SUM(CASE WHEN has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
-			SUM(CASE WHEN has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
-			SUM(CASE WHEN has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
-		SUM(CASE WHEN has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
-		SUM(CASE WHEN has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
-		SUM(CASE WHEN has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
-		SUM(CASE WHEN webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
-		SUM(CASE WHEN environment_count > 0 THEN 1 ELSE 0 END) as environments_count,
-		SUM(CASE WHEN secret_count > 0 THEN 1 ELSE 0 END) as secrets_count,
-		SUM(CASE WHEN variable_count > 0 THEN 1 ELSE 0 END) as variables_count,
+			-- GitHub features (from features and git_properties tables)
+			SUM(CASE WHEN r.is_archived = TRUE THEN 1 ELSE 0 END) as archived_count,
+			SUM(CASE WHEN r.is_fork = TRUE THEN 1 ELSE 0 END) as fork_count,
+			SUM(CASE WHEN gp.has_lfs = TRUE THEN 1 ELSE 0 END) as lfs_count,
+			SUM(CASE WHEN gp.has_submodules = TRUE THEN 1 ELSE 0 END) as submodules_count,
+			SUM(CASE WHEN gp.has_large_files = TRUE THEN 1 ELSE 0 END) as large_files_count,
+			SUM(CASE WHEN f.has_wiki = TRUE THEN 1 ELSE 0 END) as wiki_count,
+			SUM(CASE WHEN f.has_pages = TRUE THEN 1 ELSE 0 END) as pages_count,
+			SUM(CASE WHEN f.has_discussions = TRUE THEN 1 ELSE 0 END) as discussions_count,
+			SUM(CASE WHEN f.has_actions = TRUE THEN 1 ELSE 0 END) as actions_count,
+			SUM(CASE WHEN f.has_projects = TRUE THEN 1 ELSE 0 END) as projects_count,
+			SUM(CASE WHEN f.has_packages = TRUE THEN 1 ELSE 0 END) as packages_count,
+			SUM(CASE WHEN f.branch_protections > 0 THEN 1 ELSE 0 END) as branch_protections_count,
+			SUM(CASE WHEN f.has_rulesets = TRUE THEN 1 ELSE 0 END) as rulesets_count,
+			SUM(CASE WHEN f.has_code_scanning = TRUE THEN 1 ELSE 0 END) as code_scanning_count,
+			SUM(CASE WHEN f.has_dependabot = TRUE THEN 1 ELSE 0 END) as dependabot_count,
+			SUM(CASE WHEN f.has_secret_scanning = TRUE THEN 1 ELSE 0 END) as secret_scanning_count,
+			SUM(CASE WHEN f.has_codeowners = TRUE THEN 1 ELSE 0 END) as codeowners_count,
+			SUM(CASE WHEN f.has_self_hosted_runners = TRUE THEN 1 ELSE 0 END) as self_hosted_runners_count,
+			SUM(CASE WHEN f.has_release_assets = TRUE THEN 1 ELSE 0 END) as release_assets_count,
+			SUM(CASE WHEN f.webhook_count > 0 THEN 1 ELSE 0 END) as webhooks_count,
+			SUM(CASE WHEN f.environment_count > 0 THEN 1 ELSE 0 END) as environments_count,
+			SUM(CASE WHEN f.secret_count > 0 THEN 1 ELSE 0 END) as secrets_count,
+			SUM(CASE WHEN f.variable_count > 0 THEN 1 ELSE 0 END) as variables_count,
 			
-		-- Azure DevOps features (only count for ADO sources)
-		SUM(CASE WHEN source = 'azuredevops' AND ado_is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
-		SUM(CASE WHEN source = 'azuredevops' AND ado_service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
+			-- Azure DevOps features (only count for ADO sources)
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.is_git = FALSE THEN 1 ELSE 0 END) as ado_tfvc_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.has_boards = TRUE THEN 1 ELSE 0 END) as ado_has_boards_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.has_pipelines = TRUE THEN 1 ELSE 0 END) as ado_has_pipelines_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.has_ghas = TRUE THEN 1 ELSE 0 END) as ado_has_ghas_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.pull_request_count > 0 THEN 1 ELSE 0 END) as ado_has_pull_requests_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.work_item_count > 0 THEN 1 ELSE 0 END) as ado_has_work_items_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.branch_policy_count > 0 THEN 1 ELSE 0 END) as ado_has_branch_policies_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.yaml_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_yaml_pipelines_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.classic_pipeline_count > 0 THEN 1 ELSE 0 END) as ado_has_classic_pipelines_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.has_wiki = TRUE THEN 1 ELSE 0 END) as ado_has_wiki_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.test_plan_count > 0 THEN 1 ELSE 0 END) as ado_has_test_plans_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.package_feed_count > 0 THEN 1 ELSE 0 END) as ado_has_package_feeds_count,
+			SUM(CASE WHEN r.source = 'azuredevops' AND ap.service_hook_count > 0 THEN 1 ELSE 0 END) as ado_has_service_hooks_count,
 			
-		COUNT(*) as total
-	FROM repositories r
-	WHERE 1=1
-		AND status != 'wont_migrate'
-		` + orgFilterSQL + `
-		` + projectFilterSQL + `
-		` + batchFilterSQL + `
-		` + sourceFilterSQL + `
-`
+			COUNT(r.id) as total
+		FROM repositories r
+		LEFT JOIN repository_git_properties gp ON r.id = gp.repository_id
+		LEFT JOIN repository_features f ON r.id = f.repository_id
+		LEFT JOIN repository_ado_properties ap ON r.id = ap.repository_id
+		WHERE 1=1
+			AND r.status != 'wont_migrate'
+			` + orgFilterSQL + `
+			` + projectFilterSQL + `
+			` + batchFilterSQL + `
+			` + sourceFilterSQL + `
+	`
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
@@ -933,20 +947,21 @@ func (d *Database) GetProjectStatsFiltered(ctx context.Context, orgFilter, proje
 
 	query := `
 		SELECT 
-			r.ado_project as org,
+			ap.project as org,
 			COUNT(*) as total,
 			r.status as status,
 			COUNT(*) as status_count
 		FROM repositories r
-		WHERE r.ado_project IS NOT NULL
-			AND r.ado_project != ''
+		LEFT JOIN repository_ado_properties ap ON r.id = ap.repository_id
+		WHERE ap.project IS NOT NULL
+			AND ap.project != ''
 			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
 			` + sourceFilterSQL + `
-		GROUP BY r.ado_project, r.status
-		ORDER BY total DESC, r.ado_project ASC
+		GROUP BY ap.project, r.status
+		ORDER BY total DESC, ap.project ASC
 	`
 
 	// Combine all arguments
@@ -1125,10 +1140,12 @@ func (d *Database) GetDashboardActionItems(ctx context.Context) (*DashboardActio
 
 	// Get blocked repositories (remediation_required or oversized)
 	err = d.db.WithContext(ctx).
-		Where("status = ? OR has_oversized_repository = ? OR has_blocking_files = ?",
+		Joins("LEFT JOIN repository_validation rv ON repositories.id = rv.repository_id").
+		Where("repositories.status = ? OR rv.has_oversized_repository = ? OR rv.has_blocking_files = ?",
 			"remediation_required", true, true).
-		Order("discovered_at DESC").
+		Order("repositories.discovered_at DESC").
 		Limit(50).
+		Preload("Validation").
 		Find(&actionItems.BlockedRepositories).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get blocked repositories: %w", err)

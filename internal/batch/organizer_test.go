@@ -56,20 +56,24 @@ func createTestRepository(t *testing.T, db *storage.Database, fullName string, s
 
 	sizeBytes := size * 1024 // Convert KB to bytes
 	repo := &models.Repository{
-		FullName:      fullName,
-		TotalSize:     &sizeBytes,
-		Status:        string(models.StatusPending),
-		Source:        "github",
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-		HasLFS:        features["lfs"],
-		HasSubmodules: features["submodules"],
-		HasActions:    features["actions"],
-		HasWiki:       features["wiki"],
-		HasPages:      features["pages"],
-		HasProjects:   features["projects"],
-		CommitCount:   100,
-		BranchCount:   2,
+		FullName:     fullName,
+		Status:       string(models.StatusPending),
+		Source:       "github",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
+		GitProperties: &models.RepositoryGitProperties{
+			TotalSize:     &sizeBytes,
+			HasLFS:        features["lfs"],
+			HasSubmodules: features["submodules"],
+			CommitCount:   100,
+			BranchCount:   2,
+		},
+		Features: &models.RepositoryFeatures{
+			HasActions:  features["actions"],
+			HasWiki:     features["wiki"],
+			HasPages:    features["pages"],
+			HasProjects: features["projects"],
+		},
 	}
 
 	ctx := context.Background()
@@ -163,8 +167,8 @@ func TestSelectPilotRepositories(t *testing.T) {
 
 		// Verify all selected repos are within size limits
 		for _, repo := range repos {
-			if repo.TotalSize != nil {
-				sizeKB := *repo.TotalSize / 1024
+			if repo.GetTotalSize() != nil {
+				sizeKB := *repo.GetTotalSize() / 1024
 				if sizeKB > criteria.MaxSize {
 					t.Errorf("Repo %s exceeds max size: %d > %d", repo.FullName, sizeKB, criteria.MaxSize)
 				}
@@ -184,7 +188,7 @@ func TestSelectPilotRepositories(t *testing.T) {
 
 		// All selected repos should have LFS
 		for _, repo := range repos {
-			if !repo.HasLFS {
+			if !repo.HasLFS() {
 				t.Errorf("Repo %s should have LFS", repo.FullName)
 			}
 		}

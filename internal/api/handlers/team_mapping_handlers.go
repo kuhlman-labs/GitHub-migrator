@@ -824,12 +824,13 @@ func (h *Handler) findCodeownersIssues(ctx context.Context, mappingMap map[strin
 	}
 
 	for _, repo := range repos {
-		if repo.CodeownersTeams == nil || *repo.CodeownersTeams == "" {
+		codeownersTeams := repo.GetCodeownersTeams()
+		if codeownersTeams == nil || *codeownersTeams == "" {
 			continue
 		}
 
 		var teamRefs []string
-		if err := json.Unmarshal([]byte(*repo.CodeownersTeams), &teamRefs); err != nil {
+		if err := json.Unmarshal([]byte(*codeownersTeams), &teamRefs); err != nil {
 			continue
 		}
 

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -152,19 +153,27 @@ func TestADODiscoveryStatus(t *testing.T) {
 	// Add some ADO repositories
 	projectName := "TestProject"
 	repo1 := &models.Repository{
-		FullName:   "test-org/TestProject/repo1",
-		Status:     string(models.StatusPending),
-		Source:     models.SourceTypeAzureDevOps,
-		ADOProject: &projectName,
-		ADOIsGit:   true,
+		FullName:     "test-org/TestProject/repo1",
+		Status:       string(models.StatusPending),
+		Source:       models.SourceTypeAzureDevOps,
+		SourceURL:    "https://dev.azure.com/test-org/TestProject/repo1",
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo1.SetADOProject(&projectName)
+	repo1.SetADOIsGit(true)
 	repo2 := &models.Repository{
-		FullName:   "test-org/TestProject/repo2",
-		Status:     string(models.StatusPending),
-		Source:     models.SourceTypeAzureDevOps,
-		ADOProject: &projectName,
-		ADOIsGit:   false, // TFVC
+		FullName:     "test-org/TestProject/repo2",
+		Status:       string(models.StatusPending),
+		Source:       models.SourceTypeAzureDevOps,
+		SourceURL:    "https://dev.azure.com/test-org/TestProject/repo2",
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo2.SetADOProject(&projectName)
+	repo2.SetADOIsGit(false) // TFVC
 	if err := baseHandler.db.SaveRepository(ctx, repo1); err != nil {
 		t.Fatalf("Failed to save repo1: %v", err)
 	}

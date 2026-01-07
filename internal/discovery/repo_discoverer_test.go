@@ -177,32 +177,34 @@ func TestRepoDiscoverer_GetRepositoryStats(t *testing.T) {
 	size100MB := int64(100 * 1024 * 1024)
 	size50MB := int64(50 * 1024 * 1024)
 
-	repos := []*models.Repository{
-		{
-			ID:            1,
-			FullName:      "org/repo1",
-			Status:        string(models.StatusPending),
-			TotalSize:     &size100MB,
-			HasLFS:        true,
-			HasSubmodules: false,
-		},
-		{
-			ID:            2,
-			FullName:      "org/repo2",
-			Status:        string(models.StatusPending),
-			TotalSize:     &size50MB,
-			HasLFS:        false,
-			HasSubmodules: true,
-		},
-		{
-			ID:            3,
-			FullName:      "org/repo3",
-			Status:        string(models.StatusMigrationComplete),
-			TotalSize:     nil, // No size
-			HasLFS:        true,
-			HasSubmodules: true,
-		},
+	repo1 := &models.Repository{
+		ID:       1,
+		FullName: "org/repo1",
+		Status:   string(models.StatusPending),
 	}
+	repo1.SetTotalSize(&size100MB)
+	repo1.SetHasLFS(true)
+	repo1.SetHasSubmodules(false)
+
+	repo2 := &models.Repository{
+		ID:       2,
+		FullName: "org/repo2",
+		Status:   string(models.StatusPending),
+	}
+	repo2.SetTotalSize(&size50MB)
+	repo2.SetHasLFS(false)
+	repo2.SetHasSubmodules(true)
+
+	repo3 := &models.Repository{
+		ID:       3,
+		FullName: "org/repo3",
+		Status:   string(models.StatusMigrationComplete),
+	}
+	// No size
+	repo3.SetHasLFS(true)
+	repo3.SetHasSubmodules(true)
+
+	repos := []*models.Repository{repo1, repo2, repo3}
 
 	stats := d.GetRepositoryStats(repos)
 

@@ -431,9 +431,13 @@ func TestCheckBatchEligibility(t *testing.T) {
 			wantReason:   "repository is already assigned to a batch",
 		},
 		{
-			name:         "not eligible - oversized",
-			fullName:     "org/repo1",
-			repo:         &models.Repository{ID: 1, FullName: "org/repo1", Status: string(models.StatusPending), HasOversizedRepository: true},
+			name:     "not eligible - oversized",
+			fullName: "org/repo1",
+			repo: func() *models.Repository {
+				r := &models.Repository{ID: 1, FullName: "org/repo1", Status: string(models.StatusPending)}
+				r.SetHasOversizedRepository(true)
+				return r
+			}(),
 			wantEligible: false,
 			wantReason:   "repository exceeds GitHub's 40 GiB size limit and requires remediation",
 		},

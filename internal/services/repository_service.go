@@ -161,7 +161,7 @@ func (s *RepositoryService) CheckBatchEligibility(ctx context.Context, fullName 
 	}
 
 	// Check for oversized repository
-	if repo.HasOversizedRepository {
+	if repo.HasOversizedRepository() {
 		return &BatchEligibilityResult{
 			Eligible: false,
 			Reason:   "repository exceeds GitHub's 40 GiB size limit and requires remediation",

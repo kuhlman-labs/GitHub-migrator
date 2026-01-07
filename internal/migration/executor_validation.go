@@ -23,7 +23,7 @@ type ValidationMismatch struct {
 // nolint:gocyclo // Complex validation logic - refactoring would reduce readability
 func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Repository, batch *models.Batch) error {
 	// Check for GitHub Enterprise Importer blocking issues
-	if repo.HasOversizedRepository {
+	if repo.HasOversizedRepository() {
 		return fmt.Errorf("repository exceeds GitHub's 40 GiB size limit and requires remediation before migration (reduce repository size using Git LFS or history rewriting)")
 	}
 
@@ -31,15 +31,15 @@ func (e *Executor) validatePreMigration(ctx context.Context, repo *models.Reposi
 	var issues []string
 
 	// Check for very large files
-	if repo.LargestFileSize != nil && *repo.LargestFileSize > 100*1024*1024 { // >100MB
+	if repo.GetLargestFileSize() != nil && *repo.GetLargestFileSize() > 100*1024*1024 { // >100MB
 		issues = append(issues, fmt.Sprintf("Very large file detected: %s (%d MB)",
-			*repo.LargestFile, *repo.LargestFileSize/(1024*1024)))
+			*repo.GetLargestFile(), *repo.GetLargestFileSize()/(1024*1024)))
 	}
 
 	// Check for very large repository
-	if repo.TotalSize != nil && *repo.TotalSize > 50*1024*1024*1024 { // >50GB
+	if repo.GetTotalSize() != nil && *repo.GetTotalSize() > 50*1024*1024*1024 { // >50GB
 		issues = append(issues, fmt.Sprintf("Very large repository: %d GB",
-			*repo.TotalSize/(1024*1024*1024)))
+			*repo.GetTotalSize()/(1024*1024*1024)))
 	}
 
 	// 1. Verify source repository exists and is accessible (GitHub sources only)
@@ -207,9 +207,9 @@ func (e *Executor) validatePostMigration(ctx context.Context, repo *models.Repos
 	}
 
 	// Update repository validation fields
-	repo.ValidationStatus = &validationStatus
-	repo.ValidationDetails = validationDetails
-	repo.DestinationData = destinationData
+	repo.SetValidationStatus(&validationStatus)
+	repo.SetValidationDetails(validationDetails)
+	repo.SetDestinationData(destinationData)
 
 	// Don't fail migration on validation warnings - just log them
 	return nil
@@ -243,18 +243,18 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 	totalSize := int64(ghRepo.GetSize()) * 1024 // Convert KB to bytes
 	defaultBranch := ghRepo.GetDefaultBranch()
 	repo := &models.Repository{
-		FullName:      ghRepo.GetFullName(),
-		DefaultBranch: &defaultBranch,
-		TotalSize:     &totalSize,
-		HasWiki:       ghRepo.GetHasWiki(),
-		HasPages:      ghRepo.GetHasPages(),
-		IsArchived:    ghRepo.GetArchived(),
+		FullName:   ghRepo.GetFullName(),
+		IsArchived: ghRepo.GetArchived(),
 	}
+	repo.SetDefaultBranch(&defaultBranch)
+	repo.SetTotalSize(&totalSize)
+	repo.SetHasWiki(ghRepo.GetHasWiki())
+	repo.SetHasPages(ghRepo.GetHasPages())
 
 	// Get branch count
 	branches, _, err := e.destClient.REST().Repositories.ListBranches(ctx, org, name, nil)
 	if err == nil {
-		repo.BranchCount = len(branches)
+		repo.SetBranchCount(len(branches))
 	}
 
 	// Get last commit SHA from default branch
@@ -262,7 +262,7 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 		branch, _, err := e.destClient.REST().Repositories.GetBranch(ctx, org, name, defaultBranch, 0)
 		if err == nil && branch != nil && branch.Commit != nil {
 			sha := branch.Commit.GetSHA()
-			repo.LastCommitSHA = &sha
+			repo.SetLastCommitSHA(&sha)
 		}
 	}
 
@@ -273,7 +273,7 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 		for _, contributor := range contributors {
 			totalCommits += contributor.GetContributions()
 		}
-		repo.CommitCount = totalCommits
+		repo.SetCommitCount(totalCommits)
 		e.logger.Debug("Retrieved commit count from contributors", "repo", fullName, "commits", totalCommits, "contributors", len(contributors))
 	} else {
 		e.logger.Warn("Failed to get contributors for commit count", "repo", fullName, "error", err)
@@ -282,7 +282,7 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 	// Get tag count
 	tags, _, err := e.destClient.REST().Repositories.ListTags(ctx, org, name, nil)
 	if err == nil {
-		repo.TagCount = len(tags)
+		repo.SetTagCount(len(tags))
 	}
 
 	// Get issue and PR counts
@@ -292,14 +292,18 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 		ListOptions: ghapi.ListOptions{PerPage: 1},
 	})
 	if err == nil {
+		issueCount := 0
+		prCount := 0
 		// Count issues (excluding PRs)
 		for _, issue := range issues {
 			if issue.PullRequestLinks == nil {
-				repo.IssueCount++
+				issueCount++
 			} else {
-				repo.PullRequestCount++
+				prCount++
 			}
 		}
+		repo.SetIssueCount(issueCount)
+		repo.SetPullRequestCount(prCount)
 	}
 
 	return repo, nil
@@ -311,98 +315,102 @@ func (e *Executor) compareRepositoryCharacteristics(source, dest *models.Reposit
 	hasCritical := false
 
 	// Compare critical Git properties
-	if source.DefaultBranch != nil && dest.DefaultBranch != nil && *source.DefaultBranch != *dest.DefaultBranch {
+	srcBranch := source.GetDefaultBranch()
+	dstBranch := dest.GetDefaultBranch()
+	if srcBranch != nil && dstBranch != nil && *srcBranch != *dstBranch {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "default_branch",
-			SourceValue: *source.DefaultBranch,
-			DestValue:   *dest.DefaultBranch,
+			SourceValue: *srcBranch,
+			DestValue:   *dstBranch,
 			Critical:    true,
 		})
 		hasCritical = true
 	}
 
-	if source.CommitCount != dest.CommitCount {
+	if source.GetCommitCount() != dest.GetCommitCount() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "commit_count",
-			SourceValue: source.CommitCount,
-			DestValue:   dest.CommitCount,
+			SourceValue: source.GetCommitCount(),
+			DestValue:   dest.GetCommitCount(),
 			Critical:    true,
 		})
 		hasCritical = true
 	}
 
-	if source.BranchCount != dest.BranchCount {
+	if source.GetBranchCount() != dest.GetBranchCount() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "branch_count",
-			SourceValue: source.BranchCount,
-			DestValue:   dest.BranchCount,
+			SourceValue: source.GetBranchCount(),
+			DestValue:   dest.GetBranchCount(),
 			Critical:    true,
 		})
 		hasCritical = true
 	}
 
-	if source.TagCount != dest.TagCount {
+	if source.GetTagCount() != dest.GetTagCount() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "tag_count",
-			SourceValue: source.TagCount,
-			DestValue:   dest.TagCount,
+			SourceValue: source.GetTagCount(),
+			DestValue:   dest.GetTagCount(),
 			Critical:    false,
 		})
 	}
 
 	// Compare last commit SHA if available
-	if source.LastCommitSHA != nil && dest.LastCommitSHA != nil && *source.LastCommitSHA != *dest.LastCommitSHA {
+	srcSHA := source.GetLastCommitSHA()
+	dstSHA := dest.GetLastCommitSHA()
+	if srcSHA != nil && dstSHA != nil && *srcSHA != *dstSHA {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "last_commit_sha",
-			SourceValue: *source.LastCommitSHA,
-			DestValue:   *dest.LastCommitSHA,
+			SourceValue: *srcSHA,
+			DestValue:   *dstSHA,
 			Critical:    true,
 		})
 		hasCritical = true
 	}
 
 	// Compare GitHub features (non-critical)
-	if source.HasWiki != dest.HasWiki {
+	if source.HasWiki() != dest.HasWiki() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "has_wiki",
-			SourceValue: source.HasWiki,
-			DestValue:   dest.HasWiki,
+			SourceValue: source.HasWiki(),
+			DestValue:   dest.HasWiki(),
 			Critical:    false,
 		})
 	}
 
-	if source.HasPages != dest.HasPages {
+	if source.HasPages() != dest.HasPages() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "has_pages",
-			SourceValue: source.HasPages,
-			DestValue:   dest.HasPages,
+			SourceValue: source.HasPages(),
+			DestValue:   dest.HasPages(),
 			Critical:    false,
 		})
 	}
 
-	if source.HasDiscussions != dest.HasDiscussions {
+	if source.HasDiscussions() != dest.HasDiscussions() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "has_discussions",
-			SourceValue: source.HasDiscussions,
-			DestValue:   dest.HasDiscussions,
+			SourceValue: source.HasDiscussions(),
+			DestValue:   dest.HasDiscussions(),
 			Critical:    false,
 		})
 	}
 
-	if source.HasActions != dest.HasActions {
+	if source.HasActions() != dest.HasActions() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "has_actions",
-			SourceValue: source.HasActions,
-			DestValue:   dest.HasActions,
+			SourceValue: source.HasActions(),
+			DestValue:   dest.HasActions(),
 			Critical:    false,
 		})
 	}
 
-	if source.BranchProtections != dest.BranchProtections {
+	if source.GetBranchProtections() != dest.GetBranchProtections() {
 		mismatches = append(mismatches, ValidationMismatch{
 			Field:       "branch_protections",
-			SourceValue: source.BranchProtections,
-			DestValue:   dest.BranchProtections,
+			SourceValue: source.GetBranchProtections(),
+			DestValue:   dest.GetBranchProtections(),
 			Critical:    false,
 		})
 	}
@@ -461,19 +469,19 @@ func (e *Executor) serializeDestinationData(dest *models.Repository) string {
 	}
 
 	data := DestData{
-		DefaultBranch:     dest.DefaultBranch,
-		BranchCount:       dest.BranchCount,
-		CommitCount:       dest.CommitCount,
-		TagCount:          dest.TagCount,
-		LastCommitSHA:     dest.LastCommitSHA,
-		TotalSize:         dest.TotalSize,
-		HasWiki:           dest.HasWiki,
-		HasPages:          dest.HasPages,
-		HasDiscussions:    dest.HasDiscussions,
-		HasActions:        dest.HasActions,
-		BranchProtections: dest.BranchProtections,
-		IssueCount:        dest.IssueCount,
-		PullRequestCount:  dest.PullRequestCount,
+		DefaultBranch:     dest.GetDefaultBranch(),
+		BranchCount:       dest.GetBranchCount(),
+		CommitCount:       dest.GetCommitCount(),
+		TagCount:          dest.GetTagCount(),
+		LastCommitSHA:     dest.GetLastCommitSHA(),
+		TotalSize:         dest.GetTotalSize(),
+		HasWiki:           dest.HasWiki(),
+		HasPages:          dest.HasPages(),
+		HasDiscussions:    dest.HasDiscussions(),
+		HasActions:        dest.HasActions(),
+		BranchProtections: dest.GetBranchProtections(),
+		IssueCount:        dest.GetIssueCount(),
+		PullRequestCount:  dest.GetPullRequestCount(),
 	}
 
 	jsonData, err := json.Marshal(data)

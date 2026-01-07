@@ -20,56 +20,62 @@ func createTestRepository(fullName string) *models.Repository {
 	defaultBranch := "main"
 	topContrib := "user1,user2"
 
-	return &models.Repository{
-		FullName:             fullName,
-		Source:               "ghes",
-		SourceURL:            fmt.Sprintf("https://github.com/%s", fullName),
-		TotalSize:            &totalSize,
-		DefaultBranch:        &defaultBranch,
-		HasLFS:               false,
-		HasSubmodules:        false,
-		HasLargeFiles:        false,
-		LargeFileCount:       0,
-		BranchCount:          5,
-		CommitCount:          100,
-		IsArchived:           false,
-		IsFork:               false,
-		HasWiki:              false,
-		HasPages:             false,
-		HasDiscussions:       false,
-		HasActions:           false,
-		HasProjects:          false,
-		HasPackages:          false,
-		BranchProtections:    0,
-		HasRulesets:          false,
-		EnvironmentCount:     0,
-		SecretCount:          0,
-		VariableCount:        0,
-		WebhookCount:         0,
-		HasCodeScanning:      false,
-		HasDependabot:        false,
-		HasSecretScanning:    false,
-		HasCodeowners:        false,
-		Visibility:           "private",
-		WorkflowCount:        0,
-		HasSelfHostedRunners: false,
-		CollaboratorCount:    0,
-		InstalledAppsCount:   0,
-		ReleaseCount:         0,
-		HasReleaseAssets:     false,
-		ContributorCount:     2,
-		TopContributors:      &topContrib,
-		IssueCount:           0,
-		PullRequestCount:     0,
-		TagCount:             0,
-		OpenIssueCount:       0,
-		OpenPRCount:          0,
-		Status:               string(models.StatusPending),
-		Priority:             0,
-		IsSourceLocked:       false,
-		DiscoveredAt:         time.Now(),
-		UpdatedAt:            time.Now(),
+	repo := &models.Repository{
+		FullName:       fullName,
+		Source:         "ghes",
+		SourceURL:      fmt.Sprintf("https://github.com/%s", fullName),
+		IsArchived:     false,
+		IsFork:         false,
+		Visibility:     "private",
+		Status:         string(models.StatusPending),
+		Priority:       0,
+		IsSourceLocked: false,
+		DiscoveredAt:   time.Now(),
+		UpdatedAt:      time.Now(),
 	}
+
+	// Set git properties
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
+	repo.SetHasLFS(false)
+	repo.SetHasSubmodules(false)
+	repo.SetHasLargeFiles(false)
+	repo.SetLargeFileCount(0)
+	repo.SetBranchCount(5)
+	repo.SetCommitCount(100)
+
+	// Set features
+	repo.SetHasWiki(false)
+	repo.SetHasPages(false)
+	repo.SetHasDiscussions(false)
+	repo.SetHasActions(false)
+	repo.SetHasProjects(false)
+	repo.SetHasPackages(false)
+	repo.SetBranchProtections(0)
+	repo.SetHasRulesets(false)
+	repo.SetEnvironmentCount(0)
+	repo.SetSecretCount(0)
+	repo.SetVariableCount(0)
+	repo.SetWebhookCount(0)
+	repo.SetHasCodeScanning(false)
+	repo.SetHasDependabot(false)
+	repo.SetHasSecretScanning(false)
+	repo.SetHasCodeowners(false)
+	repo.SetWorkflowCount(0)
+	repo.SetHasSelfHostedRunners(false)
+	repo.SetCollaboratorCount(0)
+	repo.SetInstalledAppsCount(0)
+	repo.SetReleaseCount(0)
+	repo.SetHasReleaseAssets(false)
+	repo.SetContributorCount(2)
+	repo.SetTopContributors(&topContrib)
+	repo.SetIssueCount(0)
+	repo.SetPullRequestCount(0)
+	repo.SetTagCount(0)
+	repo.SetOpenIssueCount(0)
+	repo.SetOpenPRCount(0)
+
+	return repo
 }
 
 func TestNewExecutor(t *testing.T) {
@@ -173,19 +179,25 @@ func TestExecutor_validatePreMigration(t *testing.T) {
 		},
 		{
 			name: "repository with large file warning",
-			repo: &models.Repository{
-				FullName:        "test-org/large-file-repo",
-				LargestFile:     ptrString("large-binary.bin"),
-				LargestFileSize: ptrInt64(150 * 1024 * 1024), // 150MB
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "test-org/large-file-repo",
+				}
+				r.SetLargestFile(ptrString("large-binary.bin"))
+				r.SetLargestFileSize(ptrInt64(150 * 1024 * 1024)) // 150MB
+				return r
+			}(),
 			wantErr: false, // Warnings don't fail validation
 		},
 		{
 			name: "very large repository",
-			repo: &models.Repository{
-				FullName:  "test-org/huge-repo",
-				TotalSize: ptrInt64(60 * 1024 * 1024 * 1024), // 60GB
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "test-org/huge-repo",
+				}
+				r.SetTotalSize(ptrInt64(60 * 1024 * 1024 * 1024)) // 60GB
+				return r
+			}(),
 			wantErr: false, // Warnings don't fail validation
 		},
 	}

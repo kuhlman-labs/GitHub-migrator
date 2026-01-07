@@ -21,15 +21,16 @@ func TestGetRepositoryDependents(t *testing.T) {
 	defaultBranch := "main"
 
 	repo := &models.Repository{
-		FullName:      "org/repo1",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo1",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
+		FullName:     "org/repo1",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/org/repo1",
+		Status:       string(models.StatusPending),
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
@@ -73,15 +74,16 @@ func TestGetDependencyGraph(t *testing.T) {
 	repos := []string{"org/repo1", "org/repo2", "org/repo3"}
 	for _, name := range repos {
 		repo := &models.Repository{
-			FullName:      name,
-			Source:        "ghes",
-			SourceURL:     fmt.Sprintf("https://github.com/%s", name),
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
+			FullName:     name,
+			Source:       "ghes",
+			SourceURL:    fmt.Sprintf("https://github.com/%s", name),
+			Status:       string(models.StatusPending),
+			Visibility:   "private",
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
 		}
+		repo.SetTotalSize(&totalSize)
+		repo.SetDefaultBranch(&defaultBranch)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository: %v", err)
 		}
@@ -142,15 +144,16 @@ func TestExportDependencies(t *testing.T) {
 	defaultBranch := "main"
 
 	repo := &models.Repository{
-		FullName:      "org/repo1",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo1",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
+		FullName:     "org/repo1",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/org/repo1",
+		Status:       string(models.StatusPending),
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}
@@ -213,15 +216,16 @@ func TestExportRepositoryDependencies(t *testing.T) {
 	defaultBranch := "main"
 
 	repo := &models.Repository{
-		FullName:      "org/repo1",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo1",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
+		FullName:     "org/repo1",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/org/repo1",
+		Status:       string(models.StatusPending),
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
 	}

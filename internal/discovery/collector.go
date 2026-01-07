@@ -1177,32 +1177,32 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 	totalSize := int64(ghRepo.GetSize()) * 1024 // Convert KB to bytes
 	defaultBranch := ghRepo.GetDefaultBranch()
 	repo := &models.Repository{
-		FullName:      ghRepo.GetFullName(),
-		Source:        "ghec", // Destination is GHEC
-		SourceURL:     ghRepo.GetHTMLURL(),
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		IsArchived:    ghRepo.GetArchived(),
-		IsFork:        ghRepo.GetFork(),
-		HasWiki:       ghRepo.GetHasWiki(),
-		HasPages:      ghRepo.GetHasPages(),
-		HasPackages:   false, // Will be detected by profiler
-		Visibility:    ghRepo.GetVisibility(),
-		Status:        string(models.StatusComplete),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
+		FullName:     ghRepo.GetFullName(),
+		Source:       "ghec", // Destination is GHEC
+		SourceURL:    ghRepo.GetHTMLURL(),
+		IsArchived:   ghRepo.GetArchived(),
+		IsFork:       ghRepo.GetFork(),
+		Visibility:   ghRepo.GetVisibility(),
+		Status:       string(models.StatusComplete),
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
+	repo.SetHasWiki(ghRepo.GetHasWiki())
+	repo.SetHasPages(ghRepo.GetHasPages())
+	repo.SetHasPackages(false) // Will be detected by profiler
 
 	// Extract last push date
 	if ghRepo.PushedAt != nil {
 		pushTime := ghRepo.PushedAt.Time
-		repo.LastCommitDate = &pushTime
+		repo.SetLastCommitDate(&pushTime)
 	}
 
 	// Get branch count using git API
 	branches, _, err := c.client.REST().Repositories.ListBranches(ctx, org, name, nil)
 	if err == nil {
-		repo.BranchCount = len(branches)
+		repo.SetBranchCount(len(branches))
 	}
 
 	// Get last commit SHA from default branch
@@ -1210,7 +1210,7 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		branch, _, err := c.client.REST().Repositories.GetBranch(ctx, org, name, defaultBranch, 0)
 		if err == nil && branch != nil && branch.Commit != nil {
 			sha := branch.Commit.GetSHA()
-			repo.LastCommitSHA = &sha
+			repo.SetLastCommitSHA(&sha)
 		}
 	}
 
@@ -1221,7 +1221,7 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		for _, contributor := range contributors {
 			totalCommits += contributor.GetContributions()
 		}
-		repo.CommitCount = totalCommits
+		repo.SetCommitCount(totalCommits)
 	}
 
 	// Profile GitHub features via API (no clone needed)
@@ -1237,15 +1237,15 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 
 	// Log the profiled repository with dereferenced values
 	destSizeBytes := int64(0)
-	if repo.TotalSize != nil {
-		destSizeBytes = *repo.TotalSize
+	if repo.GetTotalSize() != nil {
+		destSizeBytes = *repo.GetTotalSize()
 	}
 	c.logger.Info("Destination repository profiled",
 		"repo", repo.FullName,
 		"size_bytes", destSizeBytes,
-		"commits", repo.CommitCount,
-		"branches", repo.BranchCount,
-		"tags", repo.TagCount)
+		"commits", repo.GetCommitCount(),
+		"branches", repo.GetBranchCount(),
+		"tags", repo.GetTagCount())
 
 	return repo, nil
 }
@@ -1269,24 +1269,24 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 		FullName:        ghRepo.GetFullName(),
 		Source:          "ghes",
 		SourceURL:       ghRepo.GetHTMLURL(),
-		TotalSize:       &totalSize,
-		DefaultBranch:   &defaultBranch,
 		IsArchived:      ghRepo.GetArchived(),
 		IsFork:          ghRepo.GetFork(),
-		HasWiki:         ghRepo.GetHasWiki(),
-		HasPages:        ghRepo.GetHasPages(),
-		HasPackages:     false, // Will be detected by profiler
 		Visibility:      ghRepo.GetVisibility(),
 		Status:          string(models.StatusPending),
 		DiscoveredAt:    now,
 		UpdatedAt:       now,
 		LastDiscoveryAt: &now, // Track when repository data was last refreshed
 	}
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
+	repo.SetHasWiki(ghRepo.GetHasWiki())
+	repo.SetHasPages(ghRepo.GetHasPages())
+	repo.SetHasPackages(false) // Will be detected by profiler
 
 	// Extract last push date from repository object
 	if ghRepo.PushedAt != nil {
 		pushTime := ghRepo.PushedAt.Time
-		repo.LastCommitDate = &pushTime
+		repo.SetLastCommitDate(&pushTime)
 	}
 
 	// Clone repository temporarily for git-sizer analysis
@@ -1412,13 +1412,13 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 	}
 
 	// Check for GitHub migration limit violations and set status accordingly
-	if repo.HasOversizedCommits || repo.HasLongRefs || repo.HasBlockingFiles {
+	if repo.HasOversizedCommits() || repo.HasLongRefs() || repo.HasBlockingFiles() {
 		repo.Status = string(models.StatusRemediationRequired)
 		c.logger.Warn("Repository requires remediation before migration",
 			"repo", repo.FullName,
-			"has_oversized_commits", repo.HasOversizedCommits,
-			"has_long_refs", repo.HasLongRefs,
-			"has_blocking_files", repo.HasBlockingFiles)
+			"has_oversized_commits", repo.HasOversizedCommits(),
+			"has_long_refs", repo.HasLongRefs(),
+			"has_blocking_files", repo.HasBlockingFiles())
 	}
 
 	// Associate with source if set
@@ -1443,13 +1443,13 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 
 	// Log the profiled repository with dereferenced values
 	sizeBytes := int64(0)
-	if repo.TotalSize != nil {
-		sizeBytes = *repo.TotalSize
+	if repo.GetTotalSize() != nil {
+		sizeBytes = *repo.GetTotalSize()
 	}
 	c.logger.Info("Repository profiled and saved",
 		"repo", repo.FullName,
 		"size_bytes", sizeBytes,
-		"commits", repo.CommitCount)
+		"commits", repo.GetCommitCount())
 
 	return nil
 }

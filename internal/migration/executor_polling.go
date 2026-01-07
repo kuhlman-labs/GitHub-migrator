@@ -21,9 +21,9 @@ func (e *Executor) generateArchivesOnGHES(ctx context.Context, repo *models.Repo
 	excludeAttachments := e.shouldExcludeAttachments(repo, batch)
 
 	// Check if we need to exclude releases due to size (override if not already set)
-	if !excludeReleases && repo.TotalSize != nil && *repo.TotalSize > 10*1024*1024*1024 { // >10GB
+	if !excludeReleases && repo.GetTotalSize() != nil && *repo.GetTotalSize() > 10*1024*1024*1024 { // >10GB
 		excludeReleases = true
-		e.logger.Info("Excluding releases due to repository size", "repo", repo.FullName, "size", *repo.TotalSize)
+		e.logger.Info("Excluding releases due to repository size", "repo", repo.FullName, "size", *repo.GetTotalSize())
 	}
 
 	e.logger.Info("Generating separate git and metadata archives",

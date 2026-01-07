@@ -348,8 +348,9 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	output.WriteString(",")
 
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		if repo.ADOProject != nil {
-			output.WriteString(escapeCSV(*repo.ADOProject))
+		adoProject := repo.GetADOProject()
+		if adoProject != nil {
+			output.WriteString(escapeCSV(*adoProject))
 		}
 		output.WriteString(",")
 	}
@@ -368,22 +369,24 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	}
 	output.WriteString(",")
 
-	if repo.TotalSize != nil {
-		output.WriteString(fmt.Sprintf("%d,%s,", *repo.TotalSize, escapeCSV(formatBytes(*repo.TotalSize))))
+	totalSize := repo.GetTotalSize()
+	if totalSize != nil {
+		output.WriteString(fmt.Sprintf("%d,%s,", *totalSize, escapeCSV(formatBytes(*totalSize))))
 	} else {
 		output.WriteString("0,0 B,")
 	}
 
-	output.WriteString(fmt.Sprintf("%d,%d,", repo.CommitCount, repo.CommitsLast12Weeks))
-	output.WriteString(fmt.Sprintf("%s,%s,%s,%d,", formatBool(repo.HasLFS), formatBool(repo.HasSubmodules), formatBool(repo.HasLargeFiles), repo.LargeFileCount))
+	output.WriteString(fmt.Sprintf("%d,%d,", repo.GetCommitCount(), repo.GetCommitsLast12Weeks()))
+	output.WriteString(fmt.Sprintf("%s,%s,%s,%d,", formatBool(repo.HasLFS()), formatBool(repo.HasSubmodules()), formatBool(repo.HasLargeFiles()), repo.GetLargeFileCount()))
 
-	if repo.LargestFileSize != nil {
-		output.WriteString(fmt.Sprintf("%d,", *repo.LargestFileSize))
+	largestFileSize := repo.GetLargestFileSize()
+	if largestFileSize != nil {
+		output.WriteString(fmt.Sprintf("%d,", *largestFileSize))
 	} else {
 		output.WriteString("0,")
 	}
 
-	output.WriteString(formatBool(repo.HasBlockingFiles))
+	output.WriteString(formatBool(repo.HasBlockingFiles()))
 	output.WriteString(",")
 
 	if count, exists := localDepsCount[repo.ID]; exists {
@@ -392,20 +395,23 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 		output.WriteString("0,")
 	}
 
-	if repo.ComplexityScore != nil {
-		output.WriteString(fmt.Sprintf("%d,", *repo.ComplexityScore))
+	complexityScore := repo.GetComplexityScore()
+	if complexityScore != nil {
+		output.WriteString(fmt.Sprintf("%d,", *complexityScore))
 	} else {
 		output.WriteString(",")
 	}
 
-	if repo.DefaultBranch != nil {
-		output.WriteString(escapeCSV(*repo.DefaultBranch))
+	defaultBranch := repo.GetDefaultBranch()
+	if defaultBranch != nil {
+		output.WriteString(escapeCSV(*defaultBranch))
 	}
 	output.WriteString(",")
-	output.WriteString(fmt.Sprintf("%d,", repo.BranchCount))
+	output.WriteString(fmt.Sprintf("%d,", repo.GetBranchCount()))
 
-	if repo.LastCommitDate != nil {
-		output.WriteString(repo.LastCommitDate.Format("2006-01-02"))
+	lastCommitDate := repo.GetLastCommitDate()
+	if lastCommitDate != nil {
+		output.WriteString(lastCommitDate.Format("2006-01-02"))
 	}
 	output.WriteString(",")
 
@@ -418,34 +424,34 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 func (h *Handler) writeCSVSourceSpecificFields(output *strings.Builder, repo *models.Repository) {
 	if h.sourceType == models.SourceTypeAzureDevOps {
 		output.WriteString(fmt.Sprintf("%s,%d,%d,%d,%s,%s,",
-			formatBool(repo.ADOIsGit),
-			repo.ADOPipelineCount,
-			repo.ADOYAMLPipelineCount,
-			repo.ADOClassicPipelineCount,
-			formatBool(repo.ADOHasBoards),
-			formatBool(repo.ADOHasWiki)))
+			formatBool(repo.GetADOIsGit()),
+			repo.GetADOPipelineCount(),
+			repo.GetADOYAMLPipelineCount(),
+			repo.GetADOClassicPipelineCount(),
+			formatBool(repo.GetADOHasBoards()),
+			formatBool(repo.GetADOHasWiki())))
 		output.WriteString(fmt.Sprintf("%d,%d,%d,%d,%d,%d",
-			repo.ADOPullRequestCount,
-			repo.ADOWorkItemCount,
-			repo.ADOBranchPolicyCount,
-			repo.ADOTestPlanCount,
-			repo.ADOPackageFeedCount,
-			repo.ADOServiceHookCount))
+			repo.GetADOPullRequestCount(),
+			repo.GetADOWorkItemCount(),
+			repo.GetADOBranchPolicyCount(),
+			repo.GetADOTestPlanCount(),
+			repo.GetADOPackageFeedCount(),
+			repo.GetADOServiceHookCount()))
 	} else {
 		output.WriteString(fmt.Sprintf("%d,%d,%d,%s,%s,%s,%s,%d,%s,",
-			repo.WorkflowCount,
-			repo.EnvironmentCount,
-			repo.SecretCount,
-			formatBool(repo.HasActions),
-			formatBool(repo.EnvironmentCount > 0),
-			formatBool(repo.HasPackages),
-			formatBool(repo.HasProjects),
-			repo.BranchProtections,
-			formatBool(repo.HasRulesets)))
+			repo.GetWorkflowCount(),
+			repo.GetEnvironmentCount(),
+			repo.GetSecretCount(),
+			formatBool(repo.HasActions()),
+			formatBool(repo.GetEnvironmentCount() > 0),
+			formatBool(repo.HasPackages()),
+			formatBool(repo.HasProjects()),
+			repo.GetBranchProtections(),
+			formatBool(repo.HasRulesets())))
 		output.WriteString(fmt.Sprintf("%d,%d,%d,%s",
-			repo.ContributorCount,
-			repo.IssueCount,
-			repo.PullRequestCount,
-			formatBool(repo.HasSelfHostedRunners)))
+			repo.GetContributorCount(),
+			repo.GetIssueCount(),
+			repo.GetPullRequestCount(),
+			formatBool(repo.HasSelfHostedRunners())))
 	}
 }

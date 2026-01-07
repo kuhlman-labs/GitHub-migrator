@@ -182,8 +182,12 @@ func TestRepository_DestinationRepoName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &Repository{
-				FullName:   tt.fullName,
-				ADOProject: tt.adoProject,
+				FullName: tt.fullName,
+			}
+			if tt.adoProject != nil {
+				repo.ADOProperties = &RepositoryADOProperties{
+					Project: tt.adoProject,
+				}
 			}
 			result := repo.DestinationRepoName()
 			if result != tt.expected {
@@ -201,18 +205,18 @@ func strPtr(s string) *string {
 // TestRepository_SetComplexityBreakdown tests setting complexity breakdown
 func TestRepository_SetComplexityBreakdown(t *testing.T) {
 	t.Run("set nil breakdown", func(t *testing.T) {
-		repo := &Repository{}
+		repo := &Repository{Validation: &RepositoryValidation{}}
 		err := repo.SetComplexityBreakdown(nil)
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
-		if repo.ComplexityBreakdown != nil {
+		if repo.Validation.ComplexityBreakdown != nil {
 			t.Error("Expected ComplexityBreakdown to be nil")
 		}
 	})
 
 	t.Run("set valid breakdown", func(t *testing.T) {
-		repo := &Repository{}
+		repo := &Repository{Validation: &RepositoryValidation{}}
 		breakdown := &ComplexityBreakdown{
 			SizePoints:         5,
 			LargeFilesPoints:   4,
@@ -222,10 +226,10 @@ func TestRepository_SetComplexityBreakdown(t *testing.T) {
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
-		if repo.ComplexityBreakdown == nil {
+		if repo.Validation.ComplexityBreakdown == nil {
 			t.Fatal("Expected ComplexityBreakdown to be set")
 		}
-		if *repo.ComplexityBreakdown == "" {
+		if *repo.Validation.ComplexityBreakdown == "" {
 			t.Error("Expected non-empty ComplexityBreakdown JSON")
 		}
 	})
@@ -246,7 +250,7 @@ func TestRepository_GetComplexityBreakdown(t *testing.T) {
 
 	t.Run("empty string breakdown", func(t *testing.T) {
 		emptyStr := ""
-		repo := &Repository{ComplexityBreakdown: &emptyStr}
+		repo := &Repository{Validation: &RepositoryValidation{ComplexityBreakdown: &emptyStr}}
 		breakdown, err := repo.GetComplexityBreakdown()
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
@@ -258,7 +262,7 @@ func TestRepository_GetComplexityBreakdown(t *testing.T) {
 
 	t.Run("valid JSON breakdown", func(t *testing.T) {
 		jsonStr := `{"size_points":5,"large_files_points":4}`
-		repo := &Repository{ComplexityBreakdown: &jsonStr}
+		repo := &Repository{Validation: &RepositoryValidation{ComplexityBreakdown: &jsonStr}}
 		breakdown, err := repo.GetComplexityBreakdown()
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
@@ -277,7 +281,7 @@ func TestRepository_GetComplexityBreakdown(t *testing.T) {
 
 	t.Run("invalid JSON breakdown", func(t *testing.T) {
 		invalidJSON := `{invalid json}`
-		repo := &Repository{ComplexityBreakdown: &invalidJSON}
+		repo := &Repository{Validation: &RepositoryValidation{ComplexityBreakdown: &invalidJSON}}
 		_, err := repo.GetComplexityBreakdown()
 		if err == nil {
 			t.Error("Expected error for invalid JSON")
@@ -311,10 +315,10 @@ func TestRepository_MarshalJSON(t *testing.T) {
 	t.Run("marshal with complexity breakdown", func(t *testing.T) {
 		jsonStr := `{"size_points":5}`
 		repo := &Repository{
-			FullName:            "org/repo",
-			Source:              "ghes",
-			Status:              "pending",
-			ComplexityBreakdown: &jsonStr,
+			FullName:   "org/repo",
+			Source:     "ghes",
+			Status:     "pending",
+			Validation: &RepositoryValidation{ComplexityBreakdown: &jsonStr},
 		}
 		data, err := json.Marshal(repo)
 		if err != nil {
@@ -326,11 +330,18 @@ func TestRepository_MarshalJSON(t *testing.T) {
 			t.Errorf("Failed to unmarshal result: %v", err)
 		}
 
-		// Verify complexity_breakdown is marshaled as object not string
-		breakdown, ok := result["complexity_breakdown"].(map[string]any)
+		// Verify validation is present and contains complexity_breakdown as an object
+		validation, ok := result["validation"].(map[string]any)
 		if !ok {
-			t.Error("Expected complexity_breakdown to be an object")
-		} else if breakdown["size_points"] != float64(5) {
+			t.Error("Expected validation to be an object")
+			return
+		}
+		breakdown, ok := validation["complexity_breakdown"].(map[string]any)
+		if !ok {
+			t.Errorf("Expected complexity_breakdown to be an object in validation, got %T", validation["complexity_breakdown"])
+			return
+		}
+		if breakdown["size_points"] != float64(5) {
 			t.Errorf("Expected size_points=5, got %v", breakdown["size_points"])
 		}
 	})

@@ -73,13 +73,32 @@ type SQLiteDialect struct {
 }
 
 func (d *SQLiteDialect) Dialect() gorm.Dialector {
-	// Add _parseTime=true to DSN to parse DATETIME columns correctly
+	// Add required DSN parameters for SQLite
 	dsn := d.cfg.DSN
 	if !strings.Contains(dsn, "?") {
-		dsn += "?_parseTime=true"
-	} else if !strings.Contains(dsn, "_parseTime") {
-		dsn += "&_parseTime=true"
+		dsn += "?"
+	} else {
+		dsn += "&"
 	}
+
+	// Add _parseTime=true to parse DATETIME columns correctly
+	if !strings.Contains(dsn, "_parseTime") {
+		dsn += "_parseTime=true&"
+	}
+
+	// Add _busy_timeout to wait for locks instead of failing immediately (5 seconds)
+	if !strings.Contains(dsn, "_busy_timeout") {
+		dsn += "_busy_timeout=5000&"
+	}
+
+	// Add _txlock=immediate to acquire locks immediately on BEGIN
+	if !strings.Contains(dsn, "_txlock") {
+		dsn += "_txlock=immediate"
+	}
+
+	// Clean up trailing ampersand if present
+	dsn = strings.TrimSuffix(dsn, "&")
+
 	return sqlite.Open(dsn)
 }
 
@@ -113,6 +132,11 @@ func (d *SQLiteDialect) ConfigureConnection(db *gorm.DB) error {
 	// Enable WAL mode for better concurrency
 	if err := db.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
 		return fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+
+	// Set busy timeout to wait for locks instead of failing immediately (5 seconds)
+	if err := db.Exec("PRAGMA busy_timeout=5000").Error; err != nil {
+		return fmt.Errorf("failed to set busy timeout: %w", err)
 	}
 
 	// Enable foreign keys

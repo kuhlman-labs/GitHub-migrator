@@ -420,13 +420,13 @@ func TestAnalyzeGitProperties_Integration(t *testing.T) {
 	}
 
 	// Verify results
-	if repo.TotalSize == nil || *repo.TotalSize == 0 {
+	if repo.GetTotalSize() == nil || *repo.GetTotalSize() == 0 {
 		t.Error("Expected non-zero total size")
 	}
-	if repo.CommitCount == 0 {
+	if repo.GetCommitCount() == 0 {
 		t.Error("Expected non-zero commit count")
 	}
-	if repo.BranchCount < 0 {
+	if repo.GetBranchCount() < 0 {
 		t.Error("Expected non-negative branch count")
 	}
 }
@@ -652,15 +652,15 @@ func TestLargeFileDetection(t *testing.T) {
 
 			// Simulate the large file detection logic
 			if tt.maxBlobSize > LargeFileThreshold {
-				repo.HasLargeFiles = true
-				repo.LargeFileCount = 1
+				repo.SetHasLargeFiles(true)
+				repo.SetLargeFileCount(1)
 			}
 
-			if repo.HasLargeFiles != tt.expectLargeFiles {
-				t.Errorf("Expected HasLargeFiles=%v, got %v", tt.expectLargeFiles, repo.HasLargeFiles)
+			if repo.HasLargeFiles() != tt.expectLargeFiles {
+				t.Errorf("Expected HasLargeFiles=%v, got %v", tt.expectLargeFiles, repo.HasLargeFiles())
 			}
-			if repo.LargeFileCount != tt.expectCount {
-				t.Errorf("Expected LargeFileCount=%d, got %d", tt.expectCount, repo.LargeFileCount)
+			if repo.GetLargeFileCount() != tt.expectCount {
+				t.Errorf("Expected LargeFileCount=%d, got %d", tt.expectCount, repo.GetLargeFileCount())
 			}
 		})
 	}

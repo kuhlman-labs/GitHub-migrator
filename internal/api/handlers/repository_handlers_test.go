@@ -18,19 +18,27 @@ func TestListRepositories(t *testing.T) {
 
 	// Add test repositories
 	repo1 := &models.Repository{
-		FullName:      "org/repo1",
-		Status:        string(models.StatusPending),
-		Source:        "github-enterprise",
-		HasLFS:        true,
-		HasSubmodules: false,
+		FullName:     "org/repo1",
+		Status:       string(models.StatusPending),
+		Source:       "github-enterprise",
+		SourceURL:    "https://github.com/org/repo1",
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo1.SetHasLFS(true)
+	repo1.SetHasSubmodules(false)
 	repo2 := &models.Repository{
-		FullName:      "org/repo2",
-		Status:        string(models.StatusComplete),
-		Source:        "github-enterprise",
-		HasLFS:        false,
-		HasSubmodules: true,
+		FullName:     "org/repo2",
+		Status:       string(models.StatusComplete),
+		Source:       "github-enterprise",
+		SourceURL:    "https://github.com/org/repo2",
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo2.SetHasLFS(false)
+	repo2.SetHasSubmodules(true)
 	db.SaveRepository(ctx, repo1)
 	db.SaveRepository(ctx, repo2)
 
@@ -262,15 +270,16 @@ func TestListRepositoriesWithFilters(t *testing.T) {
 
 	for _, r := range repos {
 		repo := &models.Repository{
-			FullName:      r.name,
-			Source:        "ghes",
-			SourceURL:     "https://github.com/" + r.name,
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(r.status),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
+			FullName:     r.name,
+			Source:       "ghes",
+			SourceURL:    "https://github.com/" + r.name,
+			Status:       string(r.status),
+			Visibility:   "private",
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
 		}
+		repo.SetTotalSize(&totalSize)
+		repo.SetDefaultBranch(&defaultBranch)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}

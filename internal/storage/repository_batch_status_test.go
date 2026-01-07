@@ -13,8 +13,6 @@ func TestUpdateBatchStatus(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	tests := []struct {
 		name               string
@@ -77,16 +75,7 @@ func TestUpdateBatchStatus(t *testing.T) {
 			// Create repositories with specified statuses
 			var repoIDs []int64
 			for i, status := range tt.repoStatuses {
-				repo := &models.Repository{
-					FullName:      "org/repo-" + tt.name + "-" + string(rune(i)),
-					Source:        "ghes",
-					SourceURL:     "https://github.com/org/repo",
-					TotalSize:     &totalSize,
-					DefaultBranch: &defaultBranch,
-					Status:        status,
-					DiscoveredAt:  time.Now(),
-					UpdatedAt:     time.Now(),
-				}
+				repo := createTestRepoWithStatus("org/repo-"+tt.name+"-"+string(rune(i)), status)
 				if err := db.SaveRepository(ctx, repo); err != nil {
 					t.Fatalf("SaveRepository() error = %v", err)
 				}
@@ -117,8 +106,6 @@ func TestUpdateBatchStatusDoesNotAffectInProgressBatches(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Create a batch in 'in_progress' state
 	batch := &models.Batch{
@@ -133,16 +120,7 @@ func TestUpdateBatchStatusDoesNotAffectInProgressBatches(t *testing.T) {
 	}
 
 	// Create a repository with pending status
-	repo := &models.Repository{
-		FullName:      "org/test-repo-in-progress",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/test-repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo := createTestRepoWithStatus("org/test-repo-in-progress", string(models.StatusPending))
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("SaveRepository() error = %v", err)
 	}
@@ -169,8 +147,6 @@ func TestUpdateBatchStatusAfterRepositoryRemoval(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Create a batch
 	batch := &models.Batch{
@@ -185,26 +161,8 @@ func TestUpdateBatchStatusAfterRepositoryRemoval(t *testing.T) {
 	}
 
 	// Create one pending and one dry_run_complete repo
-	repo1 := &models.Repository{
-		FullName:      "org/repo-pending",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo1",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-	repo2 := &models.Repository{
-		FullName:      "org/repo-complete",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo2",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusDryRunComplete),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo1 := createTestRepoWithStatus("org/repo-pending", string(models.StatusPending))
+	repo2 := createTestRepoWithStatus("org/repo-complete", string(models.StatusDryRunComplete))
 
 	if err := db.SaveRepository(ctx, repo1); err != nil {
 		t.Fatalf("SaveRepository(repo1) error = %v", err)
@@ -244,8 +202,6 @@ func TestAddingPendingRepoToReadyBatchMakesPending(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := testDefaultBranch
 
 	// Create a batch
 	batch := &models.Batch{
@@ -260,16 +216,7 @@ func TestAddingPendingRepoToReadyBatchMakesPending(t *testing.T) {
 	}
 
 	// Create a dry_run_complete repo
-	repo1 := &models.Repository{
-		FullName:      "org/repo-complete-1",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo1",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusDryRunComplete),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo1 := createTestRepoWithStatus("org/repo-complete-1", string(models.StatusDryRunComplete))
 	if err := db.SaveRepository(ctx, repo1); err != nil {
 		t.Fatalf("SaveRepository(repo1) error = %v", err)
 	}
@@ -286,16 +233,7 @@ func TestAddingPendingRepoToReadyBatchMakesPending(t *testing.T) {
 	}
 
 	// Now add a pending repo
-	repo2 := &models.Repository{
-		FullName:      "org/repo-pending-2",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo2",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo2 := createTestRepoWithStatus("org/repo-pending-2", string(models.StatusPending))
 	if err := db.SaveRepository(ctx, repo2); err != nil {
 		t.Fatalf("SaveRepository(repo2) error = %v", err)
 	}

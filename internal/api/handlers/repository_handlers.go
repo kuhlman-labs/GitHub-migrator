@@ -29,6 +29,9 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	// Convert to map for storage layer compatibility
 	filters := repoFilters.ToMap()
 
+	// Always include related data (GitProperties, Features, etc.) for API responses
+	filters["include_details"] = true
+
 	repos, err := h.db.ListRepositories(ctx, filters)
 	if err != nil {
 		if h.handleContextError(ctx, err, "list repositories", r) {
@@ -371,7 +374,8 @@ func (h *Handler) getDecodedRepoName(r *http.Request) (string, error) {
 
 // isADORepository checks if a repository is from Azure DevOps
 func (h *Handler) isADORepository(repo *models.Repository) bool {
-	return repo.ADOProject != nil && *repo.ADOProject != ""
+	adoProject := repo.GetADOProject()
+	return adoProject != nil && *adoProject != ""
 }
 
 // rediscoverADORepository handles rediscovery of Azure DevOps repositories

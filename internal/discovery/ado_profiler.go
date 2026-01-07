@@ -37,11 +37,12 @@ func NewADOProfiler(client *azuredevops.Client, logger *slog.Logger, sourceProvi
 // ProfileRepository profiles an Azure DevOps repository
 // This includes both Git analysis (if it's a Git repo) and ADO-specific features
 func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Repository, adoRepo any) error {
-	if repo.ADOProject == nil {
+	adoProject := repo.GetADOProject()
+	if adoProject == nil {
 		return fmt.Errorf("repository missing ADO project name")
 	}
 
-	projectName := *repo.ADOProject
+	projectName := *adoProject
 
 	// Extract repo ID from adoRepo - type assert to *git.GitRepository
 	repoID := ""
@@ -63,10 +64,10 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 		"repo", repo.FullName,
 		"repo_id", repoID,
 		"project", projectName,
-		"is_git", repo.ADOIsGit)
+		"is_git", repo.GetADOIsGit())
 
 	// 1. Check repository type (Git vs TFVC)
-	if !repo.ADOIsGit {
+	if !repo.GetADOIsGit() {
 		// TFVC repository - mark for remediation and skip further analysis
 		repo.Status = string(models.StatusRemediationRequired)
 		p.logger.Warn("TFVC repository detected - requires git conversion before migration",
@@ -108,7 +109,7 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 
 	// 6. Calculate complexity score based on all profiled features
 	complexity, breakdown := p.EstimateComplexityWithBreakdown(repo)
-	repo.ComplexityScore = &complexity
+	repo.SetComplexityScore(&complexity)
 
 	// Serialize complexity breakdown to JSON for storage
 	if err := repo.SetComplexityBreakdown(breakdown); err != nil {
@@ -119,10 +120,10 @@ func (p *ADOProfiler) ProfileRepository(ctx context.Context, repo *models.Reposi
 
 	p.logger.Info("ADO repository profiled",
 		"repo", repo.FullName,
-		"prs", repo.ADOPullRequestCount,
-		"has_boards", repo.ADOHasBoards,
-		"has_pipelines", repo.ADOHasPipelines,
-		"branch_policies", repo.ADOBranchPolicyCount,
+		"prs", repo.GetADOPullRequestCount(),
+		"has_boards", repo.GetADOHasBoards(),
+		"has_pipelines", repo.GetADOHasPipelines(),
+		"branch_policies", repo.GetADOBranchPolicyCount(),
 		"complexity", complexity)
 
 	return nil
@@ -181,9 +182,9 @@ func (p *ADOProfiler) cloneAndAnalyzeGit(ctx context.Context, repo *models.Repos
 
 	p.logger.Info("Git analysis complete",
 		"repo", repo.FullName,
-		"has_lfs", repo.HasLFS,
-		"has_submodules", repo.HasSubmodules,
-		"has_large_files", repo.HasLargeFiles)
+		"has_lfs", repo.HasLFS(),
+		"has_submodules", repo.HasSubmodules(),
+		"has_large_files", repo.HasLargeFiles())
 
 	// Analyze and save dependencies (submodules, etc.)
 	if err := p.analyzeDependencies(ctx, repo, tempDir); err != nil {
@@ -269,7 +270,7 @@ func (p *ADOProfiler) profileGitProperties(ctx context.Context, repo *models.Rep
 	if err != nil {
 		p.logger.Debug("Failed to get branches", "error", err)
 	} else {
-		repo.BranchCount = len(branches)
+		repo.SetBranchCount(len(branches))
 	}
 
 	// Get commit count (approximate)
@@ -277,7 +278,7 @@ func (p *ADOProfiler) profileGitProperties(ctx context.Context, repo *models.Rep
 	if err != nil {
 		p.logger.Debug("Failed to get commit count", "error", err)
 	} else {
-		repo.CommitCount = commitCount
+		repo.SetCommitCount(commitCount)
 	}
 
 	// Note: For accurate git-sizer analysis (LFS, submodules, large files, etc.),
@@ -304,7 +305,7 @@ func (p *ADOProfiler) profileAzureBoards(ctx context.Context, repo *models.Repos
 	if err != nil {
 		p.logger.Debug("Failed to check Azure Boards", "error", err)
 	} else {
-		repo.ADOHasBoards = hasBoards
+		repo.SetADOHasBoards(hasBoards)
 	}
 }
 
@@ -315,7 +316,7 @@ func (p *ADOProfiler) profileAzurePipelines(ctx context.Context, repo *models.Re
 	if err != nil {
 		p.logger.Debug("Failed to check Azure Pipelines", "error", err)
 	} else {
-		repo.ADOHasPipelines = hasPipelines
+		repo.SetADOHasPipelines(hasPipelines)
 	}
 
 	// Get pipeline definitions and categorize them
@@ -331,7 +332,7 @@ func (p *ADOProfiler) profileAzurePipelines(ctx context.Context, repo *models.Re
 	if err != nil {
 		p.logger.Debug("Failed to get pipeline runs", "error", err)
 	} else {
-		repo.ADOPipelineRunCount = pipelineRunCount
+		repo.SetADOPipelineRunCount(pipelineRunCount)
 	}
 
 	// Check for service connections and variable groups
@@ -342,13 +343,13 @@ func (p *ADOProfiler) profileAzurePipelines(ctx context.Context, repo *models.Re
 	if err != nil {
 		p.logger.Debug("Failed to check GHAS", "error", err)
 	} else {
-		repo.ADOHasGHAS = hasGHAS
+		repo.SetADOHasGHAS(hasGHAS)
 	}
 }
 
 // categorizePipelines categorizes pipelines into YAML and Classic
 func (p *ADOProfiler) categorizePipelines(repo *models.Repository, pipelineDefs []build.BuildDefinition) {
-	repo.ADOPipelineCount = len(pipelineDefs)
+	repo.SetADOPipelineCount(len(pipelineDefs))
 	yamlCount := 0
 	classicCount := 0
 	for _, def := range pipelineDefs {
@@ -373,8 +374,8 @@ func (p *ADOProfiler) categorizePipelines(repo *models.Repository, pipelineDefs 
 		// Fallback: if we can't determine, assume classic
 		classicCount++
 	}
-	repo.ADOYAMLPipelineCount = yamlCount
-	repo.ADOClassicPipelineCount = classicCount
+	repo.SetADOYAMLPipelineCount(yamlCount)
+	repo.SetADOClassicPipelineCount(classicCount)
 }
 
 // profilePipelineResources profiles pipeline-related resources
@@ -383,14 +384,14 @@ func (p *ADOProfiler) profilePipelineResources(ctx context.Context, repo *models
 	if err != nil {
 		p.logger.Debug("Failed to get service connections", "error", err)
 	} else {
-		repo.ADOHasServiceConnections = serviceConnCount > 0
+		repo.SetADOHasServiceConnections(serviceConnCount > 0)
 	}
 
 	varGroupCount, err := p.client.GetVariableGroups(ctx, projectName)
 	if err != nil {
 		p.logger.Debug("Failed to get variable groups", "error", err)
 	} else {
-		repo.ADOHasVariableGroups = varGroupCount > 0
+		repo.SetADOHasVariableGroups(varGroupCount > 0)
 	}
 }
 
@@ -400,17 +401,17 @@ func (p *ADOProfiler) profilePullRequests(ctx context.Context, repo *models.Repo
 	if err != nil {
 		p.logger.Debug("Failed to get PR details", "error", err)
 	} else {
-		repo.ADOOpenPRCount = openCount
-		repo.ADOPRWithLinkedWorkItems = withWorkItems
-		repo.ADOPRWithAttachments = withAttachments
+		repo.SetADOOpenPRCount(openCount)
+		repo.SetADOPRWithLinkedWorkItems(withWorkItems)
+		repo.SetADOPRWithAttachments(withAttachments)
 	}
 
 	prs, err := p.client.GetPullRequests(ctx, projectName, repoID)
 	if err != nil {
 		p.logger.Debug("Failed to get pull requests", "error", err)
 	} else {
-		repo.ADOPullRequestCount = len(prs)
-		repo.PullRequestCount = len(prs)
+		repo.SetADOPullRequestCount(len(prs))
+		repo.SetPullRequestCount(len(prs))
 	}
 }
 
@@ -422,14 +423,14 @@ func (p *ADOProfiler) profileBranchPolicies(ctx context.Context, repo *models.Re
 		return
 	}
 
-	repo.ADOBranchPolicyCount = len(policyTypes)
-	repo.BranchProtections = len(policyTypes)
-	repo.ADORequiredReviewerCount = requiredReviewers
-	repo.ADOBuildValidationPolicies = buildValidations
+	repo.SetADOBranchPolicyCount(len(policyTypes))
+	repo.SetBranchProtections(len(policyTypes))
+	repo.SetADORequiredReviewerCount(requiredReviewers)
+	repo.SetADOBuildValidationPolicies(buildValidations)
 
 	if len(policyTypes) > 0 {
 		policyTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(policyTypes, `","`))
-		repo.ADOBranchPolicyTypes = &policyTypesJSON
+		repo.SetADOBranchPolicyTypes(&policyTypesJSON)
 	}
 }
 
@@ -441,13 +442,13 @@ func (p *ADOProfiler) profileWorkItems(ctx context.Context, repo *models.Reposit
 		return
 	}
 
-	repo.ADOWorkItemLinkedCount = linkedCount
-	repo.ADOActiveWorkItemCount = activeCount
-	repo.ADOWorkItemCount = linkedCount
+	repo.SetADOWorkItemLinkedCount(linkedCount)
+	repo.SetADOActiveWorkItemCount(activeCount)
+	repo.SetADOWorkItemCount(linkedCount)
 
 	if len(workItemTypes) > 0 {
 		workItemTypesJSON := fmt.Sprintf(`["%s"]`, joinStrings(workItemTypes, `","`))
-		repo.ADOWorkItemTypes = &workItemTypesJSON
+		repo.SetADOWorkItemTypes(&workItemTypesJSON)
 	}
 }
 
@@ -458,8 +459,8 @@ func (p *ADOProfiler) profileAdditionalFeatures(ctx context.Context, repo *model
 	if err != nil {
 		p.logger.Debug("Failed to get wiki details", "error", err)
 	} else {
-		repo.ADOHasWiki = hasWiki
-		repo.ADOWikiPageCount = wikiPageCount
+		repo.SetADOHasWiki(hasWiki)
+		repo.SetADOWikiPageCount(wikiPageCount)
 	}
 
 	// Test Plans
@@ -467,7 +468,7 @@ func (p *ADOProfiler) profileAdditionalFeatures(ctx context.Context, repo *model
 	if err != nil {
 		p.logger.Debug("Failed to get test plans", "error", err)
 	} else {
-		repo.ADOTestPlanCount = testPlanCount
+		repo.SetADOTestPlanCount(testPlanCount)
 	}
 
 	// Package Feeds
@@ -475,7 +476,7 @@ func (p *ADOProfiler) profileAdditionalFeatures(ctx context.Context, repo *model
 	if err != nil {
 		p.logger.Debug("Failed to get package feeds", "error", err)
 	} else {
-		repo.ADOPackageFeedCount = packageFeedCount
+		repo.SetADOPackageFeedCount(packageFeedCount)
 	}
 
 	// Service Hooks
@@ -483,7 +484,7 @@ func (p *ADOProfiler) profileAdditionalFeatures(ctx context.Context, repo *model
 	if err != nil {
 		p.logger.Debug("Failed to get service hooks", "error", err)
 	} else {
-		repo.ADOServiceHookCount = serviceHookCount
+		repo.SetADOServiceHookCount(serviceHookCount)
 	}
 }
 
@@ -521,84 +522,84 @@ func (p *ADOProfiler) profileMigratableFeatures(ctx context.Context, repo *model
 	// ❌ Variable groups (must be recreated as GitHub secrets)
 
 	// Log warnings for features that won't migrate
-	if repo.ADOHasBoards && repo.ADOActiveWorkItemCount > 0 {
+	if repo.GetADOHasBoards() && repo.GetADOActiveWorkItemCount() > 0 {
 		p.logger.Warn("Repository has active Azure Boards work items - these won't migrate",
 			"repo", repo.FullName,
-			"active_work_items", repo.ADOActiveWorkItemCount,
+			"active_work_items", repo.GetADOActiveWorkItemCount(),
 			"note", "Only work item links on PRs will migrate")
 	}
 
-	if repo.ADOClassicPipelineCount > 0 {
+	if repo.GetADOClassicPipelineCount() > 0 {
 		p.logger.Warn("Repository has Classic pipelines - these require manual recreation",
 			"repo", repo.FullName,
-			"classic_pipelines", repo.ADOClassicPipelineCount,
+			"classic_pipelines", repo.GetADOClassicPipelineCount(),
 			"note", "Classic pipelines cannot be automatically converted to GitHub Actions")
 	}
 
-	if repo.ADOHasPipelines {
+	if repo.GetADOHasPipelines() {
 		p.logger.Info("Repository uses Azure Pipelines - pipeline history won't migrate",
 			"repo", repo.FullName,
-			"yaml_pipelines", repo.ADOYAMLPipelineCount,
-			"classic_pipelines", repo.ADOClassicPipelineCount,
+			"yaml_pipelines", repo.GetADOYAMLPipelineCount(),
+			"classic_pipelines", repo.GetADOClassicPipelineCount(),
 			"note", "YAML files migrate as source code, but execution history doesn't")
 	}
 
-	if repo.ADOHasWiki && repo.ADOWikiPageCount > 0 {
+	if repo.GetADOHasWiki() && repo.GetADOWikiPageCount() > 0 {
 		p.logger.Warn("Repository has wiki pages - these require manual migration",
 			"repo", repo.FullName,
-			"wiki_pages", repo.ADOWikiPageCount,
+			"wiki_pages", repo.GetADOWikiPageCount(),
 			"note", "Azure Repos wikis are separate from GitHub wikis")
 	}
 
-	if repo.ADOTestPlanCount > 0 {
+	if repo.GetADOTestPlanCount() > 0 {
 		p.logger.Warn("Repository has test plans - no GitHub equivalent exists",
 			"repo", repo.FullName,
-			"test_plans", repo.ADOTestPlanCount,
+			"test_plans", repo.GetADOTestPlanCount(),
 			"note", "Consider using third-party test management tools")
 	}
 
-	if repo.ADOPackageFeedCount > 0 {
+	if repo.GetADOPackageFeedCount() > 0 {
 		p.logger.Warn("Repository uses package feeds - require separate migration",
 			"repo", repo.FullName,
-			"package_feeds", repo.ADOPackageFeedCount,
+			"package_feeds", repo.GetADOPackageFeedCount(),
 			"note", "Migrate to GitHub Packages separately")
 	}
 
-	if repo.ADOHasServiceConnections {
+	if repo.GetADOHasServiceConnections() {
 		p.logger.Info("Project uses service connections - must be recreated in GitHub",
 			"repo", repo.FullName,
 			"note", "Recreate as GitHub Actions secrets and variables")
 	}
 
-	if repo.ADOHasVariableGroups {
+	if repo.GetADOHasVariableGroups() {
 		p.logger.Info("Project uses variable groups - must be recreated in GitHub",
 			"repo", repo.FullName,
 			"note", "Convert to GitHub repository or organization secrets")
 	}
 
-	if repo.ADOServiceHookCount > 0 {
+	if repo.GetADOServiceHookCount() > 0 {
 		p.logger.Info("Repository has service hooks - must be recreated as webhooks",
 			"repo", repo.FullName,
-			"service_hooks", repo.ADOServiceHookCount)
+			"service_hooks", repo.GetADOServiceHookCount())
 	}
 
-	if repo.ADOHasGHAS {
+	if repo.GetADOHasGHAS() {
 		p.logger.Info("Repository uses GitHub Advanced Security for Azure DevOps",
 			"repo", repo.FullName,
 			"note", "Enable GitHub Advanced Security in GitHub after migration")
 	}
 
 	// Log what WILL migrate successfully
-	if repo.ADOPRWithLinkedWorkItems > 0 {
+	if repo.GetADOPRWithLinkedWorkItems() > 0 {
 		p.logger.Info("Pull requests with work item links will migrate",
 			"repo", repo.FullName,
-			"prs_with_links", repo.ADOPRWithLinkedWorkItems)
+			"prs_with_links", repo.GetADOPRWithLinkedWorkItems())
 	}
 
-	if repo.ADOBranchPolicyCount > 0 {
+	if repo.GetADOBranchPolicyCount() > 0 {
 		p.logger.Info("Branch policies will migrate (repository-level only)",
 			"repo", repo.FullName,
-			"policies", repo.ADOBranchPolicyCount,
+			"policies", repo.GetADOBranchPolicyCount(),
 			"note", "Verify and adjust policies after migration")
 	}
 }
@@ -620,61 +621,61 @@ func (p *ADOProfiler) EstimateComplexity(repo *models.Repository) int {
 	complexity := 0
 
 	// TFVC repos are blocking - very high complexity
-	if !repo.ADOIsGit {
+	if !repo.GetADOIsGit() {
 		complexity += 50 // Requires Git conversion - BLOCKING
 	}
 
 	// Classic Pipelines (require manual recreation)
-	complexity += repo.ADOClassicPipelineCount * 5 // 5 points per classic pipeline
+	complexity += repo.GetADOClassicPipelineCount() * 5 // 5 points per classic pipeline
 
 	// Package Feeds (require separate migration)
-	if repo.ADOPackageFeedCount > 0 {
+	if repo.GetADOPackageFeedCount() > 0 {
 		complexity += 3
 	}
 
 	// Service Connections (must recreate in GitHub)
-	if repo.ADOHasServiceConnections {
+	if repo.GetADOHasServiceConnections() {
 		complexity += 3
 	}
 
 	// Active Pipelines with runs (CI/CD reconfiguration needed)
-	if repo.ADOPipelineRunCount > 0 {
+	if repo.GetADOPipelineRunCount() > 0 {
 		complexity += 3
 	}
 
 	// Azure Boards with active work items (don't migrate)
-	if repo.ADOActiveWorkItemCount > 0 {
+	if repo.GetADOActiveWorkItemCount() > 0 {
 		complexity += 3
 	}
 
 	// Wiki Pages (manual migration needed)
-	if repo.ADOWikiPageCount > 0 {
+	if repo.GetADOWikiPageCount() > 0 {
 		// 2 points per 10 pages
-		complexity += ((repo.ADOWikiPageCount + 9) / 10) * 2
+		complexity += ((repo.GetADOWikiPageCount() + 9) / 10) * 2
 	}
 
 	// Test Plans (no GitHub equivalent)
-	if repo.ADOTestPlanCount > 0 {
+	if repo.GetADOTestPlanCount() > 0 {
 		complexity += 2
 	}
 
 	// Variable Groups (convert to GitHub secrets)
-	if repo.ADOHasVariableGroups {
+	if repo.GetADOHasVariableGroups() {
 		complexity += 1
 	}
 
 	// Service Hooks (recreate webhooks)
-	if repo.ADOServiceHookCount > 0 {
+	if repo.GetADOServiceHookCount() > 0 {
 		complexity += 1
 	}
 
 	// Many PRs (metadata migration time)
-	if repo.ADOPullRequestCount > 50 {
+	if repo.GetADOPullRequestCount() > 50 {
 		complexity += 2
 	}
 
 	// Branch Policies (need validation/recreation)
-	if repo.ADOBranchPolicyCount > 0 {
+	if repo.GetADOBranchPolicyCount() > 0 {
 		complexity += 1
 	}
 
@@ -689,60 +690,60 @@ func (p *ADOProfiler) EstimateComplexityWithBreakdown(repo *models.Repository) (
 	breakdown := &models.ComplexityBreakdown{}
 
 	// TFVC - blocking
-	if !repo.ADOIsGit {
+	if !repo.GetADOIsGit() {
 		breakdown.ADOTFVCPoints = 50
 	}
 
 	// Classic Pipelines
-	breakdown.ADOClassicPipelinePoints = repo.ADOClassicPipelineCount * 5
+	breakdown.ADOClassicPipelinePoints = repo.GetADOClassicPipelineCount() * 5
 
 	// Package Feeds
-	if repo.ADOPackageFeedCount > 0 {
+	if repo.GetADOPackageFeedCount() > 0 {
 		breakdown.ADOPackageFeedPoints = 3
 	}
 
 	// Service Connections
-	if repo.ADOHasServiceConnections {
+	if repo.GetADOHasServiceConnections() {
 		breakdown.ADOServiceConnectionPoints = 3
 	}
 
 	// Active Pipelines
-	if repo.ADOPipelineRunCount > 0 {
+	if repo.GetADOPipelineRunCount() > 0 {
 		breakdown.ADOActivePipelinePoints = 3
 	}
 
 	// Active Boards
-	if repo.ADOActiveWorkItemCount > 0 {
+	if repo.GetADOActiveWorkItemCount() > 0 {
 		breakdown.ADOActiveBoardsPoints = 3
 	}
 
 	// Wiki Pages
-	if repo.ADOWikiPageCount > 0 {
-		breakdown.ADOWikiPoints = ((repo.ADOWikiPageCount + 9) / 10) * 2
+	if repo.GetADOWikiPageCount() > 0 {
+		breakdown.ADOWikiPoints = ((repo.GetADOWikiPageCount() + 9) / 10) * 2
 	}
 
 	// Test Plans
-	if repo.ADOTestPlanCount > 0 {
+	if repo.GetADOTestPlanCount() > 0 {
 		breakdown.ADOTestPlanPoints = 2
 	}
 
 	// Variable Groups
-	if repo.ADOHasVariableGroups {
+	if repo.GetADOHasVariableGroups() {
 		breakdown.ADOVariableGroupPoints = 1
 	}
 
 	// Service Hooks
-	if repo.ADOServiceHookCount > 0 {
+	if repo.GetADOServiceHookCount() > 0 {
 		breakdown.ADOServiceHookPoints = 1
 	}
 
 	// Many PRs
-	if repo.ADOPullRequestCount > 50 {
+	if repo.GetADOPullRequestCount() > 50 {
 		breakdown.ADOManyPRsPoints = 2
 	}
 
 	// Branch Policies
-	if repo.ADOBranchPolicyCount > 0 {
+	if repo.GetADOBranchPolicyCount() > 0 {
 		breakdown.ADOBranchPolicyPoints = 1
 	}
 

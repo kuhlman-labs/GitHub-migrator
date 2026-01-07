@@ -405,9 +405,11 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 			name:    "repo not eligible - oversized",
 			batchID: 1,
 			batch:   &models.Batch{ID: 1, Status: models.BatchStatusPending},
-			repos: []*models.Repository{
-				{ID: 1, FullName: "org/repo1", Status: string(models.StatusPending), HasOversizedRepository: true},
-			},
+			repos: func() []*models.Repository {
+				r := &models.Repository{ID: 1, FullName: "org/repo1", Status: string(models.StatusPending)}
+				r.SetHasOversizedRepository(true)
+				return []*models.Repository{r}
+			}(),
 			repoIDs:   []int64{1},
 			wantAdded: 0,
 		},
@@ -792,8 +794,12 @@ func TestCheckRepoEligibility(t *testing.T) {
 			wantEligible: true,
 		},
 		{
-			name:         "not eligible - oversized",
-			repo:         &models.Repository{Status: string(models.StatusPending), HasOversizedRepository: true},
+			name: "not eligible - oversized",
+			repo: func() *models.Repository {
+				r := &models.Repository{Status: string(models.StatusPending)}
+				r.SetHasOversizedRepository(true)
+				return r
+			}(),
 			wantEligible: false,
 			wantReason:   "repository exceeds GitHub's 40 GiB size limit",
 		},

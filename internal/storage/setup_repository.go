@@ -44,13 +44,15 @@ func (d *Database) GetSetupStatus() (*SetupStatus, error) {
 // MarkSetupComplete marks the setup as completed in the database
 func (d *Database) MarkSetupComplete() error {
 	now := time.Now()
-	result := d.db.Model(&SetupStatus{}).
-		Where("id = ?", 1).
-		Updates(map[string]any{
-			"setup_completed": true,
-			"completed_at":    now,
-			"updated_at":      now,
-		})
+	status := SetupStatus{
+		ID:             1,
+		SetupCompleted: true,
+		CompletedAt:    &now,
+		UpdatedAt:      now,
+	}
+
+	// Use Save which does an upsert - creates if not exists, updates if exists
+	result := d.db.Save(&status)
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to mark setup complete: %w", result.Error)
@@ -62,13 +64,15 @@ func (d *Database) MarkSetupComplete() error {
 // ResetSetup resets the setup status to allow re-running setup
 func (d *Database) ResetSetup() error {
 	now := time.Now()
-	result := d.db.Model(&SetupStatus{}).
-		Where("id = ?", 1).
-		Updates(map[string]any{
-			"setup_completed": false,
-			"completed_at":    nil,
-			"updated_at":      now,
-		})
+	status := SetupStatus{
+		ID:             1,
+		SetupCompleted: false,
+		CompletedAt:    nil,
+		UpdatedAt:      now,
+	}
+
+	// Use Save which does an upsert - creates if not exists, updates if exists
+	result := d.db.Save(&status)
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to reset setup: %w", result.Error)
