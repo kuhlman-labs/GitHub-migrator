@@ -58,6 +58,12 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify ADO client and collector are available before creating progress record
+	if h.adoClient == nil || h.adoCollector == nil {
+		WriteError(w, ErrServiceUnavailable.WithDetails("ADO client not configured"))
+		return
+	}
+
 	// Create progress record
 	progress, err := h.createADODiscoveryProgress(req)
 	if err != nil {
@@ -127,16 +133,15 @@ func (h *ADOHandler) handleProgressCreationError(w http.ResponseWriter, err erro
 }
 
 // startADOOrgDiscovery starts organization-wide ADO discovery
+// Caller must ensure h.adoCollector and h.adoClient are not nil
 func (h *ADOHandler) startADOOrgDiscovery(w http.ResponseWriter, req StartADODiscoveryRequest, progress *models.DiscoveryProgress, tracker *discovery.DBProgressTracker) {
 	h.logger.Info("Starting ADO organization discovery",
 		"organization", req.Organization,
 		"workers", req.Workers,
 		"progress_id", progress.ID)
 
-	if h.adoCollector != nil && h.adoClient != nil {
-		h.adoCollector.SetProgressTracker(tracker)
-		go h.runADOOrgDiscovery(req.Organization, progress.ID, tracker)
-	}
+	h.adoCollector.SetProgressTracker(tracker)
+	go h.runADOOrgDiscovery(req.Organization, progress.ID, tracker)
 
 	h.sendJSON(w, http.StatusAccepted, map[string]any{
 		"message":      "ADO organization discovery started",
@@ -198,6 +203,7 @@ func (h *ADOHandler) runADOOrgDiscovery(organization string, progressID int64, t
 }
 
 // startADOProjectDiscovery starts project-specific ADO discovery
+// Caller must ensure h.adoCollector and h.adoClient are not nil
 func (h *ADOHandler) startADOProjectDiscovery(w http.ResponseWriter, req StartADODiscoveryRequest, progress *models.DiscoveryProgress, tracker *discovery.DBProgressTracker) {
 	h.logger.Info("Starting ADO project discovery",
 		"organization", req.Organization,
@@ -205,10 +211,8 @@ func (h *ADOHandler) startADOProjectDiscovery(w http.ResponseWriter, req StartAD
 		"workers", req.Workers,
 		"progress_id", progress.ID)
 
-	if h.adoCollector != nil && h.adoClient != nil {
-		h.adoCollector.SetProgressTracker(tracker)
-		go h.runADOProjectDiscovery(req.Organization, req.Projects, progress.ID, tracker)
-	}
+	h.adoCollector.SetProgressTracker(tracker)
+	go h.runADOProjectDiscovery(req.Organization, req.Projects, progress.ID, tracker)
 
 	h.sendJSON(w, http.StatusAccepted, map[string]any{
 		"message":      "ADO project discovery started",

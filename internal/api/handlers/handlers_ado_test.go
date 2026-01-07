@@ -30,89 +30,69 @@ func setupTestADOHandler(t *testing.T) (*ADOHandler, *Handler) {
 
 	adoHandler := &ADOHandler{
 		Handler:      baseHandler,
-		adoClient:    nil, // Will be checked in handler to skip discovery
+		adoClient:    nil, // Nil to test error handling when not configured
 		adoProvider:  adoProvider,
-		adoCollector: nil, // Will be checked in handler to skip discovery
+		adoCollector: nil, // Nil to test error handling when not configured
 	}
 
 	return adoHandler, baseHandler
 }
 
 func TestStartADODiscovery(t *testing.T) {
-	t.Run("OrganizationDiscovery", testADOOrganizationDiscovery)
-	t.Run("ProjectDiscovery", testADOProjectDiscovery)
+	t.Run("ClientNotConfigured_ReturnsServiceUnavailable", testADOClientNotConfigured)
 	t.Run("ValidationErrors", testADODiscoveryValidation)
 }
 
-func testADOOrganizationDiscovery(t *testing.T) {
+// testADOClientNotConfigured tests that the handler returns a 503 Service Unavailable
+// error when the ADO client/collector is not configured. This prevents creating stuck
+// progress records that block future discovery attempts.
+func testADOClientNotConfigured(t *testing.T) {
 	adoHandler, _ := setupTestADOHandler(t)
 
-	reqBody := map[string]any{
-		"organization": "test-ado-org",
-		"workers":      5,
-	}
-	body, _ := json.Marshal(reqBody)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/ado/discover", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-
-	adoHandler.StartADODiscovery(w, req)
-
-	if w.Code != http.StatusAccepted {
-		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
-	}
-
-	var response map[string]any
-	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if response["type"] != "organization" {
-		t.Errorf("Expected type 'organization', got %v", response["type"])
-	}
-	if response["organization"] != "test-ado-org" {
-		t.Errorf("Expected organization 'test-ado-org', got %v", response["organization"])
-	}
-	if response["message"] == nil || response["message"] == "" {
-		t.Error("Expected message to be set")
-	}
-}
-
-func testADOProjectDiscovery(t *testing.T) {
-	adoHandler, _ := setupTestADOHandler(t)
-
-	reqBody := map[string]any{
-		"organization": "test-ado-org",
-		"projects":     []string{"Project1", "Project2"},
-		"workers":      3,
-	}
-	body, _ := json.Marshal(reqBody)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/ado/discover", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-
-	adoHandler.StartADODiscovery(w, req)
-
-	if w.Code != http.StatusAccepted {
-		t.Errorf("Expected status %d, got %d", http.StatusAccepted, w.Code)
+	tests := []struct {
+		name    string
+		reqBody map[string]any
+	}{
+		{
+			name: "organization discovery without client",
+			reqBody: map[string]any{
+				"organization": "test-ado-org",
+				"workers":      5,
+			},
+		},
+		{
+			name: "project discovery without client",
+			reqBody: map[string]any{
+				"organization": "test-ado-org",
+				"projects":     []string{"Project1", "Project2"},
+				"workers":      3,
+			},
+		},
 	}
 
-	var response map[string]any
-	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.reqBody)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/ado/discover", bytes.NewReader(body))
+			w := httptest.NewRecorder()
 
-	if response["type"] != "project" {
-		t.Errorf("Expected type 'project', got %v", response["type"])
-	}
-	if response["organization"] != "test-ado-org" {
-		t.Errorf("Expected organization 'test-ado-org', got %v", response["organization"])
-	}
+			adoHandler.StartADODiscovery(w, req)
 
-	// Verify projects are included in response
-	projects, ok := response["projects"].([]any)
-	if !ok || len(projects) != 2 {
-		t.Errorf("Expected 2 projects in response, got %v", response["projects"])
+			// Should return 503 Service Unavailable when ADO client is not configured
+			if w.Code != http.StatusServiceUnavailable {
+				t.Errorf("Expected status %d (Service Unavailable), got %d", http.StatusServiceUnavailable, w.Code)
+			}
+
+			var response map[string]any
+			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			// Should include error details
+			if response["error"] == nil {
+				t.Error("Expected error field in response")
+			}
+		})
 	}
 }
 
