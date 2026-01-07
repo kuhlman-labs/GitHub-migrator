@@ -440,7 +440,8 @@ func (o *Organizer) OrganizeIntoWaves(ctx context.Context, criteria WaveCriteria
 
 	// Get all pending repositories (not in any batch, exclude wont_migrate)
 	repos, err := o.storage.ListRepositories(ctx, map[string]any{
-		"status": models.StatusPending,
+		"status":          models.StatusPending,
+		"include_details": true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %w", err)

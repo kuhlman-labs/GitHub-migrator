@@ -817,7 +817,7 @@ func findUnmappedTeams(teams []*models.GitHubTeam, mappingMap map[string]*models
 func (h *Handler) findCodeownersIssues(ctx context.Context, mappingMap map[string]*models.TeamMapping) []CodeownersIssue {
 	var issues []CodeownersIssue
 
-	repos, err := h.db.ListRepositories(ctx, map[string]any{"has_codeowners": true})
+	repos, err := h.db.ListRepositories(ctx, map[string]any{"has_codeowners": true, "include_details": true})
 	if err != nil {
 		h.logger.Warn("Failed to query repositories with CODEOWNERS", "error", err)
 		return issues
