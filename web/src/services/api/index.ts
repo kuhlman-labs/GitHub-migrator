@@ -108,7 +108,6 @@ export const api = {
   // Configuration
   getConfig: configApi.getConfig,
   getAuthConfig: configApi.getAuthConfig,
-  getAuthSources: configApi.getAuthSources,
   getCurrentUser: configApi.getCurrentUser,
   logout: configApi.logout,
   refreshToken: configApi.refreshToken,

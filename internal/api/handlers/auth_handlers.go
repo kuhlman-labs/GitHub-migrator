@@ -1,35 +1,26 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
-	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
 // defaultFrontendURL is the default frontend URL when not configured
 // Use "/" to keep users on the same domain instead of hardcoded localhost
 const defaultFrontendURL = "/"
 
-// SourceStore interface for source lookups (to avoid tight coupling)
-type SourceStore interface {
-	GetSource(ctx context.Context, id int64) (*models.Source, error)
-	ListSources(ctx context.Context) ([]*models.Source, error)
-}
-
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
-	oauthHandler *auth.OAuthHandler // Fallback for destination-based auth
+	oauthHandler *auth.OAuthHandler // GitHub OAuth handler for destination-centric auth
 	jwtManager   *auth.JWTManager
 	authorizer   *auth.Authorizer
 	logger       *slog.Logger
 	config       *config.AuthConfig
-	sourceStore  SourceStore // For source-scoped auth
-	callbackURL  string      // OAuth callback URL
+	callbackURL  string // OAuth callback URL
 }
 
 // NewAuthHandler creates a new auth handler
@@ -51,11 +42,6 @@ func NewAuthHandler(cfg *config.AuthConfig, logger *slog.Logger, githubBaseURL s
 		config:       cfg,
 		callbackURL:  cfg.CallbackURL,
 	}, nil
-}
-
-// SetSourceStore sets the source store for source-scoped authentication
-func (h *AuthHandler) SetSourceStore(store SourceStore) {
-	h.sourceStore = store
 }
 
 // HandleLogin initiates OAuth login flow
@@ -283,18 +269,6 @@ func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.Error("Failed to encode auth config response", "error", err)
-	}
-}
-
-// HandleAuthSources returns list of sources with OAuth configured (for login page)
-// Note: Source-specific OAuth has been removed. This endpoint now always returns an empty array.
-// It is kept for backward compatibility with the frontend.
-func (h *AuthHandler) HandleAuthSources(w http.ResponseWriter, r *http.Request) {
-	// Source-specific OAuth has been removed in favor of destination-centric auth
-	// Always return an empty array for backward compatibility
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode([]any{}); err != nil {
-		h.logger.Error("Failed to encode empty sources response", "error", err)
 	}
 }
 

@@ -20,7 +20,6 @@ describe('Login', () => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({
       authConfig: null,
-      authSources: [],
       login: mockLogin,
     });
   });
@@ -86,7 +85,6 @@ describe('Login', () => {
             required_orgs: ['my-org'],
           },
         },
-        authSources: [],
         login: mockLogin,
       });
 
@@ -107,7 +105,6 @@ describe('Login', () => {
             required_orgs: ['org1', 'org2'],
           },
         },
-        authSources: [],
         login: mockLogin,
       });
 
@@ -128,7 +125,6 @@ describe('Login', () => {
             required_teams: ['team-a', 'team-b'],
           },
         },
-        authSources: [],
         login: mockLogin,
       });
 
@@ -149,7 +145,6 @@ describe('Login', () => {
             enterprise: 'my-enterprise',
           },
         },
-        authSources: [],
         login: mockLogin,
       });
 
@@ -170,7 +165,6 @@ describe('Login', () => {
             enterprise: 'my-enterprise',
           },
         },
-        authSources: [],
         login: mockLogin,
       });
 
@@ -192,7 +186,6 @@ describe('Login', () => {
             enterprise: 'my-enterprise',
           },
         },
-        authSources: [],
         login: mockLogin,
       });
 
@@ -208,4 +201,3 @@ describe('Login', () => {
     });
   });
 });
-

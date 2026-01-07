@@ -8,7 +8,6 @@ import { api } from '../services/api';
 vi.mock('../services/api', () => ({
   api: {
     getAuthConfig: vi.fn(),
-    getAuthSources: vi.fn(),
     getCurrentUser: vi.fn(),
     logout: vi.fn(),
   },
@@ -25,7 +24,7 @@ function TestComponent() {
       <div data-testid="authEnabled">{authEnabled.toString()}</div>
       <div data-testid="user">{user?.login || 'no-user'}</div>
       <div data-testid="authConfig">{JSON.stringify(authConfig)}</div>
-      <button onClick={() => login()}>Login</button>
+      <button onClick={login}>Login</button>
       <button onClick={logout}>Logout</button>
       <button onClick={refreshAuth}>Refresh</button>
     </div>
@@ -43,7 +42,6 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 describe('AuthContext', () => {
   const mockApi = api as unknown as {
     getAuthConfig: ReturnType<typeof vi.fn>;
-    getAuthSources: ReturnType<typeof vi.fn>;
     getCurrentUser: ReturnType<typeof vi.fn>;
     logout: ReturnType<typeof vi.fn>;
   };
@@ -53,8 +51,6 @@ describe('AuthContext', () => {
     // Reset window.location
     delete (window as { location?: Location }).location;
     window.location = { href: '', pathname: '/' } as Location;
-    // Default mock for getAuthSources - return empty array
-    mockApi.getAuthSources.mockResolvedValue([]);
   });
 
   describe('useAuth hook', () => {
@@ -166,7 +162,6 @@ describe('AuthContext', () => {
   describe('login function', () => {
     beforeEach(() => {
       mockApi.getAuthConfig.mockResolvedValue({ enabled: true });
-      mockApi.getAuthSources.mockResolvedValue([]);
       mockApi.getCurrentUser.mockResolvedValue({
         id: 1,
         login: 'testuser',
@@ -176,7 +171,7 @@ describe('AuthContext', () => {
       });
     });
 
-    it('should redirect to login URL without source_id when no sources', async () => {
+    it('should redirect to GitHub OAuth login URL', async () => {
       render(
         <TestWrapper>
           <TestComponent />
@@ -193,22 +188,6 @@ describe('AuthContext', () => {
       });
 
       expect(window.location.href).toBe('/api/v1/auth/login');
-    });
-
-    it('should redirect with source_id when a source is specified', async () => {
-      render(
-        <TestWrapper>
-          <TestComponent />
-        </TestWrapper>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('isLoading').textContent).toBe('false');
-      });
-
-      // We need to call login directly with a source ID
-      // The test component calls login() without arguments, so we test the default behavior above
-      // For source-specific login, the Login component would call login(sourceId)
     });
   });
 
@@ -322,4 +301,3 @@ describe('AuthContext', () => {
     });
   });
 });
-

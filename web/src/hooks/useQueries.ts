@@ -48,7 +48,7 @@ export function useOrganizations(options?: OrganizationQueryOptions) {
 
 // Config query
 export function useConfig() {
-  return useQuery<{ source_type: 'github' | 'azuredevops'; auth_enabled: boolean; entraid_enabled?: boolean }, Error>({
+  return useQuery<{ source_type: 'github' | 'azuredevops'; auth_enabled: boolean }, Error>({
     queryKey: ['config'],
     queryFn: () => api.getConfig(),
     staleTime: 5 * 60 * 1000, // Config rarely changes, cache for 5 minutes

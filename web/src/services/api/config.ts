@@ -9,7 +9,6 @@ export const configApi = {
   async getConfig(): Promise<{
     source_type: 'github' | 'azuredevops';
     auth_enabled: boolean;
-    entraid_enabled?: boolean;
   }> {
     const { data } = await client.get('/config');
     return data;
@@ -19,7 +18,6 @@ export const configApi = {
   async getAuthConfig(): Promise<{
     enabled: boolean;
     login_url?: string;
-    entraid_login_url?: string;
     authorization_rules?: {
       requires_org_membership?: boolean;
       required_orgs?: string[];
@@ -41,20 +39,8 @@ export const configApi = {
     email: string;
     avatar_url: string;
     roles?: string[];
-    source_id?: number;   // Present if user authenticated via a source
-    source_type?: string; // 'github' or 'azuredevops'
   }> {
     const { data } = await client.get('/auth/user');
-    return data;
-  },
-
-  /** Get sources that have OAuth configured (for login page source selector) */
-  async getAuthSources(): Promise<Array<{
-    id: number;
-    name: string;
-    type: 'github' | 'azuredevops';
-  }>> {
-    const { data } = await client.get('/auth/sources');
     return data;
   },
 

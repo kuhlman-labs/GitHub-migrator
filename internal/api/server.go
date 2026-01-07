@@ -20,17 +20,16 @@ import (
 )
 
 type Server struct {
-	config              *config.Config
-	db                  *storage.Database
-	logger              *slog.Logger
-	handler             *handlers.Handler
-	authHandler         *handlers.AuthHandler
-	adoHandler          *handlers.ADOHandler
-	sourceHandler       *handlers.SourceHandler
-	settingsHandler     *handlers.SettingsHandler
-	entraIDOAuthHandler *auth.EntraIDOAuthHandler
-	configSvc           *configsvc.Service
-	shutdownChan        chan struct{}
+	config          *config.Config
+	db              *storage.Database
+	logger          *slog.Logger
+	handler         *handlers.Handler
+	authHandler     *handlers.AuthHandler
+	adoHandler      *handlers.ADOHandler
+	sourceHandler   *handlers.SourceHandler
+	settingsHandler *handlers.SettingsHandler
+	configSvc       *configsvc.Service
+	shutdownChan    chan struct{}
 }
 
 func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient) *Server {
@@ -92,7 +91,6 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 
 	// Create ADO handler if source is Azure DevOps
 	var adoHandler *handlers.ADOHandler
-	var entraIDOAuthHandler *auth.EntraIDOAuthHandler
 	if cfg.Source.Type == "azuredevops" && cfg.Source.Token != "" {
 		// Validate ADO configuration before attempting connection
 		if cfg.Source.BaseURL == "" {
@@ -116,33 +114,20 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 				logger.Info("Azure DevOps integration enabled", "org_url", cfg.Source.BaseURL)
 			}
 		}
-
-		// Create Entra ID OAuth handler if enabled
-		if cfg.Auth.Enabled && cfg.Auth.EntraIDEnabled {
-			entraIDOAuthHandler = auth.NewEntraIDOAuthHandler(&cfg.Auth)
-			logger.Info("Entra ID OAuth enabled for Azure DevOps")
-		}
 	}
 
 	// Create source handler for multi-source management
 	sourceHandler := handlers.NewSourceHandler(db, logger)
 
-	// Wire up auth handler with source store for source-scoped authentication
-	if authHandler != nil {
-		authHandler.SetSourceStore(db)
-		logger.Info("Source-scoped authentication enabled")
-	}
-
 	return &Server{
-		config:              cfg,
-		db:                  db,
-		logger:              logger,
-		handler:             mainHandler,
-		authHandler:         authHandler,
-		adoHandler:          adoHandler,
-		sourceHandler:       sourceHandler,
-		entraIDOAuthHandler: entraIDOAuthHandler,
-		shutdownChan:        make(chan struct{}),
+		config:        cfg,
+		db:            db,
+		logger:        logger,
+		handler:       mainHandler,
+		authHandler:   authHandler,
+		adoHandler:    adoHandler,
+		sourceHandler: sourceHandler,
+		shutdownChan:  make(chan struct{}),
 	}
 }
 
@@ -193,7 +178,6 @@ func (s *Server) Router() http.Handler {
 		mux.HandleFunc("GET /api/v1/auth/login", s.authHandler.HandleLogin)
 		mux.HandleFunc("GET /api/v1/auth/callback", s.authHandler.HandleCallback)
 		mux.HandleFunc("GET /api/v1/auth/config", s.authHandler.HandleAuthConfig)
-		mux.HandleFunc("GET /api/v1/auth/sources", s.authHandler.HandleAuthSources)
 
 		// Protected auth endpoints (require authentication)
 		if authMiddleware != nil {
@@ -201,17 +185,6 @@ func (s *Server) Router() http.Handler {
 			mux.Handle("GET /api/v1/auth/user", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleCurrentUser)))
 			mux.Handle("POST /api/v1/auth/refresh", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleRefreshToken)))
 			mux.Handle("GET /api/v1/auth/authorization-status", authMiddleware.RequireAuth(http.HandlerFunc(s.handler.HandleAuthorizationStatus)))
-		}
-	}
-
-	// Entra ID OAuth endpoints for Azure DevOps (public - no auth required)
-	if s.config.Auth.Enabled && s.entraIDOAuthHandler != nil {
-		mux.HandleFunc("GET /api/v1/auth/entraid/login", s.entraIDOAuthHandler.Login)
-		mux.HandleFunc("GET /api/v1/auth/entraid/callback", s.entraIDOAuthHandler.Callback)
-
-		// Protected Entra ID endpoints
-		if authMiddleware != nil {
-			mux.Handle("GET /api/v1/auth/entraid/user", authMiddleware.RequireAuth(http.HandlerFunc(s.entraIDOAuthHandler.GetUser)))
 		}
 	}
 

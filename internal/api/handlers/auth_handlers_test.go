@@ -82,22 +82,20 @@ func TestAuthHandler_NilHandler(t *testing.T) {
 func TestAuthConfigResponse_Structure(t *testing.T) {
 	// Test that auth config response has expected structure
 	response := struct {
-		AuthEnabled       bool   `json:"auth_enabled"`
-		AuthMethod        string `json:"auth_method,omitempty"`
-		LoginURL          string `json:"login_url,omitempty"`
-		RequiredOrg       string `json:"required_org,omitempty"`
-		RequiredTeam      string `json:"required_team,omitempty"`
-		RequiredTeamID    int64  `json:"required_team_id,omitempty"`
-		AllowedUsers      int    `json:"allowed_users_count,omitempty"`
-		RolePermissions   bool   `json:"role_permissions_enabled,omitempty"`
-		EntraIDConfigured bool   `json:"entra_id_configured,omitempty"`
+		AuthEnabled     bool   `json:"auth_enabled"`
+		AuthMethod      string `json:"auth_method,omitempty"`
+		LoginURL        string `json:"login_url,omitempty"`
+		RequiredOrg     string `json:"required_org,omitempty"`
+		RequiredTeam    string `json:"required_team,omitempty"`
+		RequiredTeamID  int64  `json:"required_team_id,omitempty"`
+		AllowedUsers    int    `json:"allowed_users_count,omitempty"`
+		RolePermissions bool   `json:"role_permissions_enabled,omitempty"`
 	}{
-		AuthEnabled:       true,
-		AuthMethod:        "github",
-		LoginURL:          "/api/auth/login",
-		RequiredOrg:       "my-org",
-		RolePermissions:   true,
-		EntraIDConfigured: false,
+		AuthEnabled:     true,
+		AuthMethod:      "github",
+		LoginURL:        "/api/auth/login",
+		RequiredOrg:     "my-org",
+		RolePermissions: true,
 	}
 
 	data, err := json.Marshal(response)
