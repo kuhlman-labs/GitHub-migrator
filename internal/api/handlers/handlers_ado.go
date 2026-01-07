@@ -148,19 +148,52 @@ func (h *ADOHandler) startADOOrgDiscovery(w http.ResponseWriter, req StartADODis
 
 // runADOOrgDiscovery executes organization discovery in background
 func (h *ADOHandler) runADOOrgDiscovery(organization string, progressID int64, tracker *discovery.DBProgressTracker) {
-	ctx := context.Background()
-	defer tracker.Flush() // Ensure pending progress updates are written to the database
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Register cancel function for this discovery
+	h.discoveryMu.Lock()
+	h.discoveryCancel[progressID] = cancel
+	h.discoveryMu.Unlock()
+
+	// Clean up when done
+	defer func() {
+		h.discoveryMu.Lock()
+		delete(h.discoveryCancel, progressID)
+		h.discoveryMu.Unlock()
+		cancel()
+		tracker.Flush()
+	}()
 
 	if err := h.adoCollector.DiscoverADOOrganization(ctx, organization); err != nil {
+		// Check if this was a cancellation
+		if ctx.Err() == context.Canceled {
+			h.logger.Info("ADO organization discovery cancelled", "organization", organization)
+			if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+				h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+			}
+			return
+		}
+
 		h.logger.Error("ADO organization discovery failed", "organization", organization, "error", err)
 		if markErr := h.db.MarkDiscoveryFailed(progressID, err.Error()); markErr != nil {
 			h.logger.Error("Failed to mark discovery as failed", "error", markErr)
 		}
-	} else {
-		h.logger.Info("ADO organization discovery completed", "organization", organization)
-		if markErr := h.db.MarkDiscoveryComplete(progressID); markErr != nil {
-			h.logger.Error("Failed to mark discovery as complete", "error", markErr)
+		return
+	}
+
+	// Check if cancelled even on success (rare but possible)
+	if ctx.Err() == context.Canceled {
+		h.logger.Info("ADO organization discovery cancelled", "organization", organization)
+		if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+			h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
 		}
+		return
+	}
+
+	h.logger.Info("ADO organization discovery completed", "organization", organization)
+	if markErr := h.db.MarkDiscoveryComplete(progressID); markErr != nil {
+		h.logger.Error("Failed to mark discovery as complete", "error", markErr)
 	}
 }
 
@@ -188,13 +221,45 @@ func (h *ADOHandler) startADOProjectDiscovery(w http.ResponseWriter, req StartAD
 
 // runADOProjectDiscovery executes project discovery in background
 func (h *ADOHandler) runADOProjectDiscovery(organization string, projects []string, progressID int64, tracker *discovery.DBProgressTracker) {
-	ctx := context.Background()
-	defer tracker.Flush() // Ensure pending progress updates are written to the database
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Register cancel function for this discovery
+	h.discoveryMu.Lock()
+	h.discoveryCancel[progressID] = cancel
+	h.discoveryMu.Unlock()
+
+	// Clean up when done
+	defer func() {
+		h.discoveryMu.Lock()
+		delete(h.discoveryCancel, progressID)
+		h.discoveryMu.Unlock()
+		cancel()
+		tracker.Flush()
+	}()
 
 	var lastErr error
 	for i, project := range projects {
+		// Check for cancellation before starting each project
+		if ctx.Err() == context.Canceled {
+			h.logger.Info("ADO project discovery cancelled", "organization", organization, "completed_projects", i)
+			if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+				h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+			}
+			return
+		}
+
 		tracker.StartOrg(project, i)
 		if err := h.adoCollector.DiscoverADOProject(ctx, organization, project); err != nil {
+			// Check if this was a cancellation
+			if ctx.Err() == context.Canceled {
+				h.logger.Info("ADO project discovery cancelled", "organization", organization, "project", project)
+				if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+					h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+				}
+				return
+			}
+
 			h.logger.Error("Failed to discover ADO project", "organization", organization, "project", project, "error", err)
 			tracker.RecordError(err)
 			lastErr = err
