@@ -79,8 +79,16 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	// Determine source base URL for permission checks
 	sourceBaseURL := cfg.Auth.GetOAuthBaseURL(cfg)
 
+	// Determine destination base URL for authorization tier checks
+	// This is needed for CheckRepositoryAccess and GetUserAuthorizationStatus to query the correct GitHub instance
+	destBaseURLForAuth := cfg.Destination.BaseURL
+	if destBaseURLForAuth == "" {
+		destBaseURLForAuth = "https://api.github.com" // Default to github.com
+	}
+
 	// Create main handler
 	mainHandler := handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig, &cfg.Auth, sourceBaseURL, cfg.Source.Type)
+	mainHandler.SetDestinationBaseURL(destBaseURLForAuth)
 
 	// Create ADO handler if source is Azure DevOps
 	var adoHandler *handlers.ADOHandler

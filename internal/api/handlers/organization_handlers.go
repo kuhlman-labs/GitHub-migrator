@@ -19,9 +19,11 @@ type adoProjectStats struct {
 }
 
 // getADOProjectStats queries and calculates status distribution and progress metrics for an ADO project
+// The sourceID parameter enables filtering in multi-source environments to ensure status counts
+// match the filtered repoCount
 //
 //nolint:dupl // Intentionally extracted to avoid duplication in ListOrganizations and ListProjects
-func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organization string, repoCount int) adoProjectStats {
+func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organization string, repoCount int, sourceID *int64) adoProjectStats {
 	stats := adoProjectStats{
 		statusCounts: make(map[string]int),
 	}
@@ -34,16 +36,19 @@ func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organizat
 		Status string
 		Count  int
 	}
-	err := h.db.DB().WithContext(ctx).
-		Raw(`
-			SELECT status, COUNT(*) as count
-			FROM repositories
-			WHERE ado_project = ?
-			AND full_name LIKE ?
-			AND status != 'wont_migrate'
-			GROUP BY status
-		`, projectName, organization+"/%").
-		Scan(&results).Error
+
+	// Build query with optional source_id filter for multi-source support
+	query := h.db.DB().WithContext(ctx).Table("repositories").
+		Select("status, COUNT(*) as count").
+		Where("ado_project = ?", projectName).
+		Where("full_name LIKE ?", organization+"/%").
+		Where("status != ?", "wont_migrate")
+
+	if sourceID != nil {
+		query = query.Where("source_id = ?", *sourceID)
+	}
+
+	err := query.Group("status").Scan(&results).Error
 
 	if err != nil {
 		h.logger.Warn("Failed to get status counts for project", "project", projectName, "org", organization, "error", err)
@@ -185,7 +190,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 				repoCount = 0
 			}
 
-			stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
+			stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount, sourceID)
 
 			projectStats = append(projectStats, map[string]any{
 				"organization":                  project.Name,
@@ -257,7 +262,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 			repoCount = 0
 		}
 
-		stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount)
+		stats := h.getADOProjectStats(ctx, project.Name, project.Organization, repoCount, sourceID)
 
 		projectStats = append(projectStats, map[string]any{
 			"organization":                  project.Name,
