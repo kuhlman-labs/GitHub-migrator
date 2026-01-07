@@ -472,11 +472,10 @@ func migrateEnvSourceToDatabase(db *storage.Database, cfg *config.Config, logger
 	}
 
 	// Check if we have source config in .env
-	// Source is considered configured if we have a token (PAT) or app credentials
-	hasToken := cfg.Source.Token != ""
-	hasAppAuth := cfg.Source.AppID > 0 && cfg.Source.AppPrivateKey != ""
-	if !hasToken && !hasAppAuth {
-		logger.Debug("No source configuration in .env to migrate")
+	// Token (PAT) is always required - GitHub Enterprise Importer API calls require a PAT
+	// App auth (GitHub App) is optional and supplements but cannot replace the token
+	if cfg.Source.Token == "" {
+		logger.Debug("No source token in .env to migrate (app auth alone is insufficient)")
 		return
 	}
 
