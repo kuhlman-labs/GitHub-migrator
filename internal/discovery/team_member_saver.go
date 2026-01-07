@@ -31,6 +31,7 @@ type SaveMemberParams struct {
 	TeamID         int64
 	Members        []*github.TeamMember
 	SourceInstance string
+	SourceID       *int64 // Optional source ID for multi-source support
 }
 
 // SaveTeamMembersResult contains the result of saving team members
@@ -62,6 +63,7 @@ func (s *TeamMemberSaver) SaveTeamMembers(ctx context.Context, params SaveMember
 
 		// Also save the user to github_users table
 		user := &models.GitHubUser{
+			SourceID:       params.SourceID, // Associate with source for multi-source support
 			Login:          member.Login,
 			SourceInstance: params.SourceInstance,
 		}

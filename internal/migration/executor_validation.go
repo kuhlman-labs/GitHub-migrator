@@ -274,6 +274,9 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 			totalCommits += contributor.GetContributions()
 		}
 		repo.CommitCount = totalCommits
+		e.logger.Debug("Retrieved commit count from contributors", "repo", fullName, "commits", totalCommits, "contributors", len(contributors))
+	} else {
+		e.logger.Warn("Failed to get contributors for commit count", "repo", fullName, "error", err)
 	}
 
 	// Get tag count

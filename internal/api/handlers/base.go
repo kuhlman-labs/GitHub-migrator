@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/discovery"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
@@ -43,6 +46,10 @@ type Handler struct {
 	collector      *discovery.Collector
 	sourceType     string      // Source type: models.SourceTypeGitHub or models.SourceTypeAzureDevOps
 	adoHandler     *ADOHandler // ADO-specific handler (set by server if ADO is configured)
+
+	// Discovery cancellation tracking
+	discoveryCancel map[int64]context.CancelFunc // progressID -> cancel function
+	discoveryMu     sync.RWMutex                 // protects discoveryCancel
 }
 
 // SetADOHandler sets the ADO handler reference for delegating ADO operations
@@ -68,13 +75,17 @@ func NewHandler(db *storage.Database, logger *slog.Logger, sourceDualClient *git
 			collector.WithBaseConfig(*sourceBaseConfig)
 		}
 	}
+	handlerUtils := NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger)
+	handlerUtils.SetDatabase(db)
+
 	return &Handler{
-		HandlerUtils:   NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
-		db:             db,
-		logger:         logger,
-		destDualClient: destDualClient,
-		collector:      collector,
-		sourceType:     sourceType,
+		HandlerUtils:    handlerUtils,
+		db:              db,
+		logger:          logger,
+		destDualClient:  destDualClient,
+		collector:       collector,
+		sourceType:      sourceType,
+		discoveryCancel: make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -85,12 +96,13 @@ func NewHandlerWithDataStore(db DataStore, logger *slog.Logger, sourceDualClient
 	// Note: collector requires *storage.Database, so it's nil when using MockDataStore
 	// Tests that need the collector should use NewHandler with a real database
 	return &Handler{
-		HandlerUtils:   NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
-		db:             db,
-		logger:         logger,
-		destDualClient: destDualClient,
-		collector:      nil,
-		sourceType:     sourceType,
+		HandlerUtils:    NewHandlerUtils(authConfig, sourceDualClient, sourceBaseConfig, sourceBaseURL, logger),
+		db:              db,
+		logger:          logger,
+		destDualClient:  destDualClient,
+		collector:       nil,
+		sourceType:      sourceType,
+		discoveryCancel: make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -116,12 +128,25 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		"auth_enabled": h.authConfig != nil && h.authConfig.Enabled,
 	}
 
-	// Add Entra ID enabled flag if auth is enabled
-	if h.authConfig != nil && h.authConfig.Enabled {
-		response["entraid_enabled"] = h.authConfig.EntraIDEnabled
+	h.sendJSON(w, http.StatusOK, response)
+}
+
+// HandleAuthorizationStatus handles GET /api/v1/auth/authorization-status
+// Returns the current user's authorization tier and permissions
+func (h *Handler) HandleAuthorizationStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
-	h.sendJSON(w, http.StatusOK, response)
+	status, err := h.GetUserAuthorizationStatus(r.Context())
+	if err != nil {
+		h.logger.Error("Failed to get authorization status", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, status)
 }
 
 // sendJSON sends a JSON response
@@ -157,6 +182,199 @@ func (h *Handler) handleContextError(ctx context.Context, err error, operation s
 		return true
 	}
 	return false
+}
+
+// getCollectorForSource returns a collector for the given source ID.
+// If a sourceID is provided, it creates a collector dynamically from the source's credentials.
+// Only falls back to h.collector when no sourceID is given (legacy mode).
+func (h *Handler) getCollectorForSource(ctx context.Context, sourceID *int64) (*discovery.Collector, error) {
+	// If sourceID is provided, always use that source's credentials
+	// This ensures consistency between the credentials used and the source ID assigned to repos
+	if sourceID == nil {
+		// No source ID - fall back to pre-configured collector if available
+		if h.collector != nil {
+			return h.collector, nil
+		}
+		return nil, fmt.Errorf("no source_id provided and no legacy collector configured")
+	}
+
+	// Get the database - need to type assert to *storage.Database
+	db, ok := h.db.(*storage.Database)
+	if !ok {
+		return nil, fmt.Errorf("database type assertion failed - cannot create dynamic collector")
+	}
+
+	// Fetch the source from the database using request context
+	src, err := db.GetSource(ctx, *sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source %d: %w", *sourceID, err)
+	}
+	if src == nil {
+		return nil, fmt.Errorf("source %d not found", *sourceID)
+	}
+
+	// Only GitHub sources are supported for discovery
+	if src.Type != models.SourceConfigTypeGitHub {
+		return nil, fmt.Errorf("source %d is not a GitHub source (type: %s)", *sourceID, src.Type)
+	}
+
+	// Create GitHub client configuration with proper timeout and retry settings
+	clientConfig := github.ClientConfig{
+		BaseURL:     src.BaseURL,
+		Token:       src.Token,
+		Timeout:     120 * time.Second, // Match server initialization
+		RetryConfig: github.DefaultRetryConfig(),
+		Logger:      h.logger,
+	}
+
+	// Add App credentials if configured
+	// Note: If AppInstallationID is nil/0, this creates a JWT-only client
+	// which can discover app installations across an enterprise
+	if src.HasAppAuth() {
+		clientConfig.AppID = *src.AppID
+		clientConfig.AppPrivateKey = *src.AppPrivateKey
+		if src.AppInstallationID != nil && *src.AppInstallationID > 0 {
+			clientConfig.AppInstallationID = *src.AppInstallationID
+			h.logger.Info("Creating client with GitHub App installation auth",
+				"source_id", *sourceID,
+				"app_id", *src.AppID,
+				"installation_id", *src.AppInstallationID)
+		} else {
+			// JWT-only mode for enterprise-wide discovery
+			h.logger.Info("Creating client with GitHub App JWT-only auth (enterprise mode)",
+				"source_id", *sourceID,
+				"app_id", *src.AppID)
+		}
+	}
+
+	// Create GitHub client
+	client, err := github.NewClient(clientConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub client for source %d: %w", *sourceID, err)
+	}
+
+	// Create source provider
+	sourceProvider, err := source.NewGitHubProvider(src.BaseURL, src.Token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create source provider for source %d: %w", *sourceID, err)
+	}
+
+	// Create collector
+	collector := discovery.NewCollector(client, db, h.logger, sourceProvider)
+
+	// Set source ID to associate discovered entities with this source
+	collector.SetSourceID(sourceID)
+
+	// Set base config for App auth if available
+	if src.HasAppAuth() {
+		collector.WithBaseConfig(clientConfig)
+	}
+
+	h.logger.Info("Created dynamic collector for source", "source_id", *sourceID, "source_name", src.Name)
+
+	return collector, nil
+}
+
+// getADOCollectorForSource returns an ADO collector for the given source ID.
+// It creates a collector dynamically from the source's credentials in the database.
+func (h *Handler) getADOCollectorForSource(ctx context.Context, sourceID *int64) (*discovery.ADOCollector, *azuredevops.Client, error) {
+	// No source ID means we can't create a dynamic collector
+	if sourceID == nil {
+		return nil, nil, fmt.Errorf("no source_id provided for ADO discovery")
+	}
+
+	// Get the database - need to type assert to *storage.Database
+	db, ok := h.db.(*storage.Database)
+	if !ok {
+		return nil, nil, fmt.Errorf("database type assertion failed - cannot create dynamic ADO collector")
+	}
+
+	// Fetch the source from the database using request context
+	src, err := db.GetSource(ctx, *sourceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get source %d: %w", *sourceID, err)
+	}
+	if src == nil {
+		return nil, nil, fmt.Errorf("source %d not found", *sourceID)
+	}
+
+	// Only Azure DevOps sources are supported for ADO discovery
+	if src.Type != models.SourceConfigTypeAzureDevOps {
+		return nil, nil, fmt.Errorf("source %d is not an Azure DevOps source (type: %s)", *sourceID, src.Type)
+	}
+
+	// Extract organization name from base URL or use stored organization field
+	var orgName string
+	if src.Organization != nil && *src.Organization != "" {
+		orgName = *src.Organization
+	} else {
+		// Try to extract from base URL
+		orgName = extractADOOrganization(src.BaseURL)
+	}
+
+	if orgName == "" {
+		return nil, nil, fmt.Errorf("source %d: could not determine Azure DevOps organization. Please ensure the organization field is set or the base URL includes the organization (e.g., https://dev.azure.com/your-org)", *sourceID)
+	}
+
+	// Build the full organization URL by combining base URL and organization
+	// We need to check if org is in the URL path, not just anywhere in the URL string
+	// (e.g., org "dev" should not match domain "dev.azure.com")
+	orgURL := src.BaseURL
+	parsedURL, parseErr := url.Parse(src.BaseURL)
+	if parseErr == nil {
+		// Check if org is an exact path segment (not a substring of domain or another segment)
+		pathSegments := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
+		if !slices.Contains(pathSegments, orgName) {
+			orgURL = strings.TrimSuffix(src.BaseURL, "/") + "/" + orgName
+		}
+	} else {
+		// Fallback: safer check using path separators
+		if !strings.Contains(src.BaseURL, "/"+orgName+"/") && !strings.HasSuffix(src.BaseURL, "/"+orgName) {
+			orgURL = strings.TrimSuffix(src.BaseURL, "/") + "/" + orgName
+		}
+	}
+
+	h.logger.Info("Creating ADO client for source",
+		"source_id", *sourceID,
+		"source_name", src.Name,
+		"base_url", src.BaseURL,
+		"organization", orgName,
+		"org_url", orgURL)
+
+	// Create Azure DevOps client
+	adoClient, err := azuredevops.NewClient(azuredevops.ClientConfig{
+		OrganizationURL:     orgURL,
+		PersonalAccessToken: src.Token,
+		Logger:              h.logger,
+	})
+	if err != nil {
+		h.logger.Error("Failed to create ADO client",
+			"source_id", *sourceID,
+			"base_url", src.BaseURL,
+			"organization", orgName,
+			"org_url", orgURL,
+			"error", err)
+		return nil, nil, fmt.Errorf("failed to create ADO client for source %d: %w", *sourceID, err)
+	}
+
+	// Create source provider
+	adoProvider, provErr := source.NewAzureDevOpsProvider(orgName, src.Token, "")
+	if provErr != nil {
+		return nil, nil, fmt.Errorf("failed to create ADO provider for source %d: %w", *sourceID, provErr)
+	}
+
+	h.logger.Info("Created dynamic ADO collector",
+		"source_id", *sourceID,
+		"source_name", src.Name,
+		"organization", orgName)
+
+	// Create ADO collector
+	adoCollector := discovery.NewADOCollector(adoClient, db, h.logger, adoProvider)
+
+	// Set source ID to associate discovered entities with this source
+	adoCollector.SetSourceID(sourceID)
+
+	return adoCollector, adoClient, nil
 }
 
 // PaginationParams holds parsed pagination parameters
@@ -358,4 +576,30 @@ func formatVisibilityForDisplay(visibility string) string {
 	default:
 		return visibility
 	}
+}
+
+// extractADOOrganization extracts the organization name from an Azure DevOps URL.
+// Supports: https://dev.azure.com/myorg or https://myorg.visualstudio.com
+func extractADOOrganization(baseURL string) string {
+	// Handle https://dev.azure.com/myorg format
+	if strings.Contains(baseURL, "dev.azure.com") {
+		parts := strings.Split(strings.TrimSuffix(baseURL, "/"), "/")
+		if len(parts) >= 4 {
+			return parts[3] // https://dev.azure.com/myorg -> myorg
+		}
+	}
+
+	// Handle https://myorg.visualstudio.com format
+	if strings.Contains(baseURL, ".visualstudio.com") {
+		// Extract subdomain
+		trimmed := strings.TrimPrefix(baseURL, "https://")
+		trimmed = strings.TrimPrefix(trimmed, "http://")
+		if idx := strings.Index(trimmed, "."); idx > 0 {
+			return trimmed[:idx]
+		}
+	}
+
+	// Return empty string if organization cannot be extracted
+	// This allows the caller's empty-string check to properly detect and report the error
+	return ""
 }

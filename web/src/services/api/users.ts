@@ -15,6 +15,7 @@ export const usersApi = {
   // Users
   async list(filters?: {
     source_instance?: string;
+    source_id?: number;
     limit?: number;
     offset?: number;
   }): Promise<{ users: GitHubUser[]; total: number }> {
@@ -22,13 +23,17 @@ export const usersApi = {
     return data;
   },
 
-  async getStats(): Promise<UserStats> {
-    const { data } = await client.get('/users/stats');
+  async getStats(sourceId?: number): Promise<UserStats> {
+    const params = sourceId !== undefined ? { source_id: sourceId } : undefined;
+    const { data } = await client.get('/users/stats', { params });
     return data;
   },
 
-  async discover(organization: string) {
-    const { data } = await client.post('/users/discover', { organization });
+  async discover(organization: string, sourceId?: number) {
+    const { data } = await client.post('/users/discover', { 
+      organization,
+      source_id: sourceId,
+    });
     return data;
   },
 
@@ -36,6 +41,7 @@ export const usersApi = {
   async listMappings(filters?: {
     status?: string;
     source_org?: string;
+    source_id?: number;
     has_destination?: boolean;
     has_mannequin?: boolean;
     reclaim_status?: string;
@@ -47,9 +53,10 @@ export const usersApi = {
     return data;
   },
 
-  async getMappingStats(sourceOrg?: string): Promise<UserMappingStats> {
+  async getMappingStats(sourceOrg?: string, sourceId?: number): Promise<UserMappingStats> {
     const params = new URLSearchParams();
     if (sourceOrg) params.append('source_org', sourceOrg);
+    if (sourceId !== undefined) params.append('source_id', String(sourceId));
     const query = params.toString() ? `?${params.toString()}` : '';
     const { data } = await client.get(`/user-mappings/stats${query}`);
     return data;
@@ -88,9 +95,9 @@ export const usersApi = {
     return data;
   },
 
-  async exportMappings(status?: string): Promise<Blob> {
+  async exportMappings(status?: string, sourceId?: number): Promise<Blob> {
     const { data } = await client.get('/user-mappings/export', {
-      params: { status },
+      params: { status, source_id: sourceId },
       responseType: 'blob',
     });
     return data;

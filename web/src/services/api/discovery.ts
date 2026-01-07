@@ -6,7 +6,7 @@ import type { DiscoveryProgress, Organization, Project, GitHubTeam } from '../..
 
 export const discoveryApi = {
   // GitHub Discovery
-  async start(params: { organization?: string; enterprise_slug?: string; workers?: number }) {
+  async start(params: { organization?: string; enterprise_slug?: string; workers?: number; source_id?: number }) {
     const { data } = await client.post('/discovery/start', params);
     return data;
   },
@@ -24,8 +24,13 @@ export const discoveryApi = {
     return data;
   },
 
+  async cancel() {
+    const { data } = await client.post('/discovery/cancel');
+    return data;
+  },
+
   // Azure DevOps Discovery
-  async startADO(params: { organization?: string; project?: string; workers?: number }) {
+  async startADO(params: { organization?: string; project?: string; workers?: number; source_id?: number }) {
     const { data } = await client.post('/ado/discover', params);
     return data;
   },
@@ -48,13 +53,18 @@ export const discoveryApi = {
   },
 
   // Organizations
-  async listOrganizations(): Promise<Organization[]> {
-    const { data } = await client.get('/organizations');
+  async listOrganizations(sourceId?: number): Promise<Organization[]> {
+    const params: Record<string, string> = {};
+    if (sourceId !== undefined) {
+      params.source_id = String(sourceId);
+    }
+    const { data } = await client.get('/organizations', { params });
     return data;
   },
 
-  async listProjects(): Promise<Project[]> {
-    const { data } = await client.get('/projects');
+  async listProjects(sourceId?: number): Promise<Project[]> {
+    const params = sourceId !== undefined ? { source_id: sourceId } : undefined;
+    const { data } = await client.get('/projects', { params });
     return data;
   },
 
@@ -63,8 +73,11 @@ export const discoveryApi = {
     return data;
   },
 
-  async listTeams(organization?: string): Promise<GitHubTeam[]> {
-    const { data } = await client.get('/teams', { params: { organization } });
+  async listTeams(organization?: string, sourceId?: number): Promise<GitHubTeam[]> {
+    const params: Record<string, string | number> = {};
+    if (organization) params.organization = organization;
+    if (sourceId !== undefined) params.source_id = sourceId;
+    const { data } = await client.get('/teams', { params });
     return data;
   },
 };

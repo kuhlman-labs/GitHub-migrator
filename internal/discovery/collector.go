@@ -28,6 +28,7 @@ type Collector struct {
 	sourceProvider  source.Provider
 	baseConfig      *github.ClientConfig // Base config for creating per-org clients (optional)
 	progressTracker ProgressTracker      // Optional progress tracker for UI visibility
+	sourceID        *int64               // Optional source ID to associate with discovered repos
 }
 
 // NewCollector creates a new repository collector
@@ -67,6 +68,16 @@ func (c *Collector) SetOrgDelay(delay time.Duration) {
 // SetProgressTracker sets the progress tracker for discovery operations
 func (c *Collector) SetProgressTracker(tracker ProgressTracker) {
 	c.progressTracker = tracker
+}
+
+// SetSourceID sets the source ID to associate with discovered repositories
+func (c *Collector) SetSourceID(sourceID *int64) {
+	c.sourceID = sourceID
+}
+
+// GetSourceID returns the current source ID (may be nil)
+func (c *Collector) GetSourceID() *int64 {
+	return c.sourceID
 }
 
 // getProgressTracker returns the progress tracker or a no-op if none is set
@@ -233,6 +244,7 @@ func (c *Collector) DiscoverOrgMembersOnly(ctx context.Context, org string) (int
 
 	for _, member := range members {
 		user := &models.GitHubUser{
+			SourceID:       c.sourceID, // Associate with source for multi-source support
 			Login:          member.Login,
 			Name:           member.Name,
 			Email:          member.Email,
@@ -370,6 +382,7 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 			"team", teamInfo.Slug)
 
 		team := &models.GitHubTeam{
+			SourceID:     c.sourceID, // Associate with source for multi-source support
 			Organization: org,
 			Slug:         teamInfo.Slug,
 			Name:         teamInfo.Name,
@@ -389,6 +402,36 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 			continue
 		}
 		result.teamSaved = true
+
+		// List repositories for this team
+		teamRepos, err := client.ListTeamRepositories(ctx, org, teamInfo.Slug)
+		if err != nil {
+			c.logger.Warn("Failed to list repositories for team",
+				"worker_id", workerID,
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			// Don't return - continue with members
+		} else {
+			c.logger.Debug("Found repositories for team",
+				"worker_id", workerID,
+				"organization", org,
+				"team", teamInfo.Slug,
+				"count", len(teamRepos))
+
+			// Save team-repository associations
+			for _, teamRepo := range teamRepos {
+				if err := c.storage.SaveTeamRepository(ctx, team.ID, teamRepo.FullName, teamRepo.Permission); err != nil {
+					c.logger.Warn("Failed to save team-repository association",
+						"worker_id", workerID,
+						"organization", org,
+						"team", teamInfo.Slug,
+						"repo", teamRepo.FullName,
+						"error", err)
+					// Continue with other repos even if one fails
+				}
+			}
+		}
 
 		// List and save team members using GraphQL (more efficient, no N+1 queries)
 		teamMembers, err := client.ListTeamMembersGraphQL(ctx, org, teamInfo.Slug)
@@ -417,6 +460,7 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 			TeamID:         team.ID,
 			Members:        teamMembers,
 			SourceInstance: sourceInstance,
+			SourceID:       c.sourceID, // Pass source ID for multi-source support
 		})
 		result.memberCount = saveResult.SavedCount
 
@@ -440,6 +484,9 @@ func (c *Collector) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, wor
 func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpriseSlug string) error {
 	c.logger.Info("Starting enterprise-wide repository discovery", "enterprise", enterpriseSlug)
 
+	// Get progress tracker early so we can update it during rate limit waits
+	tracker := c.getProgressTracker()
+
 	// Check if we need to use per-org clients (GitHub App without installation ID)
 	useAppInstallations := c.baseConfig != nil && c.baseConfig.AppID > 0 && c.baseConfig.AppInstallationID == 0
 
@@ -452,7 +499,13 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 		c.logger.Info("Using GitHub App Installations API to discover organizations",
 			"app_id", c.baseConfig.AppID)
 
-		installations, err := c.client.ListAppInstallations(ctx)
+		// Wrap in rate limit handling so progress tracker shows waiting state
+		var installations map[string]int64
+		err := c.retryWithRateLimitHandling(ctx, tracker, "list app installations", func() error {
+			var listErr error
+			installations, listErr = c.client.ListAppInstallations(ctx)
+			return listErr
+		})
 		if err != nil {
 			return fmt.Errorf("failed to list app installations: %w", err)
 		}
@@ -468,7 +521,13 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 	} else {
 		// Use enterprise GraphQL API (requires installation token or PAT with enterprise access)
 		// Get orgs with repo counts for accurate upfront progress tracking
-		orgInfos, err := c.client.ListEnterpriseOrganizationsWithCounts(ctx, enterpriseSlug)
+		// Wrap in rate limit handling so progress tracker shows waiting state
+		var orgInfos []github.EnterpriseOrgInfo
+		err := c.retryWithRateLimitHandling(ctx, tracker, "list enterprise organizations", func() error {
+			var listErr error
+			orgInfos, listErr = c.client.ListEnterpriseOrganizationsWithCounts(ctx, enterpriseSlug)
+			return listErr
+		})
 		if err != nil {
 			return fmt.Errorf("failed to list enterprise organizations: %w", err)
 		}
@@ -487,8 +546,9 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			"total_repos", totalRepos)
 
 		// Set total repos upfront for accurate progress tracking
-		tracker := c.getProgressTracker()
-		tracker.SetTotalRepos(totalRepos)
+		if totalRepos > 0 {
+			tracker.SetTotalRepos(totalRepos)
+		}
 	}
 
 	// Collect repositories from all organizations
@@ -498,6 +558,13 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 	// If not using per-org clients, create a single shared profiler
 	if !useAppInstallations {
 		profiler = NewProfiler(c.client, c.logger)
+	}
+
+	// Track whether we have an upfront total count
+	// This is used to determine if we need to increment total as we discover
+	hasUpfrontTotalPAT := false
+	if !useAppInstallations {
+		hasUpfrontTotalPAT = tracker.GetProgress().TotalRepos > 0
 	}
 
 	if useAppInstallations {
@@ -511,37 +578,31 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 		allRepos = c.processOrganizationsSequentially(ctx, enterpriseSlug, orgs, orgInstallations)
 	} else {
 		// Sequential processing for PAT/shared client mode
-		// In this mode, we first collect all repos and discover teams/members,
-		// then profile all repos in a batch at the end
-		tracker := c.getProgressTracker()
+		// Each org goes through all phases sequentially (same as GitHub App mode):
+		// Listing → Profiling → Teams → Members → Complete
 		tracker.SetTotalOrgs(len(orgs))
 
-		// Track successful orgs and their repo counts for completion after batch profiling
-		orgRepoCounts := make(map[string]int)
+		// Note: Total repos was already set upfront if available (hasUpfrontTotalPAT)
+		// If not, we'll add repos incrementally as we discover each org
 
 		for i, org := range orgs {
-			c.logger.Info("Discovering repositories for organization",
+			c.logger.Info("Processing organization",
 				"enterprise", enterpriseSlug,
 				"organization", org,
 				"progress", fmt.Sprintf("%d/%d", i+1, len(orgs)))
 
-			// Update progress tracker - we're in listing phase for this org
+			// Update progress tracker - StartOrg sets CurrentOrg and phase to listing_repos
 			tracker.StartOrg(org, i)
 
-			// Use shared client and profiler
-			orgClient := c.client
-			orgProfiler := profiler
-
-			// Use org-specific client for listing repos
-			repos, err := c.listAllRepositoriesWithClient(ctx, org, orgClient)
+			// List repositories for this org using shared client
+			repos, err := c.listAllRepositoriesWithClient(ctx, org, c.client)
 			if err != nil {
 				c.logger.Error("Failed to list repositories for organization",
 					"enterprise", enterpriseSlug,
 					"organization", org,
 					"error", err)
 				tracker.RecordError(err)
-				tracker.CompleteOrg(org, 0) // Mark failed org as processed
-				// Continue with other organizations even if one fails
+				tracker.CompleteOrg(org, 0)
 				continue
 			}
 
@@ -550,10 +611,16 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 				"organization", org,
 				"count", len(repos))
 
-			// Note: Total repos was set upfront via ListEnterpriseOrganizationsWithCounts
+			// If we didn't get upfront counts, add repos as we discover them
+			if !hasUpfrontTotalPAT && len(repos) > 0 {
+				tracker.AddRepos(len(repos))
+			}
 
-			// Load package cache for this organization using org-specific profiler
-			if err := orgProfiler.LoadPackageCache(ctx, org); err != nil {
+			// Set phase to profiling for this org's repos
+			tracker.SetPhase(models.PhaseProfilingRepos)
+
+			// Load package cache for this organization
+			if err := profiler.LoadPackageCache(ctx, org); err != nil {
 				c.logger.Warn("Failed to load package cache for organization",
 					"enterprise", enterpriseSlug,
 					"org", org,
@@ -561,7 +628,7 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			}
 
 			// Load ProjectsV2 map for this organization
-			if err := orgProfiler.LoadProjectsMap(ctx, org); err != nil {
+			if err := profiler.LoadProjectsMap(ctx, org); err != nil {
 				c.logger.Warn("Failed to load ProjectsV2 map for organization",
 					"enterprise", enterpriseSlug,
 					"org", org,
@@ -569,7 +636,7 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			}
 
 			// Load GitHub App installations for this organization
-			if err := orgProfiler.LoadOrgInstallations(ctx, org); err != nil {
+			if err := profiler.LoadOrgInstallations(ctx, org); err != nil {
 				c.logger.Warn("Failed to load org installations for organization",
 					"enterprise", enterpriseSlug,
 					"org", org,
@@ -578,12 +645,26 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 
 			allRepos = append(allRepos, repos...)
 
+			// Process this org's repos with the shared profiler (parallel within org)
+			if err := c.processRepositoriesWithProfilerTracked(ctx, repos, profiler, tracker); err != nil {
+				c.logger.Error("Failed to process repositories for organization",
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"error", err)
+				tracker.RecordError(err)
+			} else {
+				c.logger.Info("Completed profiling organization",
+					"enterprise", enterpriseSlug,
+					"organization", org,
+					"repo_count", len(repos))
+			}
+
 			// Discover teams and their repository associations for this org
-			// Note: Not changing phase here since profiling happens after all orgs
+			tracker.SetPhase(models.PhaseDiscoveringTeams)
 			c.logger.Info("Discovering teams for organization",
 				"enterprise", enterpriseSlug,
 				"organization", org)
-			if err := c.discoverTeams(ctx, org, orgClient); err != nil {
+			if err := c.discoverTeams(ctx, org, c.client); err != nil {
 				c.logger.Warn("Failed to discover teams for organization",
 					"enterprise", enterpriseSlug,
 					"organization", org,
@@ -592,10 +673,11 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 			}
 
 			// Discover organization members
+			tracker.SetPhase(models.PhaseDiscoveringMembers)
 			c.logger.Info("Discovering organization members",
 				"enterprise", enterpriseSlug,
 				"organization", org)
-			if err := c.discoverOrgMembers(ctx, org, orgClient); err != nil {
+			if err := c.discoverOrgMembers(ctx, org, c.client); err != nil {
 				c.logger.Warn("Failed to discover org members for organization",
 					"enterprise", enterpriseSlug,
 					"organization", org,
@@ -603,30 +685,22 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 				// Don't fail if member discovery fails
 			}
 
-			// Track this org's repo count for completion after batch profiling
-			orgRepoCounts[org] = len(repos)
-		}
+			// Mark org as complete
+			tracker.CompleteOrg(org, len(repos))
 
-		// Now profile all repos in batch and then mark orgs as complete
-		c.logger.Info("Enterprise discovery complete, starting batch profiling",
-			"enterprise", enterpriseSlug,
-			"total_orgs", len(orgs),
-			"total_repos", len(allRepos))
-
-		// Set phase to profiling before batch processing
-		tracker.SetPhase(models.PhaseProfilingRepos)
-
-		if err := c.processRepositoriesWithProfilerTracked(ctx, allRepos, profiler, tracker); err != nil {
-			// Mark remaining orgs as complete even on error
-			for org, repoCount := range orgRepoCounts {
-				tracker.CompleteOrg(org, repoCount)
+			// Add delay between organizations to prevent secondary rate limits
+			// Skip delay after the last org or if delay is zero
+			if i < len(orgs)-1 && c.orgDelay > 0 {
+				c.logger.Debug("Waiting between organizations to avoid rate limits",
+					"delay", c.orgDelay)
+				select {
+				case <-ctx.Done():
+					c.logger.Warn("Context cancelled during org processing", "error", ctx.Err())
+					return err
+				case <-time.After(c.orgDelay):
+					// Continue to next org
+				}
 			}
-			return err
-		}
-
-		// After successful batch profiling, mark all orgs as complete
-		for org, repoCount := range orgRepoCounts {
-			tracker.CompleteOrg(org, repoCount)
 		}
 	}
 
@@ -708,7 +782,13 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 	// Pre-fetch repo counts for all orgs to set accurate total upfront
 	orgClients, totalRepos := c.prefetchOrgClientsAndCounts(ctx, orgs, orgInstallations)
 	c.logger.Info("Pre-fetched total repository count", "enterprise", enterpriseSlug, "total_repos", totalRepos)
-	tracker.SetTotalRepos(totalRepos)
+
+	// Track whether we got a valid upfront count
+	// If totalRepos is 0, we'll increment it as we discover repos
+	hasUpfrontTotal := totalRepos > 0
+	if hasUpfrontTotal {
+		tracker.SetTotalRepos(totalRepos)
+	}
 
 	for i, org := range orgs {
 		c.logger.Info("Processing organization",
@@ -753,7 +833,10 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 			"organization", org,
 			"count", len(repos))
 
-		// Note: Total repos was set upfront via pre-fetch phase
+		// If we didn't get upfront counts, add repos as we discover them
+		if !hasUpfrontTotal && len(repos) > 0 {
+			tracker.AddRepos(len(repos))
+		}
 		tracker.SetPhase(models.PhaseProfilingRepos)
 
 		// Load package cache for this organization
@@ -838,7 +921,13 @@ func (c *Collector) processOrganizationsSequentially(ctx context.Context, enterp
 }
 
 // listAllRepositoriesWithClient lists all repositories for an organization using a specific client
+// This method handles rate limit errors by waiting and retrying
 func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org string, client *github.Client) ([]*ghapi.Repository, error) {
+	return c.listAllRepositoriesWithClientTracked(ctx, org, client, c.getProgressTracker())
+}
+
+// listAllRepositoriesWithClientTracked lists all repositories with progress tracking for rate limits
+func (c *Collector) listAllRepositoriesWithClientTracked(ctx context.Context, org string, client *github.Client, tracker ProgressTracker) ([]*ghapi.Repository, error) {
 	var allRepos []*ghapi.Repository
 	opts := &ghapi.RepositoryListByOrgOptions{
 		ListOptions: ghapi.ListOptions{PerPage: 100},
@@ -847,6 +936,14 @@ func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org strin
 	for {
 		repos, resp, err := client.REST().Repositories.ListByOrg(ctx, org, opts)
 		if err != nil {
+			// Check if this is a rate limit error that we should wait for
+			if github.IsRateLimitBlockedError(err) || github.IsRateLimitError(err) || github.IsSecondaryRateLimitError(err) {
+				if waitErr := c.waitForRateLimitReset(ctx, err, tracker); waitErr != nil {
+					return nil, fmt.Errorf("failed to list repositories (rate limit wait failed): %w", waitErr)
+				}
+				// Retry the same page after waiting
+				continue
+			}
 			return nil, fmt.Errorf("failed to list repositories: %w", err)
 		}
 
@@ -859,6 +956,106 @@ func (c *Collector) listAllRepositoriesWithClient(ctx context.Context, org strin
 	}
 
 	return allRepos, nil
+}
+
+// waitForRateLimitReset waits for the rate limit to reset, updating progress tracker
+// rateLimitResetBuffer is the additional time to wait after the rate limit reset time
+// to ensure the rate limit is actually reset before making the next request.
+// GitHub's rate limit reset times can have slight delays, so we add a safety margin.
+const rateLimitResetBuffer = 5 * time.Second
+
+func (c *Collector) waitForRateLimitReset(ctx context.Context, err error, tracker ProgressTracker) error {
+	// Parse reset time from error if available
+	resetTime, hasResetTime := github.ParseRateLimitResetTime(err)
+
+	var waitDuration time.Duration
+	if hasResetTime {
+		waitDuration = time.Until(resetTime)
+		// Add buffer to ensure rate limit is actually reset before retrying
+		// This prevents hitting the rate limit again due to timing discrepancies
+		waitDuration += rateLimitResetBuffer
+	} else if github.IsSecondaryRateLimitError(err) {
+		// Secondary rate limits typically require 60 seconds wait
+		waitDuration = 60 * time.Second
+	} else {
+		// Default wait time if we can't parse the reset time
+		waitDuration = 60 * time.Second
+	}
+
+	// Ensure minimum wait of 10 seconds and maximum of 15 minutes
+	if waitDuration < 10*time.Second {
+		waitDuration = 10 * time.Second
+	}
+	if waitDuration > 15*time.Minute {
+		waitDuration = 15 * time.Minute
+	}
+
+	c.logger.Warn("Rate limit exceeded, waiting for reset",
+		"wait_duration", waitDuration,
+		"reset_time", resetTime,
+		"error", err)
+
+	// Save the previous phase to restore after waiting
+	previousPhase := ""
+	if progress := tracker.GetProgress(); progress != nil {
+		previousPhase = progress.Phase
+	}
+
+	// Update tracker to show waiting for rate limit
+	tracker.SetPhase(models.PhaseWaitingForRateLimit)
+
+	// Wait for the rate limit to reset
+	select {
+	case <-ctx.Done():
+		// Restore previous phase before returning
+		if previousPhase != "" {
+			tracker.SetPhase(previousPhase)
+		}
+		return fmt.Errorf("context cancelled while waiting for rate limit: %w", ctx.Err())
+	case <-time.After(waitDuration):
+		c.logger.Info("Rate limit wait complete, resuming discovery")
+		// Restore previous phase
+		if previousPhase != "" {
+			tracker.SetPhase(previousPhase)
+		}
+		return nil
+	}
+}
+
+// isRateLimitError checks if an error is any type of rate limit error
+func (c *Collector) isRateLimitError(err error) bool {
+	return github.IsRateLimitBlockedError(err) || github.IsRateLimitError(err) || github.IsSecondaryRateLimitError(err)
+}
+
+// retryWithRateLimitHandling executes a function and retries on rate limit errors
+// This is a general-purpose retry wrapper for operations that may hit rate limits
+func (c *Collector) retryWithRateLimitHandling(ctx context.Context, tracker ProgressTracker, operation string, fn func() error) error {
+	maxRetries := 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+
+		// Check if this is a rate limit error
+		if c.isRateLimitError(err) {
+			c.logger.Warn("Rate limit hit, waiting before retry",
+				"operation", operation,
+				"attempt", attempt,
+				"max_retries", maxRetries,
+				"error", err)
+
+			if waitErr := c.waitForRateLimitReset(ctx, err, tracker); waitErr != nil {
+				return fmt.Errorf("%s failed (rate limit wait failed): %w", operation, waitErr)
+			}
+			// Continue to retry after waiting
+			continue
+		}
+
+		// Non-rate-limit error, return immediately
+		return err
+	}
+	return fmt.Errorf("%s failed after %d retries due to rate limits", operation, maxRetries)
 }
 
 // listAllRepositories lists all repositories for an organization with pagination
@@ -880,15 +1077,33 @@ func (c *Collector) processRepositoriesWithProfilerTracked(ctx context.Context, 
 		go c.workerWithProfilerTracked(ctx, &wg, jobs, errors, profiler, tracker)
 	}
 
-	// Send jobs
+	// Send jobs - stop if context is cancelled (graceful cancellation)
+	sentCount := 0
 	for _, repo := range repos {
-		jobs <- repo
+		select {
+		case <-ctx.Done():
+			c.logger.Info("Discovery cancelled, stopping job dispatch",
+				"sent", sentCount,
+				"total", len(repos))
+			close(jobs)
+			wg.Wait()
+			close(errors)
+			return ctx.Err()
+		case jobs <- repo:
+			sentCount++
+		}
 	}
 	close(jobs)
 
 	// Wait for completion
 	wg.Wait()
 	close(errors)
+
+	// Check if cancelled during processing
+	if ctx.Err() != nil {
+		c.logger.Info("Discovery cancelled during processing")
+		return ctx.Err()
+	}
 
 	// Collect errors
 	var errs []error
@@ -914,12 +1129,25 @@ func (c *Collector) workerWithProfilerTracked(ctx context.Context, wg *sync.Wait
 	defer wg.Done()
 
 	for repo := range jobs {
+		// Check for cancellation before starting a new repo (graceful cancellation)
+		// This allows the current repo to finish before stopping
+		select {
+		case <-ctx.Done():
+			c.logger.Debug("Worker stopping due to cancellation", "last_repo", repo.GetFullName())
+			return
+		default:
+			// Continue processing
+		}
+
 		if err := c.ProfileRepositoryWithProfiler(ctx, repo, profiler); err != nil {
-			c.logger.Error("Failed to profile repository",
-				"repo", repo.GetFullName(),
-				"error", err)
-			errors <- err
-			tracker.RecordError(err)
+			// Don't log context cancellation as an error
+			if ctx.Err() == nil {
+				c.logger.Error("Failed to profile repository",
+					"repo", repo.GetFullName(),
+					"error", err)
+				errors <- err
+				tracker.RecordError(err)
+			}
 		}
 		// Increment processed repos counter (even on error, it was attempted)
 		tracker.IncrementProcessedRepos(1)
@@ -999,7 +1227,9 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 	// Profile GitHub features via API (no clone needed)
 	// Note: Don't save users for destination profiling, only source discovery
 	profiler := NewProfiler(c.client, c.logger)
-	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
+	if err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "profile destination features for "+repo.FullName, func() error {
+		return profiler.ProfileFeatures(ctx, repo)
+	}); err != nil {
 		c.logger.Warn("Failed to profile destination features",
 			"repo", repo.FullName,
 			"error", err)
@@ -1172,7 +1402,10 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 		}
 	}
 
-	if err := profiler.ProfileFeatures(ctx, repo); err != nil {
+	// Profile features with rate limit retry
+	if err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "profile features for "+repo.FullName, func() error {
+		return profiler.ProfileFeatures(ctx, repo)
+	}); err != nil {
 		c.logger.Warn("Failed to profile features",
 			"repo", repo.FullName,
 			"error", err)
@@ -1186,6 +1419,11 @@ func (c *Collector) ProfileRepositoryWithProfiler(ctx context.Context, ghRepo *g
 			"has_oversized_commits", repo.HasOversizedCommits,
 			"has_long_refs", repo.HasLongRefs,
 			"has_blocking_files", repo.HasBlockingFiles)
+	}
+
+	// Associate with source if set
+	if c.sourceID != nil {
+		repo.SourceID = c.sourceID
 	}
 
 	// Save to database
@@ -1391,6 +1629,7 @@ func (c *Collector) teamDiscoveryWorker(ctx context.Context, wg *sync.WaitGroup,
 
 		// Save the team to the database
 		team := &models.GitHubTeam{
+			SourceID:     c.sourceID, // Associate with source for multi-source support
 			Organization: org,
 			Slug:         teamInfo.Slug,
 			Name:         teamInfo.Name,
@@ -1488,8 +1727,13 @@ func (c *Collector) teamDiscoveryWorker(ctx context.Context, wg *sync.WaitGroup,
 func (c *Collector) discoverTeams(ctx context.Context, org string, client *github.Client) error {
 	c.logger.Info("Discovering teams for organization", "organization", org)
 
-	// List all teams in the organization
-	teams, err := client.ListOrganizationTeams(ctx, org)
+	// List all teams in the organization with rate limit retry
+	var teams []*github.TeamInfo
+	err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "list teams", func() error {
+		var listErr error
+		teams, listErr = client.ListOrganizationTeams(ctx, org)
+		return listErr
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list teams: %w", err)
 	}
@@ -1513,7 +1757,13 @@ func (c *Collector) discoverTeams(ctx context.Context, org string, client *githu
 func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *github.Client) error {
 	c.logger.Info("Discovering organization members", "organization", org)
 
-	members, err := client.ListOrgMembers(ctx, org)
+	// List org members with rate limit retry
+	var members []*github.OrgMember
+	err := c.retryWithRateLimitHandling(ctx, c.getProgressTracker(), "list org members", func() error {
+		var listErr error
+		members, listErr = client.ListOrgMembers(ctx, org)
+		return listErr
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list org members: %w", err)
 	}
@@ -1526,6 +1776,7 @@ func (c *Collector) discoverOrgMembers(ctx context.Context, org string, client *
 
 	for _, member := range members {
 		user := &models.GitHubUser{
+			SourceID:       c.sourceID, // Associate with source for multi-source support
 			Login:          member.Login,
 			Name:           member.Name,
 			Email:          member.Email,

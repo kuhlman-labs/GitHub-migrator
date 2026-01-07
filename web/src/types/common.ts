@@ -18,6 +18,12 @@ export interface Organization {
   failed_count: number;
   pending_count: number;
   migration_progress_percentage: number;
+  /** Source ID for multi-source support */
+  source_id?: number;
+  /** Display name of the source */
+  source_name?: string;
+  /** Type of source (github or azuredevops) */
+  source_type?: 'github' | 'azuredevops';
 }
 
 export interface Project {
@@ -220,10 +226,12 @@ export type DiscoveryPhase =
   | 'profiling_repos'
   | 'discovering_teams'
   | 'discovering_members'
+  | 'waiting_for_rate_limit'
+  | 'cancelling'
   | 'completed';
 
-export type DiscoveryStatus = 'in_progress' | 'completed' | 'failed' | 'none';
-export type DiscoveryType = 'enterprise' | 'organization' | 'repository';
+export type DiscoveryStatus = 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'none';
+export type DiscoveryType = 'enterprise' | 'organization' | 'repository' | 'ado_organization' | 'ado_project';
 
 export interface DiscoveryProgress {
   id: number;

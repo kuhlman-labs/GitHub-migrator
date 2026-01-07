@@ -327,7 +327,7 @@ describe('useQueries hooks', () => {
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(mockApi.getUserMappingStats).toHaveBeenCalledWith('my-org');
+      expect(mockApi.getUserMappingStats).toHaveBeenCalledWith('my-org', undefined);
     });
   });
 
@@ -353,7 +353,7 @@ describe('useQueries hooks', () => {
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(mockApi.listTeams).toHaveBeenCalledWith('my-org');
+      expect(mockApi.listTeams).toHaveBeenCalledWith('my-org', undefined);
     });
   });
 

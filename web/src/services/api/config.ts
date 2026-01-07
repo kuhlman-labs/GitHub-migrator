@@ -9,7 +9,6 @@ export const configApi = {
   async getConfig(): Promise<{
     source_type: 'github' | 'azuredevops';
     auth_enabled: boolean;
-    entraid_enabled?: boolean;
   }> {
     const { data } = await client.get('/config');
     return data;
@@ -19,7 +18,6 @@ export const configApi = {
   async getAuthConfig(): Promise<{
     enabled: boolean;
     login_url?: string;
-    entraid_login_url?: string;
     authorization_rules?: {
       requires_org_membership?: boolean;
       required_orgs?: string[];
@@ -52,6 +50,28 @@ export const configApi = {
 
   async refreshToken(): Promise<void> {
     await client.post('/auth/refresh');
+  },
+
+  /** Get current user's authorization status including their tier */
+  async getAuthorizationStatus(): Promise<{
+    tier: 'admin' | 'self_service' | 'read_only';
+    tier_name: string;
+    permissions: {
+      can_view_repos: boolean;
+      can_migrate_own_repos: boolean;
+      can_migrate_all_repos: boolean;
+      can_manage_batches: boolean;
+      can_manage_sources: boolean;
+    };
+    identity_mapping?: {
+      status: string;
+      source_login?: string;
+      destination_login?: string;
+    };
+    upgrade_path?: string;
+  }> {
+    const { data } = await client.get('/auth/authorization-status');
+    return data;
   },
 
   // Setup

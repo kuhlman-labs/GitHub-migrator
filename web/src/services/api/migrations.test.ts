@@ -156,7 +156,7 @@ describe('migrationsApi', () => {
 
       const result = await migrationsApi.getHistoryList();
 
-      expect(mockClient.get).toHaveBeenCalledWith('/migrations/history');
+      expect(mockClient.get).toHaveBeenCalledWith('/migrations/history', { params: undefined });
       expect(result).toEqual(mockData);
     });
   });
@@ -168,7 +168,8 @@ describe('migrationsApi', () => {
 
       const result = await migrationsApi.exportHistory('csv');
 
-      expect(mockClient.get).toHaveBeenCalledWith('/migrations/history/export?format=csv', {
+      expect(mockClient.get).toHaveBeenCalledWith('/migrations/history/export', {
+        params: { format: 'csv' },
         responseType: 'blob',
       });
       expect(result).toEqual(mockBlob);
@@ -180,7 +181,8 @@ describe('migrationsApi', () => {
 
       const result = await migrationsApi.exportHistory('json');
 
-      expect(mockClient.get).toHaveBeenCalledWith('/migrations/history/export?format=json', {
+      expect(mockClient.get).toHaveBeenCalledWith('/migrations/history/export', {
+        params: { format: 'json' },
         responseType: 'blob',
       });
       expect(result).toEqual(mockBlob);

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { ActionMenu, ActionList, TextInput } from '@primer/react';
 import { OrganizationIcon, RepoIcon, PackageIcon, SearchIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { FilterDropdownButton } from '../common/buttons';
@@ -12,6 +12,8 @@ interface FilterBarProps {
   onProjectChange: (project: string) => void;
   onBatchChange: (batch: string) => void;
   sourceType?: 'github' | 'azuredevops';
+  isAllSources?: boolean;
+  sourceId?: number;
 }
 
 export function FilterBar({
@@ -22,9 +24,13 @@ export function FilterBar({
   onProjectChange,
   onBatchChange,
   sourceType = 'github',
+  isAllSources = false,
+  sourceId,
 }: FilterBarProps) {
   const { data: organizations } = useOrganizations();
-  const { data: projects } = useProjects();
+  // Only fetch projects when viewing a specific ADO source (not all sources)
+  const shouldFetchProjects = sourceType === 'azuredevops' && !isAllSources;
+  const { data: projects } = useProjects(shouldFetchProjects ? sourceId : undefined);
   const { data: batches } = useBatches();
 
   // Search state for each dropdown
@@ -32,10 +38,48 @@ export function FilterBar({
   const [projectSearch, setProjectSearch] = useState('');
   const [batchSearch, setBatchSearch] = useState('');
 
+  // Build organizations list based on source type
+  // For GitHub: use organization field
+  // For ADO: use ado_organization field (unique ADO org names)
+  // For All Sources: combine both
+  const processedOrgs = useMemo(() => {
+    const orgData = organizations || [];
+    
+    if (isAllSources) {
+      // Combine GitHub orgs and unique ADO orgs
+      const githubOrgs = orgData
+        .filter(org => !org.ado_organization)
+        .map(org => ({ name: org.organization, total_repos: org.total_repos }));
+      
+      // Group ADO projects by ado_organization and sum repos
+      const adoOrgMap = new Map<string, number>();
+      orgData.filter(org => org.ado_organization).forEach(org => {
+        const adoOrg = org.ado_organization!;
+        adoOrgMap.set(adoOrg, (adoOrgMap.get(adoOrg) || 0) + org.total_repos);
+      });
+      const adoOrgs = Array.from(adoOrgMap.entries()).map(([name, total_repos]) => ({ name, total_repos }));
+      
+      return [...githubOrgs, ...adoOrgs];
+    } else if (sourceType === 'azuredevops') {
+      // For ADO, extract unique ado_organization values
+      const adoOrgMap = new Map<string, number>();
+      orgData.filter(org => org.ado_organization).forEach(org => {
+        const adoOrg = org.ado_organization!;
+        adoOrgMap.set(adoOrg, (adoOrgMap.get(adoOrg) || 0) + org.total_repos);
+      });
+      return Array.from(adoOrgMap.entries()).map(([name, total_repos]) => ({ name, total_repos }));
+    } else {
+      // For GitHub, use organization field
+      return orgData
+        .filter(org => !org.ado_organization)
+        .map(org => ({ name: org.organization, total_repos: org.total_repos }));
+    }
+  }, [organizations, sourceType, isAllSources]);
+
   // Filter functions
-  const filteredOrgs = organizations?.filter((org) =>
-    org.organization.toLowerCase().includes(orgSearch.toLowerCase())
-  ) || [];
+  const filteredOrgs = processedOrgs.filter((org) =>
+    org.name.toLowerCase().includes(orgSearch.toLowerCase())
+  );
 
   const filteredProjects = projects?.filter((project) =>
     project.project.toLowerCase().includes(projectSearch.toLowerCase())
@@ -48,9 +92,9 @@ export function FilterBar({
   // Get display text for buttons
   const getOrgButtonText = useCallback(() => {
     if (!selectedOrganization) return 'All Organizations';
-    const org = organizations?.find((o) => o.organization === selectedOrganization);
-    return org ? `${org.organization} (${org.total_repos})` : selectedOrganization;
-  }, [selectedOrganization, organizations]);
+    const org = processedOrgs.find((o) => o.name === selectedOrganization);
+    return org ? `${org.name} (${org.total_repos})` : selectedOrganization;
+  }, [selectedOrganization, processedOrgs]);
 
   const getProjectButtonText = useCallback(() => {
     if (!selectedProject) return 'All Projects';
@@ -110,19 +154,19 @@ export function FilterBar({
                     >
                       All Organizations
                     </ActionList.Item>
-                    {organizations && organizations.length > 0 && <ActionList.Divider />}
+                    {processedOrgs.length > 0 && <ActionList.Divider />}
                   </>
                 )}
                 {filteredOrgs.map((org) => (
                   <ActionList.Item
-                    key={org.organization}
-                    selected={selectedOrganization === org.organization}
-                    onSelect={() => onOrganizationChange(org.organization)}
+                    key={org.name}
+                    selected={selectedOrganization === org.name}
+                    onSelect={() => onOrganizationChange(org.name)}
                   >
                     <ActionList.LeadingVisual>
                       <OrganizationIcon />
                     </ActionList.LeadingVisual>
-                    {org.organization}
+                    {org.name}
                     <ActionList.TrailingVisual>
                       <span style={{ color: 'var(--fgColor-muted)' }}>{org.total_repos} repos</span>
                     </ActionList.TrailingVisual>
@@ -136,8 +180,8 @@ export function FilterBar({
           </ActionMenu>
         </div>
 
-        {/* Project Filter - Only for Azure DevOps */}
-        {sourceType === 'azuredevops' && (
+        {/* Project Filter - Show only for ADO sources with projects */}
+        {shouldFetchProjects && projects && projects.length > 0 && (
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--fgColor-default)' }}>
               Project

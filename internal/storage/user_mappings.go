@@ -85,6 +85,24 @@ func (d *Database) GetUserMappingByID(ctx context.Context, id int64) (*models.Us
 	return &mapping, nil
 }
 
+// GetUserMappingByDestinationLogin retrieves a user mapping by destination login (GitHub username)
+// This is used for destination-centric authorization to find a user's source identity
+func (d *Database) GetUserMappingByDestinationLogin(ctx context.Context, destinationLogin string) (*models.UserMapping, error) {
+	var mapping models.UserMapping
+	err := d.db.WithContext(ctx).
+		Where("destination_login = ?", destinationLogin).
+		First(&mapping).Error
+
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user mapping by destination login: %w", err)
+	}
+
+	return &mapping, nil
+}
+
 // UserMappingFilters defines filters for listing user mappings
 type UserMappingFilters struct {
 	Status         string // Filter by mapping_status
@@ -93,6 +111,7 @@ type UserMappingFilters struct {
 	ReclaimStatus  string // Filter by reclaim_status
 	SourceOrg      string // Filter by source_org
 	Search         string // Search in source_login, source_email, destination_login
+	SourceID       *int   // Filter by source ID (multi-source support)
 	Limit          int
 	Offset         int
 }
@@ -139,6 +158,10 @@ func (d *Database) ListUserMappings(ctx context.Context, filters UserMappingFilt
 			"source_login LIKE ? OR source_email LIKE ? OR destination_login LIKE ? OR source_name LIKE ?",
 			searchPattern, searchPattern, searchPattern, searchPattern,
 		)
+	}
+
+	if filters.SourceID != nil {
+		query = query.Where("source_id = ?", *filters.SourceID)
 	}
 
 	// Get total count
@@ -415,6 +438,7 @@ func (d *Database) GetUserMappingSourceOrgs(ctx context.Context) ([]string, erro
 // CreateUserMappingFromUser creates a user mapping from a discovered user
 func (d *Database) CreateUserMappingFromUser(ctx context.Context, user *models.GitHubUser) error {
 	mapping := &models.UserMapping{
+		SourceID:      user.SourceID, // Copy source_id for multi-source support
 		SourceLogin:   user.Login,
 		SourceEmail:   user.Email,
 		SourceName:    user.Name,
@@ -427,21 +451,23 @@ func (d *Database) CreateUserMappingFromUser(ctx context.Context, user *models.G
 }
 
 // SyncUserMappingsFromUsers creates user mappings for all discovered users that don't have one
-// Also populates source_org from user_org_memberships
+// Also populates source_org from user_org_memberships and source_id from the user
 func (d *Database) SyncUserMappingsFromUsers(ctx context.Context) (int64, error) {
 	// Find users without mappings and create mappings for them
 	// Also get the primary org (first alphabetically) from user_org_memberships
 	type userWithOrg struct {
+		SourceID   *int64 `gorm:"column:source_id"`
 		Login      string
 		Email      *string
 		Name       *string
-		PrimaryOrg *string
+		PrimaryOrg *string `gorm:"column:primary_org"`
 	}
 
 	var usersWithOrgs []userWithOrg
 	err := d.db.WithContext(ctx).
 		Raw(`
 			SELECT 
+				u.source_id,
 				u.login,
 				u.email,
 				u.name,
@@ -467,6 +493,7 @@ func (d *Database) SyncUserMappingsFromUsers(ctx context.Context) (int64, error)
 	now := time.Now()
 	for _, user := range usersWithOrgs {
 		mappings = append(mappings, &models.UserMapping{
+			SourceID:      user.SourceID, // Copy source_id for multi-source support
 			SourceLogin:   user.Login,
 			SourceEmail:   user.Email,
 			SourceName:    user.Name,

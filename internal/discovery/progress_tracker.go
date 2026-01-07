@@ -16,6 +16,10 @@ type ProgressTracker interface {
 	StartOrg(org string, index int)
 	// CompleteOrg signals that processing of an organization has completed
 	CompleteOrg(org string, repoCount int)
+	// SetCurrentOrg sets the current org being processed (without changing phase)
+	SetCurrentOrg(org string, index int)
+	// ClearCurrentOrg clears the current org (used during batch profiling across all orgs)
+	ClearCurrentOrg()
 	// SetTotalRepos sets the total number of repositories to process
 	SetTotalRepos(total int)
 	// AddRepos adds to the total repo count (for incremental discovery)
@@ -28,6 +32,8 @@ type ProgressTracker interface {
 	RecordError(err error)
 	// GetProgressID returns the ID of the progress record
 	GetProgressID() int64
+	// GetProgress returns the current progress snapshot
+	GetProgress() *models.DiscoveryProgress
 }
 
 // DBProgressTracker implements ProgressTracker using database storage
@@ -58,6 +64,15 @@ func (t *DBProgressTracker) GetProgressID() int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.progress.ID
+}
+
+// GetProgress returns a copy of the current progress state
+func (t *DBProgressTracker) GetProgress() *models.DiscoveryProgress {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// Return a copy to avoid race conditions
+	progressCopy := *t.progress
+	return &progressCopy
 }
 
 // SetTotalOrgs sets the total number of organizations to process
@@ -97,6 +112,32 @@ func (t *DBProgressTracker) CompleteOrg(org string, repoCount int) {
 
 	if err := t.db.UpdateDiscoveryProgress(t.progress); err != nil {
 		t.logger.Warn("Failed to update org completion", "error", err, "org", org)
+	}
+}
+
+// SetCurrentOrg sets the current org being processed (without changing phase)
+// This is useful during team/member discovery phase when we want to show which org
+// is being processed but don't want to reset the phase to listing_repos
+func (t *DBProgressTracker) SetCurrentOrg(org string, index int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.progress.CurrentOrg = org
+
+	if err := t.db.UpdateDiscoveryProgress(t.progress); err != nil {
+		t.logger.Warn("Failed to set current org", "error", err, "org", org)
+	}
+}
+
+// ClearCurrentOrg clears the current org (used during batch profiling across all orgs)
+func (t *DBProgressTracker) ClearCurrentOrg() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.progress.CurrentOrg = ""
+
+	if err := t.db.UpdateDiscoveryProgress(t.progress); err != nil {
+		t.logger.Warn("Failed to clear current org", "error", err)
 	}
 }
 
@@ -184,12 +225,15 @@ func (t *DBProgressTracker) Flush() {
 // NoOpProgressTracker is a no-op implementation for when progress tracking is disabled
 type NoOpProgressTracker struct{}
 
-func (NoOpProgressTracker) SetTotalOrgs(int)            {}
-func (NoOpProgressTracker) StartOrg(string, int)        {}
-func (NoOpProgressTracker) CompleteOrg(string, int)     {}
-func (NoOpProgressTracker) SetTotalRepos(int)           {}
-func (NoOpProgressTracker) AddRepos(int)                {}
-func (NoOpProgressTracker) IncrementProcessedRepos(int) {}
-func (NoOpProgressTracker) SetPhase(string)             {}
-func (NoOpProgressTracker) RecordError(error)           {}
-func (NoOpProgressTracker) GetProgressID() int64        { return 0 }
+func (NoOpProgressTracker) SetTotalOrgs(int)                       {}
+func (NoOpProgressTracker) StartOrg(string, int)                   {}
+func (NoOpProgressTracker) CompleteOrg(string, int)                {}
+func (NoOpProgressTracker) SetCurrentOrg(string, int)              {}
+func (NoOpProgressTracker) ClearCurrentOrg()                       {}
+func (NoOpProgressTracker) SetTotalRepos(int)                      {}
+func (NoOpProgressTracker) AddRepos(int)                           {}
+func (NoOpProgressTracker) IncrementProcessedRepos(int)            {}
+func (NoOpProgressTracker) SetPhase(string)                        {}
+func (NoOpProgressTracker) RecordError(error)                      {}
+func (NoOpProgressTracker) GetProgressID() int64                   { return 0 }
+func (NoOpProgressTracker) GetProgress() *models.DiscoveryProgress { return nil }

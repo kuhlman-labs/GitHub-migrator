@@ -14,8 +14,11 @@ import type {
 
 export const teamsApi = {
   // Teams
-  async list(organization?: string): Promise<GitHubTeam[]> {
-    const { data } = await client.get('/teams', { params: { organization } });
+  async list(organization?: string, sourceId?: number): Promise<GitHubTeam[]> {
+    const params: Record<string, string | number> = {};
+    if (organization) params.organization = organization;
+    if (sourceId !== undefined) params.source_id = sourceId;
+    const { data } = await client.get('/teams', { params });
     return data;
   },
 
@@ -36,8 +39,11 @@ export const teamsApi = {
     return data;
   },
 
-  async discover(organization: string) {
-    const { data } = await client.post('/teams/discover', { organization });
+  async discover(organization: string, sourceId?: number) {
+    const { data } = await client.post('/teams/discover', { 
+      organization,
+      source_id: sourceId,
+    });
     return data;
   },
 
@@ -45,6 +51,7 @@ export const teamsApi = {
   async listMappings(filters?: {
     source_org?: string;
     destination_org?: string;
+    source_id?: number;
     status?: string;
     has_destination?: boolean;
     search?: string;
@@ -55,9 +62,10 @@ export const teamsApi = {
     return data;
   },
 
-  async getMappingStats(organization?: string): Promise<TeamMappingStats> {
+  async getMappingStats(organization?: string, sourceId?: number): Promise<TeamMappingStats> {
     const params = new URLSearchParams();
     if (organization) params.append('organization', organization);
+    if (sourceId !== undefined) params.append('source_id', String(sourceId));
     const query = params.toString() ? `?${params.toString()}` : '';
     const { data } = await client.get(`/team-mappings/stats${query}`);
     return data;
@@ -100,7 +108,7 @@ export const teamsApi = {
     return data;
   },
 
-  async exportMappings(filters?: { status?: string; source_org?: string }): Promise<Blob> {
+  async exportMappings(filters?: { status?: string; source_org?: string; source_id?: number }): Promise<Blob> {
     const { data } = await client.get('/team-mappings/export', {
       params: filters,
       responseType: 'blob',

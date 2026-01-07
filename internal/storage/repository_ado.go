@@ -25,6 +25,44 @@ func (db *Database) GetADOProjects(ctx context.Context, organization string) ([]
 	return projects, nil
 }
 
+// GetADOProjectsFiltered retrieves ADO projects, optionally filtered by organization and source_id
+// This function queries the repositories table to find distinct ado_project values
+// that belong to the specified source, supporting multi-source environments.
+func (db *Database) GetADOProjectsFiltered(ctx context.Context, organization string, sourceID *int64) ([]models.ADOProject, error) {
+	// Query repositories to get distinct ADO projects for the specified source
+	query := db.db.WithContext(ctx).
+		Model(&models.Repository{}).
+		Select("DISTINCT ado_project as name, SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization").
+		Where("ado_project IS NOT NULL AND ado_project != ''")
+
+	if organization != "" {
+		query = query.Where("full_name LIKE ?", organization+"/%")
+	}
+
+	if sourceID != nil {
+		query = query.Where("source_id = ?", *sourceID)
+	}
+
+	var results []struct {
+		Name         string
+		Organization string
+	}
+	if err := query.Scan(&results).Error; err != nil {
+		return nil, fmt.Errorf("failed to get ADO projects filtered: %w", err)
+	}
+
+	// Convert to ADOProject models
+	projects := make([]models.ADOProject, 0, len(results))
+	for _, r := range results {
+		projects = append(projects, models.ADOProject{
+			Name:         r.Name,
+			Organization: r.Organization,
+		})
+	}
+
+	return projects, nil
+}
+
 // GetADOProject retrieves a specific ADO project by organization and name
 func (db *Database) GetADOProject(ctx context.Context, organization, projectName string) (*models.ADOProject, error) {
 	var project models.ADOProject
@@ -71,6 +109,32 @@ func (db *Database) CountRepositoriesByADOProject(ctx context.Context, organizat
 	err := query.Count(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to count repositories by ADO project: %w", err)
+	}
+
+	return int(count), nil
+}
+
+// CountRepositoriesByADOProjectFiltered counts repositories for a specific ADO project,
+// with optional source_id filtering for multi-source environments.
+func (db *Database) CountRepositoriesByADOProjectFiltered(ctx context.Context, organization, projectName string, sourceID *int64) (int, error) {
+	var count int64
+	query := db.db.WithContext(ctx).
+		Model(&models.Repository{}).
+		Where("ado_project = ?", projectName)
+
+	// Filter by organization to handle duplicate project names across different ADO orgs
+	if organization != "" {
+		query = query.Where("full_name LIKE ?", organization+"/%")
+	}
+
+	// Filter by source_id for multi-source support
+	if sourceID != nil {
+		query = query.Where("source_id = ?", *sourceID)
+	}
+
+	err := query.Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to count repositories by ADO project filtered: %w", err)
 	}
 
 	return int(count), nil

@@ -14,7 +14,6 @@ import (
 
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
-	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
@@ -162,7 +161,7 @@ type AuthorizationRulesData struct {
 	RequireEnterpriseAdmin      bool     `json:"require_enterprise_admin,omitempty"`      // Require GitHub Enterprise admin role
 	RequireEnterpriseMembership bool     `json:"require_enterprise_membership,omitempty"` // Require enterprise membership
 	EnterpriseSlug              string   `json:"enterprise_slug,omitempty"`               // Enterprise slug
-	PrivilegedTeams             []string `json:"privileged_teams,omitempty"`              // Privileged teams with full access
+	MigrationAdminTeams         []string `json:"migration_admin_teams,omitempty"`         // Teams with full migration access
 }
 
 type LoggingConfigData struct {
@@ -234,7 +233,7 @@ func (h *SetupHandler) ValidateSource(w http.ResponseWriter, r *http.Request) {
 
 	switch strings.ToLower(req.Type) {
 	case models.SourceTypeGitHub:
-		response = h.validateGitHub(ctx, req.BaseURL, req.Token)
+		response = ValidateGitHubConnection(ctx, req.BaseURL, req.Token, h.logger)
 	case models.SourceTypeAzureDevOps:
 		response = h.validateAzureDevOps(ctx, req.BaseURL, req.Token, req.Organization)
 	default:
@@ -254,7 +253,7 @@ func (h *SetupHandler) ValidateDestination(w http.ResponseWriter, r *http.Reques
 	}
 
 	ctx := r.Context()
-	response := h.validateGitHub(ctx, req.BaseURL, req.Token)
+	response := ValidateGitHubConnection(ctx, req.BaseURL, req.Token, h.logger)
 
 	h.sendJSON(w, http.StatusOK, response)
 }
@@ -329,52 +328,6 @@ func (h *SetupHandler) ApplySetup(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// validateGitHub validates a GitHub connection
-func (h *SetupHandler) validateGitHub(ctx context.Context, baseURL, token string) ValidationResponse {
-	response := ValidationResponse{Details: make(map[string]any)}
-
-	// Create temporary GitHub client
-	client, err := github.NewClient(github.ClientConfig{
-		BaseURL: baseURL,
-		Token:   token,
-		Timeout: 10 * time.Second,
-		Logger:  h.logger,
-	})
-	if err != nil {
-		response.Valid = false
-		response.Error = fmt.Sprintf("Failed to create GitHub client: %v", err)
-		return response
-	}
-
-	// Test connection by getting authenticated user
-	user, _, err := client.REST().Users.Get(ctx, "")
-	if err != nil {
-		response.Valid = false
-		response.Error = fmt.Sprintf("Failed to connect to GitHub: %v", err)
-		return response
-	}
-
-	response.Valid = true
-	response.Details["username"] = user.GetLogin()
-	response.Details["user_id"] = user.GetID()
-	response.Details["base_url"] = baseURL
-
-	// Check rate limit
-	rateLimits, _, err := client.REST().RateLimit.Get(ctx)
-	if err == nil && rateLimits != nil && rateLimits.Core != nil {
-		response.Details["rate_limit_remaining"] = rateLimits.Core.Remaining
-		response.Details["rate_limit_total"] = rateLimits.Core.Limit
-
-		// Warn if rate limit is low
-		if rateLimits.Core.Remaining < 100 {
-			response.Warnings = append(response.Warnings,
-				fmt.Sprintf("Low rate limit remaining: %d/%d", rateLimits.Core.Remaining, rateLimits.Core.Limit))
-		}
-	}
-
-	return response
-}
-
 // validateAzureDevOps validates an Azure DevOps connection
 func (h *SetupHandler) validateAzureDevOps(ctx context.Context, orgURL, token, organization string) ValidationResponse {
 	response := ValidationResponse{Details: make(map[string]any)}
@@ -437,10 +390,15 @@ func (h *SetupHandler) validateSQLitePath(dsn string) ValidationResponse {
 		response.Error = fmt.Sprintf("Invalid directory: %v", err)
 		return response
 	}
-	// Ensure absDir is strictly within absSafeBaseDir using filepath.Rel
+	// Ensure absDir is within absSafeBaseDir using filepath.Rel
 	// This is more robust than HasPrefix and handles symlinks better
 	rel, err := filepath.Rel(absSafeBaseDir, absDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".") {
+	// Reject if:
+	// - Error computing relative path
+	// - rel starts with ".." means absDir is outside absSafeBaseDir
+	// - rel contains "/.." means path traversal within the path
+	// Note: rel == "." is valid - it means the file is directly in the safe base directory
+	if err != nil || strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+"..") {
 		response.Valid = false
 		response.Error = fmt.Sprintf("Database directory must be inside %s", safeBaseDir)
 		return response
@@ -528,7 +486,15 @@ func (h *SetupHandler) generateEnvFile(cfg SetupConfig) string {
 }
 
 // writeSourceConfig writes source configuration to the env file
+// Skips writing if token is empty or a placeholder (sources are now configured via Sources page)
 func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigData) {
+	// Skip source config if no real token is provided
+	// Sources are now managed via the Sources page, not the initial setup
+	if src.Token == "" || src.Token == "placeholder" {
+		sb.WriteString("# Source configuration - configure via Sources page after setup\n\n")
+		return
+	}
+
 	sb.WriteString("# Source Repository System Configuration\n")
 	sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_TYPE=%s\n", src.Type))
 	sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_BASE_URL=%s\n", src.BaseURL))
@@ -552,7 +518,15 @@ func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigDa
 }
 
 // writeDestinationConfig writes destination configuration to the env file
+// Skips writing if token is empty or a placeholder (destination is now configured via Settings page)
 func (h *SetupHandler) writeDestinationConfig(sb *strings.Builder, dest DestinationConfigData) {
+	// Skip destination config if no real token is provided
+	// Destination is now managed via the Settings page, not the initial setup
+	if dest.Token == "" || dest.Token == "placeholder" {
+		sb.WriteString("# Destination configuration - configure via Settings page after setup\n\n")
+		return
+	}
+
 	sb.WriteString("# Destination Repository System Configuration\n")
 	sb.WriteString("GHMIG_DESTINATION_TYPE=github\n")
 	sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_BASE_URL=%s\n", dest.BaseURL))
@@ -698,9 +672,9 @@ func (h *SetupHandler) writeAuthorizationRules(sb *strings.Builder, rules *Autho
 		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG=%s\n", rules.EnterpriseSlug))
 	}
 
-	if len(rules.PrivilegedTeams) > 0 {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS=%s\n",
-			strings.Join(rules.PrivilegedTeams, ",")))
+	if len(rules.MigrationAdminTeams) > 0 {
+		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS=%s\n",
+			strings.Join(rules.MigrationAdminTeams, ",")))
 	}
 }
 

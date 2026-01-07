@@ -11,12 +11,15 @@ import { MigrationHistory } from './components/MigrationHistory';
 import { Dependencies } from './components/Dependencies';
 import { UserMappingTable } from './components/UserMapping';
 import { TeamMappingTable } from './components/TeamMapping';
+import { SourcesPage } from './components/Sources';
+import { SettingsPage } from './components/Settings';
 import { Navigation } from './components/common/Navigation';
 import { PageLayout } from './components/common/PageLayout';
 import { Login } from './components/Auth/Login';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { Setup } from './components/Setup';
 import { ToastProvider } from './contexts/ToastContext';
+import { SourceProvider } from './contexts/SourceContext';
 import { useSetupStatus } from './hooks/useQueries';
 
 const THEME_STORAGE_KEY = 'primer-theme-mode';
@@ -53,8 +56,10 @@ function App() {
                 <Route path="*" element={
                   <ProtectedRoute>
                     <SetupCheck>
-                      <Navigation />
-                      <ProtectedRoutes />
+                      <SourceProvider>
+                        <Navigation />
+                        <ProtectedRoutes />
+                      </SourceProvider>
                     </SetupCheck>
                   </ProtectedRoute>
                 } />
@@ -77,16 +82,28 @@ function SetupCheck({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  // Show loading state
+  // Show loading state (with retry happening in background)
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-        Loading...
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: '100vh',
+        gap: '16px'
+      }}>
+        <div>Loading...</div>
+        {isError && (
+          <div style={{ fontSize: '14px', color: 'var(--fgColor-muted)', textAlign: 'center', maxWidth: '400px' }}>
+            Connecting to server... (retrying)
+          </div>
+        )}
       </div>
     );
   }
 
-  // Redirect to setup if not complete or if we couldn't fetch status
+  // Redirect to setup if not complete or if we couldn't fetch status after all retries
   if (isError || !setupStatus?.setup_completed) {
     return <Navigate to="/setup" replace />;
   }
@@ -131,6 +148,8 @@ function ProtectedRoutes() {
       <Route path="/history" element={<PageLayout><MigrationHistory /></PageLayout>} />
       <Route path="/user-mappings" element={<PageLayout><UserMappingTable /></PageLayout>} />
       <Route path="/team-mappings" element={<PageLayout><TeamMappingTable /></PageLayout>} />
+      <Route path="/sources" element={<PageLayout><SourcesPage /></PageLayout>} />
+      <Route path="/settings" element={<PageLayout><SettingsPage /></PageLayout>} />
     </Routes>
   );
 }

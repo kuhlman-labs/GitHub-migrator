@@ -1,7 +1,9 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { TextInput } from '@primer/react';
-import { MarkGithubIcon, SearchIcon } from '@primer/octicons-react';
+import { MarkGithubIcon, SearchIcon, GearIcon } from '@primer/octicons-react';
+import { IconButton } from '@primer/react';
 import { UserProfile } from './UserProfile';
+import { SourceSelector } from './SourceSelector';
 
 export function Navigation() {
   const location = useLocation();
@@ -240,19 +242,36 @@ export function Navigation() {
               </div>
           </div>
           
-            {/* Navigation End */}
+            {/* Navigation End - Right Side Utilities */}
           <div className="flex items-center gap-4">
-            {/* Context-Aware Global Search */}
-            {searchContext.isSearchable && (
-              <TextInput
-                leadingVisual={SearchIcon}
-                placeholder={searchContext.placeholder}
-                value={currentSearch}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                style={{ width: 300 }}
-              />
-            )}
-            <UserProfile />
+            {/* Content Filters (always before utility icons) */}
+            <div className="flex items-center gap-3">
+              {/* Source Selector - content filter, shown before settings */}
+              <SourceSelector />
+              
+              {/* Context-Aware Global Search - content filter */}
+              {searchContext.isSearchable && (
+                <TextInput
+                  leadingVisual={SearchIcon}
+                  placeholder={searchContext.placeholder}
+                  value={currentSearch}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  style={{ width: 300 }}
+                />
+              )}
+            </div>
+            
+            {/* Utility Icons (fixed position on right) */}
+            <div className="flex items-center gap-2">
+              <Link to="/settings">
+                <IconButton 
+                  icon={GearIcon} 
+                  aria-label="Settings"
+                  variant="invisible"
+                />
+              </Link>
+              <UserProfile />
+            </div>
           </div>
         </div>
       </div>

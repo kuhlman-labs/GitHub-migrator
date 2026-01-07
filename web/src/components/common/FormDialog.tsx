@@ -14,6 +14,8 @@ export interface FormDialogProps {
   children: React.ReactNode;
   size?: 'small' | 'medium' | 'large';
   variant?: 'default' | 'primary' | 'danger';
+  /** Hide the footer buttons (use when the form content includes its own buttons) */
+  hideFooter?: boolean;
 }
 
 const sizeClasses = {
@@ -54,6 +56,7 @@ export function FormDialog({
   children,
   size = 'medium',
   variant = 'primary',
+  hideFooter = false,
 }: FormDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -151,21 +154,23 @@ export function FormDialog({
             <div className="p-4">{children}</div>
 
             {/* Footer */}
-            <div
-              className="px-4 py-3 border-t flex justify-end gap-2"
-              style={{ borderColor: 'var(--borderColor-default)' }}
-            >
-              <Button type="button" onClick={onCancel} disabled={isLoading}>
-                {cancelLabel}
-              </Button>
-              <Button
-                type="submit"
-                variant={variant}
-                disabled={isLoading || isSubmitDisabled}
+            {!hideFooter && (
+              <div
+                className="px-4 py-3 border-t flex justify-end gap-2"
+                style={{ borderColor: 'var(--borderColor-default)' }}
               >
-                {isLoading ? 'Loading...' : submitLabel}
-              </Button>
-            </div>
+                <Button type="button" onClick={onCancel} disabled={isLoading}>
+                  {cancelLabel}
+                </Button>
+                <Button
+                  type="submit"
+                  variant={variant}
+                  disabled={isLoading || isSubmitDisabled}
+                >
+                  {isLoading ? 'Loading...' : submitLabel}
+                </Button>
+              </div>
+            )}
           </form>
         </div>
       </div>

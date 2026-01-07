@@ -171,7 +171,7 @@ describe('AuthContext', () => {
       });
     });
 
-    it('should redirect to login URL', async () => {
+    it('should redirect to GitHub OAuth login URL', async () => {
       render(
         <TestWrapper>
           <TestComponent />
@@ -301,4 +301,3 @@ describe('AuthContext', () => {
     });
   });
 });
-

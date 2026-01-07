@@ -52,13 +52,16 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 		}
 	}
 
-	// For ADO repos, extract ONLY the repository name (last part)
-	// ADO full_name format: org/project/repo -> we want just "repo"
+	// For ADO repos, use project-repo pattern to avoid naming conflicts
+	// ADO full_name format: org/project/repo -> we want "project-repo"
+	// This preserves project context and prevents collisions between
+	// repos with the same name in different projects
 	if repo.ADOProject != nil && *repo.ADOProject != "" {
 		parts := strings.Split(repo.FullName, "/")
 		if len(parts) >= 3 {
-			// Return sanitized repo name (last part)
-			return sanitizeRepoName(parts[len(parts)-1])
+			project := sanitizeRepoName(parts[1])
+			repoName := sanitizeRepoName(parts[len(parts)-1])
+			return project + "-" + repoName
 		}
 	}
 
@@ -66,9 +69,14 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 	return sanitizeRepoName(repo.Name())
 }
 
-// sanitizeRepoName replaces spaces with hyphens for GitHub compatibility
+// sanitizeRepoName replaces slashes and spaces with hyphens for GitHub compatibility
+// GitHub repo names can only contain ASCII letters, digits, and ., -, _
 func sanitizeRepoName(name string) string {
-	return strings.ReplaceAll(name, " ", "-")
+	// Replace slashes with hyphens (for ADO project/repo paths)
+	name = strings.ReplaceAll(name, "/", "-")
+	// Replace spaces with hyphens
+	name = strings.ReplaceAll(name, " ", "-")
+	return name
 }
 
 // shouldExcludeReleases determines whether to exclude releases during migration
@@ -333,6 +341,13 @@ func (e *Executor) unlockSourceRepository(ctx context.Context, repo *models.Repo
 // This uses API-only calls to update basic repository information
 func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Repository) error {
 	e.logger.Info("Refreshing repository characteristics before migration", "repo", repo.FullName)
+
+	// For ADO sources, sourceClient is nil - skip GitHub-specific discovery
+	// ADO repositories don't support the same API calls for discovery
+	if e.sourceClient == nil {
+		e.logger.Debug("Skipping pre-migration discovery for non-GitHub source", "repo", repo.FullName)
+		return nil
+	}
 
 	// Get repository from source API
 	var sourceRepo *ghapi.Repository

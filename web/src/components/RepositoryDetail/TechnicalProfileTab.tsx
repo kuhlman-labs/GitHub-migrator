@@ -1,6 +1,7 @@
 import type { Repository } from '../../types';
 import { ProfileCard } from '../common/ProfileCard';
 import { ProfileItem } from '../common/ProfileItem';
+import { SourceBadge } from '../common/SourceBadge';
 import { formatBytes } from '../../utils/format';
 
 interface TechnicalProfileTabProps {
@@ -13,6 +14,12 @@ export function TechnicalProfileTab({ repository }: TechnicalProfileTabProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {/* Git Properties */}
       <ProfileCard title="Git Properties">
+        {repository.source_id && (
+          <ProfileItem 
+            label="Source" 
+            value={<SourceBadge sourceId={repository.source_id} size="small" showTooltip />}
+          />
+        )}
         <ProfileItem label="Default Branch" value={repository.default_branch} />
         <ProfileItem 
           label="Last Commit SHA" 

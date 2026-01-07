@@ -102,6 +102,46 @@ export const mockAuthConfig = {
   login_url: '/auth/github/login',
 };
 
+export const mockSources = [
+  {
+    id: 1,
+    name: 'GitHub Enterprise',
+    type: 'github',
+    base_url: 'https://github.company.com/api/v3',
+    is_active: true,
+    repository_count: 50,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export const mockSetupProgress = {
+  destination_configured: true,
+  sources_configured: true,
+  source_count: 1,
+  batches_created: false,
+  batch_count: 0,
+  setup_complete: true,
+};
+
+export const mockSettings = {
+  id: 1,
+  destination_base_url: 'https://api.github.com',
+  destination_token_configured: true,
+  destination_app_key_configured: false,
+  migration_workers: 5,
+  migration_poll_interval_seconds: 30,
+  migration_dest_repo_exists_action: 'fail',
+  migration_visibility_public: 'private',
+  migration_visibility_internal: 'private',
+  auth_enabled: false,
+  auth_session_secret_set: false,
+  auth_session_duration_hours: 24,
+  auth_frontend_url: 'http://localhost:3000',
+  destination_configured: true,
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
 // Request handlers
 export const handlers = [
   // Analytics endpoints
@@ -187,6 +227,32 @@ export const handlers = [
   // Teams endpoint
   http.get(`${API_BASE}/teams`, () => {
     return HttpResponse.json([]);
+  }),
+
+  // Sources endpoints
+  http.get(`${API_BASE}/sources`, () => {
+    return HttpResponse.json(mockSources);
+  }),
+
+  http.get(`${API_BASE}/sources/:id`, ({ params }) => {
+    const source = mockSources.find((s) => s.id === Number(params.id));
+    if (source) {
+      return HttpResponse.json(source);
+    }
+    return new HttpResponse(null, { status: 404 });
+  }),
+
+  // Settings endpoints
+  http.get(`${API_BASE}/settings`, () => {
+    return HttpResponse.json(mockSettings);
+  }),
+
+  http.get(`${API_BASE}/settings/setup-progress`, () => {
+    return HttpResponse.json(mockSetupProgress);
+  }),
+
+  http.put(`${API_BASE}/settings`, () => {
+    return HttpResponse.json(mockSettings);
   }),
 ];
 

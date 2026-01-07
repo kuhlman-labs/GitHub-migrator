@@ -83,33 +83,5 @@ describe('DependencyFilters', () => {
     const searchInput = screen.getByPlaceholderText('Search repositories...');
     expect(searchInput).toHaveValue('my-search');
   });
-
-  // Skip: Style assertions are brittle with CSS-in-JS and may not reflect computed styles in jsdom
-  it.skip('highlights selected filter button', () => {
-    render(<DependencyFilters {...defaultProps} typeFilter="workflow" />);
-
-    const workflowButton = screen.getByRole('button', { name: 'Workflow' });
-    const allTypesButton = screen.getByRole('button', { name: 'All Types' });
-
-    // Workflow should be highlighted (purple #8250DF)
-    expect(workflowButton).toHaveStyle('background-color: #8250DF');
-    expect(workflowButton).toHaveStyle('color: #ffffff');
-
-    // All Types should not be highlighted
-    expect(allTypesButton).not.toHaveStyle('background-color: #2da44e');
-  });
-
-  // Skip: Style assertions are brittle with CSS-in-JS and may not reflect computed styles in jsdom
-  it.skip('updates highlighted button when filter changes', () => {
-    const { rerender } = render(<DependencyFilters {...defaultProps} typeFilter="all" />);
-
-    const allTypesButton = screen.getByRole('button', { name: 'All Types' });
-    expect(allTypesButton).toHaveStyle('background-color: #2da44e');
-
-    rerender(<DependencyFilters {...defaultProps} typeFilter="package" />);
-
-    const packageButton = screen.getByRole('button', { name: 'Package' });
-    expect(packageButton).toHaveStyle('background-color: #656D76');
-  });
 });
 

@@ -110,10 +110,16 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 			oldStatus := batch.Status
 			batch.Status = newStatus
 
-			// Track dry run completion: when batch transitions from in_progress to ready
-			// and dry run was started (DryRunStartedAt is set), record completion time
-			if oldStatus == models.BatchStatusInProgress && newStatus == models.BatchStatusReady {
-				if batch.DryRunStartedAt != nil && batch.DryRunCompletedAt == nil {
+			// Track dry run completion: when batch was doing a dry run (DryRunStartedAt set,
+			// StartedAt not set) and transitions out of in_progress to any non-in_progress state.
+			// This handles:
+			// - Successful dry runs (in_progress → ready)
+			// - Failed dry runs (in_progress → completed_with_errors)
+			// - Dry runs with some failures (in_progress → ready with some failed repos)
+			if oldStatus == models.BatchStatusInProgress && newStatus != models.BatchStatusInProgress {
+				// Only set dry run completion if this was a dry run (DryRunStartedAt set, StartedAt not set)
+				isDryRunPhase := batch.DryRunStartedAt != nil && batch.StartedAt == nil
+				if isDryRunPhase && batch.DryRunCompletedAt == nil {
 					now := time.Now()
 					batch.DryRunCompletedAt = &now
 
@@ -126,6 +132,7 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 						su.logger.Info("Batch dry run completed",
 							"batch_id", batch.ID,
 							"batch_name", batch.Name,
+							"new_status", newStatus,
 							"started_at", batch.DryRunStartedAt.Format(time.RFC3339),
 							"completed_at", batch.DryRunCompletedAt.Format(time.RFC3339),
 							"duration_seconds", durationSeconds,
@@ -134,8 +141,10 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 				}
 			}
 
-			// Set completion time if batch is now complete
-			if isTerminalStatus(newStatus) && batch.CompletedAt == nil {
+			// Set completion time ONLY when batch fully completes with all repos successful.
+			// For failed or completed_with_errors batches, we don't set CompletedAt because
+			// the user may want to retry failed repos.
+			if newStatus == models.BatchStatusCompleted && batch.CompletedAt == nil {
 				now := time.Now()
 				batch.CompletedAt = &now
 
@@ -143,7 +152,7 @@ func (su *StatusUpdater) updateBatchStatuses(ctx context.Context) {
 				if batch.StartedAt != nil {
 					duration := batch.Duration()
 					if duration != nil {
-						su.logger.Info("Batch completed",
+						su.logger.Info("Batch completed successfully",
 							"batch_id", batch.ID,
 							"batch_name", batch.Name,
 							"status", newStatus,

@@ -186,5 +186,63 @@ describe('BatchRepositoryItem', () => {
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('href', '/repository/org%2Frepo1');
   });
+
+  describe('ADO repository naming', () => {
+    const mockADORepository: Repository = {
+      ...mockRepository,
+      id: 2,
+      full_name: 'brettkuhlman/DevOps/Terraform',
+      name: 'Terraform',
+      source: 'azuredevops',
+      ado_project: 'DevOps',
+    };
+
+    it('shows batch default with project-repo pattern for ADO repos', () => {
+      render(
+        <BatchRepositoryItem
+          repository={mockADORepository}
+          batch={mockBatch}
+        />
+      );
+
+      // ADO repos should use project-repo pattern: dest-org/DevOps-Terraform
+      expect(screen.getByText('dest-org/DevOps-Terraform')).toBeInTheDocument();
+      expect(screen.getByText('Batch Default')).toBeInTheDocument();
+    });
+
+    it('shows custom destination when set for ADO repo', () => {
+      const adoWithCustomDestination: Repository = {
+        ...mockADORepository,
+        destination_full_name: 'custom-org/my-terraform',
+      };
+
+      render(
+        <BatchRepositoryItem
+          repository={adoWithCustomDestination}
+          batch={mockBatch}
+        />
+      );
+
+      expect(screen.getByText('custom-org/my-terraform')).toBeInTheDocument();
+      expect(screen.getByText('Custom')).toBeInTheDocument();
+    });
+
+    it('shows batch default when ADO repo destination matches computed default', () => {
+      const adoWithBatchDefault: Repository = {
+        ...mockADORepository,
+        destination_full_name: 'dest-org/DevOps-Terraform',
+      };
+
+      render(
+        <BatchRepositoryItem
+          repository={adoWithBatchDefault}
+          batch={mockBatch}
+        />
+      );
+
+      expect(screen.getByText('dest-org/DevOps-Terraform')).toBeInTheDocument();
+      expect(screen.getByText('Batch Default')).toBeInTheDocument();
+    });
+  });
 });
 

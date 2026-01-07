@@ -45,6 +45,7 @@ type Repository struct {
 	FullName  string `json:"full_name" db:"full_name" gorm:"column:full_name;uniqueIndex;not null"` // org/repo
 	Source    string `json:"source" db:"source" gorm:"column:source;not null"`                      // "ghes", "gitlab", etc.
 	SourceURL string `json:"source_url" db:"source_url" gorm:"column:source_url;not null"`
+	SourceID  *int64 `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table
 
 	// Git properties
 	TotalSize          *int64     `json:"total_size,omitempty" db:"total_size" gorm:"column:total_size"`
@@ -549,6 +550,39 @@ func (r *Repository) Name() string {
 	return r.FullName
 }
 
+// DestinationRepoName returns the appropriate destination repository name for GitHub.
+// For ADO repos (org/project/repo format), returns "project-repo" pattern to preserve
+// project context and avoid naming conflicts.
+// For GitHub repos (org/repo format), returns just the repo name.
+// Spaces and slashes are replaced with hyphens for GitHub compatibility.
+func (r *Repository) DestinationRepoName() string {
+	// For ADO repos, use project-repo pattern
+	if r.ADOProject != nil && *r.ADOProject != "" {
+		parts := strings.Split(r.FullName, "/")
+		if len(parts) >= 3 {
+			project := sanitizeRepoName(parts[1])
+			repoName := sanitizeRepoName(parts[len(parts)-1])
+			return project + "-" + repoName
+		}
+	}
+
+	// For GitHub repos (org/repo format), use just the repo name
+	parts := strings.Split(r.FullName, "/")
+	if len(parts) >= 2 {
+		return sanitizeRepoName(parts[len(parts)-1])
+	}
+
+	// Fallback: sanitize the full name
+	return sanitizeRepoName(r.FullName)
+}
+
+// sanitizeRepoName replaces slashes and spaces with hyphens for GitHub compatibility
+func sanitizeRepoName(name string) string {
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, " ", "-")
+	return name
+}
+
 // RepositoryDependency represents a dependency relationship between repositories
 // Used for batch planning to understand which repositories should be migrated together
 type RepositoryDependency struct {
@@ -579,6 +613,7 @@ const (
 // Teams are org-scoped, so the same team name can exist in different organizations
 type GitHubTeam struct {
 	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID     *int64    `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
 	Organization string    `json:"organization" db:"organization" gorm:"column:organization;not null;uniqueIndex:idx_github_teams_org_slug"`
 	Slug         string    `json:"slug" db:"slug" gorm:"column:slug;not null;uniqueIndex:idx_github_teams_org_slug"`
 	Name         string    `json:"name" db:"name" gorm:"column:name;not null"`
@@ -630,6 +665,7 @@ func (GitHubTeamMember) TableName() string {
 // Used for user identity mapping and mannequin reclaim
 type GitHubUser struct {
 	ID             int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID       *int64    `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
 	Login          string    `json:"login" db:"login" gorm:"column:login;not null;uniqueIndex"`
 	Name           *string   `json:"name,omitempty" db:"name" gorm:"column:name"`
 	Email          *string   `json:"email,omitempty" db:"email" gorm:"column:email;index"`
@@ -689,6 +725,7 @@ const (
 // UserMapping maps a source user to a destination user for mannequin reclaim
 type UserMapping struct {
 	ID               int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID         *int64    `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
 	SourceLogin      string    `json:"source_login" db:"source_login" gorm:"column:source_login;not null;uniqueIndex"`
 	SourceEmail      *string   `json:"source_email,omitempty" db:"source_email" gorm:"column:source_email;index"`
 	SourceName       *string   `json:"source_name,omitempty" db:"source_name" gorm:"column:source_name"`
@@ -714,6 +751,7 @@ func (UserMapping) TableName() string {
 // TeamMapping maps a source team to a destination team
 type TeamMapping struct {
 	ID                  int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID            *int64     `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
 	SourceOrg           string     `json:"source_org" db:"source_org" gorm:"column:source_org;not null;uniqueIndex:idx_team_mapping_source"`
 	SourceTeamSlug      string     `json:"source_team_slug" db:"source_team_slug" gorm:"column:source_team_slug;not null;uniqueIndex:idx_team_mapping_source"`
 	SourceTeamName      *string    `json:"source_team_name,omitempty" db:"source_team_name" gorm:"column:source_team_name"`
@@ -779,11 +817,13 @@ func (t *TeamMapping) DestinationFullSlug() string {
 
 // Discovery progress phase constants
 const (
-	PhaseListingRepos       = "listing_repos"
-	PhaseProfilingRepos     = "profiling_repos"
-	PhaseDiscoveringTeams   = "discovering_teams"
-	PhaseDiscoveringMembers = "discovering_members"
-	PhaseCompleted          = "completed"
+	PhaseListingRepos        = "listing_repos"
+	PhaseProfilingRepos      = "profiling_repos"
+	PhaseDiscoveringTeams    = "discovering_teams"
+	PhaseDiscoveringMembers  = "discovering_members"
+	PhaseWaitingForRateLimit = "waiting_for_rate_limit"
+	PhaseCancelling          = "cancelling"
+	PhaseCompleted           = "completed"
 )
 
 // Discovery progress status constants
@@ -791,6 +831,7 @@ const (
 	DiscoveryStatusInProgress = "in_progress"
 	DiscoveryStatusCompleted  = "completed"
 	DiscoveryStatusFailed     = "failed"
+	DiscoveryStatusCancelled  = "cancelled"
 )
 
 // Discovery type constants
@@ -798,6 +839,9 @@ const (
 	DiscoveryTypeEnterprise   = "enterprise"
 	DiscoveryTypeOrganization = "organization"
 	DiscoveryTypeRepository   = "repository"
+	// ADO discovery types
+	DiscoveryTypeADOOrganization = "ado_organization"
+	DiscoveryTypeADOProject      = "ado_project"
 )
 
 // DiscoveryProgress tracks the progress of a discovery operation

@@ -12,6 +12,8 @@ interface DependencyExportProps {
   filteredEdges: DependencyGraphEdge[];
   hasActiveFilters: boolean;
   hasFilteredData: boolean;
+  sourceId?: number;
+  sourceName?: string;
 }
 
 export function DependencyExport({
@@ -19,19 +21,22 @@ export function DependencyExport({
   filteredEdges,
   hasActiveFilters,
   hasFilteredData,
+  sourceId,
+  sourceName,
 }: DependencyExportProps) {
   const { showError } = useToast();
   const [exporting, setExporting] = useState(false);
+  const sourceSuffix = sourceName ? `_${sourceName.replace(/\s+/g, '_')}` : '';
 
-  // Export all dependencies from API (no filters applied)
+  // Export all dependencies from API (filtered by source if selected)
   const handleExportAll = async (format: 'csv' | 'json') => {
     try {
       setExporting(true);
-      const blob = await api.exportDependencies(format);
+      const blob = await api.exportDependencies(format, { source_id: sourceId });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `dependencies-all.${format}`;
+      link.download = `dependencies-all${sourceSuffix}.${format}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -102,11 +107,11 @@ export function DependencyExport({
       });
       content = csvRows.join('\n');
       mimeType = 'text/csv';
-      filename = 'dependencies-summary.csv';
+      filename = `dependencies-summary${sourceSuffix}.csv`;
     } else {
       content = JSON.stringify(exportRows, null, 2);
       mimeType = 'application/json';
-      filename = 'dependencies-summary.json';
+      filename = `dependencies-summary${sourceSuffix}.json`;
     }
 
     const blob = new Blob([content], { type: mimeType });

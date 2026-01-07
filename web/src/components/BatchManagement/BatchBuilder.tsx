@@ -15,6 +15,7 @@ import { ImportPreview, type ValidationGroup } from './ImportPreview';
 import { BatchMetadataForm } from './BatchMetadataForm';
 import { BatchSummaryPanel } from './BatchSummaryPanel';
 import type { ImportParseResult } from '../../utils/import';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 interface BatchBuilderProps {
   batch?: Batch; // If provided, we're editing; otherwise creating
@@ -30,6 +31,7 @@ interface BatchResponse extends Batch {
 
 export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const isEditMode = !!batch;
+  const { activeSource } = useSourceContext();
 
   // Batch metadata - ensure all inputs start with defined values (never undefined)
   const [batchName, setBatchName] = useState('');
@@ -47,8 +49,12 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
 
   // Repository lists
   const [availableRepos, setAvailableRepos] = useState<Repository[]>([]);
-  const [selectedRepoIds, setSelectedRepoIds] = useState<Set<number>>(new Set());
+  // Map of selected repository ID -> Repository object (preserves data across page changes)
+  const [selectedReposMap, setSelectedReposMap] = useState<Map<number, Repository>>(new Map());
   const [currentBatchRepos, setCurrentBatchRepos] = useState<Repository[]>([]);
+  
+  // Derived set of selected IDs for efficient lookup
+  const selectedRepoIds = new Set(selectedReposMap.keys());
 
   // Filters and pagination
   const [filters, setFilters] = useState<RepositoryFilters>({
@@ -141,8 +147,9 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         const repos = batchResp.repositories;
         if (repos && Array.isArray(repos)) {
           setCurrentBatchRepos(repos);
-          const repoIds = repos.map((r: Repository) => r.id);
-          setSelectedRepoIds(new Set(repoIds));
+          // Build map from repos for edit mode (these are already in the batch, not "selected")
+          // Actually, in edit mode we don't need to select them - they're already in currentBatchRepos
+          setSelectedReposMap(new Map());
         } else {
           loadCurrentBatchRepos();
         }
@@ -151,11 +158,11 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, batch]);
 
-  // Load available repositories
+  // Load available repositories when filters or active source changes
   useEffect(() => {
     loadAvailableRepos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters, activeSource?.id]);
 
   const loadCurrentBatchRepos = async () => {
     // Handle nested batch structure
@@ -172,10 +179,8 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       // Ensure we only set repositories that belong to this batch
       const repos = Array.isArray(response) ? response : (response.repositories || []);
       setCurrentBatchRepos(repos);
-      
-      // Auto-select these repositories
-      const repoIds = repos.map(r => r.id);
-      setSelectedRepoIds(new Set(repoIds));
+      // In edit mode, repos are already in the batch - no need to select them
+      setSelectedReposMap(new Map());
     } catch {
       setCurrentBatchRepos([]);
     }
@@ -184,7 +189,12 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const loadAvailableRepos = async () => {
     setAvailableLoading(true);
     try {
-      const response = await api.listRepositories(filters);
+      // Include source_id filter if a specific source is selected
+      const filtersWithSource = {
+        ...filters,
+        ...(activeSource?.id ? { source_id: activeSource.id } : {}),
+      };
+      const response = await api.listRepositories(filtersWithSource);
       const repos = Array.isArray(response) ? response : (response.repositories || []);
       
       // Always update repos
@@ -219,13 +229,13 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
   const handleFilterChange = (newFilters: RepositoryFilters) => {
     setFilters({ ...newFilters, available_for_batch: true, limit: 50, offset: 0 });
     setCurrentPage(1);
-    setSelectedRepoIds(new Set()); // Clear selections when filters change
+    setSelectedReposMap(new Map()); // Clear selections when filters change
   };
 
   const handleClearFilters = () => {
     setFilters({ available_for_batch: true, limit: 50, offset: 0 });
     setCurrentPage(1);
-    setSelectedRepoIds(new Set()); // Clear selections when filters clear
+    setSelectedReposMap(new Map()); // Clear selections when filters clear
   };
 
   const handleRemoveFilter = (filterKey: keyof RepositoryFilters) => {
@@ -255,40 +265,53 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
         offset: 0,
       });
       setCurrentPage(1);
-      setSelectedRepoIds(new Set()); // Clear selections when quick filter changes
+      setSelectedReposMap(new Map()); // Clear selections when quick filter changes
     }
   };
 
   const handleToggleRepo = (repoId: number) => {
-    const newSelected = new Set(selectedRepoIds);
+    const newSelected = new Map(selectedReposMap);
     if (newSelected.has(repoId)) {
       newSelected.delete(repoId);
     } else {
-      newSelected.add(repoId);
+      // Find the repo in availableRepos and store the full object
+      const repo = availableRepos.find(r => r.id === repoId);
+      if (repo) {
+        newSelected.set(repoId, repo);
+      }
     }
-    setSelectedRepoIds(newSelected);
+    setSelectedReposMap(newSelected);
   };
 
   const handleToggleAllInGroup = (repoIds: number[]) => {
-    const newSelected = new Set(selectedRepoIds);
+    const newSelected = new Map(selectedReposMap);
     const allSelected = repoIds.every((id) => newSelected.has(id));
     
     if (allSelected) {
       repoIds.forEach((id) => newSelected.delete(id));
     } else {
-      repoIds.forEach((id) => newSelected.add(id));
+      // Add all repos from the group, finding each in availableRepos
+      repoIds.forEach((id) => {
+        if (!newSelected.has(id)) {
+          const repo = availableRepos.find(r => r.id === id);
+          if (repo) {
+            newSelected.set(id, repo);
+          }
+        }
+      });
     }
     
-    setSelectedRepoIds(newSelected);
+    setSelectedReposMap(newSelected);
   };
 
   const handleAddSelected = async () => {
-    if (selectedRepoIds.size === 0) return;
+    if (selectedReposMap.size === 0) return;
 
-    const selectedRepos = availableRepos.filter((r) => selectedRepoIds.has(r.id));
+    // Get all selected repos from the map (works across pages!)
+    const selectedRepos = Array.from(selectedReposMap.values());
     const newBatchRepos = [...currentBatchRepos, ...selectedRepos];
     setCurrentBatchRepos(newBatchRepos);
-    setSelectedRepoIds(new Set());
+    setSelectedReposMap(new Map()); // Clear all selections
     
     // Check if all non-added repos on current page were selected
     const addedIds = new Set(newBatchRepos.map(r => r.id));
@@ -315,7 +338,10 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
     
     try {
       // Fetch all repositories matching the filters (without pagination)
-      const filtersWithoutPagination = { ...filters };
+      const filtersWithoutPagination = { 
+        ...filters,
+        ...(activeSource?.id ? { source_id: activeSource.id } : {}),
+      };
       delete filtersWithoutPagination.limit;
       delete filtersWithoutPagination.offset;
       
@@ -328,7 +354,7 @@ export function BatchBuilder({ batch, onClose, onSuccess }: BatchBuilderProps) {
       // Add all new repos to the batch
       const updatedBatch = [...currentBatchRepos, ...newRepos];
       setCurrentBatchRepos(updatedBatch);
-      setSelectedRepoIds(new Set());
+      setSelectedReposMap(new Map()); // Clear selections after adding all
       
       // Reload the current page to show updated state
     await loadAvailableRepos();

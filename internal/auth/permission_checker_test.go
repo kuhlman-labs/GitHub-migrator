@@ -76,7 +76,7 @@ func TestPermissionChecker_HasFullAccess_PrivilegedTeam(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			PrivilegedTeams: []string{"test-org/admin-team"},
+			MigrationAdminTeams: []string{"test-org/admin-team"},
 		},
 	}
 

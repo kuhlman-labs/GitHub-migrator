@@ -1,8 +1,24 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '../../__tests__/test-utils';
 import { Dashboard } from './index';
 import * as useQueriesModule from '../../hooks/useQueries';
 import * as useMutationsModule from '../../hooks/useMutations';
+import * as SourceContextModule from '../../contexts/SourceContext';
+
+// Mock the SourceContext
+vi.mock('../../contexts/SourceContext', () => ({
+  useSourceContext: vi.fn(() => ({
+    sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
+    activeSourceFilter: 'all',
+    setActiveSourceFilter: vi.fn(),
+    activeSource: null,
+    isLoading: false,
+    error: null,
+    refetchSources: vi.fn(),
+  })),
+  SourceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 // Mock the hooks
 vi.mock('../../hooks/useQueries', () => ({
@@ -12,11 +28,13 @@ vi.mock('../../hooks/useQueries', () => ({
   useBatches: vi.fn(),
   useDashboardActionItems: vi.fn(),
   useDiscoveryProgress: vi.fn(),
+  useSetupProgress: vi.fn(),
 }));
 
 vi.mock('../../hooks/useMutations', () => ({
   useStartDiscovery: vi.fn(),
   useStartADODiscovery: vi.fn(),
+  useCancelDiscovery: vi.fn(),
 }));
 
 // Mock child components to simplify testing
@@ -69,6 +87,21 @@ vi.mock('./ADOOrganizationCard', () => ({
   ),
 }));
 
+vi.mock('./SetupProgress', () => ({
+  SetupProgress: () => (
+    <div data-testid="setup-progress">Setup Progress</div>
+  ),
+}));
+
+// Mock localStorage
+const localStorageMock = {
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+};
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+
 describe('Dashboard', () => {
   const mockOrganizations = [
     { organization: 'org1', total_repos: 50 },
@@ -98,6 +131,17 @@ describe('Dashboard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    
+    // Reset SourceContext mock to default GitHub source
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
+      activeSourceFilter: 'all',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: null,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
+    });
     
     // Setup default mock implementations
     (useQueriesModule.useConfig as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -131,6 +175,17 @@ describe('Dashboard', () => {
     (useQueriesModule.useDiscoveryProgress as ReturnType<typeof vi.fn>).mockReturnValue({
       data: null,
     });
+
+    (useQueriesModule.useSetupProgress as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        destination_configured: true,
+        sources_configured: true,
+        source_count: 1,
+        batches_created: false,
+        batch_count: 0,
+        setup_complete: true,
+      },
+    });
     
     (useMutationsModule.useStartDiscovery as ReturnType<typeof vi.fn>).mockReturnValue({
       mutateAsync: vi.fn(),
@@ -139,6 +194,11 @@ describe('Dashboard', () => {
     
     (useMutationsModule.useStartADODiscovery as ReturnType<typeof vi.fn>).mockReturnValue({
       mutateAsync: vi.fn(),
+      isPending: false,
+    });
+
+    (useMutationsModule.useCancelDiscovery as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: vi.fn(),
       isPending: false,
     });
   });
@@ -193,8 +253,15 @@ describe('Dashboard', () => {
   });
 
   it('should render Azure DevOps organizations section for azuredevops source', async () => {
-    (useQueriesModule.useConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-      data: { source_type: 'azuredevops' },
+    // Mock SourceContext with ADO sources
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [{ id: 1, name: 'ADO Source', type: 'azuredevops' }],
+      activeSourceFilter: 'all',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: null,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
     });
     
     // Mock organizations with ADO data
@@ -270,6 +337,19 @@ describe('Dashboard', () => {
   });
 
   it('should show organization count and repo totals', async () => {
+    const githubSource = { id: 1, name: 'GitHub Source', type: 'github' as const };
+    
+    // Set activeSource to trigger pagination display
+    (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      sources: [githubSource],
+      activeSourceFilter: '1',
+      setActiveSourceFilter: vi.fn(),
+      activeSource: githubSource,
+      isLoading: false,
+      error: null,
+      refetchSources: vi.fn(),
+    });
+    
     render(<Dashboard />);
     
     await waitFor(() => {

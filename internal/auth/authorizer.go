@@ -19,6 +19,35 @@ const (
 	membershipRoleAdmin     = "admin"
 )
 
+// AuthorizationTier represents the user's authorization level for migrations
+type AuthorizationTier string
+
+const (
+	// TierAdmin grants full migration rights (enterprise admin, org admin, or migration team member)
+	TierAdmin AuthorizationTier = "admin"
+	// TierSelfService allows users to migrate repos where their mapped source identity has admin access
+	TierSelfService AuthorizationTier = "self_service"
+	// TierReadOnly allows users to view but not initiate migrations
+	TierReadOnly AuthorizationTier = "read_only"
+)
+
+// AuthorizationTierInfo contains detailed information about a user's authorization tier
+type AuthorizationTierInfo struct {
+	Tier        AuthorizationTier `json:"tier"`
+	TierName    string            `json:"tier_name"`
+	Permissions TierPermissions   `json:"permissions"`
+	Reason      string            `json:"reason"`
+}
+
+// TierPermissions defines what actions are allowed for each tier
+type TierPermissions struct {
+	CanViewRepos       bool `json:"can_view_repos"`
+	CanMigrateOwnRepos bool `json:"can_migrate_own_repos"`
+	CanMigrateAllRepos bool `json:"can_migrate_all_repos"`
+	CanManageBatches   bool `json:"can_manage_batches"`
+	CanManageSources   bool `json:"can_manage_sources"`
+}
+
 // Authorizer handles user authorization checks
 type Authorizer struct {
 	config  *config.AuthConfig
@@ -718,4 +747,150 @@ func (a *Authorizer) GetUserOrganizations(ctx context.Context, token string) ([]
 	a.logger.Debug("Found user organizations", "count", len(orgs))
 
 	return orgs, nil
+}
+
+// GetUserAuthorizationTier determines the user's authorization tier based on destination permissions
+// This is the core of the destination-centric authorization model
+func (a *Authorizer) GetUserAuthorizationTier(ctx context.Context, user *GitHubUser, token string) (*AuthorizationTierInfo, error) {
+	rules := a.config.AuthorizationRules
+
+	// Check for Tier 1: Full Migration Rights
+
+	// Check if user is an enterprise admin on the destination
+	if rules.AllowEnterpriseAdminMigrations && rules.RequireEnterpriseSlug != "" {
+		isAdmin, err := a.CheckEnterpriseAdmin(ctx, user.Login, rules.RequireEnterpriseSlug, token)
+		if err != nil {
+			a.logger.Warn("Failed to check enterprise admin status", "user", user.Login, "error", err)
+		} else if isAdmin {
+			a.logger.Info("User has admin tier as enterprise admin", "user", user.Login)
+			return &AuthorizationTierInfo{
+				Tier:     TierAdmin,
+				TierName: "Full Migration Rights",
+				Permissions: TierPermissions{
+					CanViewRepos:       true,
+					CanMigrateOwnRepos: true,
+					CanMigrateAllRepos: true,
+					CanManageBatches:   true,
+					CanManageSources:   true,
+				},
+				Reason: "Enterprise administrator",
+			}, nil
+		}
+	}
+
+	// Check if user is a member of a migration admin team
+	if len(rules.MigrationAdminTeams) > 0 {
+		isMember, err := a.CheckTeamMembership(ctx, user.Login, rules.MigrationAdminTeams, token)
+		if err != nil {
+			a.logger.Warn("Failed to check migration admin team membership", "user", user.Login, "error", err)
+		} else if isMember {
+			a.logger.Info("User has admin tier as migration team member", "user", user.Login)
+			return &AuthorizationTierInfo{
+				Tier:     TierAdmin,
+				TierName: "Full Migration Rights",
+				Permissions: TierPermissions{
+					CanViewRepos:       true,
+					CanMigrateOwnRepos: true,
+					CanMigrateAllRepos: true,
+					CanManageBatches:   true,
+					CanManageSources:   true,
+				},
+				Reason: "Migration admin team member",
+			}, nil
+		}
+	}
+
+	// Check if user is an org admin on the destination (check all orgs they're in)
+	if rules.AllowOrgAdminMigrations {
+		orgs, err := a.GetUserOrganizations(ctx, token)
+		if err != nil {
+			a.logger.Warn("Failed to get user organizations", "user", user.Login, "error", err)
+		} else {
+			for _, org := range orgs {
+				isAdmin, err := a.IsOrgAdmin(ctx, user.Login, org, token)
+				if err != nil {
+					a.logger.Warn("Failed to check org admin status", "user", user.Login, "org", org, "error", err)
+					continue
+				}
+				if isAdmin {
+					a.logger.Info("User has admin tier as org admin", "user", user.Login, "org", org)
+					return &AuthorizationTierInfo{
+						Tier:     TierAdmin,
+						TierName: "Full Migration Rights",
+						Permissions: TierPermissions{
+							CanViewRepos:       true,
+							CanMigrateOwnRepos: true,
+							CanMigrateAllRepos: true,
+							CanManageBatches:   true,
+							CanManageSources:   true,
+						},
+						Reason: fmt.Sprintf("Organization administrator (%s)", org),
+					}, nil
+				}
+			}
+		}
+	}
+
+	// Tier 2: Self-Service - requires EnableSelfService=true AND completed identity mapping
+	// The actual identity mapping check is done in handler_utils.GetUserAuthorizationStatus
+	// which will upgrade ReadOnly to SelfService if the user has completed identity mapping.
+	//
+	// When EnableSelfService is:
+	// - false: Self-service is DISABLED. Only admins can migrate. Users are ReadOnly.
+	// - true: Self-service is ENABLED via identity mapping. Users start as ReadOnly
+	//         and can upgrade to SelfService by completing identity mapping.
+	if !rules.EnableSelfService {
+		// Self-service is disabled - only admins can migrate
+		a.logger.Debug("User has read-only tier (self-service disabled)", "user", user.Login)
+		return &AuthorizationTierInfo{
+			Tier:     TierReadOnly,
+			TierName: "Read-Only",
+			Permissions: TierPermissions{
+				CanViewRepos:       true,
+				CanMigrateOwnRepos: false,
+				CanMigrateAllRepos: false,
+				CanManageBatches:   false,
+				CanManageSources:   false,
+			},
+			Reason: "Self-service migrations are disabled; contact an administrator",
+		}, nil
+	}
+
+	// Self-service is enabled - user needs to complete identity mapping to upgrade
+	// The actual mapping check happens in handler_utils.GetUserAuthorizationStatus
+	a.logger.Debug("User has read-only tier (identity mapping required for self-service)", "user", user.Login)
+	return &AuthorizationTierInfo{
+		Tier:     TierReadOnly,
+		TierName: "Read-Only",
+		Permissions: TierPermissions{
+			CanViewRepos:       true,
+			CanMigrateOwnRepos: false,
+			CanMigrateAllRepos: false,
+			CanManageBatches:   false,
+			CanManageSources:   false,
+		},
+		Reason: "Complete identity mapping to enable self-service migrations",
+	}, nil
+}
+
+// CheckDestinationMigrationRights checks if a user has migration rights based on destination permissions
+// Returns true if user has Tier 1 (Admin) access
+func (a *Authorizer) CheckDestinationMigrationRights(ctx context.Context, user *GitHubUser, token string) (bool, string, error) {
+	tierInfo, err := a.GetUserAuthorizationTier(ctx, user, token)
+	if err != nil {
+		return false, "", err
+	}
+
+	if tierInfo.Tier == TierAdmin {
+		return true, tierInfo.Reason, nil
+	}
+
+	return false, tierInfo.Reason, nil
+}
+
+// HasFullMigrationAccess checks if a user has full migration access (Tier 1)
+// This is a convenience method that returns just a boolean
+func (a *Authorizer) HasFullMigrationAccess(ctx context.Context, user *GitHubUser, token string) (bool, error) {
+	hasAccess, _, err := a.CheckDestinationMigrationRights(ctx, user, token)
+	return hasAccess, err
 }

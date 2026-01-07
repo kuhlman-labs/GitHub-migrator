@@ -34,28 +34,24 @@ export function MigrationReadinessTab({
   
   // Destination configuration
   
-  // Helper to sanitize names for GitHub (replace spaces with hyphens)
-  const sanitizeForGitHub = (name: string): string => {
-    return name.replace(/\s+/g, '-');
-  };
-  
   // Calculate the suggested default (ignoring any saved custom destination)
+  // For ADO repos: uses {source_org}/{project}-{repo} pattern
+  // This keeps the source org but makes the repo name GitHub-compatible
   const getSuggestedDefault = () => {
     // If it's an ADO repo (has ado_project), transform to GitHub-compatible format
     if (repository.ado_project) {
-      // ADO format: org/project/repo -> GitHub format: org-project/repo
-      // Replace spaces with hyphens for GitHub compatibility
+      // ADO format: org/project/repo -> GitHub format: org/project-repo
+      // This uses the same project-repo pattern as batch defaults for consistency
       const parts = repository.full_name.split('/');
       if (parts.length >= 3) {
-        const [org, project, ...repoParts] = parts;
-        const sanitizedOrg = sanitizeForGitHub(org);
-        const sanitizedProject = sanitizeForGitHub(project);
-        const sanitizedRepo = repoParts.map(sanitizeForGitHub).join('/');
-        return `${sanitizedOrg}-${sanitizedProject}/${sanitizedRepo}`;
+        const org = parts[0].replace(/[\s/]/g, '-');
+        const project = parts[1].replace(/[\s/]/g, '-');
+        const repo = parts[parts.length - 1].replace(/[\s/]/g, '-');
+        return `${org}/${project}-${repo}`;
       }
     }
     
-    // Default: use full_name as is
+    // Default: use full_name as is (for GitHub repos)
     return repository.full_name;
   };
   

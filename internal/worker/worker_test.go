@@ -14,7 +14,7 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
-func setupTestWorker(t *testing.T) (*MigrationWorker, *storage.Database, *migration.Executor) {
+func setupTestWorker(t *testing.T) (*MigrationWorker, *storage.Database, *migration.ExecutorFactory) {
 	t.Helper()
 
 	// Create test database
@@ -33,38 +33,39 @@ func setupTestWorker(t *testing.T) (*MigrationWorker, *storage.Database, *migrat
 	// Create test logger
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	// Create mock GitHub clients
-	sourceClient := &github.Client{}
+	// Create mock destination client
 	destClient := &github.Client{}
 
-	// Create migration executor
-	executor, err := migration.NewExecutor(migration.ExecutorConfig{
-		SourceClient: sourceClient,
-		DestClient:   destClient,
-		Storage:      db,
-		Logger:       logger,
+	// Create executor factory (for dynamic multi-source support)
+	executorFactory, err := migration.NewExecutorFactory(migration.ExecutorFactoryConfig{
+		Storage:    db,
+		DestClient: destClient,
+		Logger:     logger,
 	})
 	if err != nil {
-		t.Fatalf("Failed to create executor: %v", err)
+		t.Fatalf("Failed to create executor factory: %v", err)
 	}
 
 	// Create worker
 	worker, err := NewMigrationWorker(WorkerConfig{
-		Executor:     executor,
-		Storage:      db,
-		Logger:       logger,
-		PollInterval: 100 * time.Millisecond, // Short interval for tests
-		Workers:      3,
+		ExecutorFactory: executorFactory,
+		Storage:         db,
+		Logger:          logger,
+		PollInterval:    100 * time.Millisecond, // Short interval for tests
+		Workers:         3,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create worker: %v", err)
 	}
 
-	return worker, db, executor
+	return worker, db, executorFactory
 }
 
 func TestNewMigrationWorker(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create a mock executor factory for tests
+	mockFactory := &migration.ExecutorFactory{}
 
 	tests := []struct {
 		name    string
@@ -74,16 +75,16 @@ func TestNewMigrationWorker(t *testing.T) {
 		{
 			name: "valid configuration",
 			cfg: WorkerConfig{
-				Executor:     &migration.Executor{},
-				Storage:      &storage.Database{},
-				Logger:       logger,
-				PollInterval: 30 * time.Second,
-				Workers:      5,
+				ExecutorFactory: mockFactory,
+				Storage:         &storage.Database{},
+				Logger:          logger,
+				PollInterval:    30 * time.Second,
+				Workers:         5,
 			},
 			wantErr: false,
 		},
 		{
-			name: "missing executor",
+			name: "missing executor factory",
 			cfg: WorkerConfig{
 				Storage:      &storage.Database{},
 				Logger:       logger,
@@ -95,42 +96,42 @@ func TestNewMigrationWorker(t *testing.T) {
 		{
 			name: "missing storage",
 			cfg: WorkerConfig{
-				Executor:     &migration.Executor{},
-				Logger:       logger,
-				PollInterval: 30 * time.Second,
-				Workers:      5,
+				ExecutorFactory: mockFactory,
+				Logger:          logger,
+				PollInterval:    30 * time.Second,
+				Workers:         5,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing logger",
 			cfg: WorkerConfig{
-				Executor:     &migration.Executor{},
-				Storage:      &storage.Database{},
-				PollInterval: 30 * time.Second,
-				Workers:      5,
+				ExecutorFactory: mockFactory,
+				Storage:         &storage.Database{},
+				PollInterval:    30 * time.Second,
+				Workers:         5,
 			},
 			wantErr: true,
 		},
 		{
 			name: "default poll interval",
 			cfg: WorkerConfig{
-				Executor:     &migration.Executor{},
-				Storage:      &storage.Database{},
-				Logger:       logger,
-				PollInterval: 0, // Should default to 30s
-				Workers:      5,
+				ExecutorFactory: mockFactory,
+				Storage:         &storage.Database{},
+				Logger:          logger,
+				PollInterval:    0, // Should default to 30s
+				Workers:         5,
 			},
 			wantErr: false,
 		},
 		{
 			name: "default workers",
 			cfg: WorkerConfig{
-				Executor:     &migration.Executor{},
-				Storage:      &storage.Database{},
-				Logger:       logger,
-				PollInterval: 30 * time.Second,
-				Workers:      0, // Should default to 5
+				ExecutorFactory: mockFactory,
+				Storage:         &storage.Database{},
+				Logger:          logger,
+				PollInterval:    30 * time.Second,
+				Workers:         0, // Should default to 5
 			},
 			wantErr: false,
 		},
@@ -269,21 +270,19 @@ func TestMigrationWorker_WorkerSlots(t *testing.T) {
 	defer db.Close()
 	db.Migrate()
 
-	sourceClient := &github.Client{}
 	destClient := &github.Client{}
-	executor, _ := migration.NewExecutor(migration.ExecutorConfig{
-		SourceClient: sourceClient,
-		DestClient:   destClient,
-		Storage:      db,
-		Logger:       logger,
+	executorFactory, _ := migration.NewExecutorFactory(migration.ExecutorFactoryConfig{
+		Storage:    db,
+		DestClient: destClient,
+		Logger:     logger,
 	})
 
 	worker, _ := NewMigrationWorker(WorkerConfig{
-		Executor:     executor,
-		Storage:      db,
-		Logger:       logger,
-		PollInterval: 100 * time.Millisecond,
-		Workers:      1, // Only 1 worker slot
+		ExecutorFactory: executorFactory,
+		Storage:         db,
+		Logger:          logger,
+		PollInterval:    100 * time.Millisecond,
+		Workers:         1, // Only 1 worker slot
 	})
 
 	// Manually occupy the worker slot
@@ -329,12 +328,14 @@ func TestMigrationWorker_StopWithActiveMigrations(t *testing.T) {
 	worker.active[1] = true
 	worker.mu.Unlock()
 
-	worker.wg.Go(func() {
+	worker.wg.Add(1)
+	go func() {
+		defer worker.wg.Done()
 		time.Sleep(100 * time.Millisecond)
 		worker.mu.Lock()
 		delete(worker.active, 1)
 		worker.mu.Unlock()
-	})
+	}()
 
 	// This should block until the "migration" completes
 	startTime := time.Now()

@@ -3,18 +3,21 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/discovery"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/source"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 // ADOHandler contains Azure DevOps-specific HTTP handlers
 type ADOHandler struct {
-	Handler
+	*Handler
 	adoClient    *azuredevops.Client
 	adoProvider  source.Provider
 	adoCollector *discovery.ADOCollector // Specialized collector for ADO
@@ -24,7 +27,7 @@ type ADOHandler struct {
 func NewADOHandler(baseHandler *Handler, adoClient *azuredevops.Client, adoProvider source.Provider) *ADOHandler {
 	adoCollector := discovery.NewADOCollector(adoClient, baseHandler.db, baseHandler.logger, adoProvider)
 	return &ADOHandler{
-		Handler:      *baseHandler,
+		Handler:      baseHandler,
 		adoClient:    adoClient,
 		adoProvider:  adoProvider,
 		adoCollector: adoCollector,
@@ -50,65 +53,234 @@ func (h *ADOHandler) StartADODiscovery(w http.ResponseWriter, r *http.Request) {
 		req.Workers = 5 // default
 	}
 
-	// Start discovery asynchronously based on scope
+	// Check for existing in-progress discovery
+	if err := h.checkNoActiveDiscovery(w); err != nil {
+		return
+	}
+
+	// Verify ADO client and collector are available before creating progress record
+	if h.adoClient == nil || h.adoCollector == nil {
+		WriteError(w, ErrServiceUnavailable.WithDetails("ADO client not configured"))
+		return
+	}
+
+	// Create progress record
+	progress, err := h.createADODiscoveryProgress(req)
+	if err != nil {
+		h.handleProgressCreationError(w, err)
+		return
+	}
+
+	// Create progress tracker and start discovery
+	progressTracker := discovery.NewDBProgressTracker(h.db, h.logger, progress)
+
 	if len(req.Projects) == 0 {
-		// Discover entire organization
-		h.logger.Info("Starting ADO organization discovery",
-			"organization", req.Organization,
-			"workers", req.Workers)
-
-		// Only start discovery if collector is configured (allows for testing)
-		if h.adoCollector != nil && h.adoClient != nil {
-			go func() {
-				ctx := context.Background()
-				if err := h.adoCollector.DiscoverADOOrganization(ctx, req.Organization); err != nil {
-					h.logger.Error("ADO organization discovery failed",
-						"organization", req.Organization,
-						"error", err)
-				} else {
-					h.logger.Info("ADO organization discovery completed", "organization", req.Organization)
-				}
-			}()
-		}
-
-		h.sendJSON(w, http.StatusAccepted, map[string]any{
-			"message":      "ADO organization discovery started",
-			"organization": req.Organization,
-			"type":         "organization",
-		})
+		h.startADOOrgDiscovery(w, req, progress, progressTracker)
 	} else {
-		// Discover specific projects
-		h.logger.Info("Starting ADO project discovery",
-			"organization", req.Organization,
-			"projects", req.Projects,
-			"workers", req.Workers)
+		h.startADOProjectDiscovery(w, req, progress, progressTracker)
+	}
+}
 
-		// Only start discovery if collector is configured (allows for testing)
-		if h.adoCollector != nil && h.adoClient != nil {
-			go func() {
-				ctx := context.Background()
-				for _, project := range req.Projects {
-					if err := h.adoCollector.DiscoverADOProject(ctx, req.Organization, project); err != nil {
-						h.logger.Error("Failed to discover ADO project",
-							"organization", req.Organization,
-							"project", project,
-							"error", err)
-						// Continue with other projects
-					} else {
-						h.logger.Info("ADO project discovery completed",
-							"organization", req.Organization,
-							"project", project)
-					}
-				}
-			}()
+// checkNoActiveDiscovery checks if there's an existing discovery in progress
+func (h *ADOHandler) checkNoActiveDiscovery(w http.ResponseWriter) error {
+	existingProgress, err := h.db.GetActiveDiscoveryProgress()
+	if err != nil {
+		h.logger.Error("Failed to check for active discovery", "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery status"))
+		return fmt.Errorf("failed to check discovery status: %w", err)
+	}
+	if existingProgress != nil {
+		WriteError(w, ErrConflict.WithDetails("Another discovery is already in progress"))
+		return fmt.Errorf("discovery in progress")
+	}
+	return nil
+}
+
+// createADODiscoveryProgress creates a progress record for ADO discovery
+func (h *ADOHandler) createADODiscoveryProgress(req StartADODiscoveryRequest) (*models.DiscoveryProgress, error) {
+	var discoveryType, target string
+	var totalOrgs int
+	if len(req.Projects) == 0 {
+		discoveryType = models.DiscoveryTypeADOOrganization
+		target = req.Organization
+		totalOrgs = 1
+	} else {
+		discoveryType = models.DiscoveryTypeADOProject
+		target = req.Organization + "/" + strings.Join(req.Projects, ",")
+		totalOrgs = len(req.Projects)
+	}
+
+	progress := &models.DiscoveryProgress{
+		DiscoveryType: discoveryType,
+		Target:        target,
+		TotalOrgs:     totalOrgs,
+	}
+
+	if err := h.db.CreateDiscoveryProgress(progress); err != nil {
+		return nil, err
+	}
+	return progress, nil
+}
+
+// handleProgressCreationError handles errors during progress creation
+func (h *ADOHandler) handleProgressCreationError(w http.ResponseWriter, err error) {
+	if errors.Is(err, storage.ErrDiscoveryInProgress) {
+		WriteError(w, ErrConflict.WithDetails(err.Error()))
+		return
+	}
+	h.logger.Error("Failed to create discovery progress", "error", err)
+	WriteError(w, ErrDatabaseUpdate.WithDetails("discovery progress initialization"))
+}
+
+// startADOOrgDiscovery starts organization-wide ADO discovery
+// Caller must ensure h.adoCollector and h.adoClient are not nil
+func (h *ADOHandler) startADOOrgDiscovery(w http.ResponseWriter, req StartADODiscoveryRequest, progress *models.DiscoveryProgress, tracker *discovery.DBProgressTracker) {
+	h.logger.Info("Starting ADO organization discovery",
+		"organization", req.Organization,
+		"workers", req.Workers,
+		"progress_id", progress.ID)
+
+	h.adoCollector.SetProgressTracker(tracker)
+	go h.runADOOrgDiscovery(req.Organization, progress.ID, tracker)
+
+	h.sendJSON(w, http.StatusAccepted, map[string]any{
+		"message":      "ADO organization discovery started",
+		"organization": req.Organization,
+		"type":         "organization",
+		"progress_id":  progress.ID,
+	})
+}
+
+// runADOOrgDiscovery executes organization discovery in background
+func (h *ADOHandler) runADOOrgDiscovery(organization string, progressID int64, tracker *discovery.DBProgressTracker) {
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Register cancel function for this discovery
+	h.discoveryMu.Lock()
+	h.discoveryCancel[progressID] = cancel
+	h.discoveryMu.Unlock()
+
+	// Clean up when done
+	defer func() {
+		h.discoveryMu.Lock()
+		delete(h.discoveryCancel, progressID)
+		h.discoveryMu.Unlock()
+		cancel()
+		tracker.Flush()
+	}()
+
+	if err := h.adoCollector.DiscoverADOOrganization(ctx, organization); err != nil {
+		// Check if this was a cancellation
+		if ctx.Err() == context.Canceled {
+			h.logger.Info("ADO organization discovery cancelled", "organization", organization)
+			if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+				h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+			}
+			return
 		}
 
-		h.sendJSON(w, http.StatusAccepted, map[string]any{
-			"message":      "ADO project discovery started",
-			"organization": req.Organization,
-			"projects":     req.Projects,
-			"type":         "project",
-		})
+		h.logger.Error("ADO organization discovery failed", "organization", organization, "error", err)
+		if markErr := h.db.MarkDiscoveryFailed(progressID, err.Error()); markErr != nil {
+			h.logger.Error("Failed to mark discovery as failed", "error", markErr)
+		}
+		return
+	}
+
+	// Check if cancelled even on success (rare but possible)
+	if ctx.Err() == context.Canceled {
+		h.logger.Info("ADO organization discovery cancelled", "organization", organization)
+		if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+			h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+		}
+		return
+	}
+
+	h.logger.Info("ADO organization discovery completed", "organization", organization)
+	if markErr := h.db.MarkDiscoveryComplete(progressID); markErr != nil {
+		h.logger.Error("Failed to mark discovery as complete", "error", markErr)
+	}
+}
+
+// startADOProjectDiscovery starts project-specific ADO discovery
+// Caller must ensure h.adoCollector and h.adoClient are not nil
+func (h *ADOHandler) startADOProjectDiscovery(w http.ResponseWriter, req StartADODiscoveryRequest, progress *models.DiscoveryProgress, tracker *discovery.DBProgressTracker) {
+	h.logger.Info("Starting ADO project discovery",
+		"organization", req.Organization,
+		"projects", req.Projects,
+		"workers", req.Workers,
+		"progress_id", progress.ID)
+
+	h.adoCollector.SetProgressTracker(tracker)
+	go h.runADOProjectDiscovery(req.Organization, req.Projects, progress.ID, tracker)
+
+	h.sendJSON(w, http.StatusAccepted, map[string]any{
+		"message":      "ADO project discovery started",
+		"organization": req.Organization,
+		"projects":     req.Projects,
+		"type":         "project",
+		"progress_id":  progress.ID,
+	})
+}
+
+// runADOProjectDiscovery executes project discovery in background
+func (h *ADOHandler) runADOProjectDiscovery(organization string, projects []string, progressID int64, tracker *discovery.DBProgressTracker) {
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Register cancel function for this discovery
+	h.discoveryMu.Lock()
+	h.discoveryCancel[progressID] = cancel
+	h.discoveryMu.Unlock()
+
+	// Clean up when done
+	defer func() {
+		h.discoveryMu.Lock()
+		delete(h.discoveryCancel, progressID)
+		h.discoveryMu.Unlock()
+		cancel()
+		tracker.Flush()
+	}()
+
+	var lastErr error
+	for i, project := range projects {
+		// Check for cancellation before starting each project
+		if ctx.Err() == context.Canceled {
+			h.logger.Info("ADO project discovery cancelled", "organization", organization, "completed_projects", i)
+			if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+				h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+			}
+			return
+		}
+
+		tracker.StartOrg(project, i)
+		if err := h.adoCollector.DiscoverADOProject(ctx, organization, project); err != nil {
+			// Check if this was a cancellation
+			if ctx.Err() == context.Canceled {
+				h.logger.Info("ADO project discovery cancelled", "organization", organization, "project", project)
+				if dbErr := h.db.MarkDiscoveryCancelled(progressID); dbErr != nil {
+					h.logger.Error("Failed to mark discovery as cancelled", "error", dbErr)
+				}
+				return
+			}
+
+			h.logger.Error("Failed to discover ADO project", "organization", organization, "project", project, "error", err)
+			tracker.RecordError(err)
+			lastErr = err
+		} else {
+			h.logger.Info("ADO project discovery completed", "organization", organization, "project", project)
+		}
+		tracker.CompleteOrg(project, 0)
+	}
+
+	if lastErr != nil {
+		if markErr := h.db.MarkDiscoveryFailed(progressID, lastErr.Error()); markErr != nil {
+			h.logger.Error("Failed to mark discovery as failed", "error", markErr)
+		}
+	} else {
+		if markErr := h.db.MarkDiscoveryComplete(progressID); markErr != nil {
+			h.logger.Error("Failed to mark discovery as complete", "error", markErr)
+		}
 	}
 }
 

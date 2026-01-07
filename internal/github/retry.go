@@ -29,6 +29,15 @@ func DefaultRetryConfig() RetryConfig {
 // GitHub recommends waiting "a few minutes" - we use 60 seconds as a reasonable default
 const SecondaryRateLimitBackoff = 60 * time.Second
 
+// RateLimitResetBuffer is added to the parsed reset time to ensure the rate limit is actually reset
+const RateLimitResetBuffer = 5 * time.Second
+
+// MinRateLimitWait is the minimum wait time for rate limit errors
+const MinRateLimitWait = 10 * time.Second
+
+// MaxRateLimitWait is the maximum wait time for rate limit errors (15 minutes)
+const MaxRateLimitWait = 15 * time.Minute
+
 // Retryer handles retry logic with exponential backoff
 type Retryer struct {
 	config      RetryConfig
@@ -43,6 +52,32 @@ func NewRetryer(config RetryConfig, rateLimiter *RateLimiter, logger *slog.Logge
 		rateLimiter: rateLimiter,
 		logger:      logger,
 	}
+}
+
+// calculateRateLimitWait determines how long to wait for a rate limit to reset
+func (r *Retryer) calculateRateLimitWait(err error) time.Duration {
+	// Try to parse the reset time from the error message
+	resetTime, hasResetTime := ParseRateLimitResetTime(err)
+
+	var waitDuration time.Duration
+	if hasResetTime {
+		waitDuration = time.Until(resetTime)
+		// Add buffer to ensure rate limit is actually reset
+		waitDuration += RateLimitResetBuffer
+	} else {
+		// Default wait time if we can't parse the reset time
+		waitDuration = SecondaryRateLimitBackoff
+	}
+
+	// Ensure minimum and maximum bounds
+	if waitDuration < MinRateLimitWait {
+		waitDuration = MinRateLimitWait
+	}
+	if waitDuration > MaxRateLimitWait {
+		waitDuration = MaxRateLimitWait
+	}
+
+	return waitDuration
 }
 
 // RetryFunc is a function that can be retried
@@ -86,6 +121,24 @@ func (r *Retryer) Do(ctx context.Context, operation string, fn RetryFunc) error 
 		// Don't retry on last attempt
 		if attempt == r.config.MaxAttempts {
 			break
+		}
+
+		// Handle blocked rate limit errors (go-github's client-side blocking)
+		// These contain the reset time in the error message
+		if IsRateLimitBlockedError(err) {
+			waitDuration := r.calculateRateLimitWait(err)
+			r.logger.Warn("Rate limit blocked, waiting for reset",
+				"operation", operation,
+				"attempt", attempt,
+				"wait_duration", waitDuration)
+
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("context cancelled during rate limit wait: %w", ctx.Err())
+			case <-time.After(waitDuration):
+				// Continue with next attempt after waiting
+			}
+			continue
 		}
 
 		// Handle secondary rate limit errors with longer backoff

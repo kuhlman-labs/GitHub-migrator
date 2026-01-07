@@ -16,6 +16,7 @@ import {
 } from '@primer/octicons-react';
 import { useUserDetail } from '../../hooks/useQueries';
 import { FallbackAvatar } from '../common/FallbackAvatar';
+import { SourceBadge } from '../common/SourceBadge';
 import { ReclaimStatus, UserMappingStatus } from '../../types';
 
 interface UserDetailPanelProps {
@@ -131,6 +132,12 @@ export function UserDetailPanel({ login, onClose, onEditMapping }: UserDetailPan
                   border: '1px solid var(--borderColor-default)',
                 }}
               >
+                {user.source_id && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span style={{ color: 'var(--fgColor-muted)' }}>Source</span>
+                    <SourceBadge sourceId={user.source_id} size="small" />
+                  </div>
+                )}
                 {user.email && (
                   <div className="flex justify-between text-sm">
                     <span style={{ color: 'var(--fgColor-muted)' }}>Email</span>

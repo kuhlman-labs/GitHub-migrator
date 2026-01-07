@@ -7,6 +7,7 @@ export interface Repository {
   full_name: string;
   source: string;
   source_url: string;
+  source_id?: number; // Foreign key to sources table
   total_size: number;
   largest_file?: string;
   largest_file_size?: number;
@@ -289,6 +290,7 @@ export interface DependencyGraphNode {
   status: string;
   depends_on_count: number;
   depended_by_count: number;
+  source_id?: number; // Added for multi-source support
 }
 
 export interface DependencyGraphEdge {

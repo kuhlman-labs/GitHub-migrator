@@ -22,6 +22,9 @@ type OrganizationStats struct {
 	MigrationProgressPercent int            `json:"migration_progress_percentage"`
 	Enterprise               *string        `json:"enterprise,omitempty"`       // GitHub Enterprise name
 	ADOOrganization          *string        `json:"ado_organization,omitempty"` // Azure DevOps organization
+	SourceID                 *int64         `json:"source_id,omitempty"`        // Source ID for multi-source support
+	SourceName               *string        `json:"source_name,omitempty"`      // Display name of the source
+	SourceType               *string        `json:"source_type,omitempty"`      // Type of source (github or azuredevops)
 }
 
 // GetOrganizationStats returns repository counts grouped by organization
@@ -30,22 +33,28 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
 	findSlash := d.dialect.FindCharPosition("full_name", "/")
 
+	// For ADO repos, we need to extract both org and project
+	// full_name format: "org/project/repo" for ADO, "org/repo" for GitHub
 	query := fmt.Sprintf(`
 		SELECT 
 			%s as org,
+			source,
+			ado_project,
 			COUNT(*) as total,
 			status,
 			COUNT(*) as status_count
 		FROM repositories
 		WHERE %s > 0
 		AND status != 'wont_migrate'
-		GROUP BY org, status
+		GROUP BY org, source, ado_project, status
 		ORDER BY total DESC, org ASC
 	`, extractOrg, findSlash)
 
 	// Use GORM Raw() for analytics query
 	type OrgStatusResult struct {
 		Org         string
+		Source      string
+		ADOProject  *string `gorm:"column:ado_project"`
 		Total       int
 		Status      string
 		StatusCount int
@@ -58,31 +67,54 @@ func (d *Database) GetOrganizationStats(ctx context.Context) ([]*OrganizationSta
 	}
 
 	// Build organization stats map
+	// For GitHub: key is org name
+	// For ADO: key is project name (to group by project)
 	orgMap := make(map[string]*OrganizationStats)
 	for _, result := range results {
-		if _, exists := orgMap[result.Org]; !exists {
-			orgMap[result.Org] = &OrganizationStats{
-				Organization: result.Org,
-				TotalRepos:   0,
-				StatusCounts: make(map[string]int),
+		// Determine the key and populate fields based on source type
+		var mapKey string
+		var orgStat *OrganizationStats
+
+		if result.Source == models.SourceTypeAzureDevOps && result.ADOProject != nil {
+			// For ADO: key is project name, org goes in ADOOrganization field
+			mapKey = *result.ADOProject
+			if _, exists := orgMap[mapKey]; !exists {
+				orgMap[mapKey] = &OrganizationStats{
+					Organization:    mapKey,      // Project name
+					ADOOrganization: &result.Org, // Org name (extracted from full_name)
+					TotalRepos:      0,
+					StatusCounts:    make(map[string]int),
+				}
 			}
+			orgStat = orgMap[mapKey]
+		} else {
+			// For GitHub: key is org name
+			mapKey = result.Org
+			if _, exists := orgMap[mapKey]; !exists {
+				orgMap[mapKey] = &OrganizationStats{
+					Organization: mapKey,
+					TotalRepos:   0,
+					StatusCounts: make(map[string]int),
+				}
+			}
+			orgStat = orgMap[mapKey]
 		}
 
-		orgMap[result.Org].StatusCounts[result.Status] = result.StatusCount
-		orgMap[result.Org].TotalRepos += result.StatusCount
+		orgStat.StatusCounts[result.Status] = result.StatusCount
+		orgStat.TotalRepos += result.StatusCount
 
 		// Calculate progress metrics
 		switch result.Status {
 		case string(models.StatusComplete), string(models.StatusMigrationComplete):
-			orgMap[result.Org].MigratedCount += result.StatusCount
+			orgStat.MigratedCount += result.StatusCount
 		case "migration_failed", "dry_run_failed", "rolled_back":
-			orgMap[result.Org].FailedCount += result.StatusCount
+			orgStat.FailedCount += result.StatusCount
 		case "queued_for_migration", "migrating_content", "dry_run_in_progress",
 			"dry_run_queued", "pre_migration", "archive_generating", "post_migration":
-			orgMap[result.Org].InProgressCount += result.StatusCount
+			orgStat.InProgressCount += result.StatusCount
 		default:
 			// pending, dry_run_complete, remediation_required
-			orgMap[result.Org].PendingCount += result.StatusCount
+			orgStat.PendingCount += result.StatusCount
 		}
 	}
 
@@ -267,11 +299,12 @@ type ComplexityDistribution struct {
 // and supports both GitHub and Azure DevOps repositories
 //
 //nolint:dupl // Similar query pattern but different business logic
-func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*ComplexityDistribution, error) {
+func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*ComplexityDistribution, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use stored complexity_score field (supports both GitHub and ADO repositories)
 	query := `
@@ -292,6 +325,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, pro
 				` + orgFilterSQL + `
 				` + projectFilterSQL + `
 				` + batchFilterSQL + `
+				` + sourceFilterSQL + `
 		) as categorized
 		GROUP BY category
 		ORDER BY 
@@ -306,6 +340,7 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, pro
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var distribution []*ComplexityDistribution
@@ -324,11 +359,12 @@ type MigrationVelocity struct {
 }
 
 // GetMigrationVelocity calculates migration velocity over the specified period
-func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectFilter, batchFilter string, days int) (*MigrationVelocity, error) {
+func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64, days int) (*MigrationVelocity, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific date arithmetic via DialectDialer interface
 	var args []any
@@ -336,6 +372,7 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 	args = append(args, orgArgs...)
 	args = append(args, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	query := `
 		SELECT COUNT(DISTINCT r.id) as total_completed
@@ -348,6 +385,7 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
+			` + sourceFilterSQL + `
 	`
 
 	// Use GORM Raw() for analytics query
@@ -376,11 +414,12 @@ type MigrationTimeSeriesPoint struct {
 // GetMigrationTimeSeries returns daily migration completions for the last 30 days
 //
 //nolint:dupl // Similar query pattern but different business logic
-func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*MigrationTimeSeriesPoint, error) {
+func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*MigrationTimeSeriesPoint, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific date arithmetic via DialectDialer interface
 	dateCondition := "AND mh.completed_at >= " + d.dialect.DateIntervalAgo(30)
@@ -398,6 +437,7 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projec
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
+			` + sourceFilterSQL + `
 		GROUP BY DATE(mh.completed_at)
 		ORDER BY date ASC
 	`
@@ -405,6 +445,7 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projec
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var series []*MigrationTimeSeriesPoint
@@ -417,11 +458,12 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projec
 }
 
 // GetAverageMigrationTime calculates the average migration duration
-func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, projectFilter, batchFilter string) (float64, error) {
+func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) (float64, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	query := `
 		SELECT AVG(mh.duration_seconds) as avg_duration
@@ -434,11 +476,13 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, proje
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
+			` + sourceFilterSQL + `
 	`
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var result struct {
@@ -457,11 +501,12 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, proje
 }
 
 // GetMedianMigrationTime calculates the median migration duration
-func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projectFilter, batchFilter string) (float64, error) {
+func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) (float64, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific median calculation via DialectDialer interface
 	var query string
@@ -479,6 +524,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 				` + orgFilterSQL + `
 				` + projectFilterSQL + `
 				` + batchFilterSQL + `
+				` + sourceFilterSQL + `
 		`
 	} else {
 		// SQLite - use subquery approach for median
@@ -496,6 +542,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 					` + orgFilterSQL + `
 					` + projectFilterSQL + `
 					` + batchFilterSQL + `
+					` + sourceFilterSQL + `
 			)
 			SELECT AVG(duration_seconds) as median_duration
 			FROM ordered
@@ -506,6 +553,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var result struct {
@@ -551,6 +599,15 @@ func (d *Database) buildBatchFilter(batchFilter string) (string, []any) {
 	return " AND r.batch_id = ?", []any{batchID}
 }
 
+// buildSourceFilter builds the source_id filter clause using parameterized queries
+// Returns the SQL fragment and any additional arguments to append
+func (d *Database) buildSourceFilter(sourceID *int64) (string, []any) {
+	if sourceID == nil {
+		return "", nil
+	}
+	return " AND r.source_id = ?", []any{*sourceID}
+}
+
 // buildProjectFilter builds SQL filter for ADO project (ado_project field)
 func (d *Database) buildProjectFilter(projectFilter string) (string, []any) {
 	if projectFilter == "" {
@@ -560,11 +617,12 @@ func (d *Database) buildProjectFilter(projectFilter string) (string, []any) {
 }
 
 // GetRepositoryStatsByStatusFiltered returns repository counts by status with filters
-func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) (map[string]int, error) {
+func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) (map[string]int, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	query := `
 		SELECT status, COUNT(*) as count
@@ -573,12 +631,14 @@ func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFi
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
+			` + sourceFilterSQL + `
 		GROUP BY status
 	`
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	type StatusCount struct {
@@ -603,11 +663,12 @@ func (d *Database) GetRepositoryStatsByStatusFiltered(ctx context.Context, orgFi
 // GetSizeDistributionFiltered returns size distribution with filters
 //
 //nolint:dupl // Similar query pattern but different business logic
-func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*SizeDistribution, error) {
+func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*SizeDistribution, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use a subquery
 	query := `
@@ -629,6 +690,7 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, p
 				` + orgFilterSQL + `
 				` + projectFilterSQL + `
 				` + batchFilterSQL + `
+				` + sourceFilterSQL + `
 		) categorized
 		GROUP BY category
 		ORDER BY 
@@ -644,6 +706,7 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, p
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var distribution []*SizeDistribution
@@ -656,11 +719,12 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, p
 }
 
 // GetFeatureStatsFiltered returns feature stats with filters
-func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) (*FeatureStats, error) {
+func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) (*FeatureStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	query := `
 		SELECT 
@@ -711,11 +775,13 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 		` + orgFilterSQL + `
 		` + projectFilterSQL + `
 		` + batchFilterSQL + `
+		` + sourceFilterSQL + `
 `
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var stats FeatureStats
@@ -728,39 +794,53 @@ func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, proje
 }
 
 // GetOrganizationStatsFiltered returns organization stats with batch filter
-func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*OrganizationStats, error) {
+func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*OrganizationStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific string functions via DialectDialer interface
-	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
-	findSlash := d.dialect.FindCharPosition("full_name", "/")
+	extractOrg := d.dialect.ExtractOrgFromFullName("r.full_name")
+	findSlash := d.dialect.FindCharPosition("r.full_name", "/")
 
+	// Group by organization (extracted from full_name), source, and status
+	// Join with sources table to get source name and type
 	query := fmt.Sprintf(`
 		SELECT 
 			%s as org,
+			r.source,
+			r.source_id,
+			s.name as source_name,
+			s.type as source_type,
 			COUNT(*) as total,
-			status,
+			r.status,
 			COUNT(*) as status_count
 		FROM repositories r
+		LEFT JOIN sources s ON r.source_id = s.id
 		WHERE %s > 0
-			AND status != 'wont_migrate'
+			AND r.status != 'wont_migrate'
 			%s
 			%s
 			%s
-		GROUP BY org, status
+			%s
+		GROUP BY org, r.source, r.source_id, s.name, s.type, r.status
 		ORDER BY total DESC, org ASC
-	`, extractOrg, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL)
+	`, extractOrg, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	type OrgStatusResult struct {
 		Org         string
+		Source      string
+		SourceID    *int64
+		SourceName  *string
+		SourceType  *string
 		Total       int
 		Status      string
 		StatusCount int
@@ -772,34 +852,84 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 		return nil, fmt.Errorf("failed to get organization stats: %w", err)
 	}
 
-	orgMap := make(map[string]*OrganizationStats)
+	// Build organization stats map
+	// Key by org + source_id to handle same org name across different sources
+	// For GitHub: key is org name + source_id
+	// For ADO: key is ADO organization name + source_id
+	type orgSourceKey struct {
+		Org      string
+		SourceID int64
+	}
+	orgMap := make(map[orgSourceKey]*OrganizationStats)
 	for _, result := range results {
-		if _, exists := orgMap[result.Org]; !exists {
-			orgMap[result.Org] = &OrganizationStats{
+		// Use org + source_id as key to distinguish same org across different sources
+		sourceIDForKey := int64(0)
+		if result.SourceID != nil {
+			sourceIDForKey = *result.SourceID
+		}
+		mapKey := orgSourceKey{Org: result.Org, SourceID: sourceIDForKey}
+
+		if _, exists := orgMap[mapKey]; !exists {
+			orgMap[mapKey] = &OrganizationStats{
 				Organization: result.Org,
 				TotalRepos:   0,
 				StatusCounts: make(map[string]int),
+				SourceID:     result.SourceID,
+				SourceName:   result.SourceName,
+				SourceType:   result.SourceType,
+			}
+			// For ADO, store the organization name in ADOOrganization as well
+			if result.Source == models.SourceTypeAzureDevOps {
+				orgMap[mapKey].ADOOrganization = &result.Org
 			}
 		}
+		orgStat := orgMap[mapKey]
 
-		orgMap[result.Org].StatusCounts[result.Status] = result.StatusCount
-		orgMap[result.Org].TotalRepos += result.StatusCount
+		orgStat.StatusCounts[result.Status] += result.StatusCount
+		orgStat.TotalRepos += result.StatusCount
+
+		// Calculate progress metrics
+		switch result.Status {
+		case string(models.StatusComplete), string(models.StatusMigrationComplete):
+			orgStat.MigratedCount += result.StatusCount
+		case "migration_failed", "dry_run_failed", "rolled_back":
+			orgStat.FailedCount += result.StatusCount
+		case "queued_for_migration", "migrating_content", "dry_run_in_progress",
+			"dry_run_queued", "pre_migration", "archive_generating", "post_migration":
+			orgStat.InProgressCount += result.StatusCount
+		default:
+			// pending, dry_run_complete, remediation_required
+			orgStat.PendingCount += result.StatusCount
+		}
 	}
 
 	stats := make([]*OrganizationStats, 0, len(orgMap))
 	for _, stat := range orgMap {
+		// Calculate migration progress percentage
+		if stat.TotalRepos > 0 {
+			stat.MigrationProgressPercent = (stat.MigratedCount * 100) / stat.TotalRepos
+		}
 		stats = append(stats, stat)
 	}
+
+	// Sort by total repos (descending), then by organization name (ascending) for consistent ordering
+	sort.Slice(stats, func(i, j int) bool {
+		if stats[i].TotalRepos == stats[j].TotalRepos {
+			return stats[i].Organization < stats[j].Organization
+		}
+		return stats[i].TotalRepos > stats[j].TotalRepos
+	})
 
 	return stats, nil
 }
 
 // GetProjectStatsFiltered returns repository counts grouped by ADO project (for Azure DevOps sources)
-func (d *Database) GetProjectStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*OrganizationStats, error) {
+func (d *Database) GetProjectStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*OrganizationStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	query := `
 		SELECT 
@@ -814,6 +944,7 @@ func (d *Database) GetProjectStatsFiltered(ctx context.Context, orgFilter, proje
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
+			` + sourceFilterSQL + `
 		GROUP BY r.ado_project, r.status
 		ORDER BY total DESC, r.ado_project ASC
 	`
@@ -821,6 +952,7 @@ func (d *Database) GetProjectStatsFiltered(ctx context.Context, orgFilter, proje
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	type ProjectCount struct {

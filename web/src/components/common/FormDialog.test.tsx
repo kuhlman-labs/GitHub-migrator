@@ -109,14 +109,6 @@ describe('FormDialog', () => {
       expect(onCancel).toHaveBeenCalledTimes(1);
     });
 
-    // Skip: popover polyfill interferes with Escape key in jsdom
-    it.skip('should call onCancel when Escape is pressed', () => {
-      const onCancel = vi.fn();
-      render(<FormDialog {...defaultProps} onCancel={onCancel} />);
-
-      fireEvent.keyDown(document, { key: 'Escape' });
-      expect(onCancel).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('loading state', () => {
@@ -137,15 +129,6 @@ describe('FormDialog', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Loading...' }));
       expect(onSubmit).not.toHaveBeenCalled();
-    });
-
-    // Skip: popover polyfill interferes with Escape key in jsdom
-    it.skip('should not call onCancel on Escape when loading', () => {
-      const onCancel = vi.fn();
-      render(<FormDialog {...defaultProps} onCancel={onCancel} isLoading />);
-
-      fireEvent.keyDown(document, { key: 'Escape' });
-      expect(onCancel).not.toHaveBeenCalled();
     });
   });
 

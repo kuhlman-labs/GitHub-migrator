@@ -21,6 +21,7 @@ import {
 import { useTeamDetail } from '../../hooks/useQueries';
 import { useExecuteTeamMigration } from '../../hooks/useMutations';
 import { TeamMigrationStatus, TeamMigrationCompleteness } from '../../types';
+import { SourceBadge } from '../common/SourceBadge';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
 
@@ -185,6 +186,9 @@ export function TeamDetailPanel({ org, teamSlug, onClose, onEditMapping, onMigra
           {/* Team Info */}
           <div className="p-4" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
             <div className="flex gap-2 flex-wrap mb-2">
+              {team.source_id && (
+                <SourceBadge sourceId={team.source_id} size="small" />
+              )}
               <Label variant="accent">{team.privacy}</Label>
               <Label>{team.members.length} members</Label>
               <Label>{team.repositories.length} repos</Label>

@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom';
 import { Button } from '@primer/react';
 import type { Repository, Batch } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
-import { formatBytes } from '../../utils/format';
+import { SourceTypeIcon } from '../common/SourceBadge';
+import { formatBytes, computeBatchDefaultDestination } from '../../utils/format';
 
 export interface BatchRepositoryItemProps {
   repository: Repository;
@@ -29,9 +30,10 @@ export function BatchRepositoryItem({
   let isDefaultDestination = false;
 
   // Calculate what the batch default destination would be for this repository
-  const sourceRepoName = repository.full_name.split('/')[1];
+  // For ADO repos: uses project-repo pattern (e.g., "dest-org/DevOps-Terraform")
+  // For GitHub repos: uses just the repo name (e.g., "dest-org/repo")
   const batchDefaultDestination = batch?.destination_org
-    ? `${batch.destination_org}/${sourceRepoName}`
+    ? computeBatchDefaultDestination(batch.destination_org, repository.full_name, repository.ado_project)
     : null;
 
   // Check if repo has a custom destination
@@ -64,9 +66,12 @@ export function BatchRepositoryItem({
         className="flex-1 min-w-0"
       >
         <div
-          className="font-semibold transition-colors"
+          className="font-semibold transition-colors flex items-center gap-2"
           style={{ color: 'var(--fgColor-default)' }}
         >
+          {repository.source_id && (
+            <SourceTypeIcon sourceId={repository.source_id} size={14} />
+          )}
           {repository.full_name}
         </div>
         <div className="text-sm mt-1 space-y-0.5" style={{ color: 'var(--fgColor-muted)' }}>

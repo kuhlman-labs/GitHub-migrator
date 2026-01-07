@@ -18,6 +18,8 @@ import { discoveryApi } from './discovery';
 import { migrationsApi } from './migrations';
 import { analyticsApi } from './analytics';
 import { configApi } from './config';
+import { sourcesApi } from './sources';
+import { settingsApi } from './settings';
 
 // Export domain-specific APIs for direct access
 export { repositoriesApi } from './repositories';
@@ -28,6 +30,8 @@ export { discoveryApi } from './discovery';
 export { migrationsApi } from './migrations';
 export { analyticsApi } from './analytics';
 export { configApi } from './config';
+export { sourcesApi } from './sources';
+export { settingsApi } from './settings';
 export { client } from './client';
 
 // Unified API object for backwards compatibility
@@ -36,6 +40,7 @@ export const api = {
   startDiscovery: discoveryApi.start,
   getDiscoveryStatus: discoveryApi.getStatus,
   getDiscoveryProgress: discoveryApi.getProgress,
+  cancelDiscovery: discoveryApi.cancel,
   discoverRepositories: repositoriesApi.discover,
   discoverOrgMembers: usersApi.discover,
   discoverTeams: teamsApi.discover,
@@ -158,5 +163,21 @@ export const api = {
   getTeamMigrationStatus: teamsApi.getMigrationStatus,
   cancelTeamMigration: teamsApi.cancelMigration,
   resetTeamMigrationStatus: teamsApi.resetMigrationStatus,
+
+  // Sources (multi-source management)
+  listSources: sourcesApi.list,
+  getSource: sourcesApi.get,
+  createSource: sourcesApi.create,
+  updateSource: sourcesApi.update,
+  deleteSource: sourcesApi.delete,
+  validateSource: sourcesApi.validate,
+  setSourceActive: sourcesApi.setActive,
+  getSourceRepositories: sourcesApi.getRepositories,
+
+  // Settings (dynamic configuration)
+  getSettings: settingsApi.getSettings,
+  getSetupProgress: settingsApi.getSetupProgress,
+  updateSettings: settingsApi.updateSettings,
+  validateDestination: settingsApi.validateDestination,
 };
 

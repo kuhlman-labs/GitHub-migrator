@@ -3,6 +3,7 @@ import { Checkbox } from '@primer/react';
 import type { Repository } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
+import { SourceBadge } from '../common/SourceBadge';
 import { TimestampDisplay } from '../common/TimestampDisplay';
 import { formatBytes } from '../../utils/format';
 
@@ -83,8 +84,11 @@ export function RepositoryCard({
       <h3 className="text-base font-semibold mb-3 truncate pr-8" style={{ color: 'var(--fgColor-default)' }}>
         {displayInfo.title}
       </h3>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <StatusBadge status={repository.status} size="small" />
+        {repository.source_id && (
+          <SourceBadge sourceId={repository.source_id} size="small" />
+        )}
       </div>
       <div className="space-y-1.5 text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
         <div>Size: {formatBytes(repository.total_size)}</div>

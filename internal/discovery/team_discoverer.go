@@ -14,9 +14,10 @@ import (
 // TeamDiscoverer handles discovery of teams and their members.
 // It is a focused component extracted from the larger Collector struct.
 type TeamDiscoverer struct {
-	storage *storage.Database
-	logger  *slog.Logger
-	workers int
+	storage  *storage.Database
+	logger   *slog.Logger
+	workers  int
+	sourceID *int64 // Optional source ID to associate with discovered teams
 }
 
 // NewTeamDiscoverer creates a new TeamDiscoverer.
@@ -29,6 +30,11 @@ func NewTeamDiscoverer(storage *storage.Database, logger *slog.Logger, workers i
 		logger:  logger,
 		workers: workers,
 	}
+}
+
+// SetSourceID sets the source ID to associate with discovered teams and users
+func (d *TeamDiscoverer) SetSourceID(sourceID *int64) {
+	d.sourceID = sourceID
 }
 
 // teamResult holds the result of processing a single team
@@ -108,7 +114,7 @@ func (d *TeamDiscoverer) DiscoverTeams(ctx context.Context, org string, client *
 	return nil
 }
 
-// DiscoverTeamsOnly discovers only teams and their members without repository associations.
+// DiscoverTeamsOnly discovers teams, their members, and repository associations.
 // Returns (teams saved, members saved, error).
 func (d *TeamDiscoverer) DiscoverTeamsOnly(ctx context.Context, org string, client *github.Client, sourceInstance string) (int, int, error) {
 	d.logger.Info("Starting teams-only discovery", "organization", org)
@@ -184,6 +190,7 @@ func (d *TeamDiscoverer) processTeamFull(ctx context.Context, workerID int, org 
 
 	// Save the team
 	team := &models.GitHubTeam{
+		SourceID:     d.sourceID, // Associate with source for multi-source support
 		Organization: org,
 		Slug:         teamInfo.Slug,
 		Name:         teamInfo.Name,
@@ -265,7 +272,7 @@ func (d *TeamDiscoverer) processTeamFull(ctx context.Context, workerID int, org 
 	return result
 }
 
-// teamsOnlyWorker processes teams without repository associations.
+// teamsOnlyWorker processes teams including repository associations.
 func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup, workerID int, org string, client *github.Client, sourceInstance string, jobs <-chan *github.TeamInfo, results chan<- teamResult) {
 	defer wg.Done()
 
@@ -278,6 +285,7 @@ func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup
 			"team", teamInfo.Slug)
 
 		team := &models.GitHubTeam{
+			SourceID:     d.sourceID, // Associate with source for multi-source support
 			Organization: org,
 			Slug:         teamInfo.Slug,
 			Name:         teamInfo.Name,
@@ -297,6 +305,38 @@ func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup
 			continue
 		}
 		result.teamSaved = true
+
+		// List repositories for this team
+		teamRepos, err := client.ListTeamRepositories(ctx, org, teamInfo.Slug)
+		if err != nil {
+			d.logger.Warn("Failed to list repositories for team",
+				"worker_id", workerID,
+				"organization", org,
+				"team", teamInfo.Slug,
+				"error", err)
+			// Don't return - continue with members
+		} else {
+			d.logger.Debug("Found repositories for team",
+				"worker_id", workerID,
+				"organization", org,
+				"team", teamInfo.Slug,
+				"count", len(teamRepos))
+
+			// Save team-repository associations
+			for _, teamRepo := range teamRepos {
+				if err := d.storage.SaveTeamRepository(ctx, team.ID, teamRepo.FullName, teamRepo.Permission); err != nil {
+					d.logger.Warn("Failed to save team-repository association",
+						"worker_id", workerID,
+						"organization", org,
+						"team", teamInfo.Slug,
+						"repo", teamRepo.FullName,
+						"error", err)
+					// Continue with other repos even if one fails
+				} else {
+					result.repoCount++
+				}
+			}
+		}
 
 		// List and save team members
 		teamMembers, err := client.ListTeamMembersGraphQL(ctx, org, teamInfo.Slug)
@@ -319,6 +359,7 @@ func (d *TeamDiscoverer) teamsOnlyWorker(ctx context.Context, wg *sync.WaitGroup
 			TeamID:         team.ID,
 			Members:        teamMembers,
 			SourceInstance: sourceInstance,
+			SourceID:       d.sourceID, // Pass source ID for multi-source support
 		})
 		result.memberCount = saveResult.SavedCount
 

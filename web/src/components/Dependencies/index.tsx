@@ -12,10 +12,12 @@ import { OrgAggregatedView } from './OrgAggregatedView';
 import { DependencyListView } from './DependencyListView';
 import { DependencyFilters, DependencyTypeFilter } from './DependencyFilters';
 import { DependencyExport } from './DependencyExport';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 type ViewMode = 'list' | 'org';
 
 export function Dependencies() {
+  const { activeSource } = useSourceContext();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,8 +40,14 @@ export function Dependencies() {
       }
       setError(null);
       
-      const params = typeFilter !== 'all' ? { dependency_type: typeFilter } : undefined;
-      const response = await api.getDependencyGraph(params);
+      const params: { dependency_type?: string; source_id?: number } = {};
+      if (typeFilter !== 'all') {
+        params.dependency_type = typeFilter;
+      }
+      if (activeSource?.id) {
+        params.source_id = activeSource.id;
+      }
+      const response = await api.getDependencyGraph(Object.keys(params).length > 0 ? params : undefined);
       setData(response);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load dependency graph';
@@ -53,7 +61,7 @@ export function Dependencies() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter]);
+  }, [typeFilter, activeSource?.id]);
 
   // Reset page when search or filter changes
   useEffect(() => {
@@ -208,6 +216,8 @@ export function Dependencies() {
           filteredEdges={filteredEdges}
           hasActiveFilters={hasActiveFilters}
           hasFilteredData={hasFilteredData}
+          sourceId={activeSource?.id}
+          sourceName={activeSource?.name}
         />
       </div>
 

@@ -39,11 +39,12 @@ export function BatchListPanel({
   const navigate = useNavigate();
 
   // Filter batches by tab
+  // Failed batches stay in active tab since they need user attention
   const activeBatches = batches.filter((b) => 
-    ['pending', 'ready', 'in_progress', 'scheduled'].includes(b.status)
+    ['pending', 'ready', 'in_progress', 'scheduled', 'failed'].includes(b.status)
   );
   const completedBatches = batches.filter((b) => 
-    ['completed', 'completed_with_errors', 'failed', 'cancelled'].includes(b.status)
+    ['completed', 'completed_with_errors', 'cancelled'].includes(b.status)
   );
 
   const filteredBatches = activeTab === 'active' ? activeBatches : completedBatches;

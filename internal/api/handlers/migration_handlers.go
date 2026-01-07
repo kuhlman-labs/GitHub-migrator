@@ -743,7 +743,8 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		h.logger.Info("Starting dry run for batch", "batch_id", batch.ID)
 
 		now := time.Now()
-		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, &now, nil); err != nil {
+		// For dry runs: set dryRunStartedAt and lastDryRunAt, NOT startedAt
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, nil, &now, &now, nil); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 
@@ -773,7 +774,8 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 		h.logger.Info("Starting production migration for batch", "batch_id", batch.ID)
 
 		now := time.Now()
-		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, nil, &now); err != nil {
+		// For production migrations: set startedAt and lastMigrationAttemptAt, NOT dryRunStartedAt
+		if err := h.db.UpdateBatchProgress(ctx, batch.ID, models.BatchStatusInProgress, &now, nil, nil, &now); err != nil {
 			h.logger.Error("Failed to update batch status", "error", err)
 		}
 
@@ -837,7 +839,17 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	migrations, err := h.db.GetCompletedMigrations(ctx)
+	// Parse source_id filter
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
+		}
+	}
+
+	migrations, err := h.db.GetCompletedMigrations(ctx, sourceID)
 	if err != nil {
 		if h.handleContextError(ctx, err, "get migration history", r) {
 			return
@@ -863,7 +875,17 @@ func (h *Handler) ExportMigrationHistory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	migrations, err := h.db.GetCompletedMigrations(ctx)
+	// Parse source_id filter
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
+		}
+	}
+
+	migrations, err := h.db.GetCompletedMigrations(ctx, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get migration history for export", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("migration history"))

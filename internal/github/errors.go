@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v75/github"
 )
@@ -187,9 +188,9 @@ func extractStatusCodeFromError(err error) int {
 	return 0
 }
 
-// IsRateLimitError checks if an error is a rate limit error (primary or secondary)
+// IsRateLimitError checks if an error is a rate limit error (primary, secondary, or blocked)
 func IsRateLimitError(err error) bool {
-	return errors.Is(err, ErrRateLimitExceeded) || IsSecondaryRateLimitError(err)
+	return errors.Is(err, ErrRateLimitExceeded) || IsSecondaryRateLimitError(err) || IsRateLimitBlockedError(err)
 }
 
 // IsSecondaryRateLimitError checks if an error is a secondary rate limit error
@@ -250,13 +251,18 @@ func IsRetryableError(err error) bool {
 		}
 	}
 
-	// Also retry on rate limit errors (primary and secondary)
+	// Also retry on rate limit errors (primary, secondary, and blocked)
 	if errors.Is(err, ErrRateLimitExceeded) || errors.Is(err, ErrSecondaryRateLimitExceeded) {
 		return true
 	}
 
 	// Check for secondary rate limit by message pattern
 	if IsSecondaryRateLimitError(err) {
+		return true
+	}
+
+	// Check for blocked rate limit (go-github's client-side blocking)
+	if IsRateLimitBlockedError(err) {
 		return true
 	}
 
@@ -320,4 +326,51 @@ func IsAuthError(err error) bool {
 // IsNotFoundError checks if an error is a not found error
 func IsNotFoundError(err error) bool {
 	return errors.Is(err, ErrNotFound)
+}
+
+// IsRateLimitBlockedError checks if an error indicates the request was blocked
+// due to an already-exceeded rate limit (go-github's client-side blocking)
+// Example: "403 API rate limit of 5000 still exceeded until 2026-01-06 11:39:25 -0500 EST, not making remote request."
+func IsRateLimitBlockedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "rate limit") &&
+		strings.Contains(errMsg, "exceeded until") &&
+		strings.Contains(errMsg, "not making remote request")
+}
+
+// ParseRateLimitResetTime extracts the rate limit reset time from an error message
+// Returns the reset time and true if successfully parsed, otherwise zero time and false
+func ParseRateLimitResetTime(err error) (time.Time, bool) {
+	if err == nil {
+		return time.Time{}, false
+	}
+
+	errMsg := err.Error()
+
+	// Look for "rate reset in Xm Ys" or "[rate reset in Xm Ys]" pattern
+	resetIdx := strings.Index(errMsg, "rate reset in ")
+	if resetIdx == -1 {
+		return time.Time{}, false
+	}
+
+	// Extract the duration string after "rate reset in "
+	durationStart := resetIdx + len("rate reset in ")
+	durationStr := errMsg[durationStart:]
+
+	// Find the end (either ']' or end of string)
+	if endIdx := strings.Index(durationStr, "]"); endIdx != -1 {
+		durationStr = durationStr[:endIdx]
+	}
+
+	// Parse duration (e.g., "1m56s", "30s", "2m")
+	duration, parseErr := time.ParseDuration(strings.TrimSpace(durationStr))
+	if parseErr != nil {
+		return time.Time{}, false
+	}
+
+	// Calculate reset time from now
+	return time.Now().Add(duration), true
 }

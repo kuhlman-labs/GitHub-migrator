@@ -9,6 +9,7 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { StatusBadge } from '../common/StatusBadge';
 import { Badge } from '../common/Badge';
+import { SourceBadge } from '../common/SourceBadge';
 import { FormDialog } from '../common/FormDialog';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { TimestampDisplay } from '../common/TimestampDisplay';
@@ -234,7 +235,8 @@ export function RepositoryDetail() {
                 </li>
                 <li className="mx-2" style={{ color: 'var(--fgColor-muted)' }}>/</li>
                 <li className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
-                  {repository.full_name.split('/').slice(1).join('/')}
+                  {/* Show only the repo name (last part), since org and project are shown separately */}
+                  {repository.full_name.split('/').pop()}
                 </li>
               </>
             ) : (
@@ -310,8 +312,11 @@ export function RepositoryDetail() {
                 }
               })()}
             </div>
-            <div className="flex items-center gap-4 mb-4">
+            <div className="flex items-center gap-4 mb-4 flex-wrap">
               <StatusBadge status={repository.status} />
+              {repository.source_id && (
+                <SourceBadge sourceId={repository.source_id} size="medium" />
+              )}
               {repository.priority === 1 && <Badge color="purple">High Priority</Badge>}
               {currentBatch && <Badge color="blue">{currentBatch.name}</Badge>}
               {repository.is_source_locked && <Badge color="orange">🔒 Source Locked</Badge>}

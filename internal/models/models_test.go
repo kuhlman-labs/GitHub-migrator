@@ -121,6 +121,83 @@ func TestRepository_Name(t *testing.T) {
 	}
 }
 
+// TestRepository_DestinationRepoName tests destination repository name computation
+func TestRepository_DestinationRepoName(t *testing.T) {
+	tests := []struct {
+		name       string
+		fullName   string
+		adoProject *string
+		expected   string
+	}{
+		{
+			name:       "GitHub repo - standard org/repo format",
+			fullName:   "my-org/my-repo",
+			adoProject: nil,
+			expected:   "my-repo",
+		},
+		{
+			name:       "GitHub repo - repo with spaces",
+			fullName:   "my-org/my repo",
+			adoProject: nil,
+			expected:   "my-repo",
+		},
+		{
+			name:       "ADO repo - org/project/repo format",
+			fullName:   "brettkuhlman/Test Project/Test Project 2",
+			adoProject: strPtr("Test Project"),
+			expected:   "Test-Project-Test-Project-2",
+		},
+		{
+			name:       "ADO repo - simple project and repo",
+			fullName:   "org/DevOps/Terraform",
+			adoProject: strPtr("DevOps"),
+			expected:   "DevOps-Terraform",
+		},
+		{
+			name:       "ADO repo - project with spaces",
+			fullName:   "org/My Project/my-repo",
+			adoProject: strPtr("My Project"),
+			expected:   "My-Project-my-repo",
+		},
+		{
+			name:       "ADO repo - complex nested path",
+			fullName:   "brettkuhlman/Test Project/test-ado-frontend-app",
+			adoProject: strPtr("Test Project"),
+			expected:   "Test-Project-test-ado-frontend-app",
+		},
+		{
+			name:       "single word (no slash)",
+			fullName:   "onlyrepo",
+			adoProject: nil,
+			expected:   "onlyrepo",
+		},
+		{
+			name:       "empty string",
+			fullName:   "",
+			adoProject: nil,
+			expected:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &Repository{
+				FullName:   tt.fullName,
+				ADOProject: tt.adoProject,
+			}
+			result := repo.DestinationRepoName()
+			if result != tt.expected {
+				t.Errorf("DestinationRepoName() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// strPtr is a helper to create string pointers for tests
+func strPtr(s string) *string {
+	return &s
+}
+
 // TestRepository_SetComplexityBreakdown tests setting complexity breakdown
 func TestRepository_SetComplexityBreakdown(t *testing.T) {
 	t.Run("set nil breakdown", func(t *testing.T) {

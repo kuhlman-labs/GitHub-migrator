@@ -6,7 +6,7 @@ export function useStartDiscovery() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (params: { organization?: string; enterprise_slug?: string }) => api.startDiscovery(params),
+    mutationFn: (params: { organization?: string; enterprise_slug?: string; source_id?: number }) => api.startDiscovery(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['discoveryProgress'] });
       queryClient.invalidateQueries({ queryKey: ['discoveryStatus'] });
@@ -22,13 +22,26 @@ export function useStartADODiscovery() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (params: { organization?: string; project?: string; workers?: number }) => api.startADODiscovery(params),
+    mutationFn: (params: { organization?: string; project?: string; workers?: number; source_id?: number }) => api.startADODiscovery(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['discoveryProgress'] });
       queryClient.invalidateQueries({ queryKey: ['adoDiscoveryStatus'] });
       queryClient.invalidateQueries({ queryKey: ['adoProjects'] });
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
       queryClient.invalidateQueries({ queryKey: ['analytics'] });
+    },
+  });
+}
+
+// Cancel discovery mutation
+export function useCancelDiscovery() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => api.cancelDiscovery(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['discoveryProgress'] });
+      queryClient.invalidateQueries({ queryKey: ['discoveryStatus'] });
     },
   });
 }
@@ -51,7 +64,8 @@ export function useDiscoverOrgMembers() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (organization: string) => api.discoverOrgMembers(organization),
+    mutationFn: (params: { organization: string; source_id?: number }) => 
+      api.discoverOrgMembers(params.organization, params.source_id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['userMappings'] });
@@ -65,7 +79,8 @@ export function useDiscoverTeams() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (organization: string) => api.discoverTeams(organization),
+    mutationFn: (params: { organization: string; source_id?: number }) => 
+      api.discoverTeams(params.organization, params.source_id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['teamMappings'] });

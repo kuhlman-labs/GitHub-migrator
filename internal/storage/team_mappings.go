@@ -107,6 +107,7 @@ type TeamMappingFilters struct {
 	Status         string // Filter by mapping_status
 	HasDestination *bool  // Filter by whether destination is set
 	Search         string // Search in team names/slugs
+	SourceID       *int   // Filter by source ID (multi-source support)
 	Limit          int
 	Offset         int
 }
@@ -145,6 +146,10 @@ func (d *Database) ListTeamMappings(ctx context.Context, filters TeamMappingFilt
 			"source_team_slug LIKE ? OR source_team_name LIKE ? OR destination_team_slug LIKE ? OR destination_team_name LIKE ?",
 			searchPattern, searchPattern, searchPattern, searchPattern,
 		)
+	}
+
+	if filters.SourceID != nil {
+		query = query.Where("source_id = ?", *filters.SourceID)
 	}
 
 	// Get total count
@@ -309,6 +314,7 @@ func (d *Database) DeleteAllTeamMappings(ctx context.Context) error {
 // CreateTeamMappingFromTeam creates a team mapping from a discovered team
 func (d *Database) CreateTeamMappingFromTeam(ctx context.Context, team *models.GitHubTeam) error {
 	mapping := &models.TeamMapping{
+		SourceID:       team.SourceID, // Copy source_id from discovered team for multi-source support
 		SourceOrg:      team.Organization,
 		SourceTeamSlug: team.Slug,
 		SourceTeamName: &team.Name,
@@ -344,6 +350,7 @@ func (d *Database) SyncTeamMappingsFromTeams(ctx context.Context) (int64, error)
 	now := time.Now()
 	for _, team := range teams {
 		mappings = append(mappings, &models.TeamMapping{
+			SourceID:       team.SourceID, // Copy source_id from discovered team for multi-source support
 			SourceOrg:      team.Organization,
 			SourceTeamSlug: team.Slug,
 			SourceTeamName: &team.Name,
@@ -421,6 +428,7 @@ type TeamWithMappingFilters struct {
 	Organization string // Filter by source organization
 	Status       string // Filter by mapping status
 	Search       string // Search in slug, name
+	SourceID     *int   // Filter by source ID (multi-source support)
 	Limit        int
 	Offset       int
 }
@@ -487,6 +495,11 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 			searchPattern, searchPattern, searchPattern)
 	}
 
+	// Apply source ID filter (multi-source support)
+	if filters.SourceID != nil {
+		query = query.Where("t.source_id = ?", *filters.SourceID)
+	}
+
 	// Get total count
 	var total int64
 	countQuery := d.db.WithContext(ctx).
@@ -507,6 +520,9 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 		searchPattern := "%" + filters.Search + "%"
 		countQuery = countQuery.Where("t.slug LIKE ? OR t.name LIKE ? OR m.destination_team_slug LIKE ?",
 			searchPattern, searchPattern, searchPattern)
+	}
+	if filters.SourceID != nil {
+		countQuery = countQuery.Where("t.source_id = ?", *filters.SourceID)
 	}
 
 	if err := countQuery.Count(&total).Error; err != nil {
@@ -532,12 +548,21 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 
 // GetTeamsWithMappingsStats returns stats for teams with their mapping status
 // If orgFilter is provided, stats are filtered to that organization only
-func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter string) (map[string]any, error) {
-	var total int64
-	baseQuery := d.db.WithContext(ctx).Model(&models.GitHubTeam{})
-	if orgFilter != "" {
-		baseQuery = baseQuery.Where("organization = ?", orgFilter)
+// If sourceID is provided, stats are filtered to that source only (multi-source support)
+func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter string, sourceID *int) (map[string]any, error) {
+	// Helper to apply common filters
+	applyFilters := func(query *gorm.DB) *gorm.DB {
+		if orgFilter != "" {
+			query = query.Where("github_teams.organization = ?", orgFilter)
+		}
+		if sourceID != nil {
+			query = query.Where("github_teams.source_id = ?", *sourceID)
+		}
+		return query
 	}
+
+	var total int64
+	baseQuery := applyFilters(d.db.WithContext(ctx).Table("github_teams"))
 	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count total teams: %w", err)
 	}
@@ -545,39 +570,30 @@ func (d *Database) GetTeamsWithMappingsStats(ctx context.Context, orgFilter stri
 	// Count mapped teams (teams with mapping status 'mapped')
 	// Uses LEFT JOIN to match teams with their mappings
 	var mapped int64
-	mappedQuery := d.db.WithContext(ctx).
+	mappedQuery := applyFilters(d.db.WithContext(ctx).
 		Table("github_teams").
 		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
-		Where("team_mappings.mapping_status = ?", teamMappingStatusMapped)
-	if orgFilter != "" {
-		mappedQuery = mappedQuery.Where("github_teams.organization = ?", orgFilter)
-	}
+		Where("team_mappings.mapping_status = ?", teamMappingStatusMapped))
 	if err := mappedQuery.Count(&mapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mapped: %w", err)
 	}
 
 	// Count skipped teams (teams with mapping status 'skipped')
 	var skipped int64
-	skippedQuery := d.db.WithContext(ctx).
+	skippedQuery := applyFilters(d.db.WithContext(ctx).
 		Table("github_teams").
 		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
-		Where("team_mappings.mapping_status = ?", teamMappingStatusSkipped)
-	if orgFilter != "" {
-		skippedQuery = skippedQuery.Where("github_teams.organization = ?", orgFilter)
-	}
+		Where("team_mappings.mapping_status = ?", teamMappingStatusSkipped))
 	if err := skippedQuery.Count(&skipped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
 
 	// Count unmapped teams (teams with no mapping OR mapping status 'unmapped')
 	var unmapped int64
-	unmappedQuery := d.db.WithContext(ctx).
+	unmappedQuery := applyFilters(d.db.WithContext(ctx).
 		Table("github_teams").
 		Joins("LEFT JOIN team_mappings ON github_teams.organization = team_mappings.source_org AND github_teams.slug = team_mappings.source_team_slug").
-		Where("team_mappings.id IS NULL OR team_mappings.mapping_status = ?", teamMappingStatusUnmapped)
-	if orgFilter != "" {
-		unmappedQuery = unmappedQuery.Where("github_teams.organization = ?", orgFilter)
-	}
+		Where("team_mappings.id IS NULL OR team_mappings.mapping_status = ?", teamMappingStatusUnmapped))
 	if err := unmappedQuery.Count(&unmapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count unmapped: %w", err)
 	}

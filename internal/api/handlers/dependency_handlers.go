@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -157,7 +158,17 @@ func (h *Handler) GetDependencyGraph(w http.ResponseWriter, r *http.Request) {
 		dependencyTypes = strings.Split(dependencyTypeFilter, ",")
 	}
 
-	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes)
+	// Parse source_id filter
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
+		}
+	}
+
+	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get dependency graph", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("dependency graph"))
@@ -280,7 +291,17 @@ func (h *Handler) ExportDependencies(w http.ResponseWriter, r *http.Request) {
 		dependencyTypes = strings.Split(dependencyTypeFilter, ",")
 	}
 
-	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes)
+	// Parse source_id filter
+	var sourceID *int64
+	if sourceIDStr := r.URL.Query().Get("source_id"); sourceIDStr != "" {
+		if id, err := strconv.ParseInt(sourceIDStr, 10, 64); err == nil {
+			// Allocate on heap to avoid dangling pointer when if block exits
+			sourceID = new(int64)
+			*sourceID = id
+		}
+	}
+
+	edges, err := h.db.GetAllLocalDependencyPairs(ctx, dependencyTypes, sourceID)
 	if err != nil {
 		h.logger.Error("Failed to get dependencies for export", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("dependencies"))

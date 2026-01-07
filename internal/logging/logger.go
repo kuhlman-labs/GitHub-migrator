@@ -5,12 +5,117 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+// Log level string constants
+const (
+	LevelInfo  = "info"
+	LevelDebug = "debug"
+	LevelWarn  = "warn"
+	LevelError = "error"
+)
+
+// LogLevelManager provides runtime log level control
+type LogLevelManager struct {
+	levelVar     *slog.LevelVar
+	defaultLevel slog.Level
+	mu           sync.RWMutex
+}
+
+// Global log level manager instance
+var globalManager *LogLevelManager
+var managerOnce sync.Once
+
+// GetLogLevelManager returns the global LogLevelManager instance
+func GetLogLevelManager() *LogLevelManager {
+	return globalManager
+}
+
+// GetLevel returns the current log level as a string
+func (m *LogLevelManager) GetLevel() string {
+	if m == nil || m.levelVar == nil {
+		return LevelInfo
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return levelToString(m.levelVar.Level())
+}
+
+// GetDefaultLevel returns the default log level from configuration
+func (m *LogLevelManager) GetDefaultLevel() string {
+	if m == nil {
+		return LevelInfo
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return levelToString(m.defaultLevel)
+}
+
+// SetLevel changes the log level at runtime
+func (m *LogLevelManager) SetLevel(level string) {
+	if m == nil || m.levelVar == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.levelVar.Set(parseLevel(level))
+}
+
+// IsDebugEnabled returns true if debug logging is currently enabled
+func (m *LogLevelManager) IsDebugEnabled() bool {
+	if m == nil || m.levelVar == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.levelVar.Level() <= slog.LevelDebug
+}
+
+// SetDebugEnabled enables or disables debug logging
+func (m *LogLevelManager) SetDebugEnabled(enabled bool) {
+	if m == nil || m.levelVar == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if enabled {
+		m.levelVar.Set(slog.LevelDebug)
+	} else {
+		// Reset to default level when disabling debug
+		m.levelVar.Set(m.defaultLevel)
+	}
+}
+
+// ResetToDefault resets the log level to the configured default
+func (m *LogLevelManager) ResetToDefault() {
+	if m == nil || m.levelVar == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.levelVar.Set(m.defaultLevel)
+}
+
+func levelToString(level slog.Level) string {
+	switch level {
+	case slog.LevelDebug:
+		return LevelDebug
+	case slog.LevelInfo:
+		return LevelInfo
+	case slog.LevelWarn:
+		return LevelWarn
+	case slog.LevelError:
+		return LevelError
+	default:
+		return LevelInfo
+	}
+}
 
 func NewLogger(cfg config.LoggingConfig) *slog.Logger {
 	// File writer with rotation
@@ -22,26 +127,36 @@ func NewLogger(cfg config.LoggingConfig) *slog.Logger {
 		Compress:   true,
 	}
 
-	// Determine log level
-	level := parseLevel(cfg.Level)
+	// Determine log level and create LevelVar for runtime changes
+	defaultLevel := parseLevel(cfg.Level)
+	levelVar := new(slog.LevelVar)
+	levelVar.Set(defaultLevel)
 
-	// Create handlers
+	// Initialize the global manager
+	managerOnce.Do(func() {
+		globalManager = &LogLevelManager{
+			levelVar:     levelVar,
+			defaultLevel: defaultLevel,
+		}
+	})
+
+	// Create handlers using LevelVar for dynamic level control
 	var handler slog.Handler
 
 	if cfg.Format == "json" {
 		// JSON format to both stdout and file
 		multiWriter := io.MultiWriter(os.Stdout, fileWriter)
 		handler = slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
-			Level: level,
+			Level: levelVar,
 		})
 	} else {
 		// Text format to file (plain), tinted/colored to stdout (if terminal supports it)
-		fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{Level: level})
+		fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{Level: levelVar})
 
 		// Use tint for colored console output
 		// tint automatically handles color detection based on terminal capabilities
 		stdoutHandler := tint.NewHandler(os.Stdout, &tint.Options{
-			Level:   level,
+			Level:   levelVar,
 			NoColor: !shouldUseColors(),
 		})
 
@@ -53,13 +168,13 @@ func NewLogger(cfg config.LoggingConfig) *slog.Logger {
 
 func parseLevel(level string) slog.Level {
 	switch level {
-	case "debug":
+	case LevelDebug:
 		return slog.LevelDebug
-	case "info":
+	case LevelInfo:
 		return slog.LevelInfo
-	case "warn":
+	case LevelWarn:
 		return slog.LevelWarn
-	case "error":
+	case LevelError:
 		return slog.LevelError
 	default:
 		return slog.LevelInfo

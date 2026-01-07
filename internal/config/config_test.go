@@ -504,3 +504,196 @@ auth:
 		})
 	}
 }
+
+// Tests for destination-centric authorization config
+
+func TestAuthorizationRulesDefaults(t *testing.T) {
+	viper.Reset()
+	setDefaults()
+
+	tests := []struct {
+		key      string
+		expected any
+	}{
+		{"auth.authorization_rules.allow_org_admin_migrations", true},
+		{"auth.authorization_rules.allow_enterprise_admin_migrations", true},
+		{"auth.authorization_rules.enable_self_service", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got := viper.Get(tt.key)
+			if got != tt.expected {
+				t.Errorf("Default for %s = %v, want %v", tt.key, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseAuthorizationRules_MigrationAdminTeams(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected []string
+	}{
+		{
+			name:     "single team",
+			envValue: "myorg/migration-admins",
+			expected: []string{"myorg/migration-admins"},
+		},
+		{
+			name:     "multiple teams comma separated",
+			envValue: "org1/team1,org2/team2,org3/team3",
+			expected: []string{"org1/team1", "org2/team2", "org3/team3"},
+		},
+		{
+			name:     "teams with spaces",
+			envValue: "org1/team1, org2/team2 , org3/team3",
+			expected: []string{"org1/team1", "org2/team2", "org3/team3"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+			setDefaults()
+
+			// Set environment variable
+			t.Setenv("GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS", tt.envValue)
+
+			// Create minimal config
+			tmpfile, err := os.CreateTemp("", "config-*.yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(tmpfile.Name())
+
+			configContent := `server:
+  port: 8080
+`
+			if _, err := tmpfile.Write([]byte(configContent)); err != nil {
+				t.Fatal(err)
+			}
+			tmpfile.Close()
+
+			viper.SetConfigFile(tmpfile.Name())
+			viper.SetEnvPrefix("GHMIG")
+			viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+			viper.AutomaticEnv()
+			bindEnvVars()
+
+			if err := viper.ReadInConfig(); err != nil {
+				t.Fatalf("Failed to read config: %v", err)
+			}
+
+			var cfg Config
+			if err := viper.Unmarshal(&cfg); err != nil {
+				t.Fatalf("Failed to unmarshal config: %v", err)
+			}
+
+			cfg.ParseArrayEnvVars()
+
+			result := cfg.Auth.AuthorizationRules.MigrationAdminTeams
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d teams, got %d: %v", len(tt.expected), len(result), result)
+				return
+			}
+
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Errorf("Index %d: expected %s, got %s", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseAuthorizationRules_AllowOrgAdminMigrations(t *testing.T) {
+	viper.Reset()
+	setDefaults()
+
+	// Create minimal config with the new field
+	tmpfile, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	configContent := `
+auth:
+  enabled: true
+  authorization_rules:
+    allow_org_admin_migrations: false
+    allow_enterprise_admin_migrations: true
+    enable_self_service: false
+`
+	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+
+	viper.SetConfigFile(tmpfile.Name())
+	if err := viper.ReadInConfig(); err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	if cfg.Auth.AuthorizationRules.AllowOrgAdminMigrations != false {
+		t.Error("Expected AllowOrgAdminMigrations to be false")
+	}
+	if cfg.Auth.AuthorizationRules.AllowEnterpriseAdminMigrations != true {
+		t.Error("Expected AllowEnterpriseAdminMigrations to be true")
+	}
+	if cfg.Auth.AuthorizationRules.EnableSelfService != false {
+		t.Error("Expected EnableSelfService to be false")
+	}
+}
+
+func TestParseAuthorizationRules_PrivilegedTeamsMigration(t *testing.T) {
+	// Test backward compatibility: privileged_teams should be merged into migration_admin_teams
+	viper.Reset()
+	setDefaults()
+
+	tmpfile, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	configContent := `
+auth:
+  enabled: true
+  authorization_rules:
+    privileged_teams:
+      - org1/old-team
+      - org2/legacy-team
+`
+	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+
+	viper.SetConfigFile(tmpfile.Name())
+	if err := viper.ReadInConfig(); err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	cfg.ParseArrayEnvVars()
+
+	// Check that privileged_teams are migrated to migration_admin_teams
+	if len(cfg.Auth.AuthorizationRules.MigrationAdminTeams) != 2 {
+		t.Errorf("Expected 2 migration admin teams, got %d", len(cfg.Auth.AuthorizationRules.MigrationAdminTeams))
+	}
+	if cfg.Auth.AuthorizationRules.MigrationAdminTeams[0] != "org1/old-team" {
+		t.Errorf("Expected first team to be 'org1/old-team', got %s", cfg.Auth.AuthorizationRules.MigrationAdminTeams[0])
+	}
+}

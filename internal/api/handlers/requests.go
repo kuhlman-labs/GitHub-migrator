@@ -30,11 +30,13 @@ type StartDiscoveryRequest struct {
 	Organization   string `json:"organization,omitempty"`
 	EnterpriseSlug string `json:"enterprise_slug,omitempty"`
 	Workers        int    `json:"workers,omitempty"`
+	SourceID       *int64 `json:"source_id,omitempty"` // Optional: associate discovered repos with a source
 }
 
 // StartProfilingRequest is the request body for starting repository profiling.
 type StartProfilingRequest struct {
 	Organization string `json:"organization"`
+	SourceID     *int64 `json:"source_id,omitempty"` // Optional: associate discovered repos with a source
 }
 
 // ===== User Mapping Handlers =====
@@ -42,6 +44,7 @@ type StartProfilingRequest struct {
 // DiscoverUsersRequest is the request body for discovering users from an organization.
 type DiscoverUsersRequest struct {
 	Organization string `json:"organization"`
+	SourceID     *int64 `json:"source_id,omitempty"` // Optional: use specific source for discovery
 }
 
 // CreateUserMappingRequest is the request body for creating a user mapping.
@@ -89,6 +92,7 @@ type MigrateUsersRequest struct {
 // DiscoverTeamsRequest is the request body for discovering teams from an organization.
 type DiscoverTeamsRequest struct {
 	Organization string `json:"organization"`
+	SourceID     *int64 `json:"source_id,omitempty"` // Optional: use specific source for discovery
 }
 
 // CreateTeamMappingRequest is the request body for creating a team mapping.
@@ -130,6 +134,7 @@ type StartADODiscoveryRequest struct {
 	Organization string   `json:"organization"`
 	Projects     []string `json:"projects,omitempty"`
 	Workers      int      `json:"workers,omitempty"`
+	SourceID     *int64   `json:"source_id,omitempty"` // Optional: associate discovered repos with a source
 }
 
 // ===== Repository Handlers =====

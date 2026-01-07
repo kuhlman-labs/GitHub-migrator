@@ -38,6 +38,16 @@ func WithBatchID(batchID int64) func(db *gorm.DB) *gorm.DB {
 	}
 }
 
+// WithSourceID filters repositories by multi-source ID (sources table foreign key)
+func WithSourceID(sourceID int64) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		if sourceID > 0 {
+			return db.Where("source_id = ?", sourceID)
+		}
+		return db
+	}
+}
+
 // WithSource filters repositories by source
 func WithSource(source string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {

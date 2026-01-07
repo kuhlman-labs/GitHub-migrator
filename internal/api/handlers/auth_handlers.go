@@ -9,13 +9,18 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 )
 
+// defaultFrontendURL is the default frontend URL when not configured
+// Use "/" to keep users on the same domain instead of hardcoded localhost
+const defaultFrontendURL = "/"
+
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
-	oauthHandler *auth.OAuthHandler
+	oauthHandler *auth.OAuthHandler // GitHub OAuth handler for destination-centric auth
 	jwtManager   *auth.JWTManager
 	authorizer   *auth.Authorizer
 	logger       *slog.Logger
 	config       *config.AuthConfig
+	callbackURL  string // OAuth callback URL
 }
 
 // NewAuthHandler creates a new auth handler
@@ -35,114 +40,83 @@ func NewAuthHandler(cfg *config.AuthConfig, logger *slog.Logger, githubBaseURL s
 		authorizer:   auth.NewAuthorizer(cfg, logger, githubBaseURL),
 		logger:       logger,
 		config:       cfg,
+		callbackURL:  cfg.CallbackURL,
 	}, nil
 }
 
 // HandleLogin initiates OAuth login flow
+// Uses destination-centric authentication (GitHub OAuth only)
 func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	// Use destination OAuth only - source-specific OAuth has been removed
 	h.oauthHandler.HandleLogin(w, r)
 }
 
 // HandleCallback handles OAuth callback
+// Uses destination-centric authentication (GitHub OAuth only)
 func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	// Process OAuth callback
+	// Use destination OAuth callback - validates state, exchanges code, gets user info
+	// Note: oauthHandler sends HTTP error responses on failure and returns
 	h.oauthHandler.HandleCallback(w, r)
 
-	// Get user and token from context
+	// Get user and token from context (set by oauthHandler on success)
+	// If not present, oauthHandler already sent an error response
 	user, ok := auth.GetGitHubUserFromContext(r.Context())
 	if !ok {
-		h.logger.Error("Failed to get user from context")
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		// oauthHandler should have already sent error response, but be defensive
+		h.logger.Error("Missing user in context after OAuth callback - oauthHandler may have failed")
 		return
 	}
 
-	githubToken, ok := auth.GetTokenFromContext(r.Context())
+	token, ok := auth.GetTokenFromContext(r.Context())
 	if !ok {
-		h.logger.Error("Failed to get token from context")
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		// This should never happen since oauthHandler sets both user and token together
+		// But handle it defensively - don't try to write if oauthHandler might have already written
+		h.logger.Error("Missing token in context after OAuth callback - inconsistent state")
 		return
 	}
 
-	// Check authorization
-	authResult, err := h.authorizer.Authorize(r.Context(), user, githubToken)
+	h.logger.Info("OAuth callback successful", "user", user.Login)
+
+	// Perform authorization check using destination-centric auth
+	authResult, err := h.authorizer.Authorize(r.Context(), user, token)
 	if err != nil {
-		h.logger.Error("Authorization check failed", "error", err, "user", user.Login)
-		http.Error(w, "Authorization check failed", http.StatusInternalServerError)
-		return
-	}
-
-	if !authResult.Authorized {
-		h.logger.Warn("User not authorized", "user", user.Login, "reason", authResult.Reason)
-
-		// Return HTML page with error message
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusForbidden)
-		htmlContent := `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Access Denied</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #0d1117;
-            color: #c9d1d9;
-        }
-        .container {
-            text-align: center;
-            max-width: 500px;
-            padding: 2rem;
-        }
-        h1 {
-            color: #f85149;
-            margin-bottom: 1rem;
-        }
-        p {
-            margin-bottom: 1.5rem;
-            line-height: 1.6;
-        }
-        a {
-            color: #58a6ff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Access Denied</h1>
-        <p>` + authResult.Reason + `</p>
-        <p>Please contact your administrator if you believe you should have access.</p>
-        <a href="/">Return to Home</a>
-    </div>
-</body>
-</html>
-		`
-		if _, err := w.Write([]byte(htmlContent)); err != nil {
-			h.logger.Error("Failed to write access denied response", "error", err)
+		h.logger.Error("Authorization check failed", "user", user.Login, "error", err)
+		// Treat authorization errors as unauthorized - fail secure
+		frontendURL := h.config.FrontendURL
+		if frontendURL == "" {
+			frontendURL = defaultFrontendURL
 		}
+		http.Redirect(w, r, frontendURL+"/login?error=authorization_failed", http.StatusFound)
 		return
 	}
 
-	// Generate JWT token
-	token, err := h.jwtManager.GenerateToken(user, githubToken)
+	if authResult == nil || !authResult.Authorized {
+		reason := "unknown"
+		if authResult != nil {
+			reason = authResult.Reason
+		}
+		h.logger.Warn("User not authorized", "user", user.Login, "reason", reason)
+		// Redirect to frontend with error
+		frontendURL := h.config.FrontendURL
+		if frontendURL == "" {
+			frontendURL = defaultFrontendURL
+		}
+		http.Redirect(w, r, frontendURL+"/login?error=unauthorized", http.StatusFound)
+		return
+	}
+
+	// Generate JWT token (includes encrypted OAuth token for API calls)
+	jwtToken, err := h.jwtManager.GenerateToken(user, token)
 	if err != nil {
-		h.logger.Error("Failed to generate token", "error", err, "user", user.Login)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		h.logger.Error("Failed to generate JWT token", "user", user.Login, "error", err)
+		http.Error(w, "Failed to generate session token", http.StatusInternalServerError)
 		return
 	}
 
-	// Set cookie with JWT
+	// Set auth_token cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
-		Value:    token,
+		Value:    jwtToken,
 		Path:     "/",
 		MaxAge:   h.config.SessionDurationHours * 3600,
 		HttpOnly: true,
@@ -150,15 +124,14 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	h.logger.Info("User logged in successfully", "user", user.Login)
+	h.logger.Info("User authenticated successfully", "user", user.Login)
 
-	// Redirect to frontend URL
-	redirectURL := h.config.FrontendURL
-	if redirectURL == "" {
-		redirectURL = "/" // Fallback to root if not configured
+	// Redirect to frontend
+	frontendURL := h.config.FrontendURL
+	if frontendURL == "" {
+		frontendURL = defaultFrontendURL
 	}
-	h.logger.Debug("Redirecting after login", "url", redirectURL, "user", user.Login)
-	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+	http.Redirect(w, r, frontendURL, http.StatusFound)
 }
 
 // HandleLogout logs out the user
@@ -169,7 +142,7 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		h.logger.Info("User logged out", "user", user.Login)
 	}
 
-	// Clear auth cookie - must match all attributes from when cookie was set
+	// Clear auth cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    "",
@@ -207,8 +180,15 @@ func (h *AuthHandler) HandleCurrentUser(w http.ResponseWriter, r *http.Request) 
 		"avatar_url": user.AvatarURL,
 	}
 
-	if claims != nil && len(claims.Roles) > 0 {
-		response["roles"] = claims.Roles
+	if claims != nil {
+		if len(claims.Roles) > 0 {
+			response["roles"] = claims.Roles
+		}
+		// Include source info if present
+		if claims.SourceID != nil {
+			response["source_id"] = *claims.SourceID
+			response["source_type"] = claims.SourceType
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -280,7 +260,6 @@ func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		if h.config.AuthorizationRules.RequireEnterpriseMembership && h.config.AuthorizationRules.RequireEnterpriseSlug != "" {
 			rules["requires_enterprise_membership"] = true
 			if !h.config.AuthorizationRules.RequireEnterpriseAdmin {
-				// Only include enterprise slug if not already included by RequireEnterpriseAdmin
 				rules["enterprise"] = h.config.AuthorizationRules.RequireEnterpriseSlug
 			}
 		}
@@ -290,5 +269,26 @@ func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.Error("Failed to encode auth config response", "error", err)
+	}
+}
+
+// HandleAuthorizationStatus returns the current user's authorization tier and details
+// This endpoint allows users to check their authorization level and what actions they can perform
+func (h *AuthHandler) HandleAuthorizationStatus(w http.ResponseWriter, r *http.Request, handlerUtils *HandlerUtils) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	status, err := handlerUtils.GetUserAuthorizationStatus(r.Context())
+	if err != nil {
+		h.logger.Error("Failed to get authorization status", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		h.logger.Error("Failed to encode authorization status response", "error", err)
 	}
 }

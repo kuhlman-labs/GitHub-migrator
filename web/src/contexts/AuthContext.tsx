@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { api } from '../services/api';
 
 interface User {
@@ -31,6 +31,7 @@ interface AuthContextType {
   isLoading: boolean;
   authEnabled: boolean;
   authConfig: AuthConfig | null;
+  /** Login via GitHub OAuth */
   login: () => void;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
@@ -47,6 +48,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
 
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const userData = await api.getCurrentUser();
+      setUser(userData);
+    } catch {
+      // Not authenticated or session expired
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Fetch auth configuration on mount
   useEffect(() => {
     const fetchAuthConfig = async () => {
@@ -54,7 +67,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const config = await api.getAuthConfig();
         setAuthConfig(config);
         
-        // If auth is enabled, try to get current user
+        // If auth is enabled, fetch current user
         if (config.enabled) {
           await fetchCurrentUser();
         } else {
@@ -66,26 +79,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
 
     fetchAuthConfig();
+  }, [fetchCurrentUser]);
+
+  const login = useCallback(() => {
+    // Redirect to backend GitHub OAuth login
+    window.location.href = '/api/v1/auth/login';
   }, []);
 
-  const fetchCurrentUser = async () => {
-    try {
-      const userData = await api.getCurrentUser();
-      setUser(userData);
-    } catch {
-      // Not authenticated or session expired
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const login = () => {
-    // Redirect to backend OAuth login
-    window.location.href = '/api/v1/auth/login';
-  };
-
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await api.logout();
       setUser(null);
@@ -96,13 +97,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       window.location.href = '/login';
     }
-  };
+  }, []);
 
-  const refreshAuth = async () => {
+  const refreshAuth = useCallback(async () => {
     if (authConfig?.enabled) {
       await fetchCurrentUser();
     }
-  };
+  }, [authConfig?.enabled, fetchCurrentUser]);
 
   const value: AuthContextType = {
     user,

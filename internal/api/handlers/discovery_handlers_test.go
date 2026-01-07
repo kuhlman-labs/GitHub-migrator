@@ -194,3 +194,135 @@ func TestDiscoveryStatus(t *testing.T) {
 		t.Errorf("Expected 2 repositories, got %v", response["repositories_found"])
 	}
 }
+
+func TestCancelDiscovery(t *testing.T) {
+	t.Run("NoActiveDiscovery", testCancelDiscoveryNoActiveDiscovery)
+	t.Run("Success", testCancelDiscoverySuccess)
+	t.Run("CancelFunctionNotFound", testCancelDiscoveryCancelFunctionNotFound)
+}
+
+func testCancelDiscoveryNoActiveDiscovery(t *testing.T) {
+	db := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	authConfig := &config.AuthConfig{Enabled: false}
+
+	h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/cancel", nil)
+	w := httptest.NewRecorder()
+
+	h.CancelDiscovery(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response["error"] == nil {
+		t.Error("Expected error in response")
+	}
+}
+
+func testCancelDiscoverySuccess(t *testing.T) {
+	db := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	authConfig := &config.AuthConfig{Enabled: false}
+
+	h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
+
+	// Create an active discovery progress record
+	progress := &models.DiscoveryProgress{
+		DiscoveryType: models.DiscoveryTypeOrganization,
+		Target:        "test-org",
+		Status:        models.DiscoveryStatusInProgress,
+		TotalOrgs:     1,
+	}
+	if err := db.CreateDiscoveryProgress(progress); err != nil {
+		t.Fatalf("Failed to create discovery progress: %v", err)
+	}
+
+	// Register a cancel function for this discovery
+	cancelled := false
+	h.discoveryMu.Lock()
+	h.discoveryCancel[progress.ID] = func() { cancelled = true }
+	h.discoveryMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/cancel", nil)
+	w := httptest.NewRecorder()
+
+	h.CancelDiscovery(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response["message"] != "Discovery cancellation initiated" {
+		t.Errorf("Expected message 'Discovery cancellation initiated', got %v", response["message"])
+	}
+	if response["progress_id"] != float64(progress.ID) {
+		t.Errorf("Expected progress_id %d, got %v", progress.ID, response["progress_id"])
+	}
+	if response["status"] != "cancelling" {
+		t.Errorf("Expected status 'cancelling', got %v", response["status"])
+	}
+	if !cancelled {
+		t.Error("Expected cancel function to be called")
+	}
+
+	// Verify phase was updated to cancelling
+	updatedProgress, err := db.GetLatestDiscoveryProgress()
+	if err != nil {
+		t.Fatalf("Failed to get updated progress: %v", err)
+	}
+	if updatedProgress.Phase != models.PhaseCancelling {
+		t.Errorf("Expected phase '%s', got '%s'", models.PhaseCancelling, updatedProgress.Phase)
+	}
+}
+
+func testCancelDiscoveryCancelFunctionNotFound(t *testing.T) {
+	db := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	authConfig := &config.AuthConfig{Enabled: false}
+
+	h := NewHandler(db, logger, nil, nil, nil, nil, authConfig, "https://api.github.com", "github")
+
+	// Create an active discovery progress record but don't register a cancel function
+	// This simulates a discovery that was started by a different server instance
+	progress := &models.DiscoveryProgress{
+		DiscoveryType: models.DiscoveryTypeOrganization,
+		Target:        "test-org",
+		Status:        models.DiscoveryStatusInProgress,
+		TotalOrgs:     1,
+	}
+	if err := db.CreateDiscoveryProgress(progress); err != nil {
+		t.Fatalf("Failed to create discovery progress: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/cancel", nil)
+	w := httptest.NewRecorder()
+
+	h.CancelDiscovery(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// Should indicate cancel function not found
+	if response["error"] == nil {
+		t.Error("Expected error in response")
+	}
+}

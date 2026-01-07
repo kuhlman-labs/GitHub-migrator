@@ -13,20 +13,23 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
+	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/source"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
 type Server struct {
-	config              *config.Config
-	db                  *storage.Database
-	logger              *slog.Logger
-	handler             *handlers.Handler
-	authHandler         *handlers.AuthHandler
-	adoHandler          *handlers.ADOHandler
-	entraIDOAuthHandler *auth.EntraIDOAuthHandler
-	shutdownChan        chan struct{}
+	config          *config.Config
+	db              *storage.Database
+	logger          *slog.Logger
+	handler         *handlers.Handler
+	authHandler     *handlers.AuthHandler
+	adoHandler      *handlers.ADOHandler
+	sourceHandler   *handlers.SourceHandler
+	settingsHandler *handlers.SettingsHandler
+	configSvc       *configsvc.Service
+	shutdownChan    chan struct{}
 }
 
 func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, sourceDualClient *github.DualClient, destDualClient *github.DualClient) *Server {
@@ -55,26 +58,39 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	}
 
 	// Create auth handler if enabled
+	// Uses destination-centric authentication - users authenticate against the destination GitHub instance
 	var authHandler *handlers.AuthHandler
 	if cfg.Auth.Enabled {
 		var err error
-		authHandler, err = handlers.NewAuthHandler(&cfg.Auth, logger, cfg.Source.BaseURL)
+		// Use destination URL for OAuth and authorization checks (destination-centric auth)
+		destBaseURL := cfg.Destination.BaseURL
+		if destBaseURL == "" {
+			destBaseURL = "https://api.github.com" // Default to github.com
+		}
+		authHandler, err = handlers.NewAuthHandler(&cfg.Auth, logger, destBaseURL)
 		if err != nil {
 			logger.Error("Failed to create auth handler", "error", err)
 		} else {
-			logger.Info("Authentication enabled")
+			logger.Info("Authentication enabled", "destination_url", destBaseURL)
 		}
 	}
 
 	// Determine source base URL for permission checks
 	sourceBaseURL := cfg.Auth.GetOAuthBaseURL(cfg)
 
+	// Determine destination base URL for authorization tier checks
+	// This is needed for CheckRepositoryAccess and GetUserAuthorizationStatus to query the correct GitHub instance
+	destBaseURLForAuth := cfg.Destination.BaseURL
+	if destBaseURLForAuth == "" {
+		destBaseURLForAuth = "https://api.github.com" // Default to github.com
+	}
+
 	// Create main handler
 	mainHandler := handlers.NewHandler(db, logger, sourceDualClient, destDualClient, sourceProvider, sourceBaseConfig, &cfg.Auth, sourceBaseURL, cfg.Source.Type)
+	mainHandler.SetDestinationBaseURL(destBaseURLForAuth)
 
 	// Create ADO handler if source is Azure DevOps
 	var adoHandler *handlers.ADOHandler
-	var entraIDOAuthHandler *auth.EntraIDOAuthHandler
 	if cfg.Source.Type == "azuredevops" && cfg.Source.Token != "" {
 		// Validate ADO configuration before attempting connection
 		if cfg.Source.BaseURL == "" {
@@ -98,29 +114,44 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 				logger.Info("Azure DevOps integration enabled", "org_url", cfg.Source.BaseURL)
 			}
 		}
-
-		// Create Entra ID OAuth handler if enabled
-		if cfg.Auth.Enabled && cfg.Auth.EntraIDEnabled {
-			entraIDOAuthHandler = auth.NewEntraIDOAuthHandler(&cfg.Auth)
-			logger.Info("Entra ID OAuth enabled for Azure DevOps")
-		}
 	}
 
+	// Create source handler for multi-source management
+	sourceHandler := handlers.NewSourceHandler(db, logger)
+
 	return &Server{
-		config:              cfg,
-		db:                  db,
-		logger:              logger,
-		handler:             mainHandler,
-		authHandler:         authHandler,
-		adoHandler:          adoHandler,
-		entraIDOAuthHandler: entraIDOAuthHandler,
-		shutdownChan:        make(chan struct{}),
+		config:        cfg,
+		db:            db,
+		logger:        logger,
+		handler:       mainHandler,
+		authHandler:   authHandler,
+		adoHandler:    adoHandler,
+		sourceHandler: sourceHandler,
+		shutdownChan:  make(chan struct{}),
 	}
 }
 
 // ShutdownChan returns the shutdown channel for graceful server shutdown
 func (s *Server) ShutdownChan() chan struct{} {
 	return s.shutdownChan
+}
+
+// SetConfigService sets the dynamic configuration service and creates the settings handler
+func (s *Server) SetConfigService(configSvc *configsvc.Service) {
+	s.configSvc = configSvc
+	s.settingsHandler = handlers.NewSettingsHandler(s.db, s.logger, configSvc)
+
+	// Also set configSvc on the main handler for effective auth config
+	if s.handler != nil {
+		s.handler.SetConfigService(configSvc)
+	}
+
+	s.logger.Info("Settings handler initialized with ConfigService")
+}
+
+// GetConfigService returns the dynamic configuration service
+func (s *Server) GetConfigService() *configsvc.Service {
+	return s.configSvc
 }
 
 func (s *Server) Router() http.Handler {
@@ -130,7 +161,15 @@ func (s *Server) Router() http.Handler {
 	var authMiddleware *auth.Middleware
 	if s.config.Auth.Enabled && s.authHandler != nil {
 		jwtManager, _ := auth.NewJWTManager(s.config.Auth.SessionSecret, s.config.Auth.SessionDurationHours)
-		authorizer := auth.NewAuthorizer(&s.config.Auth, s.logger, s.config.Source.BaseURL)
+		// Use effective auth config which merges static config with database settings
+		// This allows enterprise slug and authorization rules to be configured via UI
+		var effectiveAuthCfg config.AuthConfig
+		if s.configSvc != nil {
+			effectiveAuthCfg = s.configSvc.GetEffectiveAuthConfig()
+		} else {
+			effectiveAuthCfg = s.config.Auth
+		}
+		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, s.config.Source.BaseURL)
 		authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
 	}
 
@@ -145,17 +184,7 @@ func (s *Server) Router() http.Handler {
 			mux.Handle("POST /api/v1/auth/logout", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleLogout)))
 			mux.Handle("GET /api/v1/auth/user", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleCurrentUser)))
 			mux.Handle("POST /api/v1/auth/refresh", authMiddleware.RequireAuth(http.HandlerFunc(s.authHandler.HandleRefreshToken)))
-		}
-	}
-
-	// Entra ID OAuth endpoints for Azure DevOps (public - no auth required)
-	if s.config.Auth.Enabled && s.entraIDOAuthHandler != nil {
-		mux.HandleFunc("GET /api/v1/auth/entraid/login", s.entraIDOAuthHandler.Login)
-		mux.HandleFunc("GET /api/v1/auth/entraid/callback", s.entraIDOAuthHandler.Callback)
-
-		// Protected Entra ID endpoints
-		if authMiddleware != nil {
-			mux.Handle("GET /api/v1/auth/entraid/user", authMiddleware.RequireAuth(http.HandlerFunc(s.entraIDOAuthHandler.GetUser)))
+			mux.Handle("GET /api/v1/auth/authorization-status", authMiddleware.RequireAuth(http.HandlerFunc(s.handler.HandleAuthorizationStatus)))
 		}
 	}
 
@@ -173,6 +202,15 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/setup/validate-database", setupHandler.ValidateDatabase)
 	mux.HandleFunc("POST /api/v1/setup/apply", setupHandler.ApplySetup)
 
+	// Settings endpoints (public for setup progress, protected for updates)
+	if s.settingsHandler != nil {
+		// Public endpoints for dashboard setup progress
+		mux.HandleFunc("GET /api/v1/settings/setup-progress", s.settingsHandler.GetSetupProgress)
+		mux.HandleFunc("GET /api/v1/settings", s.settingsHandler.GetSettings)
+		mux.HandleFunc("POST /api/v1/settings/destination/validate", s.settingsHandler.ValidateDestination)
+		mux.HandleFunc("POST /api/v1/settings/teams/validate", s.settingsHandler.ValidateTeams)
+	}
+
 	// Helper to conditionally wrap with auth
 	protect := func(pattern string, handler http.HandlerFunc) {
 		if authMiddleware != nil {
@@ -182,10 +220,30 @@ func (s *Server) Router() http.Handler {
 		}
 	}
 
+	// Helper for admin-only endpoints (requires Tier 1 authorization)
+	// This chains RequireAuth -> RequireAdmin for endpoints that modify system configuration
+	adminOnly := func(pattern string, handler http.HandlerFunc) {
+		if authMiddleware != nil {
+			// Chain: RequireAuth validates authentication, RequireAdmin validates Tier 1 access
+			mux.Handle(pattern, authMiddleware.RequireAuth(authMiddleware.RequireAdmin(handler)))
+		} else {
+			mux.HandleFunc(pattern, handler)
+		}
+	}
+
+	// Admin-only settings endpoints (requires Tier 1 access)
+	if s.settingsHandler != nil {
+		adminOnly("PUT /api/v1/settings", s.settingsHandler.UpdateSettings)
+		// Logging settings - admin only for security (turning on debug could expose sensitive info)
+		protect("GET /api/v1/settings/logging", s.settingsHandler.GetLoggingSettings)
+		adminOnly("PUT /api/v1/settings/logging", s.settingsHandler.UpdateLoggingSettings)
+	}
+
 	// Discovery endpoints
 	protect("POST /api/v1/discovery/start", s.handler.StartDiscovery)
 	protect("GET /api/v1/discovery/status", s.handler.DiscoveryStatus)
 	protect("GET /api/v1/discovery/progress", s.handler.GetDiscoveryProgress)
+	protect("POST /api/v1/discovery/cancel", s.handler.CancelDiscovery)
 
 	// Repository endpoints
 	// Note: Using {fullName...} trailing wildcard to capture full repo name including slashes (e.g., "org/repo")
@@ -286,15 +344,28 @@ func (s *Server) Router() http.Handler {
 	protect("GET /api/v1/analytics/detailed-discovery-report/export", s.handler.ExportDetailedDiscoveryReport)
 
 	// Azure DevOps specific endpoints
-	if s.adoHandler != nil {
-		protect("POST /api/v1/ado/discover", s.adoHandler.StartADODiscovery)
-		protect("GET /api/v1/ado/discovery/status", s.adoHandler.ADODiscoveryStatus)
-		protect("GET /api/v1/ado/projects", s.adoHandler.ListADOProjects)
-		protect("GET /api/v1/ado/projects/{organization}/{project}", s.adoHandler.GetADOProject)
-	}
+	// These handlers support both static (legacy) and dynamic (database-configured) sources
+	protect("POST /api/v1/ado/discover", s.handler.StartADODiscoveryDynamic)
+	protect("GET /api/v1/ado/discovery/status", s.handler.ADODiscoveryStatusDynamic)
+	protect("GET /api/v1/ado/projects", s.handler.ListADOProjectsDynamic)
+	protect("GET /api/v1/ado/projects/{organization}/{project}", s.handler.GetADOProjectDynamic)
 
 	// Self-service endpoints
 	protect("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)
+
+	// Source management endpoints (multi-source support)
+	// Read operations - accessible to all authenticated users
+	protect("GET /api/v1/sources", s.sourceHandler.ListSources)
+	protect("GET /api/v1/sources/{id}", s.sourceHandler.GetSource)
+	protect("GET /api/v1/sources/{id}/repositories", s.sourceHandler.GetSourceRepositories)
+	protect("GET /api/v1/sources/{id}/deletion-preview", s.sourceHandler.GetSourceDeletionPreview)
+	protect("POST /api/v1/sources/validate", s.sourceHandler.ValidateSource)
+	protect("POST /api/v1/sources/{id}/validate", s.sourceHandler.ValidateSource)
+	// Write operations - require Tier 1 (Admin) access
+	adminOnly("POST /api/v1/sources", s.sourceHandler.CreateSource)
+	adminOnly("PUT /api/v1/sources/{id}", s.sourceHandler.UpdateSource)
+	adminOnly("DELETE /api/v1/sources/{id}", s.sourceHandler.DeleteSource)
+	adminOnly("POST /api/v1/sources/{id}/set-active", s.sourceHandler.SetSourceActive)
 
 	// Serve static frontend files for SPA
 	mux.HandleFunc("/", s.serveFrontend)

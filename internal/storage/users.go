@@ -342,6 +342,7 @@ type UserWithMappingFilters struct {
 	Status    string // Filter by mapping status (unmapped, mapped, reclaimed, skipped)
 	Search    string // Search in login, email, name
 	SourceOrg string // Filter by source organization
+	SourceID  *int   // Filter by source ID (multi-source support)
 	Limit     int
 	Offset    int
 }
@@ -387,6 +388,11 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 		)))`, filters.SourceOrg, filters.SourceOrg)
 	}
 
+	// Apply source ID filter (multi-source support)
+	if filters.SourceID != nil {
+		query = query.Where("u.source_id = ?", *filters.SourceID)
+	}
+
 	// Apply search filter
 	if filters.Search != "" {
 		searchPattern := "%" + filters.Search + "%"
@@ -411,6 +417,9 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 		countQuery = countQuery.Where(`(m.source_org = ? OR (m.source_org IS NULL AND EXISTS (
 			SELECT 1 FROM user_org_memberships WHERE user_login = u.login AND organization = ?
 		)))`, filters.SourceOrg, filters.SourceOrg)
+	}
+	if filters.SourceID != nil {
+		countQuery = countQuery.Where("u.source_id = ?", *filters.SourceID)
 	}
 	if filters.Search != "" {
 		searchPattern := "%" + filters.Search + "%"
@@ -441,45 +450,47 @@ func (d *Database) ListUsersWithMappings(ctx context.Context, filters UserWithMa
 
 // GetUsersWithMappingsStats returns stats for users with their mapping status
 // If orgFilter is provided, stats are filtered to that organization only
-func (d *Database) GetUsersWithMappingsStats(ctx context.Context, orgFilter string) (map[string]any, error) {
-	var total int64
-	baseQuery := d.db.WithContext(ctx).Model(&models.UserMapping{})
-	if orgFilter != "" {
-		baseQuery = baseQuery.Where("source_org = ?", orgFilter)
+// If sourceID is provided, stats are filtered to that source only (multi-source support)
+func (d *Database) GetUsersWithMappingsStats(ctx context.Context, orgFilter string, sourceID *int) (map[string]any, error) {
+	// Helper to apply common filters including source_id via join
+	applyFilters := func(query *gorm.DB) *gorm.DB {
+		if sourceID != nil {
+			query = query.
+				Joins("JOIN github_users u ON user_mappings.source_login = u.login").
+				Where("u.source_id = ?", *sourceID)
+		}
+		if orgFilter != "" {
+			query = query.Where("user_mappings.source_org = ?", orgFilter)
+		}
+		return query
 	}
+
+	var total int64
+	baseQuery := applyFilters(d.db.WithContext(ctx).Table("user_mappings"))
 	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count total users: %w", err)
 	}
 
 	var mapped int64
-	mappedQuery := d.db.WithContext(ctx).
+	mappedQuery := applyFilters(d.db.WithContext(ctx).
 		Table("user_mappings").
-		Where("mapping_status = 'mapped'")
-	if orgFilter != "" {
-		mappedQuery = mappedQuery.Where("source_org = ?", orgFilter)
-	}
+		Where("user_mappings.mapping_status = 'mapped'"))
 	if err := mappedQuery.Count(&mapped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count mapped: %w", err)
 	}
 
 	var reclaimed int64
-	reclaimedQuery := d.db.WithContext(ctx).
+	reclaimedQuery := applyFilters(d.db.WithContext(ctx).
 		Table("user_mappings").
-		Where("mapping_status = 'reclaimed'")
-	if orgFilter != "" {
-		reclaimedQuery = reclaimedQuery.Where("source_org = ?", orgFilter)
-	}
+		Where("user_mappings.mapping_status = 'reclaimed'"))
 	if err := reclaimedQuery.Count(&reclaimed).Error; err != nil {
 		return nil, fmt.Errorf("failed to count reclaimed: %w", err)
 	}
 
 	var skipped int64
-	skippedQuery := d.db.WithContext(ctx).
+	skippedQuery := applyFilters(d.db.WithContext(ctx).
 		Table("user_mappings").
-		Where("mapping_status = 'skipped'")
-	if orgFilter != "" {
-		skippedQuery = skippedQuery.Where("source_org = ?", orgFilter)
-	}
+		Where("user_mappings.mapping_status = 'skipped'"))
 	if err := skippedQuery.Count(&skipped).Error; err != nil {
 		return nil, fmt.Errorf("failed to count skipped: %w", err)
 	}
@@ -488,15 +499,12 @@ func (d *Database) GetUsersWithMappingsStats(ctx context.Context, orgFilter stri
 
 	// Count users who can be invited (mapped + has mannequin + has destination + not already invited/completed)
 	var invitable int64
-	invitableQuery := d.db.WithContext(ctx).
+	invitableQuery := applyFilters(d.db.WithContext(ctx).
 		Table("user_mappings").
-		Where("mapping_status = 'mapped'").
-		Where("mannequin_id IS NOT NULL AND mannequin_id != ''").
-		Where("destination_login IS NOT NULL AND destination_login != ''").
-		Where("(reclaim_status IS NULL OR reclaim_status IN ('pending', 'failed'))")
-	if orgFilter != "" {
-		invitableQuery = invitableQuery.Where("source_org = ?", orgFilter)
-	}
+		Where("user_mappings.mapping_status = 'mapped'").
+		Where("user_mappings.mannequin_id IS NOT NULL AND user_mappings.mannequin_id != ''").
+		Where("user_mappings.destination_login IS NOT NULL AND user_mappings.destination_login != ''").
+		Where("(user_mappings.reclaim_status IS NULL OR user_mappings.reclaim_status IN ('pending', 'failed'))"))
 	if err := invitableQuery.Count(&invitable).Error; err != nil {
 		return nil, fmt.Errorf("failed to count invitable: %w", err)
 	}

@@ -47,9 +47,13 @@ import { api } from '../../services/api';
 import { Pagination } from '../common/Pagination';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { FormDialog } from '../common/FormDialog';
+import { SourceTypeIcon } from '../common/SourceBadge';
+import { DiscoverySourceSelector } from '../common/DiscoverySourceSelector';
+import { useSourceSelection } from '../../hooks/useSourceSelection';
 import { TeamDetailPanel } from './TeamDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -269,6 +273,8 @@ interface TeamMappingFilters extends Record<string, unknown> {
 
 export function TeamMappingTable() {
   const { showError, showSuccess } = useToast();
+  const { activeSource } = useSourceContext();
+  const { isAllSourcesMode } = useSourceSelection();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<TeamMappingFilters>({
@@ -283,6 +289,7 @@ export function TeamMappingTable() {
   const [selectedTeam, setSelectedTeam] = useState<{ org: string; slug: string } | null>(null);
   const [dryRun, setDryRun] = useState(false);
   const [discoverOrg, setDiscoverOrg] = useState('');
+  const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
   
   // Dialog state using shared hooks
   const executeDialog = useDialogState();
@@ -290,16 +297,18 @@ export function TeamMappingTable() {
   const discoverDialog = useDialogState();
   const resetDialog = useDialogState();
   const deleteDialog = useDialogState<{ org: string; slug: string }>();
+  
 
   const { data, isLoading, error, refetch } = useTeamMappings({
     search: search || undefined,
     status: filters.status || undefined,
     source_org: filters.sourceOrg || undefined,
+    source_id: activeSource?.id,
     limit,
     offset,
   });
 
-  const { data: stats } = useTeamMappingStats(filters.sourceOrg || undefined);
+  const { data: stats } = useTeamMappingStats(filters.sourceOrg || undefined, activeSource?.id);
   const { data: migrationStatus } = useTeamMigrationStatus();
   const { data: sourceOrgsData } = useTeamSourceOrgs();
   const sourceOrgs = sourceOrgsData || [];
@@ -388,11 +397,13 @@ export function TeamMappingTable() {
       const blob = await api.exportTeamMappings({
         status: filters.status || undefined,
         source_org: filters.sourceOrg || undefined,
+        source_id: activeSource?.id,
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'team-mappings.csv';
+      const sourceSuffix = activeSource ? `_${activeSource.name.replace(/\s+/g, '_')}` : '';
+      a.download = `team-mappings${sourceSuffix}.csv`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -400,7 +411,7 @@ export function TeamMappingTable() {
     } catch (error) {
       handleApiError(error, showError, 'Failed to export mappings');
     }
-  }, [filters.status, filters.sourceOrg, showError]);
+  }, [filters.status, filters.sourceOrg, activeSource, showError]);
 
   const handleImport = useCallback(async (file: File) => {
     try {
@@ -699,6 +710,10 @@ export function TeamMappingTable() {
                 onClick={() => handleTeamClick(org, slug)}
               >
                 <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    {mapping.source_id && (
+                      <SourceTypeIcon sourceId={mapping.source_id} size={14} />
+                    )}
                   <div>
                     <div className="font-medium">
                       <span style={{ color: 'var(--fgColor-muted)' }}>{org}/</span>
@@ -709,6 +724,7 @@ export function TeamMappingTable() {
                         {name}
                       </span>
                     )}
+                    </div>
                   </div>
                 </td>
                 <td className="p-3 text-center">
@@ -994,12 +1010,22 @@ export function TeamMappingTable() {
         title="Discover Teams"
         submitLabel={discoverTeams.isPending ? 'Discovering...' : 'Discover'}
         onSubmit={() => {
+          // Validate source selection in All Sources mode
+          if (isAllSourcesMode && !discoverSourceId) {
+            showError('Please select a source');
+            return;
+          }
           if (!discoverOrg.trim()) return;
-          discoverTeams.mutate(discoverOrg.trim(), {
+          
+          discoverTeams.mutate({ 
+            organization: discoverOrg.trim(),
+            source_id: discoverSourceId ?? activeSource?.id,
+          }, {
             onSuccess: (data) => {
               showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();
               setDiscoverOrg('');
+              setDiscoverSourceId(null);
             },
             onError: (error) => {
               showError(error instanceof Error ? error.message : 'Discovery failed');
@@ -1009,25 +1035,55 @@ export function TeamMappingTable() {
         onCancel={() => {
           discoverDialog.close();
           setDiscoverOrg('');
+          setDiscoverSourceId(null);
         }}
         isLoading={discoverTeams.isPending}
-        isSubmitDisabled={!discoverOrg.trim()}
+        isSubmitDisabled={!discoverOrg.trim() || (isAllSourcesMode && !discoverSourceId)}
       >
         <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-          Discover all teams from a GitHub organization. This will fetch teams, their members, and create team mappings.
+          Discover all teams from an organization. This will fetch teams, their members, and create team mappings.
         </p>
-        <FormControl>
-          <FormControl.Label>Source Organization</FormControl.Label>
-          <TextInput
-            value={discoverOrg}
-            onChange={(e) => setDiscoverOrg(e.target.value)}
-            placeholder="e.g., my-org"
-            block
-          />
-          <FormControl.Caption>
-            Enter the source GitHub organization name
-          </FormControl.Caption>
-        </FormControl>
+        
+        {/* Source Selection */}
+        <DiscoverySourceSelector
+          selectedSourceId={discoverSourceId}
+          onSourceChange={(sourceId, source) => {
+            setDiscoverSourceId(sourceId);
+            // Pre-populate organization from source config
+            if (source?.organization) {
+              setDiscoverOrg(source.organization);
+            } else {
+              setDiscoverOrg('');
+            }
+          }}
+          required={isAllSourcesMode}
+          disabled={discoverTeams.isPending}
+          label="Select Source"
+          defaultCaption="Select which source to discover teams from."
+        />
+        
+        {/* Only show organization field when source is selected (in All Sources mode) or always (in single source mode) */}
+        {(!isAllSourcesMode || discoverSourceId) && (
+          <FormControl>
+            <FormControl.Label>Source Organization</FormControl.Label>
+            <TextInput
+              value={discoverOrg}
+              onChange={(e) => setDiscoverOrg(e.target.value)}
+              placeholder="e.g., my-org"
+              block
+            />
+            <FormControl.Caption>
+              Enter the source organization name to discover teams from
+            </FormControl.Caption>
+          </FormControl>
+        )}
+        
+        {/* Prompt to select a source first in All Sources mode */}
+        {isAllSourcesMode && !discoverSourceId && (
+          <div className="text-center py-4" style={{ color: 'var(--fgColor-muted)' }}>
+            <p className="text-sm">Please select a source to configure discovery options.</p>
+          </div>
+        )}
       </FormDialog>
 
       {/* Delete Mapping Dialog */}

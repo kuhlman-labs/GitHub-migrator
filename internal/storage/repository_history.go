@@ -100,13 +100,18 @@ type CompletedMigration struct {
 	DestinationURL  *string    `json:"destination_url"`
 	Status          string     `json:"status"`
 	MigratedAt      *time.Time `json:"migrated_at"`
+	SourceID        *int64     `json:"source_id"`
 	StartedAt       *time.Time `json:"started_at"`
 	CompletedAt     *time.Time `json:"completed_at"`
 	DurationSeconds *int       `json:"duration_seconds"`
 }
 
 // GetCompletedMigrations returns all completed, failed, and rolled back migrations
-func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigration, error) {
+// Optionally filters by source_id when provided.
+func (d *Database) GetCompletedMigrations(ctx context.Context, sourceID *int64) ([]*CompletedMigration, error) {
+	// Build source filter
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
+
 	query := `
 		SELECT 
 			r.id,
@@ -115,6 +120,7 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 			r.destination_url,
 			r.status,
 			r.migrated_at,
+			r.source_id,
 			h.started_at as started_at_str,
 			h.completed_at as completed_at_str,
 			h.duration_seconds
@@ -129,7 +135,7 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 			WHERE phase IN ('migration', 'rollback') 
 			GROUP BY repository_id
 		) h ON r.id = h.repository_id
-		WHERE r.status IN ('complete', 'migration_failed', 'rolled_back')
+		WHERE r.status IN ('complete', 'migration_failed', 'rolled_back')` + sourceFilterSQL + `
 		ORDER BY r.migrated_at DESC, r.updated_at DESC
 	`
 
@@ -141,13 +147,14 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 		DestinationURL  *string    `gorm:"column:destination_url"`
 		Status          string     `gorm:"column:status"`
 		MigratedAt      *time.Time `gorm:"column:migrated_at"`
+		SourceID        *int64     `gorm:"column:source_id"`
 		StartedAtStr    *string    `gorm:"column:started_at_str"`
 		CompletedAtStr  *string    `gorm:"column:completed_at_str"`
 		DurationSeconds *int       `gorm:"column:duration_seconds"`
 	}
 
 	var tempMigrations []tempMigration
-	err := d.db.WithContext(ctx).Raw(query).Scan(&tempMigrations).Error
+	err := d.db.WithContext(ctx).Raw(query, sourceArgs...).Scan(&tempMigrations).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get completed migrations: %w", err)
 	}
@@ -162,6 +169,7 @@ func (d *Database) GetCompletedMigrations(ctx context.Context) ([]*CompletedMigr
 			DestinationURL:  temp.DestinationURL,
 			Status:          temp.Status,
 			MigratedAt:      temp.MigratedAt,
+			SourceID:        temp.SourceID,
 			DurationSeconds: temp.DurationSeconds,
 		}
 
@@ -245,11 +253,12 @@ func (d *Database) GetMigrationCompletionStatsByOrg(ctx context.Context) ([]*Mig
 // GetMigrationCompletionStatsByOrgFiltered returns migration completion stats with org and batch filters
 //
 //nolint:dupl // Similar to GetMigrationCompletionStatsByOrg but with filters
-func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*MigrationCompletionStats, error) {
+func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*MigrationCompletionStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific string functions via DialectDialer interface
 	extractOrg := d.dialect.ExtractOrgFromFullName("full_name")
@@ -268,13 +277,15 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			%s
 			%s
 			%s
+			%s
 		GROUP BY organization
 		ORDER BY total_repos DESC
-	`, extractOrg, orgFilterSQL, projectFilterSQL, batchFilterSQL)
+	`, extractOrg, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var stats []*MigrationCompletionStats
@@ -290,11 +301,12 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 // Similar to GetMigrationCompletionStatsByOrgFiltered but groups by ado_project field
 //
 //nolint:dupl // Similar to GetMigrationCompletionStatsByOrgFiltered but groups by project
-func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string) ([]*MigrationCompletionStats, error) {
+func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*MigrationCompletionStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
+	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Query groups by ado_project field for Azure DevOps repositories
 	query := `
@@ -311,6 +323,7 @@ func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Cont
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
+			` + sourceFilterSQL + `
 		GROUP BY ado_project
 		ORDER BY total_repos DESC
 	`
@@ -318,6 +331,7 @@ func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Cont
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
 	args = append(args, batchArgs...)
+	args = append(args, sourceArgs...)
 
 	// Use GORM Raw() for analytics query
 	var stats []*MigrationCompletionStats

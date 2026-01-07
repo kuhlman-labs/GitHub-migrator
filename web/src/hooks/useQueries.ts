@@ -32,10 +32,15 @@ interface PollingOptions {
 }
 
 // Organization queries
-export function useOrganizations(options?: PollingOptions) {
+interface OrganizationQueryOptions extends PollingOptions {
+  /** Filter by source ID for multi-source support */
+  sourceId?: number;
+}
+
+export function useOrganizations(options?: OrganizationQueryOptions) {
   return useQuery<Organization[], Error>({
-    queryKey: ['organizations'],
-    queryFn: () => api.listOrganizations(),
+    queryKey: ['organizations', options?.sourceId],
+    queryFn: () => api.listOrganizations(options?.sourceId),
     refetchInterval: options?.refetchInterval,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
@@ -43,7 +48,7 @@ export function useOrganizations(options?: PollingOptions) {
 
 // Config query
 export function useConfig() {
-  return useQuery<{ source_type: 'github' | 'azuredevops'; auth_enabled: boolean; entraid_enabled?: boolean }, Error>({
+  return useQuery<{ source_type: 'github' | 'azuredevops'; auth_enabled: boolean }, Error>({
     queryKey: ['config'],
     queryFn: () => api.getConfig(),
     staleTime: 5 * 60 * 1000, // Config rarely changes, cache for 5 minutes
@@ -51,10 +56,10 @@ export function useConfig() {
 }
 
 // Project queries
-export function useProjects() {
+export function useProjects(sourceId?: number) {
   return useQuery<Project[], Error>({
-    queryKey: ['projects'],
-    queryFn: () => api.listProjects(),
+    queryKey: ['projects', sourceId],
+    queryFn: () => api.listProjects(sourceId),
   });
 }
 
@@ -75,7 +80,11 @@ export function useADOProjects(organization?: string) {
 }
 
 // Repository queries
-export function useRepositories(filters: RepositoryFilters = {}) {
+interface RepositoryQueryFilters extends RepositoryFilters {
+  source_id?: number;
+}
+
+export function useRepositories(filters: RepositoryQueryFilters = {}) {
   return useQuery<{ repositories: Repository[]; total?: number }, Error>({
     queryKey: ['repositories', filters],
     queryFn: () => api.listRepositories(filters),
@@ -109,6 +118,7 @@ interface AnalyticsFilters {
   organization?: string;
   project?: string;
   batch_id?: string;
+  source_id?: number;
 }
 
 export function useAnalytics(filters: AnalyticsFilters = {}, options?: PollingOptions) {
@@ -149,10 +159,14 @@ export function useBatchRepositories(batchId: number | null, options?: PollingOp
 }
 
 // Migration history queries
-export function useMigrationHistory() {
+interface MigrationHistoryFilters {
+  sourceId?: number;
+}
+
+export function useMigrationHistory(filters: MigrationHistoryFilters = {}) {
   return useQuery<{ migrations: MigrationHistoryEntry[]; total: number }, Error>({
-    queryKey: ['migrationHistory'],
-    queryFn: () => api.getMigrationHistoryList(),
+    queryKey: ['migrationHistory', filters.sourceId],
+    queryFn: () => api.getMigrationHistoryList(filters.sourceId),
   });
 }
 
@@ -177,6 +191,7 @@ export function useDashboardActionItems(options?: PollingOptions) {
 // User queries
 interface UserFilters {
   source_instance?: string;
+  source_id?: number;
   limit?: number;
   offset?: number;
 }
@@ -188,10 +203,10 @@ export function useUsers(filters: UserFilters = {}) {
   });
 }
 
-export function useUserStats() {
+export function useUserStats(sourceId?: number) {
   return useQuery<UserStats, Error>({
-    queryKey: ['userStats'],
-    queryFn: () => api.getUserStats(),
+    queryKey: ['userStats', sourceId],
+    queryFn: () => api.getUserStats(sourceId),
   });
 }
 
@@ -199,6 +214,7 @@ export function useUserStats() {
 interface UserMappingFilters {
   status?: string;
   source_org?: string;
+  source_id?: number;
   has_destination?: boolean;
   has_mannequin?: boolean;
   reclaim_status?: string;
@@ -214,10 +230,10 @@ export function useUserMappings(filters: UserMappingFilters = {}) {
   });
 }
 
-export function useUserMappingStats(sourceOrg?: string) {
+export function useUserMappingStats(sourceOrg?: string, sourceId?: number) {
   return useQuery<UserMappingStats, Error>({
-    queryKey: ['userMappingStats', sourceOrg || 'all'],
-    queryFn: () => api.getUserMappingStats(sourceOrg),
+    queryKey: ['userMappingStats', sourceOrg || 'all', sourceId],
+    queryFn: () => api.getUserMappingStats(sourceOrg, sourceId),
   });
 }
 
@@ -237,10 +253,10 @@ export function useUserDetail(login: string | null) {
 }
 
 // Team queries
-export function useTeams(organization?: string) {
+export function useTeams(organization?: string, sourceId?: number) {
   return useQuery<GitHubTeam[], Error>({
-    queryKey: ['teams', organization],
-    queryFn: () => api.listTeams(organization),
+    queryKey: ['teams', organization, sourceId],
+    queryFn: () => api.listTeams(organization, sourceId),
   });
 }
 
@@ -256,6 +272,7 @@ export function useTeamMembers(org: string, teamSlug: string) {
 interface TeamMappingFilters {
   source_org?: string;
   destination_org?: string;
+  source_id?: number;
   status?: string;
   has_destination?: boolean;
   search?: string;
@@ -270,10 +287,10 @@ export function useTeamMappings(filters: TeamMappingFilters = {}) {
   });
 }
 
-export function useTeamMappingStats(organization?: string) {
+export function useTeamMappingStats(organization?: string, sourceId?: number) {
   return useQuery<TeamMappingStats, Error>({
-    queryKey: ['teamMappingStats', organization || 'all'],
-    queryFn: () => api.getTeamMappingStats(organization),
+    queryKey: ['teamMappingStats', organization || 'all', sourceId],
+    queryFn: () => api.getTeamMappingStats(organization, sourceId),
   });
 }
 
@@ -316,7 +333,24 @@ export function useSetupStatus() {
     queryKey: ['setupStatus'],
     queryFn: () => api.getSetupStatus(),
     staleTime: Infinity, // Only fetch once per session unless invalidated
-    retry: 1, // Only retry once on failure
+    retry: 3, // Retry up to 3 times to handle temporary connection issues (e.g., backend restart)
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000), // Exponential backoff: 1s, 2s, 4s (max 5s)
+  });
+}
+
+// Setup progress query for guided empty states
+export function useSetupProgress() {
+  return useQuery<{
+    destination_configured: boolean;
+    sources_configured: boolean;
+    source_count: number;
+    batches_created: boolean;
+    batch_count: number;
+    setup_complete: boolean;
+  }, Error>({
+    queryKey: ['setupProgress'],
+    queryFn: () => api.getSetupProgress(),
+    staleTime: 30000, // Refetch every 30 seconds
   });
 }
 

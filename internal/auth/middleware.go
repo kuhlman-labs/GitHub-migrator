@@ -120,6 +120,52 @@ func (m *Middleware) RequireRole(role string) func(http.Handler) http.Handler {
 	}
 }
 
+// RequireAdmin is middleware that requires Tier 1 (Admin) authorization
+// This is used to protect sensitive endpoints like settings and source management
+func (m *Middleware) RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If auth is disabled, allow request through
+		if !m.enabled {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Get user from context (set by RequireAuth)
+		user, hasUser := GetUserFromContext(r.Context())
+		if !hasUser {
+			m.respondUnauthorized(w, "Authentication required")
+			return
+		}
+
+		// Get token from context
+		token, hasToken := GetTokenFromContext(r.Context())
+		if !hasToken {
+			m.respondUnauthorized(w, "Authentication required")
+			return
+		}
+
+		// Check if user has admin tier
+		tierInfo, err := m.authorizer.GetUserAuthorizationTier(r.Context(), user, token)
+		if err != nil {
+			m.logger.Error("Failed to check user authorization tier", "user", user.Login, "error", err)
+			m.respondForbidden(w, "Failed to verify authorization")
+			return
+		}
+
+		if tierInfo.Tier != TierAdmin {
+			m.logger.Warn("Non-admin user attempted to access admin endpoint",
+				"user", user.Login,
+				"tier", tierInfo.Tier,
+				"path", r.URL.Path)
+			m.respondForbidden(w, "Administrator access required. Only Tier 1 administrators can access this resource.")
+			return
+		}
+
+		m.logger.Debug("Admin access granted", "user", user.Login, "path", r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // respondUnauthorized sends a 401 Unauthorized response
 func (m *Middleware) respondUnauthorized(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -152,6 +198,25 @@ func GetUserFromContext(ctx context.Context) (*GitHubUser, bool) {
 func GetClaimsFromContext(ctx context.Context) (*Claims, bool) {
 	claims, ok := ctx.Value(ContextKeyClaims).(*Claims)
 	return claims, ok
+}
+
+// GetSourceIDFromContext retrieves the authenticated source ID from context
+// Returns nil if user authenticated via destination OAuth (not source-scoped)
+func GetSourceIDFromContext(ctx context.Context) *int64 {
+	claims, ok := GetClaimsFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	return claims.SourceID
+}
+
+// GetSourceTypeFromContext retrieves the authenticated source type from context
+func GetSourceTypeFromContext(ctx context.Context) string {
+	claims, ok := GetClaimsFromContext(ctx)
+	if !ok {
+		return ""
+	}
+	return claims.SourceType
 }
 
 // ExtractBearerToken extracts a bearer token from the Authorization header

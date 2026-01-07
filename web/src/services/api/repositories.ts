@@ -13,7 +13,7 @@ import type {
 } from '../../types';
 
 export const repositoriesApi = {
-  async list(filters?: RepositoryFilters): Promise<RepositoryListResponse> {
+  async list(filters?: RepositoryFilters & { source_id?: number }): Promise<RepositoryListResponse> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params: Record<string, any> = { ...filters };
 
@@ -84,12 +84,12 @@ export const repositoriesApi = {
     return data;
   },
 
-  async getDependencyGraph(params?: { dependency_type?: string }): Promise<DependencyGraphResponse> {
+  async getDependencyGraph(params?: { dependency_type?: string; source_id?: number }): Promise<DependencyGraphResponse> {
     const { data } = await client.get('/dependencies/graph', { params });
     return data;
   },
 
-  async exportDependencies(format: 'csv' | 'json', params?: { dependency_type?: string }): Promise<Blob> {
+  async exportDependencies(format: 'csv' | 'json', params?: { dependency_type?: string; source_id?: number }): Promise<Blob> {
     const { data } = await client.get('/dependencies/export', {
       params: { format, ...params },
       responseType: 'blob',

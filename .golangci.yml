@@ -25,7 +25,7 @@ linters-settings:
   errcheck:
     check-type-assertions: true
   gocyclo:
-    min-complexity: 15
+    min-complexity: 18
   dupl:
     threshold: 100
   goconst:

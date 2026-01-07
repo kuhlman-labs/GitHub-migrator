@@ -7,7 +7,7 @@ import { BorderedButton } from '../common/buttons';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RefreshIndicator } from '../common/RefreshIndicator';
 import { formatDuration } from '../../utils/format';
-import { useAnalytics, useConfig } from '../../hooks/useQueries';
+import { useAnalytics } from '../../hooks/useQueries';
 import { FilterBar } from './FilterBar';
 import { MigrationTrendChart } from './MigrationTrendChart';
 import { ComplexityChart } from './ComplexityChart';
@@ -15,6 +15,7 @@ import { KPICard } from './KPICard';
 import { getRepositoriesUrl } from '../../utils/filters';
 import { api } from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
+import { useSourceContext } from '../../contexts/SourceContext';
 import { handleApiError } from '../../utils/errorHandler';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -40,14 +41,18 @@ export function Analytics() {
   const [selectedBatch, setSelectedBatch] = useState('');
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
 
-  // Use React Query for config
-  const { data: config } = useConfig();
-  const sourceType = config?.source_type || 'github';
+  // Derive source context for display
+  const { sources, activeSource } = useSourceContext();
+  const isAllSources = !activeSource; // True when "All Sources" is selected
+  const hasMultipleSources = sources.length > 1;
+  // For backwards compatibility with existing source-specific features
+  const sourceType = activeSource?.type || 'github';
 
   const { data: analytics, isLoading, isFetching } = useAnalytics({
     organization: selectedOrganization || undefined,
     project: selectedProject || undefined,
     batch_id: selectedBatch || undefined,
+    source_id: activeSource?.id,
   });
 
   // Calculate days until completion (must be before early returns to satisfy rules of hooks)
@@ -112,17 +117,19 @@ export function Analytics() {
         organization: selectedOrganization || undefined,
         project: selectedProject || undefined,
         batch_id: selectedBatch || undefined,
+        source_id: activeSource?.id,
       };
 
       let blob: Blob;
       let filename: string;
+      const sourceSuffix = activeSource ? `_${activeSource.name.replace(/\s+/g, '_')}` : '';
 
       if (reportType === 'executive') {
         blob = await api.exportExecutiveReport(format, filters);
-        filename = `executive-migration-report.${format}`;
+        filename = `executive-migration-report${sourceSuffix}.${format}`;
       } else {
         blob = await api.exportDetailedDiscoveryReport(format, filters);
-        filename = `detailed-discovery-report.${format}`;
+        filename = `detailed-discovery-report${sourceSuffix}.${format}`;
       }
 
       const url = window.URL.createObjectURL(blob);
@@ -193,6 +200,8 @@ export function Analytics() {
         onProjectChange={setSelectedProject}
         onBatchChange={setSelectedBatch}
         sourceType={sourceType}
+        isAllSources={!activeSource}
+        sourceId={activeSource?.id}
       />
 
       {/* Tabs Navigation */}
@@ -229,14 +238,42 @@ export function Analytics() {
             title="Total Repositories"
             value={analytics.total_repositories}
             color="blue"
-            tooltip="Total number of repositories discovered across all organizations"
+            tooltip={
+              isAllSources && hasMultipleSources
+                ? "Total number of repositories discovered across all sources"
+                : sourceType === 'azuredevops'
+                  ? "Total number of repositories discovered in Azure DevOps"
+                  : "Total number of repositories discovered in GitHub"
+            }
           />
           <KPICard
-            title="Organizations"
-            value={analytics.organization_stats?.length || 0}
+            title={
+              isAllSources && hasMultipleSources 
+                ? 'Source Groups' 
+                : sourceType === 'azuredevops' 
+                  ? 'Projects' 
+                  : 'Organizations'
+            }
+            value={
+              isAllSources && hasMultipleSources
+                ? analytics.organization_stats?.length || 0
+                : sourceType === 'azuredevops'
+                  ? analytics.project_stats?.length || 0
+                  : analytics.organization_stats?.length || 0
+            }
             color="purple"
-            subtitle={sourceType === 'azuredevops' ? 'ADO projects' : 'GitHub orgs'}
-            tooltip={`Number of ${sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'GitHub organizations'} with repositories`}
+            subtitle={
+              isAllSources 
+                ? 'Across all sources' 
+                : activeSource?.name || 'Source groups'
+            }
+            tooltip={
+              isAllSources && hasMultipleSources
+                ? "Number of source groups (organizations, projects, etc.) with repositories"
+                : sourceType === 'azuredevops'
+                  ? "Number of Azure DevOps projects with repositories"
+                  : "Number of GitHub organizations with repositories"
+            }
           />
           <KPICard
             title="High Complexity"
@@ -256,14 +293,17 @@ export function Analytics() {
 
         {/* Complexity and Size Distribution Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <ComplexityChart data={analytics.complexity_distribution || []} source={sourceType} />
+          <ComplexityChart 
+            data={analytics.complexity_distribution || []} 
+            source={isAllSources ? 'all' : sourceType} 
+          />
           
           {/* Size Distribution */}
           {analytics.size_distribution && analytics.size_distribution.length > 0 && (
             <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
               <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>Repository Size Distribution</h3>
               <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-                Distribution of {sourceType === 'azuredevops' ? 'Azure DevOps' : 'GitHub'} repositories by disk size, helping identify storage requirements and migration capacity planning needs.
+                Distribution of repositories by disk size, helping identify storage requirements and migration capacity planning needs.
               </p>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
@@ -333,31 +373,51 @@ export function Analytics() {
           )}
         </div>
 
-        {/* Organization Breakdown and Feature Stats */}
+        {/* Source Group Breakdown and Feature Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Organization/Project Breakdown */}
+          {/* Source Group Breakdown */}
           {(() => {
-            // Use project_stats for ADO, organization_stats for GitHub
-            const stats = sourceType === 'azuredevops' && analytics.project_stats 
+            // When viewing all sources, always use organization_stats (includes ADO orgs, not projects)
+            // Only use project_stats when a specific ADO source is selected
+            const stats = !isAllSources && sourceType === 'azuredevops' && analytics.project_stats 
               ? analytics.project_stats 
               : analytics.organization_stats;
             
             if (!stats || stats.length === 0) return null;
+
+            // Determine terminology based on source context
+            const groupLabel = isAllSources && hasMultipleSources 
+              ? 'Source Group' 
+              : sourceType === 'azuredevops' 
+                ? 'Project' 
+                : 'Organization';
+            
+            const sectionTitle = isAllSources && hasMultipleSources 
+              ? 'Source Group Breakdown' 
+              : sourceType === 'azuredevops' 
+                ? 'Project Breakdown' 
+                : 'Organization Breakdown';
+            
+            const sectionDescription = isAllSources && hasMultipleSources
+              ? 'Repository count and distribution across source groups, useful for workload allocation and team coordination.'
+              : sourceType === 'azuredevops'
+                ? 'Repository count and distribution across Azure DevOps projects, useful for workload allocation and team coordination.'
+                : 'Repository count and distribution across GitHub organizations, useful for workload allocation and team coordination.';
             
             return (
               <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
                 <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>
-                  {sourceType === 'azuredevops' ? 'Project Breakdown' : 'Organization Breakdown'}
+                  {sectionTitle}
                 </h3>
                 <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-                  Total repository count and distribution across {sourceType === 'azuredevops' ? 'Azure DevOps projects' : 'source organizations'}, useful for workload allocation and team coordination.
+                  {sectionDescription}
                 </p>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
                     <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
-                          {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
+                          {groupLabel}
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                           Repositories
@@ -442,13 +502,17 @@ export function Analytics() {
               { label: "Variables", count: featureStats.has_variables, filter: { has_variables: true } },
             ];
             
-            // Select features based on source type
-            const features = (sourceType === 'azuredevops' ? adoFeatures : githubFeatures)
-              .filter(feature => feature.count && feature.count > 0);
+            // Select features based on source type - show combined when viewing all sources
+            const features = isAllSources && hasMultipleSources
+              ? [...githubFeatures, ...adoFeatures].filter(feature => feature.count && feature.count > 0)
+              : (sourceType === 'azuredevops' ? adoFeatures : githubFeatures)
+                  .filter(feature => feature.count && feature.count > 0);
 
-            const featureDescription = sourceType === 'azuredevops'
-              ? 'Azure DevOps features detected across repositories, including Azure Boards, Pipelines, work items, branch policies, and configurations requiring special migration handling.'
-              : 'GitHub features detected across repositories, including Actions, security tools, LFS, and advanced configurations requiring special migration handling.';
+            const featureDescription = isAllSources && hasMultipleSources
+              ? 'Features detected across repositories that may require special migration handling, including CI/CD workflows, security configurations, and advanced settings.'
+              : sourceType === 'azuredevops'
+                ? 'Azure DevOps features detected including pipelines, boards, wikis, and other project artifacts that may require special migration handling.'
+                : 'GitHub features detected including Actions workflows, security configurations, branch protections, and other settings that may require special migration handling.';
 
             return features.length > 0 ? (
               <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
@@ -610,20 +674,40 @@ export function Analytics() {
         </div>
 
         {/* Migration Progress by Organization */}
-        {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (
+        {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (() => {
+          // Determine terminology based on source context
+          const progressGroupLabel = isAllSources && hasMultipleSources 
+            ? 'Source Group' 
+            : sourceType === 'azuredevops' 
+              ? 'Project' 
+              : 'Organization';
+          
+          const progressSectionTitle = isAllSources && hasMultipleSources 
+            ? 'Migration Progress by Source Group' 
+            : sourceType === 'azuredevops' 
+              ? 'Migration Progress by Project' 
+              : 'Migration Progress by Organization';
+          
+          const progressDescription = isAllSources && hasMultipleSources
+            ? 'Detailed migration status breakdown by source group, showing completion rates and identifying areas requiring attention.'
+            : sourceType === 'azuredevops'
+              ? 'Detailed migration status breakdown by Azure DevOps project, showing completion rates and identifying areas requiring attention.'
+              : 'Detailed migration status breakdown by GitHub organization, showing completion rates and identifying areas requiring attention.';
+          
+          return (
           <div className="rounded-lg shadow-sm p-6 mb-6" style={{ backgroundColor: 'var(--bgColor-default)' }}>
             <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--fgColor-default)' }}>
-              Migration Progress by {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
+              {progressSectionTitle}
             </h3>
             <p className="text-sm mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-              Detailed migration status breakdown by {sourceType === 'azuredevops' ? 'Azure DevOps project' : 'organization'}, showing completion rates and identifying areas requiring attention.
+              {progressDescription}
             </p>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y" style={{ borderColor: 'var(--borderColor-muted)' }}>
                 <thead style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
-                      {sourceType === 'azuredevops' ? 'Project' : 'Organization'}
+                      {progressGroupLabel}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--fgColor-muted)' }}>
                       Total
@@ -693,7 +777,8 @@ export function Analytics() {
               </table>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Performance Metrics Card */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

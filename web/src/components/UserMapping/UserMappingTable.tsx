@@ -44,9 +44,13 @@ import { Pagination } from '../common/Pagination';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { FormDialog } from '../common/FormDialog';
 import { FallbackAvatar } from '../common/FallbackAvatar';
+import { SourceTypeIcon } from '../common/SourceBadge';
+import { DiscoverySourceSelector } from '../common/DiscoverySourceSelector';
+import { useSourceSelection } from '../../hooks/useSourceSelection';
 import { UserDetailPanel } from './UserDetailPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { handleApiError } from '../../utils/errorHandler';
+import { useSourceContext } from '../../contexts/SourceContext';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -91,6 +95,8 @@ interface UserMappingFilters extends Record<string, unknown> {
 
 export function UserMappingTable() {
   const { showError, showSuccess } = useToast();
+  const { activeSource } = useSourceContext();
+  const { isAllSourcesMode } = useSourceSelection();
   
   // Use shared table state hook for pagination, search, and filtering
   const { page, search, filters, setPage, setSearch, updateFilter, offset, limit } = useTableState<UserMappingFilters>({
@@ -112,17 +118,20 @@ export function UserMappingTable() {
   const [destinationOrg, setDestinationOrg] = useState('');
   const [emuShortcode, setEmuShortcode] = useState('');
   const [discoverOrg, setDiscoverOrg] = useState('');
+  const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
+  
   
 
   const { data, isLoading, error, refetch } = useUserMappings({
     search: search || undefined,
     status: filters.status || undefined,
     source_org: filters.sourceOrg || undefined,
+    source_id: activeSource?.id,
     limit,
     offset,
   });
 
-  const { data: stats } = useUserMappingStats(filters.sourceOrg || undefined);
+  const { data: stats } = useUserMappingStats(filters.sourceOrg || undefined, activeSource?.id);
   const { data: sourceOrgsData } = useUserMappingSourceOrgs();
   const updateMapping = useUpdateUserMapping();
   const deleteMapping = useDeleteUserMapping();
@@ -206,11 +215,12 @@ export function UserMappingTable() {
 
   const handleExport = useCallback(async () => {
     try {
-      const blob = await api.exportUserMappings(filters.status || undefined);
+      const blob = await api.exportUserMappings(filters.status || undefined, activeSource?.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'user-mappings.csv';
+      const sourceSuffix = activeSource ? `_${activeSource.name.replace(/\s+/g, '_')}` : '';
+      a.download = `user-mappings${sourceSuffix}.csv`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -218,7 +228,7 @@ export function UserMappingTable() {
     } catch (error) {
       handleApiError(error, showError, 'Failed to export mappings');
     }
-  }, [filters.status, showError]);
+  }, [filters.status, activeSource, showError]);
 
   const handleImport = useCallback(async (file?: File) => {
     if (!file) return;
@@ -539,6 +549,9 @@ export function UserMappingTable() {
                   >
                     <td className="p-3">
                       <div className="flex items-center gap-2">
+                        {mapping.source_id && (
+                          <SourceTypeIcon sourceId={mapping.source_id} size={14} />
+                        )}
                         <FallbackAvatar src={mapping.avatar_url} login={login} size={24} />
                         <div>
                           <div className="font-medium" style={{ color: 'var(--fgColor-default)' }}>{login}</div>
@@ -748,12 +761,22 @@ export function UserMappingTable() {
         title="Discover Organization Members"
         submitLabel={discoverOrgMembers.isPending ? 'Discovering...' : 'Discover'}
         onSubmit={() => {
+          // Validate source selection in All Sources mode
+          if (isAllSourcesMode && !discoverSourceId) {
+            showError('Please select a source');
+            return;
+          }
           if (!discoverOrg.trim()) return;
-          discoverOrgMembers.mutate(discoverOrg.trim(), {
+          
+          discoverOrgMembers.mutate({ 
+            organization: discoverOrg.trim(),
+            source_id: discoverSourceId ?? activeSource?.id,
+          }, {
             onSuccess: (data) => {
               showSuccess(data.message || 'Discovery completed!');
               discoverDialog.close();
               setDiscoverOrg('');
+              setDiscoverSourceId(null);
             },
             onError: (error) => {
               showError(error instanceof Error ? error.message : 'Discovery failed');
@@ -763,25 +786,55 @@ export function UserMappingTable() {
         onCancel={() => {
           discoverDialog.close();
           setDiscoverOrg('');
+          setDiscoverSourceId(null);
         }}
         isLoading={discoverOrgMembers.isPending}
-        isSubmitDisabled={!discoverOrg.trim()}
+        isSubmitDisabled={!discoverOrg.trim() || (isAllSourcesMode && !discoverSourceId)}
       >
         <p className="mb-4" style={{ color: 'var(--fgColor-muted)' }}>
-          Discover all members from a GitHub organization. This will fetch org members and create user mappings for mannequin matching.
+          Discover all members from an organization. This will fetch org members and create user mappings for mannequin matching.
         </p>
-        <FormControl>
-          <FormControl.Label>Source Organization</FormControl.Label>
-          <TextInput
-            value={discoverOrg}
-            onChange={(e) => setDiscoverOrg(e.target.value)}
-            placeholder="e.g., my-org"
-            block
-          />
-          <FormControl.Caption>
-            Enter the source GitHub organization name
-          </FormControl.Caption>
-        </FormControl>
+        
+        {/* Source Selection */}
+        <DiscoverySourceSelector
+          selectedSourceId={discoverSourceId}
+          onSourceChange={(sourceId, source) => {
+            setDiscoverSourceId(sourceId);
+            // Pre-populate organization from source config
+            if (source?.organization) {
+              setDiscoverOrg(source.organization);
+            } else {
+              setDiscoverOrg('');
+            }
+          }}
+          required={isAllSourcesMode}
+          disabled={discoverOrgMembers.isPending}
+          label="Select Source"
+          defaultCaption="Select which source to discover members from."
+        />
+        
+        {/* Only show organization field when source is selected (in All Sources mode) or always (in single source mode) */}
+        {(!isAllSourcesMode || discoverSourceId) && (
+          <FormControl>
+            <FormControl.Label>Source Organization</FormControl.Label>
+            <TextInput
+              value={discoverOrg}
+              onChange={(e) => setDiscoverOrg(e.target.value)}
+              placeholder="e.g., my-org"
+              block
+            />
+            <FormControl.Caption>
+              Enter the source organization name to discover members from
+            </FormControl.Caption>
+          </FormControl>
+        )}
+        
+        {/* Prompt to select a source first in All Sources mode */}
+        {isAllSourcesMode && !discoverSourceId && (
+          <div className="text-center py-4" style={{ color: 'var(--fgColor-muted)' }}>
+            <p className="text-sm">Please select a source to configure discovery options.</p>
+          </div>
+        )}
       </FormDialog>
 
       {/* Destination Org Dialog */}

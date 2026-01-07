@@ -16,6 +16,8 @@ vi.mock('../../hooks/useQueries', () => ({
 
 vi.mock('../../hooks/useMutations', () => ({
   useDiscoverRepositories: vi.fn(),
+  useStartDiscovery: vi.fn(),
+  useStartADODiscovery: vi.fn(),
 }));
 
 // Mock child components
@@ -67,6 +69,16 @@ describe('Repositories', () => {
     
     (useMutationsModule.useDiscoverRepositories as ReturnType<typeof vi.fn>).mockReturnValue({
       mutateAsync: vi.fn(),
+      isPending: false,
+    });
+    
+    (useMutationsModule.useStartDiscovery as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+    
+    (useMutationsModule.useStartADODiscovery as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: vi.fn(),
       isPending: false,
     });
   });

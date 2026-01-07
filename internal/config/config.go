@@ -116,24 +116,25 @@ type AuthConfig struct {
 	SessionSecret           string             `mapstructure:"session_secret"`
 	SessionDurationHours    int                `mapstructure:"session_duration_hours"`
 	AuthorizationRules      AuthorizationRules `mapstructure:"authorization_rules"`
-
-	// Entra ID OAuth for Azure DevOps
-	EntraIDEnabled      bool   `mapstructure:"entraid_enabled"`
-	EntraIDTenantID     string `mapstructure:"entraid_tenant_id"`
-	EntraIDClientID     string `mapstructure:"entraid_client_id"`
-	EntraIDClientSecret string `mapstructure:"entraid_client_secret"`
-	EntraIDCallbackURL  string `mapstructure:"entraid_callback_url"`
-	ADOOrganizationURL  string `mapstructure:"ado_organization_url"` // e.g., https://dev.azure.com/your-org
 }
 
 // AuthorizationRules defines rules for authorizing users
 type AuthorizationRules struct {
+	// Application access requirements (who can access the app at all)
 	RequireOrgMembership        []string `mapstructure:"require_org_membership"`
 	RequireTeamMembership       []string `mapstructure:"require_team_membership"`
 	RequireEnterpriseAdmin      bool     `mapstructure:"require_enterprise_admin"`
 	RequireEnterpriseMembership bool     `mapstructure:"require_enterprise_membership"` // Require user to be member of enterprise (any role)
 	RequireEnterpriseSlug       string   `mapstructure:"require_enterprise_slug"`
-	PrivilegedTeams             []string `mapstructure:"privileged_teams"` // Teams (format: "org/team-slug") that grant full migration access
+
+	// Destination-centric authorization (who can migrate repositories)
+	MigrationAdminTeams            []string `mapstructure:"migration_admin_teams"`             // Teams with full migration rights (format: "org/team-slug")
+	AllowOrgAdminMigrations        bool     `mapstructure:"allow_org_admin_migrations"`        // Allow destination org admins to migrate any repo
+	AllowEnterpriseAdminMigrations bool     `mapstructure:"allow_enterprise_admin_migrations"` // Allow destination enterprise admins to migrate any repo
+	EnableSelfService              bool     `mapstructure:"enable_self_service"`               // Enable self-service migrations via identity mapping (default: true)
+
+	// Deprecated: Use MigrationAdminTeams instead
+	PrivilegedTeams []string `mapstructure:"privileged_teams"`
 }
 
 func Load() (*Config, error) {
@@ -246,12 +247,10 @@ func bindEnvVars() {
 		"auth.authorization_rules.require_enterprise_membership",
 		"auth.authorization_rules.require_enterprise_slug",
 		"auth.authorization_rules.privileged_teams",
-		"auth.entraid_enabled",
-		"auth.entraid_tenant_id",
-		"auth.entraid_client_id",
-		"auth.entraid_client_secret",
-		"auth.entraid_callback_url",
-		"auth.ado_organization_url",
+		"auth.authorization_rules.migration_admin_teams",
+		"auth.authorization_rules.allow_org_admin_migrations",
+		"auth.authorization_rules.allow_enterprise_admin_migrations",
+		"auth.authorization_rules.enable_self_service",
 	}
 
 	for _, key := range envKeys {
@@ -289,7 +288,9 @@ func setDefaults() {
 	viper.SetDefault("auth.frontend_url", "http://localhost:3000")
 	viper.SetDefault("auth.session_duration_hours", 24)
 	viper.SetDefault("auth.authorization_rules.require_enterprise_admin", false)
-	viper.SetDefault("auth.entraid_enabled", false)
+	viper.SetDefault("auth.authorization_rules.allow_org_admin_migrations", true)
+	viper.SetDefault("auth.authorization_rules.allow_enterprise_admin_migrations", true)
+	viper.SetDefault("auth.authorization_rules.enable_self_service", true)
 }
 
 // MigrateDeprecatedConfig migrates old GitHub config format to new Source/Destination format
@@ -342,10 +343,20 @@ func (c *Config) ParseArrayEnvVars() {
 		c.Auth.AuthorizationRules.RequireTeamMembership,
 	)
 
-	// Parse privileged_teams
+	// Parse privileged_teams (deprecated, but still supported)
 	c.Auth.AuthorizationRules.PrivilegedTeams = parseStringSlice(
 		c.Auth.AuthorizationRules.PrivilegedTeams,
 	)
+
+	// Parse migration_admin_teams
+	c.Auth.AuthorizationRules.MigrationAdminTeams = parseStringSlice(
+		c.Auth.AuthorizationRules.MigrationAdminTeams,
+	)
+
+	// Merge privileged_teams into migration_admin_teams for backward compatibility
+	if len(c.Auth.AuthorizationRules.PrivilegedTeams) > 0 && len(c.Auth.AuthorizationRules.MigrationAdminTeams) == 0 {
+		c.Auth.AuthorizationRules.MigrationAdminTeams = c.Auth.AuthorizationRules.PrivilegedTeams
+	}
 }
 
 // parseStringSlice handles parsing of string slice from various formats:
