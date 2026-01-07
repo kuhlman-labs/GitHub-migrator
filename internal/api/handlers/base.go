@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -316,10 +317,21 @@ func (h *Handler) getADOCollectorForSource(ctx context.Context, sourceID *int64)
 	}
 
 	// Build the full organization URL by combining base URL and organization
-	// If the organization is already in the URL, use it as-is; otherwise append it
+	// We need to check if org is in the URL path, not just anywhere in the URL string
+	// (e.g., org "dev" should not match domain "dev.azure.com")
 	orgURL := src.BaseURL
-	if !strings.Contains(src.BaseURL, orgName) {
-		orgURL = strings.TrimSuffix(src.BaseURL, "/") + "/" + orgName
+	parsedURL, parseErr := url.Parse(src.BaseURL)
+	if parseErr == nil {
+		// Check if org is an exact path segment (not a substring of domain or another segment)
+		pathSegments := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
+		if !slices.Contains(pathSegments, orgName) {
+			orgURL = strings.TrimSuffix(src.BaseURL, "/") + "/" + orgName
+		}
+	} else {
+		// Fallback: safer check using path separators
+		if !strings.Contains(src.BaseURL, "/"+orgName+"/") && !strings.HasSuffix(src.BaseURL, "/"+orgName) {
+			orgURL = strings.TrimSuffix(src.BaseURL, "/") + "/" + orgName
+		}
 	}
 
 	h.logger.Info("Creating ADO client for source",
@@ -587,6 +599,7 @@ func extractADOOrganization(baseURL string) string {
 		}
 	}
 
-	// Fallback: return the URL as-is (might be a custom URL)
-	return baseURL
+	// Return empty string if organization cannot be extracted
+	// This allows the caller's empty-string check to properly detect and report the error
+	return ""
 }
