@@ -12,7 +12,8 @@ import (
 )
 
 // defaultFrontendURL is the default frontend URL when not configured
-const defaultFrontendURL = "http://localhost:3000"
+// Use "/" to keep users on the same domain instead of hardcoded localhost
+const defaultFrontendURL = "/"
 
 // SourceStore interface for source lookups (to avoid tight coupling)
 type SourceStore interface {
@@ -68,19 +69,23 @@ func (h *AuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 // Uses destination-centric authentication (GitHub OAuth only)
 func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Use destination OAuth callback - validates state, exchanges code, gets user info
+	// Note: oauthHandler sends HTTP error responses on failure and returns
 	h.oauthHandler.HandleCallback(w, r)
 
-	// Get user and token from context (set by oauthHandler)
+	// Get user and token from context (set by oauthHandler on success)
+	// If not present, oauthHandler already sent an error response
 	user, ok := auth.GetGitHubUserFromContext(r.Context())
 	if !ok {
-		// oauthHandler already sent error response
+		// oauthHandler should have already sent error response, but be defensive
+		h.logger.Error("Missing user in context after OAuth callback - oauthHandler may have failed")
 		return
 	}
 
 	token, ok := auth.GetTokenFromContext(r.Context())
 	if !ok {
-		h.logger.Error("Missing token in context after OAuth callback")
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		// This should never happen since oauthHandler sets both user and token together
+		// But handle it defensively - don't try to write if oauthHandler might have already written
+		h.logger.Error("Missing token in context after OAuth callback - inconsistent state")
 		return
 	}
 
