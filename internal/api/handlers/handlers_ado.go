@@ -80,6 +80,8 @@ func (h *ADOHandler) checkNoActiveDiscovery(w http.ResponseWriter) error {
 	existingProgress, err := h.db.GetActiveDiscoveryProgress()
 	if err != nil {
 		h.logger.Error("Failed to check for active discovery", "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery status"))
+		return fmt.Errorf("failed to check discovery status: %w", err)
 	}
 	if existingProgress != nil {
 		WriteError(w, ErrConflict.WithDetails("Another discovery is already in progress"))
@@ -133,7 +135,7 @@ func (h *ADOHandler) startADOOrgDiscovery(w http.ResponseWriter, req StartADODis
 
 	if h.adoCollector != nil && h.adoClient != nil {
 		h.adoCollector.SetProgressTracker(tracker)
-		go h.runADOOrgDiscovery(req.Organization, progress.ID)
+		go h.runADOOrgDiscovery(req.Organization, progress.ID, tracker)
 	}
 
 	h.sendJSON(w, http.StatusAccepted, map[string]any{
@@ -145,8 +147,10 @@ func (h *ADOHandler) startADOOrgDiscovery(w http.ResponseWriter, req StartADODis
 }
 
 // runADOOrgDiscovery executes organization discovery in background
-func (h *ADOHandler) runADOOrgDiscovery(organization string, progressID int64) {
+func (h *ADOHandler) runADOOrgDiscovery(organization string, progressID int64, tracker *discovery.DBProgressTracker) {
 	ctx := context.Background()
+	defer tracker.Flush() // Ensure pending progress updates are written to the database
+
 	if err := h.adoCollector.DiscoverADOOrganization(ctx, organization); err != nil {
 		h.logger.Error("ADO organization discovery failed", "organization", organization, "error", err)
 		if markErr := h.db.MarkDiscoveryFailed(progressID, err.Error()); markErr != nil {
@@ -185,6 +189,8 @@ func (h *ADOHandler) startADOProjectDiscovery(w http.ResponseWriter, req StartAD
 // runADOProjectDiscovery executes project discovery in background
 func (h *ADOHandler) runADOProjectDiscovery(organization string, projects []string, progressID int64, tracker *discovery.DBProgressTracker) {
 	ctx := context.Background()
+	defer tracker.Flush() // Ensure pending progress updates are written to the database
+
 	var lastErr error
 	for i, project := range projects {
 		tracker.StartOrg(project, i)

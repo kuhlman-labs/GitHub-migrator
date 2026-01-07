@@ -124,7 +124,7 @@ func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName s
 // - If RequireIdentityMappingForSelfService is false: User falls to Tier 3 (Read-Only) - no self-service access
 // - If RequireIdentityMappingForSelfService is true: User can achieve Tier 2 by completing identity mapping
 func (u *HandlerUtils) checkIdentityMappedAccess(ctx context.Context, user *auth.GitHubUser, repoFullName string) error {
-	rules := u.authConfig.AuthorizationRules
+	rules := u.getEffectiveAuthConfig().AuthorizationRules
 
 	// Check if self-service tier is enabled via identity mapping requirement
 	if !rules.RequireIdentityMappingForSelfService {

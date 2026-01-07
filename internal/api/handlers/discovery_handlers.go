@@ -402,7 +402,7 @@ func (h *Handler) StartADODiscoveryDynamic(w http.ResponseWriter, r *http.Reques
 
 	// Start discovery asynchronously based on scope
 	if len(req.Projects) == 0 {
-		h.startDynamicADOOrgDiscovery(w, req, adoCollector, progress)
+		h.startDynamicADOOrgDiscovery(w, req, adoCollector, progress, progressTracker)
 	} else {
 		h.startDynamicADOProjectDiscovery(w, req, adoCollector, progress, progressTracker)
 	}
@@ -443,6 +443,8 @@ func (h *Handler) hasActiveDiscovery(w http.ResponseWriter) bool {
 	existingProgress, err := h.db.GetActiveDiscoveryProgress()
 	if err != nil {
 		h.logger.Error("Failed to check for active discovery", "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery status"))
+		return true
 	}
 	if existingProgress != nil {
 		WriteError(w, ErrConflict.WithDetails("Another discovery is already in progress"))
@@ -516,14 +518,14 @@ func (h *Handler) handleProgressError(w http.ResponseWriter, err error) {
 }
 
 // startDynamicADOOrgDiscovery starts organization discovery with dynamic collector
-func (h *Handler) startDynamicADOOrgDiscovery(w http.ResponseWriter, req *StartADODiscoveryRequest, collector *discovery.ADOCollector, progress *models.DiscoveryProgress) {
+func (h *Handler) startDynamicADOOrgDiscovery(w http.ResponseWriter, req *StartADODiscoveryRequest, collector *discovery.ADOCollector, progress *models.DiscoveryProgress, tracker *discovery.DBProgressTracker) {
 	h.logger.Info("Starting ADO organization discovery (dynamic)",
 		"organization", req.Organization,
 		"workers", req.Workers,
 		"source_id", *req.SourceID,
 		"progress_id", progress.ID)
 
-	go h.runDynamicADOOrgDiscovery(req.Organization, *req.SourceID, progress.ID, collector)
+	go h.runDynamicADOOrgDiscovery(req.Organization, *req.SourceID, progress.ID, collector, tracker)
 
 	h.sendJSON(w, http.StatusAccepted, map[string]any{
 		"message":      "ADO organization discovery started",
@@ -535,8 +537,10 @@ func (h *Handler) startDynamicADOOrgDiscovery(w http.ResponseWriter, req *StartA
 }
 
 // runDynamicADOOrgDiscovery executes org discovery in background
-func (h *Handler) runDynamicADOOrgDiscovery(organization string, sourceID, progressID int64, collector *discovery.ADOCollector) {
+func (h *Handler) runDynamicADOOrgDiscovery(organization string, sourceID, progressID int64, collector *discovery.ADOCollector, tracker *discovery.DBProgressTracker) {
 	ctx := context.Background()
+	defer tracker.Flush() // Ensure pending progress updates are written to the database
+
 	if err := collector.DiscoverADOOrganization(ctx, organization); err != nil {
 		h.logger.Error("ADO organization discovery failed", "organization", organization, "error", err)
 		if markErr := h.db.MarkDiscoveryFailed(progressID, err.Error()); markErr != nil {
@@ -576,6 +580,8 @@ func (h *Handler) startDynamicADOProjectDiscovery(w http.ResponseWriter, req *St
 // runDynamicADOProjectDiscovery executes project discovery in background
 func (h *Handler) runDynamicADOProjectDiscovery(organization string, projects []string, sourceID, progressID int64, collector *discovery.ADOCollector, tracker *discovery.DBProgressTracker) {
 	ctx := context.Background()
+	defer tracker.Flush() // Ensure pending progress updates are written to the database
+
 	var lastErr error
 	for i, project := range projects {
 		tracker.StartOrg(project, i)
