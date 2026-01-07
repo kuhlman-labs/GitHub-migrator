@@ -531,9 +531,9 @@ func TestIntegration_AuthorizationTierConfiguration(t *testing.T) {
 			Auth: config.AuthConfig{
 				Enabled: true,
 				AuthorizationRules: config.AuthorizationRules{
-					MigrationAdminTeams:                  []string{"my-org/migration-admins"},
-					AllowOrgAdminMigrations:              true,
-					RequireIdentityMappingForSelfService: false,
+					MigrationAdminTeams:     []string{"my-org/migration-admins"},
+					AllowOrgAdminMigrations: true,
+					EnableSelfService:       false,
 				},
 			},
 		}
@@ -542,7 +542,7 @@ func TestIntegration_AuthorizationTierConfiguration(t *testing.T) {
 		assert.Len(t, cfg.Auth.AuthorizationRules.MigrationAdminTeams, 1)
 		assert.Equal(t, "my-org/migration-admins", cfg.Auth.AuthorizationRules.MigrationAdminTeams[0])
 		assert.True(t, cfg.Auth.AuthorizationRules.AllowOrgAdminMigrations)
-		assert.False(t, cfg.Auth.AuthorizationRules.RequireIdentityMappingForSelfService)
+		assert.False(t, cfg.Auth.AuthorizationRules.EnableSelfService)
 	})
 
 	t.Run("identity mapping for self-service configuration", func(t *testing.T) {
@@ -550,12 +550,12 @@ func TestIntegration_AuthorizationTierConfiguration(t *testing.T) {
 			Auth: config.AuthConfig{
 				Enabled: true,
 				AuthorizationRules: config.AuthorizationRules{
-					RequireIdentityMappingForSelfService: true,
+					EnableSelfService: true,
 				},
 			},
 		}
 
-		assert.True(t, cfg.Auth.AuthorizationRules.RequireIdentityMappingForSelfService)
+		assert.True(t, cfg.Auth.AuthorizationRules.EnableSelfService)
 	})
 }
 

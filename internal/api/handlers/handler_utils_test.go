@@ -94,7 +94,7 @@ func TestCheckRepositoryAccess_SelfServiceDisabled_GivesReadOnly(t *testing.T) {
 	cfg := &config.AuthConfig{
 		Enabled: true,
 		AuthorizationRules: config.AuthorizationRules{
-			RequireIdentityMappingForSelfService: false, // Self-service disabled - only admins can migrate
+			EnableSelfService: false, // Self-service disabled - only admins can migrate
 		},
 	}
 	utils := NewHandlerUtils(cfg, nil, nil, "", testLogger())
@@ -129,7 +129,7 @@ func TestCheckRepositoryAccess_SelfServiceNoMapping(t *testing.T) {
 	cfg := &config.AuthConfig{
 		Enabled: true,
 		AuthorizationRules: config.AuthorizationRules{
-			RequireIdentityMappingForSelfService: true, // Requires identity mapping
+			EnableSelfService: true, // Requires identity mapping
 		},
 	}
 	utils := NewHandlerUtils(cfg, nil, nil, "", testLogger())
@@ -228,7 +228,7 @@ func TestGetUserAuthorizationStatus_ReadOnlyUser(t *testing.T) {
 	cfg := &config.AuthConfig{
 		Enabled: true,
 		AuthorizationRules: config.AuthorizationRules{
-			RequireIdentityMappingForSelfService: true,
+			EnableSelfService: true,
 		},
 	}
 	utils := NewHandlerUtils(cfg, nil, nil, "", testLogger())
@@ -253,6 +253,56 @@ func TestGetUserAuthorizationStatus_ReadOnlyUser(t *testing.T) {
 		t.Error("Expected upgrade path for read-only user")
 	} else if status.UpgradePath.Action != "complete_identity_mapping" {
 		t.Errorf("Expected upgrade action 'complete_identity_mapping', got: %s", status.UpgradePath.Action)
+	}
+}
+
+func TestGetUserAuthorizationStatus_SelfServiceDisabled_NoUpgrade(t *testing.T) {
+	// When self-service is disabled (EnableSelfService: false),
+	// users should NOT be upgraded to SelfService tier even if they have identity mapping.
+	// This test verifies the fix for the inconsistency between GetUserAuthorizationStatus
+	// and checkIdentityMappedAccess.
+
+	// Create mock GitHub API server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user/memberships/orgs" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[]`))
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.AuthConfig{
+		Enabled: true,
+		AuthorizationRules: config.AuthorizationRules{
+			EnableSelfService: false, // Self-service disabled
+		},
+	}
+	utils := NewHandlerUtils(cfg, nil, nil, "", testLogger())
+	utils.SetDestinationBaseURL(server.URL)
+
+	// Create context with user and token
+	user := &auth.GitHubUser{ID: 123, Login: "testuser"}
+	ctx := createAuthContext(user, "test-token")
+
+	status, err := utils.GetUserAuthorizationStatus(ctx)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// User should remain read-only since self-service is disabled
+	if status.Tier != string(auth.TierReadOnly) {
+		t.Errorf("Expected read-only tier when self-service is disabled, got: %s", status.Tier)
+	}
+	if status.Permissions.CanMigrateOwnRepos {
+		t.Error("Expected CanMigrateOwnRepos to be false when self-service is disabled")
+	}
+	// Upgrade path should tell user to contact admin, not complete identity mapping
+	if status.UpgradePath == nil {
+		t.Error("Expected upgrade path for read-only user")
+	} else if status.UpgradePath.Action != "contact_admin" {
+		t.Errorf("Expected upgrade action 'contact_admin' when self-service disabled, got: %s", status.UpgradePath.Action)
 	}
 }
 

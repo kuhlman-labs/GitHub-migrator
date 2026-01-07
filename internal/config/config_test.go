@@ -517,7 +517,7 @@ func TestAuthorizationRulesDefaults(t *testing.T) {
 	}{
 		{"auth.authorization_rules.allow_org_admin_migrations", true},
 		{"auth.authorization_rules.allow_enterprise_admin_migrations", true},
-		{"auth.authorization_rules.require_identity_mapping_for_self_service", true},
+		{"auth.authorization_rules.enable_self_service", true},
 	}
 
 	for _, tt := range tests {
@@ -625,7 +625,7 @@ auth:
   authorization_rules:
     allow_org_admin_migrations: false
     allow_enterprise_admin_migrations: true
-    require_identity_mapping_for_self_service: false
+    enable_self_service: false
 `
 	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
 		t.Fatal(err)
@@ -648,8 +648,8 @@ auth:
 	if cfg.Auth.AuthorizationRules.AllowEnterpriseAdminMigrations != true {
 		t.Error("Expected AllowEnterpriseAdminMigrations to be true")
 	}
-	if cfg.Auth.AuthorizationRules.RequireIdentityMappingForSelfService != false {
-		t.Error("Expected RequireIdentityMappingForSelfService to be false")
+	if cfg.Auth.AuthorizationRules.EnableSelfService != false {
+		t.Error("Expected EnableSelfService to be false")
 	}
 }
 

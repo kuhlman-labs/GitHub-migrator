@@ -5,7 +5,7 @@ export interface AuthorizationRulesResponse {
   migration_admin_teams: string[];
   allow_org_admin_migrations: boolean;
   allow_enterprise_admin_migrations: boolean;
-  require_identity_mapping_for_self_service: boolean;
+  enable_self_service: boolean;
 }
 
 // Settings types
@@ -48,7 +48,7 @@ export interface UpdateAuthorizationRulesRequest {
   migration_admin_teams?: string[];
   allow_org_admin_migrations?: boolean;
   allow_enterprise_admin_migrations?: boolean;
-  require_identity_mapping_for_self_service?: boolean;
+  enable_self_service?: boolean;
 }
 
 export interface UpdateSettingsRequest {

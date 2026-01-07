@@ -59,8 +59,8 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
   const [allowEnterpriseAdminMigrations, setAllowEnterpriseAdminMigrations] = useState(
     settings.authorization_rules?.allow_enterprise_admin_migrations || false
   );
-  const [requireIdentityMappingForSelfService, setRequireIdentityMappingForSelfService] = useState(
-    settings.authorization_rules?.require_identity_mapping_for_self_service || false
+  const [enableSelfService, setEnableSelfService] = useState(
+    settings.authorization_rules?.enable_self_service || false
   );
 
   // Team validation state
@@ -171,7 +171,7 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
       migration_admin_teams: teams,
       allow_org_admin_migrations: allowOrgAdminMigrations,
       allow_enterprise_admin_migrations: allowEnterpriseAdminMigrations,
-      require_identity_mapping_for_self_service: requireIdentityMappingForSelfService,
+      enable_self_service: enableSelfService,
     };
 
     onSave(updates);
@@ -188,7 +188,7 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
     migrationAdminTeams !== (settings.authorization_rules?.migration_admin_teams?.join(', ') || '') ||
     allowOrgAdminMigrations !== (settings.authorization_rules?.allow_org_admin_migrations || false) ||
     allowEnterpriseAdminMigrations !== (settings.authorization_rules?.allow_enterprise_admin_migrations || false) ||
-    requireIdentityMappingForSelfService !== (settings.authorization_rules?.require_identity_mapping_for_self_service || false);
+    enableSelfService !== (settings.authorization_rules?.enable_self_service || false);
 
   const getTierIcon = (tier: string) => {
     switch (tier) {
@@ -765,8 +765,8 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
                   <Text className="font-semibold block mb-3">Self-Service Access (Tier 2)</Text>
                   <FormControl>
                     <Checkbox
-                      checked={requireIdentityMappingForSelfService}
-                      onChange={(e) => setRequireIdentityMappingForSelfService(e.target.checked)}
+                      checked={enableSelfService}
+                      onChange={(e) => setEnableSelfService(e.target.checked)}
                     />
                     <FormControl.Label>
                       Enable self-service migrations

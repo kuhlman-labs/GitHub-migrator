@@ -66,7 +66,7 @@ const defaultSettings: SettingsResponse = {
     migration_admin_teams: ['myorg/migration-admins'], // Tier 1 group for tests
     allow_org_admin_migrations: false,
     allow_enterprise_admin_migrations: false,
-    require_identity_mapping_for_self_service: false,
+    enable_self_service: false,
   },
   source_type: 'github',
   source_base_url: 'https://api.github.com',

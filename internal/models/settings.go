@@ -36,10 +36,10 @@ type Settings struct {
 	AuthFrontendURL             string  `json:"auth_frontend_url" db:"auth_frontend_url" gorm:"column:auth_frontend_url;not null;default:'http://localhost:3000'"`
 
 	// Authorization rules (stored as comma-separated for arrays)
-	AuthMigrationAdminTeams                  *string `json:"auth_migration_admin_teams,omitempty" db:"auth_migration_admin_teams" gorm:"column:auth_migration_admin_teams"`
-	AuthAllowOrgAdminMigrations              bool    `json:"auth_allow_org_admin_migrations" db:"auth_allow_org_admin_migrations" gorm:"column:auth_allow_org_admin_migrations;not null;default:false"`
-	AuthAllowEnterpriseAdminMigrations       bool    `json:"auth_allow_enterprise_admin_migrations" db:"auth_allow_enterprise_admin_migrations" gorm:"column:auth_allow_enterprise_admin_migrations;not null;default:false"`
-	AuthRequireIdentityMappingForSelfService bool    `json:"auth_require_identity_mapping_for_self_service" db:"auth_require_identity_mapping_for_self_service" gorm:"column:auth_require_identity_mapping_for_self_service;not null;default:false"`
+	AuthMigrationAdminTeams            *string `json:"auth_migration_admin_teams,omitempty" db:"auth_migration_admin_teams" gorm:"column:auth_migration_admin_teams"`
+	AuthAllowOrgAdminMigrations        bool    `json:"auth_allow_org_admin_migrations" db:"auth_allow_org_admin_migrations" gorm:"column:auth_allow_org_admin_migrations;not null;default:false"`
+	AuthAllowEnterpriseAdminMigrations bool    `json:"auth_allow_enterprise_admin_migrations" db:"auth_allow_enterprise_admin_migrations" gorm:"column:auth_allow_enterprise_admin_migrations;not null;default:false"`
+	AuthEnableSelfService              bool    `json:"auth_enable_self_service" db:"auth_enable_self_service" gorm:"column:auth_enable_self_service;not null;default:false"`
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"column:created_at"`
@@ -105,10 +105,10 @@ type SettingsResponse struct {
 
 // AuthorizationRulesResponse is the API response for authorization rules
 type AuthorizationRulesResponse struct {
-	MigrationAdminTeams                  []string `json:"migration_admin_teams"`
-	AllowOrgAdminMigrations              bool     `json:"allow_org_admin_migrations"`
-	AllowEnterpriseAdminMigrations       bool     `json:"allow_enterprise_admin_migrations"`
-	RequireIdentityMappingForSelfService bool     `json:"require_identity_mapping_for_self_service"`
+	MigrationAdminTeams            []string `json:"migration_admin_teams"`
+	AllowOrgAdminMigrations        bool     `json:"allow_org_admin_migrations"`
+	AllowEnterpriseAdminMigrations bool     `json:"allow_enterprise_admin_migrations"`
+	EnableSelfService              bool     `json:"enable_self_service"`
 }
 
 // ToResponse converts Settings to a safe API response with masked secrets
@@ -161,10 +161,10 @@ func (s *Settings) ToResponse() *SettingsResponse {
 
 		// Authorization rules
 		AuthorizationRules: AuthorizationRulesResponse{
-			MigrationAdminTeams:                  migrationAdminTeams,
-			AllowOrgAdminMigrations:              s.AuthAllowOrgAdminMigrations,
-			AllowEnterpriseAdminMigrations:       s.AuthAllowEnterpriseAdminMigrations,
-			RequireIdentityMappingForSelfService: s.AuthRequireIdentityMappingForSelfService,
+			MigrationAdminTeams:            migrationAdminTeams,
+			AllowOrgAdminMigrations:        s.AuthAllowOrgAdminMigrations,
+			AllowEnterpriseAdminMigrations: s.AuthAllowEnterpriseAdminMigrations,
+			EnableSelfService:              s.AuthEnableSelfService,
 		},
 
 		// Status
@@ -205,10 +205,10 @@ type UpdateSettingsRequest struct {
 
 // UpdateAuthorizationRulesRequest is the request to update authorization rules
 type UpdateAuthorizationRulesRequest struct {
-	MigrationAdminTeams                  []string `json:"migration_admin_teams,omitempty"`
-	AllowOrgAdminMigrations              *bool    `json:"allow_org_admin_migrations,omitempty"`
-	AllowEnterpriseAdminMigrations       *bool    `json:"allow_enterprise_admin_migrations,omitempty"`
-	RequireIdentityMappingForSelfService *bool    `json:"require_identity_mapping_for_self_service,omitempty"`
+	MigrationAdminTeams            []string `json:"migration_admin_teams,omitempty"`
+	AllowOrgAdminMigrations        *bool    `json:"allow_org_admin_migrations,omitempty"`
+	AllowEnterpriseAdminMigrations *bool    `json:"allow_enterprise_admin_migrations,omitempty"`
+	EnableSelfService              *bool    `json:"enable_self_service,omitempty"`
 }
 
 // ApplyUpdates applies non-nil fields from the update request to the settings
@@ -295,8 +295,8 @@ func (s *Settings) applyAuthUpdates(req *UpdateSettingsRequest) {
 		if req.AuthorizationRules.AllowEnterpriseAdminMigrations != nil {
 			s.AuthAllowEnterpriseAdminMigrations = *req.AuthorizationRules.AllowEnterpriseAdminMigrations
 		}
-		if req.AuthorizationRules.RequireIdentityMappingForSelfService != nil {
-			s.AuthRequireIdentityMappingForSelfService = *req.AuthorizationRules.RequireIdentityMappingForSelfService
+		if req.AuthorizationRules.EnableSelfService != nil {
+			s.AuthEnableSelfService = *req.AuthorizationRules.EnableSelfService
 		}
 	}
 }

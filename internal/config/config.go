@@ -128,10 +128,10 @@ type AuthorizationRules struct {
 	RequireEnterpriseSlug       string   `mapstructure:"require_enterprise_slug"`
 
 	// Destination-centric authorization (who can migrate repositories)
-	MigrationAdminTeams                  []string `mapstructure:"migration_admin_teams"`                     // Teams with full migration rights (format: "org/team-slug")
-	AllowOrgAdminMigrations              bool     `mapstructure:"allow_org_admin_migrations"`                // Allow destination org admins to migrate any repo
-	AllowEnterpriseAdminMigrations       bool     `mapstructure:"allow_enterprise_admin_migrations"`         // Allow destination enterprise admins to migrate any repo
-	RequireIdentityMappingForSelfService bool     `mapstructure:"require_identity_mapping_for_self_service"` // Require identity mapping for self-service (default: true)
+	MigrationAdminTeams            []string `mapstructure:"migration_admin_teams"`             // Teams with full migration rights (format: "org/team-slug")
+	AllowOrgAdminMigrations        bool     `mapstructure:"allow_org_admin_migrations"`        // Allow destination org admins to migrate any repo
+	AllowEnterpriseAdminMigrations bool     `mapstructure:"allow_enterprise_admin_migrations"` // Allow destination enterprise admins to migrate any repo
+	EnableSelfService              bool     `mapstructure:"enable_self_service"`               // Enable self-service migrations via identity mapping (default: true)
 
 	// Deprecated: Use MigrationAdminTeams instead
 	PrivilegedTeams []string `mapstructure:"privileged_teams"`
@@ -250,7 +250,7 @@ func bindEnvVars() {
 		"auth.authorization_rules.migration_admin_teams",
 		"auth.authorization_rules.allow_org_admin_migrations",
 		"auth.authorization_rules.allow_enterprise_admin_migrations",
-		"auth.authorization_rules.require_identity_mapping_for_self_service",
+		"auth.authorization_rules.enable_self_service",
 	}
 
 	for _, key := range envKeys {
@@ -290,7 +290,7 @@ func setDefaults() {
 	viper.SetDefault("auth.authorization_rules.require_enterprise_admin", false)
 	viper.SetDefault("auth.authorization_rules.allow_org_admin_migrations", true)
 	viper.SetDefault("auth.authorization_rules.allow_enterprise_admin_migrations", true)
-	viper.SetDefault("auth.authorization_rules.require_identity_mapping_for_self_service", true)
+	viper.SetDefault("auth.authorization_rules.enable_self_service", true)
 }
 
 // MigrateDeprecatedConfig migrates old GitHub config format to new Source/Destination format

@@ -56,10 +56,10 @@ Configuration:
 ```yaml
 auth:
   authorization_rules:
-    require_identity_mapping_for_self_service: true
+    enable_self_service: true
 ```
 
-When `require_identity_mapping_for_self_service` is `false`, any authenticated user can attempt self-service migrations. The actual source repository admin check happens during migration initiation.
+When `enable_self_service` is `false`, any authenticated user can attempt self-service migrations. The actual source repository admin check happens during migration initiation.
 
 ### Tier 3: Read-Only Access
 
@@ -131,7 +131,7 @@ auth:
     allow_enterprise_admin_migrations: true
     
     # Require identity mapping for self-service (Tier 2)
-    require_identity_mapping_for_self_service: true
+    enable_self_service: true
 ```
 
 ## Identity Mapping for Self-Service

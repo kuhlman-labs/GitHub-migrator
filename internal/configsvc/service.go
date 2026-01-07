@@ -254,7 +254,7 @@ func (cs *Service) GetEffectiveAuthConfig() config.AuthConfig {
 	// Override authorization rules from database settings
 	effectiveCfg.AuthorizationRules.AllowOrgAdminMigrations = cs.settings.AuthAllowOrgAdminMigrations
 	effectiveCfg.AuthorizationRules.AllowEnterpriseAdminMigrations = cs.settings.AuthAllowEnterpriseAdminMigrations
-	effectiveCfg.AuthorizationRules.RequireIdentityMappingForSelfService = cs.settings.AuthRequireIdentityMappingForSelfService
+	effectiveCfg.AuthorizationRules.EnableSelfService = cs.settings.AuthEnableSelfService
 
 	// Parse migration admin teams from database
 	if cs.settings.AuthMigrationAdminTeams != nil && *cs.settings.AuthMigrationAdminTeams != "" {

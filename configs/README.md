@@ -199,7 +199,7 @@ GHMIG_AUTH_SESSION_SECRET=your-secure-random-string
 GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS=my-org/migration-admins
 
 # Tier 2: Require identity mapping for self-service
-GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_IDENTITY_MAPPING_FOR_SELF_SERVICE=true
+GHMIG_AUTH_AUTHORIZATION_RULES_ENABLE_SELF_SERVICE=true
 ```
 
 For detailed authentication documentation, see [internal/auth/README.md](../internal/auth/README.md).

@@ -185,9 +185,9 @@ func TestRequireAdmin_NonAdminUser(t *testing.T) {
 
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			AllowEnterpriseAdminMigrations:       true,
-			RequireEnterpriseSlug:                "test-enterprise",
-			RequireIdentityMappingForSelfService: true, // This makes non-admins Tier 2
+			AllowEnterpriseAdminMigrations: true,
+			RequireEnterpriseSlug:          "test-enterprise",
+			EnableSelfService:              true, // This makes non-admins Tier 2
 		},
 	}
 	authorizer := NewAuthorizer(cfg, logger, server.URL)

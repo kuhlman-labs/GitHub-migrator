@@ -831,27 +831,33 @@ func (a *Authorizer) GetUserAuthorizationTier(ctx context.Context, user *GitHubU
 		}
 	}
 
-	// Tier 2: Self-Service (requires identity mapping - checked at request time)
-	// For now, we return self-service tier if identity mapping is not required,
-	// or read-only if it is required (the actual check happens in handler_utils)
-	if !rules.RequireIdentityMappingForSelfService {
-		a.logger.Debug("User has self-service tier (identity mapping not required)", "user", user.Login)
+	// Tier 2: Self-Service - requires EnableSelfService=true AND completed identity mapping
+	// The actual identity mapping check is done in handler_utils.GetUserAuthorizationStatus
+	// which will upgrade ReadOnly to SelfService if the user has completed identity mapping.
+	//
+	// When EnableSelfService is:
+	// - false: Self-service is DISABLED. Only admins can migrate. Users are ReadOnly.
+	// - true: Self-service is ENABLED via identity mapping. Users start as ReadOnly
+	//         and can upgrade to SelfService by completing identity mapping.
+	if !rules.EnableSelfService {
+		// Self-service is disabled - only admins can migrate
+		a.logger.Debug("User has read-only tier (self-service disabled)", "user", user.Login)
 		return &AuthorizationTierInfo{
-			Tier:     TierSelfService,
-			TierName: "Self-Service",
+			Tier:     TierReadOnly,
+			TierName: "Read-Only",
 			Permissions: TierPermissions{
 				CanViewRepos:       true,
-				CanMigrateOwnRepos: true,
+				CanMigrateOwnRepos: false,
 				CanMigrateAllRepos: false,
-				CanManageBatches:   true,
+				CanManageBatches:   false,
 				CanManageSources:   false,
 			},
-			Reason: "Self-service enabled (identity mapping not required)",
+			Reason: "Self-service migrations are disabled; contact an administrator",
 		}, nil
 	}
 
-	// Default to Tier 3: Read-Only
-	// Identity mapping status will be checked separately to potentially upgrade to Tier 2
+	// Self-service is enabled - user needs to complete identity mapping to upgrade
+	// The actual mapping check happens in handler_utils.GetUserAuthorizationStatus
 	a.logger.Debug("User has read-only tier (identity mapping required for self-service)", "user", user.Login)
 	return &AuthorizationTierInfo{
 		Tier:     TierReadOnly,

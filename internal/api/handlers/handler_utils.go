@@ -121,16 +121,16 @@ func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName s
 // and that source identity must have admin access on the repository.
 //
 // Authorization behavior:
-// - If RequireIdentityMappingForSelfService is false: User falls to Tier 3 (Read-Only) - no self-service access
-// - If RequireIdentityMappingForSelfService is true: User can achieve Tier 2 by completing identity mapping
+// - If EnableSelfService is false: Self-service is disabled, user is Tier 3 (Read-Only)
+// - If EnableSelfService is true: User can upgrade to Tier 2 (Self-Service) by completing identity mapping
 func (u *HandlerUtils) checkIdentityMappedAccess(ctx context.Context, user *auth.GitHubUser, repoFullName string) error {
 	rules := u.getEffectiveAuthConfig().AuthorizationRules
 
-	// Check if self-service tier is enabled via identity mapping requirement
-	if !rules.RequireIdentityMappingForSelfService {
-		// Self-service tier is disabled - user falls to Tier 3 (Read-Only)
+	// Check if self-service tier is enabled
+	if !rules.EnableSelfService {
+		// Self-service is disabled - user falls to Tier 3 (Read-Only)
 		// Only Tier 1 (Admin) users can initiate migrations when self-service is disabled
-		u.logger.Debug("Self-service tier disabled (identity mapping not required), user is Read-Only",
+		u.logger.Debug("Self-service disabled, user is Read-Only",
 			"user", user.Login,
 			"repo", repoFullName)
 		return fmt.Errorf("you have read-only access; only administrators can initiate migrations when self-service is disabled")
@@ -352,8 +352,13 @@ func (u *HandlerUtils) GetUserAuthorizationStatus(ctx context.Context) (*UserAut
 				SourceName:  sourceName,
 			}
 
-			// If user has identity mapping completed and is currently read-only, upgrade to self-service
-			if tierInfo.Tier == auth.TierReadOnly && mapping.MappingStatus == string(models.UserMappingStatusMapped) {
+			// If user has identity mapping completed and is currently read-only,
+			// upgrade to self-service ONLY if self-service tier is enabled.
+			// This must be consistent with checkIdentityMappedAccess which also checks this flag.
+			rules := u.getEffectiveAuthConfig().AuthorizationRules
+			if tierInfo.Tier == auth.TierReadOnly &&
+				mapping.MappingStatus == string(models.UserMappingStatusMapped) &&
+				rules.EnableSelfService {
 				status.Tier = string(auth.TierSelfService)
 				status.TierName = "Self-Service"
 				status.Permissions = auth.TierPermissions{
@@ -368,11 +373,21 @@ func (u *HandlerUtils) GetUserAuthorizationStatus(ctx context.Context) (*UserAut
 	}
 
 	// Add upgrade path for users who can improve their access
+	// Only suggest identity mapping if self-service tier is enabled
 	if status.Tier == string(auth.TierReadOnly) {
-		status.UpgradePath = &UpgradePath{
-			Action:  "complete_identity_mapping",
-			Message: "Complete identity mapping to enable self-service migrations",
-			Link:    "/user-mappings",
+		rules := u.getEffectiveAuthConfig().AuthorizationRules
+		if rules.EnableSelfService {
+			status.UpgradePath = &UpgradePath{
+				Action:  "complete_identity_mapping",
+				Message: "Complete identity mapping to enable self-service migrations",
+				Link:    "/user-mappings",
+			}
+		} else {
+			status.UpgradePath = &UpgradePath{
+				Action:  "contact_admin",
+				Message: "Self-service migrations are disabled; contact an administrator for migration access",
+				Link:    "",
+			}
 		}
 	}
 

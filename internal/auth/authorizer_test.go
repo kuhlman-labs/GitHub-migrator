@@ -426,9 +426,9 @@ func TestGetUserAuthorizationTier_EnterpriseAdmin(t *testing.T) {
 
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			RequireEnterpriseSlug:                "test-enterprise",
-			AllowEnterpriseAdminMigrations:       true,
-			RequireIdentityMappingForSelfService: true,
+			RequireEnterpriseSlug:          "test-enterprise",
+			AllowEnterpriseAdminMigrations: true,
+			EnableSelfService:              true,
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -485,10 +485,10 @@ func TestGetUserAuthorizationTier_MigrationTeamMember(t *testing.T) {
 
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			RequireEnterpriseSlug:                "test-enterprise",
-			AllowEnterpriseAdminMigrations:       true,
-			MigrationAdminTeams:                  []string{"myorg/migration-admins"},
-			RequireIdentityMappingForSelfService: true,
+			RequireEnterpriseSlug:          "test-enterprise",
+			AllowEnterpriseAdminMigrations: true,
+			MigrationAdminTeams:            []string{"myorg/migration-admins"},
+			EnableSelfService:              true,
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -548,10 +548,10 @@ func TestGetUserAuthorizationTier_OrgAdmin(t *testing.T) {
 
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			RequireEnterpriseSlug:                "test-enterprise",
-			AllowEnterpriseAdminMigrations:       true,
-			AllowOrgAdminMigrations:              true,
-			RequireIdentityMappingForSelfService: true,
+			RequireEnterpriseSlug:          "test-enterprise",
+			AllowEnterpriseAdminMigrations: true,
+			AllowOrgAdminMigrations:        true,
+			EnableSelfService:              true,
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -575,8 +575,9 @@ func TestGetUserAuthorizationTier_OrgAdmin(t *testing.T) {
 	}
 }
 
-func TestGetUserAuthorizationTier_SelfService(t *testing.T) {
-	// Create mock GitHub API server - user has no admin privileges
+func TestGetUserAuthorizationTier_SelfServiceDisabled(t *testing.T) {
+	// When EnableSelfService is false, self-service is DISABLED
+	// and users fall to read-only tier. Only admins can migrate.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/user/memberships/orgs" {
 			w.Header().Set("Content-Type", "application/json")
@@ -600,8 +601,8 @@ func TestGetUserAuthorizationTier_SelfService(t *testing.T) {
 
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			AllowOrgAdminMigrations:              true,
-			RequireIdentityMappingForSelfService: false, // Self-service without identity mapping
+			AllowOrgAdminMigrations: true,
+			EnableSelfService:       false, // Self-service DISABLED
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -617,14 +618,15 @@ func TestGetUserAuthorizationTier_SelfService(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	if tierInfo.Tier != TierSelfService {
-		t.Errorf("Expected TierSelfService, got %s", tierInfo.Tier)
+	// When self-service is disabled, users should be read-only
+	if tierInfo.Tier != TierReadOnly {
+		t.Errorf("Expected TierReadOnly when self-service disabled, got %s", tierInfo.Tier)
 	}
-	if tierInfo.TierName != "Self-Service" {
-		t.Errorf("Expected 'Self-Service', got %s", tierInfo.TierName)
+	if tierInfo.TierName != "Read-Only" {
+		t.Errorf("Expected 'Read-Only', got %s", tierInfo.TierName)
 	}
-	if !tierInfo.Permissions.CanMigrateOwnRepos {
-		t.Error("Expected CanMigrateOwnRepos to be true")
+	if tierInfo.Permissions.CanMigrateOwnRepos {
+		t.Error("Expected CanMigrateOwnRepos to be false when self-service disabled")
 	}
 	if tierInfo.Permissions.CanMigrateAllRepos {
 		t.Error("Expected CanMigrateAllRepos to be false")
@@ -656,8 +658,8 @@ func TestGetUserAuthorizationTier_ReadOnly(t *testing.T) {
 
 	cfg := &config.AuthConfig{
 		AuthorizationRules: config.AuthorizationRules{
-			AllowOrgAdminMigrations:              true,
-			RequireIdentityMappingForSelfService: true, // Requires identity mapping
+			AllowOrgAdminMigrations: true,
+			EnableSelfService:       true, // Requires identity mapping
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -751,8 +753,8 @@ func TestCheckDestinationMigrationRights_AllTiers(t *testing.T) {
 			},
 			cfg: &config.AuthConfig{
 				AuthorizationRules: config.AuthorizationRules{
-					AllowOrgAdminMigrations:              true,
-					RequireIdentityMappingForSelfService: true,
+					AllowOrgAdminMigrations: true,
+					EnableSelfService:       true,
 				},
 			},
 			expectedAccess: false,
