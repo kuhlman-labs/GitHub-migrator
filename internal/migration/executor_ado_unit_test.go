@@ -312,7 +312,7 @@ func TestADORepoNameExtraction(t *testing.T) {
 			name:         "empty ADO project pointer - falls back to source name",
 			fullName:     "org/project/repo",
 			adoProject:   ptrString(""),
-			expectedName: "project-repo", // Empty ADO project goes through non-ADO path; sanitizeRepoName replaces slashes
+			expectedName: "project-repo", // Empty ADO project uses repo.Name() which returns "project/repo", then sanitized to "project-repo"
 		},
 	}
 

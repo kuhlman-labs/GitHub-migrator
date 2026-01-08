@@ -285,15 +285,18 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 		repo.SetTagCount(len(tags))
 	}
 
-	// Get issue and PR counts
-	// Note: This is a simplified approach
-	issues, _, err := e.destClient.REST().Issues.ListByRepo(ctx, org, name, &ghapi.IssueListByRepoOptions{
+	// Get issue and PR counts using pagination
+	issueCount := 0
+	prCount := 0
+	opts := &ghapi.IssueListByRepoOptions{
 		State:       "all",
-		ListOptions: ghapi.ListOptions{PerPage: 1},
-	})
-	if err == nil {
-		issueCount := 0
-		prCount := 0
+		ListOptions: ghapi.ListOptions{PerPage: 100},
+	}
+	for {
+		issues, resp, err := e.destClient.REST().Issues.ListByRepo(ctx, org, name, opts)
+		if err != nil {
+			break
+		}
 		// Count issues (excluding PRs)
 		for _, issue := range issues {
 			if issue.PullRequestLinks == nil {
@@ -302,9 +305,13 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 				prCount++
 			}
 		}
-		repo.SetIssueCount(issueCount)
-		repo.SetPullRequestCount(prCount)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.ListOptions.Page = resp.NextPage
 	}
+	repo.SetIssueCount(issueCount)
+	repo.SetPullRequestCount(prCount)
 
 	return repo, nil
 }
