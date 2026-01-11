@@ -42,13 +42,13 @@ func CreateTestRepository(fullName string) *models.Repository {
 			HasLargeFiles:      false,
 		},
 		Features: &models.RepositoryFeatures{
-			HasWiki:       false,
-			HasPages:      false,
-			HasActions:    true,
-			HasPackages:   false,
-			HasProjects:   false,
-			HasRulesets:   false,
-			IssueCount:    10,
+			HasWiki:        false,
+			HasPages:       false,
+			HasActions:     true,
+			HasPackages:    false,
+			HasProjects:    false,
+			HasRulesets:    false,
+			IssueCount:     10,
 			OpenIssueCount: 3,
 		},
 		Validation: &models.RepositoryValidation{
@@ -136,11 +136,11 @@ func CreateTestRepositoryWithActions(fullName string) *models.Repository {
 func CreateTestRepositoryWithValidationIssues(fullName string) *models.Repository {
 	repo := CreateTestRepository(fullName)
 	repo.Validation = &models.RepositoryValidation{
-		HasOversizedCommits: true,
+		HasOversizedCommits:    true,
 		OversizedCommitDetails: StringPtr(`[{"sha": "abc123", "size": 3000000000}]`),
-		HasBlockingFiles:    true,
-		BlockingFileDetails: StringPtr(`[{"path": "large.bin", "size": 500000000}]`),
-		ComplexityScore:     IntPtr(25),
+		HasBlockingFiles:       true,
+		BlockingFileDetails:    StringPtr(`[{"path": "large.bin", "size": 500000000}]`),
+		ComplexityScore:        IntPtr(25),
 	}
 	return repo
 }
@@ -157,7 +157,7 @@ func CreateTestRepositoryInBatch(fullName string, batchID int64) *models.Reposit
 func CreateTestRepositoryMigrated(fullName string) *models.Repository {
 	now := time.Now()
 	destURL := fmt.Sprintf("https://github.com/%s", fullName)
-	
+
 	repo := CreateTestRepository(fullName)
 	repo.Status = string(models.StatusComplete)
 	repo.DestinationURL = &destURL
@@ -170,12 +170,12 @@ func CreateTestRepositoryMigrated(fullName string) *models.Repository {
 func CreateTestBatch(name string) *models.Batch {
 	now := time.Now()
 	return &models.Batch{
-		Name:           name,
-		Description:    StringPtr("Test batch"),
-		Type:           "pilot",
-		Status:         "pending",
-		MigrationAPI:   models.MigrationAPIGEI,
-		CreatedAt:      now,
+		Name:         name,
+		Description:  StringPtr("Test batch"),
+		Type:         "pilot",
+		Status:       "pending",
+		MigrationAPI: models.MigrationAPIGEI,
+		CreatedAt:    now,
 	}
 }
 
@@ -185,5 +185,3 @@ func CreateTestBatchWithStatus(name, status string) *models.Batch {
 	batch.Status = status
 	return batch
 }
-
-
