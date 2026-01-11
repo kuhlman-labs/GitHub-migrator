@@ -44,7 +44,8 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, settings.ToResponse())
+	// Return consistent response structure matching UpdateSettings
+	h.sendJSONWithRestart(w, http.StatusOK, settings.ToResponse(), false, "")
 }
 
 // UpdateSettings handles PUT /api/v1/settings

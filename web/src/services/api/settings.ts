@@ -135,8 +135,9 @@ export interface UpdateLoggingRequest {
 
 // Get current settings (with sensitive data masked)
 export async function getSettings(): Promise<SettingsResponse> {
-  const response = await client.get<SettingsResponse>('/settings');
-  return response.data;
+  const response = await client.get<SettingsApiResponse>('/settings');
+  // API returns wrapped structure; extract settings
+  return response.data.settings;
 }
 
 // Get setup progress for guided empty states
@@ -145,26 +146,17 @@ export async function getSetupProgress(): Promise<SetupProgressResponse> {
   return response.data;
 }
 
-// Update settings response with optional restart notification
-export interface UpdateSettingsResponse {
-  settings?: SettingsResponse;
-  restart_required?: boolean;
-  message?: string;
+// Settings API response structure (consistent for both GET and PUT)
+export interface SettingsApiResponse {
+  settings: SettingsResponse;
+  restart_required: boolean;
+  message: string;
 }
 
 // Update settings
-export async function updateSettings(request: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
-  const response = await client.put<SettingsResponse | UpdateSettingsResponse>('/settings', request);
-  
-  // Handle both response formats:
-  // 1. Direct SettingsResponse (when no auth settings changed)
-  // 2. Wrapped response with restart_required (when auth settings changed)
-  const data = response.data;
-  if ('restart_required' in data) {
-    return data as UpdateSettingsResponse;
-  }
-  // Wrap plain SettingsResponse for consistent interface
-  return { settings: data as SettingsResponse };
+export async function updateSettings(request: UpdateSettingsRequest): Promise<SettingsApiResponse> {
+  const response = await client.put<SettingsApiResponse>('/settings', request);
+  return response.data;
 }
 
 // Validate destination connection
