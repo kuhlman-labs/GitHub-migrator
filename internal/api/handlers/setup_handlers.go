@@ -187,7 +187,13 @@ func (h *SetupHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
 			if err := h.db.MarkSetupComplete(); err != nil {
 				h.logger.Error("Failed to mark setup complete", "error", err)
 			} else {
-				status, _ = h.db.GetSetupStatus()
+				// Refresh the status after marking complete
+				if refreshedStatus, err := h.db.GetSetupStatus(); err != nil {
+					h.logger.Error("Failed to refresh setup status", "error", err)
+					// Keep the original status value to avoid nil pointer dereference
+				} else {
+					status = refreshedStatus
+				}
 			}
 		}
 	}

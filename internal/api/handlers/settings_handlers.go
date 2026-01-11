@@ -96,13 +96,13 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 
 	h.logger.Info("Settings updated successfully")
 
-	// Return response with restart_required flag if auth settings changed
+	// Always return consistent response structure with restart_required flag
 	response := settings.ToResponse()
 	if authSettingsChanged {
 		h.logger.Info("Auth settings changed - server restart required for changes to take effect")
 		h.sendJSONWithRestart(w, http.StatusOK, response, true, "Authentication settings require a server restart to take effect")
 	} else {
-		h.sendJSON(w, http.StatusOK, response)
+		h.sendJSONWithRestart(w, http.StatusOK, response, false, "")
 	}
 }
 
