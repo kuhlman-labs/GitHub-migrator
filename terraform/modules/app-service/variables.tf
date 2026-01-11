@@ -20,9 +20,9 @@ variable "app_service_name" {
 }
 
 variable "sku_name" {
-  description = "SKU name for the App Service Plan (e.g., B1, S1, P1v2)"
+  description = "SKU name for the App Service Plan. Must be S1 or higher for deployment slots."
   type        = string
-  default     = "B1"
+  default     = "S1"
 }
 
 variable "always_on" {
@@ -55,7 +55,7 @@ variable "docker_registry_password" {
 }
 
 variable "app_settings" {
-  description = "Application settings for the App Service"
+  description = "Application settings for the App Service (production slot)"
   type        = map(string)
   default     = {}
 }
@@ -85,3 +85,27 @@ variable "storage_mounts" {
   default = []
 }
 
+# Deployment Slot Configuration
+variable "enable_staging_slot" {
+  description = "Enable the staging deployment slot"
+  type        = bool
+  default     = false
+}
+
+variable "enable_dev_slot" {
+  description = "Enable the dev deployment slot"
+  type        = bool
+  default     = false
+}
+
+variable "staging_slot_app_settings" {
+  description = "Additional/override app settings for the staging slot"
+  type        = map(string)
+  default     = {}
+}
+
+variable "dev_slot_app_settings" {
+  description = "Additional/override app settings for the dev slot"
+  type        = map(string)
+  default     = {}
+}

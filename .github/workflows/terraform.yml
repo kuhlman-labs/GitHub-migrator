@@ -1,4 +1,4 @@
-name: Terraform Deploy - Production
+name: Terraform Deploy
 
 on:
   workflow_dispatch:
@@ -12,19 +12,25 @@ on:
           - plan
           - apply
           - destroy
+  workflow_call:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        type: string
 
 # Set minimal permissions for the workflow
 permissions:
-  contents: read      # Read repository contents
-  id-token: write     # Create OIDC tokens for Azure authentication
+  contents: read
+  id-token: write
 
 env:
   TF_VERSION: '1.6'
   WORKING_DIR: terraform/environments/prod
 
 jobs:
-  terraform-prod:
-    name: Terraform ${{ github.event.inputs.action }} - Production
+  terraform:
+    name: Terraform ${{ inputs.action || github.event.inputs.action }}
     runs-on: ubuntu-latest
     environment: prod
 
@@ -56,11 +62,13 @@ jobs:
           SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
 
           # Set as environment variables for Terraform
-          echo "ARM_CLIENT_ID=${CLIENT_ID}" >> $GITHUB_ENV
-          echo "ARM_CLIENT_SECRET=${CLIENT_SECRET}" >> $GITHUB_ENV
-          echo "ARM_TENANT_ID=${TENANT_ID}" >> $GITHUB_ENV
-          echo "ARM_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}" >> $GITHUB_ENV
-          echo "ARM_USE_CLI=false" >> $GITHUB_ENV
+          {
+            echo "ARM_CLIENT_ID=${CLIENT_ID}"
+            echo "ARM_CLIENT_SECRET=${CLIENT_SECRET}"
+            echo "ARM_TENANT_ID=${TENANT_ID}"
+            echo "ARM_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}"
+            echo "ARM_USE_CLI=false"
+          } >> "$GITHUB_ENV"
 
       - name: Create terraform.tfvars from environment secrets
         run: |
@@ -74,6 +82,10 @@ jobs:
           app_name_prefix = "${{ vars.APP_NAME_PREFIX }}"
           app_service_sku = "${{ vars.APP_SERVICE_SKU }}"
           always_on       = ${{ vars.ALWAYS_ON || 'true' }}
+
+          # Deployment Slots Configuration
+          enable_staging_slot = true
+          enable_dev_slot     = true
 
           # Docker Configuration
           docker_registry_url       = "ghcr.io"
@@ -100,9 +112,11 @@ jobs:
 
           # Add GitHub App configuration if enabled (handles multi-line private key)
           if [ -n "${{ vars.SOURCE_APP_ID }}" ] && [ "${{ vars.SOURCE_APP_ID }}" != "0" ]; then
-            echo "" >> terraform.tfvars
-            echo "# Source GitHub App Configuration" >> terraform.tfvars
-            echo "source_app_id = ${{ vars.SOURCE_APP_ID }}" >> terraform.tfvars
+            {
+              echo ""
+              echo "# Source GitHub App Configuration"
+              echo "source_app_id = ${{ vars.SOURCE_APP_ID }}"
+            } >> terraform.tfvars
 
             # Use heredoc for multi-line private key
             cat >> terraform.tfvars <<'PRIVATE_KEY_EOF'
@@ -111,8 +125,9 @@ jobs:
           EOT
           PRIVATE_KEY_EOF
 
-            if [ -n "${{ vars.SOURCE_APP_INSTALLATION_ID }}" ] && [ "${{ vars.SOURCE_APP_INSTALLATION_ID }}" != "0" ]; then
-              echo "source_app_installation_id = ${{ vars.SOURCE_APP_INSTALLATION_ID }}" >> terraform.tfvars
+            SRC_INST_ID="${{ vars.SOURCE_APP_INSTALLATION_ID }}"
+            if [ -n "$SRC_INST_ID" ] && [ "$SRC_INST_ID" != "0" ]; then
+              echo "source_app_installation_id = $SRC_INST_ID" >> terraform.tfvars
             fi
           fi
 
@@ -127,9 +142,11 @@ jobs:
 
           # Add Destination GitHub App configuration if enabled (handles multi-line private key)
           if [ -n "${{ vars.DEST_APP_ID }}" ] && [ "${{ vars.DEST_APP_ID }}" != "0" ]; then
-            echo "" >> terraform.tfvars
-            echo "# Destination GitHub App Configuration" >> terraform.tfvars
-            echo "dest_app_id = ${{ vars.DEST_APP_ID }}" >> terraform.tfvars
+            {
+              echo ""
+              echo "# Destination GitHub App Configuration"
+              echo "dest_app_id = ${{ vars.DEST_APP_ID }}"
+            } >> terraform.tfvars
 
             # Use heredoc for multi-line private key
             cat >> terraform.tfvars <<'DEST_PRIVATE_KEY_EOF'
@@ -138,8 +155,9 @@ jobs:
           EOT
           DEST_PRIVATE_KEY_EOF
 
-            if [ -n "${{ vars.DEST_APP_INSTALLATION_ID }}" ] && [ "${{ vars.DEST_APP_INSTALLATION_ID }}" != "0" ]; then
-              echo "dest_app_installation_id = ${{ vars.DEST_APP_INSTALLATION_ID }}" >> terraform.tfvars
+            DEST_INST_ID="${{ vars.DEST_APP_INSTALLATION_ID }}"
+            if [ -n "$DEST_INST_ID" ] && [ "$DEST_INST_ID" != "0" ]; then
+              echo "dest_app_installation_id = $DEST_INST_ID" >> terraform.tfvars
             fi
           fi
 
@@ -182,7 +200,7 @@ jobs:
           # Tags
           tags = {
             Project     = "GitHub Migrator"
-            Environment = "${{ vars.ENVIRONMENT_NAME }}"
+            Environment = "prod"
             ManagedBy   = "Terraform"
             DeployedBy  = "GitHub Actions"
           }
@@ -196,40 +214,53 @@ jobs:
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
-        continue-on-error: true
 
       - name: Terraform Validate
         run: terraform validate
 
       - name: Terraform Plan
-        if: github.event.inputs.action == 'plan'
+        if: inputs.action == 'plan' || github.event.inputs.action == 'plan'
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
-        if: github.event.inputs.action == 'apply'
+        if: inputs.action == 'apply' || github.event.inputs.action == 'apply'
         run: terraform apply -auto-approve
 
       - name: Terraform Destroy
-        if: github.event.inputs.action == 'destroy'
+        if: inputs.action == 'destroy' || github.event.inputs.action == 'destroy'
         run: terraform destroy -auto-approve
 
       - name: Get Outputs
-        if: github.event.inputs.action == 'apply'
+        if: inputs.action == 'apply' || github.event.inputs.action == 'apply'
         run: |
-          echo "## Terraform Outputs - Production" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**App Service URL:** $(terraform output -raw app_service_url)" >> $GITHUB_STEP_SUMMARY
-          echo "**App Service Name:** $(terraform output -raw app_service_name)" >> $GITHUB_STEP_SUMMARY
-          echo "**Database Server:** $(terraform output -raw database_server_fqdn)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ⚠️ Important: Save Database Credentials" >> $GITHUB_STEP_SUMMARY
-          echo "Database admin username and password are in Terraform state." >> $GITHUB_STEP_SUMMARY
-          echo "Store them securely in a password manager or Azure Key Vault." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Update GitHub secret \`AZURE_APP_SERVICE_NAME_PROD\` with: \`$(terraform output -raw app_service_name)\`" >> $GITHUB_STEP_SUMMARY
-          echo "2. Run the Build workflow to create container image" >> $GITHUB_STEP_SUMMARY
-          echo "3. Run Deploy Production workflow to deploy the application" >> $GITHUB_STEP_SUMMARY
+          APP_URL=$(terraform output -raw app_service_url)
+          APP_NAME=$(terraform output -raw app_service_name)
+          STAGING_URL=$(terraform output -raw staging_slot_url 2>/dev/null || echo 'N/A')
+          DEV_URL=$(terraform output -raw dev_slot_url 2>/dev/null || echo 'N/A')
+          DB_FQDN=$(terraform output -raw database_server_fqdn)
+          {
+            echo "## Terraform Outputs"
+            echo ""
+            echo "### Production App Service"
+            echo "**App Service URL:** $APP_URL"
+            echo "**App Service Name:** $APP_NAME"
+            echo ""
+            echo "### Deployment Slots"
+            echo "**Staging Slot URL:** $STAGING_URL"
+            echo "**Dev Slot URL:** $DEV_URL"
+            echo ""
+            echo "### Database"
+            echo "**Database Server:** $DB_FQDN"
+            echo ""
+            echo "### Important Notes"
+            echo "- Database admin credentials are stored in Terraform state"
+            echo "- Store them securely in a password manager or Azure Key Vault"
+            echo ""
+            echo "### Next Steps"
+            echo "1. Update GitHub Environment Variable \`APP_SERVICE_NAME\` with: \`$APP_NAME\`"
+            echo "2. Run the Build workflow to create container image"
+            echo "3. Deploy workflows will automatically deploy to appropriate slots"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()

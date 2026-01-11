@@ -33,3 +33,44 @@ output "app_service_identity_tenant_id" {
   value       = azurerm_linux_web_app.main.identity[0].tenant_id
 }
 
+# Staging Slot Outputs
+output "staging_slot_id" {
+  description = "ID of the staging deployment slot"
+  value       = var.enable_staging_slot ? azurerm_linux_web_app_slot.staging[0].id : null
+}
+
+output "staging_slot_name" {
+  description = "Name of the staging deployment slot"
+  value       = var.enable_staging_slot ? azurerm_linux_web_app_slot.staging[0].name : null
+}
+
+output "staging_slot_hostname" {
+  description = "Default hostname of the staging slot"
+  value       = var.enable_staging_slot ? azurerm_linux_web_app_slot.staging[0].default_hostname : null
+}
+
+output "staging_slot_url" {
+  description = "URL of the staging deployment slot"
+  value       = var.enable_staging_slot ? "https://${azurerm_linux_web_app_slot.staging[0].default_hostname}" : null
+}
+
+# Dev Slot Outputs
+output "dev_slot_id" {
+  description = "ID of the dev deployment slot"
+  value       = var.enable_dev_slot ? azurerm_linux_web_app_slot.dev[0].id : null
+}
+
+output "dev_slot_name" {
+  description = "Name of the dev deployment slot"
+  value       = var.enable_dev_slot ? azurerm_linux_web_app_slot.dev[0].name : null
+}
+
+output "dev_slot_hostname" {
+  description = "Default hostname of the dev slot"
+  value       = var.enable_dev_slot ? azurerm_linux_web_app_slot.dev[0].default_hostname : null
+}
+
+output "dev_slot_url" {
+  description = "URL of the dev deployment slot"
+  value       = var.enable_dev_slot ? "https://${azurerm_linux_web_app_slot.dev[0].default_hostname}" : null
+}

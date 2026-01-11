@@ -24,7 +24,7 @@ resource "azurerm_service_plan" "main" {
   }
 }
 
-# App Service
+# App Service (Production Slot)
 resource "azurerm_linux_web_app" "main" {
   name                = var.app_service_name
   location            = var.location
@@ -94,3 +94,114 @@ resource "azurerm_linux_web_app" "main" {
   tags = var.tags
 }
 
+# Staging Deployment Slot
+resource "azurerm_linux_web_app_slot" "staging" {
+  count          = var.enable_staging_slot ? 1 : 0
+  name           = "staging"
+  app_service_id = azurerm_linux_web_app.main.id
+
+  https_only = true
+
+  site_config {
+    always_on                         = var.always_on
+    health_check_path                 = "/health"
+    health_check_eviction_time_in_min = 2
+
+    application_stack {
+      docker_image_name        = var.docker_image
+      docker_registry_url      = "https://${var.docker_registry_url}"
+      docker_registry_username = var.docker_registry_username
+      docker_registry_password = var.docker_registry_password
+    }
+
+    cors {
+      allowed_origins     = var.cors_allowed_origins
+      support_credentials = length(var.cors_allowed_origins) > 0 && !contains(var.cors_allowed_origins, "*") ? true : false
+    }
+  }
+
+  app_settings = merge(
+    var.app_settings,
+    var.staging_slot_app_settings,
+    {
+      "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
+      "WEBSITES_PORT"                       = "8080"
+      "ENVIRONMENT"                         = "staging"
+    }
+  )
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  logs {
+    application_logs {
+      file_system_level = "Information"
+    }
+
+    http_logs {
+      file_system {
+        retention_in_days = 7
+        retention_in_mb   = 35
+      }
+    }
+  }
+
+  tags = merge(var.tags, { Slot = "staging" })
+}
+
+# Dev Deployment Slot
+resource "azurerm_linux_web_app_slot" "dev" {
+  count          = var.enable_dev_slot ? 1 : 0
+  name           = "dev"
+  app_service_id = azurerm_linux_web_app.main.id
+
+  https_only = true
+
+  site_config {
+    always_on                         = var.always_on
+    health_check_path                 = "/health"
+    health_check_eviction_time_in_min = 2
+
+    application_stack {
+      docker_image_name        = var.docker_image
+      docker_registry_url      = "https://${var.docker_registry_url}"
+      docker_registry_username = var.docker_registry_username
+      docker_registry_password = var.docker_registry_password
+    }
+
+    cors {
+      allowed_origins     = var.cors_allowed_origins
+      support_credentials = length(var.cors_allowed_origins) > 0 && !contains(var.cors_allowed_origins, "*") ? true : false
+    }
+  }
+
+  app_settings = merge(
+    var.app_settings,
+    var.dev_slot_app_settings,
+    {
+      "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
+      "WEBSITES_PORT"                       = "8080"
+      "ENVIRONMENT"                         = "dev"
+    }
+  )
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  logs {
+    application_logs {
+      file_system_level = "Information"
+    }
+
+    http_logs {
+      file_system {
+        retention_in_days = 7
+        retention_in_mb   = 35
+      }
+    }
+  }
+
+  tags = merge(var.tags, { Slot = "dev" })
+}

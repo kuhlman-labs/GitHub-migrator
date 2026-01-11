@@ -75,20 +75,28 @@ jobs:
 
       - name: Output image tags and attestation
         run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Built and pushed the following tags:" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Build Summary"
+            echo ""
+            echo "### 📦 Built and pushed the following tags:"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🔐 Build Provenance" >> $GITHUB_STEP_SUMMARY
-            echo "- Image digest: \`${{ steps.push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- Attestation generated and pushed to registry" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Verify attestation:**" >> $GITHUB_STEP_SUMMARY
-            echo '```bash' >> $GITHUB_STEP_SUMMARY
-            echo "gh attestation verify oci://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }} --owner ${{ github.repository_owner }}" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            DIGEST="${{ steps.push.outputs.digest }}"
+            OWNER="${{ github.repository_owner }}"
+            {
+              echo ""
+              echo "### 🔐 Build Provenance"
+              echo "- Image digest: \`$DIGEST\`"
+              echo "- Attestation generated and pushed to registry"
+              echo ""
+              echo "**Verify attestation:**"
+              echo '```bash'
+              echo "gh attestation verify \\"
+              echo "  oci://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@$DIGEST \\"
+              echo "  --owner $OWNER"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi

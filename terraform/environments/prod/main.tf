@@ -57,7 +57,7 @@ module "postgresql" {
   )
 }
 
-# Deploy App Service (with PostgreSQL)
+# Deploy App Service (with PostgreSQL and Deployment Slots)
 module "app_service" {
   source = "../../modules/app-service"
 
@@ -74,6 +74,13 @@ module "app_service" {
   docker_registry_username = var.docker_registry_username
   docker_registry_password = var.docker_registry_password
 
+  # Enable deployment slots for zero-downtime deployments
+  enable_staging_slot = var.enable_staging_slot
+  enable_dev_slot     = var.enable_dev_slot
+
+  # Minimal application settings - all other configuration is done via the UI
+  # after deployment. The application has sensible defaults for source, destination,
+  # migration, logging, and auth settings.
   app_settings = {
     # Server Configuration
     "GHMIG_SERVER_PORT" = "8080"
@@ -82,61 +89,21 @@ module "app_service" {
     "GHMIG_DATABASE_TYPE" = "postgres"
     "GHMIG_DATABASE_DSN"  = module.postgresql.dsn
 
-    # Source Configuration
-    "GHMIG_SOURCE_TYPE"     = var.source_type
-    "GHMIG_SOURCE_BASE_URL" = var.source_base_url
-    "GHMIG_SOURCE_TOKEN"    = var.source_token
-
-    # Source GitHub App Configuration (optional)
-    "GHMIG_SOURCE_APP_ID"              = tostring(var.source_app_id)
-    "GHMIG_SOURCE_APP_PRIVATE_KEY"     = var.source_app_private_key
-    "GHMIG_SOURCE_APP_INSTALLATION_ID" = tostring(var.source_app_installation_id)
-
-    # Destination Configuration
-    "GHMIG_DESTINATION_TYPE"     = var.destination_type
-    "GHMIG_DESTINATION_BASE_URL" = var.destination_base_url
-    "GHMIG_DESTINATION_TOKEN"    = var.destination_token
-
-    # Destination GitHub App Configuration (optional)
-    "GHMIG_DESTINATION_APP_ID"              = tostring(var.dest_app_id)
-    "GHMIG_DESTINATION_APP_PRIVATE_KEY"     = var.dest_app_private_key
-    "GHMIG_DESTINATION_APP_INSTALLATION_ID" = tostring(var.dest_app_installation_id)
-
-    # Migration Configuration
-    "GHMIG_MIGRATION_WORKERS"                            = tostring(var.migration_workers)
-    "GHMIG_MIGRATION_POLL_INTERVAL_SECONDS"              = tostring(var.migration_poll_interval_seconds)
-    "GHMIG_MIGRATION_POST_MIGRATION_MODE"                = var.migration_post_migration_mode
-    "GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION"            = var.migration_dest_repo_exists_action
-    "GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS"   = var.migration_visibility_public_repos
-    "GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS" = var.migration_visibility_internal_repos
-
-    # Logging Configuration
-    "GHMIG_LOGGING_LEVEL"  = var.logging_level
-    "GHMIG_LOGGING_FORMAT" = var.logging_format
-
-    # Auth Configuration (optional)
-    "GHMIG_AUTH_ENABLED"                    = tostring(var.auth_enabled)
-    "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID"     = var.auth_github_oauth_client_id
-    "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET" = var.auth_github_oauth_client_secret
-    "GHMIG_AUTH_CALLBACK_URL"               = var.auth_callback_url
-    "GHMIG_AUTH_FRONTEND_URL"               = var.auth_frontend_url
-    "GHMIG_AUTH_SESSION_SECRET"             = var.auth_session_secret
-    "GHMIG_AUTH_SESSION_DURATION_HOURS"     = tostring(var.auth_session_duration_hours)
-
-    # Auth Authorization Rules
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP"        = jsonencode(var.auth_require_org_membership)
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP"       = jsonencode(var.auth_require_team_membership)
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN"      = tostring(var.auth_require_enterprise_admin)
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_MEMBERSHIP" = tostring(var.auth_require_enterprise_membership)
-    "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG"       = var.auth_require_enterprise_slug
-    "GHMIG_AUTH_AUTHORIZATION_RULES_PRIVILEGED_TEAMS"              = jsonencode(var.auth_privileged_teams)
-    "GHMIG_AUTH_GITHUB_OAUTH_BASE_URL"                             = var.auth_github_oauth_base_url
-
     # Environment
     "ENVIRONMENT" = "prod"
   }
 
-  cors_allowed_origins = var.cors_allowed_origins
+  # Staging slot uses same database (for pre-prod testing)
+  staging_slot_app_settings = {
+    "GHMIG_DATABASE_TYPE" = "postgres"
+    "GHMIG_DATABASE_DSN"  = module.postgresql.dsn
+  }
+
+  # Dev slot uses same database (for development testing)
+  dev_slot_app_settings = {
+    "GHMIG_DATABASE_TYPE" = "postgres"
+    "GHMIG_DATABASE_DSN"  = module.postgresql.dsn
+  }
 
   tags = merge(
     var.tags,

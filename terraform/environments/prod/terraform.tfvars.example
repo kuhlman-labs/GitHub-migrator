@@ -2,7 +2,7 @@
 azure_subscription_id = "YOUR_AZURE_SUBSCRIPTION_ID"
 resource_group_name   = "YOUR_RESOURCE_GROUP_NAME"
 
-# Application Configuration
+# App Service Configuration
 app_name_prefix = "github-migrator"
 app_service_sku = "S1"
 always_on       = true
@@ -14,7 +14,7 @@ docker_image_tag          = "prod"
 docker_registry_username  = "YOUR_GITHUB_USERNAME"
 docker_registry_password  = "YOUR_GITHUB_TOKEN"
 
-# Database Configuration
+# PostgreSQL Database Configuration (Azure resource provisioning)
 database_name                          = "migrator"
 database_admin_username                = "psqladmin"
 postgres_version                       = "15"
@@ -32,58 +32,6 @@ database_additional_firewall_rules = {
   # }
 }
 
-# Source Configuration
-source_type     = "github"
-source_base_url = "https://api.github.com"
-source_token    = "YOUR_SOURCE_GITHUB_TOKEN"
-
-# Destination Configuration
-destination_type     = "github"
-destination_base_url = "https://api.github.com"
-destination_token    = "YOUR_DESTINATION_GITHUB_TOKEN"
-
-# Migration Configuration
-migration_workers                      = 5
-migration_poll_interval_seconds        = 30
-migration_post_migration_mode          = "production_only"
-migration_dest_repo_exists_action      = "fail"
-migration_visibility_public_repos      = "private"
-migration_visibility_internal_repos    = "private"
-
-# Logging Configuration
-logging_level  = "info"
-logging_format = "json"
-
-# Auth Configuration
-auth_enabled                    = true
-auth_github_oauth_client_id     = "YOUR_OAUTH_CLIENT_ID"
-auth_github_oauth_client_secret = "YOUR_OAUTH_CLIENT_SECRET"
-auth_callback_url               = "https://github-migrator-prod.azurewebsites.net/api/v1/auth/callback"
-auth_frontend_url               = "https://github-migrator-prod.azurewebsites.net"
-auth_session_secret             = "YOUR_SESSION_SECRET_MIN_32_CHARS"
-auth_session_duration_hours     = 24
-
-# Auth OAuth Configuration (optional)
-# auth_github_oauth_base_url = "https://api.github.com"  # Defaults to source URL if not specified
-
-# Auth Authorization Rules
-# Example 1: Enterprise Admin Only
-# auth_require_enterprise_admin = true
-# auth_require_enterprise_slug  = "my-enterprise"
-
-# Example 2: Enterprise Members + Repository-Level Permissions
-# auth_require_enterprise_membership = true
-# auth_require_enterprise_slug       = "my-enterprise"
-# auth_privileged_teams              = ["my-org/migration-admins", "my-org/platform-team"]
-
-# Example 3: Organization/Team Membership
-# auth_require_org_membership  = ["my-org"]
-# auth_require_team_membership = ["my-org/platform-team"]
-# auth_privileged_teams        = ["my-org/migration-admins"]
-
-# CORS Configuration (restrict to your domain in production)
-cors_allowed_origins = ["https://github-migrator-prod.azurewebsites.net"]
-
 # Tags
 tags = {
   Project     = "GitHub Migrator"
@@ -91,3 +39,16 @@ tags = {
   ManagedBy   = "Terraform"
 }
 
+# ==============================================================================
+# APPLICATION CONFIGURATION
+# ==============================================================================
+# All application settings (source, destination, migration, logging, auth) are
+# configured via the Settings UI after deployment. The application has sensible
+# defaults and stores configuration in the database.
+#
+# After deployment, access the application and configure:
+#   1. Destination GitHub instance (Settings page)
+#   2. Source repositories (Sources page)
+#   3. Authentication (optional, Settings page)
+#   4. Migration settings (Settings page)
+# ==============================================================================

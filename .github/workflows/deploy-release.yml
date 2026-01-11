@@ -1,0 +1,306 @@
+name: Deploy Release to Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  attestations: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Build and push release image
+  build:
+    name: Build Release Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.get-tag.outputs.tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Get release tag
+        id: get-tag
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="${{ github.event.inputs.image_tag }}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using image tag: ${TAG}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.get-tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.get-tag.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.get-tag.outputs.tag }}
+            type=raw,value=prod
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  # Deploy to staging slot
+  deploy-staging:
+    name: Deploy to Staging Slot
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.get-url.outputs.url }}
+    outputs:
+      staging_url: ${{ steps.get-url.outputs.url }}
+
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Deploy to staging slot
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          SLOT_NAME="staging"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ needs.build.outputs.image_tag }}"
+
+          echo "Deploying $IMAGE to staging slot..."
+
+          az webapp config container set \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --slot "$SLOT_NAME" \
+            --docker-custom-image-name "$IMAGE" \
+            --docker-registry-server-url "https://${{ env.REGISTRY }}"
+
+          echo "Restarting slot..."
+          az webapp restart \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --slot "$SLOT_NAME"
+
+      - name: Get staging slot URL
+        id: get-url
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          SLOT_NAME="staging"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+
+          HOSTNAME=$(az webapp deployment slot list \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --query "[?name=='$SLOT_NAME'].defaultHostName" \
+            --output tsv)
+
+          URL="https://${HOSTNAME}"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Staging URL: ${URL}"
+
+      - name: Wait for deployment to stabilize
+        run: sleep 45
+
+      - name: Health check staging
+        run: |
+          STAGING_URL="${{ steps.get-url.outputs.url }}"
+          echo "Checking staging health endpoint: ${STAGING_URL}/health"
+
+          for i in {1..15}; do
+            if curl -f -s "${STAGING_URL}/health" > /dev/null; then
+              echo "Staging health check passed!"
+              exit 0
+            fi
+            echo "Waiting for staging to be ready... (attempt $i/15)"
+            sleep 10
+          done
+
+          echo "Staging health check failed after 15 attempts"
+          exit 1
+
+      - name: Staging deployment summary
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ needs.build.outputs.image_tag }}"
+          {
+            echo "## Staging Deployment Successful"
+            echo ""
+            echo "**Staging URL:** ${{ steps.get-url.outputs.url }}"
+            echo "**Image:** $IMAGE"
+            echo ""
+            echo "Proceeding to swap to production..."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
+
+  # Swap staging to production
+  swap-to-production:
+    name: Swap to Production
+    needs: [build, deploy-staging]
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+      url: ${{ steps.get-prod-url.outputs.url }}
+
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Swap staging to production
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+
+          echo "Swapping staging slot to production..."
+          az webapp deployment slot swap \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --slot staging \
+            --target-slot production
+
+          echo "Swap completed successfully!"
+
+      - name: Get production URL
+        id: get-prod-url
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+
+          HOSTNAME=$(az webapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --query "defaultHostName" \
+            --output tsv)
+
+          URL="https://${HOSTNAME}"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Production URL: ${URL}"
+
+      - name: Health check production
+        run: |
+          PROD_URL="${{ steps.get-prod-url.outputs.url }}"
+          echo "Checking production health endpoint: ${PROD_URL}/health"
+
+          for i in {1..15}; do
+            if curl -f -s "${PROD_URL}/health" > /dev/null; then
+              echo "Production health check passed!"
+              exit 0
+            fi
+            echo "Waiting for production to be ready... (attempt $i/15)"
+            sleep 10
+          done
+
+          echo "Production health check failed after 15 attempts"
+          exit 1
+
+      - name: Post-deployment verification
+        run: |
+          PROD_URL="${{ steps.get-prod-url.outputs.url }}"
+
+          echo "Running post-deployment verification..."
+
+          # Check if API responds
+          if curl -f -s "${PROD_URL}/api/v1/analytics/summary" > /dev/null 2>&1; then
+            echo "API endpoints are responding"
+          else
+            echo "API endpoints may require authentication (expected)"
+          fi
+
+          echo "Post-deployment verification complete"
+
+      - name: Production deployment summary
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ needs.build.outputs.image_tag }}"
+          APP="${{ vars.APP_SERVICE_NAME }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+          {
+            echo "## Production Deployment Successful"
+            echo ""
+            echo "**Production URL:** ${{ steps.get-prod-url.outputs.url }}"
+            echo "**Image:** $IMAGE"
+            echo "**Deployed at:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo ""
+            echo "### Rollback Instructions"
+            echo "If issues occur, swap staging back to production:"
+            echo '```bash'
+            echo "az webapp deployment slot swap \\"
+            echo "  --name $APP --resource-group $RG \\"
+            echo "  --slot staging --target-slot production"
+            echo '```'
+            echo ""
+            echo "### Post-Deployment Tasks"
+            echo "- [ ] Verify application functionality"
+            echo "- [ ] Monitor application logs"
+            echo "- [ ] Check database connectivity"
+            echo "- [ ] Verify authentication if enabled"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          {
+            echo "## Production Deployment Failed"
+            echo ""
+            echo "The swap to production failed. The staging slot still contains the new version."
+            echo ""
+            echo "### Recovery Options"
+            echo "1. Check production logs for errors"
+            echo "2. Investigate health check failures"
+            echo "3. Consider reverting or fixing the issue"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
