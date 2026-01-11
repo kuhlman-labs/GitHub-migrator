@@ -244,7 +244,11 @@ export const handlers = [
 
   // Settings endpoints
   http.get(`${API_BASE}/settings`, () => {
-    return HttpResponse.json(mockSettings);
+    return HttpResponse.json({
+      settings: mockSettings,
+      restart_required: false,
+      message: '',
+    });
   }),
 
   http.get(`${API_BASE}/settings/setup-progress`, () => {
@@ -252,7 +256,11 @@ export const handlers = [
   }),
 
   http.put(`${API_BASE}/settings`, () => {
-    return HttpResponse.json(mockSettings);
+    return HttpResponse.json({
+      settings: mockSettings,
+      restart_required: false,
+      message: '',
+    });
   }),
 ];
 
