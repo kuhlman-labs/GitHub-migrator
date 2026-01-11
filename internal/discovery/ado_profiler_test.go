@@ -19,28 +19,30 @@ func TestADOProfiler_DetectTFVC(t *testing.T) {
 	}{
 		{
 			name: "Git repository",
-			repo: &models.Repository{
-				FullName:   "test-project/test-repo",
-				ADOProject: stringPtr("test-project"),
-				ADOIsGit:   true,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{FullName: "test-project/test-repo"}
+				r.SetADOProject(stringPtr("test-project"))
+				r.SetADOIsGit(true)
+				return r
+			}(),
 			expectedGit: true,
 		},
 		{
 			name: "TFVC repository",
-			repo: &models.Repository{
-				FullName:   "test-project/test-tfvc",
-				ADOProject: stringPtr("test-project"),
-				ADOIsGit:   false,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{FullName: "test-project/test-tfvc"}
+				r.SetADOProject(stringPtr("test-project"))
+				r.SetADOIsGit(false)
+				return r
+			}(),
 			expectedGit: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.repo.ADOIsGit != tt.expectedGit {
-				t.Errorf("Expected ADOIsGit = %v, got %v", tt.expectedGit, tt.repo.ADOIsGit)
+			if tt.repo.GetADOIsGit() != tt.expectedGit {
+				t.Errorf("Expected ADOIsGit = %v, got %v", tt.expectedGit, tt.repo.GetADOIsGit())
 			}
 		})
 	}
@@ -55,9 +57,9 @@ func TestADOProfiler_ProfileRepository(t *testing.T) {
 	// profiler := NewADOProfiler(nil, logger)
 
 	repo := &models.Repository{
-		FullName:   "test-project/test-repo",
-		ADOProject: stringPtr("test-project"),
+		FullName: "test-project/test-repo",
 	}
+	repo.SetADOProject(stringPtr("test-project"))
 
 	// ctx := context.Background()
 	// profiler.ProfileRepository would be called here in a real test
@@ -67,7 +69,7 @@ func TestADOProfiler_ProfileRepository(t *testing.T) {
 	// }
 
 	// Verify profiling populated fields
-	if repo.ADOProject == nil {
+	if repo.GetADOProject() == nil {
 		t.Error("Expected ADOProject to be set")
 	}
 }
@@ -81,40 +83,48 @@ func TestADOProfiler_ComplexityFactors(t *testing.T) {
 	}{
 		{
 			name: "TFVC repository - blocking",
-			repo: &models.Repository{
-				ADOIsGit:   false,
-				ADOProject: stringPtr("test-project"),
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(false)
+				r.SetADOProject(stringPtr("test-project"))
+				return r
+			}(),
 			expectedHigh:   true,
 			expectedReason: "TFVC",
 		},
 		{
 			name: "Azure Boards enabled",
-			repo: &models.Repository{
-				ADOIsGit:     true,
-				ADOHasBoards: true,
-				ADOProject:   stringPtr("test-project"),
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOHasBoards(true)
+				r.SetADOProject(stringPtr("test-project"))
+				return r
+			}(),
 			expectedHigh:   false,
 			expectedReason: "Azure Boards adds complexity",
 		},
 		{
 			name: "Many pull requests",
-			repo: &models.Repository{
-				ADOIsGit:            true,
-				ADOPullRequestCount: 100,
-				ADOProject:          stringPtr("test-project"),
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOPullRequestCount(100)
+				r.SetADOProject(stringPtr("test-project"))
+				return r
+			}(),
 			expectedHigh:   false,
 			expectedReason: "High PR count",
 		},
 		{
 			name: "Many branch policies",
-			repo: &models.Repository{
-				ADOIsGit:             true,
-				ADOBranchPolicyCount: 15,
-				ADOProject:           stringPtr("test-project"),
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOBranchPolicyCount(15)
+				r.SetADOProject(stringPtr("test-project"))
+				return r
+			}(),
 			expectedHigh:   false,
 			expectedReason: "Many branch policies",
 		},
@@ -123,25 +133,25 @@ func TestADOProfiler_ComplexityFactors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// TFVC is blocking
-			if !tt.repo.ADOIsGit {
-				if tt.repo.ADOIsGit {
+			if !tt.repo.GetADOIsGit() {
+				if tt.repo.GetADOIsGit() {
 					t.Error("TFVC repository should have ADOIsGit = false")
 				}
 			}
 
 			// Azure Boards adds complexity
-			if tt.repo.ADOHasBoards {
+			if tt.repo.GetADOHasBoards() {
 				t.Log("Repository has Azure Boards integration")
 			}
 
 			// High PR count indicates active repository
-			if tt.repo.ADOPullRequestCount > 50 {
-				t.Logf("Repository has high PR count: %d", tt.repo.ADOPullRequestCount)
+			if tt.repo.GetADOPullRequestCount() > 50 {
+				t.Logf("Repository has high PR count: %d", tt.repo.GetADOPullRequestCount())
 			}
 
 			// Branch policies add complexity
-			if tt.repo.ADOBranchPolicyCount > 10 {
-				t.Logf("Repository has many branch policies: %d", tt.repo.ADOBranchPolicyCount)
+			if tt.repo.GetADOBranchPolicyCount() > 10 {
+				t.Logf("Repository has many branch policies: %d", tt.repo.GetADOBranchPolicyCount())
 			}
 		})
 	}
@@ -159,66 +169,78 @@ func TestADOProfiler_EstimateComplexity(t *testing.T) {
 	}{
 		{
 			name: "TFVC repository",
-			repo: &models.Repository{
-				ADOIsGit: false,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(false)
+				return r
+			}(),
 			expectedComplexity: 50,
 			minComplexity:      50,
 		},
 		{
 			name: "Classic pipelines",
-			repo: &models.Repository{
-				ADOIsGit:                true,
-				ADOClassicPipelineCount: 3,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOClassicPipelineCount(3)
+				return r
+			}(),
 			expectedComplexity: 15, // 3 * 5
 			minComplexity:      15,
 		},
 		{
 			name: "Package feeds",
-			repo: &models.Repository{
-				ADOIsGit:            true,
-				ADOPackageFeedCount: 2,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOPackageFeedCount(2)
+				return r
+			}(),
 			expectedComplexity: 3,
 			minComplexity:      3,
 		},
 		{
 			name: "Active pipelines with service connections",
-			repo: &models.Repository{
-				ADOIsGit:                 true,
-				ADOPipelineRunCount:      50,
-				ADOHasServiceConnections: true,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOPipelineRunCount(50)
+				r.SetADOHasServiceConnections(true)
+				return r
+			}(),
 			expectedComplexity: 6, // 3 + 3
 			minComplexity:      6,
 		},
 		{
 			name: "Wiki pages",
-			repo: &models.Repository{
-				ADOIsGit:         true,
-				ADOHasWiki:       true,
-				ADOWikiPageCount: 25,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOHasWiki(true)
+				r.SetADOWikiPageCount(25)
+				return r
+			}(),
 			expectedComplexity: 6, // (25+9)/10 * 2 = 34/10 * 2 = 3 * 2 = 6
 			minComplexity:      6,
 		},
 		{
 			name: "Complex repository with multiple factors",
-			repo: &models.Repository{
-				ADOIsGit:                 true,
-				ADOClassicPipelineCount:  2,
-				ADOPackageFeedCount:      1,
-				ADOHasServiceConnections: true,
-				ADOPipelineRunCount:      10,
-				ADOActiveWorkItemCount:   50,
-				ADOWikiPageCount:         15,
-				ADOTestPlanCount:         5,
-				ADOHasVariableGroups:     true,
-				ADOServiceHookCount:      3,
-				ADOPullRequestCount:      60,
-				ADOBranchPolicyCount:     5,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOClassicPipelineCount(2)
+				r.SetADOPackageFeedCount(1)
+				r.SetADOHasServiceConnections(true)
+				r.SetADOPipelineRunCount(10)
+				r.SetADOActiveWorkItemCount(50)
+				r.SetADOWikiPageCount(15)
+				r.SetADOTestPlanCount(5)
+				r.SetADOHasVariableGroups(true)
+				r.SetADOServiceHookCount(3)
+				r.SetADOPullRequestCount(60)
+				r.SetADOBranchPolicyCount(5)
+				return r
+			}(),
 			minComplexity: 30, // Should be at least 30 with all these factors
 		},
 	}
@@ -250,9 +272,11 @@ func TestADOProfiler_EstimateComplexityWithBreakdown(t *testing.T) {
 	}{
 		{
 			name: "TFVC repository breakdown",
-			repo: &models.Repository{
-				ADOIsGit: false,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(false)
+				return r
+			}(),
 			expectedBreakdown: &models.ComplexityBreakdown{
 				ADOTFVCPoints: 50,
 			},
@@ -260,10 +284,12 @@ func TestADOProfiler_EstimateComplexityWithBreakdown(t *testing.T) {
 		},
 		{
 			name: "Classic pipelines breakdown",
-			repo: &models.Repository{
-				ADOIsGit:                true,
-				ADOClassicPipelineCount: 2,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOClassicPipelineCount(2)
+				return r
+			}(),
 			expectedBreakdown: &models.ComplexityBreakdown{
 				ADOClassicPipelinePoints: 10, // 2 * 5
 			},
@@ -271,12 +297,14 @@ func TestADOProfiler_EstimateComplexityWithBreakdown(t *testing.T) {
 		},
 		{
 			name: "Multiple factors breakdown",
-			repo: &models.Repository{
-				ADOIsGit:                 true,
-				ADOPackageFeedCount:      1,
-				ADOHasServiceConnections: true,
-				ADOHasVariableGroups:     true,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOIsGit(true)
+				r.SetADOPackageFeedCount(1)
+				r.SetADOHasServiceConnections(true)
+				r.SetADOHasVariableGroups(true)
+				return r
+			}(),
 			checkSpecificPoints: false, // Just verify it returns breakdown
 		},
 	}

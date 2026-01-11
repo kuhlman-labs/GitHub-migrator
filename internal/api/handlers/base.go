@@ -493,7 +493,7 @@ func isRepositoryEligibleForBatch(repo *models.Repository) (bool, string) {
 	}
 
 	// Check if repository exceeds GitHub's 40 GiB size limit
-	if repo.HasOversizedRepository {
+	if repo.HasOversizedRepository() {
 		return false, "repository exceeds GitHub's 40 GiB size limit and requires remediation"
 	}
 

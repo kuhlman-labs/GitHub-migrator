@@ -106,65 +106,65 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 
 	// Use git count-objects size if available, otherwise use git-sizer calculation
 	if gitSize > 0 {
-		repo.TotalSize = &gitSize
+		repo.SetTotalSize(&gitSize)
 	} else {
 		totalSize := output.UniqueBlobSize.Value + output.UniqueTreeSize.Value + output.UniqueCommitSize.Value
-		repo.TotalSize = &totalSize
+		repo.SetTotalSize(&totalSize)
 	}
 
 	// Store largest file info
 	largestFileSize := output.MaxBlobSize.Value
-	repo.LargestFileSize = &largestFileSize
+	repo.SetLargestFileSize(&largestFileSize)
 	if output.MaxBlobSize.ObjectDescription != "" {
 		// Extract filename from blob info (format: "hash (commit:path)")
 		filename := a.extractFilenameFromBlobInfo(output.MaxBlobSize.ObjectDescription)
 		if filename != "" {
-			repo.LargestFile = &filename
+			repo.SetLargestFile(&filename)
 		}
 	}
 
 	// Store largest commit info
 	largestCommitSize := output.MaxCommitSize.Value
-	repo.LargestCommitSize = &largestCommitSize
+	repo.SetLargestCommitSize(&largestCommitSize)
 	if output.MaxCommitSize.ObjectName != "" {
 		// Store just the commit SHA
 		commitSHA := a.extractCommitSHA(output.MaxCommitSize.ObjectName)
-		repo.LargestCommit = &commitSHA
+		repo.SetLargestCommit(&commitSHA)
 	}
 
-	repo.CommitCount = int(output.UniqueCommitCount.Value)
+	repo.SetCommitCount(int(output.UniqueCommitCount.Value))
 
 	// Detect large files (>100MB) that may cause migration issues
 	if output.MaxBlobSize.Value > LargeFileThreshold {
-		repo.HasLargeFiles = true
+		repo.SetHasLargeFiles(true)
 		// git-sizer only gives us the max blob size, not a count of large files
 		// We set count to 1 to indicate at least one large file exists
-		repo.LargeFileCount = 1
+		repo.SetLargeFileCount(1)
 		a.logger.Warn("Large file detected in repository",
 			"repo", repo.FullName,
 			"size_mb", output.MaxBlobSize.Value/(1024*1024),
-			"file", repo.LargestFile)
+			"file", repo.GetLargestFile())
 	}
 
 	// Detect LFS using .gitattributes and git lfs ls-files
-	repo.HasLFS = a.detectLFS(ctx, repoPath)
+	repo.SetHasLFS(a.detectLFS(ctx, repoPath))
 
 	// Detect submodules using .gitmodules file and git submodule command
-	repo.HasSubmodules = a.detectSubmodules(ctx, repoPath)
+	repo.SetHasSubmodules(a.detectSubmodules(ctx, repoPath))
 
 	// Get branch count
-	repo.BranchCount = a.getBranchCount(ctx, repoPath)
+	repo.SetBranchCount(a.getBranchCount(ctx, repoPath))
 
 	// Get last commit SHA from default branch
 	if lastCommitSHA := a.getLastCommitSHA(ctx, repoPath); lastCommitSHA != "" {
-		repo.LastCommitSHA = &lastCommitSHA
+		repo.SetLastCommitSHA(&lastCommitSHA)
 	}
 
 	// Get tag count
-	repo.TagCount = a.getTagCount(ctx, repoPath)
+	repo.SetTagCount(a.getTagCount(ctx, repoPath))
 
 	// Get commit count for the past 12 weeks
-	repo.CommitsLast12Weeks = a.getCommitsLast12Weeks(ctx, repoPath)
+	repo.SetCommitsLast12Weeks(a.getCommitsLast12Weeks(ctx, repoPath))
 
 	// Validate GitHub migration limits
 	a.validateCommitSizes(output, repo)
@@ -174,24 +174,24 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 
 	// Log analysis results (dereference pointers for proper display)
 	var logTotalSize int64
-	if repo.TotalSize != nil {
-		logTotalSize = *repo.TotalSize
+	if repo.GetTotalSize() != nil {
+		logTotalSize = *repo.GetTotalSize()
 	}
 	var logLargestFile string
-	if repo.LargestFile != nil {
-		logLargestFile = *repo.LargestFile
+	if repo.GetLargestFile() != nil {
+		logLargestFile = *repo.GetLargestFile()
 	}
 	var logLargestFileSize int64
-	if repo.LargestFileSize != nil {
-		logLargestFileSize = *repo.LargestFileSize
+	if repo.GetLargestFileSize() != nil {
+		logLargestFileSize = *repo.GetLargestFileSize()
 	}
 	var logLargestCommit string
-	if repo.LargestCommit != nil {
-		logLargestCommit = *repo.LargestCommit
+	if repo.GetLargestCommit() != nil {
+		logLargestCommit = *repo.GetLargestCommit()
 	}
 	var logLargestCommitSize int64
-	if repo.LargestCommitSize != nil {
-		logLargestCommitSize = *repo.LargestCommitSize
+	if repo.GetLargestCommitSize() != nil {
+		logLargestCommitSize = *repo.GetLargestCommitSize()
 	}
 
 	a.logger.Info("Git analysis complete",
@@ -201,11 +201,11 @@ func (a *Analyzer) AnalyzeGitProperties(ctx context.Context, repo *models.Reposi
 		"largest_file_size", logLargestFileSize,
 		"largest_commit", logLargestCommit,
 		"largest_commit_size", logLargestCommitSize,
-		"commits", repo.CommitCount,
-		"commits_last_12_weeks", repo.CommitsLast12Weeks,
-		"has_lfs", repo.HasLFS,
-		"has_submodules", repo.HasSubmodules,
-		"branches", repo.BranchCount)
+		"commits", repo.GetCommitCount(),
+		"commits_last_12_weeks", repo.GetCommitsLast12Weeks(),
+		"has_lfs", repo.HasLFS(),
+		"has_submodules", repo.HasSubmodules(),
+		"branches", repo.GetBranchCount())
 
 	return nil
 }
@@ -673,7 +673,7 @@ func (a *Analyzer) CheckRepositoryProblems(output *GitSizerOutput) []string {
 // Uses git-sizer's MaxCommitSize which is already captured during analysis
 func (a *Analyzer) validateCommitSizes(output *GitSizerOutput, repo *models.Repository) {
 	if output.MaxCommitSize.Value > MaxCommitSize {
-		repo.HasOversizedCommits = true
+		repo.SetHasOversizedCommits(true)
 
 		// Create JSON details with commit info
 		commitSizeMB := output.MaxCommitSize.Value / (1024 * 1024)
@@ -681,7 +681,7 @@ func (a *Analyzer) validateCommitSizes(output *GitSizerOutput, repo *models.Repo
 			output.MaxCommitSize.ObjectName,
 			output.MaxCommitSize.Value,
 			commitSizeMB)
-		repo.OversizedCommitDetails = &details
+		repo.SetOversizedCommitDetails(&details)
 
 		a.logger.Warn("Repository has oversized commit exceeding GitHub limit",
 			"repo_path", repo.FullName,
@@ -719,17 +719,17 @@ func (a *Analyzer) validateGitReferences(ctx context.Context, repoPath string, r
 	}
 
 	if len(longRefs) > 0 {
-		repo.HasLongRefs = true
+		repo.SetHasLongRefs(true)
 
 		// Create JSON array of long ref names
 		details, err := json.Marshal(longRefs)
 		if err != nil {
 			a.logger.Warn("Failed to marshal long ref details", "error", err)
 			detailsStr := fmt.Sprintf(`["%s"]`, strings.Join(longRefs, `","`))
-			repo.LongRefDetails = &detailsStr
+			repo.SetLongRefDetails(&detailsStr)
 		} else {
 			detailsStr := string(details)
-			repo.LongRefDetails = &detailsStr
+			repo.SetLongRefDetails(&detailsStr)
 		}
 
 		a.logger.Warn("Repository has git references exceeding GitHub limit",
@@ -752,14 +752,14 @@ func (a *Analyzer) categorizeFileSizeIssues(output *GitSizerOutput, repo *models
 
 	if maxBlobSize > BlockingFileSize {
 		// Files >400 MiB are blocking for migration
-		repo.HasBlockingFiles = true
+		repo.SetHasBlockingFiles(true)
 
 		fileSizeMB := maxBlobSize / (1024 * 1024)
 		details := fmt.Sprintf(`[{"path":"%s","size_bytes":%d,"size_mb":%d}]`,
 			filename,
 			maxBlobSize,
 			fileSizeMB)
-		repo.BlockingFileDetails = &details
+		repo.SetBlockingFileDetails(&details)
 
 		a.logger.Warn("Repository has blocking file exceeding GitHub migration limit",
 			"repo_path", repo.FullName,
@@ -769,14 +769,14 @@ func (a *Analyzer) categorizeFileSizeIssues(output *GitSizerOutput, repo *models
 
 	} else if maxBlobSize > LargeFileWarningMin {
 		// Files 100-400 MiB are warnings (allowed during migration, need post-migration remediation)
-		repo.HasLargeFileWarnings = true
+		repo.SetHasLargeFileWarnings(true)
 
 		fileSizeMB := maxBlobSize / (1024 * 1024)
 		details := fmt.Sprintf(`[{"path":"%s","size_bytes":%d,"size_mb":%d}]`,
 			filename,
 			maxBlobSize,
 			fileSizeMB)
-		repo.LargeFileWarningDetails = &details
+		repo.SetLargeFileWarningDetails(&details)
 
 		a.logger.Info("Repository has large file requiring post-migration attention",
 			"repo_path", repo.FullName,
@@ -790,14 +790,14 @@ func (a *Analyzer) categorizeFileSizeIssues(output *GitSizerOutput, repo *models
 // validateRepositorySize checks if the repository exceeds GitHub's 40 GiB limit
 // Repositories exceeding this limit will be automatically marked for remediation
 func (a *Analyzer) validateRepositorySize(repo *models.Repository) {
-	if repo.TotalSize == nil {
+	if repo.GetTotalSize() == nil {
 		return
 	}
 
-	totalSize := *repo.TotalSize
+	totalSize := *repo.GetTotalSize()
 
 	if totalSize > MaxRepositorySize {
-		repo.HasOversizedRepository = true
+		repo.SetHasOversizedRepository(true)
 
 		// Create JSON details with size information
 		sizeGB := float64(totalSize) / (1024 * 1024 * 1024)
@@ -806,7 +806,7 @@ func (a *Analyzer) validateRepositorySize(repo *models.Repository) {
 			totalSize,
 			sizeGB,
 			limitGB)
-		repo.OversizedRepositoryDetails = &details
+		repo.SetOversizedRepositoryDetails(&details)
 
 		// Automatically set repository status to remediation_required
 		repo.Status = string(models.StatusRemediationRequired)

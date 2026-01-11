@@ -195,10 +195,10 @@ func TestADOCollector_DataPersistence(t *testing.T) {
 
 	// Test saving a repository
 	repo := &models.Repository{
-		FullName:   "TestProject/test-repo",
-		ADOProject: stringPtr("TestProject"),
-		ADOIsGit:   true,
+		FullName: "TestProject/test-repo",
 	}
+	repo.SetADOProject(stringPtr("TestProject"))
+	repo.SetADOIsGit(true)
 
 	err = mock.SaveRepository(repo)
 	if err != nil {

@@ -83,8 +83,10 @@ func (o *Organizer) SelectPilotRepositories(ctx context.Context, criteria PilotC
 	o.logger.Info("Starting pilot repository selection", "criteria", criteria)
 
 	// Get all pending repositories (exclude wont_migrate)
+	// Include details to load related tables for feature/size checks
 	repos, err := o.storage.ListRepositories(ctx, map[string]any{
-		"status": models.StatusPending,
+		"status":          models.StatusPending,
+		"include_details": true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
@@ -153,8 +155,8 @@ func (o *Organizer) matchesCriteria(repo *models.Repository, criteria PilotCrite
 // matchesSize checks if repository size is within criteria range
 func (o *Organizer) matchesSize(repo *models.Repository, criteria PilotCriteria) bool {
 	size := int64(0)
-	if repo.TotalSize != nil {
-		size = *repo.TotalSize / 1024 // Convert bytes to KB
+	if totalSize := repo.GetTotalSize(); totalSize != nil {
+		size = *totalSize / 1024 // Convert bytes to KB
 	}
 	return size >= criteria.MinSize && size <= criteria.MaxSize
 }
@@ -171,19 +173,19 @@ func (o *Organizer) matchesOrganization(repo *models.Repository, criteria PilotC
 
 // matchesFeatures checks if repository has required features
 func (o *Organizer) matchesFeatures(repo *models.Repository, criteria PilotCriteria) bool {
-	if criteria.RequireLFS && !repo.HasLFS {
+	if criteria.RequireLFS && !repo.HasLFS() {
 		return false
 	}
-	if criteria.RequireSubmodules && !repo.HasSubmodules {
+	if criteria.RequireSubmodules && !repo.HasSubmodules() {
 		return false
 	}
-	if criteria.RequireActions && !repo.HasActions {
+	if criteria.RequireActions && !repo.HasActions() {
 		return false
 	}
-	if criteria.RequireWiki && !repo.HasWiki {
+	if criteria.RequireWiki && !repo.HasWiki() {
 		return false
 	}
-	if criteria.RequirePages && !repo.HasPages {
+	if criteria.RequirePages && !repo.HasPages() {
 		return false
 	}
 	return true
@@ -223,11 +225,12 @@ func (o *Organizer) calculateRepoScore(repo *models.Repository) float64 {
 
 // scoreSizeDiversity scores repository based on size (prefer medium-sized repos)
 func (o *Organizer) scoreSizeDiversity(repo *models.Repository) float64 {
-	if repo.TotalSize == nil || *repo.TotalSize == 0 {
+	totalSize := repo.GetTotalSize()
+	if totalSize == nil || *totalSize == 0 {
 		return 0.0
 	}
 
-	sizeKB := *repo.TotalSize / 1024
+	sizeKB := *totalSize / 1024
 	// Prefer repos around 100MB (102400 KB)
 	targetSize := 102400.0
 	sizeRatio := float64(sizeKB) / targetSize
@@ -244,37 +247,37 @@ func (o *Organizer) scoreSizeDiversity(repo *models.Repository) float64 {
 func (o *Organizer) scoreFeatureDiversity(repo *models.Repository) float64 {
 	score := 0.0
 
-	if repo.HasLFS {
+	if repo.HasLFS() {
 		score += 5
 	}
-	if repo.HasSubmodules {
+	if repo.HasSubmodules() {
 		score += 5
 	}
-	if repo.HasActions {
+	if repo.HasActions() {
 		score += 8 // Actions are important to test
 	}
-	if repo.HasWiki {
+	if repo.HasWiki() {
 		score += 3
 	}
-	if repo.HasPages {
+	if repo.HasPages() {
 		score += 3
 	}
-	if repo.HasProjects {
+	if repo.HasProjects() {
 		score += 2
 	}
-	if repo.HasPackages {
+	if repo.HasPackages() {
 		score += 7 // Packages don't migrate with GEI - important to test
 	}
-	if repo.HasCodeScanning || repo.HasDependabot || repo.HasSecretScanning {
+	if repo.HasCodeScanning() || repo.HasDependabot() || repo.HasSecretScanning() {
 		score += 7 // GHAS features are critical to test
 	}
-	if repo.HasSelfHostedRunners {
+	if repo.HasSelfHostedRunners() {
 		score += 8 // Infrastructure dependency - important to test
 	}
-	if repo.HasCodeowners {
+	if repo.HasCodeowners() {
 		score += 3 // Important for PR approval workflows
 	}
-	if repo.InstalledAppsCount > 0 {
+	if repo.GetInstalledAppsCount() > 0 {
 		score += 5 // App reconfiguration needed
 	}
 	if repo.Visibility == "internal" {
@@ -289,17 +292,19 @@ func (o *Organizer) scoreActivityComplexity(repo *models.Repository) float64 {
 	score := 0.0
 
 	// Commit count (prefer repos with reasonable activity)
-	if repo.CommitCount > 10 && repo.CommitCount < 10000 {
+	commitCount := repo.GetCommitCount()
+	if commitCount > 10 && commitCount < 10000 {
 		score += 5
 	}
 
 	// Branch count (prefer repos with multiple branches)
-	if repo.BranchCount > 1 {
-		score += float64(repo.BranchCount) * 0.5
+	branchCount := repo.GetBranchCount()
+	if branchCount > 1 {
+		score += float64(branchCount) * 0.5
 	}
 
 	// Protection rules (important to test)
-	if repo.BranchProtections > 0 {
+	if repo.GetBranchProtections() > 0 {
 		score += 7
 	}
 
@@ -357,11 +362,11 @@ func (o *Organizer) selectDiverse(scored []scoredRepo, maxCount int) []*models.R
 // getFeatureKey creates a key representing the feature combination of a repo
 func (o *Organizer) getFeatureKey(repo *models.Repository) string {
 	return fmt.Sprintf("%t_%t_%t_%t_%t",
-		repo.HasLFS,
-		repo.HasSubmodules,
-		repo.HasActions,
-		repo.HasWiki,
-		repo.HasPages,
+		repo.HasLFS(),
+		repo.HasSubmodules(),
+		repo.HasActions(),
+		repo.HasWiki(),
+		repo.HasPages(),
 	)
 }
 
@@ -435,7 +440,8 @@ func (o *Organizer) OrganizeIntoWaves(ctx context.Context, criteria WaveCriteria
 
 	// Get all pending repositories (not in any batch, exclude wont_migrate)
 	repos, err := o.storage.ListRepositories(ctx, map[string]any{
-		"status": models.StatusPending,
+		"status":          models.StatusPending,
+		"include_details": true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
@@ -511,12 +517,12 @@ func (o *Organizer) sortRepositories(repos []*models.Repository, criteria WaveCr
 	case "size":
 		sort.Slice(repos, func(i, j int) bool {
 			sizeI := int64(0)
-			if repos[i].TotalSize != nil {
-				sizeI = *repos[i].TotalSize
+			if totalSizeI := repos[i].GetTotalSize(); totalSizeI != nil {
+				sizeI = *totalSizeI
 			}
 			sizeJ := int64(0)
-			if repos[j].TotalSize != nil {
-				sizeJ = *repos[j].TotalSize
+			if totalSizeJ := repos[j].GetTotalSize(); totalSizeJ != nil {
+				sizeJ = *totalSizeJ
 			}
 			return sizeI < sizeJ
 		})

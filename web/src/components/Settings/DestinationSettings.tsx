@@ -176,7 +176,7 @@ export function DestinationSettings({ settings, onSave, isSaving, readOnly = fal
               </FormControl>
 
               <FormControl>
-                <FormControl.Label>Installation ID</FormControl.Label>
+                <FormControl.Label>Installation ID (Optional)</FormControl.Label>
                 <TextInput
                   type="number"
                   value={appInstallationId}
@@ -185,7 +185,7 @@ export function DestinationSettings({ settings, onSave, isSaving, readOnly = fal
                   block
                 />
                 <FormControl.Caption>
-                  The installation ID of the GitHub App in your organization.
+                  Leave blank for multi-org discovery. For single org, put the installation ID.
                 </FormControl.Caption>
               </FormControl>
             </div>

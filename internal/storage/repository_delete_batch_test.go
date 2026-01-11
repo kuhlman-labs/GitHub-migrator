@@ -13,8 +13,6 @@ func TestDeleteBatch(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := "main"
 
 	// Create a batch
 	batch := &models.Batch{
@@ -31,16 +29,7 @@ func TestDeleteBatch(t *testing.T) {
 	// Create repositories and add to batch
 	repoIDs := make([]int64, 0, 3)
 	for i := range 3 {
-		repo := &models.Repository{
-			FullName:      "org/delete-test-repo-" + string(rune('a'+i)),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
-		}
+		repo := createTestRepoWithStatus("org/delete-test-repo-"+string(rune('a'+i)), string(models.StatusPending))
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -135,8 +124,6 @@ func TestDeleteBatchMakesRepositoriesAvailable(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	totalSize := int64(1024)
-	defaultBranch := "main"
 
 	// Create batch
 	batch := &models.Batch{
@@ -151,16 +138,7 @@ func TestDeleteBatchMakesRepositoriesAvailable(t *testing.T) {
 	}
 
 	// Create repository
-	repo := &models.Repository{
-		FullName:      "org/test-available-repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/org/repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
-	}
+	repo := createTestRepoWithStatus("org/test-available-repo", string(models.StatusPending))
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("SaveRepository() error = %v", err)
 	}

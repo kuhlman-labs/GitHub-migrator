@@ -125,10 +125,9 @@ func TestCalculateActivityPoints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := &models.Repository{
-				CommitCount:    tt.commitCount,
-				OpenIssueCount: tt.openIssueCount,
-			}
+			repo := &models.Repository{}
+			repo.SetCommitCount(tt.commitCount)
+			repo.SetOpenIssueCount(tt.openIssueCount)
 			result := calculateActivityPoints(repo)
 			if result != tt.expected {
 				t.Errorf("Expected %d, got %d", tt.expected, result)
@@ -175,9 +174,9 @@ func TestCalculateComplexity(t *testing.T) {
 
 	t.Run("repository with large files", func(t *testing.T) {
 		repo := &models.Repository{
-			FullName:      "test/repo",
-			HasLargeFiles: true,
+			FullName: "test/repo",
 		}
+		repo.SetHasLargeFiles(true)
 
 		complexity, breakdown := profiler.CalculateComplexity(repo)
 
@@ -191,10 +190,10 @@ func TestCalculateComplexity(t *testing.T) {
 
 	t.Run("repository with environments and secrets", func(t *testing.T) {
 		repo := &models.Repository{
-			FullName:         "test/repo",
-			EnvironmentCount: 3,
-			SecretCount:      5,
+			FullName: "test/repo",
 		}
+		repo.SetEnvironmentCount(3)
+		repo.SetSecretCount(5)
 
 		complexity, breakdown := profiler.CalculateComplexity(repo)
 
@@ -211,10 +210,10 @@ func TestCalculateComplexity(t *testing.T) {
 
 	t.Run("repository with packages and self-hosted runners", func(t *testing.T) {
 		repo := &models.Repository{
-			FullName:             "test/repo",
-			HasPackages:          true,
-			HasSelfHostedRunners: true,
+			FullName: "test/repo",
 		}
+		repo.SetHasPackages(true)
+		repo.SetHasSelfHostedRunners(true)
 
 		_, breakdown := profiler.CalculateComplexity(repo)
 
@@ -228,15 +227,15 @@ func TestCalculateComplexity(t *testing.T) {
 
 	t.Run("repository with moderate impact features", func(t *testing.T) {
 		repo := &models.Repository{
-			FullName:           "test/repo",
-			VariableCount:      2,
-			HasDiscussions:     true,
-			ReleaseCount:       10,
-			HasLFS:             true,
-			HasSubmodules:      true,
-			InstalledAppsCount: 2,
-			HasProjects:        true,
+			FullName: "test/repo",
 		}
+		repo.SetVariableCount(2)
+		repo.SetHasDiscussions(true)
+		repo.SetReleaseCount(10)
+		repo.SetHasLFS(true)
+		repo.SetHasSubmodules(true)
+		repo.SetInstalledAppsCount(2)
+		repo.SetHasProjects(true)
 
 		_, breakdown := profiler.CalculateComplexity(repo)
 
@@ -265,16 +264,16 @@ func TestCalculateComplexity(t *testing.T) {
 
 	t.Run("repository with low impact features", func(t *testing.T) {
 		repo := &models.Repository{
-			FullName:          "test/repo",
-			HasCodeScanning:   true,
-			HasDependabot:     true,
-			HasSecretScanning: true,
-			WebhookCount:      5,
-			BranchProtections: 2,
-			HasRulesets:       true,
-			Visibility:        "public",
-			HasCodeowners:     true,
+			FullName:   "test/repo",
+			Visibility: "public",
 		}
+		repo.SetHasCodeScanning(true)
+		repo.SetHasDependabot(true)
+		repo.SetHasSecretScanning(true)
+		repo.SetWebhookCount(5)
+		repo.SetBranchProtections(2)
+		repo.SetHasRulesets(true)
+		repo.SetHasCodeowners(true)
 
 		_, breakdown := profiler.CalculateComplexity(repo)
 
@@ -317,25 +316,25 @@ func TestCalculateComplexity(t *testing.T) {
 	t.Run("complex repository with many features", func(t *testing.T) {
 		size := int64(3 * 1024 * 1024 * 1024) // 3GB
 		repo := &models.Repository{
-			FullName:             "test/repo",
-			TotalSize:            &size,
-			HasLargeFiles:        true,
-			EnvironmentCount:     3,
-			SecretCount:          5,
-			HasPackages:          true,
-			HasSelfHostedRunners: true,
-			VariableCount:        2,
-			HasDiscussions:       true,
-			ReleaseCount:         10,
-			HasLFS:               true,
-			HasSubmodules:        true,
-			HasCodeScanning:      true,
-			WebhookCount:         5,
-			BranchProtections:    2,
-			Visibility:           "public",
-			CommitCount:          1500,
-			OpenIssueCount:       50,
+			FullName:   "test/repo",
+			Visibility: "public",
 		}
+		repo.SetTotalSize(&size)
+		repo.SetHasLargeFiles(true)
+		repo.SetEnvironmentCount(3)
+		repo.SetSecretCount(5)
+		repo.SetHasPackages(true)
+		repo.SetHasSelfHostedRunners(true)
+		repo.SetVariableCount(2)
+		repo.SetHasDiscussions(true)
+		repo.SetReleaseCount(10)
+		repo.SetHasLFS(true)
+		repo.SetHasSubmodules(true)
+		repo.SetHasCodeScanning(true)
+		repo.SetWebhookCount(5)
+		repo.SetBranchProtections(2)
+		repo.SetCommitCount(1500)
+		repo.SetOpenIssueCount(50)
 
 		complexity, breakdown := profiler.CalculateComplexity(repo)
 

@@ -280,22 +280,22 @@ func TestExecuteBatch(t *testing.T) {
 		size1 := int64(100000 * 1024) // Convert KB to bytes
 		size2 := int64(200000 * 1024)
 		repo1 := &models.Repository{
-			FullName:     "org/repo1",
-			TotalSize:    &size1,
-			Status:       string(models.StatusQueuedForMigration),
-			Source:       "github",
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-			BatchID:      &batch.ID,
+			FullName:      "org/repo1",
+			Status:        string(models.StatusQueuedForMigration),
+			Source:        "github",
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+			BatchID:       &batch.ID,
+			GitProperties: &models.RepositoryGitProperties{TotalSize: &size1},
 		}
 		repo2 := &models.Repository{
-			FullName:     "org/repo2",
-			TotalSize:    &size2,
-			Status:       string(models.StatusQueuedForMigration),
-			Source:       "github",
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-			BatchID:      &batch.ID,
+			FullName:      "org/repo2",
+			Status:        string(models.StatusQueuedForMigration),
+			Source:        "github",
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+			BatchID:       &batch.ID,
+			GitProperties: &models.RepositoryGitProperties{TotalSize: &size2},
 		}
 
 		if err := db.SaveRepository(ctx, repo1); err != nil {
@@ -354,13 +354,13 @@ func TestExecuteBatch(t *testing.T) {
 		// Create a repo with delay to keep it running
 		size := int64(100000 * 1024)
 		repo := &models.Repository{
-			FullName:     "org/repo3",
-			TotalSize:    &size,
-			Status:       string(models.StatusQueuedForMigration),
-			Source:       "github",
-			DiscoveredAt: time.Now(),
-			UpdatedAt:    time.Now(),
-			BatchID:      &batch.ID,
+			FullName:      "org/repo3",
+			Status:        string(models.StatusQueuedForMigration),
+			Source:        "github",
+			DiscoveredAt:  time.Now(),
+			UpdatedAt:     time.Now(),
+			BatchID:       &batch.ID,
+			GitProperties: &models.RepositoryGitProperties{TotalSize: &size},
 		}
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to create repo: %v", err)
@@ -410,13 +410,13 @@ func TestCancelBatch(t *testing.T) {
 	// Create test repository
 	size := int64(100000 * 1024) // Convert KB to bytes
 	repo := &models.Repository{
-		FullName:     "org/repo",
-		TotalSize:    &size,
-		Status:       string(models.StatusQueuedForMigration),
-		Source:       "github",
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-		BatchID:      &batch.ID,
+		FullName:      "org/repo",
+		Status:        string(models.StatusQueuedForMigration),
+		Source:        "github",
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+		BatchID:       &batch.ID,
+		GitProperties: &models.RepositoryGitProperties{TotalSize: &size},
 	}
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to create repo: %v", err)
@@ -505,23 +505,23 @@ func TestGetRunningBatches(t *testing.T) {
 	// Create test repositories
 	size := int64(100000 * 1024) // Convert KB to bytes
 	repo1 := &models.Repository{
-		FullName:     "org/repo1",
-		TotalSize:    &size,
-		Status:       string(models.StatusQueuedForMigration),
-		Source:       "github",
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-		BatchID:      &batch1.ID,
+		FullName:      "org/repo1",
+		Status:        string(models.StatusQueuedForMigration),
+		Source:        "github",
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+		BatchID:       &batch1.ID,
+		GitProperties: &models.RepositoryGitProperties{TotalSize: &size},
 	}
 	size2 := int64(100000 * 1024)
 	repo2 := &models.Repository{
-		FullName:     "org/repo2",
-		TotalSize:    &size2,
-		Status:       string(models.StatusQueuedForMigration),
-		Source:       "github",
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-		BatchID:      &batch2.ID,
+		FullName:      "org/repo2",
+		Status:        string(models.StatusQueuedForMigration),
+		Source:        "github",
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+		BatchID:       &batch2.ID,
+		GitProperties: &models.RepositoryGitProperties{TotalSize: &size2},
 	}
 
 	if err := db.SaveRepository(ctx, repo1); err != nil {
@@ -597,13 +597,13 @@ func TestIsBatchRunning(t *testing.T) {
 	// Create test repository
 	size := int64(100000 * 1024) // Convert KB to bytes
 	repo := &models.Repository{
-		FullName:     "org/repo",
-		TotalSize:    &size,
-		Status:       string(models.StatusQueuedForMigration),
-		Source:       "github",
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-		BatchID:      &batch.ID,
+		FullName:      "org/repo",
+		Status:        string(models.StatusQueuedForMigration),
+		Source:        "github",
+		DiscoveredAt:  time.Now(),
+		UpdatedAt:     time.Now(),
+		BatchID:       &batch.ID,
+		GitProperties: &models.RepositoryGitProperties{TotalSize: &size},
 	}
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to create repo: %v", err)

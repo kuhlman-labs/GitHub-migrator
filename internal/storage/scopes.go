@@ -10,6 +10,11 @@ import (
 
 // GORM Scopes for common repository filters
 // Scopes provide a clean way to compose queries
+// These scopes work with the new related table structure:
+//   - repository_git_properties: size, LFS, submodules, etc.
+//   - repository_features: wiki, pages, actions, security features, etc.
+//   - repository_ado_properties: Azure DevOps specific fields
+//   - repository_validation: complexity scores, limit violations
 
 // WithStatus filters repositories by status
 func WithStatus(status any) func(db *gorm.DB) *gorm.DB {
@@ -17,11 +22,11 @@ func WithStatus(status any) func(db *gorm.DB) *gorm.DB {
 		switch v := status.(type) {
 		case string:
 			if v != "" {
-				return db.Where("status = ?", v)
+				return db.Where("repositories.status = ?", v)
 			}
 		case []string:
 			if len(v) > 0 {
-				return db.Where("status IN ?", v)
+				return db.Where("repositories.status IN ?", v)
 			}
 		}
 		return db
@@ -32,7 +37,7 @@ func WithStatus(status any) func(db *gorm.DB) *gorm.DB {
 func WithBatchID(batchID int64) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		if batchID > 0 {
-			return db.Where("batch_id = ?", batchID)
+			return db.Where("repositories.batch_id = ?", batchID)
 		}
 		return db
 	}
@@ -42,7 +47,7 @@ func WithBatchID(batchID int64) func(db *gorm.DB) *gorm.DB {
 func WithSourceID(sourceID int64) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		if sourceID > 0 {
-			return db.Where("source_id = ?", sourceID)
+			return db.Where("repositories.source_id = ?", sourceID)
 		}
 		return db
 	}
@@ -52,20 +57,24 @@ func WithSourceID(sourceID int64) func(db *gorm.DB) *gorm.DB {
 func WithSource(source string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		if source != "" {
-			return db.Where("source = ?", source)
+			return db.Where("repositories.source = ?", source)
 		}
 		return db
 	}
 }
 
 // WithSizeRange filters repositories by size range
+// This now joins repository_git_properties table
 func WithSizeRange(minSize, maxSize int64) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
+		if minSize > 0 || maxSize > 0 {
+			db = db.Joins("LEFT JOIN repository_git_properties rgp ON rgp.repository_id = repositories.id")
+		}
 		if minSize > 0 {
-			db = db.Where("total_size >= ?", minSize)
+			db = db.Where("rgp.total_size >= ?", minSize)
 		}
 		if maxSize > 0 {
-			db = db.Where("total_size <= ?", maxSize)
+			db = db.Where("rgp.total_size <= ?", maxSize)
 		}
 		return db
 	}
@@ -75,7 +84,7 @@ func WithSizeRange(minSize, maxSize int64) func(db *gorm.DB) *gorm.DB {
 func WithSearch(search string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		if search != "" {
-			return db.Where("LOWER(full_name) LIKE LOWER(?)", "%"+search+"%")
+			return db.Where("LOWER(repositories.full_name) LIKE LOWER(?)", "%"+search+"%")
 		}
 		return db
 	}
@@ -87,14 +96,14 @@ func WithOrganization(org any) func(db *gorm.DB) *gorm.DB {
 		switch v := org.(type) {
 		case string:
 			if v != "" {
-				return db.Where("LOWER(full_name) LIKE LOWER(?)", v+"/%")
+				return db.Where("LOWER(repositories.full_name) LIKE LOWER(?)", v+"/%")
 			}
 		case []string:
 			if len(v) > 0 {
 				conditions := make([]string, len(v))
 				args := make([]any, len(v))
 				for i, o := range v {
-					conditions[i] = "LOWER(full_name) LIKE LOWER(?)"
+					conditions[i] = "LOWER(repositories.full_name) LIKE LOWER(?)"
 					args[i] = o + "/%"
 				}
 				return db.Where(strings.Join(conditions, " OR "), args...)
@@ -105,16 +114,19 @@ func WithOrganization(org any) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithADOProject filters by Azure DevOps project (single or multiple)
+// This now joins repository_ado_properties table
 func WithADOProject(project any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		switch v := project.(type) {
 		case string:
 			if v != "" {
-				return db.Where("ado_project = ?", v)
+				return db.Joins("LEFT JOIN repository_ado_properties rap_proj ON rap_proj.repository_id = repositories.id").
+					Where("rap_proj.project = ?", v)
 			}
 		case []string:
 			if len(v) > 0 {
-				return db.Where("ado_project IN ?", v)
+				return db.Joins("LEFT JOIN repository_ado_properties rap_proj ON rap_proj.repository_id = repositories.id").
+					Where("rap_proj.project IN ?", v)
 			}
 		}
 		return db
@@ -128,11 +140,13 @@ func WithADOOrganization(org any) func(db *gorm.DB) *gorm.DB {
 		switch v := org.(type) {
 		case string:
 			if v != "" {
-				return db.Where("ado_project IN (SELECT name FROM ado_projects WHERE organization = ?)", v)
+				return db.Joins("LEFT JOIN repository_ado_properties rap_org ON rap_org.repository_id = repositories.id").
+					Where("rap_org.project IN (SELECT name FROM ado_projects WHERE organization = ?)", v)
 			}
 		case []string:
 			if len(v) > 0 {
-				return db.Where("ado_project IN (SELECT name FROM ado_projects WHERE organization IN ?)", v)
+				return db.Joins("LEFT JOIN repository_ado_properties rap_org ON rap_org.repository_id = repositories.id").
+					Where("rap_org.project IN (SELECT name FROM ado_projects WHERE organization IN ?)", v)
 			}
 		}
 		return db
@@ -143,20 +157,30 @@ func WithADOOrganization(org any) func(db *gorm.DB) *gorm.DB {
 func WithVisibility(visibility string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		if visibility != "" {
-			return db.Where("visibility = ?", visibility)
+			return db.Where("repositories.visibility = ?", visibility)
 		}
 		return db
 	}
 }
 
-// WithFeatureFlags filters by various feature flags
-func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
-	return func(db *gorm.DB) *gorm.DB {
-		featureColumns := map[string]string{
-			// GitHub features
-			"has_lfs":                 "has_lfs",
-			"has_submodules":          "has_submodules",
-			"has_large_files":         "has_large_files",
+// featureFlagColumnMappings contains the column mappings for feature flag filtering
+type featureFlagColumnMappings struct {
+	gitColumns           map[string]string
+	featuresColumns      map[string]string
+	featuresCountColumns map[string]string
+	adoColumns           map[string]string
+	coreColumns          map[string]string
+}
+
+// getFeatureFlagMappings returns all column mappings for feature flags
+func getFeatureFlagMappings() featureFlagColumnMappings {
+	return featureFlagColumnMappings{
+		gitColumns: map[string]string{
+			"has_lfs":         "has_lfs",
+			"has_submodules":  "has_submodules",
+			"has_large_files": "has_large_files",
+		},
+		featuresColumns: map[string]string{
 			"has_actions":             "has_actions",
 			"has_wiki":                "has_wiki",
 			"has_pages":               "has_pages",
@@ -164,70 +188,92 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			"has_projects":            "has_projects",
 			"has_packages":            "has_packages",
 			"has_rulesets":            "has_rulesets",
-			"is_archived":             "is_archived",
-			"is_fork":                 "is_fork",
 			"has_code_scanning":       "has_code_scanning",
 			"has_dependabot":          "has_dependabot",
 			"has_secret_scanning":     "has_secret_scanning",
 			"has_codeowners":          "has_codeowners",
 			"has_self_hosted_runners": "has_self_hosted_runners",
 			"has_release_assets":      "has_release_assets",
-			// Azure DevOps features
-			"ado_is_git":        "ado_is_git",
-			"ado_has_boards":    "ado_has_boards",
-			"ado_has_pipelines": "ado_has_pipelines",
-			"ado_has_ghas":      "ado_has_ghas",
-			"ado_has_wiki":      "ado_has_wiki",
+		},
+		featuresCountColumns: map[string]string{
+			"has_branch_protections": "branch_protections",
+			"has_webhooks":           "webhook_count",
+			"has_environments":       "environment_count",
+			"has_secrets":            "secret_count",
+			"has_variables":          "variable_count",
+		},
+		adoColumns: map[string]string{
+			"ado_is_git":        "is_git",
+			"ado_has_boards":    "has_boards",
+			"ado_has_pipelines": "has_pipelines",
+			"ado_has_ghas":      "has_ghas",
+			"ado_has_wiki":      "has_wiki",
+		},
+		coreColumns: map[string]string{
+			"is_archived": "is_archived",
+			"is_fork":     "is_fork",
+		},
+	}
+}
+
+// applyBoolFiltersWithPrefix applies boolean filters for a column mapping with table prefix
+func applyBoolFiltersWithPrefix(db *gorm.DB, tablePrefix string, columns map[string]string, filters map[string]bool) *gorm.DB {
+	for key, column := range columns {
+		if value, ok := filters[key]; ok {
+			db = db.Where(tablePrefix+column+" = ?", value)
+		}
+	}
+	return db
+}
+
+// WithFeatureFlags filters by various feature flags
+// This now joins the appropriate related tables based on which flags are requested
+func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		m := getFeatureFlagMappings()
+
+		// Check which joins are needed
+		needsGitJoin, needsFeaturesJoin, needsADOJoin := false, false, false
+		for key := range filters {
+			if _, ok := m.gitColumns[key]; ok {
+				needsGitJoin = true
+			}
+			if _, ok := m.featuresColumns[key]; ok {
+				needsFeaturesJoin = true
+			}
+			if _, ok := m.featuresCountColumns[key]; ok {
+				needsFeaturesJoin = true
+			}
+			if _, ok := m.adoColumns[key]; ok {
+				needsADOJoin = true
+			}
 		}
 
-		for key, column := range featureColumns {
+		// Apply necessary joins
+		if needsGitJoin {
+			db = db.Joins("LEFT JOIN repository_git_properties rgp_feat ON rgp_feat.repository_id = repositories.id")
+		}
+		if needsFeaturesJoin {
+			db = db.Joins("LEFT JOIN repository_features rf ON rf.repository_id = repositories.id")
+		}
+		if needsADOJoin {
+			db = db.Joins("LEFT JOIN repository_ado_properties rap ON rap.repository_id = repositories.id")
+		}
+
+		// Apply filters using helper
+		db = applyBoolFiltersWithPrefix(db, "repositories.", m.coreColumns, filters)
+		db = applyBoolFiltersWithPrefix(db, "rgp_feat.", m.gitColumns, filters)
+		db = applyBoolFiltersWithPrefix(db, "rf.", m.featuresColumns, filters)
+		db = applyBoolFiltersWithPrefix(db, "rap.", m.adoColumns, filters)
+
+		// Special handling for count-based feature flags in features table
+		for key, column := range m.featuresCountColumns {
 			if value, ok := filters[key]; ok {
-				db = db.Where(column+" = ?", value)
-			}
-		}
-
-		// Special handling for branch_protections (checking if count > 0)
-		if value, ok := filters["has_branch_protections"]; ok {
-			if value {
-				db = db.Where("branch_protections > 0")
-			} else {
-				db = db.Where("(branch_protections = 0 OR branch_protections IS NULL)")
-			}
-		}
-
-		// Special handling for webhooks (checking if count > 0)
-		if value, ok := filters["has_webhooks"]; ok {
-			if value {
-				db = db.Where("webhook_count > 0")
-			} else {
-				db = db.Where("(webhook_count = 0 OR webhook_count IS NULL)")
-			}
-		}
-
-		// Special handling for environments (checking if count > 0)
-		if value, ok := filters["has_environments"]; ok {
-			if value {
-				db = db.Where("environment_count > 0")
-			} else {
-				db = db.Where("(environment_count = 0 OR environment_count IS NULL)")
-			}
-		}
-
-		// Special handling for secrets (checking if count > 0)
-		if value, ok := filters["has_secrets"]; ok {
-			if value {
-				db = db.Where("secret_count > 0")
-			} else {
-				db = db.Where("(secret_count = 0 OR secret_count IS NULL)")
-			}
-		}
-
-		// Special handling for variables (checking if count > 0)
-		if value, ok := filters["has_variables"]; ok {
-			if value {
-				db = db.Where("variable_count > 0")
-			} else {
-				db = db.Where("(variable_count = 0 OR variable_count IS NULL)")
+				if value {
+					db = db.Where("rf." + column + " > 0")
+				} else {
+					db = db.Where("(rf." + column + " = 0 OR rf." + column + " IS NULL)")
+				}
 			}
 		}
 
@@ -236,23 +282,33 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithADOCountFilters filters by Azure DevOps count-based fields
+// This now joins repository_ado_properties table
 func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
+		if len(filters) == 0 {
+			return db
+		}
+
+		// Join the ADO properties table
+		db = db.Joins("LEFT JOIN repository_ado_properties rap_count ON rap_count.repository_id = repositories.id")
+
 		// Whitelist of allowed column names to prevent SQL injection
-		allowedColumns := map[string]bool{
-			"ado_pull_request_count":     true,
-			"ado_work_item_count":        true,
-			"ado_branch_policy_count":    true,
-			"ado_yaml_pipeline_count":    true,
-			"ado_classic_pipeline_count": true,
-			"ado_test_plan_count":        true,
-			"ado_package_feed_count":     true,
-			"ado_service_hook_count":     true,
+		// Map from filter key to actual column name in repository_ado_properties
+		allowedColumns := map[string]string{
+			"ado_pull_request_count":     "pull_request_count",
+			"ado_work_item_count":        "work_item_count",
+			"ado_branch_policy_count":    "branch_policy_count",
+			"ado_yaml_pipeline_count":    "yaml_pipeline_count",
+			"ado_classic_pipeline_count": "classic_pipeline_count",
+			"ado_test_plan_count":        "test_plan_count",
+			"ado_package_feed_count":     "package_feed_count",
+			"ado_service_hook_count":     "service_hook_count",
 		}
 
 		for key, value := range filters {
 			// Validate that key is in the whitelist
-			if !allowedColumns[key] {
+			column, ok := allowedColumns[key]
+			if !ok {
 				// Skip invalid column names silently to prevent information leakage
 				continue
 			}
@@ -267,19 +323,19 @@ func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
 			// Use parameterized queries to prevent SQL injection
 			switch operator {
 			case ">":
-				db = db.Where(key+" > ?", numValue)
+				db = db.Where("rap_count."+column+" > ?", numValue)
 			case ">=":
-				db = db.Where(key+" >= ?", numValue)
+				db = db.Where("rap_count."+column+" >= ?", numValue)
 			case "<":
-				db = db.Where(key+" < ?", numValue)
+				db = db.Where("rap_count."+column+" < ?", numValue)
 			case "<=":
-				db = db.Where(key+" <= ?", numValue)
+				db = db.Where("rap_count."+column+" <= ?", numValue)
 			case "=":
 				if numValue == 0 {
 					// Handle zero specially to include NULL values
-					db = db.Where("("+key+" = 0 OR "+key+" IS NULL)", numValue)
+					db = db.Where("(rap_count." + column + " = 0 OR rap_count." + column + " IS NULL)")
 				} else {
-					db = db.Where(key+" = ?", numValue)
+					db = db.Where("rap_count."+column+" = ?", numValue)
 				}
 			}
 		}
@@ -288,6 +344,7 @@ func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithSizeCategory filters by size category
+// This now joins repository_git_properties table
 func WithSizeCategory(categories any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		const (
@@ -310,25 +367,28 @@ func WithSizeCategory(categories any) func(db *gorm.DB) *gorm.DB {
 			return db
 		}
 
+		// Join the git properties table
+		db = db.Joins("LEFT JOIN repository_git_properties rgp_size ON rgp_size.repository_id = repositories.id")
+
 		var conditions []string
 		var args []any
 
 		for _, category := range categoryList {
 			switch category {
 			case "small":
-				conditions = append(conditions, "(total_size > 0 AND total_size < ?)")
+				conditions = append(conditions, "(rgp_size.total_size > 0 AND rgp_size.total_size < ?)")
 				args = append(args, MB100)
 			case "medium":
-				conditions = append(conditions, "(total_size >= ? AND total_size < ?)")
+				conditions = append(conditions, "(rgp_size.total_size >= ? AND rgp_size.total_size < ?)")
 				args = append(args, MB100, GB1)
 			case "large":
-				conditions = append(conditions, "(total_size >= ? AND total_size < ?)")
+				conditions = append(conditions, "(rgp_size.total_size >= ? AND rgp_size.total_size < ?)")
 				args = append(args, GB1, GB5)
 			case "very_large":
-				conditions = append(conditions, "(total_size >= ?)")
+				conditions = append(conditions, "(rgp_size.total_size >= ?)")
 				args = append(args, GB5)
 			case "unknown":
-				conditions = append(conditions, "(total_size IS NULL OR total_size = 0)")
+				conditions = append(conditions, "(rgp_size.total_size IS NULL OR rgp_size.total_size = 0)")
 			}
 		}
 
@@ -341,6 +401,7 @@ func WithSizeCategory(categories any) func(db *gorm.DB) *gorm.DB {
 }
 
 // WithComplexity filters by complexity category
+// This now joins repository_validation table
 func WithComplexity(categories any) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		var categoryList []string
@@ -357,18 +418,21 @@ func WithComplexity(categories any) func(db *gorm.DB) *gorm.DB {
 			return db
 		}
 
+		// Join the validation table
+		db = db.Joins("LEFT JOIN repository_validation rv ON rv.repository_id = repositories.id")
+
 		// Use the stored complexity_score field (supports both GitHub and ADO)
 		var conditions []string
 		for _, category := range categoryList {
 			switch category {
 			case "simple":
-				conditions = append(conditions, "(COALESCE(complexity_score, 0) <= 5)")
+				conditions = append(conditions, "(COALESCE(rv.complexity_score, 0) <= 5)")
 			case "medium":
-				conditions = append(conditions, "(complexity_score BETWEEN 6 AND 10)")
+				conditions = append(conditions, "(rv.complexity_score BETWEEN 6 AND 10)")
 			case "complex":
-				conditions = append(conditions, "(complexity_score BETWEEN 11 AND 17)")
+				conditions = append(conditions, "(rv.complexity_score BETWEEN 11 AND 17)")
 			case "very_complex":
-				conditions = append(conditions, "(complexity_score >= 18)")
+				conditions = append(conditions, "(rv.complexity_score >= 18)")
 			}
 		}
 
@@ -384,7 +448,7 @@ func WithComplexity(categories any) func(db *gorm.DB) *gorm.DB {
 func WithAvailableForBatch() func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		// Exclude repos already in a batch
-		db = db.Where("batch_id IS NULL")
+		db = db.Where("repositories.batch_id IS NULL")
 
 		// Exclude repos in certain statuses
 		excludedStatuses := []string{
@@ -400,26 +464,29 @@ func WithAvailableForBatch() func(db *gorm.DB) *gorm.DB {
 			"remediation_required",
 			"pre_migration",
 		}
-		db = db.Where("status NOT IN ?", excludedStatuses)
+		db = db.Where("repositories.status NOT IN ?", excludedStatuses)
 
 		return db
 	}
 }
 
 // WithOrdering applies ordering to the query
+// For size ordering, this now joins repository_git_properties table
 func WithOrdering(sortBy string) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		switch sortBy {
 		case "name":
-			return db.Order("full_name ASC")
+			return db.Order("repositories.full_name ASC")
 		case "size":
-			return db.Order("total_size DESC")
+			// Join git properties for size ordering
+			return db.Joins("LEFT JOIN repository_git_properties rgp_order ON rgp_order.repository_id = repositories.id").
+				Order("rgp_order.total_size DESC")
 		case "org":
-			return db.Order("full_name ASC") // Already sorts by org/repo
+			return db.Order("repositories.full_name ASC") // Already sorts by org/repo
 		case "updated":
-			return db.Order("updated_at DESC")
+			return db.Order("repositories.updated_at DESC")
 		default:
-			return db.Order("full_name ASC")
+			return db.Order("repositories.full_name ASC")
 		}
 	}
 }

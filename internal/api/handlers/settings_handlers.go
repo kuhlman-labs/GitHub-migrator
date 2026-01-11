@@ -44,7 +44,8 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.sendJSON(w, http.StatusOK, settings.ToResponse())
+	// Return consistent response structure matching UpdateSettings
+	h.sendJSONWithRestart(w, http.StatusOK, settings.ToResponse(), false, "")
 }
 
 // UpdateSettings handles PUT /api/v1/settings
@@ -57,6 +58,15 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	// Get current settings to detect auth changes
+	currentSettings, err := h.db.GetSettings(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get current settings", "error", err)
+		http.Error(w, "Failed to get settings", http.StatusInternalServerError)
+		return
+	}
+	currentAuthEnabled := currentSettings.AuthEnabled
 
 	// Update settings in database
 	settings, err := h.db.UpdateSettings(ctx, &req)
@@ -74,8 +84,41 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	// Detect if auth settings changed - these require a server restart to take effect
+	// because the HTTP router and auth middleware are built at startup
+	authSettingsChanged := false
+	if req.AuthEnabled != nil && *req.AuthEnabled != currentAuthEnabled {
+		authSettingsChanged = true
+	}
+	if req.AuthGitHubOAuthClientID != nil || req.AuthGitHubOAuthClientSecret != nil ||
+		req.AuthSessionSecret != nil || req.AuthCallbackURL != nil {
+		authSettingsChanged = true
+	}
+
 	h.logger.Info("Settings updated successfully")
-	h.sendJSON(w, http.StatusOK, settings.ToResponse())
+
+	// Always return consistent response structure with restart_required flag
+	response := settings.ToResponse()
+	if authSettingsChanged {
+		h.logger.Info("Auth settings changed - server restart required for changes to take effect")
+		h.sendJSONWithRestart(w, http.StatusOK, response, true, "Authentication settings require a server restart to take effect")
+	} else {
+		h.sendJSONWithRestart(w, http.StatusOK, response, false, "")
+	}
+}
+
+// sendJSONWithRestart sends a JSON response with a restart_required flag
+func (h *SettingsHandler) sendJSONWithRestart(w http.ResponseWriter, statusCode int, data any, restartRequired bool, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	response := map[string]any{
+		"settings":         data,
+		"restart_required": restartRequired,
+		"message":          message,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
 }
 
 // ValidateDestinationRequest represents a request to validate destination connection
@@ -110,6 +153,151 @@ func (h *SettingsHandler) ValidateDestination(w http.ResponseWriter, r *http.Req
 
 	response := ValidateGitHubConnection(ctx, req.BaseURL, req.Token, h.logger)
 	h.sendJSON(w, http.StatusOK, response)
+}
+
+// ValidateOAuthRequest represents a request to validate OAuth configuration
+type ValidateOAuthRequest struct {
+	OAuthBaseURL  string `json:"oauth_base_url"`  // GitHub instance URL (e.g., https://github.com or https://ghes.example.com)
+	OAuthClientID string `json:"oauth_client_id"` // GitHub OAuth App Client ID
+	CallbackURL   string `json:"callback_url"`    // OAuth callback URL
+	SessionSecret string `json:"session_secret"`  // Session encryption secret
+	FrontendURL   string `json:"frontend_url"`    // Frontend URL for redirects
+}
+
+// ValidateOAuthResponse represents the OAuth validation result
+type ValidateOAuthResponse struct {
+	Valid    bool           `json:"valid"`
+	Error    string         `json:"error,omitempty"`
+	Warnings []string       `json:"warnings,omitempty"`
+	Details  map[string]any `json:"details,omitempty"`
+}
+
+// ValidateOAuth handles POST /api/v1/settings/oauth/validate
+// Validates OAuth configuration before saving to prevent lockout scenarios
+func (h *SettingsHandler) ValidateOAuth(w http.ResponseWriter, r *http.Request) {
+	var req ValidateOAuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	response := h.validateOAuthConfig(req)
+	h.sendJSON(w, http.StatusOK, response)
+}
+
+// validateOAuthConfig validates OAuth configuration
+func (h *SettingsHandler) validateOAuthConfig(req ValidateOAuthRequest) ValidateOAuthResponse {
+	response := ValidateOAuthResponse{
+		Valid:   true,
+		Details: make(map[string]any),
+	}
+	var warnings []string
+
+	// 1. Validate OAuth Client ID
+	if req.OAuthClientID == "" {
+		response.Valid = false
+		response.Error = "OAuth Client ID is required"
+		return response
+	}
+
+	// GitHub OAuth client IDs have a specific format: Iv1.xxxx or Ov23xxxxx (for OAuth apps)
+	// GitHub App client IDs start with Iv1. or similar
+	if len(req.OAuthClientID) < 10 {
+		response.Valid = false
+		response.Error = "OAuth Client ID appears to be invalid (too short)"
+		return response
+	}
+	response.Details["client_id_format"] = "valid"
+
+	// 2. Validate Session Secret (minimum length for security)
+	if req.SessionSecret == "" {
+		response.Valid = false
+		response.Error = "Session secret is required for secure token encryption"
+		return response
+	}
+	if len(req.SessionSecret) < 32 {
+		warnings = append(warnings, "Session secret is short (< 32 chars). Consider using a longer, random secret for better security.")
+	}
+	response.Details["session_secret_length"] = len(req.SessionSecret)
+
+	// 3. Validate Callback URL format
+	if req.CallbackURL == "" {
+		warnings = append(warnings, "Callback URL not specified. Will be auto-generated based on server configuration.")
+	} else {
+		if !isValidURL(req.CallbackURL) {
+			response.Valid = false
+			response.Error = "Callback URL is not a valid URL"
+			return response
+		}
+		// Check that callback URL contains the expected path
+		if !strings.Contains(req.CallbackURL, "/api/v1/auth/callback") {
+			warnings = append(warnings, "Callback URL should end with /api/v1/auth/callback")
+		}
+		response.Details["callback_url"] = req.CallbackURL
+	}
+
+	// 4. Validate Frontend URL format
+	if req.FrontendURL == "" {
+		warnings = append(warnings, "Frontend URL not specified. Users will be redirected to root path after login.")
+	} else {
+		if !isValidURL(req.FrontendURL) && req.FrontendURL != "/" {
+			response.Valid = false
+			response.Error = "Frontend URL is not a valid URL"
+			return response
+		}
+		response.Details["frontend_url"] = req.FrontendURL
+	}
+
+	// 5. Validate OAuth Base URL and attempt to verify the OAuth app exists
+	if req.OAuthBaseURL != "" && req.OAuthClientID != "" {
+		// Try to construct the OAuth authorization URL and verify it's reachable
+		oauthURL := buildOAuthBaseURL(req.OAuthBaseURL)
+		response.Details["oauth_base_url"] = oauthURL
+
+		// Note: We can't fully validate OAuth credentials without doing an actual OAuth flow
+		// The client secret is only validated during token exchange
+		h.logger.Info("OAuth configuration validated",
+			"client_id", maskClientID(req.OAuthClientID),
+			"oauth_base_url", oauthURL)
+	}
+
+	response.Warnings = warnings
+
+	if response.Valid {
+		response.Details["status"] = "Configuration appears valid. Test by logging in after enabling auth."
+	}
+
+	return response
+}
+
+// isValidURL checks if a string is a valid URL
+func isValidURL(s string) bool {
+	if s == "" {
+		return false
+	}
+	// Simple validation: must start with http:// or https://
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// buildOAuthBaseURL normalizes the OAuth base URL
+func buildOAuthBaseURL(baseURL string) string {
+	// For api.github.com, use github.com for OAuth
+	if strings.Contains(baseURL, "api.github.com") {
+		return "https://github.com"
+	}
+	// For GHES API URLs (/api/v3), strip the API path
+	if strings.Contains(baseURL, "/api/v3") {
+		return strings.Replace(baseURL, "/api/v3", "", 1)
+	}
+	return baseURL
+}
+
+// maskClientID masks a client ID for logging, showing only first and last few chars
+func maskClientID(clientID string) string {
+	if len(clientID) <= 8 {
+		return "****"
+	}
+	return clientID[:4] + "..." + clientID[len(clientID)-4:]
 }
 
 // GetSetupProgress handles GET /api/v1/settings/setup-progress

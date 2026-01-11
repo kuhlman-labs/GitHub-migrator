@@ -237,24 +237,51 @@ func (cs *Service) GetEnterpriseSlug() string {
 	return ""
 }
 
-// GetEffectiveAuthConfig returns an AuthConfig that merges static config with database settings.
-// The enterprise slug is taken from database if set, otherwise from static config.
-func (cs *Service) GetEffectiveAuthConfig() config.AuthConfig {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
+// applyDatabaseAuthSettings applies database auth settings to the config
+func (cs *Service) applyDatabaseAuthSettings(cfg *config.AuthConfig) {
+	cfg.Enabled = true
 
-	// Start with static config
-	effectiveCfg := cs.staticConfig.Auth
+	// OAuth credentials from database
+	if cs.settings.AuthGitHubOAuthClientID != nil && *cs.settings.AuthGitHubOAuthClientID != "" {
+		cfg.GitHubOAuthClientID = *cs.settings.AuthGitHubOAuthClientID
+	}
+	if cs.settings.AuthGitHubOAuthClientSecret != nil && *cs.settings.AuthGitHubOAuthClientSecret != "" {
+		cfg.GitHubOAuthClientSecret = *cs.settings.AuthGitHubOAuthClientSecret
+	}
 
+	// Session settings from database
+	if cs.settings.AuthSessionSecret != nil && *cs.settings.AuthSessionSecret != "" {
+		cfg.SessionSecret = *cs.settings.AuthSessionSecret
+	}
+	if cs.settings.AuthSessionDurationHours > 0 {
+		cfg.SessionDurationHours = cs.settings.AuthSessionDurationHours
+	}
+
+	// URLs from database
+	if cs.settings.AuthCallbackURL != nil && *cs.settings.AuthCallbackURL != "" {
+		cfg.CallbackURL = *cs.settings.AuthCallbackURL
+	}
+	if cs.settings.AuthFrontendURL != "" {
+		cfg.FrontendURL = cs.settings.AuthFrontendURL
+	}
+
+	// OAuth base URL defaults to destination URL for GitHub OAuth
+	if cfg.GitHubOAuthBaseURL == "" {
+		cfg.GitHubOAuthBaseURL = cs.settings.DestinationBaseURL
+	}
+}
+
+// applyDatabaseAuthRules applies database authorization rules to the config
+func (cs *Service) applyDatabaseAuthRules(cfg *config.AuthConfig) {
 	// Override enterprise slug from database if set
 	if cs.settings.DestinationEnterpriseSlug != nil && *cs.settings.DestinationEnterpriseSlug != "" {
-		effectiveCfg.AuthorizationRules.RequireEnterpriseSlug = *cs.settings.DestinationEnterpriseSlug
+		cfg.AuthorizationRules.RequireEnterpriseSlug = *cs.settings.DestinationEnterpriseSlug
 	}
 
 	// Override authorization rules from database settings
-	effectiveCfg.AuthorizationRules.AllowOrgAdminMigrations = cs.settings.AuthAllowOrgAdminMigrations
-	effectiveCfg.AuthorizationRules.AllowEnterpriseAdminMigrations = cs.settings.AuthAllowEnterpriseAdminMigrations
-	effectiveCfg.AuthorizationRules.EnableSelfService = cs.settings.AuthEnableSelfService
+	cfg.AuthorizationRules.AllowOrgAdminMigrations = cs.settings.AuthAllowOrgAdminMigrations
+	cfg.AuthorizationRules.AllowEnterpriseAdminMigrations = cs.settings.AuthAllowEnterpriseAdminMigrations
+	cfg.AuthorizationRules.EnableSelfService = cs.settings.AuthEnableSelfService
 
 	// Parse migration admin teams from database
 	if cs.settings.AuthMigrationAdminTeams != nil && *cs.settings.AuthMigrationAdminTeams != "" {
@@ -264,10 +291,39 @@ func (cs *Service) GetEffectiveAuthConfig() config.AuthConfig {
 				teams = append(teams, team)
 			}
 		}
-		effectiveCfg.AuthorizationRules.MigrationAdminTeams = teams
+		cfg.AuthorizationRules.MigrationAdminTeams = teams
+	}
+}
+
+// GetEffectiveAuthConfig returns an AuthConfig that merges static config with database settings.
+// If auth is enabled in database but not in static config, database settings take precedence.
+// This allows enabling auth via the UI without requiring a server restart.
+func (cs *Service) GetEffectiveAuthConfig() config.AuthConfig {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	// Start with static config
+	effectiveCfg := cs.staticConfig.Auth
+
+	// If auth is enabled in database, use database settings for auth config
+	// This allows enabling auth via UI when static config has it disabled
+	if cs.settings.AuthEnabled {
+		cs.applyDatabaseAuthSettings(&effectiveCfg)
 	}
 
+	cs.applyDatabaseAuthRules(&effectiveCfg)
+
 	return effectiveCfg
+}
+
+// HasValidAuthConfig returns true if the effective auth config has all required fields
+// for authentication to work (OAuth client ID/secret, session secret)
+func (cs *Service) HasValidAuthConfig() bool {
+	cfg := cs.GetEffectiveAuthConfig()
+	return cfg.Enabled &&
+		cfg.GitHubOAuthClientID != "" &&
+		cfg.GitHubOAuthClientSecret != "" &&
+		cfg.SessionSecret != ""
 }
 
 // splitAndTrim splits a string by separator and trims whitespace from each part

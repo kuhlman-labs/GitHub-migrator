@@ -29,7 +29,8 @@ func (s *GitHubMigrationStrategy) Name() string {
 // GitHub repositories are identified by NOT having an ADO project set.
 func (s *GitHubMigrationStrategy) SupportsRepository(repo *models.Repository) bool {
 	// A repository is considered a GitHub source if it doesn't have an ADO project
-	return repo.ADOProject == nil || *repo.ADOProject == ""
+	adoProject := repo.GetADOProject()
+	return adoProject == nil || *adoProject == ""
 }
 
 // ValidateSource validates that the source client is configured for GitHub migrations.

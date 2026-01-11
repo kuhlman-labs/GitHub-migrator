@@ -82,149 +82,197 @@ func TestExecutor_compareRepositoryCharacteristics_Additional(t *testing.T) {
 	}{
 		{
 			name: "identical repositories",
-			source: &models.Repository{
-				DefaultBranch: validStrPtr("main"),
-				CommitCount:   100,
-				BranchCount:   5,
-				TagCount:      10,
-				HasWiki:       true,
-				HasPages:      false,
-			},
-			dest: &models.Repository{
-				DefaultBranch: validStrPtr("main"),
-				CommitCount:   100,
-				BranchCount:   5,
-				TagCount:      10,
-				HasWiki:       true,
-				HasPages:      false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(validStrPtr("main"))
+				r.SetCommitCount(100)
+				r.SetBranchCount(5)
+				r.SetTagCount(10)
+				r.SetHasWiki(true)
+				r.SetHasPages(false)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(validStrPtr("main"))
+				r.SetCommitCount(100)
+				r.SetBranchCount(5)
+				r.SetTagCount(10)
+				r.SetHasWiki(true)
+				r.SetHasPages(false)
+				return r
+			}(),
 			wantMismatches: 0,
 			wantCritical:   false,
 		},
 		{
 			name: "different default branch - critical",
-			source: &models.Repository{
-				DefaultBranch: validStrPtr("main"),
-			},
-			dest: &models.Repository{
-				DefaultBranch: validStrPtr("master"),
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(validStrPtr("main"))
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(validStrPtr("master"))
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   true,
 		},
 		{
 			name: "different commit count - critical",
-			source: &models.Repository{
-				CommitCount: 100,
-			},
-			dest: &models.Repository{
-				CommitCount: 99,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetCommitCount(100)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetCommitCount(99)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   true,
 		},
 		{
 			name: "different branch count - critical",
-			source: &models.Repository{
-				BranchCount: 5,
-			},
-			dest: &models.Repository{
-				BranchCount: 4,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetBranchCount(5)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetBranchCount(4)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   true,
 		},
 		{
 			name: "different tag count - not critical",
-			source: &models.Repository{
-				TagCount: 10,
-			},
-			dest: &models.Repository{
-				TagCount: 9,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetTagCount(10)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetTagCount(9)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   false,
 		},
 		{
 			name: "different wiki - not critical",
-			source: &models.Repository{
-				HasWiki: true,
-			},
-			dest: &models.Repository{
-				HasWiki: false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasWiki(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasWiki(false)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   false,
 		},
 		{
 			name: "different pages - not critical",
-			source: &models.Repository{
-				HasPages: true,
-			},
-			dest: &models.Repository{
-				HasPages: false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasPages(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasPages(false)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   false,
 		},
 		{
 			name: "different discussions - not critical",
-			source: &models.Repository{
-				HasDiscussions: true,
-			},
-			dest: &models.Repository{
-				HasDiscussions: false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasDiscussions(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasDiscussions(false)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   false,
 		},
 		{
 			name: "different actions - not critical",
-			source: &models.Repository{
-				HasActions: true,
-			},
-			dest: &models.Repository{
-				HasActions: false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasActions(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetHasActions(false)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   false,
 		},
 		{
 			name: "different branch protections - not critical",
-			source: &models.Repository{
-				BranchProtections: 2,
-			},
-			dest: &models.Repository{
-				BranchProtections: 0,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetBranchProtections(2)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetBranchProtections(0)
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   false,
 		},
 		{
 			name: "different last commit SHA - critical",
-			source: &models.Repository{
-				LastCommitSHA: validStrPtr("abc123"),
-			},
-			dest: &models.Repository{
-				LastCommitSHA: validStrPtr("def456"),
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetLastCommitSHA(validStrPtr("abc123"))
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetLastCommitSHA(validStrPtr("def456"))
+				return r
+			}(),
 			wantMismatches: 1,
 			wantCritical:   true,
 		},
 		{
 			name: "multiple mismatches - mixed criticality",
-			source: &models.Repository{
-				DefaultBranch: validStrPtr("main"),
-				CommitCount:   100,
-				TagCount:      10,
-				HasWiki:       true,
-			},
-			dest: &models.Repository{
-				DefaultBranch: validStrPtr("master"),
-				CommitCount:   99,
-				TagCount:      9,
-				HasWiki:       false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(validStrPtr("main"))
+				r.SetCommitCount(100)
+				r.SetTagCount(10)
+				r.SetHasWiki(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(validStrPtr("master"))
+				r.SetCommitCount(99)
+				r.SetTagCount(9)
+				r.SetHasWiki(false)
+				return r
+			}(),
 			wantMismatches: 4,
 			wantCritical:   true,
 		},
@@ -321,21 +369,20 @@ func TestExecutor_generateValidationReport(t *testing.T) {
 func TestExecutor_serializeDestinationData(t *testing.T) {
 	e := &Executor{logger: newValidationTestLogger()}
 
-	dest := &models.Repository{
-		DefaultBranch:     validStrPtr("main"),
-		BranchCount:       5,
-		CommitCount:       100,
-		TagCount:          10,
-		LastCommitSHA:     validStrPtr("abc123"),
-		TotalSize:         validInt64Ptr(1024000),
-		HasWiki:           true,
-		HasPages:          false,
-		HasDiscussions:    true,
-		HasActions:        true,
-		BranchProtections: 2,
-		IssueCount:        15,
-		PullRequestCount:  8,
-	}
+	dest := &models.Repository{}
+	dest.SetDefaultBranch(validStrPtr("main"))
+	dest.SetBranchCount(5)
+	dest.SetCommitCount(100)
+	dest.SetTagCount(10)
+	dest.SetLastCommitSHA(validStrPtr("abc123"))
+	dest.SetTotalSize(validInt64Ptr(1024000))
+	dest.SetHasWiki(true)
+	dest.SetHasPages(false)
+	dest.SetHasDiscussions(true)
+	dest.SetHasActions(true)
+	dest.SetBranchProtections(2)
+	dest.SetIssueCount(15)
+	dest.SetPullRequestCount(8)
 
 	jsonData := e.serializeDestinationData(dest)
 
@@ -374,10 +421,9 @@ func TestExecutor_serializeDestinationData_NilFields(t *testing.T) {
 	e := &Executor{logger: newValidationTestLogger()}
 
 	// Repository with nil optional fields
-	dest := &models.Repository{
-		BranchCount: 3,
-		CommitCount: 50,
-	}
+	dest := &models.Repository{}
+	dest.SetBranchCount(3)
+	dest.SetCommitCount(50)
 
 	jsonData := e.serializeDestinationData(dest)
 

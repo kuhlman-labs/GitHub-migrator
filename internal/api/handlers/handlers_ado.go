@@ -442,7 +442,8 @@ func (h *ADOHandler) ADODiscoveryStatus(w http.ResponseWriter, r *http.Request) 
 // RediscoverADORepository handles rediscovery of a single ADO repository
 // This is called when a user clicks "Rediscover" on an ADO repo
 func (h *ADOHandler) RediscoverADORepository(ctx context.Context, repo *models.Repository) error {
-	if repo.ADOProject == nil || *repo.ADOProject == "" {
+	adoProject := repo.GetADOProject()
+	if adoProject == nil || *adoProject == "" {
 		return fmt.Errorf("repository is not an ADO repository")
 	}
 
@@ -454,7 +455,7 @@ func (h *ADOHandler) RediscoverADORepository(ctx context.Context, repo *models.R
 	}
 
 	organization := parts[0]
-	project := *repo.ADOProject
+	project := *adoProject
 	repoName := parts[2]
 
 	h.logger.Info("Rediscovering ADO repository",

@@ -148,7 +148,12 @@ func (a *Authorizer) Authorize(ctx context.Context, user *GitHubUser, githubToke
 	}
 
 	// Check enterprise membership (any role, not just admin)
-	if rules.RequireEnterpriseMembership {
+	// When an enterprise slug is configured, automatically require enterprise membership
+	// This ensures only members of the destination enterprise can access the system
+	shouldCheckEnterpriseMembership := rules.RequireEnterpriseMembership ||
+		(rules.RequireEnterpriseSlug != "" && !rules.RequireEnterpriseAdmin) // Auto-require membership if enterprise is configured
+
+	if shouldCheckEnterpriseMembership {
 		if rules.RequireEnterpriseSlug == "" {
 			return nil, fmt.Errorf("require_enterprise_slug must be set when require_enterprise_membership is true")
 		}

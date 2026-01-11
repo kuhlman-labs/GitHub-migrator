@@ -20,92 +20,76 @@ func createTestRepository(fullName string) *models.Repository {
 	totalSize := int64(1024 * 1024)
 	defaultBranch := testDefaultBranch
 	topContrib := "user1,user2"
+	now := time.Now()
 
-	return &models.Repository{
-		FullName:             fullName,
-		Source:               "ghes",
-		SourceURL:            fmt.Sprintf("https://github.com/%s", fullName),
-		TotalSize:            &totalSize,
-		LargestFile:          nil,
-		LargestFileSize:      nil,
-		LargestCommit:        nil,
-		LargestCommitSize:    nil,
-		DefaultBranch:        &defaultBranch,
-		LastCommitSHA:        nil,
-		LastCommitDate:       nil,
-		HasLFS:               false,
-		HasSubmodules:        false,
-		HasLargeFiles:        false,
-		LargeFileCount:       0,
-		BranchCount:          5,
-		CommitCount:          100,
-		IsArchived:           false,
-		IsFork:               false,
-		HasWiki:              false,
-		HasPages:             false,
-		HasDiscussions:       false,
-		HasActions:           false,
-		HasProjects:          false,
-		HasPackages:          false,
-		BranchProtections:    0,
-		HasRulesets:          false,
-		TagProtectionCount:   0,
-		EnvironmentCount:     0,
-		SecretCount:          0,
-		VariableCount:        0,
-		WebhookCount:         0,
-		HasCodeScanning:      false,
-		HasDependabot:        false,
-		HasSecretScanning:    false,
-		HasCodeowners:        false,
-		Visibility:           "private",
-		WorkflowCount:        0,
-		HasSelfHostedRunners: false,
-		CollaboratorCount:    0,
-		InstalledAppsCount:   0,
-		ReleaseCount:         0,
-		HasReleaseAssets:     false,
-		ContributorCount:     2,
-		TopContributors:      &topContrib,
-		IssueCount:           0,
-		PullRequestCount:     0,
-		TagCount:             0,
-		OpenIssueCount:       0,
-		OpenPRCount:          0,
-		// GitHub Migration Limit Validations
-		HasOversizedCommits:        false,
-		OversizedCommitDetails:     nil,
-		HasLongRefs:                false,
-		LongRefDetails:             nil,
-		HasBlockingFiles:           false,
-		BlockingFileDetails:        nil,
-		HasLargeFileWarnings:       false,
-		LargeFileWarningDetails:    nil,
-		HasOversizedRepository:     false,
-		OversizedRepositoryDetails: nil,
-		EstimatedMetadataSize:      nil,
-		MetadataSizeDetails:        nil,
-		// Migration Exclusion Flags
-		ExcludeReleases:      false,
-		ExcludeAttachments:   false,
-		ExcludeMetadata:      false,
-		ExcludeGitData:       false,
-		ExcludeOwnerProjects: false,
-		Status:               string(models.StatusPending),
-		BatchID:              nil,
-		Priority:             0,
-		DestinationURL:       nil,
-		DestinationFullName:  nil,
-		SourceMigrationID:    nil,
-		IsSourceLocked:       false,
-		ValidationStatus:     nil,
-		ValidationDetails:    nil,
-		DestinationData:      nil,
-		DiscoveredAt:         time.Now(),
-		UpdatedAt:            time.Now(),
-		MigratedAt:           nil,
-		LastDryRunAt:         nil,
+	repo := &models.Repository{
+		FullName:     fullName,
+		Source:       "ghes",
+		SourceURL:    fmt.Sprintf("https://github.com/%s", fullName),
+		Status:       string(models.StatusPending),
+		Visibility:   "private",
+		IsArchived:   false,
+		IsFork:       false,
+		DiscoveredAt: now,
+		UpdatedAt:    now,
+		// Related tables initialized below
+		GitProperties: &models.RepositoryGitProperties{
+			TotalSize:      &totalSize,
+			DefaultBranch:  &defaultBranch,
+			HasLFS:         false,
+			HasSubmodules:  false,
+			HasLargeFiles:  false,
+			LargeFileCount: 0,
+			BranchCount:    5,
+			CommitCount:    100,
+		},
+		Features: &models.RepositoryFeatures{
+			HasWiki:              false,
+			HasPages:             false,
+			HasDiscussions:       false,
+			HasActions:           false,
+			HasProjects:          false,
+			HasPackages:          false,
+			BranchProtections:    0,
+			HasRulesets:          false,
+			EnvironmentCount:     0,
+			SecretCount:          0,
+			VariableCount:        0,
+			WebhookCount:         0,
+			WorkflowCount:        0,
+			HasSelfHostedRunners: false,
+			CollaboratorCount:    0,
+			InstalledAppsCount:   0,
+			ReleaseCount:         0,
+			HasReleaseAssets:     false,
+			ContributorCount:     2,
+			TopContributors:      &topContrib,
+			IssueCount:           0,
+			PullRequestCount:     0,
+			TagCount:             0,
+			OpenIssueCount:       0,
+			OpenPRCount:          0,
+			HasCodeScanning:      false,
+			HasDependabot:        false,
+			HasSecretScanning:    false,
+			HasCodeowners:        false,
+		},
+		Validation: &models.RepositoryValidation{
+			HasOversizedCommits:    false,
+			HasLongRefs:            false,
+			HasBlockingFiles:       false,
+			HasLargeFileWarnings:   false,
+			HasOversizedRepository: false,
+		},
 	}
+	return repo
+}
+
+// createTestRepoWithStatus creates a test repository with a given status
+func createTestRepoWithStatus(fullName, status string) *models.Repository {
+	repo := createTestRepository(fullName)
+	repo.Status = status
+	return repo
 }
 
 func setupTestDB(t *testing.T) *Database {
@@ -133,8 +117,8 @@ func TestSaveRepository(t *testing.T) {
 	ctx := context.Background()
 
 	repo := createTestRepository("test/repo")
-	repo.HasWiki = true
-	repo.HasLFS = true
+	repo.SetHasWiki(true)
+	repo.SetHasLFS(true)
 
 	// Test insert
 	if err := db.SaveRepository(ctx, repo); err != nil {
@@ -143,7 +127,7 @@ func TestSaveRepository(t *testing.T) {
 
 	// Test update (upsert)
 	newSize := int64(2048 * 1024)
-	repo.TotalSize = &newSize
+	repo.SetTotalSize(&newSize)
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to update repository: %v", err)
 	}
@@ -195,7 +179,7 @@ func TestListRepositories(t *testing.T) {
 	// Create test repositories
 	repo1 := createTestRepository("org/repo1")
 	repo1.Status = string(models.StatusPending)
-	repo1.HasLFS = true
+	repo1.SetHasLFS(true)
 
 	repo2 := createTestRepository("org/repo2")
 	repo2.Status = string(models.StatusComplete)
@@ -276,7 +260,7 @@ func TestUpdateRepository(t *testing.T) {
 
 	// Update the repository
 	newSize := int64(2048 * 1024)
-	repo.TotalSize = &newSize
+	repo.SetTotalSize(&newSize)
 	repo.Status = string(models.StatusComplete)
 	now := time.Now()
 	repo.MigratedAt = &now
@@ -291,8 +275,8 @@ func TestUpdateRepository(t *testing.T) {
 		t.Fatalf("Failed to get repository: %v", err)
 	}
 
-	if updated.TotalSize == nil || *updated.TotalSize != newSize {
-		t.Errorf("Expected TotalSize %d, got %v", newSize, updated.TotalSize)
+	if updated.GetTotalSize() == nil || *updated.GetTotalSize() != newSize {
+		t.Errorf("Expected TotalSize %d, got %v", newSize, updated.GetTotalSize())
 	}
 	if updated.Status != string(models.StatusComplete) {
 		t.Errorf("Expected Status 'complete', got '%s'", updated.Status)
@@ -1164,16 +1148,10 @@ func TestSaveRepository_PreservesBatchIDDuringRediscovery(t *testing.T) {
 	// Simulate a re-discovery by creating a new repo object with the same name
 	// This is what happens when ProfileRepository is called - it creates a new repo object
 	// with status "pending" and no batch_id
-	rediscoveredRepo := &models.Repository{
-		FullName:  "org/test-repo",
-		Source:    "ghes",
-		SourceURL: "https://github.com/org/test-repo",
-		Status:    string(models.StatusPending), // Re-discovery sets status to "pending"
-		// BatchID is nil - simulating what happens in ProfileRepository
-		CommitCount:  100, // Updated during re-discovery
-		DiscoveredAt: time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	rediscoveredRepo := createTestRepository("org/test-repo")
+	rediscoveredRepo.Status = string(models.StatusPending) // Re-discovery sets status to "pending"
+	// BatchID is nil - simulating what happens in ProfileRepository
+	rediscoveredRepo.SetCommitCount(100) // Updated during re-discovery
 
 	// Save the "re-discovered" repository
 	if err := db.SaveRepository(ctx, rediscoveredRepo); err != nil {
@@ -1193,8 +1171,8 @@ func TestSaveRepository_PreservesBatchIDDuringRediscovery(t *testing.T) {
 	}
 
 	// Verify the metadata was still updated
-	if afterRediscovery.CommitCount != 100 {
-		t.Errorf("Expected commit_count to be updated to 100, got %d", afterRediscovery.CommitCount)
+	if afterRediscovery.GetCommitCount() != 100 {
+		t.Errorf("Expected commit_count to be updated to 100, got %d", afterRediscovery.GetCommitCount())
 	}
 
 	// Verify status is still pending
@@ -1502,7 +1480,8 @@ func TestGetSizeDistribution(t *testing.T) {
 
 	for i, size := range sizes {
 		repo := createTestRepository(fmt.Sprintf("test/repo%d", i))
-		repo.TotalSize = &size
+		s := size // create local copy to avoid pointer issues
+		repo.SetTotalSize(&s)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository %d: %v", i, err)
 		}
@@ -1555,9 +1534,9 @@ func TestGetFeatureStats(t *testing.T) {
 
 	for _, r := range repos {
 		repo := createTestRepository(r.fullName)
-		repo.HasLFS = r.hasLFS
-		repo.HasActions = r.hasActions
-		repo.HasWiki = r.hasWiki
+		repo.SetHasLFS(r.hasLFS)
+		repo.SetHasActions(r.hasActions)
+		repo.SetHasWiki(r.hasWiki)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository %s: %v", r.fullName, err)
 		}
@@ -1592,14 +1571,14 @@ func TestGetFeatureStats_TFVCOnlyCountsADO(t *testing.T) {
 	// Create GitHub repos with ADOIsGit=false (should NOT be counted as TFVC)
 	ghRepo1 := createTestRepository("github-org/repo1")
 	ghRepo1.Source = "ghes"
-	ghRepo1.ADOIsGit = false // This should NOT be counted as TFVC
+	ghRepo1.SetADOIsGit(false) // This should NOT be counted as TFVC
 	if err := db.SaveRepository(ctx, ghRepo1); err != nil {
 		t.Fatalf("Failed to save GitHub repo: %v", err)
 	}
 
 	ghRepo2 := createTestRepository("github-org/repo2")
 	ghRepo2.Source = "ghes"
-	ghRepo2.ADOIsGit = false // This should NOT be counted as TFVC
+	ghRepo2.SetADOIsGit(false) // This should NOT be counted as TFVC
 	if err := db.SaveRepository(ctx, ghRepo2); err != nil {
 		t.Fatalf("Failed to save GitHub repo: %v", err)
 	}
@@ -1607,16 +1586,16 @@ func TestGetFeatureStats_TFVCOnlyCountsADO(t *testing.T) {
 	// Create ADO repos with ADOIsGit=false (SHOULD be counted as TFVC)
 	adoRepo1 := createTestRepository("ado-org/project/tfvc-repo1")
 	adoRepo1.Source = "azuredevops"
-	adoRepo1.ADOIsGit = false // This SHOULD be counted as TFVC
-	adoRepo1.ADOHasPipelines = true
+	adoRepo1.SetADOIsGit(false) // This SHOULD be counted as TFVC
+	adoRepo1.SetADOHasPipelines(true)
 	if err := db.SaveRepository(ctx, adoRepo1); err != nil {
 		t.Fatalf("Failed to save ADO TFVC repo: %v", err)
 	}
 
 	adoRepo2 := createTestRepository("ado-org/project/git-repo")
 	adoRepo2.Source = "azuredevops"
-	adoRepo2.ADOIsGit = true // This should NOT be counted as TFVC
-	adoRepo2.ADOHasBoards = true
+	adoRepo2.SetADOIsGit(true) // This should NOT be counted as TFVC
+	adoRepo2.SetADOHasBoards(true)
 	if err := db.SaveRepository(ctx, adoRepo2); err != nil {
 		t.Fatalf("Failed to save ADO Git repo: %v", err)
 	}

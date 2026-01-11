@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FormControl, TextInput, Textarea, Button, Text, Heading, Flash, Label, Spinner, Checkbox } from '@primer/react';
 import { AlertIcon, ShieldCheckIcon, ShieldLockIcon, PersonIcon, EyeIcon, ChevronDownIcon, ChevronRightIcon, LinkExternalIcon, PeopleIcon, CheckCircleIcon } from '@primer/octicons-react';
 import { useQuery } from '@tanstack/react-query';
-import type { SettingsResponse, UpdateSettingsRequest, ValidateTeamsResponse } from '../../services/api/settings';
+import type { SettingsResponse, UpdateSettingsRequest, ValidateTeamsResponse, ValidateOAuthResponse } from '../../services/api/settings';
 import { settingsApi } from '../../services/api/settings';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -68,6 +68,11 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
   const [isValidatingTeams, setIsValidatingTeams] = useState(false);
   const [teamsValidated, setTeamsValidated] = useState(false); // Tracks if teams have been validated since last change
   
+  // OAuth validation state
+  const [oauthValidation, setOAuthValidation] = useState<ValidateOAuthResponse | null>(null);
+  const [isValidatingOAuth, setIsValidatingOAuth] = useState(false);
+  const [showLockoutWarning, setShowLockoutWarning] = useState(false);
+  
   // Track the original teams value to determine if validation is needed
   const originalTeams = settings.authorization_rules?.migration_admin_teams?.join(', ') || '';
   const teamsHaveChanged = migrationAdminTeams !== originalTeams;
@@ -128,7 +133,88 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
     setTeamValidation(null);
   };
 
+  // Validate OAuth configuration before enabling auth
+  const handleValidateOAuth = async (): Promise<boolean> => {
+    // Only validate when enabling auth
+    if (!authEnabled) {
+      return true;
+    }
+
+    // Check if required fields are present
+    if (!oauthClientId) {
+      setOAuthValidation({
+        valid: false,
+        error: 'OAuth Client ID is required to enable authentication',
+      });
+      return false;
+    }
+
+    // If auth is being enabled (not already enabled) and secrets aren't configured
+    if (!settings.auth_enabled) {
+      if (!oauthClientSecret) {
+        setOAuthValidation({
+          valid: false,
+          error: 'OAuth Client Secret is required when enabling authentication',
+        });
+        return false;
+      }
+      if (!sessionSecret && !settings.auth_session_secret_set) {
+        setOAuthValidation({
+          valid: false,
+          error: 'Session Secret is required when enabling authentication',
+        });
+        return false;
+      }
+    }
+
+    setIsValidatingOAuth(true);
+    try {
+      // Get destination URL for OAuth base URL
+      const result = await settingsApi.validateOAuth({
+        oauth_base_url: settings.destination_base_url || 'https://github.com',
+        oauth_client_id: oauthClientId,
+        callback_url: callbackURL || undefined,
+        session_secret: sessionSecret || 'configured', // Use placeholder if already set
+        frontend_url: frontendURL || undefined,
+      });
+      setOAuthValidation(result);
+      return result.valid;
+    } catch (error) {
+      setOAuthValidation({
+        valid: false,
+        error: error instanceof Error ? error.message : 'Failed to validate OAuth configuration',
+      });
+      return false;
+    } finally {
+      setIsValidatingOAuth(false);
+    }
+  };
+
   const handleSave = async () => {
+    // If enabling auth, validate OAuth configuration first
+    if (authEnabled && !settings.auth_enabled) {
+      const isOAuthValid = await handleValidateOAuth();
+      if (!isOAuthValid) {
+        return;
+      }
+      // Show lockout warning confirmation
+      setShowLockoutWarning(true);
+      return;
+    }
+
+    await performSave();
+  };
+
+  const confirmSaveWithAuth = () => {
+    setShowLockoutWarning(false);
+    performSave();
+  };
+
+  const cancelSaveWithAuth = () => {
+    setShowLockoutWarning(false);
+  };
+
+  const performSave = async () => {
     // If teams are specified but not validated, validate first
     const teams = parseTeams(migrationAdminTeams);
     if (teams.length > 0 && !teamsValidated) {
@@ -794,15 +880,74 @@ export function AuthSettings({ settings, onSave, isSaving, readOnly = false }: A
         </Flash>
       )}
 
+      {/* OAuth Validation Feedback */}
+      {oauthValidation && !oauthValidation.valid && (
+        <Flash variant="danger" className="mt-4">
+          <div className="flex items-start gap-2">
+            <AlertIcon size={16} className="mt-0.5 flex-shrink-0" />
+            <div>
+              <Text className="font-semibold">OAuth Configuration Invalid</Text>
+              <Text className="block mt-1">{oauthValidation.error}</Text>
+            </div>
+          </div>
+        </Flash>
+      )}
+
+      {oauthValidation?.valid && oauthValidation.warnings && oauthValidation.warnings.length > 0 && (
+        <Flash variant="warning" className="mt-4">
+          <div className="flex items-start gap-2">
+            <AlertIcon size={16} className="mt-0.5 flex-shrink-0" />
+            <div>
+              <Text className="font-semibold">Configuration Warnings</Text>
+              <ul className="list-disc ml-4 mt-1">
+                {oauthValidation.warnings.map((warning, idx) => (
+                  <li key={idx}><Text>{warning}</Text></li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Flash>
+      )}
+
+      {/* Lockout Warning Confirmation */}
+      {showLockoutWarning && (
+        <Flash variant="danger" className="mt-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <AlertIcon size={20} />
+              <Text className="font-bold text-lg">Confirm Authentication Enablement</Text>
+            </div>
+            <Text className="block mb-3">
+              You are about to enable authentication. Please verify:
+            </Text>
+            <ul className="list-disc ml-4 mb-4 space-y-1">
+              <li><Text>Your OAuth App is correctly configured in GitHub</Text></li>
+              <li><Text>The callback URL matches: <code className="text-xs">{callbackURL || `${window.location.origin}/api/v1/auth/callback`}</code></Text></li>
+              <li><Text>You have access to a GitHub account that will be authorized after login</Text></li>
+              <li><Text>A server restart is required for auth to take effect</Text></li>
+            </ul>
+            <Text className="block mb-4 font-semibold" style={{ color: 'var(--fgColor-danger)' }}>
+              If misconfigured, you may be locked out of the application. Ensure you can restart the server to disable auth if needed.
+            </Text>
+            <div className="flex gap-3">
+              <Button variant="danger" onClick={confirmSaveWithAuth} disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Enable Authentication'}
+              </Button>
+              <Button onClick={cancelSaveWithAuth}>Cancel</Button>
+            </div>
+          </div>
+        </Flash>
+      )}
+
       {/* Actions */}
       <div className="flex gap-3 pt-6 mt-6 border-t" style={{ borderColor: 'var(--borderColor-default)' }}>
         <Button
           variant="primary"
           onClick={handleSave}
-          disabled={!hasChanges || isSaving || !!getSaveBlockReason() || readOnly}
+          disabled={!hasChanges || isSaving || isValidatingOAuth || !!getSaveBlockReason() || readOnly || showLockoutWarning}
           title={readOnly ? 'Administrator access required to modify settings' : getSaveBlockReason()}
         >
-          {isSaving ? 'Saving...' : 'Save Changes'}
+          {isValidatingOAuth ? 'Validating...' : isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
     </div>

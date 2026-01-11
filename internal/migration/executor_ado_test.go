@@ -17,22 +17,28 @@ func TestExecutor_ADOMigrationFlow(t *testing.T) {
 	}{
 		{
 			name: "Git repository migration",
-			repo: &models.Repository{
-				FullName:   "testorg/testproj/test-repo",
-				ADOProject: stringPtr("testproj"),
-				ADOIsGit:   true,
-				Status:     "pending",
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "testorg/testproj/test-repo",
+					Status:   "pending",
+				}
+				r.SetADOProject(stringPtr("testproj"))
+				r.SetADOIsGit(true)
+				return r
+			}(),
 			wantErr: false,
 		},
 		{
 			name: "TFVC repository should fail",
-			repo: &models.Repository{
-				FullName:   "testorg/testproj/tfvc-repo",
-				ADOProject: stringPtr("testproj"),
-				ADOIsGit:   false, // TFVC
-				Status:     "pending",
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "testorg/testproj/tfvc-repo",
+					Status:   "pending",
+				}
+				r.SetADOProject(stringPtr("testproj"))
+				r.SetADOIsGit(false) // TFVC
+				return r
+			}(),
 			wantErr: true, // Should fail validation
 		},
 	}
@@ -46,7 +52,7 @@ func TestExecutor_ADOMigrationFlow(t *testing.T) {
 			// 4. No source locking for ADO
 			// 5. GraphQL mutation uses ADO-specific parameters
 
-			if !tt.repo.ADOIsGit && !tt.wantErr {
+			if !tt.repo.GetADOIsGit() && !tt.wantErr {
 				t.Error("TFVC repository should produce error")
 			}
 		})
@@ -64,31 +70,39 @@ func TestStartADORepositoryMigration(t *testing.T) {
 	}{
 		{
 			name: "valid Git repository",
-			repo: &models.Repository{
-				FullName:   "org/proj/repo",
-				SourceURL:  "https://dev.azure.com/org/proj/_git/repo",
-				ADOProject: stringPtr("proj"),
-				ADOIsGit:   true,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName:  "org/proj/repo",
+					SourceURL: "https://dev.azure.com/org/proj/_git/repo",
+				}
+				r.SetADOProject(stringPtr("proj"))
+				r.SetADOIsGit(true)
+				return r
+			}(),
 			expectError: false,
 		},
 		{
 			name: "TFVC repository blocked",
-			repo: &models.Repository{
-				FullName:   "org/proj/tfvc",
-				ADOProject: stringPtr("proj"),
-				ADOIsGit:   false,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "org/proj/tfvc",
+				}
+				r.SetADOProject(stringPtr("proj"))
+				r.SetADOIsGit(false)
+				return r
+			}(),
 			expectError:   true,
 			errorContains: "TFVC",
 		},
 		{
 			name: "missing ADO project",
-			repo: &models.Repository{
-				FullName:   "org/repo",
-				ADOProject: nil,
-				ADOIsGit:   true,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "org/repo",
+				}
+				r.SetADOIsGit(true)
+				return r
+			}(),
 			expectError:   true,
 			errorContains: "project",
 		},
@@ -97,11 +111,11 @@ func TestStartADORepositoryMigration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Validation tests
-			if tt.repo.ADOProject == nil && !tt.expectError {
+			if tt.repo.GetADOProject() == nil && !tt.expectError {
 				t.Error("Repository without ADO project should fail")
 			}
 
-			if !tt.repo.ADOIsGit {
+			if !tt.repo.GetADOIsGit() {
 				t.Log("TFVC repository correctly identified for rejection")
 			}
 		})
@@ -126,33 +140,42 @@ func TestADOMigrationValidation(t *testing.T) {
 	}{
 		{
 			name: "valid ADO Git repo",
-			repo: &models.Repository{
-				FullName:   "org/proj/repo",
-				ADOProject: stringPtr("proj"),
-				ADOIsGit:   true,
-				SourceURL:  "https://dev.azure.com/org/proj/_git/repo",
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName:  "org/proj/repo",
+					SourceURL: "https://dev.azure.com/org/proj/_git/repo",
+				}
+				r.SetADOProject(stringPtr("proj"))
+				r.SetADOIsGit(true)
+				return r
+			}(),
 			isValid: true,
 			reason:  "Valid Git repository",
 		},
 		{
 			name: "TFVC repo not supported",
-			repo: &models.Repository{
-				FullName:   "org/proj/tfvc",
-				ADOProject: stringPtr("proj"),
-				ADOIsGit:   false,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "org/proj/tfvc",
+				}
+				r.SetADOProject(stringPtr("proj"))
+				r.SetADOIsGit(false)
+				return r
+			}(),
 			isValid: false,
 			reason:  "TFVC repositories not supported by GEI",
 		},
 		{
 			name: "missing source URL",
-			repo: &models.Repository{
-				FullName:   "org/proj/repo",
-				ADOProject: stringPtr("proj"),
-				ADOIsGit:   true,
-				SourceURL:  "",
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName:  "org/proj/repo",
+					SourceURL: "",
+				}
+				r.SetADOProject(stringPtr("proj"))
+				r.SetADOIsGit(true)
+				return r
+			}(),
 			isValid: false,
 			reason:  "Source URL required",
 		},
@@ -161,8 +184,8 @@ func TestADOMigrationValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Validate repository eligibility for ADO migration
-			isValid := tt.repo.ADOIsGit &&
-				tt.repo.ADOProject != nil &&
+			isValid := tt.repo.GetADOIsGit() &&
+				tt.repo.GetADOProject() != nil &&
 				tt.repo.SourceURL != ""
 
 			if isValid != tt.isValid {
@@ -183,12 +206,15 @@ func TestADOMigrationParameters(t *testing.T) {
 	}{
 		{
 			name: "ADO migration with PAT",
-			repo: &models.Repository{
-				FullName:   "org/proj/repo",
-				ADOProject: stringPtr("proj"),
-				ADOIsGit:   true,
-				SourceURL:  "https://dev.azure.com/org/proj/_git/repo",
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName:  "org/proj/repo",
+					SourceURL: "https://dev.azure.com/org/proj/_git/repo",
+				}
+				r.SetADOProject(stringPtr("proj"))
+				r.SetADOIsGit(true)
+				return r
+			}(),
 			expectedProvider: "azuredevops",
 			includesPAT:      true,
 		},
@@ -267,22 +293,23 @@ func TestADOvsGitHubMigrationDifferences(t *testing.T) {
 }
 
 func TestTFVCBlocker(t *testing.T) {
-	tfvcRepos := []models.Repository{
-		{
-			FullName:   "org/proj/$/trunk",
-			ADOProject: stringPtr("proj"),
-			ADOIsGit:   false,
-		},
-		{
-			FullName:   "org/proj/$/branches/main",
-			ADOProject: stringPtr("proj"),
-			ADOIsGit:   false,
-		},
+	repo1 := &models.Repository{
+		FullName: "org/proj/$/trunk",
 	}
+	repo1.SetADOProject(stringPtr("proj"))
+	repo1.SetADOIsGit(false)
+
+	repo2 := &models.Repository{
+		FullName: "org/proj/$/branches/main",
+	}
+	repo2.SetADOProject(stringPtr("proj"))
+	repo2.SetADOIsGit(false)
+
+	tfvcRepos := []*models.Repository{repo1, repo2}
 
 	for _, repo := range tfvcRepos {
 		t.Run(repo.FullName, func(t *testing.T) {
-			if repo.ADOIsGit {
+			if repo.GetADOIsGit() {
 				t.Error("TFVC repository incorrectly marked as Git")
 			}
 

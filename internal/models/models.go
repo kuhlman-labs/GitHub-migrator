@@ -17,214 +17,388 @@ const (
 //
 // # Field Organization
 //
-// This model's 80+ fields are logically grouped into components defined in
-// repository_components.go. Use the corresponding getter methods for type-safe
-// access to related field groups:
+// This model uses related tables for detailed properties:
+//   - GitProperties: size, LFS, submodules, branches, commits (1:1 relationship)
+//   - Features: wiki, pages, actions, packages, protections (1:1 relationship)
+//   - ADOProperties: project, pipelines, boards (1:1, only for Azure DevOps repos)
+//   - Validation: complexity scores, limit violations (1:1 relationship)
 //
-//   - GetGitProperties(): size, LFS, submodules, branches, commits
-//   - GetGitHubFeatures(): wiki, pages, actions, packages, protections
-//   - GetSecurityFeatures(): code scanning, Dependabot, secret scanning
-//   - GetMigrationState(): status, batch, destination, lock state
-//   - GetMigrationExclusions(): what to exclude during migration
-//   - GetGHESLimitViolations(): oversized commits, long refs, blocking files
-//   - GetADOProperties(): project, pipelines, boards (Azure DevOps only)
+// The main Repository table is kept narrow for fast list queries.
+// Related data is loaded on demand via GORM's Preload.
 //
 // # Helper Methods
 //
 //   - IsADORepository(): returns true if this is an Azure DevOps source
 //   - HasMigrationBlockers(): returns true if migration blockers exist
 //   - NeedsRemediation(): returns true if status is remediation_required
-//
-// # Future Refactoring
-//
-// The component types in repository_components.go are designed for eventual
-// embedding. Currently they serve as documentation and provide getter methods.
-// Full embedding is deferred due to GORM complexity with nullable embedded fields.
+//   - GetTotalSize(), HasLFS(), etc.: convenience accessors for related table fields
 type Repository struct {
-	ID        int64  `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	FullName  string `json:"full_name" db:"full_name" gorm:"column:full_name;uniqueIndex;not null"` // org/repo
-	Source    string `json:"source" db:"source" gorm:"column:source;not null"`                      // "ghes", "gitlab", etc.
-	SourceURL string `json:"source_url" db:"source_url" gorm:"column:source_url;not null"`
-	SourceID  *int64 `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table
+	ID        int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	FullName  string `json:"full_name" gorm:"uniqueIndex;not null"` // org/repo
+	Source    string `json:"source" gorm:"not null"`                // "ghes", "gitlab", etc.
+	SourceURL string `json:"source_url" gorm:"not null"`
+	SourceID  *int64 `json:"source_id,omitempty" gorm:"index"` // Foreign key to sources table
 
-	// Git properties
-	TotalSize          *int64     `json:"total_size,omitempty" db:"total_size" gorm:"column:total_size"`
-	LargestFile        *string    `json:"largest_file,omitempty" db:"largest_file" gorm:"column:largest_file"`
-	LargestFileSize    *int64     `json:"largest_file_size,omitempty" db:"largest_file_size" gorm:"column:largest_file_size"`
-	LargestCommit      *string    `json:"largest_commit,omitempty" db:"largest_commit" gorm:"column:largest_commit"`
-	LargestCommitSize  *int64     `json:"largest_commit_size,omitempty" db:"largest_commit_size" gorm:"column:largest_commit_size"`
-	HasLFS             bool       `json:"has_lfs" db:"has_lfs" gorm:"column:has_lfs;default:false"`
-	HasSubmodules      bool       `json:"has_submodules" db:"has_submodules" gorm:"column:has_submodules;default:false"`
-	HasLargeFiles      bool       `json:"has_large_files" db:"has_large_files" gorm:"column:has_large_files;default:false"` // Files > 100MB in history
-	LargeFileCount     int        `json:"large_file_count" db:"large_file_count" gorm:"column:large_file_count;default:0"`
-	DefaultBranch      *string    `json:"default_branch,omitempty" db:"default_branch" gorm:"column:default_branch"`
-	BranchCount        int        `json:"branch_count" db:"branch_count" gorm:"column:branch_count;default:0"`
-	CommitCount        int        `json:"commit_count" db:"commit_count" gorm:"column:commit_count;default:0"`
-	CommitsLast12Weeks int        `json:"commits_last_12_weeks" db:"commits_last_12_weeks" gorm:"column:commits_last_12_weeks;default:0"`
-	LastCommitSHA      *string    `json:"last_commit_sha,omitempty" db:"last_commit_sha" gorm:"column:last_commit_sha"`
-	LastCommitDate     *time.Time `json:"last_commit_date,omitempty" db:"last_commit_date" gorm:"column:last_commit_date"`
+	// Core status fields (kept in main table for fast filtering)
+	Status     string `json:"status" gorm:"not null;index"`
+	BatchID    *int64 `json:"batch_id,omitempty" gorm:"index"`
+	Priority   int    `json:"priority" gorm:"default:0"`
+	Visibility string `json:"visibility"`
+	IsArchived bool   `json:"is_archived" gorm:"default:false"`
+	IsFork     bool   `json:"is_fork" gorm:"default:false"`
 
-	// GitHub features
-	IsArchived         bool `json:"is_archived" db:"is_archived" gorm:"column:is_archived;default:false"`
-	IsFork             bool `json:"is_fork" db:"is_fork" gorm:"column:is_fork;default:false"`
-	HasWiki            bool `json:"has_wiki" db:"has_wiki" gorm:"column:has_wiki;default:false"`
-	HasPages           bool `json:"has_pages" db:"has_pages" gorm:"column:has_pages;default:false"`
-	HasDiscussions     bool `json:"has_discussions" db:"has_discussions" gorm:"column:has_discussions;default:false"`
-	HasActions         bool `json:"has_actions" db:"has_actions" gorm:"column:has_actions;default:false"`
-	HasProjects        bool `json:"has_projects" db:"has_projects" gorm:"column:has_projects;default:false"`
-	HasPackages        bool `json:"has_packages" db:"has_packages" gorm:"column:has_packages;default:false"`
-	BranchProtections  int  `json:"branch_protections" db:"branch_protections" gorm:"column:branch_protections;default:0"`
-	HasRulesets        bool `json:"has_rulesets" db:"has_rulesets" gorm:"column:has_rulesets;default:false"`
-	TagProtectionCount int  `json:"tag_protection_count" db:"tag_protection_count" gorm:"column:tag_protection_count;default:0"`
-	EnvironmentCount   int  `json:"environment_count" db:"environment_count" gorm:"column:environment_count;default:0"`
-	SecretCount        int  `json:"secret_count" db:"secret_count" gorm:"column:secret_count;default:0"`
-	VariableCount      int  `json:"variable_count" db:"variable_count" gorm:"column:variable_count;default:0"`
-	WebhookCount       int  `json:"webhook_count" db:"webhook_count" gorm:"column:webhook_count;default:0"`
+	// Migration destination
+	DestinationURL      *string `json:"destination_url,omitempty"`
+	DestinationFullName *string `json:"destination_full_name,omitempty"`
+	SourceMigrationID   *int64  `json:"source_migration_id,omitempty"`
+	IsSourceLocked      bool    `json:"is_source_locked" gorm:"default:false"`
 
-	// Security & Compliance
-	HasCodeScanning   bool `json:"has_code_scanning" db:"has_code_scanning" gorm:"column:has_code_scanning;default:false"`
-	HasDependabot     bool `json:"has_dependabot" db:"has_dependabot" gorm:"column:has_dependabot;default:false"`
-	HasSecretScanning bool `json:"has_secret_scanning" db:"has_secret_scanning" gorm:"column:has_secret_scanning;default:false"`
-	HasCodeowners     bool `json:"has_codeowners" db:"has_codeowners" gorm:"column:has_codeowners;default:false"`
-
-	// CODEOWNERS details (populated when HasCodeowners is true)
-	CodeownersContent *string `json:"codeowners_content,omitempty" db:"codeowners_content" gorm:"column:codeowners_content;type:text"` // Raw CODEOWNERS file content
-	CodeownersTeams   *string `json:"codeowners_teams,omitempty" db:"codeowners_teams" gorm:"column:codeowners_teams;type:text"`       // JSON array of team references (e.g., ["@org/team1", "@org/team2"])
-	CodeownersUsers   *string `json:"codeowners_users,omitempty" db:"codeowners_users" gorm:"column:codeowners_users;type:text"`       // JSON array of user references (e.g., ["@user1", "@user2"])
-
-	// Repository Settings
-	Visibility    string `json:"visibility" db:"visibility" gorm:"column:visibility"` // "public", "private", "internal"
-	WorkflowCount int    `json:"workflow_count" db:"workflow_count" gorm:"column:workflow_count;default:0"`
-
-	// Infrastructure & Access
-	HasSelfHostedRunners bool    `json:"has_self_hosted_runners" db:"has_self_hosted_runners" gorm:"column:has_self_hosted_runners;default:false"`
-	CollaboratorCount    int     `json:"collaborator_count" db:"collaborator_count" gorm:"column:collaborator_count;default:0"`
-	InstalledAppsCount   int     `json:"installed_apps_count" db:"installed_apps_count" gorm:"column:installed_apps_count;default:0"`
-	InstalledApps        *string `json:"installed_apps,omitempty" db:"installed_apps" gorm:"column:installed_apps;type:text"` // JSON array of app names
-
-	// Releases
-	ReleaseCount     int  `json:"release_count" db:"release_count" gorm:"column:release_count;default:0"`
-	HasReleaseAssets bool `json:"has_release_assets" db:"has_release_assets" gorm:"column:has_release_assets;default:false"`
-
-	// Contributors
-	ContributorCount int     `json:"contributor_count" db:"contributor_count" gorm:"column:contributor_count;default:0"`
-	TopContributors  *string `json:"top_contributors,omitempty" db:"top_contributors" gorm:"column:top_contributors;type:text"` // JSON array
-
-	// Verification data (for post-migration verification)
-	IssueCount       int `json:"issue_count" db:"issue_count" gorm:"column:issue_count;default:0"`
-	PullRequestCount int `json:"pull_request_count" db:"pull_request_count" gorm:"column:pull_request_count;default:0"`
-	TagCount         int `json:"tag_count" db:"tag_count" gorm:"column:tag_count;default:0"`
-	OpenIssueCount   int `json:"open_issue_count" db:"open_issue_count" gorm:"column:open_issue_count;default:0"`
-	OpenPRCount      int `json:"open_pr_count" db:"open_pr_count" gorm:"column:open_pr_count;default:0"`
-
-	// Status Tracking
-	Status   string `json:"status" db:"status" gorm:"column:status;not null;index"`
-	BatchID  *int64 `json:"batch_id,omitempty" db:"batch_id" gorm:"column:batch_id;index"`
-	Priority int    `json:"priority" db:"priority" gorm:"column:priority;default:0"` // 0=normal, 1=pilot
-
-	// Migration Details
-	DestinationURL      *string `json:"destination_url,omitempty" db:"destination_url" gorm:"column:destination_url"`
-	DestinationFullName *string `json:"destination_full_name,omitempty" db:"destination_full_name" gorm:"column:destination_full_name"`
-
-	// Lock Tracking (for failed migrations)
-	SourceMigrationID *int64 `json:"source_migration_id,omitempty" db:"source_migration_id" gorm:"column:source_migration_id"` // GHES migration ID
-	IsSourceLocked    bool   `json:"is_source_locked" db:"is_source_locked" gorm:"column:is_source_locked;default:false"`      // Whether source repo is locked
-
-	// Validation Tracking (for post-migration validation)
-	ValidationStatus  *string `json:"validation_status,omitempty" db:"validation_status" gorm:"column:validation_status"`              // "passed", "failed", "skipped"
-	ValidationDetails *string `json:"validation_details,omitempty" db:"validation_details" gorm:"column:validation_details;type:text"` // JSON with comparison results
-	DestinationData   *string `json:"destination_data,omitempty" db:"destination_data" gorm:"column:destination_data;type:text"`       // JSON with destination repo data (only on validation failure)
-
-	// GitHub Migration Limit Validations
-	HasOversizedCommits     bool    `json:"has_oversized_commits" db:"has_oversized_commits" gorm:"column:has_oversized_commits;default:false"`                      // Commits >2 GiB
-	OversizedCommitDetails  *string `json:"oversized_commit_details,omitempty" db:"oversized_commit_details" gorm:"column:oversized_commit_details;type:text"`       // JSON: [{sha, size}]
-	HasLongRefs             bool    `json:"has_long_refs" db:"has_long_refs" gorm:"column:has_long_refs;default:false"`                                              // Git refs >255 bytes
-	LongRefDetails          *string `json:"long_ref_details,omitempty" db:"long_ref_details" gorm:"column:long_ref_details;type:text"`                               // JSON: [ref names]
-	HasBlockingFiles        bool    `json:"has_blocking_files" db:"has_blocking_files" gorm:"column:has_blocking_files;default:false"`                               // Files >400 MiB
-	BlockingFileDetails     *string `json:"blocking_file_details,omitempty" db:"blocking_file_details" gorm:"column:blocking_file_details;type:text"`                // JSON: [{path, size}]
-	HasLargeFileWarnings    bool    `json:"has_large_file_warnings" db:"has_large_file_warnings" gorm:"column:has_large_file_warnings;default:false"`                // Files 100-400 MiB
-	LargeFileWarningDetails *string `json:"large_file_warning_details,omitempty" db:"large_file_warning_details" gorm:"column:large_file_warning_details;type:text"` // JSON: [{path, size}]
-
-	// Repository Size Validation (40 GiB limit)
-	HasOversizedRepository     bool    `json:"has_oversized_repository" db:"has_oversized_repository" gorm:"column:has_oversized_repository;default:false"`                   // Repository >40 GiB
-	OversizedRepositoryDetails *string `json:"oversized_repository_details,omitempty" db:"oversized_repository_details" gorm:"column:oversized_repository_details;type:text"` // JSON: {size, limit}
-
-	// Metadata Size Estimation (40 GiB metadata limit)
-	EstimatedMetadataSize *int64  `json:"estimated_metadata_size,omitempty" db:"estimated_metadata_size" gorm:"column:estimated_metadata_size"`     // Estimated metadata size in bytes
-	MetadataSizeDetails   *string `json:"metadata_size_details,omitempty" db:"metadata_size_details" gorm:"column:metadata_size_details;type:text"` // JSON: breakdown of metadata components
-
-	// Migration Exclusion Flags (per-repository settings for GitHub Enterprise Importer API)
-	ExcludeReleases      bool `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"`                   // Skip releases during migration
-	ExcludeAttachments   bool `json:"exclude_attachments" db:"exclude_attachments" gorm:"column:exclude_attachments;default:false"`          // Skip attachments during migration
-	ExcludeMetadata      bool `json:"exclude_metadata" db:"exclude_metadata" gorm:"column:exclude_metadata;default:false"`                   // Exclude all metadata (issues, PRs, etc.)
-	ExcludeGitData       bool `json:"exclude_git_data" db:"exclude_git_data" gorm:"column:exclude_git_data;default:false"`                   // Exclude git data (commits, refs)
-	ExcludeOwnerProjects bool `json:"exclude_owner_projects" db:"exclude_owner_projects" gorm:"column:exclude_owner_projects;default:false"` // Exclude organization/user projects
-
-	// Azure DevOps specific fields
-	ADOProject           *string `json:"ado_project,omitempty" db:"ado_project" gorm:"column:ado_project"`                                     // ADO project name
-	ADOIsGit             bool    `json:"ado_is_git" db:"ado_is_git" gorm:"column:ado_is_git;default:true"`                                     // false = TFVC
-	ADOHasBoards         bool    `json:"ado_has_boards" db:"ado_has_boards" gorm:"column:ado_has_boards;default:false"`                        // Azure Boards integration
-	ADOHasPipelines      bool    `json:"ado_has_pipelines" db:"ado_has_pipelines" gorm:"column:ado_has_pipelines;default:false"`               // Azure Pipelines configured
-	ADOHasGHAS           bool    `json:"ado_has_ghas" db:"ado_has_ghas" gorm:"column:ado_has_ghas;default:false"`                              // GitHub Advanced Security
-	ADOPullRequestCount  int     `json:"ado_pull_request_count" db:"ado_pull_request_count" gorm:"column:ado_pull_request_count;default:0"`    // Total PR count
-	ADOWorkItemCount     int     `json:"ado_work_item_count" db:"ado_work_item_count" gorm:"column:ado_work_item_count;default:0"`             // Linked work items
-	ADOBranchPolicyCount int     `json:"ado_branch_policy_count" db:"ado_branch_policy_count" gorm:"column:ado_branch_policy_count;default:0"` // Branch policies
-
-	// Enhanced Pipeline Data
-	ADOPipelineCount         int  `json:"ado_pipeline_count" db:"ado_pipeline_count" gorm:"column:ado_pipeline_count;default:0"`                                // Total number of pipelines
-	ADOYAMLPipelineCount     int  `json:"ado_yaml_pipeline_count" db:"ado_yaml_pipeline_count" gorm:"column:ado_yaml_pipeline_count;default:0"`                 // YAML pipelines (easier to migrate)
-	ADOClassicPipelineCount  int  `json:"ado_classic_pipeline_count" db:"ado_classic_pipeline_count" gorm:"column:ado_classic_pipeline_count;default:0"`        // Classic pipelines (require manual recreation)
-	ADOPipelineRunCount      int  `json:"ado_pipeline_run_count" db:"ado_pipeline_run_count" gorm:"column:ado_pipeline_run_count;default:0"`                    // Recent pipeline runs (indicates active CI/CD)
-	ADOHasServiceConnections bool `json:"ado_has_service_connections" db:"ado_has_service_connections" gorm:"column:ado_has_service_connections;default:false"` // External service integrations
-	ADOHasVariableGroups     bool `json:"ado_has_variable_groups" db:"ado_has_variable_groups" gorm:"column:ado_has_variable_groups;default:false"`             // Variable groups used
-	ADOHasSelfHostedAgents   bool `json:"ado_has_self_hosted_agents" db:"ado_has_self_hosted_agents" gorm:"column:ado_has_self_hosted_agents;default:false"`    // Uses self-hosted agents
-
-	// Enhanced Work Item Data
-	ADOWorkItemLinkedCount int     `json:"ado_work_item_linked_count" db:"ado_work_item_linked_count" gorm:"column:ado_work_item_linked_count;default:0"` // Work items with commit/PR links
-	ADOActiveWorkItemCount int     `json:"ado_active_work_item_count" db:"ado_active_work_item_count" gorm:"column:ado_active_work_item_count;default:0"` // Active (non-closed) work items
-	ADOWorkItemTypes       *string `json:"ado_work_item_types,omitempty" db:"ado_work_item_types" gorm:"column:ado_work_item_types;type:text"`            // JSON array of work item types used
-
-	// Pull Request Details
-	ADOOpenPRCount           int `json:"ado_open_pr_count" db:"ado_open_pr_count" gorm:"column:ado_open_pr_count;default:0"`                                     // Open pull requests
-	ADOPRWithLinkedWorkItems int `json:"ado_pr_with_linked_work_items" db:"ado_pr_with_linked_work_items" gorm:"column:ado_pr_with_linked_work_items;default:0"` // PRs with work item links (these migrate)
-	ADOPRWithAttachments     int `json:"ado_pr_with_attachments" db:"ado_pr_with_attachments" gorm:"column:ado_pr_with_attachments;default:0"`                   // PRs with attachments
-
-	// Enhanced Branch Policy Data
-	ADOBranchPolicyTypes       *string `json:"ado_branch_policy_types,omitempty" db:"ado_branch_policy_types" gorm:"column:ado_branch_policy_types;type:text"`         // JSON array of policy types
-	ADORequiredReviewerCount   int     `json:"ado_required_reviewer_count" db:"ado_required_reviewer_count" gorm:"column:ado_required_reviewer_count;default:0"`       // Required reviewer policies
-	ADOBuildValidationPolicies int     `json:"ado_build_validation_policies" db:"ado_build_validation_policies" gorm:"column:ado_build_validation_policies;default:0"` // Build validation requirements
-
-	// Wiki & Documentation
-	ADOHasWiki       bool `json:"ado_has_wiki" db:"ado_has_wiki" gorm:"column:ado_has_wiki;default:false"`                  // Repository has wiki (doesn't migrate)
-	ADOWikiPageCount int  `json:"ado_wiki_page_count" db:"ado_wiki_page_count" gorm:"column:ado_wiki_page_count;default:0"` // Number of wiki pages
-
-	// Test Plans
-	ADOTestPlanCount int `json:"ado_test_plan_count" db:"ado_test_plan_count" gorm:"column:ado_test_plan_count;default:0"` // Test plans linked to repo
-	ADOTestCaseCount int `json:"ado_test_case_count" db:"ado_test_case_count" gorm:"column:ado_test_case_count;default:0"` // Test cases in plans
-
-	// Artifacts & Packages
-	ADOPackageFeedCount int  `json:"ado_package_feed_count" db:"ado_package_feed_count" gorm:"column:ado_package_feed_count;default:0"` // Package feeds associated
-	ADOHasArtifacts     bool `json:"ado_has_artifacts" db:"ado_has_artifacts" gorm:"column:ado_has_artifacts;default:false"`            // Build artifacts configured
-
-	// Service Hooks & Extensions
-	ADOServiceHookCount    int     `json:"ado_service_hook_count" db:"ado_service_hook_count" gorm:"column:ado_service_hook_count;default:0"`                 // Service hooks/webhooks configured
-	ADOInstalledExtensions *string `json:"ado_installed_extensions,omitempty" db:"ado_installed_extensions" gorm:"column:ado_installed_extensions;type:text"` // JSON array of repo-specific extensions
+	// Migration exclusions (batch-level overrides)
+	ExcludeReleases      bool `json:"exclude_releases" gorm:"default:false"`
+	ExcludeAttachments   bool `json:"exclude_attachments" gorm:"default:false"`
+	ExcludeMetadata      bool `json:"exclude_metadata" gorm:"default:false"`
+	ExcludeGitData       bool `json:"exclude_git_data" gorm:"default:false"`
+	ExcludeOwnerProjects bool `json:"exclude_owner_projects" gorm:"default:false"`
 
 	// Timestamps
-	DiscoveredAt    time.Time  `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null"`
-	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
-	MigratedAt      *time.Time `json:"migrated_at,omitempty" db:"migrated_at" gorm:"column:migrated_at"`
-	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty" db:"last_discovery_at" gorm:"column:last_discovery_at"` // Latest discovery refresh
-	LastDryRunAt    *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at" gorm:"column:last_dry_run_at"`       // Latest dry run execution
+	DiscoveredAt    time.Time  `json:"discovered_at" gorm:"not null"`
+	UpdatedAt       time.Time  `json:"updated_at" gorm:"not null;autoUpdateTime"`
+	MigratedAt      *time.Time `json:"migrated_at,omitempty"`
+	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty"`
+	LastDryRunAt    *time.Time `json:"last_dry_run_at,omitempty"`
 
-	// Complexity scoring (calculated during profiling and stored for performance)
-	ComplexityScore     *int    `json:"complexity_score,omitempty" db:"complexity_score" gorm:"column:complexity_score"` // Calculated during profiling
-	ComplexityBreakdown *string `json:"-" db:"complexity_breakdown" gorm:"column:complexity_breakdown;type:text"`        // JSON breakdown stored as string, marshaled as object via MarshalJSON
+	// Related tables (loaded on demand via Preload)
+	GitProperties *RepositoryGitProperties `json:"git_properties,omitempty" gorm:"foreignKey:RepositoryID"`
+	Features      *RepositoryFeatures      `json:"features,omitempty" gorm:"foreignKey:RepositoryID"`
+	ADOProperties *RepositoryADOProperties `json:"ado_properties,omitempty" gorm:"foreignKey:RepositoryID"`
+	Validation    *RepositoryValidation    `json:"validation,omitempty" gorm:"foreignKey:RepositoryID"`
 }
 
 // TableName specifies the table name for Repository model
 func (Repository) TableName() string {
 	return "repositories"
+}
+
+// Convenience accessors for commonly-used fields from related tables
+
+// GetTotalSize returns the total size from git properties, or nil if not loaded
+func (r *Repository) GetTotalSize() *int64 {
+	if r.GitProperties != nil {
+		return r.GitProperties.TotalSize
+	}
+	return nil
+}
+
+// GetDefaultBranch returns the default branch from git properties, or nil if not loaded
+func (r *Repository) GetDefaultBranch() *string {
+	if r.GitProperties != nil {
+		return r.GitProperties.DefaultBranch
+	}
+	return nil
+}
+
+// HasLFS returns true if the repository uses Git LFS
+func (r *Repository) HasLFS() bool {
+	return r.GitProperties != nil && r.GitProperties.HasLFS
+}
+
+// HasSubmodules returns true if the repository has submodules
+func (r *Repository) HasSubmodules() bool {
+	return r.GitProperties != nil && r.GitProperties.HasSubmodules
+}
+
+// HasLargeFiles returns true if the repository has large files (>100MB)
+func (r *Repository) HasLargeFiles() bool {
+	return r.GitProperties != nil && r.GitProperties.HasLargeFiles
+}
+
+// GetBranchCount returns the branch count from git properties
+func (r *Repository) GetBranchCount() int {
+	if r.GitProperties != nil {
+		return r.GitProperties.BranchCount
+	}
+	return 0
+}
+
+// GetCommitCount returns the commit count from git properties
+func (r *Repository) GetCommitCount() int {
+	if r.GitProperties != nil {
+		return r.GitProperties.CommitCount
+	}
+	return 0
+}
+
+// HasWiki returns true if the repository has wiki enabled
+func (r *Repository) HasWiki() bool {
+	return r.Features != nil && r.Features.HasWiki
+}
+
+// HasActions returns true if the repository has GitHub Actions enabled
+func (r *Repository) HasActions() bool {
+	return r.Features != nil && r.Features.HasActions
+}
+
+// HasPackages returns true if the repository has packages
+func (r *Repository) HasPackages() bool {
+	return r.Features != nil && r.Features.HasPackages
+}
+
+// HasPages returns true if the repository has GitHub Pages enabled
+func (r *Repository) HasPages() bool {
+	return r.Features != nil && r.Features.HasPages
+}
+
+// HasDiscussions returns true if the repository has discussions enabled
+func (r *Repository) HasDiscussions() bool {
+	return r.Features != nil && r.Features.HasDiscussions
+}
+
+// HasProjects returns true if the repository has projects enabled
+func (r *Repository) HasProjects() bool {
+	return r.Features != nil && r.Features.HasProjects
+}
+
+// HasRulesets returns true if the repository has rulesets
+func (r *Repository) HasRulesets() bool {
+	return r.Features != nil && r.Features.HasRulesets
+}
+
+// GetBranchProtections returns the branch protection count
+func (r *Repository) GetBranchProtections() int {
+	if r.Features != nil {
+		return r.Features.BranchProtections
+	}
+	return 0
+}
+
+// HasCodeScanning returns true if the repository has code scanning enabled
+func (r *Repository) HasCodeScanning() bool {
+	return r.Features != nil && r.Features.HasCodeScanning
+}
+
+// HasDependabot returns true if the repository has Dependabot enabled
+func (r *Repository) HasDependabot() bool {
+	return r.Features != nil && r.Features.HasDependabot
+}
+
+// HasSecretScanning returns true if the repository has secret scanning enabled
+func (r *Repository) HasSecretScanning() bool {
+	return r.Features != nil && r.Features.HasSecretScanning
+}
+
+// HasCodeowners returns true if the repository has a CODEOWNERS file
+func (r *Repository) HasCodeowners() bool {
+	return r.Features != nil && r.Features.HasCodeowners
+}
+
+// HasSelfHostedRunners returns true if the repository has self-hosted runners
+func (r *Repository) HasSelfHostedRunners() bool {
+	return r.Features != nil && r.Features.HasSelfHostedRunners
+}
+
+// GetComplexityScore returns the complexity score from validation, or nil if not loaded
+func (r *Repository) GetComplexityScore() *int {
+	if r.Validation != nil {
+		return r.Validation.ComplexityScore
+	}
+	return nil
+}
+
+// GetComplexityBreakdown deserializes the JSON complexity breakdown from validation
+func (r *Repository) GetComplexityBreakdown() (*ComplexityBreakdown, error) {
+	if r.Validation == nil || r.Validation.ComplexityBreakdown == nil || *r.Validation.ComplexityBreakdown == "" {
+		return nil, nil
+	}
+
+	var breakdown ComplexityBreakdown
+	if err := json.Unmarshal([]byte(*r.Validation.ComplexityBreakdown), &breakdown); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal complexity breakdown: %w", err)
+	}
+
+	return &breakdown, nil
+}
+
+// SetComplexityBreakdown serializes a ComplexityBreakdown struct to JSON and stores it
+func (r *Repository) SetComplexityBreakdown(breakdown *ComplexityBreakdown) error {
+	if r.Validation == nil {
+		r.Validation = &RepositoryValidation{}
+	}
+
+	if breakdown == nil {
+		r.Validation.ComplexityBreakdown = nil
+		return nil
+	}
+
+	data, err := json.Marshal(breakdown)
+	if err != nil {
+		return fmt.Errorf("failed to marshal complexity breakdown: %w", err)
+	}
+
+	jsonStr := string(data)
+	r.Validation.ComplexityBreakdown = &jsonStr
+	return nil
+}
+
+// HasOversizedCommits returns true if the repository has oversized commits
+func (r *Repository) HasOversizedCommits() bool {
+	return r.Validation != nil && r.Validation.HasOversizedCommits
+}
+
+// HasLongRefs returns true if the repository has long refs
+func (r *Repository) HasLongRefs() bool {
+	return r.Validation != nil && r.Validation.HasLongRefs
+}
+
+// HasBlockingFiles returns true if the repository has blocking files
+func (r *Repository) HasBlockingFiles() bool {
+	return r.Validation != nil && r.Validation.HasBlockingFiles
+}
+
+// HasOversizedRepository returns true if the repository is oversized
+func (r *Repository) HasOversizedRepository() bool {
+	return r.Validation != nil && r.Validation.HasOversizedRepository
+}
+
+// HasLargeFileWarnings returns true if the repository has large file warnings
+func (r *Repository) HasLargeFileWarnings() bool {
+	return r.Validation != nil && r.Validation.HasLargeFileWarnings
+}
+
+// IsADORepository returns true if this repository is from Azure DevOps.
+func (r *Repository) IsADORepository() bool {
+	return r.ADOProperties != nil && r.ADOProperties.Project != nil && *r.ADOProperties.Project != ""
+}
+
+// GetADOProject returns the ADO project name if this is an ADO repository
+func (r *Repository) GetADOProject() *string {
+	if r.ADOProperties != nil {
+		return r.ADOProperties.Project
+	}
+	return nil
+}
+
+// GetADOIsGit returns whether this is a Git repository (vs TFVC) for ADO repos
+func (r *Repository) GetADOIsGit() bool {
+	if r.ADOProperties != nil {
+		return r.ADOProperties.IsGit
+	}
+	return true // Default to true for non-ADO repos
+}
+
+// HasMigrationBlockers returns true if the repository has any migration blockers.
+func (r *Repository) HasMigrationBlockers() bool {
+	return r.HasOversizedCommits() || r.HasLongRefs() || r.HasBlockingFiles() || r.HasOversizedRepository()
+}
+
+// NeedsRemediation returns true if the repository status indicates remediation is required.
+func (r *Repository) NeedsRemediation() bool {
+	return r.Status == string(StatusRemediationRequired)
+}
+
+// IsMigrationComplete returns true if the repository migration is complete.
+func (r *Repository) IsMigrationComplete() bool {
+	return r.Status == string(StatusComplete) || r.Status == string(StatusMigrationComplete)
+}
+
+// IsMigrationInProgress returns true if the repository is currently being migrated.
+func (r *Repository) IsMigrationInProgress() bool {
+	inProgressStatuses := map[string]bool{
+		string(StatusPreMigration):       true,
+		string(StatusArchiveGenerating):  true,
+		string(StatusQueuedForMigration): true,
+		string(StatusMigratingContent):   true,
+		string(StatusPostMigration):      true,
+	}
+	return inProgressStatuses[r.Status]
+}
+
+// IsMigrationFailed returns true if the repository migration has failed.
+func (r *Repository) IsMigrationFailed() bool {
+	return r.Status == string(StatusMigrationFailed) || r.Status == string(StatusRolledBack)
+}
+
+// CanBeMigrated returns true if the repository is in a state where it can be queued for migration.
+func (r *Repository) CanBeMigrated() bool {
+	if r.Status == string(StatusWontMigrate) {
+		return false
+	}
+	eligibleStatuses := map[string]bool{
+		string(StatusPending):         true,
+		string(StatusDryRunComplete):  true,
+		string(StatusDryRunFailed):    true,
+		string(StatusMigrationFailed): true,
+		string(StatusRolledBack):      true,
+		string(StatusDryRunQueued):    true,
+	}
+	return eligibleStatuses[r.Status]
+}
+
+// CanBeAssignedToBatch returns true if the repository can be assigned to a batch.
+func (r *Repository) CanBeAssignedToBatch() (bool, string) {
+	if r.BatchID != nil {
+		return false, "repository is already assigned to a batch"
+	}
+	if r.HasOversizedRepository() {
+		return false, "repository exceeds GitHub's 40 GiB size limit and requires remediation"
+	}
+	eligibleStatuses := map[string]bool{
+		string(StatusPending):         true,
+		string(StatusDryRunComplete):  true,
+		string(StatusDryRunFailed):    true,
+		string(StatusMigrationFailed): true,
+		string(StatusRolledBack):      true,
+	}
+	if !eligibleStatuses[r.Status] {
+		return false, "repository status is not eligible for batch assignment"
+	}
+	return true, ""
+}
+
+// GetComplexityCategoryFromFeatures returns the complexity category based on repository features.
+func (r *Repository) GetComplexityCategoryFromFeatures() string {
+	// Very complex: Has migration blockers
+	if r.HasMigrationBlockers() {
+		return ComplexityVeryComplex
+	}
+
+	// Count complex features
+	complexFeatureCount := 0
+	if r.HasLFS() {
+		complexFeatureCount++
+	}
+	if r.HasSubmodules() {
+		complexFeatureCount++
+	}
+	if r.HasLargeFiles() {
+		complexFeatureCount++
+	}
+	if r.HasPackages() {
+		complexFeatureCount++
+	}
+	if r.HasActions() {
+		complexFeatureCount++
+	}
+	if r.GetBranchProtections() > 5 {
+		complexFeatureCount++
+	}
+	if r.HasRulesets() {
+		complexFeatureCount++
+	}
+
+	if complexFeatureCount >= 4 {
+		return ComplexityVeryComplex
+	}
+	if complexFeatureCount >= 2 {
+		return ComplexityComplex
+	}
+	if complexFeatureCount >= 1 {
+		return ComplexityMedium
+	}
+	if r.GetTotalSize() != nil && *r.GetTotalSize() > 1<<30 { // > 1GB
+		return ComplexityMedium
+	}
+
+	return ComplexitySimple
 }
 
 // RepositorySource constants for source types
@@ -256,26 +430,44 @@ type RepositoryOptions struct {
 // This factory function ensures consistent initialization across all collectors.
 func NewRepository(opts RepositoryOptions) *Repository {
 	now := time.Now()
-	return &Repository{
+	repo := &Repository{
 		FullName:        opts.FullName,
 		Source:          opts.Source,
 		SourceURL:       opts.SourceURL,
 		Visibility:      opts.Visibility,
-		DefaultBranch:   opts.DefaultBranch,
-		TotalSize:       opts.TotalSize,
 		IsArchived:      opts.IsArchived,
 		IsFork:          opts.IsFork,
-		HasWiki:         opts.HasWiki,
-		HasPages:        opts.HasPages,
-		HasPackages:     false, // Will be detected by profiler
 		Status:          string(StatusPending),
 		DiscoveredAt:    now,
 		UpdatedAt:       now,
 		LastDiscoveryAt: &now,
-		// ADO-specific fields
-		ADOProject: opts.ADOProject,
-		ADOIsGit:   opts.ADOIsGit,
 	}
+
+	// Initialize git properties if provided
+	if opts.DefaultBranch != nil || opts.TotalSize != nil {
+		repo.GitProperties = &RepositoryGitProperties{
+			DefaultBranch: opts.DefaultBranch,
+			TotalSize:     opts.TotalSize,
+		}
+	}
+
+	// Initialize features if provided
+	if opts.HasWiki || opts.HasPages {
+		repo.Features = &RepositoryFeatures{
+			HasWiki:  opts.HasWiki,
+			HasPages: opts.HasPages,
+		}
+	}
+
+	// Initialize ADO properties if provided
+	if opts.ADOProject != nil {
+		repo.ADOProperties = &RepositoryADOProperties{
+			Project: opts.ADOProject,
+			IsGit:   opts.ADOIsGit,
+		}
+	}
+
+	return repo
 }
 
 // NewGitHubRepository creates a new Repository from GitHub API data with standard settings.
@@ -313,66 +505,322 @@ func NewADORepository(fullName, sourceURL, visibility string, project *string, i
 	return repo
 }
 
-// SetComplexityBreakdown serializes a ComplexityBreakdown struct to JSON and stores it
-func (r *Repository) SetComplexityBreakdown(breakdown *ComplexityBreakdown) error {
-	if breakdown == nil {
-		r.ComplexityBreakdown = nil
-		return nil
+// flattenOptionalFields adds optional core fields to the result map
+func (r *Repository) flattenOptionalFields(result map[string]any) {
+	if r.SourceID != nil {
+		result["source_id"] = *r.SourceID
 	}
-
-	data, err := json.Marshal(breakdown)
-	if err != nil {
-		return fmt.Errorf("failed to marshal complexity breakdown: %w", err)
+	if r.BatchID != nil {
+		result["batch_id"] = *r.BatchID
 	}
-
-	jsonStr := string(data)
-	r.ComplexityBreakdown = &jsonStr
-	return nil
+	if r.DestinationURL != nil {
+		result["destination_url"] = *r.DestinationURL
+	}
+	if r.DestinationFullName != nil {
+		result["destination_full_name"] = *r.DestinationFullName
+	}
+	if r.SourceMigrationID != nil {
+		result["source_migration_id"] = *r.SourceMigrationID
+	}
+	if r.MigratedAt != nil {
+		result["migrated_at"] = *r.MigratedAt
+	}
+	if r.LastDiscoveryAt != nil {
+		result["last_discovery_at"] = *r.LastDiscoveryAt
+	}
+	if r.LastDryRunAt != nil {
+		result["last_dry_run_at"] = *r.LastDryRunAt
+	}
 }
 
-// GetComplexityBreakdown deserializes the JSON complexity breakdown
-func (r *Repository) GetComplexityBreakdown() (*ComplexityBreakdown, error) {
-	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
-		return nil, nil
+// flattenGitProperties adds git properties to the result map
+func (r *Repository) flattenGitProperties(result map[string]any) {
+	if r.GitProperties == nil {
+		return
 	}
-
-	var breakdown ComplexityBreakdown
-	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal complexity breakdown: %w", err)
+	gp := r.GitProperties
+	if gp.TotalSize != nil {
+		result["total_size"] = *gp.TotalSize
 	}
-
-	return &breakdown, nil
+	if gp.LargestFile != nil {
+		result["largest_file"] = *gp.LargestFile
+	}
+	if gp.LargestFileSize != nil {
+		result["largest_file_size"] = *gp.LargestFileSize
+	}
+	if gp.LargestCommit != nil {
+		result["largest_commit"] = *gp.LargestCommit
+	}
+	if gp.LargestCommitSize != nil {
+		result["largest_commit_size"] = *gp.LargestCommitSize
+	}
+	if gp.DefaultBranch != nil {
+		result["default_branch"] = *gp.DefaultBranch
+	}
+	if gp.LastCommitSHA != nil {
+		result["last_commit_sha"] = *gp.LastCommitSHA
+	}
+	if gp.LastCommitDate != nil {
+		result["last_commit_date"] = *gp.LastCommitDate
+	}
+	result["has_lfs"] = gp.HasLFS
+	result["has_submodules"] = gp.HasSubmodules
+	result["has_large_files"] = gp.HasLargeFiles
+	result["large_file_count"] = gp.LargeFileCount
+	result["branch_count"] = gp.BranchCount
+	result["commit_count"] = gp.CommitCount
+	result["commits_last_12_weeks"] = gp.CommitsLast12Weeks
 }
 
-// MarshalJSON implements custom JSON marshaling to convert complexity_breakdown from string to object
+// flattenFeatures adds repository features to the result map
+func (r *Repository) flattenFeatures(result map[string]any) {
+	if r.Features == nil {
+		return
+	}
+	f := r.Features
+	result["has_wiki"] = f.HasWiki
+	result["has_pages"] = f.HasPages
+	result["has_discussions"] = f.HasDiscussions
+	result["has_actions"] = f.HasActions
+	result["has_projects"] = f.HasProjects
+	result["has_packages"] = f.HasPackages
+	result["branch_protections"] = f.BranchProtections
+	result["has_rulesets"] = f.HasRulesets
+	result["tag_protection_count"] = f.TagProtectionCount
+	result["environment_count"] = f.EnvironmentCount
+	result["secret_count"] = f.SecretCount
+	result["variable_count"] = f.VariableCount
+	result["webhook_count"] = f.WebhookCount
+	result["has_code_scanning"] = f.HasCodeScanning
+	result["has_dependabot"] = f.HasDependabot
+	result["has_secret_scanning"] = f.HasSecretScanning
+	result["has_codeowners"] = f.HasCodeowners
+	result["workflow_count"] = f.WorkflowCount
+	result["has_self_hosted_runners"] = f.HasSelfHostedRunners
+	result["collaborator_count"] = f.CollaboratorCount
+	result["installed_apps_count"] = f.InstalledAppsCount
+	if f.InstalledApps != nil {
+		result["installed_apps"] = *f.InstalledApps
+	}
+	result["release_count"] = f.ReleaseCount
+	result["has_release_assets"] = f.HasReleaseAssets
+	result["contributor_count"] = f.ContributorCount
+	if f.TopContributors != nil {
+		result["top_contributors"] = *f.TopContributors
+	}
+	result["issue_count"] = f.IssueCount
+	result["pull_request_count"] = f.PullRequestCount
+	result["tag_count"] = f.TagCount
+	result["open_issue_count"] = f.OpenIssueCount
+	result["open_pr_count"] = f.OpenPRCount
+}
+
+// flattenADOProperties adds Azure DevOps properties to the result map
+func (r *Repository) flattenADOProperties(result map[string]any) {
+	if r.ADOProperties == nil {
+		return
+	}
+	ado := r.ADOProperties
+	if ado.Project != nil {
+		result["ado_project"] = *ado.Project
+	}
+	result["ado_is_git"] = ado.IsGit
+	result["ado_has_boards"] = ado.HasBoards
+	result["ado_has_pipelines"] = ado.HasPipelines
+	result["ado_has_ghas"] = ado.HasGHAS
+	result["ado_pull_request_count"] = ado.PullRequestCount
+	result["ado_work_item_count"] = ado.WorkItemCount
+	result["ado_branch_policy_count"] = ado.BranchPolicyCount
+	result["ado_pipeline_count"] = ado.PipelineCount
+	result["ado_yaml_pipeline_count"] = ado.YAMLPipelineCount
+	result["ado_classic_pipeline_count"] = ado.ClassicPipelineCount
+	result["ado_pipeline_run_count"] = ado.PipelineRunCount
+	result["ado_has_service_connections"] = ado.HasServiceConnections
+	result["ado_has_variable_groups"] = ado.HasVariableGroups
+	result["ado_has_self_hosted_agents"] = ado.HasSelfHostedAgents
+	result["ado_work_item_linked_count"] = ado.WorkItemLinkedCount
+	result["ado_active_work_item_count"] = ado.ActiveWorkItemCount
+	if ado.WorkItemTypes != nil {
+		result["ado_work_item_types"] = *ado.WorkItemTypes
+	}
+	result["ado_open_pr_count"] = ado.OpenPRCount
+	result["ado_pr_with_linked_work_items"] = ado.PRWithLinkedWorkItems
+	result["ado_pr_with_attachments"] = ado.PRWithAttachments
+	if ado.BranchPolicyTypes != nil {
+		result["ado_branch_policy_types"] = *ado.BranchPolicyTypes
+	}
+	result["ado_required_reviewer_count"] = ado.RequiredReviewerCount
+	result["ado_build_validation_policies"] = ado.BuildValidationPolicies
+	result["ado_has_wiki"] = ado.HasWiki
+	result["ado_wiki_page_count"] = ado.WikiPageCount
+	result["ado_test_plan_count"] = ado.TestPlanCount
+	result["ado_test_case_count"] = ado.TestCaseCount
+	result["ado_package_feed_count"] = ado.PackageFeedCount
+	result["ado_has_artifacts"] = ado.HasArtifacts
+	result["ado_service_hook_count"] = ado.ServiceHookCount
+	if ado.InstalledExtensions != nil {
+		result["ado_installed_extensions"] = *ado.InstalledExtensions
+	}
+}
+
+// flattenValidation adds validation data to the result map
+func (r *Repository) flattenValidation(result map[string]any) {
+	if r.Validation == nil {
+		return
+	}
+	v := r.Validation
+	result["has_oversized_commits"] = v.HasOversizedCommits
+	if v.OversizedCommitDetails != nil {
+		result["oversized_commit_details"] = *v.OversizedCommitDetails
+	}
+	result["has_long_refs"] = v.HasLongRefs
+	if v.LongRefDetails != nil {
+		result["long_ref_details"] = *v.LongRefDetails
+	}
+	result["has_blocking_files"] = v.HasBlockingFiles
+	if v.BlockingFileDetails != nil {
+		result["blocking_file_details"] = *v.BlockingFileDetails
+	}
+	result["has_large_file_warnings"] = v.HasLargeFileWarnings
+	if v.LargeFileWarningDetails != nil {
+		result["large_file_warning_details"] = *v.LargeFileWarningDetails
+	}
+	result["has_oversized_repository"] = v.HasOversizedRepository
+	if v.OversizedRepositoryDetails != nil {
+		result["oversized_repository_details"] = *v.OversizedRepositoryDetails
+	}
+	if v.EstimatedMetadataSize != nil {
+		result["estimated_metadata_size"] = *v.EstimatedMetadataSize
+	}
+	if v.MetadataSizeDetails != nil {
+		result["metadata_size_details"] = *v.MetadataSizeDetails
+	}
+	if v.ComplexityScore != nil {
+		result["complexity_score"] = *v.ComplexityScore
+	}
+	// Parse complexity breakdown JSON string into object
+	if v.ComplexityBreakdown != nil && *v.ComplexityBreakdown != "" {
+		var breakdown ComplexityBreakdown
+		if err := json.Unmarshal([]byte(*v.ComplexityBreakdown), &breakdown); err == nil {
+			result["complexity_breakdown"] = breakdown
+		}
+	}
+}
+
+// MarshalJSON implements custom JSON marshaling to flatten related table data for API compatibility
 func (r *Repository) MarshalJSON() ([]byte, error) {
-	// Create an alias without MarshalJSON to avoid recursion
-	type Alias Repository
-
-	// Marshal the main struct (complexity_breakdown is excluded via json:"-")
-	data, err := json.Marshal((*Alias)(r))
-	if err != nil {
-		return nil, err
+	// Build flattened result map with core fields
+	result := map[string]any{
+		"id":                     r.ID,
+		"full_name":              r.FullName,
+		"source":                 r.Source,
+		"source_url":             r.SourceURL,
+		"status":                 r.Status,
+		"priority":               r.Priority,
+		"visibility":             r.Visibility,
+		"is_archived":            r.IsArchived,
+		"is_fork":                r.IsFork,
+		"is_source_locked":       r.IsSourceLocked,
+		"exclude_releases":       r.ExcludeReleases,
+		"exclude_attachments":    r.ExcludeAttachments,
+		"exclude_metadata":       r.ExcludeMetadata,
+		"exclude_git_data":       r.ExcludeGitData,
+		"exclude_owner_projects": r.ExcludeOwnerProjects,
+		"discovered_at":          r.DiscoveredAt,
+		"updated_at":             r.UpdatedAt,
 	}
 
-	// If no complexity breakdown, return as-is
-	if r.ComplexityBreakdown == nil || *r.ComplexityBreakdown == "" {
-		return data, nil
-	}
+	// Flatten related data
+	r.flattenOptionalFields(result)
+	r.flattenGitProperties(result)
+	r.flattenFeatures(result)
+	r.flattenADOProperties(result)
+	r.flattenValidation(result)
 
-	// Parse the marshaled JSON
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-
-	// Deserialize the complexity breakdown string and add it as an object
-	var breakdown ComplexityBreakdown
-	if err := json.Unmarshal([]byte(*r.ComplexityBreakdown), &breakdown); err == nil {
-		result["complexity_breakdown"] = breakdown
-	}
+	// Also include the nested objects for clients that want them
+	result["git_properties"] = r.GitProperties
+	result["features"] = r.Features
+	result["ado_properties"] = r.ADOProperties
+	result["validation"] = r.Validation
 
 	return json.Marshal(result)
+}
+
+// Organization extracts the organization from full_name (org/repo)
+func (r *Repository) Organization() string {
+	parts := strings.SplitN(r.FullName, "/", 2)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
+}
+
+// Name extracts the repository name from full_name (org/repo)
+func (r *Repository) Name() string {
+	parts := strings.SplitN(r.FullName, "/", 2)
+	if len(parts) > 1 {
+		return parts[1]
+	}
+	return r.FullName
+}
+
+// DestinationRepoName returns the appropriate destination repository name for GitHub.
+// For ADO repos (org/project/repo format), returns "project-repo" pattern to preserve
+// project context and avoid naming conflicts.
+// For GitHub repos (org/repo format), returns just the repo name.
+// Spaces and slashes are replaced with hyphens for GitHub compatibility.
+func (r *Repository) DestinationRepoName() string {
+	// For ADO repos, use project-repo pattern
+	if r.IsADORepository() {
+		parts := strings.Split(r.FullName, "/")
+		if len(parts) >= 3 {
+			project := sanitizeRepoName(parts[1])
+			repoName := sanitizeRepoName(parts[len(parts)-1])
+			return project + "-" + repoName
+		}
+	}
+
+	// For GitHub repos (org/repo format), use just the repo name
+	parts := strings.Split(r.FullName, "/")
+	if len(parts) >= 2 {
+		return sanitizeRepoName(parts[len(parts)-1])
+	}
+
+	// Fallback: sanitize the full name
+	return sanitizeRepoName(r.FullName)
+}
+
+// sanitizeRepoName replaces slashes and spaces with hyphens for GitHub compatibility
+func sanitizeRepoName(name string) string {
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, " ", "-")
+	return name
+}
+
+// GetOrganization extracts the organization name from the full name.
+func (r *Repository) GetOrganization() string {
+	if r.FullName == "" {
+		return ""
+	}
+	for i, c := range r.FullName {
+		if c == '/' {
+			return r.FullName[:i]
+		}
+	}
+	return r.FullName
+}
+
+// GetRepoName extracts the repository name from the full name.
+func (r *Repository) GetRepoName() string {
+	if r.FullName == "" {
+		return ""
+	}
+	for i := len(r.FullName) - 1; i >= 0; i-- {
+		if r.FullName[i] == '/' {
+			return r.FullName[i+1:]
+		}
+	}
+	return r.FullName
 }
 
 // ComplexityBreakdown provides individual component scores for transparency
@@ -438,15 +886,15 @@ const (
 
 // MigrationHistory tracks the migration lifecycle of a repository
 type MigrationHistory struct {
-	ID              int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	RepositoryID    int64      `json:"repository_id" db:"repository_id" gorm:"column:repository_id;not null;index"`
-	Status          string     `json:"status" db:"status" gorm:"column:status;not null;index"`
-	Phase           string     `json:"phase" db:"phase" gorm:"column:phase;not null"`
-	Message         *string    `json:"message,omitempty" db:"message" gorm:"column:message;type:text"`
-	ErrorMessage    *string    `json:"error_message,omitempty" db:"error_message" gorm:"column:error_message;type:text"`
-	StartedAt       time.Time  `json:"started_at" db:"started_at" gorm:"column:started_at;not null"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at" gorm:"column:completed_at"`
-	DurationSeconds *int       `json:"duration_seconds,omitempty" db:"duration_seconds" gorm:"column:duration_seconds"`
+	ID              int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	RepositoryID    int64      `json:"repository_id" gorm:"column:repository_id;not null;index"`
+	Status          string     `json:"status" gorm:"column:status;not null;index"`
+	Phase           string     `json:"phase" gorm:"column:phase;not null"`
+	Message         *string    `json:"message,omitempty" gorm:"column:message;type:text"`
+	ErrorMessage    *string    `json:"error_message,omitempty" gorm:"column:error_message;type:text"`
+	StartedAt       time.Time  `json:"started_at" gorm:"column:started_at;not null"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty" gorm:"column:completed_at"`
+	DurationSeconds *int       `json:"duration_seconds,omitempty" gorm:"column:duration_seconds"`
 }
 
 // TableName specifies the table name for MigrationHistory model
@@ -456,16 +904,16 @@ func (MigrationHistory) TableName() string {
 
 // MigrationLog provides detailed logging for troubleshooting migrations
 type MigrationLog struct {
-	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	RepositoryID int64     `json:"repository_id" db:"repository_id" gorm:"column:repository_id;not null;index"`
-	HistoryID    *int64    `json:"history_id,omitempty" db:"history_id" gorm:"column:history_id;index"`
-	Level        string    `json:"level" db:"level" gorm:"column:level;not null;index"` // DEBUG, INFO, WARN, ERROR
-	Phase        string    `json:"phase" db:"phase" gorm:"column:phase;not null"`
-	Operation    string    `json:"operation" db:"operation" gorm:"column:operation;not null"`
-	Message      string    `json:"message" db:"message" gorm:"column:message;not null"`
-	Details      *string   `json:"details,omitempty" db:"details" gorm:"column:details;type:text"`      // Additional context, JSON or text
-	InitiatedBy  *string   `json:"initiated_by,omitempty" db:"initiated_by" gorm:"column:initiated_by"` // GitHub username of user who initiated action (when auth enabled)
-	Timestamp    time.Time `json:"timestamp" db:"timestamp" gorm:"column:timestamp;not null;index;autoCreateTime"`
+	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	RepositoryID int64     `json:"repository_id" gorm:"column:repository_id;not null;index"`
+	HistoryID    *int64    `json:"history_id,omitempty" gorm:"column:history_id;index"`
+	Level        string    `json:"level" gorm:"column:level;not null;index"` // DEBUG, INFO, WARN, ERROR
+	Phase        string    `json:"phase" gorm:"column:phase;not null"`
+	Operation    string    `json:"operation" gorm:"column:operation;not null"`
+	Message      string    `json:"message" gorm:"column:message;not null"`
+	Details      *string   `json:"details,omitempty" gorm:"column:details;type:text"` // Additional context, JSON or text
+	InitiatedBy  *string   `json:"initiated_by,omitempty" gorm:"column:initiated_by"` // GitHub username of user who initiated action (when auth enabled)
+	Timestamp    time.Time `json:"timestamp" gorm:"column:timestamp;not null;index;autoCreateTime"`
 }
 
 // TableName specifies the table name for MigrationLog model
@@ -475,29 +923,29 @@ func (MigrationLog) TableName() string {
 
 // Batch represents a group of repositories to be migrated together
 type Batch struct {
-	ID                     int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	Name                   string     `json:"name" db:"name" gorm:"column:name;not null;uniqueIndex"`
-	Description            *string    `json:"description,omitempty" db:"description" gorm:"column:description;type:text"`
-	Type                   string     `json:"type" db:"type" gorm:"column:type;not null;index"` // "pilot", "wave_1", "wave_2", etc.
-	RepositoryCount        int        `json:"repository_count" db:"repository_count" gorm:"column:repository_count;default:0"`
-	Status                 string     `json:"status" db:"status" gorm:"column:status;not null;index"`
-	ScheduledAt            *time.Time `json:"scheduled_at,omitempty" db:"scheduled_at" gorm:"column:scheduled_at"`
-	StartedAt              *time.Time `json:"started_at,omitempty" db:"started_at" gorm:"column:started_at"`
-	CompletedAt            *time.Time `json:"completed_at,omitempty" db:"completed_at" gorm:"column:completed_at"`
-	CreatedAt              time.Time  `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
-	LastDryRunAt           *time.Time `json:"last_dry_run_at,omitempty" db:"last_dry_run_at" gorm:"column:last_dry_run_at"`                               // When batch dry run was last executed
-	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" db:"last_migration_attempt_at" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
+	ID                     int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name                   string     `json:"name" gorm:"column:name;not null;uniqueIndex"`
+	Description            *string    `json:"description,omitempty" gorm:"column:description;type:text"`
+	Type                   string     `json:"type" gorm:"column:type;not null;index"` // "pilot", "wave_1", "wave_2", etc.
+	RepositoryCount        int        `json:"repository_count" gorm:"column:repository_count;default:0"`
+	Status                 string     `json:"status" gorm:"column:status;not null;index"`
+	ScheduledAt            *time.Time `json:"scheduled_at,omitempty" gorm:"column:scheduled_at"`
+	StartedAt              *time.Time `json:"started_at,omitempty" gorm:"column:started_at"`
+	CompletedAt            *time.Time `json:"completed_at,omitempty" gorm:"column:completed_at"`
+	CreatedAt              time.Time  `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	LastDryRunAt           *time.Time `json:"last_dry_run_at,omitempty" gorm:"column:last_dry_run_at"`                     // When batch dry run was last executed
+	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
 
 	// Dry run timing tracking
-	DryRunStartedAt       *time.Time `json:"dry_run_started_at,omitempty" db:"dry_run_started_at" gorm:"column:dry_run_started_at"`                   // When batch dry run started
-	DryRunCompletedAt     *time.Time `json:"dry_run_completed_at,omitempty" db:"dry_run_completed_at" gorm:"column:dry_run_completed_at"`             // When batch dry run completed
-	DryRunDurationSeconds *int       `json:"dry_run_duration_seconds,omitempty" db:"dry_run_duration_seconds" gorm:"column:dry_run_duration_seconds"` // Dry run duration in seconds
+	DryRunStartedAt       *time.Time `json:"dry_run_started_at,omitempty" gorm:"column:dry_run_started_at"`             // When batch dry run started
+	DryRunCompletedAt     *time.Time `json:"dry_run_completed_at,omitempty" gorm:"column:dry_run_completed_at"`         // When batch dry run completed
+	DryRunDurationSeconds *int       `json:"dry_run_duration_seconds,omitempty" gorm:"column:dry_run_duration_seconds"` // Dry run duration in seconds
 
 	// Migration Settings (batch-level defaults, repository settings take precedence)
-	DestinationOrg     *string `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org"`                 // Default destination org for repositories in this batch
-	MigrationAPI       string  `json:"migration_api" db:"migration_api" gorm:"column:migration_api;not null"`                        // Migration API to use: "GEI" or "ELM" (default: "GEI")
-	ExcludeReleases    bool    `json:"exclude_releases" db:"exclude_releases" gorm:"column:exclude_releases;default:false"`          // Skip releases during migration (applies if repo doesn't override)
-	ExcludeAttachments bool    `json:"exclude_attachments" db:"exclude_attachments" gorm:"column:exclude_attachments;default:false"` // Skip attachments during migration (applies if repo doesn't override)
+	DestinationOrg     *string `json:"destination_org,omitempty" gorm:"column:destination_org"`             // Default destination org for repositories in this batch
+	MigrationAPI       string  `json:"migration_api" gorm:"column:migration_api;not null"`                  // Migration API to use: "GEI" or "ELM" (default: "GEI")
+	ExcludeReleases    bool    `json:"exclude_releases" gorm:"column:exclude_releases;default:false"`       // Skip releases during migration (applies if repo doesn't override)
+	ExcludeAttachments bool    `json:"exclude_attachments" gorm:"column:exclude_attachments;default:false"` // Skip attachments during migration (applies if repo doesn't override)
 }
 
 // TableName specifies the table name for Batch model
@@ -532,68 +980,17 @@ func (b *Batch) DryRunDuration() *time.Duration {
 	return &duration
 }
 
-// Organization extracts the organization from full_name (org/repo)
-func (r *Repository) Organization() string {
-	parts := strings.SplitN(r.FullName, "/", 2)
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
-}
-
-// Name extracts the repository name from full_name (org/repo)
-func (r *Repository) Name() string {
-	parts := strings.SplitN(r.FullName, "/", 2)
-	if len(parts) > 1 {
-		return parts[1]
-	}
-	return r.FullName
-}
-
-// DestinationRepoName returns the appropriate destination repository name for GitHub.
-// For ADO repos (org/project/repo format), returns "project-repo" pattern to preserve
-// project context and avoid naming conflicts.
-// For GitHub repos (org/repo format), returns just the repo name.
-// Spaces and slashes are replaced with hyphens for GitHub compatibility.
-func (r *Repository) DestinationRepoName() string {
-	// For ADO repos, use project-repo pattern
-	if r.ADOProject != nil && *r.ADOProject != "" {
-		parts := strings.Split(r.FullName, "/")
-		if len(parts) >= 3 {
-			project := sanitizeRepoName(parts[1])
-			repoName := sanitizeRepoName(parts[len(parts)-1])
-			return project + "-" + repoName
-		}
-	}
-
-	// For GitHub repos (org/repo format), use just the repo name
-	parts := strings.Split(r.FullName, "/")
-	if len(parts) >= 2 {
-		return sanitizeRepoName(parts[len(parts)-1])
-	}
-
-	// Fallback: sanitize the full name
-	return sanitizeRepoName(r.FullName)
-}
-
-// sanitizeRepoName replaces slashes and spaces with hyphens for GitHub compatibility
-func sanitizeRepoName(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, " ", "-")
-	return name
-}
-
 // RepositoryDependency represents a dependency relationship between repositories
 // Used for batch planning to understand which repositories should be migrated together
 type RepositoryDependency struct {
-	ID                 int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	RepositoryID       int64     `json:"repository_id" db:"repository_id" gorm:"column:repository_id;not null;index"`
-	DependencyFullName string    `json:"dependency_full_name" db:"dependency_full_name" gorm:"column:dependency_full_name;not null"` // org/repo format
-	DependencyType     string    `json:"dependency_type" db:"dependency_type" gorm:"column:dependency_type;not null"`                // submodule, workflow, dependency_graph, package
-	DependencyURL      string    `json:"dependency_url" db:"dependency_url" gorm:"column:dependency_url;not null"`                   // Original URL/reference
-	IsLocal            bool      `json:"is_local" db:"is_local" gorm:"column:is_local;default:false"`                                // Whether dependency is within same enterprise
-	DiscoveredAt       time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
-	Metadata           *string   `json:"metadata,omitempty" db:"metadata" gorm:"column:metadata;type:text"` // JSON with type-specific details (branch, version, path, etc.)
+	ID                 int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	RepositoryID       int64     `json:"repository_id" gorm:"column:repository_id;not null;index"`
+	DependencyFullName string    `json:"dependency_full_name" gorm:"column:dependency_full_name;not null"` // org/repo format
+	DependencyType     string    `json:"dependency_type" gorm:"column:dependency_type;not null"`           // submodule, workflow, dependency_graph, package
+	DependencyURL      string    `json:"dependency_url" gorm:"column:dependency_url;not null"`             // Original URL/reference
+	IsLocal            bool      `json:"is_local" gorm:"column:is_local;default:false"`                    // Whether dependency is within same enterprise
+	DiscoveredAt       time.Time `json:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	Metadata           *string   `json:"metadata,omitempty" gorm:"column:metadata;type:text"` // JSON with type-specific details (branch, version, path, etc.)
 }
 
 // TableName specifies the table name for RepositoryDependency model
@@ -612,15 +1009,15 @@ const (
 // GitHubTeam represents a GitHub team for filtering repositories by team membership
 // Teams are org-scoped, so the same team name can exist in different organizations
 type GitHubTeam struct {
-	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	SourceID     *int64    `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
-	Organization string    `json:"organization" db:"organization" gorm:"column:organization;not null;uniqueIndex:idx_github_teams_org_slug"`
-	Slug         string    `json:"slug" db:"slug" gorm:"column:slug;not null;uniqueIndex:idx_github_teams_org_slug"`
-	Name         string    `json:"name" db:"name" gorm:"column:name;not null"`
-	Description  *string   `json:"description,omitempty" db:"description" gorm:"column:description;type:text"`
-	Privacy      string    `json:"privacy" db:"privacy" gorm:"column:privacy;not null;default:closed"`
-	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID     *int64    `json:"source_id,omitempty" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
+	Organization string    `json:"organization" gorm:"column:organization;not null;uniqueIndex:idx_github_teams_org_slug"`
+	Slug         string    `json:"slug" gorm:"column:slug;not null;uniqueIndex:idx_github_teams_org_slug"`
+	Name         string    `json:"name" gorm:"column:name;not null"`
+	Description  *string   `json:"description,omitempty" gorm:"column:description;type:text"`
+	Privacy      string    `json:"privacy" gorm:"column:privacy;not null;default:closed"`
+	DiscoveredAt time.Time `json:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	UpdatedAt    time.Time `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 }
 
 // TableName specifies the table name for GitHubTeam model
@@ -635,11 +1032,11 @@ func (t *GitHubTeam) FullSlug() string {
 
 // GitHubTeamRepository represents the many-to-many relationship between teams and repositories
 type GitHubTeamRepository struct {
-	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	TeamID       int64     `json:"team_id" db:"team_id" gorm:"column:team_id;not null;uniqueIndex:idx_github_team_repo"`
-	RepositoryID int64     `json:"repository_id" db:"repository_id" gorm:"column:repository_id;not null;uniqueIndex:idx_github_team_repo;index"`
-	Permission   string    `json:"permission" db:"permission" gorm:"column:permission;not null;default:pull"` // pull, push, admin, maintain, triage
-	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	TeamID       int64     `json:"team_id" gorm:"column:team_id;not null;uniqueIndex:idx_github_team_repo"`
+	RepositoryID int64     `json:"repository_id" gorm:"column:repository_id;not null;uniqueIndex:idx_github_team_repo;index"`
+	Permission   string    `json:"permission" gorm:"column:permission;not null;default:pull"` // pull, push, admin, maintain, triage
+	DiscoveredAt time.Time `json:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
 }
 
 // TableName specifies the table name for GitHubTeamRepository model
@@ -649,11 +1046,11 @@ func (GitHubTeamRepository) TableName() string {
 
 // GitHubTeamMember represents a member of a GitHub team
 type GitHubTeamMember struct {
-	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	TeamID       int64     `json:"team_id" db:"team_id" gorm:"column:team_id;not null;index"`
-	Login        string    `json:"login" db:"login" gorm:"column:login;not null"`
-	Role         string    `json:"role" db:"role" gorm:"column:role;not null"` // member, maintainer
-	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	TeamID       int64     `json:"team_id" gorm:"column:team_id;not null;index"`
+	Login        string    `json:"login" gorm:"column:login;not null"`
+	Role         string    `json:"role" gorm:"column:role;not null"` // member, maintainer
+	DiscoveredAt time.Time `json:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
 }
 
 // TableName specifies the table name for GitHubTeamMember model
@@ -664,22 +1061,22 @@ func (GitHubTeamMember) TableName() string {
 // GitHubUser represents a GitHub user discovered during profiling
 // Used for user identity mapping and mannequin reclaim
 type GitHubUser struct {
-	ID             int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	SourceID       *int64    `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
-	Login          string    `json:"login" db:"login" gorm:"column:login;not null;uniqueIndex"`
-	Name           *string   `json:"name,omitempty" db:"name" gorm:"column:name"`
-	Email          *string   `json:"email,omitempty" db:"email" gorm:"column:email;index"`
-	AvatarURL      *string   `json:"avatar_url,omitempty" db:"avatar_url" gorm:"column:avatar_url"`
-	SourceInstance string    `json:"source_instance" db:"source_instance" gorm:"column:source_instance;not null"` // Source GitHub URL (e.g., github.company.com)
-	DiscoveredAt   time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID       *int64    `json:"source_id,omitempty" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
+	Login          string    `json:"login" gorm:"column:login;not null;uniqueIndex"`
+	Name           *string   `json:"name,omitempty" gorm:"column:name"`
+	Email          *string   `json:"email,omitempty" gorm:"column:email;index"`
+	AvatarURL      *string   `json:"avatar_url,omitempty" gorm:"column:avatar_url"`
+	SourceInstance string    `json:"source_instance" gorm:"column:source_instance;not null"` // Source GitHub URL (e.g., github.company.com)
+	DiscoveredAt   time.Time `json:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	UpdatedAt      time.Time `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 
 	// Contribution stats (aggregated across all repositories)
-	CommitCount     int `json:"commit_count" db:"commit_count" gorm:"column:commit_count;default:0"`
-	IssueCount      int `json:"issue_count" db:"issue_count" gorm:"column:issue_count;default:0"`
-	PRCount         int `json:"pr_count" db:"pr_count" gorm:"column:pr_count;default:0"`
-	CommentCount    int `json:"comment_count" db:"comment_count" gorm:"column:comment_count;default:0"`
-	RepositoryCount int `json:"repository_count" db:"repository_count" gorm:"column:repository_count;default:0"`
+	CommitCount     int `json:"commit_count" gorm:"column:commit_count;default:0"`
+	IssueCount      int `json:"issue_count" gorm:"column:issue_count;default:0"`
+	PRCount         int `json:"pr_count" gorm:"column:pr_count;default:0"`
+	CommentCount    int `json:"comment_count" gorm:"column:comment_count;default:0"`
+	RepositoryCount int `json:"repository_count" gorm:"column:repository_count;default:0"`
 }
 
 // TableName specifies the table name for GitHubUser model
@@ -690,11 +1087,11 @@ func (GitHubUser) TableName() string {
 // UserOrgMembership tracks which organizations a user belongs to
 // This enables organizing users by source org for mannequin reclamation
 type UserOrgMembership struct {
-	ID           int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	UserLogin    string    `json:"user_login" db:"user_login" gorm:"column:user_login;not null;uniqueIndex:idx_user_org"`
-	Organization string    `json:"organization" db:"organization" gorm:"column:organization;not null;uniqueIndex:idx_user_org;index"`
-	Role         string    `json:"role" db:"role" gorm:"column:role;not null;default:member"` // member, admin
-	DiscoveredAt time.Time `json:"discovered_at" db:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
+	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserLogin    string    `json:"user_login" gorm:"column:user_login;not null;uniqueIndex:idx_user_org"`
+	Organization string    `json:"organization" gorm:"column:organization;not null;uniqueIndex:idx_user_org;index"`
+	Role         string    `json:"role" gorm:"column:role;not null;default:member"` // member, admin
+	DiscoveredAt time.Time `json:"discovered_at" gorm:"column:discovered_at;not null;autoCreateTime"`
 }
 
 // TableName specifies the table name for UserOrgMembership model
@@ -724,23 +1121,23 @@ const (
 
 // UserMapping maps a source user to a destination user for mannequin reclaim
 type UserMapping struct {
-	ID               int64     `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	SourceID         *int64    `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
-	SourceLogin      string    `json:"source_login" db:"source_login" gorm:"column:source_login;not null;uniqueIndex"`
-	SourceEmail      *string   `json:"source_email,omitempty" db:"source_email" gorm:"column:source_email;index"`
-	SourceName       *string   `json:"source_name,omitempty" db:"source_name" gorm:"column:source_name"`
-	SourceOrg        *string   `json:"source_org,omitempty" db:"source_org" gorm:"column:source_org;index"` // Organization where user was discovered
-	DestinationLogin *string   `json:"destination_login,omitempty" db:"destination_login" gorm:"column:destination_login;index"`
-	DestinationEmail *string   `json:"destination_email,omitempty" db:"destination_email" gorm:"column:destination_email"`
-	MappingStatus    string    `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, reclaimed, skipped
-	MannequinID      *string   `json:"mannequin_id,omitempty" db:"mannequin_id" gorm:"column:mannequin_id"`                             // GEI mannequin ID after migration
-	MannequinLogin   *string   `json:"mannequin_login,omitempty" db:"mannequin_login" gorm:"column:mannequin_login"`                    // Mannequin login (e.g., mona-user-12345)
-	ReclaimStatus    *string   `json:"reclaim_status,omitempty" db:"reclaim_status" gorm:"column:reclaim_status"`                       // pending, invited, completed, failed
-	ReclaimError     *string   `json:"reclaim_error,omitempty" db:"reclaim_error" gorm:"column:reclaim_error;type:text"`                // Error message if reclaim failed
-	MatchConfidence  *int      `json:"match_confidence,omitempty" db:"match_confidence" gorm:"column:match_confidence"`                 // Auto-match confidence score (0-100)
-	MatchReason      *string   `json:"match_reason,omitempty" db:"match_reason" gorm:"column:match_reason"`                             // Why the match was made (email, login, name)
-	CreatedAt        time.Time `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
-	UpdatedAt        time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+	ID               int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID         *int64    `json:"source_id,omitempty" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
+	SourceLogin      string    `json:"source_login" gorm:"column:source_login;not null;uniqueIndex"`
+	SourceEmail      *string   `json:"source_email,omitempty" gorm:"column:source_email;index"`
+	SourceName       *string   `json:"source_name,omitempty" gorm:"column:source_name"`
+	SourceOrg        *string   `json:"source_org,omitempty" gorm:"column:source_org;index"` // Organization where user was discovered
+	DestinationLogin *string   `json:"destination_login,omitempty" gorm:"column:destination_login;index"`
+	DestinationEmail *string   `json:"destination_email,omitempty" gorm:"column:destination_email"`
+	MappingStatus    string    `json:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, reclaimed, skipped
+	MannequinID      *string   `json:"mannequin_id,omitempty" gorm:"column:mannequin_id"`                           // GEI mannequin ID after migration
+	MannequinLogin   *string   `json:"mannequin_login,omitempty" gorm:"column:mannequin_login"`                     // Mannequin login (e.g., mona-user-12345)
+	ReclaimStatus    *string   `json:"reclaim_status,omitempty" gorm:"column:reclaim_status"`                       // pending, invited, completed, failed
+	ReclaimError     *string   `json:"reclaim_error,omitempty" gorm:"column:reclaim_error;type:text"`               // Error message if reclaim failed
+	MatchConfidence  *int      `json:"match_confidence,omitempty" gorm:"column:match_confidence"`                   // Auto-match confidence score (0-100)
+	MatchReason      *string   `json:"match_reason,omitempty" gorm:"column:match_reason"`                           // Why the match was made (email, login, name)
+	CreatedAt        time.Time `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt        time.Time `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 }
 
 // TableName specifies the table name for UserMapping model
@@ -750,27 +1147,27 @@ func (UserMapping) TableName() string {
 
 // TeamMapping maps a source team to a destination team
 type TeamMapping struct {
-	ID                  int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	SourceID            *int64     `json:"source_id,omitempty" db:"source_id" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
-	SourceOrg           string     `json:"source_org" db:"source_org" gorm:"column:source_org;not null;uniqueIndex:idx_team_mapping_source"`
-	SourceTeamSlug      string     `json:"source_team_slug" db:"source_team_slug" gorm:"column:source_team_slug;not null;uniqueIndex:idx_team_mapping_source"`
-	SourceTeamName      *string    `json:"source_team_name,omitempty" db:"source_team_name" gorm:"column:source_team_name"`
-	DestinationOrg      *string    `json:"destination_org,omitempty" db:"destination_org" gorm:"column:destination_org;index"`
-	DestinationTeamSlug *string    `json:"destination_team_slug,omitempty" db:"destination_team_slug" gorm:"column:destination_team_slug"`
-	DestinationTeamName *string    `json:"destination_team_name,omitempty" db:"destination_team_name" gorm:"column:destination_team_name"`
-	MappingStatus       string     `json:"mapping_status" db:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, skipped
-	AutoCreated         bool       `json:"auto_created" db:"auto_created" gorm:"column:auto_created;default:false"`                         // True if team was auto-created during migration
-	MigrationStatus     string     `json:"migration_status" db:"migration_status" gorm:"column:migration_status;default:pending;index"`     // pending, in_progress, completed, failed
-	MigratedAt          *time.Time `json:"migrated_at,omitempty" db:"migrated_at" gorm:"column:migrated_at"`                                // When the team was created in destination
-	ErrorMessage        *string    `json:"error_message,omitempty" db:"error_message" gorm:"column:error_message"`                          // Error details if migration failed
-	ReposSynced         int        `json:"repos_synced" db:"repos_synced" gorm:"column:repos_synced;default:0"`                             // Count of repos with permissions applied
+	ID                  int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	SourceID            *int64     `json:"source_id,omitempty" gorm:"column:source_id;index"` // Foreign key to sources table for multi-source support
+	SourceOrg           string     `json:"source_org" gorm:"column:source_org;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamSlug      string     `json:"source_team_slug" gorm:"column:source_team_slug;not null;uniqueIndex:idx_team_mapping_source"`
+	SourceTeamName      *string    `json:"source_team_name,omitempty" gorm:"column:source_team_name"`
+	DestinationOrg      *string    `json:"destination_org,omitempty" gorm:"column:destination_org;index"`
+	DestinationTeamSlug *string    `json:"destination_team_slug,omitempty" gorm:"column:destination_team_slug"`
+	DestinationTeamName *string    `json:"destination_team_name,omitempty" gorm:"column:destination_team_name"`
+	MappingStatus       string     `json:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, skipped
+	AutoCreated         bool       `json:"auto_created" gorm:"column:auto_created;default:false"`                       // True if team was auto-created during migration
+	MigrationStatus     string     `json:"migration_status" gorm:"column:migration_status;default:pending;index"`       // pending, in_progress, completed, failed
+	MigratedAt          *time.Time `json:"migrated_at,omitempty" gorm:"column:migrated_at"`                             // When the team was created in destination
+	ErrorMessage        *string    `json:"error_message,omitempty" gorm:"column:error_message"`                         // Error details if migration failed
+	ReposSynced         int        `json:"repos_synced" gorm:"column:repos_synced;default:0"`                           // Count of repos with permissions applied
 	// New fields for tracking partial vs. full migration
-	TotalSourceRepos  int        `json:"total_source_repos" db:"total_source_repos" gorm:"column:total_source_repos;default:0"`           // Total repos this team has access to in source
-	ReposEligible     int        `json:"repos_eligible" db:"repos_eligible" gorm:"column:repos_eligible;default:0"`                       // How many repos have been migrated and are available for sync
-	TeamCreatedInDest bool       `json:"team_created_in_dest" db:"team_created_in_dest" gorm:"column:team_created_in_dest;default:false"` // Whether team exists in destination
-	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty" db:"last_synced_at" gorm:"column:last_synced_at"`                       // When permissions were last synced
-	CreatedAt         time.Time  `json:"created_at" db:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+	TotalSourceRepos  int        `json:"total_source_repos" gorm:"column:total_source_repos;default:0"`         // Total repos this team has access to in source
+	ReposEligible     int        `json:"repos_eligible" gorm:"column:repos_eligible;default:0"`                 // How many repos have been migrated and are available for sync
+	TeamCreatedInDest bool       `json:"team_created_in_dest" gorm:"column:team_created_in_dest;default:false"` // Whether team exists in destination
+	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty" gorm:"column:last_synced_at"`                 // When permissions were last synced
+	CreatedAt         time.Time  `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 }
 
 // NeedsReSync returns true if the team has been migrated but has new repos that need permission sync
@@ -846,20 +1243,20 @@ const (
 
 // DiscoveryProgress tracks the progress of a discovery operation
 type DiscoveryProgress struct {
-	ID             int64      `json:"id" db:"id" gorm:"primaryKey;autoIncrement"`
-	DiscoveryType  string     `json:"discovery_type" db:"discovery_type" gorm:"column:discovery_type;not null"`   // "enterprise", "organization", or "repository"
-	Target         string     `json:"target" db:"target" gorm:"column:target;not null"`                           // enterprise slug, org name, or "org/repo"
-	Status         string     `json:"status" db:"status" gorm:"column:status;not null;default:in_progress;index"` // "in_progress", "completed", "failed"
-	StartedAt      time.Time  `json:"started_at" db:"started_at" gorm:"column:started_at;not null;autoCreateTime"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty" db:"completed_at" gorm:"column:completed_at"`
-	TotalOrgs      int        `json:"total_orgs" db:"total_orgs" gorm:"column:total_orgs;default:0"`
-	ProcessedOrgs  int        `json:"processed_orgs" db:"processed_orgs" gorm:"column:processed_orgs;default:0"`
-	CurrentOrg     string     `json:"current_org" db:"current_org" gorm:"column:current_org"`
-	TotalRepos     int        `json:"total_repos" db:"total_repos" gorm:"column:total_repos;default:0"`
-	ProcessedRepos int        `json:"processed_repos" db:"processed_repos" gorm:"column:processed_repos;default:0"`
-	Phase          string     `json:"phase" db:"phase" gorm:"column:phase;default:listing_repos"` // Current phase within org processing
-	ErrorCount     int        `json:"error_count" db:"error_count" gorm:"column:error_count;default:0"`
-	LastError      *string    `json:"last_error,omitempty" db:"last_error" gorm:"column:last_error"`
+	ID             int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	DiscoveryType  string     `json:"discovery_type" gorm:"column:discovery_type;not null"`           // "enterprise", "organization", or "repository"
+	Target         string     `json:"target" gorm:"column:target;not null"`                           // enterprise slug, org name, or "org/repo"
+	Status         string     `json:"status" gorm:"column:status;not null;default:in_progress;index"` // "in_progress", "completed", "failed"
+	StartedAt      time.Time  `json:"started_at" gorm:"column:started_at;not null;autoCreateTime"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty" gorm:"column:completed_at"`
+	TotalOrgs      int        `json:"total_orgs" gorm:"column:total_orgs;default:0"`
+	ProcessedOrgs  int        `json:"processed_orgs" gorm:"column:processed_orgs;default:0"`
+	CurrentOrg     string     `json:"current_org" gorm:"column:current_org"`
+	TotalRepos     int        `json:"total_repos" gorm:"column:total_repos;default:0"`
+	ProcessedRepos int        `json:"processed_repos" gorm:"column:processed_repos;default:0"`
+	Phase          string     `json:"phase" gorm:"column:phase;default:listing_repos"` // Current phase within org processing
+	ErrorCount     int        `json:"error_count" gorm:"column:error_count;default:0"`
+	LastError      *string    `json:"last_error,omitempty" gorm:"column:last_error"`
 }
 
 // TableName specifies the table name for DiscoveryProgress model

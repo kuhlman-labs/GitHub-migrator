@@ -18,7 +18,7 @@ type SettingsTab = 'sources' | 'destination' | 'migration' | 'auth' | 'logging';
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('sources');
-  const { showSuccess, showError } = useToast();
+  const { showSuccess, showError, showWarning } = useToast();
   const queryClient = useQueryClient();
   const { authEnabled } = useAuth();
 
@@ -41,10 +41,16 @@ export function SettingsPage() {
   // Update settings mutation
   const updateMutation = useMutation({
     mutationFn: (request: UpdateSettingsRequest) => settingsApi.updateSettings(request),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['setupProgress'] });
-      showSuccess('Settings saved successfully');
+      
+      // Check if restart is required (auth settings changed)
+      if (response.restart_required) {
+        showWarning(response.message || 'Settings saved. Server restart required for changes to take effect.');
+      } else {
+        showSuccess('Settings saved successfully');
+      }
     },
     onError: (error: Error | AxiosError) => {
       // Handle 403 Forbidden specifically

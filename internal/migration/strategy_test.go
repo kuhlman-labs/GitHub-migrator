@@ -21,28 +21,30 @@ func TestStrategyRegistry_GetStrategy(t *testing.T) {
 	}{
 		{
 			name: "GitHub repository (no ADO project)",
-			repo: &models.Repository{
-				FullName:   "org/repo",
-				ADOProject: nil,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{FullName: "org/repo"}
+				return r
+			}(),
 			wantStrategy: "GitHub",
 			wantNil:      false,
 		},
 		{
 			name: "GitHub repository (empty ADO project)",
-			repo: &models.Repository{
-				FullName:   "org/repo",
-				ADOProject: strPtr(""),
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{FullName: "org/repo"}
+				r.SetADOProject(strPtr(""))
+				return r
+			}(),
 			wantStrategy: "GitHub",
 			wantNil:      false,
 		},
 		{
 			name: "ADO repository",
-			repo: &models.Repository{
-				FullName:   "project/repo",
-				ADOProject: strPtr("MyProject"),
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{FullName: "project/repo"}
+				r.SetADOProject(strPtr("MyProject"))
+				return r
+			}(),
 			wantStrategy: "AzureDevOps",
 			wantNil:      false,
 		},
@@ -81,17 +83,25 @@ func TestGitHubMigrationStrategy_SupportsRepository(t *testing.T) {
 	}{
 		{
 			name:       "nil ADO project",
-			repo:       &models.Repository{ADOProject: nil},
+			repo:       &models.Repository{},
 			wantResult: true,
 		},
 		{
-			name:       "empty ADO project",
-			repo:       &models.Repository{ADOProject: strPtr("")},
+			name: "empty ADO project",
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOProject(strPtr(""))
+				return r
+			}(),
 			wantResult: true,
 		},
 		{
-			name:       "has ADO project",
-			repo:       &models.Repository{ADOProject: strPtr("MyProject")},
+			name: "has ADO project",
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOProject(strPtr("MyProject"))
+				return r
+			}(),
 			wantResult: false,
 		},
 	}
@@ -116,17 +126,25 @@ func TestADOMigrationStrategy_SupportsRepository(t *testing.T) {
 	}{
 		{
 			name:       "nil ADO project",
-			repo:       &models.Repository{ADOProject: nil},
+			repo:       &models.Repository{},
 			wantResult: false,
 		},
 		{
-			name:       "empty ADO project",
-			repo:       &models.Repository{ADOProject: strPtr("")},
+			name: "empty ADO project",
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOProject(strPtr(""))
+				return r
+			}(),
 			wantResult: false,
 		},
 		{
-			name:       "has ADO project",
-			repo:       &models.Repository{ADOProject: strPtr("MyProject")},
+			name: "has ADO project",
+			repo: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetADOProject(strPtr("MyProject"))
+				return r
+			}(),
 			wantResult: true,
 		},
 	}
@@ -158,7 +176,7 @@ func TestStrategyRegistry_RegisterStrategy(t *testing.T) {
 	registry := NewStrategyRegistry()
 
 	// Initially empty
-	repo := &models.Repository{ADOProject: nil}
+	repo := &models.Repository{}
 	if strategy := registry.GetStrategy(repo); strategy != nil {
 		t.Error("Expected nil strategy for empty registry")
 	}

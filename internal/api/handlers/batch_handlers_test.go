@@ -480,32 +480,41 @@ func TestUpdateBatchDestinationOrg(t *testing.T) {
 		FullName:            "source-org/repo1",
 		Source:              "ghes",
 		SourceURL:           "https://github.com/source-org/repo1",
-		TotalSize:           &totalSize,
-		DefaultBranch:       &defaultBranch,
 		Status:              string(models.StatusPending),
+		Visibility:          "private",
 		BatchID:             &destBatch.ID,
 		DestinationFullName: &repo1Dest,
+		DiscoveredAt:        time.Now(),
+		UpdatedAt:           time.Now(),
 	}
+	repo1.SetTotalSize(&totalSize)
+	repo1.SetDefaultBranch(&defaultBranch)
 	repo2 := &models.Repository{
 		FullName:            "source-org/repo2",
 		Source:              "ghes",
 		SourceURL:           "https://github.com/source-org/repo2",
-		TotalSize:           &totalSize,
-		DefaultBranch:       &defaultBranch,
 		Status:              string(models.StatusPending),
+		Visibility:          "private",
 		BatchID:             &destBatch.ID,
 		DestinationFullName: &repo2Dest,
+		DiscoveredAt:        time.Now(),
+		UpdatedAt:           time.Now(),
 	}
+	repo2.SetTotalSize(&totalSize)
+	repo2.SetDefaultBranch(&defaultBranch)
 	repo3 := &models.Repository{
 		FullName:            "source-org/repo3",
 		Source:              "ghes",
 		SourceURL:           "https://github.com/source-org/repo3",
-		TotalSize:           &totalSize,
-		DefaultBranch:       &defaultBranch,
 		Status:              string(models.StatusPending),
+		Visibility:          "private",
 		BatchID:             &destBatch.ID,
 		DestinationFullName: &customDest, // Custom destination, should not be updated
+		DiscoveredAt:        time.Now(),
+		UpdatedAt:           time.Now(),
 	}
+	repo3.SetTotalSize(&totalSize)
+	repo3.SetDefaultBranch(&defaultBranch)
 
 	if err := db.SaveRepository(ctx, repo1); err != nil {
 		t.Fatalf("Failed to save repo1: %v", err)
@@ -582,15 +591,16 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 	repoIDs := make([]int64, 0, 3)
 	for i := range 3 {
 		repo := &models.Repository{
-			FullName:      fmt.Sprintf("org/repo%d", i),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
+			FullName:     fmt.Sprintf("org/repo%d", i),
+			Source:       "ghes",
+			SourceURL:    "https://github.com/org/repo",
+			Status:       string(models.StatusPending),
+			Visibility:   "private",
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
 		}
+		repo.SetTotalSize(&totalSize)
+		repo.SetDefaultBranch(&defaultBranch)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -677,16 +687,17 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	repoIDs := make([]int64, 0, 3)
 	for i := range 3 {
 		repo := &models.Repository{
-			FullName:      fmt.Sprintf("org/repo%d", i),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusPending),
-			BatchID:       &batch.ID,
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
+			FullName:     fmt.Sprintf("org/repo%d", i),
+			Source:       "ghes",
+			SourceURL:    "https://github.com/org/repo",
+			Status:       string(models.StatusPending),
+			Visibility:   "private",
+			BatchID:      &batch.ID,
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
 		}
+		repo.SetTotalSize(&totalSize)
+		repo.SetDefaultBranch(&defaultBranch)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}
@@ -745,16 +756,17 @@ func TestRetryBatchFailures(t *testing.T) {
 	failedRepoIDs := make([]int64, 0, 2)
 	for i := range 2 {
 		repo := &models.Repository{
-			FullName:      fmt.Sprintf("org/failed-repo%d", i),
-			Source:        "ghes",
-			SourceURL:     "https://github.com/org/failed-repo",
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			Status:        string(models.StatusMigrationFailed),
-			BatchID:       &batch.ID,
-			DiscoveredAt:  time.Now(),
-			UpdatedAt:     time.Now(),
+			FullName:     fmt.Sprintf("org/failed-repo%d", i),
+			Source:       "ghes",
+			SourceURL:    "https://github.com/org/failed-repo",
+			Status:       string(models.StatusMigrationFailed),
+			Visibility:   "private",
+			BatchID:      &batch.ID,
+			DiscoveredAt: time.Now(),
+			UpdatedAt:    time.Now(),
 		}
+		repo.SetTotalSize(&totalSize)
+		repo.SetDefaultBranch(&defaultBranch)
 		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("SaveRepository() error = %v", err)
 		}

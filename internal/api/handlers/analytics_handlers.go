@@ -560,6 +560,9 @@ func (h *Handler) exportMigrationHistoryJSON(w http.ResponseWriter, migrations [
 
 func buildDiscoveryReportFilters(orgFilter, projectFilter, batchFilter string, sourceID *int64) map[string]any {
 	filters := make(map[string]any)
+	// Include details to preload related tables (GitProperties, Features, ADOProperties, Validation)
+	// This is required for getter methods to return actual values in CSV/JSON exports
+	filters["include_details"] = true
 	if orgFilter != "" {
 		filters["organization"] = orgFilter
 	}

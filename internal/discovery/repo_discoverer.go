@@ -263,15 +263,15 @@ func (d *RepoDiscoverer) GetRepositoryStats(repos []*models.Repository) Reposito
 		stats.ComplexityCounts[complexity]++
 
 		// Size totals
-		if repo.TotalSize != nil {
-			totalSize += *repo.TotalSize
+		if repo.GetTotalSize() != nil {
+			totalSize += *repo.GetTotalSize()
 		}
 
 		// Feature counts
-		if repo.HasLFS {
+		if repo.HasLFS() {
 			stats.WithLFS++
 		}
-		if repo.HasSubmodules {
+		if repo.HasSubmodules() {
 			stats.WithSubmodules++
 		}
 		if repo.HasMigrationBlockers() {

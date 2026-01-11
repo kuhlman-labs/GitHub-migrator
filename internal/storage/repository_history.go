@@ -311,20 +311,21 @@ func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Cont
 	// Query groups by ado_project field for Azure DevOps repositories
 	query := `
 		SELECT 
-			ado_project as organization,
+			ap.project as organization,
 			COUNT(*) as total_repos,
-			SUM(CASE WHEN status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
-			SUM(CASE WHEN status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
-			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
-			SUM(CASE WHEN status LIKE '%failed%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
+			SUM(CASE WHEN r.status IN ('complete', 'migration_complete') THEN 1 ELSE 0 END) as completed_count,
+			SUM(CASE WHEN r.status IN ('pre_migration', 'archive_generating', 'queued_for_migration', 'migrating_content', 'post_migration') THEN 1 ELSE 0 END) as in_progress_count,
+			SUM(CASE WHEN r.status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
+			SUM(CASE WHEN r.status LIKE '%failed%' OR r.status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
 		FROM repositories r
-		WHERE ado_project IS NOT NULL AND ado_project != ''
-			AND status != 'wont_migrate'
+		LEFT JOIN repository_ado_properties ap ON r.id = ap.repository_id
+		WHERE ap.project IS NOT NULL AND ap.project != ''
+			AND r.status != 'wont_migrate'
 			` + orgFilterSQL + `
 			` + projectFilterSQL + `
 			` + batchFilterSQL + `
 			` + sourceFilterSQL + `
-		GROUP BY ado_project
+		GROUP BY ap.project
 		ORDER BY total_repos DESC
 	`
 

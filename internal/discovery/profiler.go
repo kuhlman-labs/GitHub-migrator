@@ -71,8 +71,8 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	}
 
 	// Set GitHub-specific features from repository object
-	repo.HasDiscussions = ghRepo.GetHasDiscussions()
-	repo.HasProjects = ghRepo.GetHasProjects()
+	repo.SetHasDiscussions(ghRepo.GetHasDiscussions())
+	repo.SetHasProjects(ghRepo.GetHasProjects())
 
 	// Profile various GitHub features
 	p.profileWorkflowCount(ctx, org, name, repo)
@@ -112,29 +112,29 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 
 	p.logger.Info("GitHub features profiled",
 		"repo", repo.FullName,
-		"has_actions", repo.HasActions,
-		"workflow_count", repo.WorkflowCount,
-		"has_wiki", repo.HasWiki,
-		"has_pages", repo.HasPages,
-		"has_discussions", repo.HasDiscussions,
-		"has_packages", repo.HasPackages,
-		"has_rulesets", repo.HasRulesets,
-		"environment_count", repo.EnvironmentCount,
-		"secret_count", repo.SecretCount,
-		"variable_count", repo.VariableCount,
-		"has_code_scanning", repo.HasCodeScanning,
-		"has_dependabot", repo.HasDependabot,
-		"has_secret_scanning", repo.HasSecretScanning,
-		"has_codeowners", repo.HasCodeowners,
-		"has_self_hosted_runners", repo.HasSelfHostedRunners,
-		"collaborator_count", repo.CollaboratorCount,
-		"installed_apps_count", repo.InstalledAppsCount,
-		"release_count", repo.ReleaseCount,
-		"has_release_assets", repo.HasReleaseAssets,
-		"contributors", repo.ContributorCount,
-		"issues", repo.IssueCount,
-		"prs", repo.PullRequestCount,
-		"tags", repo.TagCount)
+		"has_actions", repo.HasActions(),
+		"workflow_count", repo.GetWorkflowCount(),
+		"has_wiki", repo.HasWiki(),
+		"has_pages", repo.HasPages(),
+		"has_discussions", repo.HasDiscussions(),
+		"has_packages", repo.HasPackages(),
+		"has_rulesets", repo.HasRulesets(),
+		"environment_count", repo.GetEnvironmentCount(),
+		"secret_count", repo.GetSecretCount(),
+		"variable_count", repo.GetVariableCount(),
+		"has_code_scanning", repo.HasCodeScanning(),
+		"has_dependabot", repo.HasDependabot(),
+		"has_secret_scanning", repo.HasSecretScanning(),
+		"has_codeowners", repo.HasCodeowners(),
+		"has_self_hosted_runners", repo.HasSelfHostedRunners(),
+		"collaborator_count", repo.GetCollaboratorCount(),
+		"installed_apps_count", repo.GetInstalledAppsCount(),
+		"release_count", repo.GetReleaseCount(),
+		"has_release_assets", repo.HasReleaseAssets(),
+		"contributors", repo.GetContributorCount(),
+		"issues", repo.GetIssueCount(),
+		"prs", repo.GetPullRequestCount(),
+		"tags", repo.GetTagCount())
 
 	return nil
 }
@@ -149,7 +149,7 @@ func (p *Profiler) profileBranchProtections(ctx context.Context, org, name strin
 				protectedCount++
 			}
 		}
-		repo.BranchProtections = protectedCount
+		repo.SetBranchProtections(protectedCount)
 	} else {
 		p.logger.Debug("Failed to get branches", "error", err)
 	}
@@ -164,7 +164,7 @@ func (p *Profiler) profileRulesets(ctx context.Context, org, name string, repo *
 		IncludesParents: &includeParents,
 	})
 	if err == nil && len(rulesets) > 0 {
-		repo.HasRulesets = true
+		repo.SetHasRulesets(true)
 		p.logger.Debug("Repository has rulesets", "repo", repo.FullName, "count", len(rulesets))
 	} else if err != nil {
 		p.logger.Debug("Failed to get rulesets", "error", err)
@@ -175,7 +175,7 @@ func (p *Profiler) profileRulesets(ctx context.Context, org, name string, repo *
 func (p *Profiler) profileEnvironments(ctx context.Context, org, name string, repo *models.Repository) {
 	environments, _, err := p.client.REST().Repositories.ListEnvironments(ctx, org, name, nil)
 	if err == nil && environments != nil {
-		repo.EnvironmentCount = environments.GetTotalCount()
+		repo.SetEnvironmentCount(environments.GetTotalCount())
 	} else {
 		p.logger.Debug("Failed to get environments", "error", err)
 	}
@@ -186,7 +186,7 @@ func (p *Profiler) profileSecrets(ctx context.Context, org, name string, repo *m
 	secrets, _, err := p.client.REST().Actions.ListRepoSecrets(ctx, org, name, nil)
 	if err == nil && secrets != nil {
 		// Secrets type has TotalCount field
-		repo.SecretCount = secrets.TotalCount
+		repo.SetSecretCount(secrets.TotalCount)
 	} else {
 		p.logger.Debug("Failed to get secrets", "error", err)
 	}
@@ -197,7 +197,7 @@ func (p *Profiler) profileVariables(ctx context.Context, org, name string, repo 
 	variables, _, err := p.client.REST().Actions.ListRepoVariables(ctx, org, name, nil)
 	if err == nil && variables != nil {
 		// ActionsVariables type has TotalCount field
-		repo.VariableCount = variables.TotalCount
+		repo.SetVariableCount(variables.TotalCount)
 	} else {
 		p.logger.Debug("Failed to get variables", "error", err)
 	}
@@ -207,7 +207,7 @@ func (p *Profiler) profileVariables(ctx context.Context, org, name string, repo 
 func (p *Profiler) profileWebhooks(ctx context.Context, org, name string, repo *models.Repository) {
 	hooks, _, err := p.client.REST().Repositories.ListHooks(ctx, org, name, nil)
 	if err == nil {
-		repo.WebhookCount = len(hooks)
+		repo.SetWebhookCount(len(hooks))
 	} else {
 		p.logger.Debug("Failed to get webhooks", "error", err)
 	}
@@ -248,10 +248,10 @@ func (p *Profiler) profileContributors(ctx context.Context, org, name string, re
 		opts.ListOptions.Page = resp.NextPage
 	}
 
-	repo.ContributorCount = len(allContributors)
+	repo.SetContributorCount(len(allContributors))
 	if len(topContributors) > 0 {
 		topContribStr := strings.Join(topContributors, ",")
-		repo.TopContributors = &topContribStr
+		repo.SetTopContributors(&topContribStr)
 	}
 }
 
@@ -276,7 +276,7 @@ func (p *Profiler) profileTags(ctx context.Context, org, name string, repo *mode
 		opts.Page = resp.NextPage
 	}
 
-	repo.TagCount = totalTags
+	repo.SetTagCount(totalTags)
 }
 
 // LoadPackageCache loads all packages for an organization into the cache
@@ -424,14 +424,14 @@ func (p *Profiler) profilePackages(ctx context.Context, org, name string, repo *
 	p.packageCacheMu.RUnlock()
 
 	if inCache && hasPackages {
-		repo.HasPackages = true
+		repo.SetHasPackages(true)
 		p.logger.Debug("Found packages for repository (from REST API cache)", "repo", repo.FullName)
 		return
 	}
 
 	// If not in cache or explicitly false, the repository has no packages
 	// The cache is built from org-level package queries across all package types
-	repo.HasPackages = false
+	repo.SetHasPackages(false)
 }
 
 // countIssuesAndPRs counts issues and PRs separately for accurate verification data
@@ -470,8 +470,8 @@ func (p *Profiler) countIssuesAndPRs(ctx context.Context, org, name string, repo
 		allIssuesOpts.ListOptions.Page = resp.NextPage
 	}
 
-	repo.IssueCount = totalIssues
-	repo.OpenIssueCount = openIssues
+	repo.SetIssueCount(totalIssues)
+	repo.SetOpenIssueCount(openIssues)
 
 	// Count pull requests
 	allPRsOpts := &ghapi.PullRequestListOptions{
@@ -502,8 +502,8 @@ func (p *Profiler) countIssuesAndPRs(ctx context.Context, org, name string, repo
 		allPRsOpts.ListOptions.Page = resp.NextPage
 	}
 
-	repo.PullRequestCount = totalPRs
-	repo.OpenPRCount = openPRs
+	repo.SetPullRequestCount(totalPRs)
+	repo.SetOpenPRCount(openPRs)
 
 	return nil
 }
@@ -516,9 +516,9 @@ func (p *Profiler) profileSecurity(ctx context.Context, org, name string, repo *
 	})
 	if err == nil && resp.StatusCode != 404 {
 		// If we can access the endpoint, code scanning is enabled
-		repo.HasCodeScanning = true
+		repo.SetHasCodeScanning(true)
 	} else {
-		repo.HasCodeScanning = false
+		repo.SetHasCodeScanning(false)
 		p.logger.Debug("Code scanning not available", "repo", repo.FullName)
 	}
 
@@ -527,9 +527,9 @@ func (p *Profiler) profileSecurity(ctx context.Context, org, name string, repo *
 		ListOptions: ghapi.ListOptions{PerPage: 1},
 	})
 	if err == nil && resp.StatusCode != 404 {
-		repo.HasDependabot = true
+		repo.SetHasDependabot(true)
 	} else {
-		repo.HasDependabot = false
+		repo.SetHasDependabot(false)
 		p.logger.Debug("Dependabot not available", "repo", repo.FullName)
 	}
 
@@ -538,9 +538,9 @@ func (p *Profiler) profileSecurity(ctx context.Context, org, name string, repo *
 		ListOptions: ghapi.ListOptions{PerPage: 1},
 	})
 	if err == nil && resp.StatusCode != 404 {
-		repo.HasSecretScanning = true
+		repo.SetHasSecretScanning(true)
 	} else {
-		repo.HasSecretScanning = false
+		repo.SetHasSecretScanning(false)
 		p.logger.Debug("Secret scanning not available", "repo", repo.FullName)
 	}
 }
@@ -567,7 +567,7 @@ func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo
 		if resp != nil && resp.StatusCode == 200 {
 			// Verify it's a file, not a directory
 			if fileContent != nil && fileContent.GetType() == "file" {
-				repo.HasCodeowners = true
+				repo.SetHasCodeowners(true)
 				p.logger.Debug("Found CODEOWNERS file",
 					"repo", repo.FullName,
 					"path", path,
@@ -587,7 +587,7 @@ func (p *Profiler) profileCodeowners(ctx context.Context, org, name string, repo
 		}
 	}
 
-	repo.HasCodeowners = false
+	repo.SetHasCodeowners(false)
 	p.logger.Debug("No CODEOWNERS file found", "repo", repo.FullName)
 }
 
@@ -645,7 +645,7 @@ func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) 
 			teamList = append(teamList, team)
 		}
 		if teamsJSON, err := json.Marshal(teamList); err == nil {
-			repo.CodeownersTeams = stringPtr(string(teamsJSON))
+			repo.SetCodeownersTeams(stringPtr(string(teamsJSON)))
 		}
 	}
 
@@ -655,7 +655,7 @@ func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) 
 			userList = append(userList, user)
 		}
 		if usersJSON, err := json.Marshal(userList); err == nil {
-			repo.CodeownersUsers = stringPtr(string(usersJSON))
+			repo.SetCodeownersUsers(stringPtr(string(usersJSON)))
 		}
 	}
 }
@@ -663,7 +663,7 @@ func storeCodeownersJSON(repo *models.Repository, teams, users map[string]bool) 
 // parseCodeownersContent parses CODEOWNERS file content and extracts team/user references
 func (p *Profiler) parseCodeownersContent(repo *models.Repository, content string) {
 	// Store the raw content using stringPtr to ensure heap allocation
-	repo.CodeownersContent = stringPtr(content)
+	repo.SetCodeownersContent(stringPtr(content))
 
 	// Parse and extract team and user references
 	teams, users := extractCodeownersReferences(content)
@@ -681,11 +681,11 @@ func (p *Profiler) parseCodeownersContent(repo *models.Repository, content strin
 func (p *Profiler) profileWorkflowCount(ctx context.Context, org, name string, repo *models.Repository) {
 	workflows, _, err := p.client.REST().Actions.ListWorkflows(ctx, org, name, nil)
 	if err == nil && workflows != nil {
-		repo.WorkflowCount = workflows.GetTotalCount()
-		repo.HasActions = workflows.GetTotalCount() > 0
+		repo.SetWorkflowCount(workflows.GetTotalCount())
+		repo.SetHasActions(workflows.GetTotalCount() > 0)
 	} else {
-		repo.WorkflowCount = 0
-		repo.HasActions = false
+		repo.SetWorkflowCount(0)
+		repo.SetHasActions(false)
 		p.logger.Debug("Failed to get workflows", "error", err)
 	}
 }
@@ -697,7 +697,7 @@ func (p *Profiler) profileRunners(ctx context.Context, org, name string, repo *m
 		// Check if any runners are self-hosted (not GitHub-hosted)
 		for _, runner := range runners.Runners {
 			if !isGitHubHosted(runner.GetName()) {
-				repo.HasSelfHostedRunners = true
+				repo.SetHasSelfHostedRunners(true)
 				p.logger.Debug("Found self-hosted runner", "repo", repo.FullName, "runner", runner.GetName())
 				return
 			}
@@ -705,7 +705,7 @@ func (p *Profiler) profileRunners(ctx context.Context, org, name string, repo *m
 	} else {
 		p.logger.Debug("Failed to get runners", "error", err)
 	}
-	repo.HasSelfHostedRunners = false
+	repo.SetHasSelfHostedRunners(false)
 }
 
 // isGitHubHosted checks if a runner name indicates it's GitHub-hosted
@@ -741,7 +741,7 @@ func (p *Profiler) profileCollaborators(ctx context.Context, org, name string, r
 		opts.ListOptions.Page = resp.NextPage
 	}
 
-	repo.CollaboratorCount = outsideCount
+	repo.SetCollaboratorCount(outsideCount)
 }
 
 // profileApps identifies GitHub Apps installed for the repository
@@ -754,7 +754,7 @@ func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *mode
 	if !ok || len(installations) == 0 {
 		// No cached installations for this org
 		p.logger.Debug("No cached installations for org", "org", org)
-		repo.InstalledAppsCount = 0
+		repo.SetInstalledAppsCount(0)
 		return
 	}
 
@@ -780,7 +780,7 @@ func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *mode
 		}
 	}
 
-	repo.InstalledAppsCount = len(appNames)
+	repo.SetInstalledAppsCount(len(appNames))
 
 	// Store app names as JSON array
 	if len(appNames) > 0 {
@@ -789,7 +789,7 @@ func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *mode
 			p.logger.Debug("Failed to marshal app names", "error", err)
 		} else {
 			appNamesStr := string(appNamesJSON)
-			repo.InstalledApps = &appNamesStr
+			repo.SetInstalledApps(&appNamesStr)
 		}
 		p.logger.Debug("Found installed apps",
 			"repo", repo.FullName,
@@ -803,30 +803,30 @@ func (p *Profiler) profileReleases(ctx context.Context, org, name string, repo *
 	releases, _, err := p.client.REST().Repositories.ListReleases(ctx, org, name, &ghapi.ListOptions{PerPage: 100})
 	if err != nil {
 		p.logger.Debug("Failed to list releases", "error", err)
-		repo.ReleaseCount = 0
-		repo.HasReleaseAssets = false
+		repo.SetReleaseCount(0)
+		repo.SetHasReleaseAssets(false)
 		return
 	}
 
-	repo.ReleaseCount = len(releases)
+	repo.SetReleaseCount(len(releases))
 
 	// Check if any releases have assets
 	for _, release := range releases {
 		if len(release.Assets) > 0 {
-			repo.HasReleaseAssets = true
+			repo.SetHasReleaseAssets(true)
 			p.logger.Debug("Found release assets", "repo", repo.FullName, "release", release.GetTagName())
 			return
 		}
 	}
 
-	repo.HasReleaseAssets = false
+	repo.SetHasReleaseAssets(false)
 }
 
 // profileWikiContent checks if the wiki actually has content, not just if it's enabled
 // GitHub wikis are separate git repositories, so we check if the wiki repo exists and has commits
 func (p *Profiler) profileWikiContent(ctx context.Context, repo *models.Repository) {
 	// If wiki is not enabled, skip the check
-	if !repo.HasWiki {
+	if !repo.HasWiki() {
 		return
 	}
 
@@ -847,12 +847,12 @@ func (p *Profiler) profileWikiContent(ctx context.Context, repo *models.Reposito
 		p.logger.Debug("Failed to check wiki content, assuming no content",
 			"repo", repo.FullName,
 			"error", err)
-		repo.HasWiki = false
+		repo.SetHasWiki(false)
 		return
 	}
 
 	// Update HasWiki to reflect actual content presence
-	repo.HasWiki = hasContent
+	repo.SetHasWiki(hasContent)
 
 	if !hasContent {
 		p.logger.Debug("Wiki feature enabled but no content found",
@@ -871,7 +871,7 @@ func (p *Profiler) profileProjectContent(ctx context.Context, org, name string, 
 
 	if inMap {
 		// We have data from the org-level ProjectsV2 query
-		repo.HasProjects = hasProjectsInMap
+		repo.SetHasProjects(hasProjectsInMap)
 		if hasProjectsInMap {
 			p.logger.Debug("Found ProjectsV2 for repository (from org map)", "repo", repo.FullName)
 		}
@@ -880,7 +880,7 @@ func (p *Profiler) profileProjectContent(ctx context.Context, org, name string, 
 
 	// If not in map, default to false (no projects detected)
 	// The map should contain all repos with ProjectsV2, so absence means no projects
-	repo.HasProjects = false
+	repo.SetHasProjects(false)
 	p.logger.Debug("No ProjectsV2 found for repository", "repo", repo.FullName)
 }
 
@@ -951,8 +951,8 @@ func (p *Profiler) estimateMetadataSize(ctx context.Context, org, name string, r
 	var totalEstimate int64 = metadataOverhead
 
 	// Estimate issue and PR data
-	issueEstimate := int64(repo.IssueCount) * avgIssueSize
-	prEstimate := int64(repo.PullRequestCount) * avgPRSize
+	issueEstimate := int64(repo.GetIssueCount()) * avgIssueSize
+	prEstimate := int64(repo.GetPullRequestCount()) * avgPRSize
 	totalEstimate += issueEstimate + prEstimate
 
 	// Estimate attachments (10% of issue/PR data)
@@ -966,12 +966,12 @@ func (p *Profiler) estimateMetadataSize(ctx context.Context, org, name string, r
 			"repo", repo.FullName,
 			"error", err)
 		// Fallback: estimate ~1 MB per release
-		releaseSize = int64(repo.ReleaseCount) * 1024 * 1024
+		releaseSize = int64(repo.GetReleaseCount()) * 1024 * 1024
 	}
 	totalEstimate += releaseSize
 
 	// Store the estimate
-	repo.EstimatedMetadataSize = &totalEstimate
+	repo.SetEstimatedMetadataSize(&totalEstimate)
 
 	// Create detailed breakdown in JSON
 	details := fmt.Sprintf(`{"issues_estimate_bytes":%d,"prs_estimate_bytes":%d,"attachments_estimate_bytes":%d,"releases_bytes":%d,"overhead_bytes":%d,"total_bytes":%d,"releases":%s}`,
@@ -982,7 +982,7 @@ func (p *Profiler) estimateMetadataSize(ctx context.Context, org, name string, r
 		metadataOverhead,
 		totalEstimate,
 		releaseDetails)
-	repo.MetadataSizeDetails = &details
+	repo.SetMetadataSizeDetails(&details)
 
 	// Log if estimate is large (approaching 40 GiB limit)
 	estimateGB := float64(totalEstimate) / (1024 * 1024 * 1024)
@@ -999,7 +999,7 @@ func (p *Profiler) estimateMetadataSize(ctx context.Context, org, name string, r
 
 	// Calculate and store complexity score
 	complexity, breakdown := p.CalculateComplexity(repo)
-	repo.ComplexityScore = &complexity
+	repo.SetComplexityScore(&complexity)
 
 	// Serialize complexity breakdown to JSON for storage
 	if err := repo.SetComplexityBreakdown(breakdown); err != nil {

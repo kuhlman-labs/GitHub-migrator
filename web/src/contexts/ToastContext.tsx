@@ -76,19 +76,24 @@ export function ToastProvider({ children }: ToastProviderProps) {
         aria-live="polite"
       >
         {toasts.map((toast) => (
-          <Flash key={toast.id} variant={toast.variant} className="shadow-lg">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1">{toast.message}</div>
-              <button
-                onClick={() => dismissToast(toast.id)}
-                className="flex-shrink-0 p-1 hover:bg-black hover:bg-opacity-10 rounded transition-colors"
-                aria-label="Dismiss notification"
-              >
-                <XIcon size={16} />
-              </button>
-            </div>
-          </Flash>
-        ))}
+            <Flash 
+              key={toast.id} 
+              variant={toast.variant === 'warning' ? 'danger' : toast.variant} 
+              className="shadow-lg"
+              full
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1">{toast.message}</div>
+                <button
+                  onClick={() => dismissToast(toast.id)}
+                  className="flex-shrink-0 p-1 hover:bg-black hover:bg-opacity-10 rounded transition-colors"
+                  aria-label="Dismiss notification"
+                >
+                  <XIcon size={16} />
+                </button>
+              </div>
+            </Flash>
+          ))}
       </div>
     </ToastContext.Provider>
   );

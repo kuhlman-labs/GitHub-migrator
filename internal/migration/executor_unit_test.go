@@ -552,136 +552,172 @@ func TestCompareRepositoryCharacteristics(t *testing.T) {
 	}{
 		{
 			name: "identical repositories",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				BranchCount:   5,
-				CommitCount:   100,
-				TagCount:      10,
-				LastCommitSHA: &sha1,
-				HasWiki:       true,
-				HasPages:      false,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &mainBranch,
-				BranchCount:   5,
-				CommitCount:   100,
-				TagCount:      10,
-				LastCommitSHA: &sha1,
-				HasWiki:       true,
-				HasPages:      false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetBranchCount(5)
+				r.SetCommitCount(100)
+				r.SetTagCount(10)
+				r.SetLastCommitSHA(&sha1)
+				r.SetHasWiki(true)
+				r.SetHasPages(false)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetBranchCount(5)
+				r.SetCommitCount(100)
+				r.SetTagCount(10)
+				r.SetLastCommitSHA(&sha1)
+				r.SetHasWiki(true)
+				r.SetHasPages(false)
+				return r
+			}(),
 			expectedMismatchCount: 0,
 			expectedHasCritical:   false,
 		},
 		{
 			name: "different default branch - critical",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				BranchCount:   5,
-				CommitCount:   100,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &developBranch,
-				BranchCount:   5,
-				CommitCount:   100,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetBranchCount(5)
+				r.SetCommitCount(100)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&developBranch)
+				r.SetBranchCount(5)
+				r.SetCommitCount(100)
+				return r
+			}(),
 			expectedMismatchCount: 1,
 			expectedHasCritical:   true,
 		},
 		{
 			name: "different commit count - critical",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				CommitCount:   100,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &mainBranch,
-				CommitCount:   95,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetCommitCount(100)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetCommitCount(95)
+				return r
+			}(),
 			expectedMismatchCount: 1,
 			expectedHasCritical:   true,
 		},
 		{
 			name: "different branch count - critical",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				BranchCount:   5,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &mainBranch,
-				BranchCount:   4,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetBranchCount(5)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetBranchCount(4)
+				return r
+			}(),
 			expectedMismatchCount: 1,
 			expectedHasCritical:   true,
 		},
 		{
 			name: "different tag count - non-critical",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				TagCount:      10,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &mainBranch,
-				TagCount:      9,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetTagCount(10)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetTagCount(9)
+				return r
+			}(),
 			expectedMismatchCount: 1,
 			expectedHasCritical:   false,
 		},
 		{
 			name: "different last commit SHA - critical",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				LastCommitSHA: &sha1,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &mainBranch,
-				LastCommitSHA: &sha2,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetLastCommitSHA(&sha1)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetLastCommitSHA(&sha2)
+				return r
+			}(),
 			expectedMismatchCount: 1,
 			expectedHasCritical:   true,
 		},
 		{
 			name: "different wiki setting - non-critical",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				HasWiki:       true,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &mainBranch,
-				HasWiki:       false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetHasWiki(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetHasWiki(false)
+				return r
+			}(),
 			expectedMismatchCount: 1,
 			expectedHasCritical:   false,
 		},
 		{
 			name: "multiple non-critical mismatches",
-			source: &models.Repository{
-				DefaultBranch:  &mainBranch,
-				HasWiki:        true,
-				HasPages:       true,
-				HasDiscussions: true,
-			},
-			dest: &models.Repository{
-				DefaultBranch:  &mainBranch,
-				HasWiki:        false,
-				HasPages:       false,
-				HasDiscussions: false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetHasWiki(true)
+				r.SetHasPages(true)
+				r.SetHasDiscussions(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetHasWiki(false)
+				r.SetHasPages(false)
+				r.SetHasDiscussions(false)
+				return r
+			}(),
 			expectedMismatchCount: 3,
 			expectedHasCritical:   false,
 		},
 		{
 			name: "multiple mismatches including critical",
-			source: &models.Repository{
-				DefaultBranch: &mainBranch,
-				CommitCount:   100,
-				HasWiki:       true,
-			},
-			dest: &models.Repository{
-				DefaultBranch: &developBranch,
-				CommitCount:   95,
-				HasWiki:       false,
-			},
+			source: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&mainBranch)
+				r.SetCommitCount(100)
+				r.SetHasWiki(true)
+				return r
+			}(),
+			dest: func() *models.Repository {
+				r := &models.Repository{}
+				r.SetDefaultBranch(&developBranch)
+				r.SetCommitCount(95)
+				r.SetHasWiki(false)
+				return r
+			}(),
 			expectedMismatchCount: 3,
 			expectedHasCritical:   true,
 		},
@@ -811,27 +847,36 @@ func TestGetDestinationRepoNameWithADO(t *testing.T) {
 	}{
 		{
 			name: "ADO repo - uses project-repo pattern",
-			repo: &models.Repository{
-				FullName:   "my-org/my-project/my-repo",
-				ADOProject: &adoProject,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "my-org/my-project/my-repo",
+				}
+				r.SetADOProject(&adoProject)
+				return r
+			}(),
 			expectedName: "my-project-my-repo", // project-repo pattern to avoid conflicts
 		},
 		{
 			name: "ADO repo with spaces in name",
-			repo: &models.Repository{
-				FullName:   "my-org/my-project/my awesome repo",
-				ADOProject: &adoProject,
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName: "my-org/my-project/my awesome repo",
+				}
+				r.SetADOProject(&adoProject)
+				return r
+			}(),
 			expectedName: "my-project-my-awesome-repo", // spaces replaced with hyphens
 		},
 		{
 			name: "ADO repo with destination full name - overrides",
-			repo: &models.Repository{
-				FullName:            "my-org/my-project/old-name",
-				ADOProject:          &adoProject,
-				DestinationFullName: ptrString("dest-org/new-name"),
-			},
+			repo: func() *models.Repository {
+				r := &models.Repository{
+					FullName:            "my-org/my-project/old-name",
+					DestinationFullName: ptrString("dest-org/new-name"),
+				}
+				r.SetADOProject(&adoProject)
+				return r
+			}(),
 			expectedName: "new-name", // explicit destination always wins
 		},
 		{

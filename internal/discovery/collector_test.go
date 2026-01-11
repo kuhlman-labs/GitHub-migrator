@@ -367,17 +367,18 @@ func TestProfileRepository_SaveToDatabase(t *testing.T) {
 	totalSize := int64(1024 * 1024)
 	defaultBranch := "main"
 	repo := &models.Repository{
-		FullName:      "test/repo",
-		Source:        "ghes",
-		SourceURL:     "https://github.com/test/repo",
-		TotalSize:     &totalSize,
-		DefaultBranch: &defaultBranch,
-		HasWiki:       true,
-		HasPages:      false,
-		Status:        string(models.StatusPending),
-		DiscoveredAt:  time.Now(),
-		UpdatedAt:     time.Now(),
+		FullName:     "test/repo",
+		Source:       "ghes",
+		SourceURL:    "https://github.com/test/repo",
+		Status:       string(models.StatusPending),
+		Visibility:   "private",
+		DiscoveredAt: time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	repo.SetTotalSize(&totalSize)
+	repo.SetDefaultBranch(&defaultBranch)
+	repo.SetHasWiki(true)
+	repo.SetHasPages(false)
 
 	if err := db.SaveRepository(ctx, repo); err != nil {
 		t.Fatalf("Failed to save repository: %v", err)
@@ -400,10 +401,10 @@ func TestProfileRepository_SaveToDatabase(t *testing.T) {
 	if retrieved.Source != "ghes" {
 		t.Errorf("Expected Source 'ghes', got '%s'", retrieved.Source)
 	}
-	if retrieved.TotalSize == nil || *retrieved.TotalSize != totalSize {
-		t.Errorf("Expected TotalSize %d, got %v", totalSize, retrieved.TotalSize)
+	if retrieved.GetTotalSize() == nil || *retrieved.GetTotalSize() != totalSize {
+		t.Errorf("Expected TotalSize %d, got %v", totalSize, retrieved.GetTotalSize())
 	}
-	if !retrieved.HasWiki {
+	if !retrieved.HasWiki() {
 		t.Error("Expected HasWiki to be true")
 	}
 }

@@ -8,6 +8,39 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+// createTestADORepo creates a test ADO repository with proper related tables
+func createTestADORepo(fullName, project string, isGit bool) *models.Repository {
+	now := time.Now()
+	status := "pending"
+	if !isGit {
+		status = string(models.StatusRemediationRequired)
+	}
+	return &models.Repository{
+		FullName:        fullName,
+		Source:          "azuredevops",
+		SourceURL:       "https://dev.azure.com/" + fullName,
+		Status:          status,
+		Visibility:      "private",
+		DiscoveredAt:    now,
+		UpdatedAt:       now,
+		LastDiscoveryAt: &now,
+		ADOProperties: &models.RepositoryADOProperties{
+			Project: &project,
+			IsGit:   isGit,
+		},
+	}
+}
+
+// createTestADORepoComplex creates a complex ADO repository with additional properties
+func createTestADORepoComplex(fullName, project string, hasBoards, hasPipelines bool, prCount, branchPolicyCount int) *models.Repository {
+	repo := createTestADORepo(fullName, project, true)
+	repo.ADOProperties.HasBoards = hasBoards
+	repo.ADOProperties.HasPipelines = hasPipelines
+	repo.ADOProperties.PullRequestCount = prCount
+	repo.ADOProperties.BranchPolicyCount = branchPolicyCount
+	return repo
+}
+
 func TestGetADOProjects(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -68,29 +101,14 @@ func TestCountTFVCRepositories(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test repositories with TFVC and Git
-	repos := []models.Repository{
-		{
-			FullName:   "org1/proj1/repo1",
-			ADOProject: stringPtr("proj1"),
-			ADOIsGit:   true,
-			Status:     "pending",
-		},
-		{
-			FullName:   "org1/proj1/repo2",
-			ADOProject: stringPtr("proj1"),
-			ADOIsGit:   false, // TFVC
-			Status:     "pending",
-		},
-		{
-			FullName:   "org1/proj2/repo3",
-			ADOProject: stringPtr("proj2"),
-			ADOIsGit:   false, // TFVC
-			Status:     "pending",
-		},
+	repos := []*models.Repository{
+		createTestADORepo("org1/proj1/repo1", "proj1", true),
+		createTestADORepo("org1/proj1/repo2", "proj1", false), // TFVC
+		createTestADORepo("org1/proj2/repo3", "proj2", false), // TFVC
 	}
 
 	for _, repo := range repos {
-		if err := db.SaveRepository(ctx, &repo); err != nil {
+		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository: %v", err)
 		}
 	}
@@ -117,29 +135,14 @@ func TestGetRepositoriesByADOProject(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test repositories in different projects
-	repos := []models.Repository{
-		{
-			FullName:   "org1/ProjectA/repo1",
-			ADOProject: stringPtr("ProjectA"),
-			ADOIsGit:   true,
-			Status:     "pending",
-		},
-		{
-			FullName:   "org1/ProjectA/repo2",
-			ADOProject: stringPtr("ProjectA"),
-			ADOIsGit:   true,
-			Status:     "pending",
-		},
-		{
-			FullName:   "org1/ProjectB/repo3",
-			ADOProject: stringPtr("ProjectB"),
-			ADOIsGit:   true,
-			Status:     "pending",
-		},
+	repos := []*models.Repository{
+		createTestADORepo("org1/ProjectA/repo1", "ProjectA", true),
+		createTestADORepo("org1/ProjectA/repo2", "ProjectA", true),
+		createTestADORepo("org1/ProjectB/repo3", "ProjectB", true),
 	}
 
 	for _, repo := range repos {
-		if err := db.SaveRepository(ctx, &repo); err != nil {
+		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository: %v", err)
 		}
 	}
@@ -170,29 +173,14 @@ func TestCountRepositoriesByADOProjects(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test repositories
-	repos := []models.Repository{
-		{
-			FullName:   "org1/ProjectA/repo1",
-			ADOProject: stringPtr("ProjectA"),
-			ADOIsGit:   true,
-			Status:     "pending",
-		},
-		{
-			FullName:   "org1/ProjectA/repo2",
-			ADOProject: stringPtr("ProjectA"),
-			ADOIsGit:   true,
-			Status:     "pending",
-		},
-		{
-			FullName:   "org1/ProjectB/repo3",
-			ADOProject: stringPtr("ProjectB"),
-			ADOIsGit:   false, // TFVC
-			Status:     "pending",
-		},
+	repos := []*models.Repository{
+		createTestADORepo("org1/ProjectA/repo1", "ProjectA", true),
+		createTestADORepo("org1/ProjectA/repo2", "ProjectA", true),
+		createTestADORepo("org1/ProjectB/repo3", "ProjectB", false), // TFVC
 	}
 
 	for _, repo := range repos {
-		if err := db.SaveRepository(ctx, &repo); err != nil {
+		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository: %v", err)
 		}
 	}
@@ -223,41 +211,36 @@ func TestADOComplexityScoring(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test repositories with different complexity factors
-	repos := []models.Repository{
-		{
-			FullName:   "org1/proj/tfvc-repo",
-			ADOProject: stringPtr("proj"),
-			ADOIsGit:   false, // TFVC - should have highest complexity
-			Status:     "pending",
-		},
-		{
-			FullName:             "org1/proj/complex-repo",
-			ADOProject:           stringPtr("proj"),
-			ADOIsGit:             true,
-			ADOHasBoards:         true,
-			ADOHasPipelines:      true,
-			ADOPullRequestCount:  100,
-			ADOBranchPolicyCount: 10,
-			Status:               "pending",
-		},
-		{
-			FullName:   "org1/proj/simple-repo",
-			ADOProject: stringPtr("proj"),
-			ADOIsGit:   true,
-			Status:     "pending",
-		},
+	repos := []*models.Repository{
+		createTestADORepo("org1/proj/tfvc-repo", "proj", false), // TFVC - should have highest complexity
+		createTestADORepoComplex("org1/proj/complex-repo", "proj", true, true, 100, 10),
+		createTestADORepo("org1/proj/simple-repo", "proj", true),
 	}
 
 	for _, repo := range repos {
-		if err := db.SaveRepository(ctx, &repo); err != nil {
+		if err := db.SaveRepository(ctx, repo); err != nil {
 			t.Fatalf("Failed to save repository: %v", err)
 		}
 	}
 
+	// Reload repositories from DB to verify ADO properties were saved correctly
+	loadedRepos := make([]*models.Repository, 0, len(repos))
+	for _, repo := range repos {
+		loaded, err := db.GetRepository(ctx, repo.FullName)
+		if err != nil {
+			t.Fatalf("Failed to load repository %s: %v", repo.FullName, err)
+		}
+		t.Logf("Loaded %s: ADOProperties=%v, IsGit=%v", loaded.FullName, loaded.ADOProperties != nil, loaded.GetADOIsGit())
+		if loaded.ADOProperties != nil {
+			t.Logf("  ADOProperties.IsGit=%v, Project=%v", loaded.ADOProperties.IsGit, loaded.ADOProperties.Project)
+		}
+		loadedRepos = append(loadedRepos, loaded)
+	}
+
 	// Verify TFVC repositories are flagged
 	tfvcCount := 0
-	for _, repo := range repos {
-		if !repo.ADOIsGit {
+	for _, repo := range loadedRepos {
+		if !repo.GetADOIsGit() {
 			tfvcCount++
 			t.Logf("TFVC repository detected: %s", repo.FullName)
 		}
@@ -268,22 +251,22 @@ func TestADOComplexityScoring(t *testing.T) {
 	}
 
 	// Verify complexity factors
-	for _, repo := range repos {
+	for _, repo := range loadedRepos {
 		complexityFactors := []string{}
 
-		if !repo.ADOIsGit {
+		if !repo.GetADOIsGit() {
 			complexityFactors = append(complexityFactors, "TFVC (blocking)")
 		}
-		if repo.ADOHasBoards {
+		if repo.GetADOHasBoards() {
 			complexityFactors = append(complexityFactors, "Azure Boards")
 		}
-		if repo.ADOHasPipelines {
+		if repo.GetADOHasPipelines() {
 			complexityFactors = append(complexityFactors, "Azure Pipelines")
 		}
-		if repo.ADOPullRequestCount > 50 {
+		if repo.GetADOPullRequestCount() > 50 {
 			complexityFactors = append(complexityFactors, "High PR count")
 		}
-		if repo.ADOBranchPolicyCount > 5 {
+		if repo.GetADOBranchPolicyCount() > 5 {
 			complexityFactors = append(complexityFactors, "Branch policies")
 		}
 

@@ -9,7 +9,6 @@ export function Login() {
   const requiresOrg = hasRules?.requires_org_membership;
   const requiresTeam = hasRules?.requires_team_membership;
   const requiresEnterpriseAdmin = hasRules?.requires_enterprise_admin;
-  const requiresEnterpriseMembership = hasRules?.requires_enterprise_membership;
 
   return (
     <div
@@ -67,24 +66,22 @@ export function Login() {
                 className="text-xs pl-4 m-0 list-disc"
                 style={{ color: 'var(--fgColor-default)' }}
               >
+                {/* Enterprise requirement - shown first and prominently */}
+                {hasRules.enterprise && (
+                  <li className="mb-1">
+                    {requiresEnterpriseAdmin 
+                      ? `Enterprise admin of: ${hasRules.enterprise}`
+                      : `Member of enterprise: ${hasRules.enterprise}`}
+                  </li>
+                )}
                 {requiresOrg && (
                   <li className="mb-1">
-                    Enterprise member: {hasRules.required_orgs?.join(', ')}
+                    Organization member: {hasRules.required_orgs?.join(', ')}
                   </li>
                 )}
                 {requiresTeam && (
                   <li className="mb-1">
                     Team member: {hasRules.required_teams?.join(', ')}
-                  </li>
-                )}
-                {requiresEnterpriseAdmin && (
-                  <li className="mb-1">
-                    Enterprise admin: {hasRules.enterprise}
-                  </li>
-                )}
-                {requiresEnterpriseMembership && !requiresEnterpriseAdmin && (
-                  <li className="mb-1">
-                    Enterprise member: {hasRules.enterprise}
                   </li>
                 )}
               </ul>

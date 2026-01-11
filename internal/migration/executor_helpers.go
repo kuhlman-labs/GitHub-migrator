@@ -56,7 +56,8 @@ func (e *Executor) getDestinationRepoName(repo *models.Repository) string {
 	// ADO full_name format: org/project/repo -> we want "project-repo"
 	// This preserves project context and prevents collisions between
 	// repos with the same name in different projects
-	if repo.ADOProject != nil && *repo.ADOProject != "" {
+	adoProject := repo.GetADOProject()
+	if adoProject != nil && *adoProject != "" {
 		parts := strings.Split(repo.FullName, "/")
 		if len(parts) >= 3 {
 			project := sanitizeRepoName(parts[1])
@@ -365,25 +366,25 @@ func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Re
 
 	// Update basic repository information from API
 	totalSize := int64(sourceRepo.GetSize()) * 1024 // Convert KB to bytes
-	repo.TotalSize = &totalSize
+	repo.SetTotalSize(&totalSize)
 
 	defaultBranch := sourceRepo.GetDefaultBranch()
-	repo.DefaultBranch = &defaultBranch
+	repo.SetDefaultBranch(&defaultBranch)
 
-	repo.HasWiki = sourceRepo.GetHasWiki()
-	repo.HasPages = sourceRepo.GetHasPages()
+	repo.SetHasWiki(sourceRepo.GetHasWiki())
+	repo.SetHasPages(sourceRepo.GetHasPages())
 	repo.IsArchived = sourceRepo.GetArchived()
 
 	// Update last push date
 	if sourceRepo.PushedAt != nil {
 		pushTime := sourceRepo.PushedAt.Time
-		repo.LastCommitDate = &pushTime
+		repo.SetLastCommitDate(&pushTime)
 	}
 
 	// Get branch count
 	branches, _, err := e.sourceClient.REST().Repositories.ListBranches(ctx, repo.Organization(), repo.Name(), nil)
 	if err == nil {
-		repo.BranchCount = len(branches)
+		repo.SetBranchCount(len(branches))
 	}
 
 	// Get last commit SHA from default branch
@@ -391,14 +392,14 @@ func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Re
 		branch, _, err := e.sourceClient.REST().Repositories.GetBranch(ctx, repo.Organization(), repo.Name(), defaultBranch, 0)
 		if err == nil && branch != nil && branch.Commit != nil {
 			sha := branch.Commit.GetSHA()
-			repo.LastCommitSHA = &sha
+			repo.SetLastCommitSHA(&sha)
 		}
 	}
 
 	// Get tag count
 	tags, _, err := e.sourceClient.REST().Repositories.ListTags(ctx, repo.Organization(), repo.Name(), nil)
 	if err == nil {
-		repo.TagCount = len(tags)
+		repo.SetTagCount(len(tags))
 	}
 
 	// Update repository in database
@@ -410,9 +411,9 @@ func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Re
 
 	e.logger.Info("Pre-migration discovery complete",
 		"repo", repo.FullName,
-		"total_size", repo.TotalSize,
-		"branches", repo.BranchCount,
-		"tags", repo.TagCount)
+		"total_size", repo.GetTotalSize(),
+		"branches", repo.GetBranchCount(),
+		"tags", repo.GetTagCount())
 
 	return nil
 }

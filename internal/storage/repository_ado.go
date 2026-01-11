@@ -32,15 +32,16 @@ func (db *Database) GetADOProjectsFiltered(ctx context.Context, organization str
 	// Query repositories to get distinct ADO projects for the specified source
 	query := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Select("DISTINCT ado_project as name, SUBSTR(full_name, 1, INSTR(full_name, '/') - 1) as organization").
-		Where("ado_project IS NOT NULL AND ado_project != ''")
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Select("DISTINCT a.project as name, SUBSTR(repositories.full_name, 1, INSTR(repositories.full_name, '/') - 1) as organization").
+		Where("a.project IS NOT NULL AND a.project != ''")
 
 	if organization != "" {
-		query = query.Where("full_name LIKE ?", organization+"/%")
+		query = query.Where("repositories.full_name LIKE ?", organization+"/%")
 	}
 
 	if sourceID != nil {
-		query = query.Where("source_id = ?", *sourceID)
+		query = query.Where("repositories.source_id = ?", *sourceID)
 	}
 
 	var results []struct {
@@ -81,8 +82,9 @@ func (db *Database) GetADOProject(ctx context.Context, organization, projectName
 func (db *Database) GetRepositoriesByADOProject(ctx context.Context, organization, projectName string) ([]models.Repository, error) {
 	var repos []models.Repository
 	err := db.db.WithContext(ctx).
-		Where("ado_project = ?", projectName).
-		Order("full_name ASC").
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Where("a.project = ?", projectName).
+		Order("repositories.full_name ASC").
 		Find(&repos).Error
 
 	if err != nil {
@@ -99,11 +101,12 @@ func (db *Database) CountRepositoriesByADOProject(ctx context.Context, organizat
 	var count int64
 	query := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("ado_project = ?", projectName)
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Where("a.project = ?", projectName)
 
 	// Also filter by organization to handle duplicate project names across different ADO orgs
 	if organization != "" {
-		query = query.Where("full_name LIKE ?", organization+"/%")
+		query = query.Where("repositories.full_name LIKE ?", organization+"/%")
 	}
 
 	err := query.Count(&count).Error
@@ -120,16 +123,17 @@ func (db *Database) CountRepositoriesByADOProjectFiltered(ctx context.Context, o
 	var count int64
 	query := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("ado_project = ?", projectName)
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Where("a.project = ?", projectName)
 
 	// Filter by organization to handle duplicate project names across different ADO orgs
 	if organization != "" {
-		query = query.Where("full_name LIKE ?", organization+"/%")
+		query = query.Where("repositories.full_name LIKE ?", organization+"/%")
 	}
 
 	// Filter by source_id for multi-source support
 	if sourceID != nil {
-		query = query.Where("source_id = ?", *sourceID)
+		query = query.Where("repositories.source_id = ?", *sourceID)
 	}
 
 	err := query.Count(&count).Error
@@ -147,7 +151,8 @@ func (db *Database) CountRepositoriesByADOOrganization(ctx context.Context, orga
 	// We filter by ado_project being NOT NULL to identify ADO repos
 	err := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("full_name LIKE ? AND ado_project IS NOT NULL", organization+"/%").
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Where("repositories.full_name LIKE ? AND a.project IS NOT NULL", organization+"/%").
 		Count(&count).Error
 
 	if err != nil {
@@ -163,7 +168,8 @@ func (db *Database) CountRepositoriesByADOProjects(ctx context.Context, organiza
 	// For ADO repos, filter by full_name prefix and project names
 	err := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("full_name LIKE ? AND ado_project IN ?", organization+"/%", projects).
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Where("repositories.full_name LIKE ? AND a.project IN ?", organization+"/%", projects).
 		Count(&count).Error
 
 	if err != nil {
@@ -179,11 +185,12 @@ func (db *Database) CountTFVCRepositories(ctx context.Context, organization stri
 	var count int64
 	query := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
-		Where("ado_is_git = ? AND ado_project IS NOT NULL", false)
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Where("a.is_git = ? AND a.project IS NOT NULL", false)
 
 	if organization != "" {
 		// Filter by full_name prefix for ADO organization
-		query = query.Where("full_name LIKE ?", organization+"/%")
+		query = query.Where("repositories.full_name LIKE ?", organization+"/%")
 	}
 
 	err := query.Count(&count).Error

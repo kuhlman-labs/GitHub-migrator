@@ -11,78 +11,78 @@ func (p *Profiler) CalculateComplexity(repo *models.Repository) (int, *models.Co
 	complexity := 0
 
 	// Size tier scoring (0-9 points)
-	sizePoints := calculateSizePoints(repo.TotalSize)
+	sizePoints := calculateSizePoints(repo.GetTotalSize())
 	breakdown.SizePoints = sizePoints
 	complexity += sizePoints
 
 	// Large files (blocking for GitHub migrations) - 4 points
-	if repo.HasLargeFiles {
+	if repo.HasLargeFiles() {
 		breakdown.LargeFilesPoints = 4
 		complexity += 4
 	}
 
 	// High impact features (3 points each)
-	if repo.EnvironmentCount > 0 {
+	if repo.GetEnvironmentCount() > 0 {
 		breakdown.EnvironmentsPoints = 3
 		complexity += 3
 	}
-	if repo.SecretCount > 0 {
+	if repo.GetSecretCount() > 0 {
 		breakdown.SecretsPoints = 3
 		complexity += 3
 	}
-	if repo.HasPackages {
+	if repo.HasPackages() {
 		breakdown.PackagesPoints = 3
 		complexity += 3
 	}
-	if repo.HasSelfHostedRunners {
+	if repo.HasSelfHostedRunners() {
 		breakdown.RunnersPoints = 3
 		complexity += 3
 	}
 
 	// Moderate impact features (2 points each)
-	if repo.VariableCount > 0 {
+	if repo.GetVariableCount() > 0 {
 		breakdown.VariablesPoints = 2
 		complexity += 2
 	}
-	if repo.HasDiscussions {
+	if repo.HasDiscussions() {
 		breakdown.DiscussionsPoints = 2
 		complexity += 2
 	}
-	if repo.ReleaseCount > 0 {
+	if repo.GetReleaseCount() > 0 {
 		breakdown.ReleasesPoints = 2
 		complexity += 2
 	}
-	if repo.HasLFS {
+	if repo.HasLFS() {
 		breakdown.LFSPoints = 2
 		complexity += 2
 	}
-	if repo.HasSubmodules {
+	if repo.HasSubmodules() {
 		breakdown.SubmodulesPoints = 2
 		complexity += 2
 	}
-	if repo.InstalledAppsCount > 0 {
+	if repo.GetInstalledAppsCount() > 0 {
 		breakdown.AppsPoints = 2
 		complexity += 2
 	}
-	if repo.HasProjects {
+	if repo.HasProjects() {
 		breakdown.ProjectsPoints = 2
 		complexity += 2
 	}
 
 	// Low impact features (1 point each)
-	if repo.HasCodeScanning || repo.HasDependabot || repo.HasSecretScanning {
+	if repo.HasCodeScanning() || repo.HasDependabot() || repo.HasSecretScanning() {
 		breakdown.SecurityPoints = 1
 		complexity += 1
 	}
-	if repo.WebhookCount > 0 {
+	if repo.GetWebhookCount() > 0 {
 		breakdown.WebhooksPoints = 1
 		complexity += 1
 	}
-	if repo.BranchProtections > 0 {
+	if repo.GetBranchProtections() > 0 {
 		breakdown.BranchProtectionsPoints = 1
 		complexity += 1
 	}
-	if repo.HasRulesets {
+	if repo.HasRulesets() {
 		breakdown.RulesetsPoints = 1
 		complexity += 1
 	}
@@ -94,7 +94,7 @@ func (p *Profiler) CalculateComplexity(repo *models.Repository) (int, *models.Co
 		breakdown.InternalVisibilityPoints = 1
 		complexity += 1
 	}
-	if repo.HasCodeowners {
+	if repo.HasCodeowners() {
 		breakdown.CodeownersPoints = 1
 		complexity += 1
 	}
@@ -133,7 +133,7 @@ func calculateSizePoints(totalSize *int64) int {
 // Uses simplified thresholds since we don't have access to database quantiles
 func calculateActivityPoints(repo *models.Repository) int {
 	// Estimate activity from commit count and open issue count
-	activity := repo.CommitCount + (repo.OpenIssueCount * 2) // Issues/PRs count double
+	activity := repo.GetCommitCount() + (repo.GetOpenIssueCount() * 2) // Issues/PRs count double
 
 	// Use static thresholds (less accurate than SQL quantiles, but reasonable)
 	if activity > 1000 {

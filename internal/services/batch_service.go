@@ -279,7 +279,7 @@ func (s *BatchService) StartBatch(ctx context.Context, batchID int64) (*models.B
 // checkRepoEligibility checks if a repository is eligible for batch assignment.
 func (s *BatchService) checkRepoEligibility(repo *models.Repository) (bool, string) {
 	// Check for oversized repository
-	if repo.HasOversizedRepository {
+	if repo.HasOversizedRepository() {
 		return false, "repository exceeds GitHub's 40 GiB size limit"
 	}
 

@@ -257,11 +257,19 @@ func (h *AuthHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 			rules["requires_enterprise_admin"] = true
 			rules["enterprise"] = h.config.AuthorizationRules.RequireEnterpriseSlug
 		}
-		if h.config.AuthorizationRules.RequireEnterpriseMembership && h.config.AuthorizationRules.RequireEnterpriseSlug != "" {
-			rules["requires_enterprise_membership"] = true
+
+		// Always require enterprise membership if an enterprise slug is configured
+		// This ensures users must be members of the configured destination enterprise
+		enterpriseSlug := h.config.AuthorizationRules.RequireEnterpriseSlug
+		if enterpriseSlug != "" {
+			rules["enterprise"] = enterpriseSlug
+			// If not explicitly requiring enterprise admin, at minimum require membership
 			if !h.config.AuthorizationRules.RequireEnterpriseAdmin {
-				rules["enterprise"] = h.config.AuthorizationRules.RequireEnterpriseSlug
+				rules["requires_enterprise_membership"] = true
 			}
+		} else if h.config.AuthorizationRules.RequireEnterpriseMembership {
+			// Legacy support: explicit enterprise membership requirement
+			rules["requires_enterprise_membership"] = true
 		}
 		response["authorization_rules"] = rules
 	}
