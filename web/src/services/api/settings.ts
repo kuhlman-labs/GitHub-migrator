@@ -106,6 +106,22 @@ export interface ValidateTeamsResponse {
   error_message?: string;
 }
 
+// OAuth validation types
+export interface ValidateOAuthRequest {
+  oauth_base_url: string;
+  oauth_client_id: string;
+  callback_url?: string;
+  session_secret: string;
+  frontend_url?: string;
+}
+
+export interface ValidateOAuthResponse {
+  valid: boolean;
+  error?: string;
+  warnings?: string[];
+  details?: Record<string, unknown>;
+}
+
 // Logging settings types
 export interface LoggingSettingsResponse {
   debug_enabled: boolean;
@@ -129,10 +145,26 @@ export async function getSetupProgress(): Promise<SetupProgressResponse> {
   return response.data;
 }
 
+// Update settings response with optional restart notification
+export interface UpdateSettingsResponse {
+  settings?: SettingsResponse;
+  restart_required?: boolean;
+  message?: string;
+}
+
 // Update settings
-export async function updateSettings(request: UpdateSettingsRequest): Promise<SettingsResponse> {
-  const response = await client.put<SettingsResponse>('/settings', request);
-  return response.data;
+export async function updateSettings(request: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
+  const response = await client.put<SettingsResponse | UpdateSettingsResponse>('/settings', request);
+  
+  // Handle both response formats:
+  // 1. Direct SettingsResponse (when no auth settings changed)
+  // 2. Wrapped response with restart_required (when auth settings changed)
+  const data = response.data;
+  if ('restart_required' in data) {
+    return data as UpdateSettingsResponse;
+  }
+  // Wrap plain SettingsResponse for consistent interface
+  return { settings: data as SettingsResponse };
 }
 
 // Validate destination connection
@@ -144,6 +176,12 @@ export async function validateDestination(request: ValidateDestinationRequest): 
 // Validate that teams exist in the destination GitHub instance
 export async function validateTeams(teams: string[]): Promise<ValidateTeamsResponse> {
   const response = await client.post<ValidateTeamsResponse>('/settings/teams/validate', { teams });
+  return response.data;
+}
+
+// Validate OAuth configuration before enabling auth
+export async function validateOAuth(request: ValidateOAuthRequest): Promise<ValidateOAuthResponse> {
+  const response = await client.post<ValidateOAuthResponse>('/settings/oauth/validate', request);
   return response.data;
 }
 
@@ -166,6 +204,7 @@ export const settingsApi = {
   updateSettings,
   validateDestination,
   validateTeams,
+  validateOAuth,
   getLoggingSettings,
   updateLoggingSettings,
 };

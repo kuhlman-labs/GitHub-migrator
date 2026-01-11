@@ -34,14 +34,14 @@ func createTestRepository(fullName string) *models.Repository {
 		UpdatedAt:    now,
 		// Related tables initialized below
 		GitProperties: &models.RepositoryGitProperties{
-			TotalSize:     &totalSize,
-			DefaultBranch: &defaultBranch,
-			HasLFS:        false,
-			HasSubmodules: false,
-			HasLargeFiles: false,
+			TotalSize:      &totalSize,
+			DefaultBranch:  &defaultBranch,
+			HasLFS:         false,
+			HasSubmodules:  false,
+			HasLargeFiles:  false,
 			LargeFileCount: 0,
-			BranchCount:   5,
-			CommitCount:   100,
+			BranchCount:    5,
+			CommitCount:    100,
 		},
 		Features: &models.RepositoryFeatures{
 			HasWiki:              false,

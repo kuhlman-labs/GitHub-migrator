@@ -69,17 +69,52 @@ func (h *Handler) exportExecutiveReportCSV(w http.ResponseWriter, sourceType str
 	output.WriteString("Feature,Repository Count,Percentage\n")
 	totalRepos := featureStats.TotalRepositories
 	if totalRepos > 0 {
-		if sourceType == models.SourceTypeAzureDevOps {
-			output.WriteString(fmt.Sprintf("TFVC Repositories,%d,%.1f%%\n", featureStats.ADOTFVCCount, float64(featureStats.ADOTFVCCount)/float64(totalRepos)*100))
-			output.WriteString(fmt.Sprintf("Azure Boards,%d,%.1f%%\n", featureStats.ADOHasBoards, float64(featureStats.ADOHasBoards)/float64(totalRepos)*100))
-			output.WriteString(fmt.Sprintf("Azure Pipelines,%d,%.1f%%\n", featureStats.ADOHasPipelines, float64(featureStats.ADOHasPipelines)/float64(totalRepos)*100))
-		} else {
-			output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, float64(featureStats.HasActions)/float64(totalRepos)*100))
-			output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, float64(featureStats.HasWiki)/float64(totalRepos)*100))
-			output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, float64(featureStats.HasPages)/float64(totalRepos)*100))
+		calcPct := func(count int) float64 {
+			return float64(count) / float64(totalRepos) * 100
 		}
-		output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, float64(featureStats.HasLFS)/float64(totalRepos)*100))
-		output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, float64(featureStats.HasSubmodules)/float64(totalRepos)*100))
+
+		if sourceType == models.SourceTypeAzureDevOps {
+			// Azure DevOps specific features
+			output.WriteString(fmt.Sprintf("TFVC Repositories,%d,%.1f%%\n", featureStats.ADOTFVCCount, calcPct(featureStats.ADOTFVCCount)))
+			output.WriteString(fmt.Sprintf("Azure Pipelines,%d,%.1f%%\n", featureStats.ADOHasPipelines, calcPct(featureStats.ADOHasPipelines)))
+			output.WriteString(fmt.Sprintf("YAML Pipelines,%d,%.1f%%\n", featureStats.ADOHasYAMLPipelines, calcPct(featureStats.ADOHasYAMLPipelines)))
+			output.WriteString(fmt.Sprintf("Classic Pipelines,%d,%.1f%%\n", featureStats.ADOHasClassicPipelines, calcPct(featureStats.ADOHasClassicPipelines)))
+			output.WriteString(fmt.Sprintf("Azure Boards,%d,%.1f%%\n", featureStats.ADOHasBoards, calcPct(featureStats.ADOHasBoards)))
+			output.WriteString(fmt.Sprintf("Work Items,%d,%.1f%%\n", featureStats.ADOHasWorkItems, calcPct(featureStats.ADOHasWorkItems)))
+			output.WriteString(fmt.Sprintf("Wiki,%d,%.1f%%\n", featureStats.ADOHasWiki, calcPct(featureStats.ADOHasWiki)))
+			output.WriteString(fmt.Sprintf("Branch Policies,%d,%.1f%%\n", featureStats.ADOHasBranchPolicies, calcPct(featureStats.ADOHasBranchPolicies)))
+			output.WriteString(fmt.Sprintf("Pull Requests,%d,%.1f%%\n", featureStats.ADOHasPullRequests, calcPct(featureStats.ADOHasPullRequests)))
+			output.WriteString(fmt.Sprintf("Test Plans,%d,%.1f%%\n", featureStats.ADOHasTestPlans, calcPct(featureStats.ADOHasTestPlans)))
+			output.WriteString(fmt.Sprintf("Package Feeds,%d,%.1f%%\n", featureStats.ADOHasPackageFeeds, calcPct(featureStats.ADOHasPackageFeeds)))
+			output.WriteString(fmt.Sprintf("Service Hooks,%d,%.1f%%\n", featureStats.ADOHasServiceHooks, calcPct(featureStats.ADOHasServiceHooks)))
+			output.WriteString(fmt.Sprintf("GitHub Advanced Security,%d,%.1f%%\n", featureStats.ADOHasGHAS, calcPct(featureStats.ADOHasGHAS)))
+		} else {
+			// GitHub specific features
+			output.WriteString(fmt.Sprintf("GitHub Actions,%d,%.1f%%\n", featureStats.HasActions, calcPct(featureStats.HasActions)))
+			output.WriteString(fmt.Sprintf("Wikis,%d,%.1f%%\n", featureStats.HasWiki, calcPct(featureStats.HasWiki)))
+			output.WriteString(fmt.Sprintf("Pages,%d,%.1f%%\n", featureStats.HasPages, calcPct(featureStats.HasPages)))
+			output.WriteString(fmt.Sprintf("Discussions,%d,%.1f%%\n", featureStats.HasDiscussions, calcPct(featureStats.HasDiscussions)))
+			output.WriteString(fmt.Sprintf("Projects,%d,%.1f%%\n", featureStats.HasProjects, calcPct(featureStats.HasProjects)))
+			output.WriteString(fmt.Sprintf("Packages,%d,%.1f%%\n", featureStats.HasPackages, calcPct(featureStats.HasPackages)))
+			output.WriteString(fmt.Sprintf("Environments,%d,%.1f%%\n", featureStats.HasEnvironments, calcPct(featureStats.HasEnvironments)))
+			output.WriteString(fmt.Sprintf("Secrets,%d,%.1f%%\n", featureStats.HasSecrets, calcPct(featureStats.HasSecrets)))
+			output.WriteString(fmt.Sprintf("Variables,%d,%.1f%%\n", featureStats.HasVariables, calcPct(featureStats.HasVariables)))
+			output.WriteString(fmt.Sprintf("Branch Protections,%d,%.1f%%\n", featureStats.HasBranchProtections, calcPct(featureStats.HasBranchProtections)))
+			output.WriteString(fmt.Sprintf("Rulesets,%d,%.1f%%\n", featureStats.HasRulesets, calcPct(featureStats.HasRulesets)))
+			output.WriteString(fmt.Sprintf("Code Scanning,%d,%.1f%%\n", featureStats.HasCodeScanning, calcPct(featureStats.HasCodeScanning)))
+			output.WriteString(fmt.Sprintf("Dependabot,%d,%.1f%%\n", featureStats.HasDependabot, calcPct(featureStats.HasDependabot)))
+			output.WriteString(fmt.Sprintf("Secret Scanning,%d,%.1f%%\n", featureStats.HasSecretScanning, calcPct(featureStats.HasSecretScanning)))
+			output.WriteString(fmt.Sprintf("CODEOWNERS,%d,%.1f%%\n", featureStats.HasCodeowners, calcPct(featureStats.HasCodeowners)))
+			output.WriteString(fmt.Sprintf("Self-Hosted Runners,%d,%.1f%%\n", featureStats.HasSelfHostedRunners, calcPct(featureStats.HasSelfHostedRunners)))
+			output.WriteString(fmt.Sprintf("Release Assets,%d,%.1f%%\n", featureStats.HasReleaseAssets, calcPct(featureStats.HasReleaseAssets)))
+			output.WriteString(fmt.Sprintf("Webhooks,%d,%.1f%%\n", featureStats.HasWebhooks, calcPct(featureStats.HasWebhooks)))
+		}
+		// Common features for both platforms
+		output.WriteString(fmt.Sprintf("LFS,%d,%.1f%%\n", featureStats.HasLFS, calcPct(featureStats.HasLFS)))
+		output.WriteString(fmt.Sprintf("Submodules,%d,%.1f%%\n", featureStats.HasSubmodules, calcPct(featureStats.HasSubmodules)))
+		output.WriteString(fmt.Sprintf("Large Files,%d,%.1f%%\n", featureStats.HasLargeFiles, calcPct(featureStats.HasLargeFiles)))
+		output.WriteString(fmt.Sprintf("Archived,%d,%.1f%%\n", featureStats.IsArchived, calcPct(featureStats.IsArchived)))
+		output.WriteString(fmt.Sprintf("Forks,%d,%.1f%%\n", featureStats.IsFork, calcPct(featureStats.IsFork)))
 	}
 	output.WriteString("\n")
 

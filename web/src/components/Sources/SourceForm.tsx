@@ -374,7 +374,7 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
               </FormControl>
 
               <FormControl>
-                <FormControl.Label>Installation ID</FormControl.Label>
+                <FormControl.Label>Installation ID (Optional)</FormControl.Label>
                 <TextInput
                   type="number"
                   value={formData.app_installation_id}
@@ -383,7 +383,7 @@ export function SourceForm({ source, onSubmit, onCancel, isSubmitting }: SourceF
                   block
                 />
                 <FormControl.Caption>
-                  The installation ID from when the app was installed to your organization.
+                  Leave blank for multi-org discovery. For single org, put the installation ID.
                 </FormControl.Caption>
               </FormControl>
             </div>

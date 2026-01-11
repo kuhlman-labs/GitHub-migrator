@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // RepositoryGitProperties stores Git-related repository properties (1:1 with Repository)
 type RepositoryGitProperties struct {
@@ -132,3 +135,23 @@ type RepositoryValidation struct {
 // TableName specifies the table name for RepositoryValidation
 func (RepositoryValidation) TableName() string { return "repository_validation" }
 
+// MarshalJSON implements custom JSON marshaling to parse complexity_breakdown as object
+func (v RepositoryValidation) MarshalJSON() ([]byte, error) {
+	type Alias RepositoryValidation
+	result := struct {
+		Alias
+		ComplexityBreakdown any `json:"complexity_breakdown,omitempty"`
+	}{
+		Alias: Alias(v),
+	}
+	// Parse complexity breakdown JSON string into object
+	if v.ComplexityBreakdown != nil && *v.ComplexityBreakdown != "" {
+		var breakdown map[string]any
+		if err := json.Unmarshal([]byte(*v.ComplexityBreakdown), &breakdown); err == nil {
+			result.ComplexityBreakdown = breakdown
+		} else {
+			result.ComplexityBreakdown = *v.ComplexityBreakdown
+		}
+	}
+	return json.Marshal(result)
+}

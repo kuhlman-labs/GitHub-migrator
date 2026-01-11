@@ -114,7 +114,7 @@ describe('Login', () => {
         </TestWrapper>
       );
 
-      expect(screen.getByText(/Enterprise member: org1, org2/)).toBeInTheDocument();
+      expect(screen.getByText(/Organization member: org1, org2/)).toBeInTheDocument();
     });
 
     it('should show team membership requirement', () => {
@@ -154,7 +154,7 @@ describe('Login', () => {
         </TestWrapper>
       );
 
-      expect(screen.getByText(/Enterprise admin: my-enterprise/)).toBeInTheDocument();
+      expect(screen.getByText(/Enterprise admin of: my-enterprise/)).toBeInTheDocument();
     });
 
     it('should show enterprise membership requirement', () => {
@@ -174,7 +174,7 @@ describe('Login', () => {
         </TestWrapper>
       );
 
-      expect(screen.getByText(/Enterprise member: my-enterprise/)).toBeInTheDocument();
+      expect(screen.getByText(/Member of enterprise: my-enterprise/)).toBeInTheDocument();
     });
 
     it('should prefer enterprise admin over enterprise membership', () => {
@@ -195,7 +195,7 @@ describe('Login', () => {
         </TestWrapper>
       );
 
-      expect(screen.getByText(/Enterprise admin: my-enterprise/)).toBeInTheDocument();
+      expect(screen.getByText(/Enterprise admin of: my-enterprise/)).toBeInTheDocument();
       // Should not show both admin and member requirement
       expect(screen.queryAllByText(/Enterprise/)).toHaveLength(1);
     });

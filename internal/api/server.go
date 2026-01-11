@@ -19,6 +19,8 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
+const defaultGitHubAPIURL = "https://api.github.com"
+
 type Server struct {
 	config          *config.Config
 	db              *storage.Database
@@ -65,7 +67,7 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		// Use destination URL for OAuth and authorization checks (destination-centric auth)
 		destBaseURL := cfg.Destination.BaseURL
 		if destBaseURL == "" {
-			destBaseURL = "https://api.github.com" // Default to github.com
+			destBaseURL = defaultGitHubAPIURL // Default to github.com
 		}
 		authHandler, err = handlers.NewAuthHandler(&cfg.Auth, logger, destBaseURL)
 		if err != nil {
@@ -82,7 +84,7 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	// This is needed for CheckRepositoryAccess and GetUserAuthorizationStatus to query the correct GitHub instance
 	destBaseURLForAuth := cfg.Destination.BaseURL
 	if destBaseURLForAuth == "" {
-		destBaseURLForAuth = "https://api.github.com" // Default to github.com
+		destBaseURLForAuth = defaultGitHubAPIURL // Default to github.com
 	}
 
 	// Create main handler
@@ -146,6 +148,25 @@ func (s *Server) SetConfigService(configSvc *configsvc.Service) {
 		s.handler.SetConfigService(configSvc)
 	}
 
+	// Create auth handler from database settings if not already created from static config
+	// This enables auth configuration via the UI without requiring .env changes
+	if s.authHandler == nil && configSvc.HasValidAuthConfig() {
+		effectiveAuthCfg := configSvc.GetEffectiveAuthConfig()
+		destConfig := configSvc.GetDestinationConfig()
+		destBaseURL := destConfig.BaseURL
+		if destBaseURL == "" {
+			destBaseURL = defaultGitHubAPIURL
+		}
+
+		authHandler, err := handlers.NewAuthHandler(&effectiveAuthCfg, s.logger, destBaseURL)
+		if err != nil {
+			s.logger.Error("Failed to create auth handler from database settings", "error", err)
+		} else {
+			s.authHandler = authHandler
+			s.logger.Info("Authentication enabled from database settings", "destination_url", destBaseURL)
+		}
+	}
+
 	s.logger.Info("Settings handler initialized with ConfigService")
 }
 
@@ -157,24 +178,29 @@ func (s *Server) GetConfigService() *configsvc.Service {
 func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 
-	// Create auth middleware if enabled
+	// Determine if auth is enabled (check both static config and database settings)
+	authEnabled := s.config.Auth.Enabled
+	if s.configSvc != nil && s.configSvc.HasValidAuthConfig() {
+		authEnabled = true
+	}
+
+	// Create auth middleware if enabled (from static config OR database settings)
 	var authMiddleware *auth.Middleware
-	if s.config.Auth.Enabled && s.authHandler != nil {
-		jwtManager, _ := auth.NewJWTManager(s.config.Auth.SessionSecret, s.config.Auth.SessionDurationHours)
-		// Use effective auth config which merges static config with database settings
-		// This allows enterprise slug and authorization rules to be configured via UI
+	if authEnabled && s.authHandler != nil {
+		// Get effective auth config (merges static config with database settings)
 		var effectiveAuthCfg config.AuthConfig
 		if s.configSvc != nil {
 			effectiveAuthCfg = s.configSvc.GetEffectiveAuthConfig()
 		} else {
 			effectiveAuthCfg = s.config.Auth
 		}
+		jwtManager, _ := auth.NewJWTManager(effectiveAuthCfg.SessionSecret, effectiveAuthCfg.SessionDurationHours)
 		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, s.config.Source.BaseURL)
 		authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
 	}
 
 	// Public auth endpoints (no authentication required)
-	if s.config.Auth.Enabled && s.authHandler != nil {
+	if authEnabled && s.authHandler != nil {
 		mux.HandleFunc("GET /api/v1/auth/login", s.authHandler.HandleLogin)
 		mux.HandleFunc("GET /api/v1/auth/callback", s.authHandler.HandleCallback)
 		mux.HandleFunc("GET /api/v1/auth/config", s.authHandler.HandleAuthConfig)
@@ -209,6 +235,7 @@ func (s *Server) Router() http.Handler {
 		mux.HandleFunc("GET /api/v1/settings", s.settingsHandler.GetSettings)
 		mux.HandleFunc("POST /api/v1/settings/destination/validate", s.settingsHandler.ValidateDestination)
 		mux.HandleFunc("POST /api/v1/settings/teams/validate", s.settingsHandler.ValidateTeams)
+		mux.HandleFunc("POST /api/v1/settings/oauth/validate", s.settingsHandler.ValidateOAuth)
 	}
 
 	// Helper to conditionally wrap with auth

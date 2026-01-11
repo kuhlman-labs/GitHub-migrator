@@ -179,21 +179,15 @@ func (h *SetupHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If setup is not marked complete in DB, check if config exists via environment variables
-	// This handles container deployments where config is provided via env vars
-	if !status.SetupCompleted && h.cfg != nil && h.hasRequiredConfig() {
-		h.logger.Info("Configuration detected via environment variables, marking setup as complete")
-		if err := h.db.MarkSetupComplete(); err != nil {
-			h.logger.Error("Failed to mark setup complete", "error", err)
-			// Don't fail the request, just log the error
-		} else {
-			// Re-fetch status to get the updated values
-			updatedStatus, err := h.db.GetSetupStatus()
-			if err != nil {
-				h.logger.Error("Failed to get updated setup status", "error", err)
-				// Continue with original status if re-fetch fails
+	// If setup is not marked complete in DB, check if minimal config exists
+	// Setup only requires database configuration - sources/destination are configured in dashboard
+	if !status.SetupCompleted {
+		if h.cfg != nil && h.hasMinimalSetupConfig() {
+			h.logger.Info("Database configuration detected, marking setup as complete")
+			if err := h.db.MarkSetupComplete(); err != nil {
+				h.logger.Error("Failed to mark setup complete", "error", err)
 			} else {
-				status = updatedStatus
+				status, _ = h.db.GetSetupStatus()
 			}
 		}
 	}
@@ -712,24 +706,18 @@ func (h *SetupHandler) writeEnvFile(content string) error {
 
 // Helper functions
 
-// hasRequiredConfig checks if all critical configuration exists
-// This is used to detect container deployments with env vars
-func (h *SetupHandler) hasRequiredConfig() bool {
+// hasMinimalSetupConfig checks if the minimal setup configuration exists
+// Setup only requires database configuration - sources/destination are configured in the dashboard
+func (h *SetupHandler) hasMinimalSetupConfig() bool {
 	if h.cfg == nil {
 		return false
 	}
 
-	// Check critical source configuration
-	// Source.Type is required per ApplySetup validation (line 279)
-	hasSource := h.cfg.Source.Type != "" && h.cfg.Source.Token != "" && h.cfg.Source.BaseURL != ""
-
-	// Check critical destination configuration
-	hasDestination := h.cfg.Destination.Token != "" && h.cfg.Destination.BaseURL != ""
-
-	// Check critical database configuration
+	// Only check critical database configuration
+	// Sources and destination are configured through the dashboard UI after setup
 	hasDatabase := h.cfg.Database.DSN != ""
 
-	return hasSource && hasDestination && hasDatabase
+	return hasDatabase
 }
 
 func (h *SetupHandler) sendJSON(w http.ResponseWriter, statusCode int, data any) {

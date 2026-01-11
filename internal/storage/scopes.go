@@ -163,23 +163,24 @@ func WithVisibility(visibility string) func(db *gorm.DB) *gorm.DB {
 	}
 }
 
-// WithFeatureFlags filters by various feature flags
-// This now joins the appropriate related tables based on which flags are requested
-func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
-	return func(db *gorm.DB) *gorm.DB {
-		// Determine which tables need to be joined
-		needsGitJoin := false
-		needsFeaturesJoin := false
-		needsADOJoin := false
+// featureFlagColumnMappings contains the column mappings for feature flag filtering
+type featureFlagColumnMappings struct {
+	gitColumns           map[string]string
+	featuresColumns      map[string]string
+	featuresCountColumns map[string]string
+	adoColumns           map[string]string
+	coreColumns          map[string]string
+}
 
-		// Define which features are in which tables
-		gitColumns := map[string]string{
+// getFeatureFlagMappings returns all column mappings for feature flags
+func getFeatureFlagMappings() featureFlagColumnMappings {
+	return featureFlagColumnMappings{
+		gitColumns: map[string]string{
 			"has_lfs":         "has_lfs",
 			"has_submodules":  "has_submodules",
 			"has_large_files": "has_large_files",
-		}
-
-		featuresColumns := map[string]string{
+		},
+		featuresColumns: map[string]string{
 			"has_actions":             "has_actions",
 			"has_wiki":                "has_wiki",
 			"has_pages":               "has_pages",
@@ -193,41 +194,57 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			"has_codeowners":          "has_codeowners",
 			"has_self_hosted_runners": "has_self_hosted_runners",
 			"has_release_assets":      "has_release_assets",
-		}
-
-		featuresCountColumns := map[string]string{
+		},
+		featuresCountColumns: map[string]string{
 			"has_branch_protections": "branch_protections",
 			"has_webhooks":           "webhook_count",
 			"has_environments":       "environment_count",
 			"has_secrets":            "secret_count",
 			"has_variables":          "variable_count",
-		}
-
-		adoColumns := map[string]string{
+		},
+		adoColumns: map[string]string{
 			"ado_is_git":        "is_git",
 			"ado_has_boards":    "has_boards",
 			"ado_has_pipelines": "has_pipelines",
 			"ado_has_ghas":      "has_ghas",
 			"ado_has_wiki":      "has_wiki",
-		}
-
-		coreColumns := map[string]string{
+		},
+		coreColumns: map[string]string{
 			"is_archived": "is_archived",
 			"is_fork":     "is_fork",
+		},
+	}
+}
+
+// applyBoolFiltersWithPrefix applies boolean filters for a column mapping with table prefix
+func applyBoolFiltersWithPrefix(db *gorm.DB, tablePrefix string, columns map[string]string, filters map[string]bool) *gorm.DB {
+	for key, column := range columns {
+		if value, ok := filters[key]; ok {
+			db = db.Where(tablePrefix+column+" = ?", value)
 		}
+	}
+	return db
+}
+
+// WithFeatureFlags filters by various feature flags
+// This now joins the appropriate related tables based on which flags are requested
+func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		m := getFeatureFlagMappings()
 
 		// Check which joins are needed
+		needsGitJoin, needsFeaturesJoin, needsADOJoin := false, false, false
 		for key := range filters {
-			if _, ok := gitColumns[key]; ok {
+			if _, ok := m.gitColumns[key]; ok {
 				needsGitJoin = true
 			}
-			if _, ok := featuresColumns[key]; ok {
+			if _, ok := m.featuresColumns[key]; ok {
 				needsFeaturesJoin = true
 			}
-			if _, ok := featuresCountColumns[key]; ok {
+			if _, ok := m.featuresCountColumns[key]; ok {
 				needsFeaturesJoin = true
 			}
-			if _, ok := adoColumns[key]; ok {
+			if _, ok := m.adoColumns[key]; ok {
 				needsADOJoin = true
 			}
 		}
@@ -243,41 +260,19 @@ func WithFeatureFlags(filters map[string]bool) func(db *gorm.DB) *gorm.DB {
 			db = db.Joins("LEFT JOIN repository_ado_properties rap ON rap.repository_id = repositories.id")
 		}
 
-		// Apply filters from core repository table
-		for key, column := range coreColumns {
-			if value, ok := filters[key]; ok {
-				db = db.Where("repositories."+column+" = ?", value)
-			}
-		}
-
-		// Apply filters from git properties table
-		for key, column := range gitColumns {
-			if value, ok := filters[key]; ok {
-				db = db.Where("rgp_feat."+column+" = ?", value)
-			}
-		}
-
-		// Apply filters from features table
-		for key, column := range featuresColumns {
-			if value, ok := filters[key]; ok {
-				db = db.Where("rf."+column+" = ?", value)
-			}
-		}
-
-		// Apply filters from ADO properties table
-		for key, column := range adoColumns {
-			if value, ok := filters[key]; ok {
-				db = db.Where("rap."+column+" = ?", value)
-			}
-		}
+		// Apply filters using helper
+		db = applyBoolFiltersWithPrefix(db, "repositories.", m.coreColumns, filters)
+		db = applyBoolFiltersWithPrefix(db, "rgp_feat.", m.gitColumns, filters)
+		db = applyBoolFiltersWithPrefix(db, "rf.", m.featuresColumns, filters)
+		db = applyBoolFiltersWithPrefix(db, "rap.", m.adoColumns, filters)
 
 		// Special handling for count-based feature flags in features table
-		for key, column := range featuresCountColumns {
+		for key, column := range m.featuresCountColumns {
 			if value, ok := filters[key]; ok {
 				if value {
-					db = db.Where("rf."+column+" > 0")
+					db = db.Where("rf." + column + " > 0")
 				} else {
-					db = db.Where("(rf."+column+" = 0 OR rf."+column+" IS NULL)")
+					db = db.Where("(rf." + column + " = 0 OR rf." + column + " IS NULL)")
 				}
 			}
 		}
@@ -338,7 +333,7 @@ func WithADOCountFilters(filters map[string]string) func(db *gorm.DB) *gorm.DB {
 			case "=":
 				if numValue == 0 {
 					// Handle zero specially to include NULL values
-					db = db.Where("(rap_count."+column+" = 0 OR rap_count."+column+" IS NULL)")
+					db = db.Where("(rap_count." + column + " = 0 OR rap_count." + column + " IS NULL)")
 				} else {
 					db = db.Where("rap_count."+column+" = ?", numValue)
 				}

@@ -569,24 +569,28 @@ func (d *Database) GetRepositoryStatsByStatus(ctx context.Context) (map[string]i
 	return stats, nil
 }
 
-// GetRepositoriesByIDs retrieves multiple repositories by their IDs using GORM
-func (d *Database) GetRepositoriesByIDs(ctx context.Context, ids []int64) ([]*models.Repository, error) {
-	if len(ids) == 0 {
-		return []*models.Repository{}, nil
-	}
-
+// getRepositoriesByCondition retrieves multiple repositories with standard preloads
+func (d *Database) getRepositoriesByCondition(ctx context.Context, condition string, args any) ([]*models.Repository, error) {
 	var repos []*models.Repository
 	err := d.db.WithContext(ctx).
 		Preload("GitProperties").
 		Preload("Features").
 		Preload("ADOProperties").
 		Preload("Validation").
-		Where("id IN ?", ids).
+		Where(condition, args).
 		Find(&repos).Error
+	return repos, err
+}
+
+// GetRepositoriesByIDs retrieves multiple repositories by their IDs using GORM
+func (d *Database) GetRepositoriesByIDs(ctx context.Context, ids []int64) ([]*models.Repository, error) {
+	if len(ids) == 0 {
+		return []*models.Repository{}, nil
+	}
+	repos, err := d.getRepositoriesByCondition(ctx, "id IN ?", ids)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repositories by IDs: %w", err)
 	}
-
 	return repos, nil
 }
 
@@ -595,19 +599,10 @@ func (d *Database) GetRepositoriesByNames(ctx context.Context, names []string) (
 	if len(names) == 0 {
 		return []*models.Repository{}, nil
 	}
-
-	var repos []*models.Repository
-	err := d.db.WithContext(ctx).
-		Preload("GitProperties").
-		Preload("Features").
-		Preload("ADOProperties").
-		Preload("Validation").
-		Where("full_name IN ?", names).
-		Find(&repos).Error
+	repos, err := d.getRepositoriesByCondition(ctx, "full_name IN ?", names)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repositories by names: %w", err)
 	}
-
 	return repos, nil
 }
 

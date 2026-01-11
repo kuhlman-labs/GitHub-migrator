@@ -505,31 +505,8 @@ func NewADORepository(fullName, sourceURL, visibility string, project *string, i
 	return repo
 }
 
-// MarshalJSON implements custom JSON marshaling to flatten related table data for API compatibility
-func (r *Repository) MarshalJSON() ([]byte, error) {
-	// Build flattened result map
-	result := map[string]any{
-		// Core fields
-		"id":                    r.ID,
-		"full_name":             r.FullName,
-		"source":                r.Source,
-		"source_url":            r.SourceURL,
-		"status":                r.Status,
-		"priority":              r.Priority,
-		"visibility":            r.Visibility,
-		"is_archived":           r.IsArchived,
-		"is_fork":               r.IsFork,
-		"is_source_locked":      r.IsSourceLocked,
-		"exclude_releases":      r.ExcludeReleases,
-		"exclude_attachments":   r.ExcludeAttachments,
-		"exclude_metadata":      r.ExcludeMetadata,
-		"exclude_git_data":      r.ExcludeGitData,
-		"exclude_owner_projects": r.ExcludeOwnerProjects,
-		"discovered_at":         r.DiscoveredAt,
-		"updated_at":            r.UpdatedAt,
-	}
-
-	// Optional core fields
+// flattenOptionalFields adds optional core fields to the result map
+func (r *Repository) flattenOptionalFields(result map[string]any) {
 	if r.SourceID != nil {
 		result["source_id"] = *r.SourceID
 	}
@@ -554,168 +531,211 @@ func (r *Repository) MarshalJSON() ([]byte, error) {
 	if r.LastDryRunAt != nil {
 		result["last_dry_run_at"] = *r.LastDryRunAt
 	}
+}
 
-	// Flatten GitProperties
-	if r.GitProperties != nil {
-		gp := r.GitProperties
-		if gp.TotalSize != nil {
-			result["total_size"] = *gp.TotalSize
+// flattenGitProperties adds git properties to the result map
+func (r *Repository) flattenGitProperties(result map[string]any) {
+	if r.GitProperties == nil {
+		return
+	}
+	gp := r.GitProperties
+	if gp.TotalSize != nil {
+		result["total_size"] = *gp.TotalSize
+	}
+	if gp.LargestFile != nil {
+		result["largest_file"] = *gp.LargestFile
+	}
+	if gp.LargestFileSize != nil {
+		result["largest_file_size"] = *gp.LargestFileSize
+	}
+	if gp.LargestCommit != nil {
+		result["largest_commit"] = *gp.LargestCommit
+	}
+	if gp.LargestCommitSize != nil {
+		result["largest_commit_size"] = *gp.LargestCommitSize
+	}
+	if gp.DefaultBranch != nil {
+		result["default_branch"] = *gp.DefaultBranch
+	}
+	if gp.LastCommitSHA != nil {
+		result["last_commit_sha"] = *gp.LastCommitSHA
+	}
+	if gp.LastCommitDate != nil {
+		result["last_commit_date"] = *gp.LastCommitDate
+	}
+	result["has_lfs"] = gp.HasLFS
+	result["has_submodules"] = gp.HasSubmodules
+	result["has_large_files"] = gp.HasLargeFiles
+	result["large_file_count"] = gp.LargeFileCount
+	result["branch_count"] = gp.BranchCount
+	result["commit_count"] = gp.CommitCount
+	result["commits_last_12_weeks"] = gp.CommitsLast12Weeks
+}
+
+// flattenFeatures adds repository features to the result map
+func (r *Repository) flattenFeatures(result map[string]any) {
+	if r.Features == nil {
+		return
+	}
+	f := r.Features
+	result["has_wiki"] = f.HasWiki
+	result["has_pages"] = f.HasPages
+	result["has_discussions"] = f.HasDiscussions
+	result["has_actions"] = f.HasActions
+	result["has_projects"] = f.HasProjects
+	result["has_packages"] = f.HasPackages
+	result["branch_protections"] = f.BranchProtections
+	result["has_rulesets"] = f.HasRulesets
+	result["tag_protection_count"] = f.TagProtectionCount
+	result["environment_count"] = f.EnvironmentCount
+	result["secret_count"] = f.SecretCount
+	result["variable_count"] = f.VariableCount
+	result["webhook_count"] = f.WebhookCount
+	result["has_code_scanning"] = f.HasCodeScanning
+	result["has_dependabot"] = f.HasDependabot
+	result["has_secret_scanning"] = f.HasSecretScanning
+	result["has_codeowners"] = f.HasCodeowners
+	result["workflow_count"] = f.WorkflowCount
+	result["has_self_hosted_runners"] = f.HasSelfHostedRunners
+	result["collaborator_count"] = f.CollaboratorCount
+	result["installed_apps_count"] = f.InstalledAppsCount
+	if f.InstalledApps != nil {
+		result["installed_apps"] = *f.InstalledApps
+	}
+	result["release_count"] = f.ReleaseCount
+	result["has_release_assets"] = f.HasReleaseAssets
+	result["contributor_count"] = f.ContributorCount
+	if f.TopContributors != nil {
+		result["top_contributors"] = *f.TopContributors
+	}
+	result["issue_count"] = f.IssueCount
+	result["pull_request_count"] = f.PullRequestCount
+	result["tag_count"] = f.TagCount
+	result["open_issue_count"] = f.OpenIssueCount
+	result["open_pr_count"] = f.OpenPRCount
+}
+
+// flattenADOProperties adds Azure DevOps properties to the result map
+func (r *Repository) flattenADOProperties(result map[string]any) {
+	if r.ADOProperties == nil {
+		return
+	}
+	ado := r.ADOProperties
+	if ado.Project != nil {
+		result["ado_project"] = *ado.Project
+	}
+	result["ado_is_git"] = ado.IsGit
+	result["ado_has_boards"] = ado.HasBoards
+	result["ado_has_pipelines"] = ado.HasPipelines
+	result["ado_has_ghas"] = ado.HasGHAS
+	result["ado_pull_request_count"] = ado.PullRequestCount
+	result["ado_work_item_count"] = ado.WorkItemCount
+	result["ado_branch_policy_count"] = ado.BranchPolicyCount
+	result["ado_pipeline_count"] = ado.PipelineCount
+	result["ado_yaml_pipeline_count"] = ado.YAMLPipelineCount
+	result["ado_classic_pipeline_count"] = ado.ClassicPipelineCount
+	result["ado_pipeline_run_count"] = ado.PipelineRunCount
+	result["ado_has_service_connections"] = ado.HasServiceConnections
+	result["ado_has_variable_groups"] = ado.HasVariableGroups
+	result["ado_has_self_hosted_agents"] = ado.HasSelfHostedAgents
+	result["ado_work_item_linked_count"] = ado.WorkItemLinkedCount
+	result["ado_active_work_item_count"] = ado.ActiveWorkItemCount
+	if ado.WorkItemTypes != nil {
+		result["ado_work_item_types"] = *ado.WorkItemTypes
+	}
+	result["ado_open_pr_count"] = ado.OpenPRCount
+	result["ado_pr_with_linked_work_items"] = ado.PRWithLinkedWorkItems
+	result["ado_pr_with_attachments"] = ado.PRWithAttachments
+	if ado.BranchPolicyTypes != nil {
+		result["ado_branch_policy_types"] = *ado.BranchPolicyTypes
+	}
+	result["ado_required_reviewer_count"] = ado.RequiredReviewerCount
+	result["ado_build_validation_policies"] = ado.BuildValidationPolicies
+	result["ado_has_wiki"] = ado.HasWiki
+	result["ado_wiki_page_count"] = ado.WikiPageCount
+	result["ado_test_plan_count"] = ado.TestPlanCount
+	result["ado_test_case_count"] = ado.TestCaseCount
+	result["ado_package_feed_count"] = ado.PackageFeedCount
+	result["ado_has_artifacts"] = ado.HasArtifacts
+	result["ado_service_hook_count"] = ado.ServiceHookCount
+	if ado.InstalledExtensions != nil {
+		result["ado_installed_extensions"] = *ado.InstalledExtensions
+	}
+}
+
+// flattenValidation adds validation data to the result map
+func (r *Repository) flattenValidation(result map[string]any) {
+	if r.Validation == nil {
+		return
+	}
+	v := r.Validation
+	result["has_oversized_commits"] = v.HasOversizedCommits
+	if v.OversizedCommitDetails != nil {
+		result["oversized_commit_details"] = *v.OversizedCommitDetails
+	}
+	result["has_long_refs"] = v.HasLongRefs
+	if v.LongRefDetails != nil {
+		result["long_ref_details"] = *v.LongRefDetails
+	}
+	result["has_blocking_files"] = v.HasBlockingFiles
+	if v.BlockingFileDetails != nil {
+		result["blocking_file_details"] = *v.BlockingFileDetails
+	}
+	result["has_large_file_warnings"] = v.HasLargeFileWarnings
+	if v.LargeFileWarningDetails != nil {
+		result["large_file_warning_details"] = *v.LargeFileWarningDetails
+	}
+	result["has_oversized_repository"] = v.HasOversizedRepository
+	if v.OversizedRepositoryDetails != nil {
+		result["oversized_repository_details"] = *v.OversizedRepositoryDetails
+	}
+	if v.EstimatedMetadataSize != nil {
+		result["estimated_metadata_size"] = *v.EstimatedMetadataSize
+	}
+	if v.MetadataSizeDetails != nil {
+		result["metadata_size_details"] = *v.MetadataSizeDetails
+	}
+	if v.ComplexityScore != nil {
+		result["complexity_score"] = *v.ComplexityScore
+	}
+	// Parse complexity breakdown JSON string into object
+	if v.ComplexityBreakdown != nil && *v.ComplexityBreakdown != "" {
+		var breakdown ComplexityBreakdown
+		if err := json.Unmarshal([]byte(*v.ComplexityBreakdown), &breakdown); err == nil {
+			result["complexity_breakdown"] = breakdown
 		}
-		if gp.LargestFile != nil {
-			result["largest_file"] = *gp.LargestFile
-		}
-		if gp.LargestFileSize != nil {
-			result["largest_file_size"] = *gp.LargestFileSize
-		}
-		if gp.LargestCommit != nil {
-			result["largest_commit"] = *gp.LargestCommit
-		}
-		if gp.LargestCommitSize != nil {
-			result["largest_commit_size"] = *gp.LargestCommitSize
-		}
-		if gp.DefaultBranch != nil {
-			result["default_branch"] = *gp.DefaultBranch
-		}
-		if gp.LastCommitSHA != nil {
-			result["last_commit_sha"] = *gp.LastCommitSHA
-		}
-		if gp.LastCommitDate != nil {
-			result["last_commit_date"] = *gp.LastCommitDate
-		}
-		result["has_lfs"] = gp.HasLFS
-		result["has_submodules"] = gp.HasSubmodules
-		result["has_large_files"] = gp.HasLargeFiles
-		result["large_file_count"] = gp.LargeFileCount
-		result["branch_count"] = gp.BranchCount
-		result["commit_count"] = gp.CommitCount
-		result["commits_last_12_weeks"] = gp.CommitsLast12Weeks
+	}
+}
+
+// MarshalJSON implements custom JSON marshaling to flatten related table data for API compatibility
+func (r *Repository) MarshalJSON() ([]byte, error) {
+	// Build flattened result map with core fields
+	result := map[string]any{
+		"id":                     r.ID,
+		"full_name":              r.FullName,
+		"source":                 r.Source,
+		"source_url":             r.SourceURL,
+		"status":                 r.Status,
+		"priority":               r.Priority,
+		"visibility":             r.Visibility,
+		"is_archived":            r.IsArchived,
+		"is_fork":                r.IsFork,
+		"is_source_locked":       r.IsSourceLocked,
+		"exclude_releases":       r.ExcludeReleases,
+		"exclude_attachments":    r.ExcludeAttachments,
+		"exclude_metadata":       r.ExcludeMetadata,
+		"exclude_git_data":       r.ExcludeGitData,
+		"exclude_owner_projects": r.ExcludeOwnerProjects,
+		"discovered_at":          r.DiscoveredAt,
+		"updated_at":             r.UpdatedAt,
 	}
 
-	// Flatten Features
-	if r.Features != nil {
-		f := r.Features
-		result["has_wiki"] = f.HasWiki
-		result["has_pages"] = f.HasPages
-		result["has_discussions"] = f.HasDiscussions
-		result["has_actions"] = f.HasActions
-		result["has_projects"] = f.HasProjects
-		result["has_packages"] = f.HasPackages
-		result["branch_protections"] = f.BranchProtections
-		result["has_rulesets"] = f.HasRulesets
-		result["tag_protection_count"] = f.TagProtectionCount
-		result["environment_count"] = f.EnvironmentCount
-		result["secret_count"] = f.SecretCount
-		result["variable_count"] = f.VariableCount
-		result["webhook_count"] = f.WebhookCount
-		result["has_code_scanning"] = f.HasCodeScanning
-		result["has_dependabot"] = f.HasDependabot
-		result["has_secret_scanning"] = f.HasSecretScanning
-		result["has_codeowners"] = f.HasCodeowners
-		result["workflow_count"] = f.WorkflowCount
-		result["has_self_hosted_runners"] = f.HasSelfHostedRunners
-		result["collaborator_count"] = f.CollaboratorCount
-		result["installed_apps_count"] = f.InstalledAppsCount
-		if f.InstalledApps != nil {
-			result["installed_apps"] = *f.InstalledApps
-		}
-		result["release_count"] = f.ReleaseCount
-		result["has_release_assets"] = f.HasReleaseAssets
-		result["contributor_count"] = f.ContributorCount
-		if f.TopContributors != nil {
-			result["top_contributors"] = *f.TopContributors
-		}
-		result["issue_count"] = f.IssueCount
-		result["pull_request_count"] = f.PullRequestCount
-		result["tag_count"] = f.TagCount
-		result["open_issue_count"] = f.OpenIssueCount
-		result["open_pr_count"] = f.OpenPRCount
-	}
-
-	// Flatten ADOProperties
-	if r.ADOProperties != nil {
-		ado := r.ADOProperties
-		if ado.Project != nil {
-			result["ado_project"] = *ado.Project
-		}
-		result["ado_is_git"] = ado.IsGit
-		result["ado_has_boards"] = ado.HasBoards
-		result["ado_has_pipelines"] = ado.HasPipelines
-		result["ado_has_ghas"] = ado.HasGHAS
-		result["ado_pull_request_count"] = ado.PullRequestCount
-		result["ado_work_item_count"] = ado.WorkItemCount
-		result["ado_branch_policy_count"] = ado.BranchPolicyCount
-		result["ado_pipeline_count"] = ado.PipelineCount
-		result["ado_yaml_pipeline_count"] = ado.YAMLPipelineCount
-		result["ado_classic_pipeline_count"] = ado.ClassicPipelineCount
-		result["ado_pipeline_run_count"] = ado.PipelineRunCount
-		result["ado_has_service_connections"] = ado.HasServiceConnections
-		result["ado_has_variable_groups"] = ado.HasVariableGroups
-		result["ado_has_self_hosted_agents"] = ado.HasSelfHostedAgents
-		result["ado_work_item_linked_count"] = ado.WorkItemLinkedCount
-		result["ado_active_work_item_count"] = ado.ActiveWorkItemCount
-		if ado.WorkItemTypes != nil {
-			result["ado_work_item_types"] = *ado.WorkItemTypes
-		}
-		result["ado_open_pr_count"] = ado.OpenPRCount
-		result["ado_pr_with_linked_work_items"] = ado.PRWithLinkedWorkItems
-		result["ado_pr_with_attachments"] = ado.PRWithAttachments
-		if ado.BranchPolicyTypes != nil {
-			result["ado_branch_policy_types"] = *ado.BranchPolicyTypes
-		}
-		result["ado_required_reviewer_count"] = ado.RequiredReviewerCount
-		result["ado_build_validation_policies"] = ado.BuildValidationPolicies
-		result["ado_has_wiki"] = ado.HasWiki
-		result["ado_wiki_page_count"] = ado.WikiPageCount
-		result["ado_test_plan_count"] = ado.TestPlanCount
-		result["ado_test_case_count"] = ado.TestCaseCount
-		result["ado_package_feed_count"] = ado.PackageFeedCount
-		result["ado_has_artifacts"] = ado.HasArtifacts
-		result["ado_service_hook_count"] = ado.ServiceHookCount
-		if ado.InstalledExtensions != nil {
-			result["ado_installed_extensions"] = *ado.InstalledExtensions
-		}
-	}
-
-	// Flatten Validation
-	if r.Validation != nil {
-		v := r.Validation
-		result["has_oversized_commits"] = v.HasOversizedCommits
-		if v.OversizedCommitDetails != nil {
-			result["oversized_commit_details"] = *v.OversizedCommitDetails
-		}
-		result["has_long_refs"] = v.HasLongRefs
-		if v.LongRefDetails != nil {
-			result["long_ref_details"] = *v.LongRefDetails
-		}
-		result["has_blocking_files"] = v.HasBlockingFiles
-		if v.BlockingFileDetails != nil {
-			result["blocking_file_details"] = *v.BlockingFileDetails
-		}
-		result["has_large_file_warnings"] = v.HasLargeFileWarnings
-		if v.LargeFileWarningDetails != nil {
-			result["large_file_warning_details"] = *v.LargeFileWarningDetails
-		}
-		result["has_oversized_repository"] = v.HasOversizedRepository
-		if v.OversizedRepositoryDetails != nil {
-			result["oversized_repository_details"] = *v.OversizedRepositoryDetails
-		}
-		if v.EstimatedMetadataSize != nil {
-			result["estimated_metadata_size"] = *v.EstimatedMetadataSize
-		}
-		if v.MetadataSizeDetails != nil {
-			result["metadata_size_details"] = *v.MetadataSizeDetails
-		}
-		if v.ComplexityScore != nil {
-			result["complexity_score"] = *v.ComplexityScore
-		}
-		// Parse complexity breakdown JSON string into object
-		if v.ComplexityBreakdown != nil && *v.ComplexityBreakdown != "" {
-			var breakdown ComplexityBreakdown
-			if err := json.Unmarshal([]byte(*v.ComplexityBreakdown), &breakdown); err == nil {
-				result["complexity_breakdown"] = breakdown
-			}
-		}
-	}
+	// Flatten related data
+	r.flattenOptionalFields(result)
+	r.flattenGitProperties(result)
+	r.flattenFeatures(result)
+	r.flattenADOProperties(result)
+	r.flattenValidation(result)
 
 	// Also include the nested objects for clients that want them
 	result["git_properties"] = r.GitProperties
@@ -891,8 +911,8 @@ type MigrationLog struct {
 	Phase        string    `json:"phase" gorm:"column:phase;not null"`
 	Operation    string    `json:"operation" gorm:"column:operation;not null"`
 	Message      string    `json:"message" gorm:"column:message;not null"`
-	Details      *string   `json:"details,omitempty" gorm:"column:details;type:text"`      // Additional context, JSON or text
-	InitiatedBy  *string   `json:"initiated_by,omitempty" gorm:"column:initiated_by"`      // GitHub username of user who initiated action (when auth enabled)
+	Details      *string   `json:"details,omitempty" gorm:"column:details;type:text"` // Additional context, JSON or text
+	InitiatedBy  *string   `json:"initiated_by,omitempty" gorm:"column:initiated_by"` // GitHub username of user who initiated action (when auth enabled)
 	Timestamp    time.Time `json:"timestamp" gorm:"column:timestamp;not null;index;autoCreateTime"`
 }
 
@@ -913,18 +933,18 @@ type Batch struct {
 	StartedAt              *time.Time `json:"started_at,omitempty" gorm:"column:started_at"`
 	CompletedAt            *time.Time `json:"completed_at,omitempty" gorm:"column:completed_at"`
 	CreatedAt              time.Time  `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
-	LastDryRunAt           *time.Time `json:"last_dry_run_at,omitempty" gorm:"column:last_dry_run_at"`                               // When batch dry run was last executed
+	LastDryRunAt           *time.Time `json:"last_dry_run_at,omitempty" gorm:"column:last_dry_run_at"`                     // When batch dry run was last executed
 	LastMigrationAttemptAt *time.Time `json:"last_migration_attempt_at,omitempty" gorm:"column:last_migration_attempt_at"` // When migration was last attempted
 
 	// Dry run timing tracking
-	DryRunStartedAt       *time.Time `json:"dry_run_started_at,omitempty" gorm:"column:dry_run_started_at"`                   // When batch dry run started
-	DryRunCompletedAt     *time.Time `json:"dry_run_completed_at,omitempty" gorm:"column:dry_run_completed_at"`             // When batch dry run completed
+	DryRunStartedAt       *time.Time `json:"dry_run_started_at,omitempty" gorm:"column:dry_run_started_at"`             // When batch dry run started
+	DryRunCompletedAt     *time.Time `json:"dry_run_completed_at,omitempty" gorm:"column:dry_run_completed_at"`         // When batch dry run completed
 	DryRunDurationSeconds *int       `json:"dry_run_duration_seconds,omitempty" gorm:"column:dry_run_duration_seconds"` // Dry run duration in seconds
 
 	// Migration Settings (batch-level defaults, repository settings take precedence)
-	DestinationOrg     *string `json:"destination_org,omitempty" gorm:"column:destination_org"`                 // Default destination org for repositories in this batch
-	MigrationAPI       string  `json:"migration_api" gorm:"column:migration_api;not null"`                      // Migration API to use: "GEI" or "ELM" (default: "GEI")
-	ExcludeReleases    bool    `json:"exclude_releases" gorm:"column:exclude_releases;default:false"`           // Skip releases during migration (applies if repo doesn't override)
+	DestinationOrg     *string `json:"destination_org,omitempty" gorm:"column:destination_org"`             // Default destination org for repositories in this batch
+	MigrationAPI       string  `json:"migration_api" gorm:"column:migration_api;not null"`                  // Migration API to use: "GEI" or "ELM" (default: "GEI")
+	ExcludeReleases    bool    `json:"exclude_releases" gorm:"column:exclude_releases;default:false"`       // Skip releases during migration (applies if repo doesn't override)
 	ExcludeAttachments bool    `json:"exclude_attachments" gorm:"column:exclude_attachments;default:false"` // Skip attachments during migration (applies if repo doesn't override)
 }
 
@@ -1142,10 +1162,10 @@ type TeamMapping struct {
 	ErrorMessage        *string    `json:"error_message,omitempty" gorm:"column:error_message"`                         // Error details if migration failed
 	ReposSynced         int        `json:"repos_synced" gorm:"column:repos_synced;default:0"`                           // Count of repos with permissions applied
 	// New fields for tracking partial vs. full migration
-	TotalSourceRepos  int        `json:"total_source_repos" gorm:"column:total_source_repos;default:0"`             // Total repos this team has access to in source
-	ReposEligible     int        `json:"repos_eligible" gorm:"column:repos_eligible;default:0"`                     // How many repos have been migrated and are available for sync
-	TeamCreatedInDest bool       `json:"team_created_in_dest" gorm:"column:team_created_in_dest;default:false"`     // Whether team exists in destination
-	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty" gorm:"column:last_synced_at"`                     // When permissions were last synced
+	TotalSourceRepos  int        `json:"total_source_repos" gorm:"column:total_source_repos;default:0"`         // Total repos this team has access to in source
+	ReposEligible     int        `json:"repos_eligible" gorm:"column:repos_eligible;default:0"`                 // How many repos have been migrated and are available for sync
+	TeamCreatedInDest bool       `json:"team_created_in_dest" gorm:"column:team_created_in_dest;default:false"` // Whether team exists in destination
+	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty" gorm:"column:last_synced_at"`                 // When permissions were last synced
 	CreatedAt         time.Time  `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 }
@@ -1224,8 +1244,8 @@ const (
 // DiscoveryProgress tracks the progress of a discovery operation
 type DiscoveryProgress struct {
 	ID             int64      `json:"id" gorm:"primaryKey;autoIncrement"`
-	DiscoveryType  string     `json:"discovery_type" gorm:"column:discovery_type;not null"`   // "enterprise", "organization", or "repository"
-	Target         string     `json:"target" gorm:"column:target;not null"`                   // enterprise slug, org name, or "org/repo"
+	DiscoveryType  string     `json:"discovery_type" gorm:"column:discovery_type;not null"`           // "enterprise", "organization", or "repository"
+	Target         string     `json:"target" gorm:"column:target;not null"`                           // enterprise slug, org name, or "org/repo"
 	Status         string     `json:"status" gorm:"column:status;not null;default:in_progress;index"` // "in_progress", "completed", "failed"
 	StartedAt      time.Time  `json:"started_at" gorm:"column:started_at;not null;autoCreateTime"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty" gorm:"column:completed_at"`
