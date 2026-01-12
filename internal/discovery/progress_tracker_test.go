@@ -33,7 +33,7 @@ func setupTestDatabase(t *testing.T) *storage.Database {
 
 func TestNewDBProgressTracker(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -63,7 +63,7 @@ func TestNewDBProgressTracker(t *testing.T) {
 
 func TestDBProgressTracker_GetProgressID(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -80,7 +80,7 @@ func TestDBProgressTracker_GetProgressID(t *testing.T) {
 
 func TestDBProgressTracker_SetTotalOrgs(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -99,7 +99,7 @@ func TestDBProgressTracker_SetTotalOrgs(t *testing.T) {
 
 func TestDBProgressTracker_StartOrg(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -121,7 +121,7 @@ func TestDBProgressTracker_StartOrg(t *testing.T) {
 
 func TestDBProgressTracker_CompleteOrg(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -148,7 +148,7 @@ func TestDBProgressTracker_CompleteOrg(t *testing.T) {
 
 func TestDBProgressTracker_SetTotalRepos(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -167,7 +167,7 @@ func TestDBProgressTracker_SetTotalRepos(t *testing.T) {
 
 func TestDBProgressTracker_AddRepos(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -193,7 +193,7 @@ func TestDBProgressTracker_AddRepos(t *testing.T) {
 
 func TestDBProgressTracker_IncrementProcessedRepos(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -220,7 +220,7 @@ func TestDBProgressTracker_IncrementProcessedRepos(t *testing.T) {
 
 func TestDBProgressTracker_SetPhase(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -245,7 +245,7 @@ func TestDBProgressTracker_SetPhase(t *testing.T) {
 
 func TestDBProgressTracker_RecordError(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{
@@ -277,7 +277,7 @@ func TestDBProgressTracker_RecordError(t *testing.T) {
 
 func TestDBProgressTracker_Flush(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	progress := &models.DiscoveryProgress{

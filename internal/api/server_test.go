@@ -33,14 +33,14 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 
 	db, err := storage.NewDatabase(cfg.Database)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		t.Fatal(err)
 	}
 
 	// Run migrations
 	if err := db.Migrate(); err != nil {
-		db.Close()
-		os.RemoveAll(tmpDir)
+		_ = db.Close()
+		_ = os.RemoveAll(tmpDir)
 		t.Fatal(err)
 	}
 
@@ -49,8 +49,8 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 	server := NewServer(cfg, db, logger, nil, nil)
 
 	cleanup := func() {
-		db.Close()
-		os.RemoveAll(tmpDir)
+		_ = db.Close()
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return server, cleanup
@@ -98,7 +98,7 @@ func TestServer_HandleHealth(t *testing.T) {
 	server.handler.Health(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Health() status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -120,7 +120,7 @@ func TestServer_HandleRepositories(t *testing.T) {
 	server.handler.ListRepositories(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("ListRepositories() status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -145,7 +145,7 @@ func TestServer_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /health error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET /health status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -156,7 +156,7 @@ func TestServer_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/v1/repositories error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET /api/v1/repositories status = %d, want %d", resp.StatusCode, http.StatusOK)

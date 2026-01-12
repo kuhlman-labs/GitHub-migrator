@@ -24,6 +24,7 @@ func TestNewAnalyzer(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different scenarios
 func TestDetectLFS(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	analyzer := NewAnalyzer(logger)
@@ -42,7 +43,7 @@ func TestDetectLFS(t *testing.T) {
 	t.Run("LFS detected via .gitattributes", func(t *testing.T) {
 		gitattributes := filepath.Join(tempDir, ".gitattributes")
 		content := "*.psd filter=lfs diff=lfs merge=lfs -text\n"
-		if err := os.WriteFile(gitattributes, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(gitattributes, []byte(content), 0600); err != nil {
 			t.Fatalf("Failed to create .gitattributes: %v", err)
 		}
 
@@ -58,7 +59,7 @@ func TestDetectLFS(t *testing.T) {
 
 		// Create .git directory
 		gitDir := filepath.Join(tempDir2, ".git")
-		if err := os.Mkdir(gitDir, 0755); err != nil {
+		if err := os.Mkdir(gitDir, 0750); err != nil {
 			t.Fatalf("Failed to create .git directory: %v", err)
 		}
 
@@ -73,7 +74,7 @@ func TestDetectLFS(t *testing.T) {
 	process = git-lfs filter-process
 	required = true
 `
-		if err := os.WriteFile(gitConfig, []byte(configContent), 0644); err != nil {
+		if err := os.WriteFile(gitConfig, []byte(configContent), 0600); err != nil {
 			t.Fatalf("Failed to create .git/config: %v", err)
 		}
 
@@ -103,21 +104,21 @@ func TestDetectLFSPointerFiles(t *testing.T) {
 		// Configure git user
 		cmd = exec.Command("git", "config", "user.name", "Test User")
 		cmd.Dir = tempDir
-		cmd.Run()
+		_ = cmd.Run()
 
 		cmd = exec.Command("git", "config", "user.email", "test@example.com")
 		cmd.Dir = tempDir
-		cmd.Run()
+		_ = cmd.Run()
 
 		// Create a regular file and commit
 		testFile := filepath.Join(tempDir, "test.txt")
-		if err := os.WriteFile(testFile, []byte("regular file content"), 0644); err != nil {
+		if err := os.WriteFile(testFile, []byte("regular file content"), 0600); err != nil {
 			t.Fatalf("Failed to create test file: %v", err)
 		}
 
 		cmd = exec.Command("git", "add", ".")
 		cmd.Dir = tempDir
-		cmd.Run()
+		_ = cmd.Run()
 
 		cmd = exec.Command("git", "commit", "-m", "Initial commit")
 		cmd.Dir = tempDir
@@ -145,11 +146,11 @@ func TestDetectLFSPointerFiles(t *testing.T) {
 		// Configure git user
 		cmd = exec.Command("git", "config", "user.name", "Test User")
 		cmd.Dir = tempDir
-		cmd.Run()
+		_ = cmd.Run()
 
 		cmd = exec.Command("git", "config", "user.email", "test@example.com")
 		cmd.Dir = tempDir
-		cmd.Run()
+		_ = cmd.Run()
 
 		// Create a file with LFS pointer content
 		lfsPointerFile := filepath.Join(tempDir, "large-file.bin")
@@ -157,13 +158,13 @@ func TestDetectLFSPointerFiles(t *testing.T) {
 oid sha256:4d70b55500e395744f43477146522c019d3f11d132a9a834927b5f63901b0f5b
 size 123456
 `
-		if err := os.WriteFile(lfsPointerFile, []byte(lfsPointerContent), 0644); err != nil {
+		if err := os.WriteFile(lfsPointerFile, []byte(lfsPointerContent), 0600); err != nil {
 			t.Fatalf("Failed to create LFS pointer file: %v", err)
 		}
 
 		cmd = exec.Command("git", "add", ".")
 		cmd.Dir = tempDir
-		cmd.Run()
+		_ = cmd.Run()
 
 		cmd = exec.Command("git", "commit", "-m", "Add LFS pointer")
 		cmd.Dir = tempDir
@@ -178,6 +179,7 @@ size 123456
 	})
 }
 
+//nolint:dupl // Test cases have similar structure but test different scenarios
 func TestDetectSubmodules(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	analyzer := NewAnalyzer(logger)
@@ -195,7 +197,7 @@ func TestDetectSubmodules(t *testing.T) {
 	t.Run("Submodules detected via .gitmodules", func(t *testing.T) {
 		gitmodules := filepath.Join(tempDir, ".gitmodules")
 		content := "[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n\turl = https://github.com/example/lib.git\n"
-		if err := os.WriteFile(gitmodules, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(gitmodules, []byte(content), 0600); err != nil {
 			t.Fatalf("Failed to create .gitmodules: %v", err)
 		}
 
@@ -211,7 +213,7 @@ func TestDetectSubmodules(t *testing.T) {
 
 		// Create .git directory
 		gitDir := filepath.Join(tempDir2, ".git")
-		if err := os.Mkdir(gitDir, 0755); err != nil {
+		if err := os.Mkdir(gitDir, 0750); err != nil {
 			t.Fatalf("Failed to create .git directory: %v", err)
 		}
 
@@ -224,7 +226,7 @@ func TestDetectSubmodules(t *testing.T) {
 	url = https://github.com/example/lib.git
 	active = true
 `
-		if err := os.WriteFile(gitConfig, []byte(configContent), 0644); err != nil {
+		if err := os.WriteFile(gitConfig, []byte(configContent), 0600); err != nil {
 			t.Fatalf("Failed to create .git/config: %v", err)
 		}
 
@@ -256,13 +258,13 @@ func TestGetBranchCount(t *testing.T) {
 
 	// Create an initial commit
 	testFile := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
 	cmd = exec.Command("git", "add", ".")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "commit", "-m", "Initial commit")
 	cmd.Dir = tempDir
@@ -396,13 +398,13 @@ func TestAnalyzeGitProperties_Integration(t *testing.T) {
 
 	// Create a test file and commit
 	testFile := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
 	cmd = exec.Command("git", "add", ".")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "commit", "-m", "Initial commit")
 	cmd.Dir = tempDir
@@ -521,21 +523,21 @@ func TestGetLastCommitSHA(t *testing.T) {
 	// Configure git user
 	cmd = exec.Command("git", "config", "user.name", "Test User")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "config", "user.email", "test@example.com")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	// Create an initial commit
 	testFile := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
 	cmd = exec.Command("git", "add", ".")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "commit", "-m", "Initial commit")
 	cmd.Dir = tempDir
@@ -570,21 +572,21 @@ func TestGetTagCount(t *testing.T) {
 	// Configure git user
 	cmd = exec.Command("git", "config", "user.name", "Test User")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "config", "user.email", "test@example.com")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	// Create an initial commit
 	testFile := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
 	cmd = exec.Command("git", "add", ".")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "commit", "-m", "Initial commit")
 	cmd.Dir = tempDir
@@ -938,21 +940,21 @@ func TestGetGitObjectSize_Integration(t *testing.T) {
 	// Configure git user
 	cmd = exec.Command("git", "config", "user.name", "Test User")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "config", "user.email", "test@example.com")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	// Create a test file and commit
 	testFile := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test content for git object size calculation"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content for git object size calculation"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
 	cmd = exec.Command("git", "add", ".")
 	cmd.Dir = tempDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "commit", "-m", "Initial commit")
 	cmd.Dir = tempDir

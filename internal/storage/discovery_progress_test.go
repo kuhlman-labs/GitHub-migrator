@@ -29,7 +29,7 @@ func setupTestDBForDiscovery(t *testing.T) *Database {
 
 func TestCreateDiscoveryProgress(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	progress := &models.DiscoveryProgress{
 		DiscoveryType: models.DiscoveryTypeOrganization,
@@ -54,7 +54,7 @@ func TestCreateDiscoveryProgress(t *testing.T) {
 
 func TestCreateDiscoveryProgress_AlreadyInProgress(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create first discovery
 	progress1 := &models.DiscoveryProgress{
@@ -80,7 +80,7 @@ func TestCreateDiscoveryProgress_AlreadyInProgress(t *testing.T) {
 
 func TestGetActiveDiscoveryProgress(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// No active discovery initially
 	progress, err := db.GetActiveDiscoveryProgress()
@@ -115,9 +115,10 @@ func TestGetActiveDiscoveryProgress(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different states
 func TestMarkDiscoveryComplete(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	progress := &models.DiscoveryProgress{
 		DiscoveryType: models.DiscoveryTypeOrganization,
@@ -149,7 +150,7 @@ func TestMarkDiscoveryComplete(t *testing.T) {
 
 func TestMarkDiscoveryFailed(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	progress := &models.DiscoveryProgress{
 		DiscoveryType: models.DiscoveryTypeOrganization,
@@ -180,9 +181,10 @@ func TestMarkDiscoveryFailed(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different states
 func TestMarkDiscoveryCancelled(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	progress := &models.DiscoveryProgress{
 		DiscoveryType: models.DiscoveryTypeOrganization,
@@ -214,7 +216,7 @@ func TestMarkDiscoveryCancelled(t *testing.T) {
 
 func TestMarkDiscoveryCancelled_NotFound(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Try to mark non-existent discovery as cancelled
 	err := db.MarkDiscoveryCancelled(9999)
@@ -225,7 +227,7 @@ func TestMarkDiscoveryCancelled_NotFound(t *testing.T) {
 
 func TestDeleteCompletedDiscoveryProgress(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create and complete a discovery
 	progress1 := &models.DiscoveryProgress{
@@ -257,7 +259,7 @@ func TestDeleteCompletedDiscoveryProgress(t *testing.T) {
 
 func TestDeleteCompletedDiscoveryProgress_IncludesCancelled(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create and cancel a discovery
 	progress := &models.DiscoveryProgress{
@@ -289,7 +291,7 @@ func TestDeleteCompletedDiscoveryProgress_IncludesCancelled(t *testing.T) {
 
 func TestUpdateDiscoveryPhase(t *testing.T) {
 	db := setupTestDBForDiscovery(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	progress := &models.DiscoveryProgress{
 		DiscoveryType: models.DiscoveryTypeOrganization,

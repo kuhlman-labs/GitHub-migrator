@@ -14,10 +14,12 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
+const testMainBranchMigration = "main"
+
 // createTestRepository creates a minimal repository with all required fields for testing
 func createTestRepository(fullName string) *models.Repository {
 	totalSize := int64(1024 * 1024)
-	defaultBranch := "main"
+	defaultBranch := testMainBranchMigration
 	topContrib := "user1,user2"
 
 	repo := &models.Repository{
@@ -157,7 +159,7 @@ func TestExecutor_validatePreMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -286,7 +288,7 @@ func TestPreMigrationValidationActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -350,7 +352,7 @@ func TestExecutor_DryRunExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -397,7 +399,7 @@ func TestExecutor_MigrationHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -471,7 +473,7 @@ func TestExecutor_MigrationLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)

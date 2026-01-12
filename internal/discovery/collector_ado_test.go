@@ -10,6 +10,8 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
+const testOrgNameADO = "test-org"
+
 func TestDiscoverADOOrganization(t *testing.T) {
 	// This is an integration test that requires Azure DevOps access
 	t.Skip("Skipping integration test - requires Azure DevOps access and database")
@@ -19,7 +21,7 @@ func TestDiscoverADOOrganization(t *testing.T) {
 	// Would need to set up test database and ADO client
 	// This is a placeholder for the test structure
 
-	organization := "test-org"
+	organization := testOrgNameADO
 	workers := 5
 
 	t.Logf("Would test ADO discovery for organization: %s with %d workers", organization, workers)
@@ -37,7 +39,7 @@ func TestDiscoverADOProject(t *testing.T) {
 
 	_ = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	organization := "test-org"
+	organization := testOrgNameADO
 	project := "test-project"
 	workers := 5
 

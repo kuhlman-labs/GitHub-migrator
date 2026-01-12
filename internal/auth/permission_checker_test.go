@@ -15,10 +15,16 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+const (
+	testGraphQLPath            = "/graphql"
+	testOrgMembershipPath      = "/user/memberships/orgs/test-org"
+	testUserMembershipsOrgPath = "/user/memberships/orgs"
+)
+
 func TestPermissionChecker_HasFullAccess_EnterpriseAdmin(t *testing.T) {
 	// Mock GitHub GraphQL API for enterprise admin check
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/graphql" {
+		if r.URL.Path == testGraphQLPath {
 			// Return enterprise admin response
 			resp := map[string]any{
 				"data": map[string]any{
@@ -28,7 +34,7 @@ func TestPermissionChecker_HasFullAccess_EnterpriseAdmin(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		http.NotFound(w, r)
@@ -66,7 +72,7 @@ func TestPermissionChecker_HasFullAccess_PrivilegedTeam(t *testing.T) {
 				"state": "active",
 				"role":  "member",
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		http.NotFound(w, r)
@@ -97,12 +103,12 @@ func TestPermissionChecker_HasFullAccess_PrivilegedTeam(t *testing.T) {
 func TestPermissionChecker_HasRepoAccess_OrgAdmin(t *testing.T) {
 	// Mock GitHub API for org admin check
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs/test-org" {
+		if r.URL.Path == testOrgMembershipPath {
 			resp := map[string]any{
 				"state": "active",
 				"role":  "admin",
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		http.NotFound(w, r)
@@ -129,12 +135,12 @@ func TestPermissionChecker_HasRepoAccess_OrgAdmin(t *testing.T) {
 func TestPermissionChecker_HasRepoAccess_RepoAdmin(t *testing.T) {
 	// Mock GitHub API for repo permission check
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs/test-org" {
+		if r.URL.Path == testOrgMembershipPath {
 			// Not an org admin
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Path == "/graphql" {
+		if r.URL.Path == testGraphQLPath {
 			resp := map[string]any{
 				"data": map[string]any{
 					"repository": map[string]any{
@@ -142,7 +148,7 @@ func TestPermissionChecker_HasRepoAccess_RepoAdmin(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		http.NotFound(w, r)
@@ -169,12 +175,12 @@ func TestPermissionChecker_HasRepoAccess_RepoAdmin(t *testing.T) {
 func TestPermissionChecker_HasRepoAccess_NoPermission(t *testing.T) {
 	// Mock GitHub API - user has no admin access
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs/test-org" {
+		if r.URL.Path == testOrgMembershipPath {
 			// Not an org admin
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Path == "/graphql" {
+		if r.URL.Path == testGraphQLPath {
 			resp := map[string]any{
 				"data": map[string]any{
 					"repository": map[string]any{
@@ -182,7 +188,7 @@ func TestPermissionChecker_HasRepoAccess_NoPermission(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		http.NotFound(w, r)
@@ -232,22 +238,22 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 			repoFullNames: []string{"test-org/repo1", "test-org/repo2"},
 			mockResponses: func(w http.ResponseWriter, r *http.Request) {
 				// Mock org membership endpoint to return active memberships
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgPath {
 					resp := []map[string]any{
 						{
 							"organization": map[string]string{"login": "test-org"},
 							"state":        "active",
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
-				if r.URL.Path == "/user/memberships/orgs/test-org" {
+				if r.URL.Path == testOrgMembershipPath {
 					resp := map[string]any{
 						"state": "active",
 						"role":  "admin",
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -258,16 +264,16 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 			name:          "user without access fails validation",
 			repoFullNames: []string{"other-org/repo1"},
 			mockResponses: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgPath {
 					resp := []map[string]any{}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				if r.URL.Path == "/user/memberships/orgs/other-org" {
 					http.NotFound(w, r)
 					return
 				}
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					resp := map[string]any{
 						"data": map[string]any{
 							"repository": map[string]any{
@@ -275,7 +281,7 @@ func TestPermissionChecker_ValidateRepositoryAccess(t *testing.T) {
 							},
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -323,14 +329,14 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 			inputRepos: []*models.Repository{repo1, repo2, repo3},
 			mockResponses: func(w http.ResponseWriter, r *http.Request) {
 				// Return org1 membership
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgPath {
 					resp := []map[string]any{
 						{
 							"organization": map[string]string{"login": "org1"},
 							"state":        "active",
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				if r.URL.Path == "/user/memberships/orgs/org1" {
@@ -338,7 +344,7 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 						"state": "active",
 						"role":  "admin",
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				// Not admin of org2
@@ -347,7 +353,7 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 					return
 				}
 				// No repo-level admin for org2/repo3
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					resp := map[string]any{
 						"data": map[string]any{
 							"repository": map[string]any{
@@ -355,7 +361,7 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 							},
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -390,7 +396,7 @@ func TestPermissionChecker_FilterRepositoriesByAccess(t *testing.T) {
 func TestPermissionChecker_GetUserOrganizationsWithAdminRole(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Request: %s %s\n", r.Method, r.URL.Path)
-		if r.URL.Path == "/user/memberships/orgs" {
+		if r.URL.Path == testUserMembershipsOrgPath {
 			resp := []map[string]any{
 				{
 					"organization": map[string]string{"login": "org1"},
@@ -401,7 +407,7 @@ func TestPermissionChecker_GetUserOrganizationsWithAdminRole(t *testing.T) {
 					"state":        "active",
 				},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		if r.URL.Path == "/user/memberships/orgs/org1" {
@@ -409,7 +415,7 @@ func TestPermissionChecker_GetUserOrganizationsWithAdminRole(t *testing.T) {
 				"state": "active",
 				"role":  "admin",
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		if r.URL.Path == "/user/memberships/orgs/org2" {
@@ -417,7 +423,7 @@ func TestPermissionChecker_GetUserOrganizationsWithAdminRole(t *testing.T) {
 				"state": "active",
 				"role":  "member",
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		http.NotFound(w, r)

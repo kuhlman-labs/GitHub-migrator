@@ -1,3 +1,4 @@
+//nolint:goconst // Tests intentionally use string literals to verify constant values
 package models
 
 import "testing"

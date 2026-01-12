@@ -76,7 +76,7 @@ func TestPackageScanner_ParsePackageJSONBasic(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 			pkgPath := filepath.Join(tmpDir, "package.json")
-			if err := os.WriteFile(pkgPath, []byte(tt.content), 0644); err != nil {
+			if err := os.WriteFile(pkgPath, []byte(tt.content), 0600); err != nil {
 				t.Fatalf("Failed to write package.json: %v", err)
 			}
 
@@ -368,11 +368,11 @@ func TestPackageScanner_ParsePackageJSONFilesUnit(t *testing.T) {
 
 	// Create first package.json
 	pkg1 := filepath.Join(tmpDir, "pkg1", "package.json")
-	if err := os.MkdirAll(filepath.Dir(pkg1), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pkg1), 0750); err != nil {
 		t.Fatal(err)
 	}
 	pkg1Content := `{"dependencies": {"lib1": "github:owner1/repo1"}}`
-	if err := os.WriteFile(pkg1, []byte(pkg1Content), 0644); err != nil {
+	if err := os.WriteFile(pkg1, []byte(pkg1Content), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -393,7 +393,7 @@ func TestPackageScanner_ParsePackageJSON_InvalidJSONUnit(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	pkgPath := filepath.Join(tmpDir, "package.json")
-	if err := os.WriteFile(pkgPath, []byte("not valid json"), 0644); err != nil {
+	if err := os.WriteFile(pkgPath, []byte("not valid json"), 0600); err != nil {
 		t.Fatal(err)
 	}
 

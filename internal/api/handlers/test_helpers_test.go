@@ -14,7 +14,11 @@ import (
 )
 
 const (
-	testMainBranch = "main"
+	testMainBranch      = "main"
+	testSourceGitHub    = "github"
+	testContentTypeJSON = "application/json"
+	testContentTypeCSV  = "text/csv"
+	testOrgName         = "test-org"
 )
 
 // ============================================================================

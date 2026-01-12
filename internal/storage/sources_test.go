@@ -525,7 +525,7 @@ func TestSourceModel(t *testing.T) {
 
 	t.Run("HasAppAuth", func(t *testing.T) {
 		appID := int64(12345)
-		privateKey := "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----"
+		privateKey := "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----" // #nosec G101 -- test credential
 
 		source := &models.Source{}
 		if source.HasAppAuth() {
@@ -854,7 +854,7 @@ func setupSourcesTestDB(t *testing.T) *Database {
 	}
 
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 	})
 
 	return db

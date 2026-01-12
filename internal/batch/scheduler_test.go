@@ -132,7 +132,7 @@ func setupTestScheduler(t *testing.T) (*Scheduler, *storage.Database, *MockMigra
 	}
 
 	cleanup := func() {
-		db.Close()
+		_ = db.Close()
 	}
 
 	return scheduler, db, executor, cleanup
@@ -628,7 +628,7 @@ func TestIsBatchRunning(t *testing.T) {
 		}
 
 		// Cancel it
-		scheduler.CancelBatch(ctx, batch.ID)
+		_ = scheduler.CancelBatch(ctx, batch.ID)
 
 		// Should not be running
 		if scheduler.IsBatchRunning(batch.ID) {

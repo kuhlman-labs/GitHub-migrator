@@ -18,7 +18,7 @@ import (
 
 func TestListOrganizationsHandler(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test repositories in different orgs
 	repos := []struct {
@@ -68,7 +68,7 @@ func TestListOrganizationsHandler(t *testing.T) {
 
 func TestListOrganizationsWithMultipleSources(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test repositories in different orgs with different sources
 	repos := []struct {
@@ -122,7 +122,7 @@ func TestListOrganizationsWithMultipleSources(t *testing.T) {
 
 func TestGetOrganizationListHandler(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test repositories
 	repos := []struct {

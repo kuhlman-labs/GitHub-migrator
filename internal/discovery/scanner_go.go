@@ -9,7 +9,7 @@ import (
 
 // parseGoModFiles parses a list of go.mod files and extracts dependencies
 func (ps *PackageScanner) parseGoModFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files))
 	for _, modPath := range files {
 		relPath, _ := filepath.Rel(repoPath, modPath)
 		extracted := ps.parseGoMod(modPath, relPath)
@@ -27,7 +27,7 @@ func (ps *PackageScanner) parseGoMod(modPath, manifestPath string) []ExtractedDe
 	if err != nil {
 		return deps
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	inRequireBlock := false
 	scanner := bufio.NewScanner(file)

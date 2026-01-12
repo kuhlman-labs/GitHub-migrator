@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -5,14 +7,10 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
-    - staticcheck
-    - typecheck
+    - staticcheck  # includes gosimple in v2.x
     - unused
-    - gofmt
-    - goimports
     - misspell
     - goconst
     - gocyclo
@@ -20,6 +18,11 @@ linters:
     - gosec
     - unconvert
     - prealloc
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 linters-settings:
   errcheck:

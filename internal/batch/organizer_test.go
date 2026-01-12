@@ -45,7 +45,7 @@ func setupTestOrganizer(t *testing.T) (*Organizer, *storage.Database, func()) {
 	}
 
 	cleanup := func() {
-		db.Close()
+		_ = db.Close()
 	}
 
 	return organizer, db, cleanup
@@ -382,17 +382,17 @@ func TestGetBatchProgress(t *testing.T) {
 	repo1 := createTestRepository(t, db, "org/repo1", 100000, map[string]bool{})
 	repo1.BatchID = &batch.ID
 	repo1.Status = string(models.StatusComplete)
-	db.UpdateRepository(ctx, repo1)
+	_ = db.UpdateRepository(ctx, repo1)
 
 	repo2 := createTestRepository(t, db, "org/repo2", 100000, map[string]bool{})
 	repo2.BatchID = &batch.ID
 	repo2.Status = string(models.StatusMigratingContent)
-	db.UpdateRepository(ctx, repo2)
+	_ = db.UpdateRepository(ctx, repo2)
 
 	repo3 := createTestRepository(t, db, "org/repo3", 100000, map[string]bool{})
 	repo3.BatchID = &batch.ID
 	repo3.Status = string(models.StatusMigrationFailed)
-	db.UpdateRepository(ctx, repo3)
+	_ = db.UpdateRepository(ctx, repo3)
 
 	t.Run("calculate progress", func(t *testing.T) {
 		progress, err := organizer.GetBatchProgress(ctx, batch.ID)

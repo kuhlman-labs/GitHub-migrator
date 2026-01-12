@@ -201,7 +201,7 @@ func TestRepositoryFilters_ToMap(t *testing.T) {
 	filters := &RepositoryFilters{
 		Status:            []string{"pending", "complete"},
 		BatchID:           &batchID,
-		Source:            "github",
+		Source:            testSourceGitHub,
 		Organization:      []string{"org1"},
 		Search:            "test",
 		Visibility:        "public",
@@ -234,7 +234,7 @@ func TestRepositoryFilters_ToMap(t *testing.T) {
 
 	// Check source
 	if source, ok := m["source"].(string); ok {
-		if source != "github" {
+		if source != testSourceGitHub {
 			t.Errorf("Expected source 'github', got %s", source)
 		}
 	} else {
@@ -317,7 +317,7 @@ func TestParseRepositoryFilters(t *testing.T) {
 	}
 
 	// Check source
-	if filters.Source != "github" {
+	if filters.Source != testSourceGitHub {
 		t.Errorf("Expected source 'github', got %s", filters.Source)
 	}
 

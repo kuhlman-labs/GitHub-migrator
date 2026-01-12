@@ -9,7 +9,7 @@ import (
 
 // parseChartYamlFiles parses a list of Chart.yaml files and extracts dependencies
 func (ps *PackageScanner) parseChartYamlFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*2)
 	for _, chartPath := range files {
 		relPath, _ := filepath.Rel(repoPath, chartPath)
 		// Pattern: repository: "https://host/owner/repo" or repository: "git+https://..."
@@ -26,7 +26,7 @@ func (ps *PackageScanner) parseChartYamlFiles(files []string, repoPath string) [
 
 // parsePackageSwiftFiles parses a list of Package.swift files and extracts dependencies
 func (ps *PackageScanner) parsePackageSwiftFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*2)
 	for _, swiftPath := range files {
 		relPath, _ := filepath.Rel(repoPath, swiftPath)
 		// Pattern: .package(url: "https://host/owner/repo"
@@ -43,7 +43,7 @@ func (ps *PackageScanner) parsePackageSwiftFiles(files []string, repoPath string
 
 // parseMixExsFiles parses a list of mix.exs files and extracts dependencies
 func (ps *PackageScanner) parseMixExsFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*2)
 	for _, mixPath := range files {
 		relPath, _ := filepath.Rel(repoPath, mixPath)
 		extracted := ps.parseMixExs(mixPath, relPath)
@@ -131,7 +131,7 @@ func (ps *PackageScanner) parseMixExs(mixPath, manifestPath string) []ExtractedD
 
 // parseBuildGradleFiles parses a list of build.gradle/build.gradle.kts files and extracts dependencies
 func (ps *PackageScanner) parseBuildGradleFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*2)
 	for _, gradlePath := range files {
 		relPath, _ := filepath.Rel(repoPath, gradlePath)
 		extracted := ps.parseBuildGradle(gradlePath, relPath)

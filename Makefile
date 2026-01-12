@@ -17,7 +17,7 @@ install-dependencies: ## Install Go module dependencies
 
 install-tools: ## Install development tools
 	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) v2.8.0
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	go install github.com/github/git-sizer@latest
 	@echo "Development tools installed successfully!"

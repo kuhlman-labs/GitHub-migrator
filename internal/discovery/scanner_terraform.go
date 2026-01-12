@@ -9,7 +9,7 @@ import (
 
 // parseTerraformFiles parses a list of .tf files and extracts dependencies
 func (ps *PackageScanner) parseTerraformFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*3)
 	for _, tfPath := range files {
 		relPath, _ := filepath.Rel(repoPath, tfPath)
 		extracted := ps.parseTerraformFile(tfPath, relPath)

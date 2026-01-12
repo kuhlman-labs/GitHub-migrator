@@ -11,6 +11,8 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+const testDependencyTypePackage = "package"
+
 // setupTestDir creates a temporary directory with test files
 func setupTestDir(t *testing.T) string {
 	t.Helper()
@@ -27,18 +29,18 @@ func writeTestFile(t *testing.T, dir, filename, content string) {
 	path := filepath.Join(dir, filename)
 
 	// Create parent directories if needed
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 }
 
 func TestPackageScanner_ScanGoModWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create go.mod with GitHub dependencies
 	goMod := `module github.com/example/test
@@ -74,7 +76,7 @@ require github.com/single/dep v1.0.0
 	for _, dep := range deps {
 		if _, ok := expectedDeps[dep.DependencyFullName]; ok {
 			expectedDeps[dep.DependencyFullName] = true
-			if dep.DependencyType != "package" {
+			if dep.DependencyType != testDependencyTypePackage {
 				t.Errorf("Expected dependency type 'package', got '%s'", dep.DependencyType)
 			}
 		}
@@ -89,7 +91,7 @@ require github.com/single/dep v1.0.0
 
 func TestPackageScanner_ScanNpmWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create package.json with GitHub dependencies
 	packageJSON := `{
@@ -136,7 +138,7 @@ func TestPackageScanner_ScanNpmWithGitHubDeps(t *testing.T) {
 
 func TestPackageScanner_ScanPythonWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create requirements.txt with GitHub dependencies
 	requirements := `flask==2.3.0
@@ -177,7 +179,7 @@ git+ssh://git@github.com/private/repo.git
 
 func TestPackageScanner_RepoNamesWithDots(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Test that repo names with dots are correctly extracted (not truncated at first dot)
 	requirements := `flask==2.3.0
@@ -242,7 +244,7 @@ gem 'another-dotted', git: 'git@github.example.com:owner/lib.core.utils.git'
 
 func TestPackageScanner_NoGitHubDepsReturnsEmpty(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create package.json with only npm registry dependencies (no GitHub refs)
 	packageJSON := `{
@@ -275,7 +277,7 @@ requests>=2.28.0
 
 func TestPackageScanner_EmptyDirectory(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	scanner := NewPackageScanner(logger)
@@ -292,7 +294,7 @@ func TestPackageScanner_EmptyDirectory(t *testing.T) {
 
 func TestPackageScanner_MonorepoWithMultipleGoMods(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create multiple go.mod files with GitHub dependencies
 	writeTestFile(t, dir, "go.mod", `module main
@@ -340,7 +342,7 @@ require github.com/gin-gonic/gin v1.9.0`)
 
 func TestPackageScanner_SkipsNodeModules(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create go.mod in root with a GitHub dependency
 	writeTestFile(t, dir, "go.mod", `module test
@@ -420,7 +422,7 @@ func TestPackageScanner_ExtractGitHubFromNpmVersion(t *testing.T) {
 
 func TestPackageScanner_ParseGoMod(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	goMod := `module example.com/test
 
@@ -470,7 +472,7 @@ require github.com/single/dep v1.0.0
 
 func TestPackageScanner_DependencyMetadata(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	goMod := `module test
 go 1.21
@@ -493,7 +495,7 @@ require github.com/gin-gonic/gin v1.9.0`
 	if dep.DependencyFullName != "gin-gonic/gin" {
 		t.Errorf("Expected DependencyFullName 'gin-gonic/gin', got '%s'", dep.DependencyFullName)
 	}
-	if dep.DependencyType != "package" {
+	if dep.DependencyType != testDependencyTypePackage {
 		t.Errorf("Expected DependencyType 'package', got '%s'", dep.DependencyType)
 	}
 	if dep.DependencyURL != "https://github.com/gin-gonic/gin" {
@@ -504,9 +506,10 @@ require github.com/gin-gonic/gin v1.9.0`
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different package types
 func TestPackageScanner_ScanRubyGemfileWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create Gemfile with GitHub dependencies
 	gemfile := `source 'https://rubygems.org'
@@ -539,7 +542,7 @@ gem 'ssh-lib', git: 'git@github.com:another/repo.git'
 	for _, dep := range deps {
 		if _, ok := expectedDeps[dep.DependencyFullName]; ok {
 			expectedDeps[dep.DependencyFullName] = true
-			if dep.DependencyType != "package" {
+			if dep.DependencyType != testDependencyTypePackage {
 				t.Errorf("Expected dependency type 'package', got '%s'", dep.DependencyType)
 			}
 		}
@@ -554,7 +557,7 @@ gem 'ssh-lib', git: 'git@github.com:another/repo.git'
 
 func TestPackageScanner_LocalDependenciesWithSourceURL(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create go.mod with both public GitHub and enterprise dependencies
 	goMod := `module github.example.com/myorg/myapp
@@ -611,7 +614,7 @@ require (
 
 func TestPackageScanner_RubyGemfileLocalDependencies(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create Gemfile with local enterprise dependencies
 	gemfile := `source 'https://rubygems.org'
@@ -661,9 +664,10 @@ gem 'another-internal', git: 'git@github.example.com:internal/another.git'
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different package types
 func TestPackageScanner_ScanTerraformWithGitHubModules(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create main.tf with various module sources
 	mainTF := `terraform {
@@ -722,7 +726,7 @@ module "local" {
 	for _, dep := range deps {
 		if _, ok := expectedDeps[dep.DependencyFullName]; ok {
 			expectedDeps[dep.DependencyFullName] = true
-			if dep.DependencyType != "package" {
+			if dep.DependencyType != testDependencyTypePackage {
 				t.Errorf("Expected dependency type 'package', got '%s'", dep.DependencyType)
 			}
 		}
@@ -737,7 +741,7 @@ module "local" {
 
 func TestPackageScanner_TerraformLocalDependencies(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create main.tf with both public and enterprise modules
 	mainTF := `terraform {
@@ -809,7 +813,7 @@ module "secrets" {
 
 func TestPackageScanner_TerraformRegistryModulesIgnored(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create main.tf with only registry modules
 	mainTF := `terraform {
@@ -851,7 +855,7 @@ module "s3" {
 
 func TestPackageScanner_ScanRustCargoWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create Cargo.toml with GitHub dependencies
 	cargoToml := `[package]
@@ -897,7 +901,7 @@ test-utils = { git = "https://github.com/test/utils" }
 
 func TestPackageScanner_RustCargoLocalDependencies(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	cargoToml := `[package]
 name = "my-project"
@@ -933,7 +937,7 @@ internal = { git = "https://github.example.com/internal/lib" }
 
 func TestPackageScanner_ScanHelmChartWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create Chart.yaml with GitHub repository dependencies
 	chartYaml := `apiVersion: v2
@@ -979,7 +983,7 @@ dependencies:
 
 func TestPackageScanner_ScanSwiftPackageWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create Package.swift with GitHub dependencies
 	packageSwift := `// swift-tools-version:5.5
@@ -1028,7 +1032,7 @@ let package = Package(
 
 func TestPackageScanner_SwiftLocalDependencies(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	packageSwift := `// swift-tools-version:5.5
 import PackageDescription
@@ -1071,7 +1075,7 @@ let package = Package(
 
 func TestPackageScanner_ScanElixirMixWithGitHubDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create mix.exs with GitHub dependencies - both github: shorthand AND git: URL formats
 	mixExs := `defmodule MyApp.MixProject do
@@ -1135,7 +1139,7 @@ end
 
 func TestPackageScanner_ScanGradleJitPackDeps(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create build.gradle with JitPack dependencies
 	buildGradle := `plugins {
@@ -1185,7 +1189,7 @@ dependencies {
 
 func TestPackageScanner_ScanGradleKotlinDSL(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create build.gradle.kts (Kotlin DSL)
 	buildGradleKts := `plugins {
@@ -1232,7 +1236,7 @@ dependencies {
 
 func TestPackageScanner_MultipleEcosystemsInMonorepo(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// Create a monorepo with multiple ecosystems
 	writeTestFile(t, dir, "go.mod", `module test
@@ -1434,9 +1438,10 @@ func TestPackageScanner_ExtractADOReference(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different package types
 func TestPackageScanner_RustCargoADODependencies(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	cargoToml := `[package]
 name = "my-project"
@@ -1478,7 +1483,7 @@ internal-ssh = { git = "git@ssh.dev.azure.com:v3/myorg/myproject/another-lib" }
 
 func TestPackageScanner_TerraformADOModules(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	mainTF := `terraform {
   required_version = ">= 1.0"
@@ -1530,9 +1535,10 @@ module "external-ado" {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different package types
 func TestPackageScanner_PythonADODependencies(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	requirements := `flask==2.3.0
 git+https://github.com/pallets/click.git@8.0.0
@@ -1569,9 +1575,10 @@ requests>=2.28.0
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different package types
 func TestPackageScanner_RubyGemfileADODependencies(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	gemfile := `source 'https://rubygems.org'
 
@@ -1687,7 +1694,7 @@ let package = Package(
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := setupTestDir(t)
-			defer os.RemoveAll(dir)
+			defer func() { _ = os.RemoveAll(dir) }()
 
 			writeTestFile(t, dir, tt.filename, tt.content)
 
@@ -1744,7 +1751,7 @@ func getDependencyHost(dep *models.RepositoryDependency) string {
 // are correctly marked as local when the source is github.com (GHEC scenario)
 func TestPackageScanner_ShorthandLocalDependenciesGitHubCom(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// NPM package.json with github: shorthand and owner/repo shorthand
 	packageJSON := `{
@@ -1827,7 +1834,7 @@ dependencies {
 // dependencies are NOT marked as local when the source is a different host (GHES scenario)
 func TestPackageScanner_ShorthandExternalDependenciesGHES(t *testing.T) {
 	dir := setupTestDir(t)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	// NPM package.json with github: shorthand (these reference github.com)
 	packageJSON := `{

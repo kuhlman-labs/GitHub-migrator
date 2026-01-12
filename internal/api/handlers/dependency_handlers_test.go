@@ -18,7 +18,7 @@ func TestGetRepositoryDependents(t *testing.T) {
 
 	// Create test repositories
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testMainBranch
 
 	repo := &models.Repository{
 		FullName:     "org/repo1",
@@ -69,7 +69,7 @@ func TestGetDependencyGraph(t *testing.T) {
 
 	// Create test repositories with dependencies
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testMainBranch
 
 	repos := []string{"org/repo1", "org/repo2", "org/repo3"}
 	for _, name := range repos {
@@ -141,7 +141,7 @@ func TestExportDependencies(t *testing.T) {
 
 	// Create test repositories
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testMainBranch
 
 	repo := &models.Repository{
 		FullName:     "org/repo1",
@@ -169,7 +169,7 @@ func TestExportDependencies(t *testing.T) {
 		}
 
 		contentType := w.Header().Get("Content-Type")
-		if contentType != "text/csv" {
+		if contentType != testContentTypeCSV {
 			t.Errorf("Expected Content-Type text/csv, got %s", contentType)
 		}
 	})
@@ -185,7 +185,7 @@ func TestExportDependencies(t *testing.T) {
 		}
 
 		contentType := w.Header().Get("Content-Type")
-		if contentType != "application/json" {
+		if contentType != testContentTypeJSON {
 			t.Errorf("Expected Content-Type application/json, got %s", contentType)
 		}
 	})
@@ -201,7 +201,7 @@ func TestExportDependencies(t *testing.T) {
 		}
 
 		contentType := w.Header().Get("Content-Type")
-		if contentType != "text/csv" {
+		if contentType != testContentTypeCSV {
 			t.Errorf("Expected default Content-Type text/csv, got %s", contentType)
 		}
 	})
@@ -213,7 +213,7 @@ func TestExportRepositoryDependencies(t *testing.T) {
 
 	// Create test repository
 	totalSize := int64(1024)
-	defaultBranch := "main"
+	defaultBranch := testMainBranch
 
 	repo := &models.Repository{
 		FullName:     "org/repo1",

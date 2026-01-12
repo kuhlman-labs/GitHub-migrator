@@ -348,9 +348,9 @@ func (h *Handler) exportDetailedDiscoveryReportCSV(w http.ResponseWriter, repos 
 func (h *Handler) writeCSVReportHeader(output *strings.Builder, repoCount int) {
 	sourceDisplay := formatSourceForDisplay(h.sourceType)
 	output.WriteString("DETAILED REPOSITORY DISCOVERY REPORT\n")
-	output.WriteString(fmt.Sprintf("Source: %s\n", sourceDisplay))
-	output.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
-	output.WriteString(fmt.Sprintf("Total Repositories: %d\n", repoCount))
+	fmt.Fprintf(output, "Source: %s\n", sourceDisplay)
+	fmt.Fprintf(output, "Generated: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(output, "Total Repositories: %d\n", repoCount)
 	output.WriteString("\n")
 }
 
@@ -399,24 +399,24 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 		if batchName, exists := batchNames[*repo.BatchID]; exists {
 			output.WriteString(escapeCSV(batchName))
 		} else {
-			output.WriteString(fmt.Sprintf("Batch %d", *repo.BatchID))
+			fmt.Fprintf(output, "Batch %d", *repo.BatchID)
 		}
 	}
 	output.WriteString(",")
 
 	totalSize := repo.GetTotalSize()
 	if totalSize != nil {
-		output.WriteString(fmt.Sprintf("%d,%s,", *totalSize, escapeCSV(formatBytes(*totalSize))))
+		fmt.Fprintf(output, "%d,%s,", *totalSize, escapeCSV(formatBytes(*totalSize)))
 	} else {
 		output.WriteString("0,0 B,")
 	}
 
-	output.WriteString(fmt.Sprintf("%d,%d,", repo.GetCommitCount(), repo.GetCommitsLast12Weeks()))
-	output.WriteString(fmt.Sprintf("%s,%s,%s,%d,", formatBool(repo.HasLFS()), formatBool(repo.HasSubmodules()), formatBool(repo.HasLargeFiles()), repo.GetLargeFileCount()))
+	fmt.Fprintf(output, "%d,%d,", repo.GetCommitCount(), repo.GetCommitsLast12Weeks())
+	fmt.Fprintf(output, "%s,%s,%s,%d,", formatBool(repo.HasLFS()), formatBool(repo.HasSubmodules()), formatBool(repo.HasLargeFiles()), repo.GetLargeFileCount())
 
 	largestFileSize := repo.GetLargestFileSize()
 	if largestFileSize != nil {
-		output.WriteString(fmt.Sprintf("%d,", *largestFileSize))
+		fmt.Fprintf(output, "%d,", *largestFileSize)
 	} else {
 		output.WriteString("0,")
 	}
@@ -425,14 +425,14 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	output.WriteString(",")
 
 	if count, exists := localDepsCount[repo.ID]; exists {
-		output.WriteString(fmt.Sprintf("%d,", count))
+		fmt.Fprintf(output, "%d,", count)
 	} else {
 		output.WriteString("0,")
 	}
 
 	complexityScore := repo.GetComplexityScore()
 	if complexityScore != nil {
-		output.WriteString(fmt.Sprintf("%d,", *complexityScore))
+		fmt.Fprintf(output, "%d,", *complexityScore)
 	} else {
 		output.WriteString(",")
 	}
@@ -442,7 +442,7 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 		output.WriteString(escapeCSV(*defaultBranch))
 	}
 	output.WriteString(",")
-	output.WriteString(fmt.Sprintf("%d,", repo.GetBranchCount()))
+	fmt.Fprintf(output, "%d,", repo.GetBranchCount())
 
 	lastCommitDate := repo.GetLastCommitDate()
 	if lastCommitDate != nil {
@@ -450,7 +450,7 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 	}
 	output.WriteString(",")
 
-	output.WriteString(fmt.Sprintf("%s,%s,%s,", escapeCSV(formatVisibilityForDisplay(repo.Visibility)), formatBool(repo.IsArchived), formatBool(repo.IsFork)))
+	fmt.Fprintf(output, "%s,%s,%s,", escapeCSV(formatVisibilityForDisplay(repo.Visibility)), formatBool(repo.IsArchived), formatBool(repo.IsFork))
 
 	h.writeCSVSourceSpecificFields(output, repo)
 	output.WriteString("\n")
@@ -458,22 +458,22 @@ func (h *Handler) writeCSVRepoRow(output *strings.Builder, repo *models.Reposito
 
 func (h *Handler) writeCSVSourceSpecificFields(output *strings.Builder, repo *models.Repository) {
 	if h.sourceType == models.SourceTypeAzureDevOps {
-		output.WriteString(fmt.Sprintf("%s,%d,%d,%d,%s,%s,",
+		fmt.Fprintf(output, "%s,%d,%d,%d,%s,%s,",
 			formatBool(repo.GetADOIsGit()),
 			repo.GetADOPipelineCount(),
 			repo.GetADOYAMLPipelineCount(),
 			repo.GetADOClassicPipelineCount(),
 			formatBool(repo.GetADOHasBoards()),
-			formatBool(repo.GetADOHasWiki())))
-		output.WriteString(fmt.Sprintf("%d,%d,%d,%d,%d,%d",
+			formatBool(repo.GetADOHasWiki()))
+		fmt.Fprintf(output, "%d,%d,%d,%d,%d,%d",
 			repo.GetADOPullRequestCount(),
 			repo.GetADOWorkItemCount(),
 			repo.GetADOBranchPolicyCount(),
 			repo.GetADOTestPlanCount(),
 			repo.GetADOPackageFeedCount(),
-			repo.GetADOServiceHookCount()))
+			repo.GetADOServiceHookCount())
 	} else {
-		output.WriteString(fmt.Sprintf("%d,%d,%d,%s,%s,%s,%s,%d,%s,",
+		fmt.Fprintf(output, "%d,%d,%d,%s,%s,%s,%s,%d,%s,",
 			repo.GetWorkflowCount(),
 			repo.GetEnvironmentCount(),
 			repo.GetSecretCount(),
@@ -482,11 +482,11 @@ func (h *Handler) writeCSVSourceSpecificFields(output *strings.Builder, repo *mo
 			formatBool(repo.HasPackages()),
 			formatBool(repo.HasProjects()),
 			repo.GetBranchProtections(),
-			formatBool(repo.HasRulesets())))
-		output.WriteString(fmt.Sprintf("%d,%d,%d,%s",
+			formatBool(repo.HasRulesets()))
+		fmt.Fprintf(output, "%d,%d,%d,%s",
 			repo.GetContributorCount(),
 			repo.GetIssueCount(),
 			repo.GetPullRequestCount(),
-			formatBool(repo.HasSelfHostedRunners())))
+			formatBool(repo.HasSelfHostedRunners()))
 	}
 }

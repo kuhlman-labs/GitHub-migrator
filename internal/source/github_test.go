@@ -128,12 +128,12 @@ func TestGitHubProvider_ValidateCredentials(t *testing.T) {
 			auth := r.Header.Get("Authorization")
 			if auth == "Bearer valid_token" {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"login":"testuser"}`))
+				_, _ = w.Write([]byte(`{"login":"testuser"}`))
 				return
 			}
 			// Invalid token
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"message":"Bad credentials"}`))
+			_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

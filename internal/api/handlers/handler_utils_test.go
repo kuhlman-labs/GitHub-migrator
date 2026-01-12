@@ -14,6 +14,8 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+const testUserMembershipsOrgsPath = "/user/memberships/orgs"
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
@@ -52,7 +54,7 @@ func TestCheckRepositoryAccess_AdminTier(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/orgs/myorg/teams/migration-admins/memberships/testuser" {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"state": "active"}`))
+			_, _ = w.Write([]byte(`{"state": "active"}`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -82,9 +84,9 @@ func TestCheckRepositoryAccess_SelfServiceDisabled_GivesReadOnly(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// User is not in any admin team or org admin
-		if r.URL.Path == "/user/memberships/orgs" {
+		if r.URL.Path == testUserMembershipsOrgsPath {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`[]`))
+			_, _ = w.Write([]byte(`[]`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -117,9 +119,9 @@ func TestCheckRepositoryAccess_SelfServiceDisabled_GivesReadOnly(t *testing.T) {
 func TestCheckRepositoryAccess_SelfServiceNoMapping(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs" {
+		if r.URL.Path == testUserMembershipsOrgsPath {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`[]`))
+			_, _ = w.Write([]byte(`[]`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -177,7 +179,7 @@ func TestGetUserAuthorizationStatus_AdminUser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/orgs/myorg/teams/migration-admins/memberships/testuser" {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"state": "active"}`))
+			_, _ = w.Write([]byte(`{"state": "active"}`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -213,12 +215,13 @@ func TestGetUserAuthorizationStatus_AdminUser(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different scenarios
 func TestGetUserAuthorizationStatus_ReadOnlyUser(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs" {
+		if r.URL.Path == testUserMembershipsOrgsPath {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`[]`))
+			_, _ = w.Write([]byte(`[]`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -256,6 +259,7 @@ func TestGetUserAuthorizationStatus_ReadOnlyUser(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different scenarios
 func TestGetUserAuthorizationStatus_SelfServiceDisabled_NoUpgrade(t *testing.T) {
 	// When self-service is disabled (EnableSelfService: false),
 	// users should NOT be upgraded to SelfService tier even if they have identity mapping.
@@ -264,9 +268,9 @@ func TestGetUserAuthorizationStatus_SelfServiceDisabled_NoUpgrade(t *testing.T) 
 
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs" {
+		if r.URL.Path == testUserMembershipsOrgsPath {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`[]`))
+			_, _ = w.Write([]byte(`[]`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}

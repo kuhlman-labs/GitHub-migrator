@@ -103,7 +103,7 @@ func runIntegrationTests(t *testing.T, cfg config.DatabaseConfig, dbName string)
 		if err != nil {
 			t.Fatalf("Failed to initialize %s database: %v", dbName, err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		// Run migrations
 		t.Run("Migrations", func(t *testing.T) {

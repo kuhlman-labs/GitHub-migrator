@@ -200,7 +200,7 @@ func TestADODiscoveryStatus(t *testing.T) {
 	if !ok {
 		t.Error("Expected total_repositories to be a number")
 	}
-	if response["organization"] != "test-org" {
+	if response["organization"] != testOrgName {
 		t.Errorf("Expected organization 'test-org', got %v", response["organization"])
 	}
 
@@ -232,20 +232,20 @@ func TestListADOProjects(t *testing.T) {
 
 	// Create some ADO projects
 	project1 := &models.ADOProject{
-		Organization: "test-org",
+		Organization: testOrgName,
 		Name:         "Project1",
 		State:        "wellFormed",
 		Visibility:   "private",
 	}
 	project2 := &models.ADOProject{
-		Organization: "test-org",
+		Organization: testOrgName,
 		Name:         "Project2",
 		State:        "wellFormed",
 		Visibility:   "public",
 	}
 
-	baseHandler.db.SaveADOProject(ctx, project1)
-	baseHandler.db.SaveADOProject(ctx, project2)
+	_ = baseHandler.db.SaveADOProject(ctx, project1)
+	_ = baseHandler.db.SaveADOProject(ctx, project2)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ado/projects?organization=test-org", nil)
 	w := httptest.NewRecorder()

@@ -1,7 +1,5 @@
 package handlers
 
-//nolint:goconst // Test files can have repeated strings for clarity
-
 import (
 	"context"
 	"encoding/json"
@@ -17,12 +15,14 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+const testOrgMembershipPathPerm = "/user/memberships/orgs/test-org"
+
 func TestHandler_ListRepositories_Filtering(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	// Create test database with migrations
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Add test repositories
 	repos := []*models.Repository{
@@ -119,7 +119,7 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 
 	// Create test database with migrations
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Add test repository
 	repo := &models.Repository{
@@ -158,16 +158,16 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgsPath {
 					resp := []map[string]any{
 						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
-				if r.URL.Path == "/user/memberships/orgs/test-org" {
+				if r.URL.Path == testOrgMembershipPathPerm {
 					resp := map[string]any{"state": "active", "role": "admin"}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -181,14 +181,14 @@ func TestHandler_StartMigration_PermissionCheck(t *testing.T) {
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgsPath {
 					resp := []map[string]any{}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
 					resp := map[string]any{"permission": "write"}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -248,7 +248,7 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 
 	// Create test database with migrations
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Add test repository
 	migrationID := int64(123456)
@@ -289,16 +289,16 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgsPath {
 					resp := []map[string]any{
 						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
-				if r.URL.Path == "/user/memberships/orgs/test-org" {
+				if r.URL.Path == testOrgMembershipPathPerm {
 					resp := map[string]any{"state": "active", "role": "admin"}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -312,13 +312,13 @@ func TestHandler_HandleRepositoryAction_PermissionCheck(t *testing.T) {
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs/test-org" {
+				if r.URL.Path == testOrgMembershipPathPerm {
 					http.NotFound(w, r)
 					return
 				}
 				if r.URL.Path == "/repos/test-org/test-repo/collaborators/testuser/permission" {
 					resp := map[string]any{"permission": "write"}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -379,15 +379,15 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 
 	// Create test database with migrations
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Add test repositories with valid status for batch assignment
 	repo1 := &models.Repository{FullName: "test-org/repo1", Source: "github", SourceURL: "https://github.com", Status: "pending"}
 	repo2 := &models.Repository{FullName: "test-org/repo2", Source: "github", SourceURL: "https://github.com", Status: "pending"}
 	repo3 := &models.Repository{FullName: "other-org/repo3", Source: "github", SourceURL: "https://github.com", Status: "pending"}
-	db.SaveRepository(context.Background(), repo1)
-	db.SaveRepository(context.Background(), repo2)
-	db.SaveRepository(context.Background(), repo3)
+	_ = db.SaveRepository(context.Background(), repo1)
+	_ = db.SaveRepository(context.Background(), repo2)
+	_ = db.SaveRepository(context.Background(), repo3)
 
 	// Create a test batch
 	batch := &models.Batch{Name: "Test Batch", Status: "pending"}
@@ -421,16 +421,16 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgsPath {
 					resp := []map[string]any{
 						{"organization": map[string]string{"login": "test-org"}, "state": "active"},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
-				if r.URL.Path == "/user/memberships/orgs/test-org" {
+				if r.URL.Path == testOrgMembershipPathPerm {
 					resp := map[string]any{"state": "active", "role": "admin"}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -444,9 +444,9 @@ func TestHandler_AddRepositoriesToBatch_PermissionCheck(t *testing.T) {
 			contextUser:  &auth.GitHubUser{Login: "testuser", ID: 123},
 			contextToken: "test-token",
 			mockGitHub: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgsPath {
 					resp := []map[string]any{}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)

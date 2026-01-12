@@ -37,8 +37,8 @@ func TestListSources(t *testing.T) {
 	// Create test sources
 	source1 := createTestSourceModel("Source Alpha", models.SourceConfigTypeGitHub)
 	source2 := createTestSourceModel("Source Beta", models.SourceConfigTypeGitHub)
-	db.CreateSource(ctx, source1)
-	db.CreateSource(ctx, source2)
+	_ = db.CreateSource(ctx, source1)
+	_ = db.CreateSource(ctx, source2)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sources", nil)
 	w := httptest.NewRecorder()

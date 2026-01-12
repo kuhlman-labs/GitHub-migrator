@@ -10,7 +10,7 @@ import (
 
 func TestUpdateBatchStatus(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -73,7 +73,7 @@ func TestUpdateBatchStatus(t *testing.T) {
 			}
 
 			// Create repositories with specified statuses
-			var repoIDs []int64
+			repoIDs := make([]int64, 0, len(tt.repoStatuses))
 			for i, status := range tt.repoStatuses {
 				repo := createTestRepoWithStatus("org/repo-"+tt.name+"-"+string(rune(i)), status)
 				if err := db.SaveRepository(ctx, repo); err != nil {
@@ -103,7 +103,7 @@ func TestUpdateBatchStatus(t *testing.T) {
 
 func TestUpdateBatchStatusDoesNotAffectInProgressBatches(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -144,7 +144,7 @@ func TestUpdateBatchStatusDoesNotAffectInProgressBatches(t *testing.T) {
 
 func TestUpdateBatchStatusAfterRepositoryRemoval(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -199,7 +199,7 @@ func TestUpdateBatchStatusAfterRepositoryRemoval(t *testing.T) {
 
 func TestAddingPendingRepoToReadyBatchMakesPending(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 

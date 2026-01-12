@@ -10,7 +10,7 @@ import (
 
 // parseGemfiles parses a list of Gemfile files and extracts dependencies
 func (ps *PackageScanner) parseGemfiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*5)
 	for _, gemPath := range files {
 		relPath, _ := filepath.Rel(repoPath, gemPath)
 		extracted := ps.parseGemfile(gemPath, relPath)
@@ -33,7 +33,7 @@ func (ps *PackageScanner) parseGemfile(gemPath, manifestPath string) []Extracted
 	if err != nil {
 		return deps
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Pattern for gem name extraction
 	gemNamePattern := regexp.MustCompile(`gem\s+['"]([^'"]+)['"]`)

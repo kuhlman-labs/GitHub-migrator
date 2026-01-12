@@ -11,7 +11,7 @@ import (
 
 // parsePackageJSONFiles parses a list of package.json files and extracts dependencies
 func (ps *PackageScanner) parsePackageJSONFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*2)
 	for _, pkgPath := range files {
 		relPath, _ := filepath.Rel(repoPath, pkgPath)
 		extracted := ps.parsePackageJSON(pkgPath, relPath)

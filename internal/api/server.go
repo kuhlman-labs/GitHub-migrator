@@ -474,7 +474,7 @@ func (s *Server) tryServeFile(w http.ResponseWriter, r *http.Request, absPath st
 	if err != nil {
 		return false
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Get file info to check if it's a directory
 	info, err := file.Stat()

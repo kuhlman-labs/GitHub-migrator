@@ -10,10 +10,12 @@ import (
 	"testing"
 )
 
+const testUser1 = "user1"
+
 // mockRateLimitResponse returns a mock rate limit response
 func mockRateLimitResponse(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"resources": map[string]any{
 			"core": map[string]any{
 				"limit":     5000,
@@ -63,7 +65,7 @@ func TestListOrgMembers(t *testing.T) {
 	mux.HandleFunc("/api/v3/orgs/test-org/members", func(w http.ResponseWriter, _ *http.Request) {
 		members := []map[string]any{
 			{
-				"login":      "user1",
+				"login":      testUser1,
 				"id":         1001,
 				"avatar_url": "https://github.com/avatars/user1.png",
 				"html_url":   "https://github.com/user1",
@@ -76,7 +78,7 @@ func TestListOrgMembers(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(members)
+		_ = json.NewEncoder(w).Encode(members)
 	})
 
 	server := httptest.NewServer(mux)
@@ -102,7 +104,7 @@ func TestListOrgMembers(t *testing.T) {
 		t.Errorf("Expected 2 members, got %d", len(members))
 	}
 
-	if members[0].Login != "user1" {
+	if members[0].Login != testUser1 {
 		t.Errorf("Expected first member 'user1', got %s", members[0].Login)
 	}
 }
@@ -181,19 +183,19 @@ func TestEnterpriseOrgInfo(t *testing.T) {
 func TestOrgMember(t *testing.T) {
 	t.Run("creates org member correctly", func(t *testing.T) {
 		member := &OrgMember{
-			Login:     "user1",
+			Login:     testUser1,
 			ID:        12345,
 			AvatarURL: "https://github.com/avatars/user1.png",
-			Role:      "admin",
+			Role:      PermissionAdmin,
 		}
 
-		if member.Login != "user1" {
+		if member.Login != testUser1 {
 			t.Errorf("Expected login 'user1', got %s", member.Login)
 		}
 		if member.ID != 12345 {
 			t.Errorf("Expected ID 12345, got %d", member.ID)
 		}
-		if member.Role != "admin" {
+		if member.Role != PermissionAdmin {
 			t.Errorf("Expected role 'admin', got %s", member.Role)
 		}
 	})

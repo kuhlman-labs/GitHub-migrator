@@ -154,7 +154,7 @@ func (p *AzureDevOpsProvider) ValidateCredentials(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrAuthenticationFailed, err.Error())
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return fmt.Errorf("%w: invalid credentials", ErrAuthenticationFailed)

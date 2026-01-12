@@ -350,10 +350,10 @@ func (h *Handler) ExportDependencies(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=dependencies.csv")
 
-	fmt.Fprintln(w, "repository,dependency_full_name,direction,dependency_type,dependency_url")
+	_, _ = fmt.Fprintln(w, "repository,dependency_full_name,direction,dependency_type,dependency_url")
 
 	for _, row := range exportData {
-		fmt.Fprintf(w, "%s,%s,%s,%s,%s\n",
+		_, _ = fmt.Fprintf(w, "%s,%s,%s,%s,%s\n",
 			escapeCSV(row.Repository),
 			escapeCSV(row.DependencyName),
 			escapeCSV(row.Direction),
@@ -440,9 +440,9 @@ func (h *Handler) writeRepoDependencyExport(w http.ResponseWriter, format, repoF
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-dependencies.csv", filename))
 
-	fmt.Fprintln(w, "repository,dependency_full_name,direction,dependency_type,dependency_url")
+	_, _ = fmt.Fprintln(w, "repository,dependency_full_name,direction,dependency_type,dependency_url")
 	for _, row := range data {
-		fmt.Fprintf(w, "%s,%s,%s,%s,%s\n",
+		_, _ = fmt.Fprintf(w, "%s,%s,%s,%s,%s\n",
 			escapeCSV(row.Repository),
 			escapeCSV(row.DependencyName),
 			escapeCSV(row.Direction),

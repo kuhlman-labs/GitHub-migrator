@@ -112,7 +112,7 @@ func setupTestDB(t *testing.T) *Database {
 
 func TestSaveRepository(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -135,7 +135,7 @@ func TestSaveRepository(t *testing.T) {
 
 func TestGetRepository(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -172,7 +172,7 @@ func TestGetRepository(t *testing.T) {
 
 func TestListRepositories(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -248,7 +248,7 @@ func TestListRepositories(t *testing.T) {
 
 func TestUpdateRepository(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -288,7 +288,7 @@ func TestUpdateRepository(t *testing.T) {
 
 func TestUpdateRepositoryStatus(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -316,7 +316,7 @@ func TestUpdateRepositoryStatus(t *testing.T) {
 
 func TestDeleteRepository(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -343,7 +343,7 @@ func TestDeleteRepository(t *testing.T) {
 
 func TestCountRepositories(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -405,7 +405,7 @@ func TestCountRepositories(t *testing.T) {
 
 func TestGetRepositoryStatsByStatus(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -446,7 +446,7 @@ func TestGetRepositoryStatsByStatus(t *testing.T) {
 
 func TestGetRepositoriesByIDs(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -486,7 +486,7 @@ func TestGetRepositoriesByIDs(t *testing.T) {
 
 func TestGetRepositoriesByNames(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -523,7 +523,7 @@ func TestGetRepositoriesByNames(t *testing.T) {
 
 func TestGetRepositoryByID(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -563,7 +563,7 @@ func TestGetRepositoryByID(t *testing.T) {
 
 func TestBatchOperations(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -644,7 +644,7 @@ func TestBatchOperations(t *testing.T) {
 //nolint:gocyclo // Test function with multiple setup steps
 func TestRollbackRepositoryClearsBatchID(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -748,7 +748,7 @@ func TestRollbackRepositoryClearsBatchID(t *testing.T) {
 
 func TestGetMigrationHistory(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -797,7 +797,7 @@ func TestGetMigrationHistory(t *testing.T) {
 
 func TestCreateMigrationHistory(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -828,7 +828,7 @@ func TestCreateMigrationHistory(t *testing.T) {
 
 func TestUpdateMigrationHistory(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -863,7 +863,7 @@ func TestUpdateMigrationHistory(t *testing.T) {
 
 func TestGetMigrationLogs(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -946,7 +946,7 @@ func TestGetMigrationLogs(t *testing.T) {
 
 func TestCreateMigrationLog(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -974,7 +974,7 @@ func TestCreateMigrationLog(t *testing.T) {
 
 func TestAddRepositoriesToBatch(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1032,7 +1032,7 @@ func TestAddRepositoriesToBatch(t *testing.T) {
 
 func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1099,7 +1099,7 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 // does not remove a repository from its batch when the repo status is still "pending"
 func TestSaveRepository_PreservesBatchIDDuringRediscovery(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1185,7 +1185,7 @@ func TestSaveRepository_PreservesBatchIDDuringRediscovery(t *testing.T) {
 
 func TestListRepositoriesWithSearch(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1256,7 +1256,7 @@ func TestListRepositoriesWithSearch(t *testing.T) {
 
 func TestListRepositoriesAvailableForBatch(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	// Create a batch first
@@ -1336,7 +1336,7 @@ func TestListRepositoriesAvailableForBatch(t *testing.T) {
 
 func TestListRepositoriesWithPagination(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1398,7 +1398,7 @@ func TestListRepositoriesWithPagination(t *testing.T) {
 
 func TestGetOrganizationStats(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1466,7 +1466,7 @@ func TestGetOrganizationStats(t *testing.T) {
 
 func TestGetSizeDistribution(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1515,7 +1515,7 @@ func TestGetSizeDistribution(t *testing.T) {
 
 func TestGetFeatureStats(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1564,7 +1564,7 @@ func TestGetFeatureStats(t *testing.T) {
 
 func TestGetFeatureStats_TFVCOnlyCountsADO(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1671,7 +1671,7 @@ func createRepoWithHistory(t *testing.T, db *Database, ctx context.Context, full
 
 func TestGetCompletedMigrations(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -1727,7 +1727,7 @@ func TestGetCompletedMigrations(t *testing.T) {
 
 func TestGetMigrationCompletionStatsByOrg(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 

@@ -448,7 +448,7 @@ func (h *SetupHandler) validateDatabaseConnection(dbType, dsn string) Validation
 		response.Error = fmt.Sprintf("Failed to open database: %v", err)
 		return response
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
@@ -496,22 +496,22 @@ func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigDa
 	}
 
 	sb.WriteString("# Source Repository System Configuration\n")
-	sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_TYPE=%s\n", src.Type))
-	sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_BASE_URL=%s\n", src.BaseURL))
-	sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_TOKEN=%s\n", src.Token))
+	fmt.Fprintf(sb, "GHMIG_SOURCE_TYPE=%s\n", src.Type)
+	fmt.Fprintf(sb, "GHMIG_SOURCE_BASE_URL=%s\n", src.BaseURL)
+	fmt.Fprintf(sb, "GHMIG_SOURCE_TOKEN=%s\n", src.Token)
 	if src.Organization != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_ORGANIZATION=%s\n", src.Organization))
+		fmt.Fprintf(sb, "GHMIG_SOURCE_ORGANIZATION=%s\n", src.Organization)
 	}
 
 	// GitHub App for source (only when source is GitHub)
 	if src.Type == models.SourceTypeGitHub && src.AppID > 0 {
 		sb.WriteString("\n# GitHub App Configuration for Source (Optional)\n")
-		sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_APP_ID=%d\n", src.AppID))
+		fmt.Fprintf(sb, "GHMIG_SOURCE_APP_ID=%d\n", src.AppID)
 		if src.AppPrivateKey != "" {
-			sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(src.AppPrivateKey)))
+			fmt.Fprintf(sb, "GHMIG_SOURCE_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(src.AppPrivateKey))
 		}
 		if src.AppInstallationID > 0 {
-			sb.WriteString(fmt.Sprintf("GHMIG_SOURCE_APP_INSTALLATION_ID=%d\n", src.AppInstallationID))
+			fmt.Fprintf(sb, "GHMIG_SOURCE_APP_INSTALLATION_ID=%d\n", src.AppInstallationID)
 		}
 	}
 	sb.WriteString("\n")
@@ -529,18 +529,18 @@ func (h *SetupHandler) writeDestinationConfig(sb *strings.Builder, dest Destinat
 
 	sb.WriteString("# Destination Repository System Configuration\n")
 	sb.WriteString("GHMIG_DESTINATION_TYPE=github\n")
-	sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_BASE_URL=%s\n", dest.BaseURL))
-	sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_TOKEN=%s\n", dest.Token))
+	fmt.Fprintf(sb, "GHMIG_DESTINATION_BASE_URL=%s\n", dest.BaseURL)
+	fmt.Fprintf(sb, "GHMIG_DESTINATION_TOKEN=%s\n", dest.Token)
 
 	// GitHub App for destination (always available since destination is GitHub)
 	if dest.AppID > 0 {
 		sb.WriteString("\n# GitHub App Configuration for Destination (Optional)\n")
-		sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_ID=%d\n", dest.AppID))
+		fmt.Fprintf(sb, "GHMIG_DESTINATION_APP_ID=%d\n", dest.AppID)
 		if dest.AppPrivateKey != "" {
-			sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(dest.AppPrivateKey)))
+			fmt.Fprintf(sb, "GHMIG_DESTINATION_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(dest.AppPrivateKey))
 		}
 		if dest.AppInstallationID > 0 {
-			sb.WriteString(fmt.Sprintf("GHMIG_DESTINATION_APP_INSTALLATION_ID=%d\n", dest.AppInstallationID))
+			fmt.Fprintf(sb, "GHMIG_DESTINATION_APP_INSTALLATION_ID=%d\n", dest.AppInstallationID)
 		}
 	}
 	sb.WriteString("\n")
@@ -549,36 +549,36 @@ func (h *SetupHandler) writeDestinationConfig(sb *strings.Builder, dest Destinat
 // writeDatabaseConfig writes database configuration to the env file
 func (h *SetupHandler) writeDatabaseConfig(sb *strings.Builder, db DatabaseConfigData) {
 	sb.WriteString("# Database Configuration\n")
-	sb.WriteString(fmt.Sprintf("GHMIG_DATABASE_TYPE=%s\n", db.Type))
+	fmt.Fprintf(sb, "GHMIG_DATABASE_TYPE=%s\n", db.Type)
 	// Quote DSN as it often contains special characters
-	sb.WriteString(fmt.Sprintf("GHMIG_DATABASE_DSN=\"%s\"\n", escapeEnvValue(db.DSN)))
+	fmt.Fprintf(sb, "GHMIG_DATABASE_DSN=\"%s\"\n", escapeEnvValue(db.DSN))
 	sb.WriteString("\n")
 }
 
 // writeServerConfig writes server configuration to the env file
 func (h *SetupHandler) writeServerConfig(sb *strings.Builder, srv ServerConfigData) {
 	sb.WriteString("# Server Configuration\n")
-	sb.WriteString(fmt.Sprintf("GHMIG_SERVER_PORT=%d\n", srv.Port))
+	fmt.Fprintf(sb, "GHMIG_SERVER_PORT=%d\n", srv.Port)
 	sb.WriteString("\n")
 }
 
 // writeMigrationConfig writes migration configuration to the env file
 func (h *SetupHandler) writeMigrationConfig(sb *strings.Builder, mig MigrationConfigData) {
 	sb.WriteString("# Migration Configuration\n")
-	sb.WriteString(fmt.Sprintf("GHMIG_MIGRATION_WORKERS=%d\n", mig.Workers))
-	sb.WriteString(fmt.Sprintf("GHMIG_MIGRATION_POLL_INTERVAL_SECONDS=%d\n", mig.PollIntervalSeconds))
-	sb.WriteString(fmt.Sprintf("GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION=%s\n", mig.DestRepoExistsAction))
-	sb.WriteString(fmt.Sprintf("GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS=%s\n", mig.VisibilityHandling.PublicRepos))
-	sb.WriteString(fmt.Sprintf("GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS=%s\n", mig.VisibilityHandling.InternalRepos))
+	fmt.Fprintf(sb, "GHMIG_MIGRATION_WORKERS=%d\n", mig.Workers)
+	fmt.Fprintf(sb, "GHMIG_MIGRATION_POLL_INTERVAL_SECONDS=%d\n", mig.PollIntervalSeconds)
+	fmt.Fprintf(sb, "GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION=%s\n", mig.DestRepoExistsAction)
+	fmt.Fprintf(sb, "GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS=%s\n", mig.VisibilityHandling.PublicRepos)
+	fmt.Fprintf(sb, "GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS=%s\n", mig.VisibilityHandling.InternalRepos)
 	sb.WriteString("\n")
 }
 
 // writeLoggingConfig writes logging configuration to the env file
 func (h *SetupHandler) writeLoggingConfig(sb *strings.Builder, log LoggingConfigData) {
 	sb.WriteString("# Logging Configuration\n")
-	sb.WriteString(fmt.Sprintf("GHMIG_LOGGING_LEVEL=%s\n", log.Level))
-	sb.WriteString(fmt.Sprintf("GHMIG_LOGGING_FORMAT=%s\n", log.Format))
-	sb.WriteString(fmt.Sprintf("GHMIG_LOGGING_OUTPUT_FILE=%s\n", log.OutputFile))
+	fmt.Fprintf(sb, "GHMIG_LOGGING_LEVEL=%s\n", log.Level)
+	fmt.Fprintf(sb, "GHMIG_LOGGING_FORMAT=%s\n", log.Format)
+	fmt.Fprintf(sb, "GHMIG_LOGGING_OUTPUT_FILE=%s\n", log.OutputFile)
 	sb.WriteString("\n")
 }
 
@@ -600,42 +600,42 @@ func (h *SetupHandler) writeAuthConfig(sb *strings.Builder, auth *AuthConfigData
 // writeGitHubOAuthConfig writes GitHub OAuth settings
 func (h *SetupHandler) writeGitHubOAuthConfig(sb *strings.Builder, auth *AuthConfigData) {
 	if auth.GitHubOAuthClientID != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID=%s\n", auth.GitHubOAuthClientID))
+		fmt.Fprintf(sb, "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID=%s\n", auth.GitHubOAuthClientID)
 	}
 	if auth.GitHubOAuthClientSecret != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET=%s\n", auth.GitHubOAuthClientSecret))
+		fmt.Fprintf(sb, "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET=%s\n", auth.GitHubOAuthClientSecret)
 	}
 	if auth.GitHubOAuthBaseURL != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_GITHUB_OAUTH_BASE_URL=%s\n", auth.GitHubOAuthBaseURL))
+		fmt.Fprintf(sb, "GHMIG_AUTH_GITHUB_OAUTH_BASE_URL=%s\n", auth.GitHubOAuthBaseURL)
 	}
 }
 
 // writeAzureADConfig writes Azure AD settings
 func (h *SetupHandler) writeAzureADConfig(sb *strings.Builder, auth *AuthConfigData) {
 	if auth.AzureADTenantID != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AZURE_AD_TENANT_ID=%s\n", auth.AzureADTenantID))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AZURE_AD_TENANT_ID=%s\n", auth.AzureADTenantID)
 	}
 	if auth.AzureADClientID != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AZURE_AD_CLIENT_ID=%s\n", auth.AzureADClientID))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AZURE_AD_CLIENT_ID=%s\n", auth.AzureADClientID)
 	}
 	if auth.AzureADClientSecret != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AZURE_AD_CLIENT_SECRET=%s\n", auth.AzureADClientSecret))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AZURE_AD_CLIENT_SECRET=%s\n", auth.AzureADClientSecret)
 	}
 }
 
 // writeCommonAuthConfig writes common authentication settings
 func (h *SetupHandler) writeCommonAuthConfig(sb *strings.Builder, auth *AuthConfigData) {
 	if auth.CallbackURL != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_CALLBACK_URL=%s\n", auth.CallbackURL))
+		fmt.Fprintf(sb, "GHMIG_AUTH_CALLBACK_URL=%s\n", auth.CallbackURL)
 	}
 	if auth.FrontendURL != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_FRONTEND_URL=%s\n", auth.FrontendURL))
+		fmt.Fprintf(sb, "GHMIG_AUTH_FRONTEND_URL=%s\n", auth.FrontendURL)
 	}
 	if auth.SessionSecret != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_SESSION_SECRET=%s\n", auth.SessionSecret))
+		fmt.Fprintf(sb, "GHMIG_AUTH_SESSION_SECRET=%s\n", auth.SessionSecret)
 	}
 	if auth.SessionDurationHours > 0 {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_SESSION_DURATION_HOURS=%d\n", auth.SessionDurationHours))
+		fmt.Fprintf(sb, "GHMIG_AUTH_SESSION_DURATION_HOURS=%d\n", auth.SessionDurationHours)
 	}
 
 	// Write authorization rules if present
@@ -651,30 +651,30 @@ func (h *SetupHandler) writeAuthorizationRules(sb *strings.Builder, rules *Autho
 	sb.WriteString("\n# Authorization Rules (Optional)\n")
 
 	if len(rules.RequireOrgMembership) > 0 {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP=%s\n",
-			strings.Join(rules.RequireOrgMembership, ",")))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP=%s\n",
+			strings.Join(rules.RequireOrgMembership, ","))
 	}
 
 	if len(rules.RequireTeamMembership) > 0 {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP=%s\n",
-			strings.Join(rules.RequireTeamMembership, ",")))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP=%s\n",
+			strings.Join(rules.RequireTeamMembership, ","))
 	}
 
 	if rules.RequireEnterpriseAdmin {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN=%t\n", rules.RequireEnterpriseAdmin))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_ADMIN=%t\n", rules.RequireEnterpriseAdmin)
 	}
 
 	if rules.RequireEnterpriseMembership {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_MEMBERSHIP=%t\n", rules.RequireEnterpriseMembership))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_MEMBERSHIP=%t\n", rules.RequireEnterpriseMembership)
 	}
 
 	if rules.EnterpriseSlug != "" {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG=%s\n", rules.EnterpriseSlug))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG=%s\n", rules.EnterpriseSlug)
 	}
 
 	if len(rules.MigrationAdminTeams) > 0 {
-		sb.WriteString(fmt.Sprintf("GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS=%s\n",
-			strings.Join(rules.MigrationAdminTeams, ",")))
+		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS=%s\n",
+			strings.Join(rules.MigrationAdminTeams, ","))
 	}
 }
 

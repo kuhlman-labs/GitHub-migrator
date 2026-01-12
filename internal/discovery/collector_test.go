@@ -17,6 +17,8 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
+const testMainBranch = "main"
+
 // mockSourceProvider is a mock implementation of source.Provider for testing
 type mockSourceProvider struct{}
 
@@ -69,7 +71,7 @@ func TestNewCollector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -122,7 +124,7 @@ func TestSetWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mockProvider := &mockSourceProvider{}
 	collector := NewCollector(client, db, logger, mockProvider)
@@ -355,7 +357,7 @@ func TestProfileRepository_SaveToDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -365,7 +367,7 @@ func TestProfileRepository_SaveToDatabase(t *testing.T) {
 
 	// Test SaveRepository directly
 	totalSize := int64(1024 * 1024)
-	defaultBranch := "main"
+	defaultBranch := testMainBranch
 	repo := &models.Repository{
 		FullName:     "test/repo",
 		Source:       "ghes",
@@ -439,7 +441,7 @@ func TestDiscoverRepositories_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -499,7 +501,7 @@ func TestDiscoverEnterpriseRepositories_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -554,7 +556,7 @@ func TestDiscoverEnterpriseRepositories_Unit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -603,7 +605,7 @@ func TestProcessRepositoriesWithCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -675,7 +677,7 @@ func TestWorkerStopsOnCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)

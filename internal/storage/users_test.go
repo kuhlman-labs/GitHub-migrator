@@ -10,6 +10,8 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+const testOrg1 = "org1"
+
 // setupUsersTestDB creates a test database and runs migrations
 func setupUsersTestDB(t *testing.T) (*Database, func()) {
 	t.Helper()
@@ -26,19 +28,19 @@ func setupUsersTestDB(t *testing.T) (*Database, func()) {
 
 	db, err := NewDatabase(cfg)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		t.Fatalf("NewDatabase() error = %v", err)
 	}
 
 	if err := db.Migrate(); err != nil {
-		db.Close()
-		os.RemoveAll(tmpDir)
+		_ = db.Close()
+		_ = os.RemoveAll(tmpDir)
 		t.Fatalf("Migrate() error = %v", err)
 	}
 
 	cleanup := func() {
-		db.Close()
-		os.RemoveAll(tmpDir)
+		_ = db.Close()
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return db, cleanup
@@ -395,7 +397,7 @@ func TestDatabase_UserOrgMembership(t *testing.T) {
 	// Save membership
 	membership := &models.UserOrgMembership{
 		UserLogin:    "memberuser",
-		Organization: "org1",
+		Organization: testOrg1,
 		Role:         "member",
 	}
 	err = db.SaveUserOrgMembership(ctx, membership)
@@ -432,7 +434,7 @@ func TestDatabase_UserOrgMembership(t *testing.T) {
 
 	memberships, _ = db.GetUserOrgMemberships(ctx, "memberuser")
 	for _, m := range memberships {
-		if m.Organization == "org1" && m.Role != "admin" {
+		if m.Organization == testOrg1 && m.Role != "admin" {
 			t.Errorf("Expected role to be updated to admin, got %v", m.Role)
 		}
 	}

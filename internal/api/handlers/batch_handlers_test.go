@@ -21,8 +21,8 @@ func TestListBatches(t *testing.T) {
 	// Create test batches
 	batch1 := &models.Batch{Name: "Batch 1", Type: "pilot", Status: "ready", CreatedAt: time.Now()}
 	batch2 := &models.Batch{Name: "Batch 2", Type: "wave", Status: "ready", CreatedAt: time.Now()}
-	db.CreateBatch(ctx, batch1)
-	db.CreateBatch(ctx, batch2)
+	_ = db.CreateBatch(ctx, batch1)
+	_ = db.CreateBatch(ctx, batch2)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/batches", nil)
 	w := httptest.NewRecorder()
@@ -242,7 +242,7 @@ func TestGetBatch(t *testing.T) {
 	ctx := context.Background()
 
 	batch := &models.Batch{Name: "Test Batch", Type: "pilot", Status: "ready", CreatedAt: time.Now()}
-	db.CreateBatch(ctx, batch)
+	_ = db.CreateBatch(ctx, batch)
 
 	t.Run("existing batch", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/batches/1", nil)
@@ -301,14 +301,14 @@ func TestStartBatch(t *testing.T) {
 
 	// Create batch
 	batch := &models.Batch{Name: "Test Batch", Type: "pilot", Status: "ready", CreatedAt: time.Now()}
-	db.CreateBatch(ctx, batch)
+	_ = db.CreateBatch(ctx, batch)
 
 	// Add repositories to batch
 	repo1 := &models.Repository{FullName: "org/repo1", Status: string(models.StatusPending)}
-	db.SaveRepository(ctx, repo1)
+	_ = db.SaveRepository(ctx, repo1)
 	batchID := batch.ID
 	repo1.BatchID = &batchID
-	db.UpdateRepository(ctx, repo1)
+	_ = db.UpdateRepository(ctx, repo1)
 
 	t.Run("successful batch start", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/batches/1/start", nil)
@@ -362,7 +362,7 @@ func TestStartBatchErrors(t *testing.T) {
 
 	// Create batch without repositories
 	batch := &models.Batch{Name: "Empty Batch", Type: "pilot", Status: "ready", CreatedAt: time.Now()}
-	db.CreateBatch(ctx, batch)
+	_ = db.CreateBatch(ctx, batch)
 
 	t.Run("batch with no repositories", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/batches/1/start", nil)
@@ -706,7 +706,7 @@ func TestRemoveRepositoriesFromBatch(t *testing.T) {
 	}
 
 	batch.RepositoryCount = 3
-	db.UpdateBatch(ctx, batch)
+	_ = db.UpdateBatch(ctx, batch)
 
 	t.Run("successful remove", func(t *testing.T) {
 		reqBody := map[string]any{
@@ -803,7 +803,7 @@ func TestRetryBatchFailures(t *testing.T) {
 		for _, id := range failedRepoIDs {
 			repo, _ := db.GetRepositoryByID(ctx, id)
 			repo.Status = string(models.StatusMigrationFailed)
-			db.UpdateRepository(ctx, repo)
+			_ = db.UpdateRepository(ctx, repo)
 		}
 
 		reqBody := map[string]any{

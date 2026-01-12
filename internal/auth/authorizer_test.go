@@ -85,15 +85,16 @@ func TestCheckOrganizationMembership(t *testing.T) {
 
 		// Parse the URL to determine which org is being checked
 		// New endpoint: /user/memberships/orgs/{org}
-		if r.URL.Path == "/user/memberships/orgs/allowed-org" {
+		switch r.URL.Path {
+		case "/user/memberships/orgs/allowed-org":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 				"role":  "member",
 			})
-		} else if r.URL.Path == "/user/memberships/orgs/forbidden-org" {
+		case "/user/memberships/orgs/forbidden-org":
 			w.WriteHeader(http.StatusNotFound) // User is not a member
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -150,14 +151,15 @@ func TestCheckTeamMembership(t *testing.T) {
 		}
 
 		// Parse the URL to determine which team is being checked
-		if r.URL.Path == testTeamMembershipPath {
+		switch r.URL.Path {
+		case testTeamMembershipPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 			})
-		} else if r.URL.Path == "/orgs/test-org/teams/other-team/memberships/testuser" {
+		case "/orgs/test-org/teams/other-team/memberships/testuser":
 			w.WriteHeader(http.StatusNotFound)
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -214,7 +216,7 @@ func TestAuthorizeWithOrgMembership(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/user/memberships/orgs/allowed-org" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 				"role":  "member",
 			})
@@ -283,18 +285,19 @@ func TestAuthorizeWithOrgMembershipDenied(t *testing.T) {
 func TestAuthorizeWithMultipleRules(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs/test-org" {
+		switch r.URL.Path {
+		case testOrgMembershipPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 				"role":  "member",
 			})
-		} else if r.URL.Path == testTeamMembershipPath {
+		case testTeamMembershipPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 			})
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -327,9 +330,9 @@ func TestAuthorizeWithMultipleRules(t *testing.T) {
 func TestIsOrgMember(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs/test-org" {
+		if r.URL.Path == testOrgMembershipPath {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 				"role":  "member",
 			})
@@ -369,7 +372,7 @@ func TestIsTeamMember(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == testTeamMembershipPath {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 			})
 		} else {
@@ -408,9 +411,9 @@ func TestIsTeamMember(t *testing.T) {
 func TestGetUserAuthorizationTier_EnterpriseAdmin(t *testing.T) {
 	// Create mock GitHub API server that returns enterprise admin status
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/graphql" {
+		if r.URL.Path == testGraphQLPath {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"enterprise": map[string]any{
 						"slug":          "test-enterprise",
@@ -461,15 +464,16 @@ func TestGetUserAuthorizationTier_EnterpriseAdmin(t *testing.T) {
 func TestGetUserAuthorizationTier_MigrationTeamMember(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/orgs/myorg/teams/migration-admins/memberships/testuser" {
+		switch r.URL.Path {
+		case "/orgs/myorg/teams/migration-admins/memberships/testuser":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 			})
-		} else if r.URL.Path == "/graphql" {
+		case testGraphQLPath:
 			// Enterprise admin check - user is not admin
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"enterprise": map[string]any{
 						"slug":          "test-enterprise",
@@ -477,7 +481,7 @@ func TestGetUserAuthorizationTier_MigrationTeamMember(t *testing.T) {
 					},
 				},
 			})
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -515,24 +519,25 @@ func TestGetUserAuthorizationTier_MigrationTeamMember(t *testing.T) {
 func TestGetUserAuthorizationTier_OrgAdmin(t *testing.T) {
 	// Create mock GitHub API server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs" {
+		switch r.URL.Path {
+		case testUserMembershipsOrgPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]map[string]any{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{
 					"organization": map[string]string{"login": "test-org"},
 					"state":        "active",
 				},
 			})
-		} else if r.URL.Path == "/user/memberships/orgs/test-org" {
+		case testOrgMembershipPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 				"role":  "admin",
 			})
-		} else if r.URL.Path == "/graphql" {
+		case testGraphQLPath:
 			// Enterprise admin check - user is not admin
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"enterprise": map[string]any{
 						"slug":          "test-enterprise",
@@ -540,7 +545,7 @@ func TestGetUserAuthorizationTier_OrgAdmin(t *testing.T) {
 					},
 				},
 			})
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -579,21 +584,22 @@ func TestGetUserAuthorizationTier_SelfServiceDisabled(t *testing.T) {
 	// When EnableSelfService is false, self-service is DISABLED
 	// and users fall to read-only tier. Only admins can migrate.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs" {
+		switch r.URL.Path {
+		case testUserMembershipsOrgPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]map[string]any{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{
 					"organization": map[string]string{"login": "test-org"},
 					"state":        "active",
 				},
 			})
-		} else if r.URL.Path == "/user/memberships/orgs/test-org" {
+		case testOrgMembershipPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 				"role":  "member", // Not admin
 			})
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -636,21 +642,22 @@ func TestGetUserAuthorizationTier_SelfServiceDisabled(t *testing.T) {
 func TestGetUserAuthorizationTier_ReadOnly(t *testing.T) {
 	// Create mock GitHub API server - user has no admin privileges
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs" {
+		switch r.URL.Path {
+		case testUserMembershipsOrgPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]map[string]any{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{
 					"organization": map[string]string{"login": "test-org"},
 					"state":        "active",
 				},
 			})
-		} else if r.URL.Path == "/user/memberships/orgs/test-org" {
+		case testOrgMembershipPath:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 				"role":  "member", // Not admin
 			})
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -702,9 +709,9 @@ func TestCheckDestinationMigrationRights_AllTiers(t *testing.T) {
 		{
 			name: "enterprise admin has access",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]any{
+					_ = json.NewEncoder(w).Encode(map[string]any{
 						"data": map[string]any{
 							"enterprise": map[string]any{
 								"slug":          "test-enterprise",
@@ -729,7 +736,7 @@ func TestCheckDestinationMigrationRights_AllTiers(t *testing.T) {
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/orgs/myorg/teams/migrators/memberships/testuser" {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]string{"state": "active"})
+					_ = json.NewEncoder(w).Encode(map[string]string{"state": "active"})
 				} else {
 					w.WriteHeader(http.StatusNotFound)
 				}
@@ -744,9 +751,9 @@ func TestCheckDestinationMigrationRights_AllTiers(t *testing.T) {
 		{
 			name: "regular user has no full access",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgPath {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode([]map[string]any{})
+					_ = json.NewEncoder(w).Encode([]map[string]any{})
 				} else {
 					w.WriteHeader(http.StatusNotFound)
 				}
