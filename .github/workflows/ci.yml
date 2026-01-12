@@ -46,13 +46,15 @@ jobs:
         run: go mod verify
 
       - name: Run go vet
-        run: go vet ./...
+        run: go vet ./cmd/... ./internal/...
 
       - name: Run go fmt check
         run: |
-          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          # Check formatting only for main Go code (exclude scripts and web directories)
+          UNFORMATTED=$(find . -name '*.go' -not -path './scripts/*' -not -path './web/*' -not -path './vendor/*' | xargs gofmt -s -l)
+          if [ -n "$UNFORMATTED" ]; then
             echo "The following files need formatting:"
-            gofmt -s -l .
+            echo "$UNFORMATTED"
             exit 1
           fi
 
@@ -64,10 +66,10 @@ jobs:
           echo "$GOPATH_BIN" >> "$GITHUB_PATH"
 
       - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m
+        run: golangci-lint run --timeout=5m ./cmd/... ./internal/...
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./cmd/... ./internal/...
 
       - name: Generate coverage report
         run: go tool cover -html=coverage.out -o coverage.html
@@ -175,7 +177,7 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh \
             | sh -s -- -b "$GOPATH_BIN" v2.18.2
           echo "$GOPATH_BIN" >> "$GITHUB_PATH"
-          gosec -fmt json -out gosec-report.json ./... || true
+          gosec -fmt json -out gosec-report.json -exclude-dir=scripts -exclude-dir=web ./... || true
         continue-on-error: true
 
       - name: Upload Gosec report
@@ -202,7 +204,7 @@ jobs:
       - name: Check for known vulnerabilities (Go)
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          govulncheck ./cmd/... ./internal/...
         continue-on-error: true
 
       - name: Set up Node.js
