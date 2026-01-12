@@ -131,8 +131,8 @@ jobs:
             --name "$APP_NAME" \
             --resource-group "$RG" \
             --slot "$SLOT_NAME" \
-            --docker-custom-image-name "$IMAGE" \
-            --docker-registry-server-url "https://${{ env.REGISTRY }}"
+            --container-image-name "$IMAGE" \
+            --container-registry-url "https://${{ env.REGISTRY }}"
 
           echo "Restarting slot..."
           az webapp restart \
