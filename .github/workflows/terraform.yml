@@ -19,7 +19,6 @@ on:
         required: true
         type: string
 
-# Set minimal permissions for the workflow
 permissions:
   contents: read
   id-token: write
@@ -53,7 +52,6 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Extract Azure credentials for Terraform
-        id: azure-creds
         run: |
           # Extract credentials from AZURE_CREDENTIALS JSON
           CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
@@ -70,132 +68,39 @@ jobs:
             echo "ARM_USE_CLI=false"
           } >> "$GITHUB_ENV"
 
-      - name: Create terraform.tfvars from environment secrets
+      - name: Create terraform.tfvars
         run: |
           cat > terraform.tfvars <<'TFVARS_EOF'
-          # Azure Configuration
+          # Azure Infrastructure
           azure_subscription_id = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
           resource_group_name   = "${{ secrets.AZURE_RESOURCE_GROUP }}"
-          location              = "${{ vars.AZURE_LOCATION || 'eastus' }}"
+          location              = "${{ vars.AZURE_LOCATION }}"
 
-          # Application Configuration
+          # App Service Configuration
           app_name_prefix = "${{ vars.APP_NAME_PREFIX }}"
           app_service_sku = "${{ vars.APP_SERVICE_SKU }}"
-          always_on       = ${{ vars.ALWAYS_ON || 'true' }}
+          always_on       = ${{ vars.ALWAYS_ON }}
 
-          # Deployment Slots Configuration
+          # Deployment Slots
           enable_staging_slot = true
           enable_dev_slot     = true
 
-          # Docker Configuration
-          docker_registry_url       = "ghcr.io"
-          docker_image_repository   = "${{ github.repository }}"
-          docker_image_tag          = "${{ vars.DOCKER_IMAGE_TAG }}"
-          docker_registry_username  = "${{ github.actor }}"
-          docker_registry_password  = "${{ secrets.GITHUB_TOKEN }}"
+          # Docker Registry (GitHub Container Registry)
+          docker_registry_url      = "ghcr.io"
+          docker_image_repository  = "${{ github.repository }}"
+          docker_image_tag         = "${{ vars.DOCKER_IMAGE_TAG }}"
+          docker_registry_username = "${{ github.actor }}"
+          docker_registry_password = "${{ secrets.GITHUB_TOKEN }}"
 
-          # Database Configuration
-          database_name                          = "${{ vars.DATABASE_NAME }}"
-          database_admin_username                = "${{ vars.DATABASE_ADMIN_USERNAME }}"
-          postgres_version                       = "${{ vars.POSTGRES_VERSION }}"
-          database_sku                           = "${{ vars.DATABASE_SKU }}"
-          database_storage_mb                    = ${{ vars.DATABASE_STORAGE_MB }}
-          database_backup_retention_days         = ${{ vars.DATABASE_BACKUP_RETENTION_DAYS }}
-          database_geo_redundant_backup_enabled  = ${{ vars.DATABASE_GEO_REDUNDANT_BACKUP }}
-          database_high_availability_mode        = "${{ vars.DATABASE_HIGH_AVAILABILITY_MODE }}"
-
-          # Source Configuration
-          source_type     = "${{ vars.SOURCE_TYPE }}"
-          source_base_url = "${{ vars.SOURCE_BASE_URL }}"
-          source_token    = "${{ secrets.SOURCE_GITHUB_TOKEN }}"
-          TFVARS_EOF
-
-          # Add GitHub App configuration if enabled (handles multi-line private key)
-          if [ -n "${{ vars.SOURCE_APP_ID }}" ] && [ "${{ vars.SOURCE_APP_ID }}" != "0" ]; then
-            {
-              echo ""
-              echo "# Source GitHub App Configuration"
-              echo "source_app_id = ${{ vars.SOURCE_APP_ID }}"
-            } >> terraform.tfvars
-
-            # Use heredoc for multi-line private key
-            cat >> terraform.tfvars <<'PRIVATE_KEY_EOF'
-          source_app_private_key = <<-EOT
-          ${{ secrets.SOURCE_APP_PRIVATE_KEY }}
-          EOT
-          PRIVATE_KEY_EOF
-
-            SRC_INST_ID="${{ vars.SOURCE_APP_INSTALLATION_ID }}"
-            if [ -n "$SRC_INST_ID" ] && [ "$SRC_INST_ID" != "0" ]; then
-              echo "source_app_installation_id = $SRC_INST_ID" >> terraform.tfvars
-            fi
-          fi
-
-          # Continue with rest of configuration
-          cat >> terraform.tfvars <<'TFVARS_EOF'
-
-          # Destination Configuration
-          destination_type     = "${{ vars.DESTINATION_TYPE }}"
-          destination_base_url = "${{ vars.DESTINATION_BASE_URL }}"
-          destination_token    = "${{ secrets.DEST_GITHUB_TOKEN }}"
-          TFVARS_EOF
-
-          # Add Destination GitHub App configuration if enabled (handles multi-line private key)
-          if [ -n "${{ vars.DEST_APP_ID }}" ] && [ "${{ vars.DEST_APP_ID }}" != "0" ]; then
-            {
-              echo ""
-              echo "# Destination GitHub App Configuration"
-              echo "dest_app_id = ${{ vars.DEST_APP_ID }}"
-            } >> terraform.tfvars
-
-            # Use heredoc for multi-line private key
-            cat >> terraform.tfvars <<'DEST_PRIVATE_KEY_EOF'
-          dest_app_private_key = <<-EOT
-          ${{ secrets.DEST_APP_PRIVATE_KEY }}
-          EOT
-          DEST_PRIVATE_KEY_EOF
-
-            DEST_INST_ID="${{ vars.DEST_APP_INSTALLATION_ID }}"
-            if [ -n "$DEST_INST_ID" ] && [ "$DEST_INST_ID" != "0" ]; then
-              echo "dest_app_installation_id = $DEST_INST_ID" >> terraform.tfvars
-            fi
-          fi
-
-          # Continue with rest of configuration
-          cat >> terraform.tfvars <<'TFVARS_EOF'
-
-          # Migration Configuration
-          migration_workers                      = ${{ vars.MIGRATION_WORKERS }}
-          migration_poll_interval_seconds        = ${{ vars.MIGRATION_POLL_INTERVAL_SECONDS }}
-          migration_post_migration_mode          = "${{ vars.MIGRATION_POST_MIGRATION_MODE }}"
-          migration_dest_repo_exists_action      = "${{ vars.MIGRATION_DEST_REPO_EXISTS_ACTION }}"
-          migration_visibility_public_repos      = "${{ vars.MIGRATION_VISIBILITY_PUBLIC_REPOS }}"
-          migration_visibility_internal_repos    = "${{ vars.MIGRATION_VISIBILITY_INTERNAL_REPOS }}"
-
-          # Logging Configuration
-          logging_level  = "${{ vars.LOGGING_LEVEL }}"
-          logging_format = "${{ vars.LOGGING_FORMAT }}"
-
-          # Auth Configuration
-          auth_enabled                     = ${{ vars.AUTH_ENABLED }}
-          auth_github_oauth_client_id      = "${{ secrets.AUTH_GITHUB_OAUTH_CLIENT_ID }}"
-          auth_github_oauth_client_secret  = "${{ secrets.AUTH_GITHUB_OAUTH_CLIENT_SECRET }}"
-          auth_callback_url                = "${{ vars.AUTH_CALLBACK_URL }}"
-          auth_frontend_url                = "${{ vars.AUTH_FRONTEND_URL }}"
-          auth_session_secret              = "${{ secrets.AUTH_SESSION_SECRET }}"
-          auth_session_duration_hours      = ${{ vars.AUTH_SESSION_DURATION_HOURS }}
-
-          # Auth Authorization Rules
-          auth_require_org_membership      = ${{ vars.AUTH_REQUIRE_ORG_MEMBERSHIP || '[]' }}
-          auth_require_team_membership     = ${{ vars.AUTH_REQUIRE_TEAM_MEMBERSHIP || '[]' }}
-          auth_require_enterprise_admin    = ${{ vars.AUTH_REQUIRE_ENTERPRISE_ADMIN || 'false' }}
-          auth_require_enterprise_slug     = "${{ vars.AUTH_REQUIRE_ENTERPRISE_SLUG || '' }}"
-          auth_require_enterprise_membership = ${{ vars.AUTH_REQUIRE_ENTERPRISE_MEMBERSHIP || 'false' }}
-          auth_privileged_teams              = ${{ vars.AUTH_PRIVILEGED_TEAMS || '[]' }}
-          auth_github_oauth_base_url         = "${{ vars.AUTH_GITHUB_OAUTH_BASE_URL || '' }}"
-
-          # CORS Configuration
-          cors_allowed_origins = ${{ vars.CORS_ALLOWED_ORIGINS || '[]' }}
+          # PostgreSQL Database
+          database_name                         = "${{ vars.DATABASE_NAME }}"
+          database_admin_username               = "${{ vars.DATABASE_ADMIN_USERNAME }}"
+          postgres_version                      = "${{ vars.POSTGRES_VERSION }}"
+          database_sku                          = "${{ vars.DATABASE_SKU }}"
+          database_storage_mb                   = ${{ vars.DATABASE_STORAGE_MB }}
+          database_backup_retention_days        = ${{ vars.DATABASE_BACKUP_RETENTION_DAYS }}
+          database_geo_redundant_backup_enabled = ${{ vars.DATABASE_GEO_REDUNDANT_BACKUP }}
+          database_high_availability_mode       = "${{ vars.DATABASE_HA_MODE }}"
 
           # Tags
           tags = {
@@ -230,36 +135,58 @@ jobs:
         if: inputs.action == 'destroy' || github.event.inputs.action == 'destroy'
         run: terraform destroy -auto-approve
 
-      - name: Get Outputs
+      - name: Output Infrastructure Details
         if: inputs.action == 'apply' || github.event.inputs.action == 'apply'
         run: |
+          # Get outputs
           APP_URL=$(terraform output -raw app_service_url)
           APP_NAME=$(terraform output -raw app_service_name)
           STAGING_URL=$(terraform output -raw staging_slot_url 2>/dev/null || echo 'N/A')
           DEV_URL=$(terraform output -raw dev_slot_url 2>/dev/null || echo 'N/A')
           DB_FQDN=$(terraform output -raw database_server_fqdn)
+          DB_NAME=$(terraform output -raw database_name)
+          DB_USER=$(terraform output -raw database_admin_username 2>/dev/null || echo '[sensitive]')
+
           {
-            echo "## Terraform Outputs"
+            echo "## Terraform Infrastructure Outputs"
             echo ""
-            echo "### Production App Service"
-            echo "**App Service URL:** $APP_URL"
-            echo "**App Service Name:** $APP_NAME"
+            echo "### App Service"
+            echo "| Resource | Value |"
+            echo "|----------|-------|"
+            echo "| **App Service Name** | \`$APP_NAME\` |"
+            echo "| **Production URL** | $APP_URL |"
+            echo "| **Staging Slot URL** | $STAGING_URL |"
+            echo "| **Dev Slot URL** | $DEV_URL |"
             echo ""
-            echo "### Deployment Slots"
-            echo "**Staging Slot URL:** $STAGING_URL"
-            echo "**Dev Slot URL:** $DEV_URL"
+            echo "### PostgreSQL Database"
+            echo "| Resource | Value |"
+            echo "|----------|-------|"
+            echo "| **Server FQDN** | \`$DB_FQDN\` |"
+            echo "| **Database Name** | \`$DB_NAME\` |"
+            echo "| **Port** | \`5432\` |"
+            echo "| **Admin Username** | \`$DB_USER\` |"
+            echo "| **Admin Password** | (see Terraform state or Azure Portal) |"
+            echo "| **SSL Mode** | \`require\` |"
             echo ""
-            echo "### Database"
-            echo "**Database Server:** $DB_FQDN"
+            echo "### Database Connection String"
+            echo '```'
+            echo "postgres://$DB_USER:<password>@$DB_FQDN:5432/$DB_NAME?sslmode=require"
+            echo '```'
             echo ""
-            echo "### Important Notes"
-            echo "- Database admin credentials are stored in Terraform state"
-            echo "- Store them securely in a password manager or Azure Key Vault"
+            echo "### Required GitHub Environment Setup"
+            echo ""
+            echo "Add these to your GitHub environments (\`dev\`, \`staging\`, \`prod\`, \`pr-preview\`):"
+            echo ""
+            echo "| Type | Name | Value |"
+            echo "|------|------|-------|"
+            echo "| Variable | \`APP_SERVICE_NAME\` | \`$APP_NAME\` |"
+            echo "| Secret | \`AZURE_RESOURCE_GROUP\` | (your resource group) |"
+            echo "| Secret | \`AZURE_CREDENTIALS\` | (your Azure SP JSON) |"
             echo ""
             echo "### Next Steps"
-            echo "1. Update GitHub Environment Variable \`APP_SERVICE_NAME\` with: \`$APP_NAME\`"
-            echo "2. Run the Build workflow to create container image"
-            echo "3. Deploy workflows will automatically deploy to appropriate slots"
+            echo "1. Copy \`APP_SERVICE_NAME\` value above to GitHub environment variables"
+            echo "2. Configure app settings via the Settings UI after first deployment"
+            echo "3. Store database password in a secure location (Key Vault recommended)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup

@@ -55,7 +55,7 @@ This directory contains all CI/CD workflows for the GitHub Migrator project.
 #### `terraform.yml` - Infrastructure as Code
 **Triggers**: Manual  
 **Purpose**: Manage production infrastructure with deployment slots  
-**Operations**: Plan, Apply, Destroy  
+**Operations**: Plan, Apply, Destroy
 **Resources Created**:
 - App Service Plan (S1 or higher for slots)
 - App Service with production slot
@@ -150,36 +150,68 @@ gh workflow run terraform.yml \
   -r main
 ```
 
-## Secrets Required
+## Repository Configuration
 
-### GitHub Container Registry
-- `GITHUB_TOKEN` (automatically provided)
+### Repository Secrets (Settings → Secrets → Actions)
 
-### Azure Deployment
-- `AZURE_CREDENTIALS` - Service principal credentials (JSON)
-- `AZURE_RESOURCE_GROUP` - Azure resource group name
+These are shared across all environments:
 
-### GitHub Environment Variables
-- `APP_SERVICE_NAME` - Name of the Azure App Service
+| Secret | Description |
+|--------|-------------|
+| `AZURE_CREDENTIALS` | Azure service principal JSON (see format below) |
+| `AZURE_RESOURCE_GROUP` | Azure resource group name |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID (for Terraform) |
 
-### Application Secrets (Terraform)
-- `AZURE_SUBSCRIPTION_ID` - Azure subscription ID
-- `SOURCE_GITHUB_TOKEN` - Source GitHub token
-- `DEST_GITHUB_TOKEN` - Destination GitHub token
-- `AUTH_GITHUB_OAUTH_CLIENT_ID` - OAuth client ID
-- `AUTH_GITHUB_OAUTH_CLIENT_SECRET` - OAuth client secret
-- `AUTH_SESSION_SECRET` - Session encryption secret
+#### `AZURE_CREDENTIALS` Format
+```json
+{
+  "clientId": "<service-principal-app-id>",
+  "clientSecret": "<service-principal-secret>",
+  "subscriptionId": "<azure-subscription-id>",
+  "tenantId": "<azure-tenant-id>"
+}
+```
+
+### Repository Variables (Settings → Variables → Actions)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `APP_SERVICE_NAME` | Azure App Service name (from Terraform output) | `app-github-migrator-prod` |
+
+### Terraform Variables (for infrastructure provisioning)
+
+These are only needed if running the Terraform workflow:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AZURE_LOCATION` | Azure region | `eastus` |
+| `APP_NAME_PREFIX` | Resource naming prefix | `github-migrator` |
+| `APP_SERVICE_SKU` | App Service Plan SKU | `S1` |
+| `ALWAYS_ON` | Keep app always running | `true` |
+| `DOCKER_IMAGE_TAG` | Default image tag | `prod` |
+| `DATABASE_NAME` | PostgreSQL database name | `migrator` |
+| `DATABASE_ADMIN_USERNAME` | Database admin user | `psqladmin` |
+| `POSTGRES_VERSION` | PostgreSQL version | `15` |
+| `DATABASE_SKU` | Database SKU | `GP_Standard_D2s_v3` |
+| `DATABASE_STORAGE_MB` | Storage size in MB | `32768` |
+| `DATABASE_BACKUP_RETENTION_DAYS` | Backup retention | `30` |
+| `DATABASE_GEO_REDUNDANT_BACKUP` | Geo-redundant backups | `true` |
+| `DATABASE_HA_MODE` | High availability mode | `ZoneRedundant` |
+
+> **Note**: Application configuration (source/destination GitHub, auth, logging, etc.) is done via the Settings UI in the app after deployment.
 
 ## GitHub Environments
 
-The following environments should be configured in GitHub:
+Create these environments in GitHub (Settings → Environments):
 
 | Environment | Purpose | Protection Rules |
 |-------------|---------|------------------|
 | `dev` | Dev slot deployments | None |
 | `staging` | Staging slot (pre-prod) | Required reviewers (optional) |
-| `prod` | Production deployments | Required reviewers |
+| `prod` | Production & Terraform | Required reviewers |
 | `pr-preview` | PR preview environments | None |
+
+> **Note**: Secrets and variables are configured at the **repository level** (not per-environment) since all environments share the same Azure infrastructure. Environments are used for deployment protection rules only.
 
 ## Deployment Slots
 
