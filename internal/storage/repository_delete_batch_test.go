@@ -10,7 +10,7 @@ import (
 
 func TestDeleteBatch(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -78,7 +78,7 @@ func TestDeleteBatch(t *testing.T) {
 
 func TestDeleteBatchNotFound(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -91,7 +91,7 @@ func TestDeleteBatchNotFound(t *testing.T) {
 
 func TestDeleteEmptyBatch(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -121,7 +121,7 @@ func TestDeleteEmptyBatch(t *testing.T) {
 
 func TestDeleteBatchMakesRepositoriesAvailable(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 

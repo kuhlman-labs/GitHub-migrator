@@ -39,8 +39,8 @@ func TestListRepositories(t *testing.T) {
 	}
 	repo2.SetHasLFS(false)
 	repo2.SetHasSubmodules(true)
-	db.SaveRepository(ctx, repo1)
-	db.SaveRepository(ctx, repo2)
+	_ = db.SaveRepository(ctx, repo1)
+	_ = db.SaveRepository(ctx, repo2)
 
 	tests := []struct {
 		name           string
@@ -116,7 +116,7 @@ func TestGetRepository(t *testing.T) {
 		FullName: "org/test-repo",
 		Status:   string(models.StatusPending),
 	}
-	db.SaveRepository(ctx, repo)
+	_ = db.SaveRepository(ctx, repo)
 
 	t.Run("existing repository", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/org/test-repo", nil)
@@ -190,7 +190,7 @@ func TestUpdateRepository(t *testing.T) {
 		Status:   string(models.StatusPending),
 		Priority: 0,
 	}
-	db.SaveRepository(ctx, repo)
+	_ = db.SaveRepository(ctx, repo)
 
 	t.Run("update batch_id and priority", func(t *testing.T) {
 		updates := map[string]any{

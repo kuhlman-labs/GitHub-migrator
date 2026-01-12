@@ -175,7 +175,7 @@ func (h *OAuthHandler) getGitHubUser(accessToken string) (*GitHubUser, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -242,7 +242,7 @@ func (h *OAuthHandler) getUserEmails(accessToken string) ([]GitHubEmail, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)

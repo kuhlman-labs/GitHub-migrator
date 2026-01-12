@@ -22,7 +22,7 @@ func TestGetAnalyticsSummary(t *testing.T) {
 		{FullName: "org/repo4", Status: string(models.StatusMigrationFailed)},
 	}
 	for _, repo := range repos {
-		db.SaveRepository(ctx, repo)
+		_ = db.SaveRepository(ctx, repo)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/summary", nil)
@@ -63,7 +63,7 @@ func TestGetMigrationProgressHandler(t *testing.T) {
 		{FullName: "org/repo2", Status: string(models.StatusComplete)},
 	}
 	for _, repo := range repos {
-		db.SaveRepository(ctx, repo)
+		_ = db.SaveRepository(ctx, repo)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/progress", nil)
@@ -99,7 +99,7 @@ func TestGetAnalyticsSummaryWithFilters(t *testing.T) {
 		{FullName: "org2/repo1", Status: string(models.StatusComplete)},
 	}
 	for _, repo := range repos {
-		db.SaveRepository(ctx, repo)
+		_ = db.SaveRepository(ctx, repo)
 	}
 
 	t.Run("filter by organization", func(t *testing.T) {
@@ -136,7 +136,7 @@ func TestGetExecutiveReport(t *testing.T) {
 		{FullName: "org/repo5", Status: string(models.StatusDryRunComplete)},
 	}
 	for _, repo := range repos {
-		db.SaveRepository(ctx, repo)
+		_ = db.SaveRepository(ctx, repo)
 	}
 
 	t.Run("basic executive report", func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestGetMigrationProgressWithBatchFilter(t *testing.T) {
 			Status:   status,
 			BatchID:  &batch.ID,
 		}
-		db.SaveRepository(ctx, repo)
+		_ = db.SaveRepository(ctx, repo)
 	}
 
 	t.Run("filter by batch_id", func(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 // mockRateLimitHandlerMigrations returns a mock rate limit response
 func mockRateLimitHandlerMigrations(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"resources": map[string]any{
 			"core": map[string]any{
 				"limit":     5000,
@@ -53,7 +53,7 @@ func TestStartMigrationWithOptions(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(migration)
+		_ = json.NewEncoder(w).Encode(migration)
 	})
 
 	server := httptest.NewServer(mux)
@@ -194,7 +194,7 @@ func TestListOrgInstallations(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 
 	server := httptest.NewServer(mux)

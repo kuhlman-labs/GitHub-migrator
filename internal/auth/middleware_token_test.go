@@ -20,7 +20,7 @@ func TestMiddleware_TokenInjection(t *testing.T) {
 		Name:  "Test User",
 		Email: "test@example.com",
 	}
-	originalGitHubToken := "gh_test_token_12345"
+	originalGitHubToken := "gh_test_token_12345" // #nosec G101 -- test credential
 
 	// Generate JWT with encrypted GitHub token
 	jwtToken, err := jwtManager.GenerateToken(user, originalGitHubToken)

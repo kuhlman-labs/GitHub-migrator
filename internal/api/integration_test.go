@@ -23,7 +23,7 @@ import (
 func TestIntegration_RepositoryLifecycle(t *testing.T) {
 	// Setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	server := NewServer(&config.Config{}, db, logger, nil, nil)
@@ -108,7 +108,7 @@ func TestIntegration_RepositoryLifecycle(t *testing.T) {
 func TestIntegration_BatchWorkflow(t *testing.T) {
 	// Setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	server := NewServer(&config.Config{}, db, logger, nil, nil)
@@ -196,7 +196,7 @@ func TestIntegration_BatchWorkflow(t *testing.T) {
 func TestIntegration_MigrationStartWorkflow(t *testing.T) {
 	// Setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	server := NewServer(&config.Config{}, db, logger, nil, nil)
@@ -249,7 +249,7 @@ func TestIntegration_MigrationStartWorkflow(t *testing.T) {
 func TestIntegration_Analytics(t *testing.T) {
 	// Setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	server := NewServer(&config.Config{}, db, logger, nil, nil)
@@ -349,7 +349,7 @@ func setupTestDB(t *testing.T) *storage.Database {
 // TestIntegration_SourcesCreate tests source creation
 func TestIntegration_SourcesCreate(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	server := NewServer(&config.Config{}, db, logger, nil, nil)
@@ -378,7 +378,7 @@ func TestIntegration_SourcesCreate(t *testing.T) {
 // TestIntegration_SourcesListAndGet tests listing and getting sources
 func TestIntegration_SourcesListAndGet(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	source := &models.Source{
@@ -418,7 +418,7 @@ func TestIntegration_SourcesListAndGet(t *testing.T) {
 // TestIntegration_SourcesUpdateAndDelete tests updating and deleting sources
 func TestIntegration_SourcesUpdateAndDelete(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	source := &models.Source{
@@ -463,7 +463,7 @@ func TestIntegration_SourcesUpdateAndDelete(t *testing.T) {
 // TestIntegration_AuthorizationStatus tests the authorization status endpoint
 func TestIntegration_AuthorizationStatus(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
@@ -473,7 +473,7 @@ func TestIntegration_AuthorizationStatus(t *testing.T) {
 		// Return empty responses - no special permissions
 		switch r.URL.Path {
 		case "/user/memberships/orgs":
-			json.NewEncoder(w).Encode([]any{})
+			_ = json.NewEncoder(w).Encode([]any{})
 		default:
 			http.NotFound(w, r)
 		}
@@ -521,7 +521,7 @@ func TestIntegration_AuthorizationStatus(t *testing.T) {
 // TestIntegration_AuthorizationTierConfiguration tests different authorization configurations
 func TestIntegration_AuthorizationTierConfiguration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	_ = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
@@ -562,7 +562,7 @@ func TestIntegration_AuthorizationTierConfiguration(t *testing.T) {
 // TestIntegration_SourceWithRepositories tests source-repository relationship
 func TestIntegration_SourceWithRepositories(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 

@@ -23,8 +23,8 @@ func TestStartMigrationHandler(t *testing.T) {
 	// Create test repositories
 	repo1 := &models.Repository{FullName: "org/repo1", Status: string(models.StatusPending)}
 	repo2 := &models.Repository{FullName: "org/repo2", Status: string(models.StatusPending)}
-	db.SaveRepository(ctx, repo1)
-	db.SaveRepository(ctx, repo2)
+	_ = db.SaveRepository(ctx, repo1)
+	_ = db.SaveRepository(ctx, repo2)
 
 	// Fetch the repos to get their IDs
 	savedRepo1, _ := db.GetRepository(ctx, "org/repo1")
@@ -114,7 +114,7 @@ func TestGetMigrationStatusHandler(t *testing.T) {
 		FullName: "org/test-repo",
 		Status:   string(models.StatusComplete),
 	}
-	db.SaveRepository(ctx, repo)
+	_ = db.SaveRepository(ctx, repo)
 
 	// Fetch the repo to get its ID
 	savedRepo, _ := db.GetRepository(ctx, "org/test-repo")
@@ -175,7 +175,7 @@ func TestGetMigrationHistoryHandler(t *testing.T) {
 	ctx := context.Background()
 
 	repo := &models.Repository{FullName: "org/test-repo", Status: string(models.StatusPending)}
-	db.SaveRepository(ctx, repo)
+	_ = db.SaveRepository(ctx, repo)
 
 	// Add migration history
 	history := &models.MigrationHistory{
@@ -184,7 +184,7 @@ func TestGetMigrationHistoryHandler(t *testing.T) {
 		Status:       "complete",
 		StartedAt:    time.Now(),
 	}
-	db.CreateMigrationHistory(ctx, history)
+	_, _ = db.CreateMigrationHistory(ctx, history)
 
 	idStr := fmt.Sprintf("%d", repo.ID)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/migrations/"+idStr+"/history", nil)
@@ -212,7 +212,7 @@ func TestGetMigrationLogsHandler(t *testing.T) {
 	ctx := context.Background()
 
 	repo := &models.Repository{FullName: "org/test-repo", Status: string(models.StatusPending)}
-	db.SaveRepository(ctx, repo)
+	_ = db.SaveRepository(ctx, repo)
 
 	// Add migration logs
 	log1 := &models.MigrationLog{
@@ -231,8 +231,8 @@ func TestGetMigrationLogsHandler(t *testing.T) {
 		Message:      "Test log 2",
 		Timestamp:    time.Now(),
 	}
-	db.CreateMigrationLog(ctx, log1)
-	db.CreateMigrationLog(ctx, log2)
+	_ = db.CreateMigrationLog(ctx, log1)
+	_ = db.CreateMigrationLog(ctx, log2)
 
 	idStr := fmt.Sprintf("%d", repo.ID)
 
@@ -309,7 +309,7 @@ func TestGetMigrationLogsHandler(t *testing.T) {
 
 func TestGetMigrationHistoryListHandler(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create completed and incomplete repositories
 	repos := []struct {
@@ -369,7 +369,7 @@ func TestGetMigrationHistoryListHandler(t *testing.T) {
 
 func TestExportMigrationHistoryHandler(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a completed repository
 	now := time.Now()

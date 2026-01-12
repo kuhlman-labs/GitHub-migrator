@@ -514,7 +514,7 @@ func (e *Executor) validateADORepositoryAccess(ctx context.Context, repo *models
 	if err != nil {
 		return fmt.Errorf("failed to call ADO API: %w - ensure the ADO organization is accessible and your network allows outbound connections to dev.azure.com", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body for better error messages
 	body, _ := io.ReadAll(resp.Body)

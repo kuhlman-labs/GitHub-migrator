@@ -10,7 +10,7 @@ import (
 // TestSaveRepository_SetsIDOnInsert verifies that SaveRepository sets the ID after INSERT
 func TestSaveRepository_SetsIDOnInsert(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -43,7 +43,7 @@ func TestSaveRepository_SetsIDOnInsert(t *testing.T) {
 // TestSaveRepository_SetsIDOnUpdate verifies that SaveRepository sets the ID after UPDATE
 func TestSaveRepository_SetsIDOnUpdate(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -97,7 +97,7 @@ func TestSaveRepository_SetsIDOnUpdate(t *testing.T) {
 // TestSaveRepository_IDUsableForDependencies verifies the ID can be used immediately after save
 func TestSaveRepository_IDUsableForDependencies(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 

@@ -82,7 +82,7 @@ func TestSendJSON(t *testing.T) {
 	}
 
 	contentType := w.Header().Get("Content-Type")
-	if contentType != "application/json" {
+	if contentType != testContentTypeJSON {
 		t.Errorf("Expected Content-Type application/json, got %s", contentType)
 	}
 

@@ -86,14 +86,9 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 
 	// Detect if auth settings changed - these require a server restart to take effect
 	// because the HTTP router and auth middleware are built at startup
-	authSettingsChanged := false
-	if req.AuthEnabled != nil && *req.AuthEnabled != currentAuthEnabled {
-		authSettingsChanged = true
-	}
-	if req.AuthGitHubOAuthClientID != nil || req.AuthGitHubOAuthClientSecret != nil ||
-		req.AuthSessionSecret != nil || req.AuthCallbackURL != nil {
-		authSettingsChanged = true
-	}
+	authSettingsChanged := (req.AuthEnabled != nil && *req.AuthEnabled != currentAuthEnabled) ||
+		req.AuthGitHubOAuthClientID != nil || req.AuthGitHubOAuthClientSecret != nil ||
+		req.AuthSessionSecret != nil || req.AuthCallbackURL != nil
 
 	h.logger.Info("Settings updated successfully")
 

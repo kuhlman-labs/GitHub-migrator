@@ -153,7 +153,7 @@ func TestNewMigrationWorker(t *testing.T) {
 
 func TestMigrationWorker_StartStop(t *testing.T) {
 	worker, db, _ := setupTestWorker(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -202,7 +202,7 @@ func TestMigrationWorker_StartStop(t *testing.T) {
 
 func TestMigrationWorker_GetActiveCount(t *testing.T) {
 	worker, db, _ := setupTestWorker(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Initially should be 0
 	if count := worker.GetActiveCount(); count != 0 {
@@ -222,7 +222,7 @@ func TestMigrationWorker_GetActiveCount(t *testing.T) {
 
 func TestMigrationWorker_GetActiveMigrations(t *testing.T) {
 	worker, db, _ := setupTestWorker(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Initially should be empty
 	if migrations := worker.GetActiveMigrations(); len(migrations) != 0 {
@@ -267,8 +267,8 @@ func TestMigrationWorker_WorkerSlots(t *testing.T) {
 		DSN:  ":memory:",
 	}
 	db, _ := storage.NewDatabase(dbCfg)
-	defer db.Close()
-	db.Migrate()
+	defer func() { _ = db.Close() }()
+	_ = db.Migrate()
 
 	destClient := &github.Client{}
 	executorFactory, _ := migration.NewExecutorFactory(migration.ExecutorFactoryConfig{
@@ -297,7 +297,7 @@ func TestMigrationWorker_WorkerSlots(t *testing.T) {
 		SourceURL: "https://github.com/org/repo1",
 		Status:    string(models.StatusQueuedForMigration),
 	}
-	db.SaveRepository(ctx, repo)
+	_ = db.SaveRepository(ctx, repo)
 
 	// Should not process because all slots are busy
 	worker.processQueuedRepositories()
@@ -313,7 +313,7 @@ func TestMigrationWorker_WorkerSlots(t *testing.T) {
 
 func TestMigrationWorker_StopWithActiveMigrations(t *testing.T) {
 	worker, db, _ := setupTestWorker(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -354,7 +354,7 @@ func TestMigrationWorker_StopWithActiveMigrations(t *testing.T) {
 
 func TestMigrationWorker_IsActive(t *testing.T) {
 	worker, db, _ := setupTestWorker(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Initially not active
 	if worker.IsActive() {
@@ -363,7 +363,7 @@ func TestMigrationWorker_IsActive(t *testing.T) {
 
 	// Start worker
 	ctx := context.Background()
-	worker.Start(ctx)
+	_ = worker.Start(ctx)
 
 	// Should be active
 	if !worker.IsActive() {
@@ -371,7 +371,7 @@ func TestMigrationWorker_IsActive(t *testing.T) {
 	}
 
 	// Stop worker
-	worker.Stop()
+	_ = worker.Stop()
 
 	// Wait for worker to fully stop with timeout
 	timeout := time.After(500 * time.Millisecond)

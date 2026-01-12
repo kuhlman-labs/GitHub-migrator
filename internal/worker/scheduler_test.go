@@ -374,7 +374,7 @@ func setupTestDB(t *testing.T) (*storage.Database, func()) {
 	}
 
 	cleanup := func() {
-		db.Close()
+		_ = db.Close()
 	}
 
 	return db, cleanup

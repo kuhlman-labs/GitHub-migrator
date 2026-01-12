@@ -10,7 +10,7 @@ import (
 
 // parseRequirementsFiles parses a list of requirements.txt files and extracts dependencies
 func (ps *PackageScanner) parseRequirementsFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*5)
 	for _, reqPath := range files {
 		relPath, _ := filepath.Rel(repoPath, reqPath)
 		extracted := ps.parseRequirementsTxt(reqPath, relPath)
@@ -28,7 +28,7 @@ func (ps *PackageScanner) parseRequirementsTxt(reqPath, manifestPath string) []E
 	if err != nil {
 		return deps
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

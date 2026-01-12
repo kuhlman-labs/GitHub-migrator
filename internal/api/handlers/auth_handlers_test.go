@@ -92,7 +92,7 @@ func TestAuthConfigResponse_Structure(t *testing.T) {
 		RolePermissions bool   `json:"role_permissions_enabled,omitempty"`
 	}{
 		AuthEnabled:     true,
-		AuthMethod:      "github",
+		AuthMethod:      testSourceGitHub,
 		LoginURL:        "/api/auth/login",
 		RequiredOrg:     "my-org",
 		RolePermissions: true,
@@ -111,7 +111,7 @@ func TestAuthConfigResponse_Structure(t *testing.T) {
 	if decoded["auth_enabled"] != true {
 		t.Error("auth_enabled should be true")
 	}
-	if decoded["auth_method"] != "github" {
+	if decoded["auth_method"] != testSourceGitHub {
 		t.Errorf("auth_method = %v, want github", decoded["auth_method"])
 	}
 }

@@ -13,7 +13,7 @@ import (
 // mockRateLimitHandler returns a handler that responds to rate limit checks
 func mockRateLimitHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"resources": map[string]any{
 			"core": map[string]any{
 				"limit":     5000,
@@ -45,7 +45,7 @@ func TestListOrganizationTeams(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(teams)
+		_ = json.NewEncoder(w).Encode(teams)
 	})
 
 	server := httptest.NewServer(mux)
@@ -108,7 +108,7 @@ func TestListTeamRepositories(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(repos)
+		_ = json.NewEncoder(w).Encode(repos)
 	})
 
 	server := httptest.NewServer(mux)
@@ -154,7 +154,7 @@ func TestGetTeamBySlug(t *testing.T) {
 			"privacy":     "closed",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(team)
+		_ = json.NewEncoder(w).Encode(team)
 	})
 
 	server := httptest.NewServer(mux)
@@ -192,7 +192,7 @@ func TestGetTeamBySlug_NotFound(t *testing.T) {
 	mux.HandleFunc("/api/v3/orgs/test-org/teams/non-existent", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
 	})
 
 	server := httptest.NewServer(mux)
@@ -234,7 +234,7 @@ func TestListTeamMembers(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(members)
+		_ = json.NewEncoder(w).Encode(members)
 	})
 
 	server := httptest.NewServer(mux)

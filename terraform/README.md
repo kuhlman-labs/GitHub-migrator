@@ -24,7 +24,7 @@ Deploys an Azure App Service with:
 - GHCR integration
 - Health check configuration
 - Managed identity
-- Application settings and secrets
+- Minimal application settings (database + port only)
 
 ### postgresql
 
@@ -39,7 +39,7 @@ Deploys Azure PostgreSQL Flexible Server with:
 
 ### Development (dev)
 
-- **Database**: SQLite (embedded)
+- **Database**: SQLite (embedded, persisted via Azure File Share)
 - **App Service**: Basic tier (B1)
 - **Always On**: Disabled (to save costs)
 - **Purpose**: Testing and development
@@ -52,6 +52,25 @@ Deploys Azure PostgreSQL Flexible Server with:
 - **High Availability**: Zone redundant
 - **Backups**: 30-day retention with geo-redundancy
 - **Purpose**: Production workloads
+
+## Application Configuration
+
+Terraform deploys only the **minimal infrastructure settings** required to run the application:
+- Server port (8080)
+- Database connection (SQLite for dev, PostgreSQL for prod)
+
+**All other application configuration is done via the Settings UI after deployment:**
+- Destination GitHub instance
+- Source repositories (via Sources page)
+- Migration settings (workers, visibility handling, etc.)
+- Authentication (OAuth, authorization rules)
+- Logging settings
+
+This approach provides several benefits:
+1. **Simpler Terraform**: Fewer variables and secrets to manage
+2. **Flexibility**: Configuration can be updated without redeployment
+3. **Security**: Sensitive tokens are stored in the application database, not Terraform state
+4. **Sensible Defaults**: The application has production-ready defaults for all settings
 
 ## Quick Start
 
@@ -105,6 +124,15 @@ terraform output -json > outputs.json
 chmod 600 outputs.json
 ```
 
+### Post-Deployment Configuration
+
+After deployment, access the application and configure:
+
+1. **Destination GitHub instance** - Go to Settings page and configure your destination GitHub instance (URL and authentication)
+2. **Source repositories** - Go to Sources page and add your source GitHub/Azure DevOps instances
+3. **Authentication** (optional) - Enable OAuth authentication in Settings
+4. **Migration settings** - Customize worker count, visibility handling, etc.
+
 ## Required Variables
 
 ### Common Variables (both environments)
@@ -112,12 +140,10 @@ chmod 600 outputs.json
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `azure_subscription_id` | Azure subscription ID | Yes |
-| `resource_group_name` | Existing resource group name | Yes |
+| `resource_group_name` | Resource group name | Yes |
 | `docker_image_repository` | GHCR image repository | Yes |
 | `docker_registry_username` | GitHub username | Yes |
 | `docker_registry_password` | GitHub token with packages read | Yes |
-| `source_token` | Source GitHub PAT | Yes |
-| `destination_token` | Destination GitHub PAT | Yes |
 
 ### Production-Specific Variables
 
@@ -126,7 +152,7 @@ chmod 600 outputs.json
 | `database_sku` | PostgreSQL SKU | `GP_Standard_D2s_v3` |
 | `database_storage_mb` | Storage size in MB | `32768` |
 | `database_backup_retention_days` | Backup retention | `30` |
-| `auth_enabled` | Enable authentication | `true` |
+| `database_high_availability_mode` | HA mode | `ZoneRedundant` |
 
 ## Outputs
 
@@ -202,15 +228,13 @@ Never commit sensitive values to Git. Use one of these methods:
 
 ```hcl
 # terraform.tfvars (add to .gitignore)
-source_token      = "ghp_xxxxxxxxxx"
-destination_token = "ghp_xxxxxxxxxx"
+docker_registry_password = "ghp_xxxxxxxxxx"
 ```
 
 #### 2. Environment Variables
 
 ```bash
-export TF_VAR_source_token="ghp_xxxxxxxxxx"
-export TF_VAR_destination_token="ghp_xxxxxxxxxx"
+export TF_VAR_docker_registry_password="ghp_xxxxxxxxxx"
 terraform apply
 ```
 
@@ -222,19 +246,17 @@ Store secrets in Azure Key Vault and reference them:
 # Store secret in Key Vault
 az keyvault secret set \
   --vault-name YOUR_VAULT \
-  --name source-token \
+  --name docker-registry-password \
   --value "ghp_xxxxxxxxxx"
 
 # Retrieve in Terraform (requires additional configuration)
 ```
 
+### Application Secrets
+
+Application secrets (GitHub tokens, OAuth credentials, etc.) are configured via the Settings UI and stored securely in the application database. They are not managed by Terraform.
+
 ## Updating the Infrastructure
-
-### Update Application Settings
-
-1. Modify `app_settings` in `main.tf`
-2. Run `terraform plan` to review changes
-3. Run `terraform apply` to update
 
 ### Update Docker Image Tag
 
@@ -369,4 +391,3 @@ docker pull ghcr.io/YOUR_USERNAME/github-migrator:dev
 ## Support
 
 For deployment issues, see [AZURE_DEPLOYMENT.md](../docs/AZURE_DEPLOYMENT.md) for detailed troubleshooting.
-

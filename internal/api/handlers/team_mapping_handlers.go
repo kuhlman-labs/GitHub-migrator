@@ -358,7 +358,7 @@ func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, ErrMissingField.WithField("file"))
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Parse CSV
 	reader := csv.NewReader(file)

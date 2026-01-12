@@ -268,7 +268,7 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 		a.logger.Error("Enterprise admin check failed with error", "error", err, "url", graphqlURL)
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	a.logger.Debug("Enterprise admin GraphQL response",
@@ -368,7 +368,7 @@ func (a *Authorizer) CheckEnterpriseMembership(ctx context.Context, username str
 		a.logger.Error("Enterprise membership check failed with error", "error", err, "url", graphqlURL)
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	a.logger.Debug("Enterprise membership GraphQL response",
@@ -451,7 +451,7 @@ func (a *Authorizer) isOrgMember(ctx context.Context, username string, org strin
 			"error", err)
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -524,7 +524,7 @@ func (a *Authorizer) isTeamMember(ctx context.Context, username string, org stri
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return false, nil
@@ -569,7 +569,7 @@ func (a *Authorizer) IsOrgAdmin(ctx context.Context, username string, org string
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		// User is not a member of the organization
@@ -651,7 +651,7 @@ func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -724,7 +724,7 @@ func (a *Authorizer) GetUserOrganizations(ctx context.Context, token string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

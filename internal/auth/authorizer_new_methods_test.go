@@ -1,7 +1,5 @@
 package auth
 
-//nolint:goconst // Test files can have repeated strings for clarity
-
 import (
 	"context"
 	"encoding/json"
@@ -24,12 +22,12 @@ func TestAuthorizer_IsOrgAdmin(t *testing.T) {
 		{
 			name: "user is org admin",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs/test-org" {
+				if r.URL.Path == testOrgMembershipPath {
 					resp := map[string]any{
 						"state": "active",
 						"role":  "admin",
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -40,12 +38,12 @@ func TestAuthorizer_IsOrgAdmin(t *testing.T) {
 		{
 			name: "user is org member but not admin",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs/test-org" {
+				if r.URL.Path == testOrgMembershipPath {
 					resp := map[string]any{
 						"state": "active",
 						"role":  "member",
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -97,7 +95,7 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 		{
 			name: "user has admin permission",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					resp := map[string]any{
 						"data": map[string]any{
 							"repository": map[string]any{
@@ -105,7 +103,7 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 							},
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -116,7 +114,7 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 		{
 			name: "user has write permission but not admin",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					resp := map[string]any{
 						"data": map[string]any{
 							"repository": map[string]any{
@@ -124,7 +122,7 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 							},
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -135,13 +133,13 @@ func TestAuthorizer_HasRepoAdminPermission(t *testing.T) {
 		{
 			name: "user has no access to repo",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					resp := map[string]any{
 						"errors": []map[string]any{
 							{"message": "Could not resolve to a Repository with the name 'test-repo'."},
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -185,7 +183,7 @@ func TestAuthorizer_GetUserOrganizations(t *testing.T) {
 		{
 			name: "user has multiple orgs",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgPath {
 					resp := []map[string]any{
 						{
 							"organization": map[string]string{"login": "org1"},
@@ -200,7 +198,7 @@ func TestAuthorizer_GetUserOrganizations(t *testing.T) {
 							"state":        "pending", // Should be excluded
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -211,9 +209,9 @@ func TestAuthorizer_GetUserOrganizations(t *testing.T) {
 		{
 			name: "user has no orgs",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/user/memberships/orgs" {
+				if r.URL.Path == testUserMembershipsOrgPath {
 					resp := []map[string]any{}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -262,7 +260,7 @@ func TestAuthorizer_CheckEnterpriseMembership(t *testing.T) {
 		{
 			name: "user is enterprise member",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					resp := map[string]any{
 						"data": map[string]any{
 							"enterprise": map[string]any{
@@ -271,7 +269,7 @@ func TestAuthorizer_CheckEnterpriseMembership(t *testing.T) {
 							},
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)
@@ -282,7 +280,7 @@ func TestAuthorizer_CheckEnterpriseMembership(t *testing.T) {
 		{
 			name: "user is not enterprise member",
 			mockResponse: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/graphql" {
+				if r.URL.Path == testGraphQLPath {
 					resp := map[string]any{
 						"errors": []map[string]any{
 							{
@@ -290,7 +288,7 @@ func TestAuthorizer_CheckEnterpriseMembership(t *testing.T) {
 							},
 						},
 					}
-					json.NewEncoder(w).Encode(resp)
+					_ = json.NewEncoder(w).Encode(resp)
 					return
 				}
 				http.NotFound(w, r)

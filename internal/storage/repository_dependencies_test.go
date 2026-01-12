@@ -15,7 +15,7 @@ func TestRepositoryDependenciesTableExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
@@ -26,7 +26,7 @@ func TestRepositoryDependenciesTableExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDatabase() error = %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Run migrations
 	if err := db.Migrate(); err != nil {
@@ -83,7 +83,7 @@ func TestGetRepositoryDependencies_EmptyResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
@@ -94,7 +94,7 @@ func TestGetRepositoryDependencies_EmptyResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDatabase() error = %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("Migrate() error = %v", err)

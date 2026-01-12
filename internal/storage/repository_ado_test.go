@@ -11,7 +11,7 @@ import (
 // createTestADORepo creates a test ADO repository with proper related tables
 func createTestADORepo(fullName, project string, isGit bool) *models.Repository {
 	now := time.Now()
-	status := "pending"
+	status := string(models.StatusPending)
 	if !isGit {
 		status = string(models.StatusRemediationRequired)
 	}

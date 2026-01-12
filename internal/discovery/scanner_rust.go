@@ -9,7 +9,7 @@ import (
 
 // parseCargoFiles parses a list of Cargo.toml files and extracts dependencies
 func (ps *PackageScanner) parseCargoFiles(files []string, repoPath string) []ExtractedDependency {
-	var deps []ExtractedDependency
+	deps := make([]ExtractedDependency, 0, len(files)*10)
 	for _, cargoPath := range files {
 		relPath, _ := filepath.Rel(repoPath, cargoPath)
 		extracted := ps.parseCargoToml(cargoPath, relPath)

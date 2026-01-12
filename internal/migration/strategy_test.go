@@ -73,6 +73,7 @@ func TestStrategyRegistry_GetStrategy(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different strategies
 func TestGitHubMigrationStrategy_SupportsRepository(t *testing.T) {
 	strategy := NewGitHubMigrationStrategy(nil)
 
@@ -116,6 +117,7 @@ func TestGitHubMigrationStrategy_SupportsRepository(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test cases have similar structure but test different strategies
 func TestADOMigrationStrategy_SupportsRepository(t *testing.T) {
 	strategy := NewADOMigrationStrategy(nil)
 

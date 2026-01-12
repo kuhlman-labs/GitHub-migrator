@@ -3,7 +3,7 @@
 # Variables
 APP_NAME=github-migrator
 DOCKER_IMAGE=$(APP_NAME):latest
-GO_FILES=$(shell find . -name '*.go' -not -path "./vendor/*")
+GO_FILES=$(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./scripts/*" -not -path "./web/*")
 GOBIN=$(shell go env GOPATH)/bin
 
 help: ## Show this help
@@ -17,7 +17,7 @@ install-dependencies: ## Install Go module dependencies
 
 install-tools: ## Install development tools
 	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) v2.8.0
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	go install github.com/github/git-sizer@latest
 	@echo "Development tools installed successfully!"
@@ -94,7 +94,7 @@ lint: ## Run linters
 	@echo "Linting backend..."
 	$(GOBIN)/golangci-lint run --config .golangci.yml ./cmd/... ./internal/...
 	@echo "Running security scan..."
-	$(GOBIN)/gosec -exclude=G201,G202 -exclude-dir=scripts ./...
+	$(GOBIN)/gosec -exclude=G201,G202 -exclude-dir=scripts -exclude-dir=web ./...
 
 web-lint: ## Run frontend linter
 	@echo "Linting frontend..."
@@ -123,7 +123,7 @@ test-all: test web-test ## Run all tests (backend and frontend)
 
 fmt: ## Format code
 	@echo "Formatting Go code..."
-	go fmt ./...
+	go fmt ./cmd/... ./internal/...
 	gofmt -s -w $(GO_FILES)
 
 run-server: ## Run the server locally

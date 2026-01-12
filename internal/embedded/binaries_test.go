@@ -93,11 +93,11 @@ func TestVerifyBinary(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp file: %v", err)
 		}
-		defer os.Remove(tmpFile.Name())
-		tmpFile.Close()
+		defer func() { _ = os.Remove(tmpFile.Name()) }()
+		_ = tmpFile.Close()
 
 		// Make it non-executable
-		if err := os.Chmod(tmpFile.Name(), 0644); err != nil {
+		if err := os.Chmod(tmpFile.Name(), 0600); err != nil {
 			t.Fatalf("Failed to chmod: %v", err)
 		}
 
@@ -138,13 +138,13 @@ func TestCleanupExtractedBinaries(t *testing.T) {
 		tmpDir := getBinaryStorageDir()
 
 		// Create the directory
-		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		if err := os.MkdirAll(tmpDir, 0750); err != nil {
 			t.Fatalf("Failed to create temp directory: %v", err)
 		}
 
 		// Create a test file in it
 		testFile := filepath.Join(tmpDir, "test-file")
-		if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
 			t.Fatalf("Failed to create test file: %v", err)
 		}
 
@@ -163,7 +163,7 @@ func TestCleanupExtractedBinaries(t *testing.T) {
 	t.Run("succeeds even if directory doesn't exist", func(t *testing.T) {
 		// Remove directory first
 		tmpDir := getBinaryStorageDir()
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 
 		// Cleanup should not fail
 		err := CleanupExtractedBinaries()
@@ -207,6 +207,7 @@ func TestFallbackToSystemGitSizer(t *testing.T) {
 			t.Logf("System git-sizer found at: %s", path)
 
 			// Verify it's executable
+			// #nosec G204 -- path is from exec.LookPath, controlled system binary
 			cmd := exec.Command(path, "--version")
 			if err := cmd.Run(); err != nil {
 				t.Logf("System git-sizer exists but failed to run: %v", err)
@@ -279,6 +280,7 @@ func TestIntegration(t *testing.T) {
 		}
 
 		// Try to use it
+		// #nosec G204 -- path is extracted git-sizer binary from our embedded data
 		cmd := exec.Command(path, "--version")
 		if err := cmd.Run(); err != nil {
 			t.Errorf("Failed to execute git-sizer: %v", err)
@@ -294,7 +296,7 @@ func TestIntegration(t *testing.T) {
 // BenchmarkGetGitSizerPath benchmarks the cached path retrieval
 func BenchmarkGetGitSizerPath(b *testing.B) {
 	// First call to initialize
-	GetGitSizerPath()
+	_, _ = GetGitSizerPath()
 
 	for b.Loop() {
 		_, _ = GetGitSizerPath()
@@ -316,14 +318,14 @@ func TestGetBinaryStorageDir(t *testing.T) {
 		// Ensure we're not in Azure or custom environment
 		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
 		oldCustom := os.Getenv("GHMIG_TEMP_DIR")
-		os.Unsetenv("WEBSITE_SITE_NAME")
-		os.Unsetenv("GHMIG_TEMP_DIR")
+		_ = os.Unsetenv("WEBSITE_SITE_NAME")
+		_ = os.Unsetenv("GHMIG_TEMP_DIR")
 		defer func() {
 			if oldWebsite != "" {
-				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+				_ = os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
 			}
 			if oldCustom != "" {
-				os.Setenv("GHMIG_TEMP_DIR", oldCustom)
+				_ = os.Setenv("GHMIG_TEMP_DIR", oldCustom)
 			}
 		}()
 
@@ -337,12 +339,12 @@ func TestGetBinaryStorageDir(t *testing.T) {
 	t.Run("uses Azure path when WEBSITE_SITE_NAME is set", func(t *testing.T) {
 		// Set Azure environment variable
 		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
-		os.Setenv("WEBSITE_SITE_NAME", "test-site")
+		_ = os.Setenv("WEBSITE_SITE_NAME", "test-site")
 		defer func() {
 			if oldWebsite != "" {
-				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+				_ = os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
 			} else {
-				os.Unsetenv("WEBSITE_SITE_NAME")
+				_ = os.Unsetenv("WEBSITE_SITE_NAME")
 			}
 		}()
 
@@ -357,16 +359,16 @@ func TestGetBinaryStorageDir(t *testing.T) {
 		// Ensure Azure variable is not set
 		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
 		oldCustom := os.Getenv("GHMIG_TEMP_DIR")
-		os.Unsetenv("WEBSITE_SITE_NAME")
-		os.Setenv("GHMIG_TEMP_DIR", "/custom/temp")
+		_ = os.Unsetenv("WEBSITE_SITE_NAME")
+		_ = os.Setenv("GHMIG_TEMP_DIR", "/custom/temp")
 		defer func() {
 			if oldWebsite != "" {
-				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+				_ = os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
 			}
 			if oldCustom != "" {
-				os.Setenv("GHMIG_TEMP_DIR", oldCustom)
+				_ = os.Setenv("GHMIG_TEMP_DIR", oldCustom)
 			} else {
-				os.Unsetenv("GHMIG_TEMP_DIR")
+				_ = os.Unsetenv("GHMIG_TEMP_DIR")
 			}
 		}()
 
@@ -380,18 +382,18 @@ func TestGetBinaryStorageDir(t *testing.T) {
 	t.Run("Azure takes precedence over custom", func(t *testing.T) {
 		oldWebsite := os.Getenv("WEBSITE_SITE_NAME")
 		oldCustom := os.Getenv("GHMIG_TEMP_DIR")
-		os.Setenv("WEBSITE_SITE_NAME", "test-site")
-		os.Setenv("GHMIG_TEMP_DIR", "/custom/temp")
+		_ = os.Setenv("WEBSITE_SITE_NAME", "test-site")
+		_ = os.Setenv("GHMIG_TEMP_DIR", "/custom/temp")
 		defer func() {
 			if oldWebsite != "" {
-				os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
+				_ = os.Setenv("WEBSITE_SITE_NAME", oldWebsite)
 			} else {
-				os.Unsetenv("WEBSITE_SITE_NAME")
+				_ = os.Unsetenv("WEBSITE_SITE_NAME")
 			}
 			if oldCustom != "" {
-				os.Setenv("GHMIG_TEMP_DIR", oldCustom)
+				_ = os.Setenv("GHMIG_TEMP_DIR", oldCustom)
 			} else {
-				os.Unsetenv("GHMIG_TEMP_DIR")
+				_ = os.Unsetenv("GHMIG_TEMP_DIR")
 			}
 		}()
 
@@ -423,9 +425,9 @@ func (e envBackup) restore() {
 
 func restoreEnvVar(key, value string) {
 	if value != "" {
-		os.Setenv(key, value)
+		_ = os.Setenv(key, value)
 	} else {
-		os.Unsetenv(key)
+		_ = os.Unsetenv(key)
 	}
 }
 
@@ -439,8 +441,8 @@ func TestShouldSkipVerification(t *testing.T) {
 		env := saveEnv()
 		defer env.restore()
 
-		os.Setenv("WEBSITE_SITE_NAME", "test-app")
-		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		_ = os.Setenv("WEBSITE_SITE_NAME", "test-app")
+		_ = os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
 
 		if !shouldSkipVerification() {
 			t.Error("Expected to skip verification in Azure App Service")
@@ -451,8 +453,8 @@ func TestShouldSkipVerification(t *testing.T) {
 		env := saveEnv()
 		defer env.restore()
 
-		os.Unsetenv("WEBSITE_SITE_NAME")
-		os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", "true")
+		_ = os.Unsetenv("WEBSITE_SITE_NAME")
+		_ = os.Setenv("GHMIG_SKIP_BINARY_VERIFICATION", "true")
 
 		if !shouldSkipVerification() {
 			t.Error("Expected to skip verification when GHMIG_SKIP_BINARY_VERIFICATION is true")
@@ -463,8 +465,8 @@ func TestShouldSkipVerification(t *testing.T) {
 		env := saveEnv()
 		defer env.restore()
 
-		os.Unsetenv("WEBSITE_SITE_NAME")
-		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		_ = os.Unsetenv("WEBSITE_SITE_NAME")
+		_ = os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
 
 		if isInDocker() {
 			if !shouldSkipVerification() {
@@ -481,8 +483,8 @@ func TestShouldSkipVerification(t *testing.T) {
 		env := saveEnv()
 		defer env.restore()
 
-		os.Unsetenv("WEBSITE_SITE_NAME")
-		os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
+		_ = os.Unsetenv("WEBSITE_SITE_NAME")
+		_ = os.Unsetenv("GHMIG_SKIP_BINARY_VERIFICATION")
 
 		if isInDocker() {
 			t.Skip("Skipping test: running in Docker container")

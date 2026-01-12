@@ -4,32 +4,19 @@ This directory contains all CI/CD workflows for the GitHub Migrator project.
 
 ## Workflows Overview
 
-### 🧪 Testing & Quality
+### Testing & Quality
 
 #### `ci.yml` - Continuous Integration
 **Triggers**: Push to main/develop, Pull Requests  
 **Purpose**: Primary CI pipeline for code quality  
 **Components**:
-- Backend tests (Go)
-- Frontend tests (React/TypeScript)
+- Backend tests (Go) with mandatory linting
+- Frontend tests (React/TypeScript) with mandatory ESLint
 - Security scanning
 - Dependency checks
 - Docker build validation
 
-#### `integration-tests.yml` - Database Integration Tests
-**Triggers**: Push, PRs, Daily schedule, Manual  
-**Purpose**: Validate database compatibility  
-**Databases Tested**:
-- ✅ SQLite (always) - ~30 seconds
-- ✅ PostgreSQL (always) - ~2 minutes
-- ⚠️ SQL Server (scheduled/manual) - ~5 minutes
-
-**Strategy**:
-- Fast feedback with SQLite
-- Production validation with PostgreSQL
-- Enterprise validation with SQL Server (conditional)
-
-### 📦 Build & Deploy
+### Build & Deploy
 
 #### `build.yml` - Container Image Build
 **Triggers**: Push to main, Tags, PRs, Manual  
@@ -39,49 +26,91 @@ This directory contains all CI/CD workflows for the GitHub Migrator project.
 - Build provenance attestations
 - Multiple image tags (latest, dev, semver, sha)
 
-#### `deploy-dev.yml` - Development Deployment
-**Triggers**: Push to develop, Manual  
-**Purpose**: Deploy to development environment  
-**Target**: Azure development environment
+#### `deploy-main.yml` - Development Slot Deployment
+**Triggers**: Push to main, Manual  
+**Purpose**: Deploy to dev slot on production App Service  
+**Target**: Azure App Service `dev` deployment slot
 
-#### `deploy-prod.yml` - Production Deployment
-**Triggers**: Push to main, Tags (v*), Manual  
-**Purpose**: Deploy to production environment  
-**Target**: Azure production environment  
-**Requires**: Manual approval
+#### `deploy-pr.yml` - PR Preview Deployment
+**Triggers**: Pull Request (opened, synchronize, reopened, closed)  
+**Purpose**: Create/update/cleanup PR preview environments  
+**Target**: Dynamic `pr-{number}` deployment slots  
+**Features**:
+- Automatic slot creation on PR open
+- Comments PR with preview URL
+- Uses in-memory SQLite for ephemeral testing
+- Automatic cleanup on PR close
 
-### 🏗️ Infrastructure
+#### `deploy-release.yml` - Production Deployment
+**Triggers**: Release published, Manual  
+**Purpose**: Deploy releases to production via staging slot  
+**Flow**:
+1. Build release image
+2. Deploy to staging slot
+3. Health check staging
+4. Swap staging to production (zero-downtime)
 
-#### `terraform-dev.yml` - Development Infrastructure
-**Triggers**: Push to terraform files (develop), PRs, Manual  
-**Purpose**: Manage development infrastructure as code  
+### Infrastructure
+
+#### `terraform.yml` - Infrastructure as Code
+**Triggers**: Manual  
+**Purpose**: Manage production infrastructure with deployment slots  
 **Operations**: Plan, Apply, Destroy
+**Resources Created**:
+- App Service Plan (S1 or higher for slots)
+- App Service with production slot
+- Staging deployment slot
+- Dev deployment slot
+- PostgreSQL database
 
-#### `terraform-prod.yml` - Production Infrastructure
-**Triggers**: Push to terraform files (main), Tags, Manual  
-**Purpose**: Manage production infrastructure as code  
-**Operations**: Plan, Apply (with approval)
+## Deployment Architecture
+
+```
+                    GitHub Actions
+                         |
+         +---------------+---------------+
+         |               |               |
+    PR Opened       Push to main    Release Published
+         |               |               |
+         v               v               v
+    +---------+    +---------+    +-----------+
+    | pr-123  |    |   dev   |    |  staging  |
+    |  slot   |    |  slot   |    |   slot    |
+    +---------+    +---------+    +-----------+
+         |               |               |
+         | (ephemeral)   | (persistent)  | swap
+         |               |               v
+    Delete on        Dev testing    +------------+
+    PR close                        | production |
+                                    |   slot     |
+                                    +------------+
+```
 
 ## Workflow Dependencies
 
 ```
 Pull Request Flow:
-├─ ci.yml (Backend, Frontend, Security)
-├─ integration-tests.yml (SQLite, PostgreSQL)
-└─ build.yml (Docker build test)
-    └─ All pass → Allow merge
++-- ci.yml (Backend, Frontend, Security)
++-- deploy-pr.yml
+    +-- Build container image
+    +-- Create/update pr-{number} slot
+    +-- Comment PR with preview URL
+    +-- All pass -> Allow merge
 
 Main Branch Flow:
-├─ ci.yml
-├─ integration-tests.yml (+ SQL Server optional)
-├─ build.yml (Push images)
-└─ deploy-prod.yml (If tag: v*)
++-- ci.yml
++-- deploy-main.yml
+    +-- Build container image (tag: dev)
+    +-- Deploy to dev slot
+    +-- Health check
 
-Develop Branch Flow:
-├─ ci.yml
-├─ integration-tests.yml
-├─ build.yml
-└─ deploy-dev.yml
+Release Flow:
++-- deploy-release.yml
+    +-- Build release image (tag: v1.0.0, prod)
+    +-- Deploy to staging slot
+    +-- Health check staging
+    +-- Swap staging to production
+    +-- Health check production
 ```
 
 ## Running Workflows Manually
@@ -95,59 +124,116 @@ Develop Branch Flow:
 
 ### Via GitHub CLI
 
-#### Run integration tests with SQL Server
+#### Deploy to dev slot
 ```bash
-gh workflow run integration-tests.yml \
-  -f test-sqlserver=true \
+gh workflow run deploy-main.yml -r main
+```
+
+#### Deploy to production (with tag)
+```bash
+gh workflow run deploy-release.yml \
+  -f image_tag=v1.0.0 \
   -r main
 ```
 
-#### Deploy to development
+#### Terraform plan
 ```bash
-gh workflow run deploy-dev.yml -r develop
-```
-
-#### Deploy to production
-```bash
-gh workflow run deploy-prod.yml -r main
-```
-
-#### Terraform plan for production
-```bash
-gh workflow run terraform-prod.yml \
+gh workflow run terraform.yml \
   -f action=plan \
   -r main
 ```
 
-## Secrets Required
+#### Terraform apply
+```bash
+gh workflow run terraform.yml \
+  -f action=apply \
+  -r main
+```
 
-### GitHub Container Registry
-- `GITHUB_TOKEN` (automatically provided)
+## Repository Configuration
 
-### Azure Deployment
-- `AZURE_CREDENTIALS` - Service principal credentials
-- `AZURE_SUBSCRIPTION_ID` - Azure subscription ID
-- `AZURE_TENANT_ID` - Azure tenant ID
+### Repository Secrets (Settings → Secrets → Actions)
 
-### Application Secrets
-- `GHMIG_SOURCE_TOKEN` - Source GitHub token
-- `GHMIG_DESTINATION_TOKEN` - Destination GitHub token
-- `GHMIG_SOURCE_BASE_URL` - Source GitHub URL
-- `GHMIG_DESTINATION_BASE_URL` - Destination GitHub URL
+These are shared across all environments:
 
-### Database (Production)
-- `POSTGRES_PASSWORD` - PostgreSQL password
-- `DATABASE_DSN` - Database connection string
+| Secret | Description |
+|--------|-------------|
+| `AZURE_CREDENTIALS` | Azure service principal JSON (see format below) |
+| `AZURE_RESOURCE_GROUP` | Azure resource group name |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID (for Terraform) |
+
+#### `AZURE_CREDENTIALS` Format
+```json
+{
+  "clientId": "<service-principal-app-id>",
+  "clientSecret": "<service-principal-secret>",
+  "subscriptionId": "<azure-subscription-id>",
+  "tenantId": "<azure-tenant-id>"
+}
+```
+
+### Repository Variables (Settings → Variables → Actions)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `APP_SERVICE_NAME` | Azure App Service name (from Terraform output) | `app-github-migrator-prod` |
+
+### Terraform Variables (for infrastructure provisioning)
+
+These are only needed if running the Terraform workflow:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AZURE_LOCATION` | Azure region | `eastus` |
+| `APP_NAME_PREFIX` | Resource naming prefix | `github-migrator` |
+| `APP_SERVICE_SKU` | App Service Plan SKU | `S1` |
+| `ALWAYS_ON` | Keep app always running | `true` |
+| `DOCKER_IMAGE_TAG` | Default image tag | `prod` |
+| `DATABASE_NAME` | PostgreSQL database name | `migrator` |
+| `DATABASE_ADMIN_USERNAME` | Database admin user | `psqladmin` |
+| `POSTGRES_VERSION` | PostgreSQL version | `15` |
+| `DATABASE_SKU` | Database SKU | `GP_Standard_D2s_v3` |
+| `DATABASE_STORAGE_MB` | Storage size in MB | `32768` |
+| `DATABASE_BACKUP_RETENTION_DAYS` | Backup retention | `30` |
+| `DATABASE_GEO_REDUNDANT_BACKUP` | Geo-redundant backups | `true` |
+| `DATABASE_HA_MODE` | High availability mode | `ZoneRedundant` |
+
+> **Note**: Application configuration (source/destination GitHub, auth, logging, etc.) is done via the Settings UI in the app after deployment.
+
+## GitHub Environments
+
+Create these environments in GitHub (Settings → Environments):
+
+| Environment | Purpose | Protection Rules |
+|-------------|---------|------------------|
+| `dev` | Dev slot deployments | None |
+| `staging` | Staging slot (pre-prod) | Required reviewers (optional) |
+| `prod` | Production & Terraform | Required reviewers |
+| `pr-preview` | PR preview environments | None |
+
+> **Note**: Secrets and variables are configured at the **repository level** (not per-environment) since all environments share the same Azure infrastructure. Environments are used for deployment protection rules only.
+
+## Deployment Slots
+
+### Slot Configuration
+
+| Slot | Purpose | Database | Persistence |
+|------|---------|----------|-------------|
+| production | Live production | PostgreSQL | Yes |
+| staging | Pre-prod testing | PostgreSQL (shared) | Yes |
+| dev | Development testing | PostgreSQL (shared) | Yes |
+| pr-{number} | PR previews | In-memory SQLite | No |
+
+### SKU Requirements
+Deployment slots require **Standard (S1)** tier or higher. The Terraform configuration defaults to S1.
 
 ## Branch Protection Rules
 
 ### `main` branch
 **Required Status Checks**:
-- ✅ Backend CI (Go)
-- ✅ Frontend CI (React/TypeScript)
-- ✅ Integration Tests - SQLite
-- ✅ Integration Tests - PostgreSQL
-- ✅ Docker Build Test
+- Backend CI (Go)
+- Frontend CI (React/TypeScript)
+- Docker Build Test
 
 **Additional Settings**:
 - Require pull request reviews (1+)
@@ -155,15 +241,6 @@ gh workflow run terraform-prod.yml \
 - Dismiss stale reviews on push
 - Require status checks to pass
 - Require branches to be up to date
-
-### `develop` branch
-**Required Status Checks**:
-- ✅ Backend CI (Go)
-- ✅ Integration Tests - SQLite
-
-**Additional Settings**:
-- Require pull request reviews (1)
-- Require status checks to pass
 
 ## Workflow Optimization
 
@@ -178,27 +255,35 @@ All workflows use caching to speed up execution:
 Jobs run in parallel where possible:
 ```
 Start
- ├─ Backend CI (parallel)
- ├─ Frontend CI (parallel)
- ├─ Security Scan (parallel)
- └─ Integration Tests (parallel)
-     ├─ SQLite (parallel)
-     ├─ PostgreSQL (parallel)
-     └─ SQL Server (conditional)
+ +-- Backend CI (parallel)
+ +-- Frontend CI (parallel)
+ +-- Security Scan (parallel)
+ +-- Dependency Check (parallel)
 ```
 
-### Cost Optimization
-- Use path filters to skip unnecessary runs
-- Skip SQL Server on PRs (run on schedule)
-- Use GitHub Actions cache for artifacts
-- Parallelize independent jobs
+### Zero-Downtime Deployments
+Production deployments use slot swapping:
+1. Deploy new version to staging slot
+2. Warm up staging slot with health checks
+3. Swap staging with production (instant)
+4. Old version remains in staging for rollback
+
+### Rollback Procedure
+To rollback production:
+```bash
+az webapp deployment slot swap \
+  --name <app-service-name> \
+  --resource-group <resource-group> \
+  --slot staging \
+  --target-slot production
+```
 
 ## Monitoring & Debugging
 
 ### View Workflow Runs
 ```bash
 # List recent runs
-gh run list --workflow=integration-tests.yml
+gh run list --workflow=deploy-release.yml
 
 # View specific run
 gh run view <run-id>
@@ -212,59 +297,48 @@ gh run watch <run-id>
 
 ### Common Issues
 
-#### 1. PostgreSQL Connection Timeout
-**Symptom**: Tests fail with connection timeout  
-**Solution**: Increase health check retries in `integration-tests.yml`
+#### 1. Deployment Slot Creation Fails
+**Symptom**: PR slot creation fails  
+**Solution**: Ensure App Service Plan is S1 or higher
 
-#### 2. SQL Server Startup Timeout
-**Symptom**: SQL Server not ready after 60 seconds  
-**Solution**: Increase wait timeout to 120 seconds
+#### 2. Health Check Timeout
+**Symptom**: Deployment fails at health check  
+**Solution**: Increase stabilization wait time or check app startup logs
 
-#### 3. Cache Invalidation
-**Symptom**: Stale dependencies  
-**Solution**: Clear workflow cache or update cache key
+#### 3. Swap Fails
+**Symptom**: Staging to production swap fails  
+**Solution**: Check staging health, ensure both slots are running
 
-#### 4. Docker Build Failures
-**Symptom**: Build fails in CI but works locally  
-**Solution**: Check Dockerfile PATH, ensure all files are committed
-
-## Maintenance Schedule
-
-### Daily
-- ✅ Automatic: Integration tests (scheduled)
-- ✅ Automatic: Security scans
-
-### Weekly
-- 🔍 Review: Workflow execution times
-- 🔍 Review: Failure rates
-- 🔍 Review: Resource usage
-
-### Monthly
-- 🔧 Update: Action versions
-- 🔧 Update: Base images
-- 🔧 Review: Caching strategy
-- 🔧 Review: Cost optimization
+#### 4. PR Slot Cleanup Fails
+**Symptom**: Orphaned PR slots  
+**Solution**: Manually delete via Azure CLI:
+```bash
+az webapp deployment slot delete \
+  --name <app-name> \
+  --resource-group <rg> \
+  --slot pr-123
+```
 
 ## Documentation
 
-- [CI Integration Testing Guide](../docs/CI_INTEGRATION_TESTING.md)
-- [CI Pipeline Diagram](../docs/CI_PIPELINE_DIAGRAM.md)
-- [GORM Refactoring Summary](../docs/GORM_REFACTORING_SUMMARY.md)
-- [Deployment Guide](../docs/DEPLOYMENT.md)
+- [Deployment Guide](../../docs/deployment/README.md)
+- [Azure Deployment](../../docs/deployment/AZURE.md)
+- [Kubernetes Deployment](../../docs/deployment/KUBERNETES.md)
+- [Architecture Overview](../../docs/ARCHITECTURE.md)
 
 ## Contributing
 
-When adding new workflows:
+When modifying workflows:
 1. Follow existing naming conventions
-2. Add comprehensive documentation
-3. Use workflow caching where possible
-4. Test with `workflow_dispatch` first
-5. Update this README
+2. Test with `workflow_dispatch` first
+3. Use GitHub Actions cache where possible
+4. Update this README
+5. Consider impact on PR preview environments
 
 ## Support
 
 For workflow issues:
 1. Check workflow logs in GitHub Actions
-2. Review documentation
+2. Review this documentation
 3. Test locally using Make targets
 4. Open an issue with workflow run ID

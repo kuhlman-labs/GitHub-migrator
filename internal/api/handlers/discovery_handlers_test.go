@@ -122,7 +122,7 @@ func testStartDiscoveryOrganization(t *testing.T) {
 	}
 
 	var response map[string]any
-	json.NewDecoder(w.Body).Decode(&response)
+	_ = json.NewDecoder(w.Body).Decode(&response)
 
 	if response["type"] != "organization" {
 		t.Errorf("Expected type 'organization', got %v", response["type"])
@@ -156,7 +156,7 @@ func testStartDiscoveryEnterprise(t *testing.T) {
 	}
 
 	var response map[string]any
-	json.NewDecoder(w.Body).Decode(&response)
+	_ = json.NewDecoder(w.Body).Decode(&response)
 
 	if response["type"] != "enterprise" {
 		t.Errorf("Expected type 'enterprise', got %v", response["type"])
@@ -173,8 +173,8 @@ func TestDiscoveryStatus(t *testing.T) {
 	// Add some repositories
 	repo1 := &models.Repository{FullName: "org/repo1", Status: string(models.StatusPending)}
 	repo2 := &models.Repository{FullName: "org/repo2", Status: string(models.StatusPending)}
-	db.SaveRepository(ctx, repo1)
-	db.SaveRepository(ctx, repo2)
+	_ = db.SaveRepository(ctx, repo1)
+	_ = db.SaveRepository(ctx, repo2)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/discovery/status", nil)
 	w := httptest.NewRecorder()

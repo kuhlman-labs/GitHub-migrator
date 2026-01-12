@@ -1,0 +1,196 @@
+name: Terraform Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+  workflow_call:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: '1.6'
+  WORKING_DIR: terraform/environments/prod
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action || github.event.inputs.action }}
+    runs-on: ubuntu-latest
+    environment: prod
+
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Extract Azure credentials for Terraform
+        run: |
+          # Extract credentials from AZURE_CREDENTIALS JSON
+          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
+          CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
+          TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
+          SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
+
+          # Set as environment variables for Terraform
+          {
+            echo "ARM_CLIENT_ID=${CLIENT_ID}"
+            echo "ARM_CLIENT_SECRET=${CLIENT_SECRET}"
+            echo "ARM_TENANT_ID=${TENANT_ID}"
+            echo "ARM_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}"
+            echo "ARM_USE_CLI=false"
+          } >> "$GITHUB_ENV"
+
+      - name: Create terraform.tfvars
+        run: |
+          cat > terraform.tfvars <<'TFVARS_EOF'
+          # Azure Infrastructure
+          azure_subscription_id = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          resource_group_name   = "${{ secrets.AZURE_RESOURCE_GROUP }}"
+          location              = "${{ vars.AZURE_LOCATION }}"
+
+          # App Service Configuration
+          app_name_prefix = "${{ vars.APP_NAME_PREFIX }}"
+          app_service_sku = "${{ vars.APP_SERVICE_SKU }}"
+          always_on       = ${{ vars.ALWAYS_ON }}
+
+          # Deployment Slots
+          enable_staging_slot = true
+          enable_dev_slot     = true
+
+          # Docker Registry (GitHub Container Registry)
+          docker_registry_url      = "ghcr.io"
+          docker_image_repository  = "${{ github.repository }}"
+          docker_image_tag         = "${{ vars.DOCKER_IMAGE_TAG }}"
+          docker_registry_username = "${{ github.actor }}"
+          docker_registry_password = "${{ secrets.GITHUB_TOKEN }}"
+
+          # PostgreSQL Database
+          database_name                         = "${{ vars.DATABASE_NAME }}"
+          database_admin_username               = "${{ vars.DATABASE_ADMIN_USERNAME }}"
+          postgres_version                      = "${{ vars.POSTGRES_VERSION }}"
+          database_sku                          = "${{ vars.DATABASE_SKU }}"
+          database_storage_mb                   = ${{ vars.DATABASE_STORAGE_MB }}
+          database_backup_retention_days        = ${{ vars.DATABASE_BACKUP_RETENTION_DAYS }}
+          database_geo_redundant_backup_enabled = ${{ vars.DATABASE_GEO_REDUNDANT_BACKUP }}
+          database_high_availability_mode       = "${{ vars.DATABASE_HA_MODE }}"
+
+          # Tags
+          tags = {
+            Project     = "GitHub Migrator"
+            Environment = "prod"
+            ManagedBy   = "Terraform"
+            DeployedBy  = "GitHub Actions"
+          }
+          TFVARS_EOF
+
+      - name: Format terraform.tfvars
+        run: terraform fmt terraform.tfvars
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan' || github.event.inputs.action == 'plan'
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply' || github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy' || github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
+
+      - name: Output Infrastructure Details
+        if: inputs.action == 'apply' || github.event.inputs.action == 'apply'
+        run: |
+          # Get outputs
+          APP_URL=$(terraform output -raw app_service_url)
+          APP_NAME=$(terraform output -raw app_service_name)
+          STAGING_URL=$(terraform output -raw staging_slot_url 2>/dev/null || echo 'N/A')
+          DEV_URL=$(terraform output -raw dev_slot_url 2>/dev/null || echo 'N/A')
+          DB_FQDN=$(terraform output -raw database_server_fqdn)
+          DB_NAME=$(terraform output -raw database_name)
+          DB_USER=$(terraform output -raw database_admin_username 2>/dev/null || echo '[sensitive]')
+
+          {
+            echo "## Terraform Infrastructure Outputs"
+            echo ""
+            echo "### App Service"
+            echo "| Resource | Value |"
+            echo "|----------|-------|"
+            echo "| **App Service Name** | \`$APP_NAME\` |"
+            echo "| **Production URL** | $APP_URL |"
+            echo "| **Staging Slot URL** | $STAGING_URL |"
+            echo "| **Dev Slot URL** | $DEV_URL |"
+            echo ""
+            echo "### PostgreSQL Database"
+            echo "| Resource | Value |"
+            echo "|----------|-------|"
+            echo "| **Server FQDN** | \`$DB_FQDN\` |"
+            echo "| **Database Name** | \`$DB_NAME\` |"
+            echo "| **Port** | \`5432\` |"
+            echo "| **Admin Username** | \`$DB_USER\` |"
+            echo "| **Admin Password** | (see Terraform state or Azure Portal) |"
+            echo "| **SSL Mode** | \`require\` |"
+            echo ""
+            echo "### Database Connection String"
+            echo '```'
+            echo "postgres://$DB_USER:<password>@$DB_FQDN:5432/$DB_NAME?sslmode=require"
+            echo '```'
+            echo ""
+            echo "### Required GitHub Environment Setup"
+            echo ""
+            echo "Add these to your GitHub environments (\`dev\`, \`staging\`, \`prod\`, \`pr-preview\`):"
+            echo ""
+            echo "| Type | Name | Value |"
+            echo "|------|------|-------|"
+            echo "| Variable | \`APP_SERVICE_NAME\` | \`$APP_NAME\` |"
+            echo "| Secret | \`AZURE_RESOURCE_GROUP\` | (your resource group) |"
+            echo "| Secret | \`AZURE_CREDENTIALS\` | (your Azure SP JSON) |"
+            echo ""
+            echo "### Next Steps"
+            echo "1. Copy \`APP_SERVICE_NAME\` value above to GitHub environment variables"
+            echo "2. Configure app settings via the Settings UI after first deployment"
+            echo "3. Store database password in a secure location (Key Vault recommended)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f terraform.tfvars
+          az logout

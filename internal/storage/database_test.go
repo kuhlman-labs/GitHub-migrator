@@ -14,7 +14,7 @@ func TestNewDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
@@ -25,7 +25,7 @@ func TestNewDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDatabase() error = %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if db.db == nil {
 		t.Error("NewDatabase() db.db is nil")
@@ -58,7 +58,7 @@ func TestNewDatabase_CreatesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Use a subdirectory that doesn't exist yet
 	dbPath := filepath.Join(tmpDir, "subdir", "test.db")
@@ -72,7 +72,7 @@ func TestNewDatabase_CreatesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDatabase() error = %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify directory was created
 	dir := filepath.Dir(dbPath)
@@ -86,7 +86,7 @@ func TestDatabase_Migrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
@@ -97,7 +97,7 @@ func TestDatabase_Migrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDatabase() error = %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Run migrations
 	if err := db.Migrate(); err != nil {
@@ -129,7 +129,7 @@ func TestDatabase_Migrate_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
@@ -140,7 +140,7 @@ func TestDatabase_Migrate_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDatabase() error = %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Run migrations first time
 	if err := db.Migrate(); err != nil {
@@ -176,7 +176,7 @@ func TestDatabase_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",
@@ -187,7 +187,7 @@ func TestDatabase_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	gormDB := db.DB()
 	if gormDB == nil {
@@ -209,7 +209,7 @@ func TestDatabase_Close(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := config.DatabaseConfig{
 		Type: "sqlite",

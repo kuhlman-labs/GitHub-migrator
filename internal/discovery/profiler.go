@@ -245,7 +245,7 @@ func (p *Profiler) profileContributors(ctx context.Context, org, name string, re
 		if resp.NextPage == 0 {
 			break
 		}
-		opts.ListOptions.Page = resp.NextPage
+		opts.Page = resp.NextPage
 	}
 
 	repo.SetContributorCount(len(allContributors))
@@ -499,7 +499,7 @@ func (p *Profiler) countIssuesAndPRs(ctx context.Context, org, name string, repo
 		if resp.NextPage == 0 {
 			break
 		}
-		allPRsOpts.ListOptions.Page = resp.NextPage
+		allPRsOpts.Page = resp.NextPage
 	}
 
 	repo.SetPullRequestCount(totalPRs)
@@ -738,7 +738,7 @@ func (p *Profiler) profileCollaborators(ctx context.Context, org, name string, r
 		if resp.NextPage == 0 {
 			break
 		}
-		opts.ListOptions.Page = resp.NextPage
+		opts.Page = resp.NextPage
 	}
 
 	repo.SetCollaboratorCount(outsideCount)
@@ -763,16 +763,15 @@ func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *mode
 	repoFullName := repo.FullName
 
 	for _, install := range installations {
-		hasAccess := false
+		var hasAccess bool
 
-		if install.RepositorySelection == "all" {
+		switch install.RepositorySelection {
+		case "all":
 			// App has access to all repos in the org
 			hasAccess = true
-		} else if install.RepositorySelection == "selected" {
+		case "selected":
 			// Check if this repo is in the selected repos list
-			if slices.Contains(install.SelectedRepos, repoFullName) {
-				hasAccess = true
-			}
+			hasAccess = slices.Contains(install.SelectedRepos, repoFullName)
 		}
 
 		if hasAccess && install.AppSlug != "" {

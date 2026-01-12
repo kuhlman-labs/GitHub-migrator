@@ -71,7 +71,7 @@ func TestGetInitiatingUser(t *testing.T) {
 func TestDirectMigrationLogging(t *testing.T) {
 	// Setup test database using the standard test setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test repository
 	repo := &models.Repository{
@@ -179,7 +179,7 @@ func TestDirectMigrationLogging(t *testing.T) {
 func TestMigrationLogWithoutHistoryID(t *testing.T) {
 	// Setup test database using the standard test setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -241,7 +241,7 @@ func TestMigrationLogWithoutHistoryID(t *testing.T) {
 func TestMigrationLogging_DifferentOperations(t *testing.T) {
 	// Setup test database using the standard test setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -352,7 +352,7 @@ func TestMigrationLogging_DifferentOperations(t *testing.T) {
 func TestMigrationLogging_SystemVsUser(t *testing.T) {
 	// Setup test database using the standard test setup
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 

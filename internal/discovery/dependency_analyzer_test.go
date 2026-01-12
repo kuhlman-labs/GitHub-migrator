@@ -181,7 +181,7 @@ func TestExtractWorkflowDependencies(t *testing.T) {
 	t.Run("with workflow files", func(t *testing.T) {
 		tempDir := t.TempDir()
 		workflowsDir := filepath.Join(tempDir, ".github", "workflows")
-		if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		if err := os.MkdirAll(workflowsDir, 0750); err != nil {
 			t.Fatalf("Failed to create workflows dir: %v", err)
 		}
 

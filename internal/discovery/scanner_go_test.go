@@ -87,7 +87,7 @@ go 1.21
 			// Create temp directory and go.mod file
 			tmpDir := t.TempDir()
 			modPath := filepath.Join(tmpDir, "go.mod")
-			if err := os.WriteFile(modPath, []byte(tt.content), 0644); err != nil {
+			if err := os.WriteFile(modPath, []byte(tt.content), 0600); err != nil {
 				t.Fatalf("Failed to write go.mod: %v", err)
 			}
 
@@ -367,20 +367,20 @@ func TestPackageScanner_ParseGoModFilesUnit(t *testing.T) {
 
 	// Create first go.mod
 	mod1 := filepath.Join(tmpDir, "mod1", "go.mod")
-	if err := os.MkdirAll(filepath.Dir(mod1), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mod1), 0750); err != nil {
 		t.Fatal(err)
 	}
 	mod1Content := `module example.com/mod1
 go 1.21
 require github.com/owner1/repo1 v1.0.0
 `
-	if err := os.WriteFile(mod1, []byte(mod1Content), 0644); err != nil {
+	if err := os.WriteFile(mod1, []byte(mod1Content), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create second go.mod
 	mod2 := filepath.Join(tmpDir, "mod2", "go.mod")
-	if err := os.MkdirAll(filepath.Dir(mod2), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mod2), 0750); err != nil {
 		t.Fatal(err)
 	}
 	mod2Content := `module example.com/mod2
@@ -390,7 +390,7 @@ require (
 	github.com/owner2/repo3 v2.1.0
 )
 `
-	if err := os.WriteFile(mod2, []byte(mod2Content), 0644); err != nil {
+	if err := os.WriteFile(mod2, []byte(mod2Content), 0600); err != nil {
 		t.Fatal(err)
 	}
 

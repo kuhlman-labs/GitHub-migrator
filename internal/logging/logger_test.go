@@ -39,8 +39,8 @@ func TestNewLogger_JSONFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	cfg := config.LoggingConfig{
 		Level:      "info",
@@ -76,8 +76,8 @@ func TestNewLogger_TextFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	cfg := config.LoggingConfig{
 		Level:      "debug",
@@ -136,8 +136,8 @@ func TestNewLogger_TextFormat_NoANSICodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	cfg := config.LoggingConfig{
 		Level:      "info",
@@ -186,8 +186,8 @@ func TestIsTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
-	defer tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	defer func() { _ = tmpfile.Close() }()
 
 	if isTerminal(tmpfile) {
 		t.Error("isTerminal() = true for a regular file, want false")
@@ -206,14 +206,14 @@ func TestShouldUseColors(t *testing.T) {
 	origTerm := os.Getenv("TERM")
 	defer func() {
 		if origNoColor != "" {
-			os.Setenv("NO_COLOR", origNoColor)
+			_ = os.Setenv("NO_COLOR", origNoColor)
 		} else {
-			os.Unsetenv("NO_COLOR")
+			_ = os.Unsetenv("NO_COLOR")
 		}
 		if origTerm != "" {
-			os.Setenv("TERM", origTerm)
+			_ = os.Setenv("TERM", origTerm)
 		} else {
-			os.Unsetenv("TERM")
+			_ = os.Unsetenv("TERM")
 		}
 	}()
 
@@ -246,11 +246,11 @@ func TestShouldUseColors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.noColor != "" {
-				os.Setenv("NO_COLOR", tt.noColor)
+				_ = os.Setenv("NO_COLOR", tt.noColor)
 			} else {
-				os.Unsetenv("NO_COLOR")
+				_ = os.Unsetenv("NO_COLOR")
 			}
-			os.Setenv("TERM", tt.term)
+			_ = os.Setenv("TERM", tt.term)
 
 			// Note: In test environment, stdout is likely not a TTY,
 			// so shouldUseColors() will likely return false regardless

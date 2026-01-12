@@ -1,0 +1,302 @@
+name: Deploy PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  pull-requests: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Build and deploy PR preview
+  deploy-pr:
+    name: Deploy PR Preview
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    environment:
+      name: pr-preview
+      url: ${{ steps.get-url.outputs.url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set lowercase image name
+        run: |
+          {
+            echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+            echo "SLOT_NAME=pr-${{ github.event.pull_request.number }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=pr
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create or update PR slot
+        id: create-slot
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          SLOT_NAME="${{ env.SLOT_NAME }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+
+          # Check if slot already exists
+          SLOT_EXISTS=$(az webapp deployment slot list \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --query "[?name=='$SLOT_NAME'].name" \
+            --output tsv)
+
+          if [ -z "$SLOT_EXISTS" ]; then
+            echo "Creating new slot: $SLOT_NAME"
+            az webapp deployment slot create \
+              --name "$APP_NAME" \
+              --resource-group "$RG" \
+              --slot "$SLOT_NAME" \
+              --configuration-source "$APP_NAME"
+          else
+            echo "Slot $SLOT_NAME already exists"
+          fi
+
+      - name: Configure PR slot for ephemeral testing
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          SLOT_NAME="${{ env.SLOT_NAME }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+
+          # Configure slot with server port and in-memory SQLite for PR testing
+          az webapp config appsettings set \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --slot "$SLOT_NAME" \
+            --settings \
+              GHMIG_SERVER_PORT=8080 \
+              GHMIG_DATABASE_TYPE=sqlite \
+              GHMIG_DATABASE_DSN=":memory:" \
+              ENVIRONMENT=pr-preview \
+              PR_NUMBER=${{ github.event.pull_request.number }}
+
+      - name: Deploy to PR slot
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          SLOT_NAME="${{ env.SLOT_NAME }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:pr-${{ github.event.pull_request.number }}"
+
+          echo "Deploying $IMAGE to slot $SLOT_NAME..."
+
+          az webapp config container set \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --slot "$SLOT_NAME" \
+            --docker-custom-image-name "$IMAGE" \
+            --docker-registry-server-url "https://${{ env.REGISTRY }}"
+
+          echo "Restarting slot..."
+          az webapp restart \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --slot "$SLOT_NAME"
+
+      - name: Get slot URL
+        id: get-url
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          SLOT_NAME="${{ env.SLOT_NAME }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+
+          HOSTNAME=$(az webapp deployment slot list \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --query "[?name=='$SLOT_NAME'].defaultHostName" \
+            --output tsv)
+
+          URL="https://${HOSTNAME}"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Slot URL: ${URL}"
+
+      - name: Wait for deployment to stabilize
+        run: sleep 45
+
+      - name: Health check
+        run: |
+          SLOT_URL="${{ steps.get-url.outputs.url }}"
+          echo "Checking health endpoint: ${SLOT_URL}/health"
+
+          for i in {1..15}; do
+            if curl -f -s "${SLOT_URL}/health" > /dev/null; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Waiting for app to be ready... (attempt $i/15)"
+            sleep 10
+          done
+
+          echo "Health check failed after 15 attempts"
+          exit 1
+
+      - name: Comment on PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.get-url.outputs.url }}';
+            const sha = '${{ github.event.pull_request.head.sha }}';
+            const shortSha = sha.substring(0, 7);
+
+            const body = `## Preview Deployment
+
+            | Status | URL | Commit |
+            |--------|-----|--------|
+            | :rocket: Deployed | [${url}](${url}) | \`${shortSha}\` |
+
+            > This preview will be automatically deleted when the PR is closed.
+            `;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('## Preview Deployment')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
+
+  # Cleanup PR slot when PR is closed
+  cleanup-pr:
+    name: Cleanup PR Preview
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Delete PR slot
+        run: |
+          APP_NAME="${{ vars.APP_SERVICE_NAME }}"
+          SLOT_NAME="pr-${{ github.event.pull_request.number }}"
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+
+          echo "Deleting slot: $SLOT_NAME"
+
+          # Check if slot exists before attempting to delete
+          SLOT_EXISTS=$(az webapp deployment slot list \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --query "[?name=='$SLOT_NAME'].name" \
+            --output tsv)
+
+          if [ -n "$SLOT_EXISTS" ]; then
+            az webapp deployment slot delete \
+              --name "$APP_NAME" \
+              --resource-group "$RG" \
+              --slot "$SLOT_NAME"
+            echo "Slot $SLOT_NAME deleted successfully"
+          else
+            echo "Slot $SLOT_NAME does not exist, nothing to delete"
+          fi
+
+      - name: Comment on PR about cleanup
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## Preview Deployment
+
+            | Status | URL | Commit |
+            |--------|-----|--------|
+            | :wastebasket: Cleaned up | - | - |
+
+            > The preview environment has been deleted.
+            `;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('## Preview Deployment')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            }
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()

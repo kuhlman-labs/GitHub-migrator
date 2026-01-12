@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	strings0 "strings"
 
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -489,14 +488,14 @@ func (p *ADOProfiler) profileAdditionalFeatures(ctx context.Context, repo *model
 }
 
 // joinStrings joins strings with a separator
-func joinStrings(strings []string, sep string) string {
-	if len(strings) == 0 {
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
 		return ""
 	}
-	var result strings0.Builder
-	result.WriteString(strings[0])
-	for i := 1; i < len(strings); i++ {
-		result.WriteString(sep + strings[i])
+	var result strings.Builder
+	result.WriteString(strs[0])
+	for i := 1; i < len(strs); i++ {
+		result.WriteString(sep + strs[i])
 	}
 	return result.String()
 }

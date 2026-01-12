@@ -1,5 +1,5 @@
 output "app_service_url" {
-  description = "URL of the App Service"
+  description = "URL of the App Service (production slot)"
   value       = module.app_service.app_service_url
 }
 
@@ -18,6 +18,28 @@ output "app_service_identity_principal_id" {
   value       = module.app_service.app_service_identity_principal_id
 }
 
+# Deployment Slot Outputs
+output "staging_slot_url" {
+  description = "URL of the staging deployment slot"
+  value       = module.app_service.staging_slot_url
+}
+
+output "staging_slot_name" {
+  description = "Name of the staging deployment slot"
+  value       = module.app_service.staging_slot_name
+}
+
+output "dev_slot_url" {
+  description = "URL of the dev deployment slot"
+  value       = module.app_service.dev_slot_url
+}
+
+output "dev_slot_name" {
+  description = "Name of the dev deployment slot"
+  value       = module.app_service.dev_slot_name
+}
+
+# Database Outputs
 output "database_server_fqdn" {
   description = "FQDN of the PostgreSQL server"
   value       = module.postgresql.server_fqdn

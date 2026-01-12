@@ -95,7 +95,7 @@ func TestRequireAdmin_NoToken(t *testing.T) {
 func TestRequireAdmin_AdminUser(t *testing.T) {
 	// Create mock GitHub API server that returns enterprise admin status
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/graphql" {
+		if r.URL.Path == testGraphQLPath {
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
@@ -156,7 +156,8 @@ func TestRequireAdmin_AdminUser(t *testing.T) {
 func TestRequireAdmin_NonAdminUser(t *testing.T) {
 	// Create mock GitHub API server - user has no admin privileges
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/graphql" {
+		switch r.URL.Path {
+		case testGraphQLPath:
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
@@ -168,13 +169,13 @@ func TestRequireAdmin_NonAdminUser(t *testing.T) {
 			}); err != nil {
 				t.Errorf("failed to encode response: %v", err)
 			}
-		} else if r.URL.Path == "/user/memberships/orgs" {
+		case testUserMembershipsOrgPath:
 			// Return empty org list - not an org admin
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode([]map[string]any{}); err != nil {
 				t.Errorf("failed to encode response: %v", err)
 			}
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -229,14 +230,15 @@ func TestRequireAdmin_NonAdminUser(t *testing.T) {
 func TestRequireAdmin_MigrationTeamMember(t *testing.T) {
 	// Create mock GitHub API server - user is member of migration admin team
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/orgs/myorg/teams/migration-admins/memberships/teamadmin" {
+		switch r.URL.Path {
+		case "/orgs/myorg/teams/migration-admins/memberships/teamadmin":
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
 			}); err != nil {
 				t.Errorf("failed to encode response: %v", err)
 			}
-		} else if r.URL.Path == "/graphql" {
+		case testGraphQLPath:
 			// Enterprise admin check - user is not enterprise admin
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]any{
@@ -249,7 +251,7 @@ func TestRequireAdmin_MigrationTeamMember(t *testing.T) {
 			}); err != nil {
 				t.Errorf("failed to encode response: %v", err)
 			}
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -299,7 +301,8 @@ func TestRequireAdmin_MigrationTeamMember(t *testing.T) {
 func TestRequireAdmin_OrgAdmin(t *testing.T) {
 	// Create mock GitHub API server - user is org admin
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/memberships/orgs" {
+		switch r.URL.Path {
+		case testUserMembershipsOrgPath:
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode([]map[string]any{
 				{
@@ -309,7 +312,7 @@ func TestRequireAdmin_OrgAdmin(t *testing.T) {
 			}); err != nil {
 				t.Errorf("failed to encode response: %v", err)
 			}
-		} else if r.URL.Path == "/user/memberships/orgs/test-org" {
+		case testOrgMembershipPath:
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]string{
 				"state": "active",
@@ -317,7 +320,7 @@ func TestRequireAdmin_OrgAdmin(t *testing.T) {
 			}); err != nil {
 				t.Errorf("failed to encode response: %v", err)
 			}
-		} else if r.URL.Path == "/graphql" {
+		case testGraphQLPath:
 			// Enterprise admin check - user is not enterprise admin
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]any{
@@ -330,7 +333,7 @@ func TestRequireAdmin_OrgAdmin(t *testing.T) {
 			}); err != nil {
 				t.Errorf("failed to encode response: %v", err)
 			}
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -382,7 +385,7 @@ func TestRequireAdmin_ChainedWithRequireAuth(t *testing.T) {
 	// This simulates how the middleware is used in server.go
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/graphql" {
+		if r.URL.Path == testGraphQLPath {
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{

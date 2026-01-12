@@ -43,7 +43,7 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	configContent := `
 server:
@@ -131,13 +131,13 @@ func TestLoadConfig_MissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(currentDir)
+	defer func() { _ = os.Chdir(currentDir) }()
 
 	tmpDir, err := os.MkdirTemp("", "config-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatal(err)
@@ -163,17 +163,17 @@ func TestLoadConfig_InvalidYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(currentDir)
+	defer func() { _ = os.Chdir(currentDir) }()
 
 	tmpDir, err := os.MkdirTemp("", "config-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create configs directory in temp dir
 	configsDir := tmpDir + "/configs"
-	if err := os.Mkdir(configsDir, 0755); err != nil {
+	if err := os.Mkdir(configsDir, 0750); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +184,7 @@ server:
   invalid yaml content [[[
 `
 	configFile := configsDir + "/config.yaml"
-	if err := os.WriteFile(configFile, []byte(invalidYAML), 0644); err != nil {
+	if err := os.WriteFile(configFile, []byte(invalidYAML), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -271,7 +271,7 @@ func TestLoadConfig_EnvironmentVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	configContent := `
 server:
@@ -347,7 +347,7 @@ auth:
 		if err := os.Setenv(key, value); err != nil {
 			t.Fatalf("Failed to set env var %s: %v", key, err)
 		}
-		defer os.Unsetenv(key)
+		defer func(k string) { _ = os.Unsetenv(k) }(key)
 	}
 
 	// Reset viper and configure it to use the temp file
@@ -414,7 +414,7 @@ func TestLoadConfig_ArrayEnvironmentVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	configContent := `
 auth:
@@ -465,7 +465,7 @@ auth:
 			if err := os.Setenv(envVar, tt.envValue); err != nil {
 				t.Fatalf("Failed to set env var: %v", err)
 			}
-			defer os.Unsetenv(envVar)
+			defer func() { _ = os.Unsetenv(envVar) }()
 
 			// Reset viper and configure it
 			viper.Reset()
@@ -566,7 +566,7 @@ func TestParseAuthorizationRules_MigrationAdminTeams(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.Remove(tmpfile.Name())
+			defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 			configContent := `server:
   port: 8080
@@ -574,7 +574,7 @@ func TestParseAuthorizationRules_MigrationAdminTeams(t *testing.T) {
 			if _, err := tmpfile.Write([]byte(configContent)); err != nil {
 				t.Fatal(err)
 			}
-			tmpfile.Close()
+			_ = tmpfile.Close()
 
 			viper.SetConfigFile(tmpfile.Name())
 			viper.SetEnvPrefix("GHMIG")
@@ -617,7 +617,7 @@ func TestParseAuthorizationRules_AllowOrgAdminMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	configContent := `
 auth:
@@ -630,7 +630,7 @@ auth:
 	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
 		t.Fatal(err)
 	}
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	viper.SetConfigFile(tmpfile.Name())
 	if err := viper.ReadInConfig(); err != nil {
@@ -662,7 +662,7 @@ func TestParseAuthorizationRules_PrivilegedTeamsMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	configContent := `
 auth:
@@ -675,7 +675,7 @@ auth:
 	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
 		t.Fatal(err)
 	}
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	viper.SetConfigFile(tmpfile.Name())
 	if err := viper.ReadInConfig(); err != nil {

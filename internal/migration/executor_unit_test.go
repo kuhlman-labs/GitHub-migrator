@@ -259,6 +259,8 @@ func TestDetermineTargetVisibility(t *testing.T) {
 }
 
 // TestShouldExcludeReleases tests the release exclusion logic
+//
+//nolint:dupl // Test cases have similar structure but test different exclusion types
 func TestShouldExcludeReleases(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -343,6 +345,8 @@ func TestShouldExcludeReleases(t *testing.T) {
 }
 
 // TestShouldExcludeAttachments tests the attachment exclusion logic
+//
+//nolint:dupl // Test cases have similar structure but test different exclusion types
 func TestShouldExcludeAttachments(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 

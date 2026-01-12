@@ -376,8 +376,8 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific date arithmetic via DialectDialer interface
-	var args []any
 	dateCondition := "AND mh.completed_at >= " + d.dialect.DateIntervalAgo(days)
+	args := make([]any, 0, len(orgArgs)+len(projectArgs)+len(batchArgs)+len(sourceArgs))
 	args = append(args, orgArgs...)
 	args = append(args, projectArgs...)
 	args = append(args, batchArgs...)

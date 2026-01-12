@@ -132,7 +132,7 @@ func (ps *PackageScanner) parseFileWithURLPattern(filePath, manifestPath string,
 			if err != nil {
 				return
 			}
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 
 			scanner := bufio.NewScanner(file)
 			for scanner.Scan() {
@@ -177,7 +177,7 @@ func (ps *PackageScanner) parseFileForADOURLs(filePath, manifestPath string, eco
 	if err != nil {
 		return deps
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	adoPattern := regexp.MustCompile(`(?:https://)?(?:[^@]+@)?dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/"'\s]+)`)
 	vstsPattern := regexp.MustCompile(`https://([^.]+)\.visualstudio\.com/([^/]+)/_git/([^/"'\s]+)`)
