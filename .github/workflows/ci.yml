@@ -60,11 +60,11 @@ jobs:
         run: |
           GOPATH_BIN="$(go env GOPATH)/bin"
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-            | sh -s -- -b "$GOPATH_BIN" v1.55.2
+            | sh -s -- -b "$GOPATH_BIN" v2.8.0
           echo "$GOPATH_BIN" >> "$GITHUB_PATH"
 
       - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m --skip-dirs=web
+        run: golangci-lint run --timeout=5m
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
