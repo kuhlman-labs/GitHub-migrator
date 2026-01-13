@@ -444,6 +444,10 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 		JOIN repositories r ON r.id = gtr.repository_id 
 		WHERE gtr.team_id = t.id AND r.status = 'complete')`
 
+	// Use dialect-specific boolean literals for cross-database compatibility
+	boolTrue := d.dialect.BooleanTrue()
+	boolFalse := d.dialect.BooleanFalse()
+
 	query := d.db.WithContext(ctx).
 		Table("github_teams t").
 		Select(`
@@ -461,11 +465,11 @@ func (d *Database) ListTeamsWithMappings(ctx context.Context, filters TeamWithMa
 			COALESCE(m.repos_synced, 0) as repos_synced,
 			` + eligibleReposSubquery + ` as repos_eligible,
 			` + totalReposSubquery + ` as total_source_repos,
-			COALESCE(m.team_created_in_dest, 0) as team_created_in_dest,
+			COALESCE(m.team_created_in_dest, ` + boolFalse + `) as team_created_in_dest,
 			CASE
 				WHEN m.migration_status IS NULL OR m.migration_status = 'pending' THEN 'pending'
 				WHEN m.migration_status = 'failed' THEN 'failed'
-				WHEN COALESCE(m.team_created_in_dest, 0) = 1 AND ` + eligibleReposSubquery + ` = 0 THEN 'team_only'
+				WHEN COALESCE(m.team_created_in_dest, ` + boolFalse + `) = ` + boolTrue + ` AND ` + eligibleReposSubquery + ` = 0 THEN 'team_only'
 				WHEN COALESCE(m.repos_synced, 0) = 0 AND ` + eligibleReposSubquery + ` > 0 THEN 'needs_sync'
 				WHEN COALESCE(m.repos_synced, 0) < ` + eligibleReposSubquery + ` THEN 'partial'
 				WHEN COALESCE(m.repos_synced, 0) >= ` + eligibleReposSubquery + ` AND ` + eligibleReposSubquery + ` > 0 THEN 'complete'
