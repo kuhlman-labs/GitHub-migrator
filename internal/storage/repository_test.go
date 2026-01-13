@@ -13,6 +13,8 @@ import (
 const (
 	testDefaultBranch = "main"
 	testMessage       = "Test message"
+	testSourceGHES    = "ghes"
+	testSourceADO     = "azuredevops"
 )
 
 // createTestRepository creates a minimal repository with all required fields
@@ -1570,14 +1572,14 @@ func TestGetFeatureStats_TFVCOnlyCountsADO(t *testing.T) {
 
 	// Create GitHub repos with ADOIsGit=false (should NOT be counted as TFVC)
 	ghRepo1 := createTestRepository("github-org/repo1")
-	ghRepo1.Source = "ghes"
+	ghRepo1.Source = testSourceGHES
 	ghRepo1.SetADOIsGit(false) // This should NOT be counted as TFVC
 	if err := db.SaveRepository(ctx, ghRepo1); err != nil {
 		t.Fatalf("Failed to save GitHub repo: %v", err)
 	}
 
 	ghRepo2 := createTestRepository("github-org/repo2")
-	ghRepo2.Source = "ghes"
+	ghRepo2.Source = testSourceGHES
 	ghRepo2.SetADOIsGit(false) // This should NOT be counted as TFVC
 	if err := db.SaveRepository(ctx, ghRepo2); err != nil {
 		t.Fatalf("Failed to save GitHub repo: %v", err)
@@ -1585,7 +1587,7 @@ func TestGetFeatureStats_TFVCOnlyCountsADO(t *testing.T) {
 
 	// Create ADO repos with ADOIsGit=false (SHOULD be counted as TFVC)
 	adoRepo1 := createTestRepository("ado-org/project/tfvc-repo1")
-	adoRepo1.Source = "azuredevops"
+	adoRepo1.Source = testSourceADO
 	adoRepo1.SetADOIsGit(false) // This SHOULD be counted as TFVC
 	adoRepo1.SetADOHasPipelines(true)
 	if err := db.SaveRepository(ctx, adoRepo1); err != nil {
@@ -1593,7 +1595,7 @@ func TestGetFeatureStats_TFVCOnlyCountsADO(t *testing.T) {
 	}
 
 	adoRepo2 := createTestRepository("ado-org/project/git-repo")
-	adoRepo2.Source = "azuredevops"
+	adoRepo2.Source = testSourceADO
 	adoRepo2.SetADOIsGit(true) // This should NOT be counted as TFVC
 	adoRepo2.SetADOHasBoards(true)
 	if err := db.SaveRepository(ctx, adoRepo2); err != nil {
@@ -1801,4 +1803,218 @@ func findOrgStats(stats []*MigrationCompletionStats, orgName string) *MigrationC
 		}
 	}
 	return nil
+}
+
+// TestListRepositories_ADOPropertiesLoading tests that ADOProperties are correctly loaded
+// only when include_details is set to true. This is critical for correct migration strategy
+// selection - without ADOProperties, an ADO repository would incorrectly use the GitHub strategy.
+func TestListRepositories_ADOPropertiesLoading(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+
+	// Create an ADO repository with ADOProperties set
+	adoRepo := createTestRepository("ado-org/Test Project/ado-repo")
+	adoRepo.Status = string(models.StatusQueuedForMigration)
+	adoRepo.Source = testSourceADO
+	adoRepo.SetADOProject(strPtr("Test Project"))
+	adoRepo.SetADOIsGit(true)
+
+	// Create a GitHub repository (no ADOProperties)
+	ghRepo := createTestRepository("gh-org/gh-repo")
+	ghRepo.Status = string(models.StatusQueuedForMigration)
+	ghRepo.Source = testSourceGHES
+
+	// Save both repositories
+	if err := db.SaveRepository(ctx, adoRepo); err != nil {
+		t.Fatalf("Failed to save ADO repository: %v", err)
+	}
+	if err := db.SaveRepository(ctx, ghRepo); err != nil {
+		t.Fatalf("Failed to save GitHub repository: %v", err)
+	}
+
+	t.Run("without include_details - ADOProperties not loaded", func(t *testing.T) {
+		filters := map[string]any{
+			"status": string(models.StatusQueuedForMigration),
+		}
+
+		repos, err := db.ListRepositories(ctx, filters)
+		if err != nil {
+			t.Fatalf("ListRepositories failed: %v", err)
+		}
+
+		if len(repos) != 2 {
+			t.Fatalf("Expected 2 repositories, got %d", len(repos))
+		}
+
+		// Find the ADO repo
+		var foundADORepo *models.Repository
+		for _, r := range repos {
+			if r.Source == testSourceADO {
+				foundADORepo = r
+				break
+			}
+		}
+
+		if foundADORepo == nil {
+			t.Fatal("ADO repository not found in results")
+		}
+
+		// Without include_details, ADOProperties should be nil
+		if foundADORepo.ADOProperties != nil {
+			t.Error("Expected ADOProperties to be nil without include_details")
+		}
+
+		// GetADOProject should return nil (would cause incorrect strategy selection)
+		if foundADORepo.GetADOProject() != nil {
+			t.Error("Expected GetADOProject() to return nil without include_details")
+		}
+
+		// This would incorrectly identify it as a GitHub repository!
+		if !foundADORepo.IsADORepository() {
+			// This is expected behavior without include_details - the bug we're testing
+			t.Log("As expected, IsADORepository() returns false without include_details (ADOProperties not loaded)")
+		}
+	})
+
+	t.Run("with include_details - ADOProperties correctly loaded", func(t *testing.T) {
+		filters := map[string]any{
+			"status":          string(models.StatusQueuedForMigration),
+			"include_details": true,
+		}
+
+		repos, err := db.ListRepositories(ctx, filters)
+		if err != nil {
+			t.Fatalf("ListRepositories failed: %v", err)
+		}
+
+		if len(repos) != 2 {
+			t.Fatalf("Expected 2 repositories, got %d", len(repos))
+		}
+
+		// Find the ADO repo
+		var foundADORepo *models.Repository
+		for _, r := range repos {
+			if r.Source == testSourceADO {
+				foundADORepo = r
+				break
+			}
+		}
+
+		if foundADORepo == nil {
+			t.Fatal("ADO repository not found in results")
+		}
+
+		// With include_details, ADOProperties should be loaded
+		if foundADORepo.ADOProperties == nil {
+			t.Fatal("Expected ADOProperties to be loaded with include_details")
+		}
+
+		// GetADOProject should return the project name
+		adoProject := foundADORepo.GetADOProject()
+		if adoProject == nil {
+			t.Fatal("Expected GetADOProject() to return non-nil with include_details")
+		}
+
+		if *adoProject != "Test Project" {
+			t.Errorf("Expected ADO project 'Test Project', got '%s'", *adoProject)
+		}
+
+		// IsADORepository should correctly identify it
+		if !foundADORepo.IsADORepository() {
+			t.Error("Expected IsADORepository() to return true with include_details")
+		}
+
+		// Find the GitHub repo and verify it's not an ADO repository
+		var foundGHRepo *models.Repository
+		for _, r := range repos {
+			if r.Source == testSourceGHES {
+				foundGHRepo = r
+				break
+			}
+		}
+
+		if foundGHRepo == nil {
+			t.Fatal("GitHub repository not found in results")
+		}
+
+		// GitHub repo should not be identified as ADO
+		if foundGHRepo.IsADORepository() {
+			t.Error("Expected GitHub repo IsADORepository() to return false")
+		}
+	})
+}
+
+// TestListRepositories_MigrationWorkerScenario simulates the exact scenario where
+// the migration worker fetches queued repositories. This ensures ADOProperties are
+// loaded so the correct migration strategy (GitHub vs ADO) is selected.
+func TestListRepositories_MigrationWorkerScenario(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+
+	// Create an ADO repository queued for migration
+	adoRepo := createTestRepository("contoso/MyProject/my-ado-repo")
+	adoRepo.Status = string(models.StatusQueuedForMigration)
+	adoRepo.Source = testSourceADO
+	adoRepo.SetADOProject(strPtr("MyProject"))
+	adoRepo.SetADOIsGit(true)
+
+	if err := db.SaveRepository(ctx, adoRepo); err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
+
+	// Simulate the migration worker's query (with include_details)
+	filters := map[string]any{
+		"status": []string{
+			string(models.StatusQueuedForMigration),
+			string(models.StatusDryRunQueued),
+		},
+		"limit":           5,
+		"order":           "priority DESC, created_at ASC",
+		"include_details": true, // This is the fix we added
+	}
+
+	repos, err := db.ListRepositories(ctx, filters)
+	if err != nil {
+		t.Fatalf("ListRepositories failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("Expected 1 repository, got %d", len(repos))
+	}
+
+	repo := repos[0]
+
+	// Verify ADOProperties are loaded
+	if repo.ADOProperties == nil {
+		t.Fatal("ADOProperties not loaded - migration strategy selection will fail")
+	}
+
+	// Verify the repository is correctly identified as ADO
+	if !repo.IsADORepository() {
+		t.Error("Repository should be identified as ADO repository")
+	}
+
+	// Verify GetADOProject returns the correct value
+	adoProject := repo.GetADOProject()
+	if adoProject == nil || *adoProject != "MyProject" {
+		t.Errorf("Expected ADO project 'MyProject', got %v", adoProject)
+	}
+
+	// This simulates what strategy.SupportsRepository checks
+	// GitHub strategy: returns true if adoProject == nil || *adoProject == ""
+	// ADO strategy: returns true if adoProject != nil && *adoProject != ""
+	isGitHubRepo := adoProject == nil || *adoProject == ""
+	isADORepo := adoProject != nil && *adoProject != ""
+
+	if isGitHubRepo {
+		t.Error("Repository incorrectly identified as GitHub (would use wrong migration strategy)")
+	}
+
+	if !isADORepo {
+		t.Error("Repository not identified as ADO (migration strategy selection would fail)")
+	}
 }

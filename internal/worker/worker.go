@@ -145,13 +145,15 @@ func (w *MigrationWorker) processQueuedRepositories() {
 	}
 
 	// Fetch queued repositories (limit to available slots)
+	// include_details is required to load ADOProperties for correct strategy selection
 	filters := map[string]any{
 		"status": []string{
 			string(models.StatusQueuedForMigration),
 			string(models.StatusDryRunQueued),
 		},
-		"limit": availableSlots,
-		"order": "priority DESC, created_at ASC", // High priority first, then FIFO
+		"limit":           availableSlots,
+		"order":           "priority DESC, created_at ASC", // High priority first, then FIFO
+		"include_details": true,                            // Load ADOProperties for strategy selection
 	}
 
 	repos, err := w.storage.ListRepositories(ctx, filters)

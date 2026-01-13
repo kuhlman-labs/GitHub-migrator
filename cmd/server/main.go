@@ -83,9 +83,10 @@ func main() {
 	workerCtx, cancelWorkers := context.WithCancel(context.Background())
 	defer cancelWorkers()
 
-	// Mutex to protect worker references from concurrent access
+	// Mutex to protect worker references and shutdown flag from concurrent access
 	// (callback runs asynchronously, shutdown code runs in main goroutine)
 	var workerMu sync.Mutex
+	shuttingDown := false
 
 	// Initialize migration executor and worker (destination client required)
 	// Source clients are created dynamically per-source by ExecutorFactory
@@ -100,6 +101,12 @@ func main() {
 	cfgSvc.OnReload(func() {
 		workerMu.Lock()
 		defer workerMu.Unlock()
+
+		// Don't start workers if we're shutting down (context is cancelled)
+		if shuttingDown {
+			slog.Debug("Ignoring OnReload callback during shutdown")
+			return
+		}
 
 		// Check if destination is now configured and workers haven't started yet
 		if migrationWorker == nil && cfgSvc.IsDestinationConfigured() {
@@ -192,11 +199,12 @@ func main() {
 
 	slog.Info("Shutting down server...")
 
-	// Cancel worker context to signal all workers to stop
+	// Set shutdown flag and cancel worker context atomically
+	workerMu.Lock()
+	shuttingDown = true
 	cancelWorkers()
 
-	// Stop migration worker with mutex protection (callback may have modified it)
-	workerMu.Lock()
+	// Stop migration worker (already holding mutex)
 	if migrationWorker != nil {
 		slog.Info("Stopping migration worker...")
 		if err := migrationWorker.Stop(); err != nil {
@@ -204,6 +212,12 @@ func main() {
 		}
 	}
 	workerMu.Unlock()
+
+	// Stop batch status updater explicitly (in addition to context cancellation)
+	if statusUpdater != nil {
+		slog.Info("Stopping batch status updater...")
+		statusUpdater.Stop()
+	}
 
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
