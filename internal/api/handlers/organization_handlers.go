@@ -38,17 +38,19 @@ func (h *Handler) getADOProjectStats(ctx context.Context, projectName, organizat
 	}
 
 	// Build query with optional source_id filter for multi-source support
+	// Join repository_ado_properties to access the project column
 	query := h.db.DB().WithContext(ctx).Table("repositories").
-		Select("status, COUNT(*) as count").
-		Where("ado_project = ?", projectName).
-		Where("full_name LIKE ?", organization+"/%").
-		Where("status != ?", "wont_migrate")
+		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
+		Select("repositories.status, COUNT(*) as count").
+		Where("a.project = ?", projectName).
+		Where("repositories.full_name LIKE ?", organization+"/%").
+		Where("repositories.status != ?", "wont_migrate")
 
 	if sourceID != nil {
-		query = query.Where("source_id = ?", *sourceID)
+		query = query.Where("repositories.source_id = ?", *sourceID)
 	}
 
-	err := query.Group("status").Scan(&results).Error
+	err := query.Group("repositories.status").Scan(&results).Error
 
 	if err != nil {
 		h.logger.Warn("Failed to get status counts for project", "project", projectName, "org", organization, "error", err)
