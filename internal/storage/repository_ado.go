@@ -29,11 +29,14 @@ func (db *Database) GetADOProjects(ctx context.Context, organization string) ([]
 // This function queries the repositories table to find distinct ado_project values
 // that belong to the specified source, supporting multi-source environments.
 func (db *Database) GetADOProjectsFiltered(ctx context.Context, organization string, sourceID *int64) ([]models.ADOProject, error) {
+	// Use dialect-specific SQL for extracting organization from full_name
+	extractOrgSQL := db.dialect.ExtractOrgFromFullName("repositories.full_name")
+
 	// Query repositories to get distinct ADO projects for the specified source
 	query := db.db.WithContext(ctx).
 		Model(&models.Repository{}).
 		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
-		Select("DISTINCT a.project as name, SUBSTR(repositories.full_name, 1, INSTR(repositories.full_name, '/') - 1) as organization").
+		Select("DISTINCT a.project as name, " + extractOrgSQL + " as organization").
 		Where("a.project IS NOT NULL AND a.project != ''")
 
 	if organization != "" {

@@ -8,6 +8,12 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+// Test constants for ADO tests
+const (
+	testADOOrg1 = "org1"
+	testADOOrg2 = "org2"
+)
+
 // createTestADORepo creates a test ADO repository with proper related tables
 func createTestADORepo(fullName, project string, isGit bool) *models.Repository {
 	now := time.Now()
@@ -317,4 +323,161 @@ func TestSaveADOProject(t *testing.T) {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+func TestGetADOProjectsFiltered(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	// Create a test source
+	adoOrg := "testorg"
+	source := &models.Source{
+		Name:         "ADO Test Source",
+		Type:         "azuredevops",
+		BaseURL:      "https://dev.azure.com",
+		Token:        "test-token-12345",
+		Organization: &adoOrg,
+	}
+	if err := db.CreateSource(ctx, source); err != nil {
+		t.Fatalf("Failed to create source: %v", err)
+	}
+
+	// Create test repositories in different organizations and projects
+	repos := []*models.Repository{
+		createTestADORepoWithSource(testADOOrg1+"/ProjectA/repo1", "ProjectA", true, source.ID),
+		createTestADORepoWithSource(testADOOrg1+"/ProjectA/repo2", "ProjectA", true, source.ID),
+		createTestADORepoWithSource(testADOOrg1+"/ProjectB/repo3", "ProjectB", true, source.ID),
+		createTestADORepoWithSource(testADOOrg2+"/ProjectC/repo4", "ProjectC", true, source.ID),
+	}
+
+	for _, repo := range repos {
+		if err := db.SaveRepository(ctx, repo); err != nil {
+			t.Fatalf("Failed to save repository: %v", err)
+		}
+	}
+
+	t.Run("get all projects without filters", func(t *testing.T) {
+		projects, err := db.GetADOProjectsFiltered(ctx, "", nil)
+		if err != nil {
+			t.Fatalf("GetADOProjectsFiltered() error: %v", err)
+		}
+
+		if len(projects) != 3 {
+			t.Errorf("Expected 3 projects (ProjectA, ProjectB, ProjectC), got %d", len(projects))
+		}
+
+		// Verify organization extraction works correctly
+		projectMap := make(map[string]string) // project name -> organization
+		for _, p := range projects {
+			projectMap[p.Name] = p.Organization
+		}
+
+		if org, ok := projectMap["ProjectA"]; !ok || org != testADOOrg1 {
+			t.Errorf("Expected ProjectA in %s, got org=%s, exists=%v", testADOOrg1, org, ok)
+		}
+		if org, ok := projectMap["ProjectB"]; !ok || org != testADOOrg1 {
+			t.Errorf("Expected ProjectB in %s, got org=%s, exists=%v", testADOOrg1, org, ok)
+		}
+		if org, ok := projectMap["ProjectC"]; !ok || org != testADOOrg2 {
+			t.Errorf("Expected ProjectC in %s, got org=%s, exists=%v", testADOOrg2, org, ok)
+		}
+	})
+
+	t.Run("filter by organization", func(t *testing.T) {
+		projects, err := db.GetADOProjectsFiltered(ctx, testADOOrg1, nil)
+		if err != nil {
+			t.Fatalf("GetADOProjectsFiltered(%s) error: %v", testADOOrg1, err)
+		}
+
+		if len(projects) != 2 {
+			t.Errorf("Expected 2 projects for %s, got %d", testADOOrg1, len(projects))
+		}
+
+		for _, p := range projects {
+			if p.Organization != testADOOrg1 {
+				t.Errorf("Expected all projects to be in %s, got %s", testADOOrg1, p.Organization)
+			}
+		}
+	})
+
+	t.Run("filter by source_id", func(t *testing.T) {
+		sourceID := source.ID
+		projects, err := db.GetADOProjectsFiltered(ctx, "", &sourceID)
+		if err != nil {
+			t.Fatalf("GetADOProjectsFiltered with sourceID error: %v", err)
+		}
+
+		if len(projects) != 3 {
+			t.Errorf("Expected 3 projects for source, got %d", len(projects))
+		}
+	})
+
+	t.Run("filter by organization and source_id", func(t *testing.T) {
+		sourceID := source.ID
+		projects, err := db.GetADOProjectsFiltered(ctx, testADOOrg2, &sourceID)
+		if err != nil {
+			t.Fatalf("GetADOProjectsFiltered(%s, sourceID) error: %v", testADOOrg2, err)
+		}
+
+		if len(projects) != 1 {
+			t.Errorf("Expected 1 project for %s with source, got %d", testADOOrg2, len(projects))
+		}
+
+		if len(projects) > 0 && projects[0].Name != "ProjectC" {
+			t.Errorf("Expected ProjectC, got %s", projects[0].Name)
+		}
+	})
+
+	t.Run("non-existent source returns empty", func(t *testing.T) {
+		nonExistentID := int64(99999)
+		projects, err := db.GetADOProjectsFiltered(ctx, "", &nonExistentID)
+		if err != nil {
+			t.Fatalf("GetADOProjectsFiltered with non-existent sourceID error: %v", err)
+		}
+
+		if len(projects) != 0 {
+			t.Errorf("Expected 0 projects for non-existent source, got %d", len(projects))
+		}
+	})
+}
+
+// createTestADORepoWithSource creates a test ADO repository with a specific source_id
+func createTestADORepoWithSource(fullName, project string, isGit bool, sourceID int64) *models.Repository {
+	repo := createTestADORepo(fullName, project, isGit)
+	repo.SourceID = &sourceID
+	return repo
+}
+
+func TestDialectExtractOrgFromFullName(t *testing.T) {
+	// Test that each dialect generates correct SQL for extracting organization
+	testCases := []struct {
+		name     string
+		dialect  DialectDialer
+		expected string
+	}{
+		{
+			name:     "SQLite",
+			dialect:  &SQLiteDialect{},
+			expected: "SUBSTR(full_name, 1, INSTR(full_name, '/') - 1)",
+		},
+		{
+			name:     "PostgreSQL",
+			dialect:  &PostgresDialect{},
+			expected: "SUBSTRING(full_name, 1, POSITION('/' IN full_name) - 1)",
+		},
+		{
+			name:     "SQLServer",
+			dialect:  &SQLServerDialect{},
+			expected: "SUBSTRING(full_name, 1, CHARINDEX('/', full_name) - 1)",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.dialect.ExtractOrgFromFullName("full_name")
+			if result != tc.expected {
+				t.Errorf("Expected %q, got %q", tc.expected, result)
+			}
+		})
+	}
 }
