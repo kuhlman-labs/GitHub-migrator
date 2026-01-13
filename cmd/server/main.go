@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -78,25 +79,86 @@ func main() {
 	// Set ConfigService for dynamic settings management
 	server.SetConfigService(cfgSvc)
 
+	// Create cancellable context for all background workers (must be created before callback registration)
+	workerCtx, cancelWorkers := context.WithCancel(context.Background())
+	defer cancelWorkers()
+
+	// Mutex to protect worker references from concurrent access
+	// (callback runs asynchronously, shutdown code runs in main goroutine)
+	var workerMu sync.Mutex
+
 	// Initialize migration executor and worker (destination client required)
 	// Source clients are created dynamically per-source by ExecutorFactory
-	migrationWorker := initializeMigrationWorker(cfg, cfgSvc, destDualClient, db, logger)
-
-	// Initialize and start batch status updater
-	statusUpdater := initializeBatchStatusUpdater(db, logger)
-	ctx, cancelStatusUpdater := context.WithCancel(context.Background())
-	defer cancelStatusUpdater()
-
-	if statusUpdater != nil {
-		go statusUpdater.Start(ctx)
-	}
+	migrationWorker := initializeMigrationWorker(workerCtx, cfg, cfgSvc, destDualClient, db, logger)
 
 	// Initialize and start scheduler worker for scheduled batches
 	// Uses ExecutorFactory for dynamic multi-source support
 	schedulerWorker := initializeSchedulerWorker(cfg, cfgSvc, destDualClient, db, logger)
-	if schedulerWorker != nil {
-		go schedulerWorker.Start(ctx)
+
+	// Register callback to start workers when destination is configured dynamically
+	// This handles the case where destination is configured via UI after server start
+	cfgSvc.OnReload(func() {
+		workerMu.Lock()
+		defer workerMu.Unlock()
+
+		// Check if destination is now configured and workers haven't started yet
+		if migrationWorker == nil && cfgSvc.IsDestinationConfigured() {
+			slog.Info("Destination configured via settings, attempting to start migration worker...")
+			// Create destination client from database settings
+			destCfg := cfgSvc.GetDestinationConfig()
+			newDestClient := initializeGitHubDualClient(
+				destCfg.Token,
+				destCfg.BaseURL,
+				"github", // Always github for destination
+				destCfg.AppID,
+				destCfg.AppPrivateKey,
+				destCfg.AppInstallationID,
+				"destination",
+				logger,
+			)
+			if newDestClient != nil {
+				migrationWorker = initializeMigrationWorker(workerCtx, cfg, cfgSvc, newDestClient, db, logger)
+				if migrationWorker != nil {
+					slog.Info("Migration worker started after destination configuration")
+				}
+			}
+		}
+		if schedulerWorker == nil && cfgSvc.IsDestinationConfigured() {
+			slog.Info("Destination configured via settings, attempting to start scheduler worker...")
+			destCfg := cfgSvc.GetDestinationConfig()
+			newDestClient := initializeGitHubDualClient(
+				destCfg.Token,
+				destCfg.BaseURL,
+				"github",
+				destCfg.AppID,
+				destCfg.AppPrivateKey,
+				destCfg.AppInstallationID,
+				"destination",
+				logger,
+			)
+			if newDestClient != nil {
+				schedulerWorker = initializeSchedulerWorker(cfg, cfgSvc, newDestClient, db, logger)
+				if schedulerWorker != nil {
+					go schedulerWorker.Start(workerCtx)
+					slog.Info("Scheduler worker started after destination configuration")
+				}
+			}
+		}
+	})
+
+	// Initialize and start batch status updater
+	statusUpdater := initializeBatchStatusUpdater(db, logger)
+
+	if statusUpdater != nil {
+		go statusUpdater.Start(workerCtx)
 	}
+
+	// Start scheduler worker with mutex protection (callback may modify schedulerWorker concurrently)
+	workerMu.Lock()
+	if schedulerWorker != nil {
+		go schedulerWorker.Start(workerCtx)
+	}
+	workerMu.Unlock()
 
 	// Start HTTP server
 	// Timeouts increased for large responses (e.g., 4k+ mannequins)
@@ -130,13 +192,18 @@ func main() {
 
 	slog.Info("Shutting down server...")
 
-	// Stop migration worker first
+	// Cancel worker context to signal all workers to stop
+	cancelWorkers()
+
+	// Stop migration worker with mutex protection (callback may have modified it)
+	workerMu.Lock()
 	if migrationWorker != nil {
 		slog.Info("Stopping migration worker...")
 		if err := migrationWorker.Stop(); err != nil {
 			slog.Error("Failed to stop migration worker", "error", err)
 		}
 	}
+	workerMu.Unlock()
 
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -258,7 +325,8 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 
 // initializeMigrationWorker creates and starts the migration worker if configured.
 // Uses ExecutorFactory for dynamic multi-source support.
-func initializeMigrationWorker(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
+// The provided context is used to control worker lifecycle for graceful shutdown.
+func initializeMigrationWorker(ctx context.Context, cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
 	// Destination client is always required for migrations
 	if destDualClient == nil {
 		logger.Info("Migration worker not started - destination GitHub client not configured")
@@ -288,8 +356,7 @@ func initializeMigrationWorker(cfg *config.Config, cfgSvc *configsvc.Service, de
 		return nil
 	}
 
-	// Start worker in background
-	ctx := context.Background()
+	// Start worker in background with provided context for graceful shutdown
 	if err := migrationWorker.Start(ctx); err != nil {
 		slog.Error("Failed to start migration worker", "error", err)
 		return nil
