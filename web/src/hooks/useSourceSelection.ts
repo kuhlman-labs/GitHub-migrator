@@ -5,12 +5,12 @@ import { useSourceContext } from '../contexts/SourceContext';
  * Use this alongside DiscoverySourceSelector component.
  */
 export function useSourceSelection() {
-  const { activeSource, sources } = useSourceContext();
-  const isAllSourcesMode = !activeSource;
+  const { activeSource, sources, isAllSourcesMode, hasMultipleSources } = useSourceContext();
   const activeSources = sources.filter(s => s.is_active);
   
   return {
     isAllSourcesMode,
+    hasMultipleSources,
     activeSources,
     activeSource,
     sources,

@@ -42,9 +42,8 @@ export function Analytics() {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('discovery');
 
   // Derive source context for display
-  const { sources, activeSource } = useSourceContext();
-  const isAllSources = !activeSource; // True when "All Sources" is selected
-  const hasMultipleSources = sources.length > 1;
+  // isAllSourcesMode from context correctly handles single-source setups (always false for single source)
+  const { activeSource, isAllSourcesMode, hasMultipleSources } = useSourceContext();
   // For backwards compatibility with existing source-specific features
   const sourceType = activeSource?.type || 'github';
 
@@ -200,7 +199,7 @@ export function Analytics() {
         onProjectChange={setSelectedProject}
         onBatchChange={setSelectedBatch}
         sourceType={sourceType}
-        isAllSources={!activeSource}
+        isAllSourcesMode={isAllSourcesMode}
         sourceId={activeSource?.id}
       />
 
@@ -239,7 +238,7 @@ export function Analytics() {
             value={analytics.total_repositories}
             color="blue"
             tooltip={
-              isAllSources && hasMultipleSources
+              isAllSourcesMode && hasMultipleSources
                 ? "Total number of repositories discovered across all sources"
                 : sourceType === 'azuredevops'
                   ? "Total number of repositories discovered in Azure DevOps"
@@ -248,14 +247,14 @@ export function Analytics() {
           />
           <KPICard
             title={
-              isAllSources && hasMultipleSources 
+              isAllSourcesMode && hasMultipleSources 
                 ? 'Source Groups' 
                 : sourceType === 'azuredevops' 
                   ? 'Projects' 
                   : 'Organizations'
             }
             value={
-              isAllSources && hasMultipleSources
+              isAllSourcesMode && hasMultipleSources
                 ? analytics.organization_stats?.length || 0
                 : sourceType === 'azuredevops'
                   ? analytics.project_stats?.length || 0
@@ -263,12 +262,12 @@ export function Analytics() {
             }
             color="purple"
             subtitle={
-              isAllSources 
+              isAllSourcesMode 
                 ? 'Across all sources' 
                 : activeSource?.name || 'Source groups'
             }
             tooltip={
-              isAllSources && hasMultipleSources
+              isAllSourcesMode && hasMultipleSources
                 ? "Number of source groups (organizations, projects, etc.) with repositories"
                 : sourceType === 'azuredevops'
                   ? "Number of Azure DevOps projects with repositories"
@@ -295,7 +294,7 @@ export function Analytics() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <ComplexityChart 
             data={analytics.complexity_distribution || []} 
-            source={isAllSources ? 'all' : sourceType} 
+            source={isAllSourcesMode ? 'all' : sourceType} 
           />
           
           {/* Size Distribution */}
@@ -379,26 +378,26 @@ export function Analytics() {
           {(() => {
             // When viewing all sources, always use organization_stats (includes ADO orgs, not projects)
             // Only use project_stats when a specific ADO source is selected
-            const stats = !isAllSources && sourceType === 'azuredevops' && analytics.project_stats 
+            const stats = !isAllSourcesMode && sourceType === 'azuredevops' && analytics.project_stats 
               ? analytics.project_stats 
               : analytics.organization_stats;
             
             if (!stats || stats.length === 0) return null;
 
             // Determine terminology based on source context
-            const groupLabel = isAllSources && hasMultipleSources 
+            const groupLabel = isAllSourcesMode && hasMultipleSources 
               ? 'Source Group' 
               : sourceType === 'azuredevops' 
                 ? 'Project' 
                 : 'Organization';
             
-            const sectionTitle = isAllSources && hasMultipleSources 
+            const sectionTitle = isAllSourcesMode && hasMultipleSources 
               ? 'Source Group Breakdown' 
               : sourceType === 'azuredevops' 
                 ? 'Project Breakdown' 
                 : 'Organization Breakdown';
             
-            const sectionDescription = isAllSources && hasMultipleSources
+            const sectionDescription = isAllSourcesMode && hasMultipleSources
               ? 'Repository count and distribution across source groups, useful for workload allocation and team coordination.'
               : sourceType === 'azuredevops'
                 ? 'Repository count and distribution across Azure DevOps projects, useful for workload allocation and team coordination.'
@@ -503,12 +502,12 @@ export function Analytics() {
             ];
             
             // Select features based on source type - show combined when viewing all sources
-            const features = isAllSources && hasMultipleSources
+            const features = isAllSourcesMode && hasMultipleSources
               ? [...githubFeatures, ...adoFeatures].filter(feature => feature.count && feature.count > 0)
               : (sourceType === 'azuredevops' ? adoFeatures : githubFeatures)
                   .filter(feature => feature.count && feature.count > 0);
 
-            const featureDescription = isAllSources && hasMultipleSources
+            const featureDescription = isAllSourcesMode && hasMultipleSources
               ? 'Features detected across repositories that may require special migration handling, including CI/CD workflows, security configurations, and advanced settings.'
               : sourceType === 'azuredevops'
                 ? 'Azure DevOps features detected including pipelines, boards, wikis, and other project artifacts that may require special migration handling.'
@@ -676,19 +675,19 @@ export function Analytics() {
         {/* Migration Progress by Organization */}
         {analytics.migration_completion_stats && analytics.migration_completion_stats.length > 0 && (() => {
           // Determine terminology based on source context
-          const progressGroupLabel = isAllSources && hasMultipleSources 
+          const progressGroupLabel = isAllSourcesMode && hasMultipleSources 
             ? 'Source Group' 
             : sourceType === 'azuredevops' 
               ? 'Project' 
               : 'Organization';
           
-          const progressSectionTitle = isAllSources && hasMultipleSources 
+          const progressSectionTitle = isAllSourcesMode && hasMultipleSources 
             ? 'Migration Progress by Source Group' 
             : sourceType === 'azuredevops' 
               ? 'Migration Progress by Project' 
               : 'Migration Progress by Organization';
           
-          const progressDescription = isAllSources && hasMultipleSources
+          const progressDescription = isAllSourcesMode && hasMultipleSources
             ? 'Detailed migration status breakdown by source group, showing completion rates and identifying areas requiring attention.'
             : sourceType === 'azuredevops'
               ? 'Detailed migration status breakdown by Azure DevOps project, showing completion rates and identifying areas requiring attention.'

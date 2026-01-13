@@ -77,7 +77,7 @@ export function UnifiedFilterSidebar({
   hideProject = false 
 }: UnifiedFilterSidebarProps) {
   const { showError } = useToast();
-  const { sources, activeSource } = useSourceContext();
+  const { sources, activeSource, isAllSourcesMode } = useSourceContext();
   
   // React Query hooks for organizations
   const { data: organizationData, isLoading: loadingOrgs } = useOrganizations();
@@ -85,7 +85,6 @@ export function UnifiedFilterSidebar({
   // Derive sourceType from configured sources
   const hasGitHubSources = sources.some(s => s.type === 'github');
   const hasADOSources = sources.some(s => s.type === 'azuredevops');
-  const isAllSources = !activeSource;
   const sourceType = activeSource?.type 
     || (hasADOSources && !hasGitHubSources ? 'azuredevops' : 'github');
   
@@ -96,7 +95,7 @@ export function UnifiedFilterSidebar({
   const organizations = useMemo(() => {
     const orgData = organizationData || [];
     
-    if (isAllSources) {
+    if (isAllSourcesMode) {
       // Combine GitHub orgs and unique ADO orgs
       const githubOrgs = orgData
         .filter(org => !org.ado_organization)
@@ -118,7 +117,7 @@ export function UnifiedFilterSidebar({
         .filter(org => !org.ado_organization)
         .map(org => org.organization);
     }
-  }, [organizationData, sourceType, isAllSources]);
+  }, [organizationData, sourceType, isAllSourcesMode]);
   
   // Local state for projects and teams (complex iteration logic)
   const [projects, setProjects] = useState<string[]>([]);
@@ -128,19 +127,19 @@ export function UnifiedFilterSidebar({
 
   // Reload projects when organization filter changes (for Azure DevOps or All Sources with ADO)
   useEffect(() => {
-    if (sourceType === 'azuredevops' || (isAllSources && hasADOSources)) {
+    if (sourceType === 'azuredevops' || (isAllSourcesMode && hasADOSources)) {
       loadProjects();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceType, isAllSources, hasADOSources, filters.ado_organization]);
+  }, [sourceType, isAllSourcesMode, hasADOSources, filters.ado_organization]);
 
   // Reload teams when organization filter changes (for GitHub or All Sources with GitHub)
   useEffect(() => {
-    if (sourceType === 'github' || (isAllSources && hasGitHubSources)) {
+    if (sourceType === 'github' || (isAllSourcesMode && hasGitHubSources)) {
       loadTeams();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceType, isAllSources, hasGitHubSources, filters.organization]);
+  }, [sourceType, isAllSourcesMode, hasGitHubSources, filters.organization]);
 
   const loadProjects = async () => {
     setLoadingProjects(true);
@@ -473,7 +472,7 @@ export function UnifiedFilterSidebar({
         )}
 
         {/* Project (for Azure DevOps or when All Sources with ADO sources) */}
-        {!hideProject && (sourceType === 'azuredevops' || (isAllSources && hasADOSources)) && (
+        {!hideProject && (sourceType === 'azuredevops' || (isAllSourcesMode && hasADOSources)) && (
           <FilterSection title="Project" defaultExpanded={true}>
             <OrganizationSelector
               organizations={projects}
@@ -488,7 +487,7 @@ export function UnifiedFilterSidebar({
         )}
 
         {/* Team (for GitHub or when All Sources with GitHub sources) */}
-        {(sourceType === 'github' || (isAllSources && hasGitHubSources)) && (
+        {(sourceType === 'github' || (isAllSourcesMode && hasGitHubSources)) && (
           <FilterSection title="Team" defaultExpanded={false}>
             <OrganizationSelector
               organizations={teams.map(t => t.full_slug)}

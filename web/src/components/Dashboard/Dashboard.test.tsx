@@ -16,6 +16,8 @@ vi.mock('../../contexts/SourceContext', () => ({
     isLoading: false,
     error: null,
     refetchSources: vi.fn(),
+    hasMultipleSources: false,
+    isAllSourcesMode: false, // Single source: never in "All Sources" mode
   })),
   SourceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -132,15 +134,17 @@ describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     
-    // Reset SourceContext mock to default GitHub source
+    // Reset SourceContext mock to default GitHub source (single source setup)
     (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
       sources: [{ id: 1, name: 'GitHub Source', type: 'github' }],
-      activeSourceFilter: 'all',
+      activeSourceFilter: 1, // Single source is always selected
       setActiveSourceFilter: vi.fn(),
-      activeSource: null,
+      activeSource: { id: 1, name: 'GitHub Source', type: 'github' }, // Single source always returned
       isLoading: false,
       error: null,
       refetchSources: vi.fn(),
+      hasMultipleSources: false,
+      isAllSourcesMode: false, // Single source: never in "All Sources" mode
     });
     
     // Setup default mock implementations
@@ -253,15 +257,18 @@ describe('Dashboard', () => {
   });
 
   it('should render Azure DevOps organizations section for azuredevops source', async () => {
-    // Mock SourceContext with ADO sources
+    const adoSource = { id: 1, name: 'ADO Source', type: 'azuredevops' as const };
+    // Mock SourceContext with single ADO source
     (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
-      sources: [{ id: 1, name: 'ADO Source', type: 'azuredevops' }],
-      activeSourceFilter: 'all',
+      sources: [adoSource],
+      activeSourceFilter: 1,
       setActiveSourceFilter: vi.fn(),
-      activeSource: null,
+      activeSource: adoSource,
       isLoading: false,
       error: null,
       refetchSources: vi.fn(),
+      hasMultipleSources: false,
+      isAllSourcesMode: false,
     });
     
     // Mock organizations with ADO data
@@ -419,6 +426,170 @@ describe('Dashboard', () => {
     
     await waitFor(() => {
       expect(screen.getByText('Loading Batches...')).toBeInTheDocument();
+    });
+  });
+
+  describe('single source vs multi-source behavior', () => {
+    it('should show source-specific view with single ADO source (not aggregated view)', async () => {
+      const adoSource = { id: 1, name: 'ADO Source', type: 'azuredevops' as const };
+      
+      // Single ADO source - should show detailed project breakdown, not aggregated
+      (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+        sources: [adoSource],
+        activeSourceFilter: 1,
+        setActiveSourceFilter: vi.fn(),
+        activeSource: adoSource, // Single source always returned as activeSource
+        isLoading: false,
+        error: null,
+        refetchSources: vi.fn(),
+        hasMultipleSources: false,
+        isAllSourcesMode: false, // Never true for single source
+      });
+
+      // ADO organizations with projects
+      (useQueriesModule.useOrganizations as ReturnType<typeof vi.fn>).mockReturnValue({
+        data: [
+          { organization: 'Project1', ado_organization: 'ADO-Org', total_repos: 20, status_counts: {} },
+          { organization: 'Project2', ado_organization: 'ADO-Org', total_repos: 15, status_counts: {} },
+        ],
+        isLoading: false,
+        isFetching: false,
+      });
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Azure DevOps Organizations')).toBeInTheDocument();
+      });
+
+      // Should show ADO org card (detailed view) not GitHub org cards
+      expect(screen.getByTestId('ado-org-card-ADO-Org')).toBeInTheDocument();
+    });
+
+    it('should show aggregated view with multiple sources in All Sources mode', async () => {
+      const githubSource = { id: 1, name: 'GitHub Source', type: 'github' as const };
+      const adoSource = { id: 2, name: 'ADO Source', type: 'azuredevops' as const };
+
+      // Multiple sources with All Sources filter
+      (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+        sources: [githubSource, adoSource],
+        activeSourceFilter: 'all',
+        setActiveSourceFilter: vi.fn(),
+        activeSource: null, // null in All Sources mode
+        isLoading: false,
+        error: null,
+        refetchSources: vi.fn(),
+        hasMultipleSources: true,
+        isAllSourcesMode: true, // True for multi-source with 'all' filter
+      });
+
+      // Mixed organizations
+      (useQueriesModule.useOrganizations as ReturnType<typeof vi.fn>).mockReturnValue({
+        data: [
+          { organization: 'github-org', total_repos: 50, status_counts: {} },
+          { organization: 'Project1', ado_organization: 'ADO-Org', total_repos: 20, status_counts: {} },
+        ],
+        isLoading: false,
+        isFetching: false,
+      });
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        // Should show both sections
+        expect(screen.getByText('GitHub Organizations')).toBeInTheDocument();
+        expect(screen.getByText('Azure DevOps Organizations')).toBeInTheDocument();
+      });
+
+      // GitHub org should be shown as a card
+      expect(screen.getByTestId('github-org-card-github-org')).toBeInTheDocument();
+    });
+
+    it('should show specific source view when source is selected from multi-source setup', async () => {
+      const githubSource = { id: 1, name: 'GitHub Source', type: 'github' as const };
+      const adoSource = { id: 2, name: 'ADO Source', type: 'azuredevops' as const };
+
+      // Multiple sources but specific source selected
+      (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+        sources: [githubSource, adoSource],
+        activeSourceFilter: 1,
+        setActiveSourceFilter: vi.fn(),
+        activeSource: githubSource, // GitHub source selected
+        isLoading: false,
+        error: null,
+        refetchSources: vi.fn(),
+        hasMultipleSources: true,
+        isAllSourcesMode: false, // False when specific source is selected
+      });
+
+      (useQueriesModule.useOrganizations as ReturnType<typeof vi.fn>).mockReturnValue({
+        data: [
+          { organization: 'github-org1', total_repos: 50, status_counts: {} },
+          { organization: 'github-org2', total_repos: 30, status_counts: {} },
+        ],
+        isLoading: false,
+        isFetching: false,
+      });
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        // Should only show GitHub section (not ADO)
+        expect(screen.getByText('GitHub Organizations')).toBeInTheDocument();
+      });
+
+      // Should NOT show Azure DevOps section
+      expect(screen.queryByText('Azure DevOps Organizations')).not.toBeInTheDocument();
+    });
+
+    it('should show active source indicator when a specific source is selected', async () => {
+      const githubSource = { id: 1, name: 'My GitHub Source', type: 'github' as const };
+
+      (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+        sources: [githubSource],
+        activeSourceFilter: 1,
+        setActiveSourceFilter: vi.fn(),
+        activeSource: githubSource,
+        isLoading: false,
+        error: null,
+        refetchSources: vi.fn(),
+        hasMultipleSources: false,
+        isAllSourcesMode: false,
+      });
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        // Should show the active source indicator
+        expect(screen.getByText(/Showing data from:/)).toBeInTheDocument();
+        expect(screen.getByText('My GitHub Source')).toBeInTheDocument();
+      });
+    });
+
+    it('should NOT show active source indicator when in All Sources mode', async () => {
+      const githubSource = { id: 1, name: 'GitHub Source', type: 'github' as const };
+      const adoSource = { id: 2, name: 'ADO Source', type: 'azuredevops' as const };
+
+      (SourceContextModule.useSourceContext as ReturnType<typeof vi.fn>).mockReturnValue({
+        sources: [githubSource, adoSource],
+        activeSourceFilter: 'all',
+        setActiveSourceFilter: vi.fn(),
+        activeSource: null,
+        isLoading: false,
+        error: null,
+        refetchSources: vi.fn(),
+        hasMultipleSources: true,
+        isAllSourcesMode: true,
+      });
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      });
+
+      // Should NOT show the active source indicator
+      expect(screen.queryByText(/Showing data from:/)).not.toBeInTheDocument();
     });
   });
 });

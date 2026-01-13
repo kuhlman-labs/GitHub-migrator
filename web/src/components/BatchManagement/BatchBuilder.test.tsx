@@ -20,6 +20,32 @@ vi.mock('../../services/api', () => ({
   },
 }));
 
+// Mock the sources API for SourceProvider
+vi.mock('../../services/api/sources', () => ({
+  sourcesApi: {
+    list: vi.fn().mockResolvedValue([
+      {
+        id: 1,
+        name: 'GitHub Source',
+        type: 'github',
+        base_url: 'https://github.com',
+        has_app_auth: false,
+        has_oauth: false,
+        is_active: true,
+        repository_count: 10,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        masked_token: 'ghp_***',
+      },
+    ]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    validate: vi.fn(),
+    setActive: vi.fn(),
+  },
+}));
+
 // Create mock repositories for testing
 const createMockRepo = (id: number, name: string): Repository => ({
   id,
@@ -170,14 +196,13 @@ describe('BatchBuilder', () => {
     it('should preserve selections across page changes', async () => {
       // This is the key test for the bug fix
       // Mock listRepositories to return different repos based on offset
-      let callCount = 0;
-      (api.listRepositories as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-        callCount++;
-        // First call returns page 1, subsequent calls return page 2
-        if (callCount === 1) {
-          return { repositories: page1Repos, total: 6 };
+      // Use offset to determine which page to return (more robust than call count)
+      (api.listRepositories as ReturnType<typeof vi.fn>).mockImplementation(async (filters) => {
+        // Return page 2 when offset > 0 (pagination), otherwise page 1
+        if (filters?.offset && filters.offset > 0) {
+          return { repositories: page2Repos, total: 6 };
         }
-        return { repositories: page2Repos, total: 6 };
+        return { repositories: page1Repos, total: 6 };
       });
 
       render(
@@ -185,10 +210,10 @@ describe('BatchBuilder', () => {
         { wrapper: createWrapper() }
       );
 
-      // Wait for page 1 to load
+      // Wait for page 1 to load (may take a moment for SourceProvider to initialize)
       await waitFor(() => {
         expect(screen.getByText('org/repo-1')).toBeInTheDocument();
-      });
+      }, { timeout: 3000 });
 
       // Select a repo from page 1
       const repo1Label = screen.getByText('org/repo-1').closest('label');

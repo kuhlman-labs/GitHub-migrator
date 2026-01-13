@@ -37,15 +37,12 @@ export function DiscoverySourceSelector({
   filterByType,
   showRepoCount = false,
 }: DiscoverySourceSelectorProps) {
-  const { sources, activeSource } = useSourceContext();
+  const { sources, activeSource, isAllSourcesMode } = useSourceContext();
   
   // Filter to active sources, optionally by type
   const availableSources = sources.filter(s => 
     s.is_active && (!filterByType || s.type === filterByType)
   );
-  
-  // Determine if we're in "All Sources" mode (no active source selected)
-  const isAllSourcesMode = !activeSource;
   
   // Get the selected source object
   const selectedSource = selectedSourceId 

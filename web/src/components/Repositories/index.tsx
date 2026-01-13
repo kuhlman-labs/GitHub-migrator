@@ -22,7 +22,7 @@ import { DiscoveryModal, type DiscoveryType } from '../Dashboard/DiscoveryModal'
 
 export function Repositories() {
   const { showError, showSuccess } = useToast();
-  const { activeSource, sources } = useSourceContext();
+  const { activeSource, sources, isAllSourcesMode } = useSourceContext();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Parse filters from URL
@@ -54,7 +54,8 @@ export function Repositories() {
   // Derive source type for discovery modal
   const hasGitHubSources = sources.some(s => s.type === 'github');
   const hasADOSources = sources.some(s => s.type === 'azuredevops');
-  const isAllSourcesMode = !activeSource;
+  
+  // Note: isAllSourcesMode comes from useSourceContext() and correctly handles single-source setups
   
   // Determine the source type for the modal
   const sourceType = activeSource?.type 

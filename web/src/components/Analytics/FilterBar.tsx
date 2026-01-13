@@ -12,7 +12,7 @@ interface FilterBarProps {
   onProjectChange: (project: string) => void;
   onBatchChange: (batch: string) => void;
   sourceType?: 'github' | 'azuredevops';
-  isAllSources?: boolean;
+  isAllSourcesMode?: boolean;
   sourceId?: number;
 }
 
@@ -24,12 +24,12 @@ export function FilterBar({
   onProjectChange,
   onBatchChange,
   sourceType = 'github',
-  isAllSources = false,
+  isAllSourcesMode = false,
   sourceId,
 }: FilterBarProps) {
   const { data: organizations } = useOrganizations();
   // Only fetch projects when viewing a specific ADO source (not all sources)
-  const shouldFetchProjects = sourceType === 'azuredevops' && !isAllSources;
+  const shouldFetchProjects = sourceType === 'azuredevops' && !isAllSourcesMode;
   const { data: projects } = useProjects(shouldFetchProjects ? sourceId : undefined);
   const { data: batches } = useBatches();
 
@@ -45,7 +45,7 @@ export function FilterBar({
   const processedOrgs = useMemo(() => {
     const orgData = organizations || [];
     
-    if (isAllSources) {
+    if (isAllSourcesMode) {
       // Combine GitHub orgs and unique ADO orgs
       const githubOrgs = orgData
         .filter(org => !org.ado_organization)
@@ -74,7 +74,7 @@ export function FilterBar({
         .filter(org => !org.ado_organization)
         .map(org => ({ name: org.organization, total_repos: org.total_repos }));
     }
-  }, [organizations, sourceType, isAllSources]);
+  }, [organizations, sourceType, isAllSourcesMode]);
 
   // Filter functions
   const filteredOrgs = processedOrgs.filter((org) =>

@@ -36,7 +36,7 @@ export function Dashboard() {
   // Use React Query for config
   const { data: config } = useConfig();
   const { showSuccess } = useToast();
-  const { activeSource, sources } = useSourceContext();
+  const { activeSource, sources, isAllSourcesMode } = useSourceContext();
   
   // Derive source types from configured sources
   // If a specific source is selected, use its type; otherwise look at all sources
@@ -121,8 +121,7 @@ export function Dashboard() {
   // For All Sources mode - track which source is selected in the discovery modal
   const [modalSelectedSourceId, setModalSelectedSourceId] = useState<number | null>(null);
   
-  // Determine if we're in "All Sources" mode (no active source filter)
-  const isAllSourcesMode = !activeSource;
+  // Note: isAllSourcesMode comes from useSourceContext() and correctly handles single-source setups
 
   // Persist dismissed state in localStorage, keyed by discovery ID
   const dismissedDiscoveryKey = 'dismissedDiscoveryId';
@@ -351,9 +350,9 @@ export function Dashboard() {
   );
   
   // Determine what to show based on source filter and available data
-  const showAllSources = activeSource === null;
-  const showGitHubSection = showAllSources ? gitHubOrgs.length > 0 : sourceType === 'github';
-  const showADOSection = showAllSources ? adoOrgs.length > 0 : sourceType === 'azuredevops';
+  // Use isAllSourcesMode from context - it's false for single-source setups
+  const showGitHubSection = isAllSourcesMode ? gitHubOrgs.length > 0 : sourceType === 'github';
+  const showADOSection = isAllSourcesMode ? adoOrgs.length > 0 : sourceType === 'azuredevops';
 
   return (
     <div className="relative">
@@ -479,7 +478,7 @@ export function Dashboard() {
                   <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                     {gitHubOrgs.length > 0 ? (
                       <>
-                        {showAllSources ? (
+                        {isAllSourcesMode ? (
                           <>Showing {gitHubOrgs.length} {gitHubOrgs.length === 1 ? 'organization' : 'organizations'} with {gitHubOrgs.reduce((sum, org) => sum + org.total_repos, 0)} total repositories</>
                         ) : (
                           <>Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} {totalItems === 1 ? 'organization' : 'organizations'} with {totalRepos} total repositories</>
@@ -494,11 +493,11 @@ export function Dashboard() {
                   ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-                        {(showAllSources ? gitHubOrgs : paginatedOrgs).map((org) => (
+                        {(isAllSourcesMode ? gitHubOrgs : paginatedOrgs).map((org) => (
                 <GitHubOrganizationCard key={org.organization} organization={org} />
               ))}
             </div>
-                      {!showAllSources && totalItems > pageSize && (
+                      {!isAllSourcesMode && totalItems > pageSize && (
               <Pagination
                 currentPage={currentPage}
                 totalItems={totalItems}
@@ -519,7 +518,7 @@ export function Dashboard() {
                   </h2>
                   <div className="mb-4 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
                     {adoOrgs.length > 0 ? (
-                      showAllSources ? (
+                      isAllSourcesMode ? (
                         // All Sources view: show org count only
                         <>
                           Showing {aggregatedADOOrgs.length} {aggregatedADOOrgs.length === 1 ? 'organization' : 'organizations'} with {adoOrgs.reduce((sum, org) => sum + org.total_repos, 0)} total repositories
@@ -536,7 +535,7 @@ export function Dashboard() {
                   </div>
                   {adoOrgs.length === 0 ? (
                     <Flash>No Azure DevOps organizations discovered yet. Start discovery to find repositories.</Flash>
-                  ) : showAllSources ? (
+                  ) : isAllSourcesMode ? (
                     // All Sources view: show simple org cards (like GitHub orgs)
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {aggregatedADOOrgs.map((org) => (
