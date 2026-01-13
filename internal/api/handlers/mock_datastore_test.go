@@ -56,6 +56,10 @@ type MockDataStore struct {
 
 	// Function overrides for additional methods
 	DeleteRepositoryFunc func(ctx context.Context, fullName string) error
+
+	// Discovery mock state
+	ActiveDiscoveryProgress   *models.DiscoveryProgress
+	ForceResetDiscoveryResult int64
 }
 
 // NewMockDataStore creates a new MockDataStore with initialized maps.
@@ -794,7 +798,9 @@ func (m *MockDataStore) IncrementDiscoveryError(_ int64, _ string) error {
 }
 
 func (m *MockDataStore) GetActiveDiscoveryProgress() (*models.DiscoveryProgress, error) {
-	return nil, nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.ActiveDiscoveryProgress, nil
 }
 
 func (m *MockDataStore) GetLatestDiscoveryProgress() (*models.DiscoveryProgress, error) {
@@ -811,6 +817,12 @@ func (m *MockDataStore) MarkDiscoveryFailed(_ int64, _ string) error {
 
 func (m *MockDataStore) MarkDiscoveryCancelled(_ int64) error {
 	return nil
+}
+
+func (m *MockDataStore) ForceResetDiscovery() (int64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.ForceResetDiscoveryResult, nil
 }
 
 // ============================================================================

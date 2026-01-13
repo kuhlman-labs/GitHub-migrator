@@ -265,6 +265,8 @@ type DiscoveryStore interface {
 	MarkDiscoveryFailed(id int64, errorMsg string) error
 	// MarkDiscoveryCancelled marks a discovery as cancelled.
 	MarkDiscoveryCancelled(id int64) error
+	// ForceResetDiscovery forcibly marks any stuck in_progress discovery as cancelled.
+	ForceResetDiscovery() (int64, error)
 }
 
 // SourceStore defines operations for migration sources.

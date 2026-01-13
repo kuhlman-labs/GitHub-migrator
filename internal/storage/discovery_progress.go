@@ -255,3 +255,47 @@ func (d *Database) IncrementProcessedRepos(id int64, count int) error {
 
 	return nil
 }
+
+// ForceResetDiscovery forcibly marks any stuck in_progress discovery as cancelled.
+// This is used to recover from scenarios where the server crashed or restarted
+// while a discovery was in progress, leaving the database in an inconsistent state.
+// Returns the number of records affected and any error.
+func (d *Database) ForceResetDiscovery() (int64, error) {
+	now := time.Now()
+	result := d.db.Model(&models.DiscoveryProgress{}).
+		Where("status = ?", models.DiscoveryStatusInProgress).
+		Updates(map[string]any{
+			"status":       models.DiscoveryStatusCancelled,
+			"completed_at": now,
+			"phase":        models.PhaseCancelling,
+			"last_error":   "Force reset: discovery was stuck in progress state",
+		})
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to force reset discovery: %w", result.Error)
+	}
+
+	return result.RowsAffected, nil
+}
+
+// RecoverStuckDiscoveries checks for any stuck discoveries on startup and resets them.
+// A discovery is considered stuck if it's been in_progress for more than the timeout duration.
+func (d *Database) RecoverStuckDiscoveries(timeout time.Duration) (int64, error) {
+	now := time.Now()
+	cutoff := now.Add(-timeout)
+
+	result := d.db.Model(&models.DiscoveryProgress{}).
+		Where("status = ? AND started_at < ?", models.DiscoveryStatusInProgress, cutoff).
+		Updates(map[string]any{
+			"status":       models.DiscoveryStatusCancelled,
+			"completed_at": now,
+			"phase":        models.PhaseCancelling,
+			"last_error":   fmt.Sprintf("Auto-recovered: discovery was stuck for more than %s", timeout),
+		})
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to recover stuck discoveries: %w", result.Error)
+	}
+
+	return result.RowsAffected, nil
+}

@@ -49,6 +49,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Recover any stuck discoveries from previous crashes/restarts
+	// This handles scenarios where the server was stopped while a discovery was in progress
+	if recovered, err := db.RecoverStuckDiscoveries(30 * time.Minute); err != nil {
+		slog.Warn("Failed to recover stuck discoveries", "error", err)
+	} else if recovered > 0 {
+		slog.Info("Recovered stuck discovery on startup", "count", recovered)
+	}
+
 	// Initialize ConfigService for dynamic configuration
 	cfgSvc, err := configsvc.New(db, cfg, logger)
 	if err != nil {

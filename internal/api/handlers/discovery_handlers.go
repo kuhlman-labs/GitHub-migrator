@@ -792,3 +792,77 @@ func (h *Handler) GetADOProjectDynamic(w http.ResponseWriter, r *http.Request) {
 
 	h.sendJSON(w, http.StatusOK, projectData)
 }
+
+// ForceResetDiscovery handles POST /api/v1/discovery/force-reset
+// Forcibly resets any stuck discovery that is blocking new discoveries.
+// This is an admin-only operation intended for recovery scenarios where
+// the server crashed or restarted during an active discovery.
+func (h *Handler) ForceResetDiscovery(w http.ResponseWriter, r *http.Request) {
+	// Get active discovery to show what we're resetting
+	progress, err := h.db.GetActiveDiscoveryProgress()
+	if err != nil {
+		h.logger.Error("Failed to get active discovery progress", "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails("discovery progress"))
+		return
+	}
+
+	if progress == nil {
+		h.sendJSON(w, http.StatusOK, map[string]any{
+			"message":       "No stuck discovery found",
+			"records_reset": 0,
+			"action_taken":  false,
+		})
+		return
+	}
+
+	// Log the force reset action
+	h.logger.Warn("Force resetting stuck discovery",
+		"progress_id", progress.ID,
+		"target", progress.Target,
+		"phase", progress.Phase,
+		"started_at", progress.StartedAt,
+	)
+
+	// Perform the force reset
+	rowsAffected, err := h.db.ForceResetDiscovery()
+	if err != nil {
+		h.logger.Error("Failed to force reset discovery", "error", err)
+		WriteError(w, ErrDatabaseUpdate.WithDetails("force reset discovery"))
+		return
+	}
+
+	// Also clean up any in-memory cancel functions for this discovery
+	h.discoveryMu.Lock()
+	delete(h.discoveryCancel, progress.ID)
+	h.discoveryMu.Unlock()
+
+	// Handle race condition: discovery may have completed between our check and reset
+	if rowsAffected == 0 {
+		h.logger.Info("Discovery completed before force reset could be applied",
+			"progress_id", progress.ID,
+			"target", progress.Target,
+		)
+		h.sendJSON(w, http.StatusOK, map[string]any{
+			"message":       "Discovery already completed before reset was applied",
+			"records_reset": 0,
+			"action_taken":  false,
+			"discovery": map[string]any{
+				"id":     progress.ID,
+				"target": progress.Target,
+			},
+		})
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, map[string]any{
+		"message":       "Discovery force reset completed",
+		"records_reset": rowsAffected,
+		"action_taken":  true,
+		"reset_discovery": map[string]any{
+			"id":         progress.ID,
+			"target":     progress.Target,
+			"phase":      progress.Phase,
+			"started_at": progress.StartedAt,
+		},
+	})
+}
