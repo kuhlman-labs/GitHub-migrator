@@ -217,14 +217,53 @@ describe('usersApi', () => {
   });
 
   describe('generateGEICSV', () => {
-    it('should generate GEI CSV', async () => {
+    it('should generate GEI CSV with mannequins_only', async () => {
       const mockBlob = new Blob(['csv,data']);
       mockClient.get.mockResolvedValue({ data: mockBlob });
 
       const result = await usersApi.generateGEICSV(true);
 
       expect(mockClient.get).toHaveBeenCalledWith('/user-mappings/generate-gei-csv', {
-        params: { mannequins_only: true },
+        params: { mannequins_only: true, org: undefined },
+        responseType: 'blob',
+      });
+      expect(result).toEqual(mockBlob);
+    });
+
+    it('should generate GEI CSV filtered by org', async () => {
+      const mockBlob = new Blob(['csv,data']);
+      mockClient.get.mockResolvedValue({ data: mockBlob });
+
+      const result = await usersApi.generateGEICSV(undefined, 'my-org');
+
+      expect(mockClient.get).toHaveBeenCalledWith('/user-mappings/generate-gei-csv', {
+        params: { mannequins_only: undefined, org: 'my-org' },
+        responseType: 'blob',
+      });
+      expect(result).toEqual(mockBlob);
+    });
+
+    it('should generate GEI CSV with both mannequins_only and org', async () => {
+      const mockBlob = new Blob(['csv,data']);
+      mockClient.get.mockResolvedValue({ data: mockBlob });
+
+      const result = await usersApi.generateGEICSV(true, 'target-org');
+
+      expect(mockClient.get).toHaveBeenCalledWith('/user-mappings/generate-gei-csv', {
+        params: { mannequins_only: true, org: 'target-org' },
+        responseType: 'blob',
+      });
+      expect(result).toEqual(mockBlob);
+    });
+
+    it('should generate GEI CSV without any filters', async () => {
+      const mockBlob = new Blob(['csv,data']);
+      mockClient.get.mockResolvedValue({ data: mockBlob });
+
+      const result = await usersApi.generateGEICSV();
+
+      expect(mockClient.get).toHaveBeenCalledWith('/user-mappings/generate-gei-csv', {
+        params: { mannequins_only: undefined, org: undefined },
         responseType: 'blob',
       });
       expect(result).toEqual(mockBlob);

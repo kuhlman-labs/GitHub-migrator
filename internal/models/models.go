@@ -1132,6 +1132,7 @@ type UserMapping struct {
 	MappingStatus    string    `json:"mapping_status" gorm:"column:mapping_status;not null;default:unmapped;index"` // unmapped, mapped, reclaimed, skipped
 	MannequinID      *string   `json:"mannequin_id,omitempty" gorm:"column:mannequin_id"`                           // GEI mannequin ID after migration
 	MannequinLogin   *string   `json:"mannequin_login,omitempty" gorm:"column:mannequin_login"`                     // Mannequin login (e.g., mona-user-12345)
+	MannequinOrg     *string   `json:"mannequin_org,omitempty" gorm:"column:mannequin_org;index"`                   // Destination org where mannequin exists
 	ReclaimStatus    *string   `json:"reclaim_status,omitempty" gorm:"column:reclaim_status"`                       // pending, invited, completed, failed
 	ReclaimError     *string   `json:"reclaim_error,omitempty" gorm:"column:reclaim_error;type:text"`               // Error message if reclaim failed
 	MatchConfidence  *int      `json:"match_confidence,omitempty" gorm:"column:match_confidence"`                   // Auto-match confidence score (0-100)

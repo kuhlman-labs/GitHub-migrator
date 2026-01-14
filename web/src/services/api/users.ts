@@ -103,9 +103,9 @@ export const usersApi = {
     return data;
   },
 
-  async generateGEICSV(mannequinsOnly?: boolean): Promise<Blob> {
+  async generateGEICSV(mannequinsOnly?: boolean, org?: string): Promise<Blob> {
     const { data } = await client.get('/user-mappings/generate-gei-csv', {
-      params: { mannequins_only: mannequinsOnly },
+      params: { mannequins_only: mannequinsOnly, org },
       responseType: 'blob',
     });
     return data;

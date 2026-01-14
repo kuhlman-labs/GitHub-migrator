@@ -112,7 +112,7 @@ export function UserMappingTable() {
   // Dialog state using shared hooks
   const deleteDialog = useDialogState<string>(); // stores the source login to delete
   const discoverDialog = useDialogState();
-  const destOrgDialog = useDialogState<{ action: 'fetch' | 'invite' | 'bulk_invite'; sourceLogin?: string }>();
+  const destOrgDialog = useDialogState<{ action: 'fetch' | 'invite' | 'bulk_invite' | 'generate_gei'; sourceLogin?: string }>();
   
   // Form state for dialogs
   const [destinationOrg, setDestinationOrg] = useState('');
@@ -242,24 +242,12 @@ export function UserMappingTable() {
     }
   }, [refetch, showError, showSuccess]);
 
-  const handleGenerateGEI = useCallback(async () => {
-    try {
-      const blob = await api.generateGEICSV();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'mannequin-mappings.csv';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      handleApiError(error, showError, 'Failed to generate GEI CSV');
-    }
-  }, [showError]);
+  const handleGenerateGEI = useCallback(() => {
+    destOrgDialog.open({ action: 'generate_gei' });
+  }, [destOrgDialog]);
 
   // Action handlers that require destination org
-  const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite', sourceLogin?: string) => {
+  const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite' | 'generate_gei', sourceLogin?: string) => {
     destOrgDialog.open({ action, sourceLogin });
   }, [destOrgDialog]);
 
@@ -296,6 +284,18 @@ export function UserMappingTable() {
         } else {
           showError(result.message);
         }
+      } else if (action === 'generate_gei') {
+        // Generate GEI CSV filtered by destination org
+        const blob = await api.generateGEICSV(undefined, destinationOrg);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mannequin-mappings-${destinationOrg}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        showSuccess(`GEI CSV generated for ${destinationOrg}`);
       }
     } catch (err) {
       showError(`Action failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -844,11 +844,13 @@ export function UserMappingTable() {
           title={
             destOrgDialog.data.action === 'fetch' ? 'Fetch Mannequins' :
             destOrgDialog.data.action === 'invite' ? 'Send Attribution Invitation' :
+            destOrgDialog.data.action === 'generate_gei' ? 'Generate GEI Reclaim CSV' :
             'Send Attribution Invitations'
           }
           submitLabel={
             destOrgDialog.data.action === 'fetch' ? 'Fetch' :
             destOrgDialog.data.action === 'invite' ? 'Send Invitation' :
+            destOrgDialog.data.action === 'generate_gei' ? 'Generate CSV' :
             'Send All'
           }
           onSubmit={handleConfirmDestOrg}
@@ -862,6 +864,8 @@ export function UserMappingTable() {
               `Send an attribution invitation for ${destOrgDialog.data.sourceLogin} to reclaim their mannequin.`}
             {destOrgDialog.data.action === 'bulk_invite' && 
               `Send attribution invitations to all ${invitableCount} mapped users with mannequins.`}
+            {destOrgDialog.data.action === 'generate_gei' && 
+              'Enter the destination organization to generate a GEI-compatible CSV for mannequin reclaim. The CSV will only include mannequins from this organization.'}
           </p>
           <FormControl>
             <FormControl.Label>Destination Organization</FormControl.Label>

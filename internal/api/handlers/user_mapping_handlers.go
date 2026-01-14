@@ -643,6 +643,9 @@ func (h *Handler) ExportUserMappings(w http.ResponseWriter, r *http.Request) {
 
 // GenerateGEICSV handles GET /api/v1/user-mappings/generate-gei-csv
 // Generates a CSV file compatible with gh gei reclaim-mannequin
+// Optional query parameters:
+//   - org: Filter by mannequin_org (destination org where mannequin exists)
+//   - mannequins_only: Only include mappings with mannequin IDs
 func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -650,6 +653,12 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 	filters := storage.UserMappingFilters{
 		Status: string(models.UserMappingStatusMapped),
 		Limit:  0, // Get all
+	}
+
+	// Filter by mannequin org if provided
+	orgFilter := r.URL.Query().Get("org")
+	if orgFilter != "" {
+		filters.MannequinOrg = orgFilter
 	}
 
 	// Optionally filter to only those with mannequin IDs
@@ -668,9 +677,13 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set headers for CSV download
+	// Set headers for CSV download - include org in filename if filtered
+	filename := "mannequin-mappings.csv"
+	if orgFilter != "" {
+		filename = fmt.Sprintf("mannequin-mappings-%s.csv", orgFilter)
+	}
 	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=mannequin-mappings.csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 
 	writer := csv.NewWriter(w)
 
@@ -916,7 +929,7 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Fetched destination org members", "org", req.DestinationOrg, "count", len(destMembers))
 
 	// Step 3: Match mannequins to destination members
-	matched, unmatched, err := h.matchMannequinsToDestMembers(ctx, mannequins, destMembers, req.EMUShortcode)
+	matched, unmatched, err := h.matchMannequinsToDestMembers(ctx, mannequins, destMembers, req.EMUShortcode, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to match mannequins to destination members", "error", err)
 		WriteError(w, ErrInternal.WithDetails("Failed to match mannequins to destination members"))
@@ -950,11 +963,12 @@ func (h *Handler) getDestinationClient() *github.Client {
 // 3. Email exact match (90% confidence)
 // 4. Name fuzzy match (70% confidence)
 // Returns matched count, unmatched count, and any error
-func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins []*github.Mannequin, destMembers []*github.OrgMember, emuShortcode string) (matched, unmatched int, err error) {
+func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins []*github.Mannequin, destMembers []*github.OrgMember, emuShortcode string, destOrg string) (matched, unmatched int, err error) {
 	h.logger.Info("Starting mannequin to destination member matching",
 		"total_mannequins", len(mannequins),
 		"total_dest_members", len(destMembers),
-		"emu_shortcode", emuShortcode)
+		"emu_shortcode", emuShortcode,
+		"dest_org", destOrg)
 
 	// Log sample of mannequin data for debugging
 	if len(mannequins) > 0 {
@@ -1006,6 +1020,7 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				DestinationEmail: stringPtr(destEmail),
 				MannequinID:      stringPtr(mannequin.ID),
 				MannequinLogin:   stringPtr(mannequin.Login),
+				MannequinOrg:     stringPtr(destOrg),
 				MappingStatus:    string(models.UserMappingStatusMapped),
 				MatchConfidence:  &confidence,
 				MatchReason:      stringPtr(reason),
@@ -1036,6 +1051,7 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				SourceName:     stringPtr(mannequin.Name),
 				MannequinID:    stringPtr(mannequin.ID),
 				MannequinLogin: stringPtr(mannequin.Login),
+				MannequinOrg:   stringPtr(destOrg),
 				MappingStatus:  string(models.UserMappingStatusUnmapped),
 			}
 

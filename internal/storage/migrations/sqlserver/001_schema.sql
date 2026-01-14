@@ -395,6 +395,7 @@ CREATE TABLE user_mappings (
     mapping_status NVARCHAR(MAX) NOT NULL DEFAULT 'unmapped',
     mannequin_id NVARCHAR(MAX),
     mannequin_login NVARCHAR(MAX),
+    mannequin_org NVARCHAR(MAX),
     reclaim_status NVARCHAR(MAX),
     reclaim_error NVARCHAR(MAX),
     match_confidence INT,
@@ -411,6 +412,9 @@ CREATE INDEX idx_user_mappings_source_org ON user_mappings(source_org);
 
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_user_mappings_dest')
 CREATE INDEX idx_user_mappings_dest ON user_mappings(destination_login);
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_user_mappings_mannequin_org')
+CREATE INDEX idx_user_mappings_mannequin_org ON user_mappings(mannequin_org);
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'team_mappings')
 CREATE TABLE team_mappings (

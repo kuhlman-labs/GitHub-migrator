@@ -110,6 +110,7 @@ type UserMappingFilters struct {
 	HasMannequin   *bool  // Filter by whether mannequin_id is set
 	ReclaimStatus  string // Filter by reclaim_status
 	SourceOrg      string // Filter by source_org
+	MannequinOrg   string // Filter by mannequin_org (destination org where mannequin exists)
 	Search         string // Search in source_login, source_email, destination_login
 	SourceID       *int   // Filter by source ID (multi-source support)
 	Limit          int
@@ -150,6 +151,10 @@ func (d *Database) ListUserMappings(ctx context.Context, filters UserMappingFilt
 
 	if filters.SourceOrg != "" {
 		query = query.Where("source_org = ?", filters.SourceOrg)
+	}
+
+	if filters.MannequinOrg != "" {
+		query = query.Where("mannequin_org = ?", filters.MannequinOrg)
 	}
 
 	if filters.Search != "" {
