@@ -458,8 +458,10 @@ func testForceResetDiscoveryCleansUpCancel(t *testing.T) {
 	}
 
 	// Register a cancel function (simulating a discovery that was running)
+	// Track whether cancel was called to verify the goroutine would be stopped
+	cancelCalled := false
 	h.discoveryMu.Lock()
-	h.discoveryCancel[progress.ID] = func() {}
+	h.discoveryCancel[progress.ID] = func() { cancelCalled = true }
 	h.discoveryMu.Unlock()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery/force-reset", nil)
@@ -471,7 +473,12 @@ func testForceResetDiscoveryCleansUpCancel(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	// Verify the cancel function was removed
+	// Verify the cancel function was called (to stop the goroutine)
+	if !cancelCalled {
+		t.Error("Expected cancel function to be called to stop the discovery goroutine")
+	}
+
+	// Verify the cancel function was removed from the map
 	h.discoveryMu.RLock()
 	_, exists := h.discoveryCancel[progress.ID]
 	h.discoveryMu.RUnlock()
