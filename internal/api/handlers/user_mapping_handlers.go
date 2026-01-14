@@ -643,31 +643,29 @@ func (h *Handler) ExportUserMappings(w http.ResponseWriter, r *http.Request) {
 
 // GenerateGEICSV handles GET /api/v1/user-mappings/generate-gei-csv
 // Generates a CSV file compatible with gh gei reclaim-mannequin
+// Required query parameters:
+//   - org: The destination org to generate the CSV for (mannequins are per-org)
+//
 // Optional query parameters:
-//   - org: Filter by mannequin_org (destination org where mannequin exists)
-//   - mannequins_only: Only include mappings with mannequin IDs
+//   - status: Filter by mapping status (default: mapped)
 func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get only mapped users that have mannequin info
-	filters := storage.UserMappingFilters{
-		Status: string(models.UserMappingStatusMapped),
-		Limit:  0, // Get all
-	}
-
-	// Filter by mannequin org if provided
+	// org is required for GEI CSV generation because mannequins are per-org
 	orgFilter := r.URL.Query().Get("org")
-	if orgFilter != "" {
-		filters.MannequinOrg = orgFilter
+	if orgFilter == "" {
+		WriteError(w, ErrMissingField.WithField("org").WithDetails("org parameter is required - mannequins are per-organization"))
+		return
 	}
 
-	// Optionally filter to only those with mannequin IDs
-	if r.URL.Query().Get("mannequins_only") == boolTrue {
-		hasMannequin := true
-		filters.HasMannequin = &hasMannequin
+	// Default to mapped status, can be overridden
+	statusFilter := r.URL.Query().Get("status")
+	if statusFilter == "" {
+		statusFilter = string(models.UserMappingStatusMapped)
 	}
 
-	mappings, _, err := h.db.ListUserMappings(ctx, filters)
+	// Use the new joined query that gets mappings with their mannequin data for a specific org
+	mappingsWithMannequins, err := h.db.ListMappingsWithMannequins(ctx, orgFilter, statusFilter)
 	if err != nil {
 		if h.handleContextError(ctx, err, "generate GEI CSV", r) {
 			return
@@ -677,21 +675,17 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set headers for CSV download - include org in filename if filtered
-	filename := "mannequin-mappings.csv"
-	if orgFilter != "" {
-		filename = fmt.Sprintf("mannequin-mappings-%s.csv", orgFilter)
-	}
+	// Set headers for CSV download - include org in filename
+	filename := fmt.Sprintf("mannequin-mappings-%s.csv", orgFilter)
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 
 	writer := csv.NewWriter(w)
 
 	// GEI reclaim-mannequin expects: mannequin-user,mannequin-id,target-user
-	// Or for EMU: source-login,target-login
 	_ = writer.Write([]string{"mannequin-user", "mannequin-id", "target-user"})
 
-	for _, m := range mappings {
+	for _, m := range mappingsWithMannequins {
 		if m.DestinationLogin == nil || *m.DestinationLogin == "" {
 			continue
 		}
@@ -701,11 +695,9 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 			mannequinUser = m.SourceLogin // Use source login as fallback
 		}
 
-		mannequinID := ptrToString(m.MannequinID)
-
 		row := []string{
 			mannequinUser,
-			mannequinID,
+			m.MannequinID,
 			*m.DestinationLogin,
 		}
 		_ = writer.Write(row)
@@ -717,6 +709,26 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to flush CSV writer for GEI CSV export",
 			"error", err)
 	}
+}
+
+// GetMannequinOrgs handles GET /api/v1/user-mappings/mannequin-orgs
+// Returns a list of unique organizations where mannequins have been fetched
+func (h *Handler) GetMannequinOrgs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	orgs, err := h.db.GetMannequinOrgs(ctx)
+	if err != nil {
+		if h.handleContextError(ctx, err, "get mannequin orgs", r) {
+			return
+		}
+		h.logger.Error("Failed to get mannequin orgs", "error", err)
+		WriteError(w, ErrInternal.WithDetails("Failed to get mannequin orgs"))
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"orgs": orgs,
+	})
 }
 
 // SuggestUserMappings handles POST /api/v1/user-mappings/suggest
@@ -827,24 +839,17 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all mapped users with mannequin info that haven't been reclaimed
-	hasMannequin := true
-	filters := storage.UserMappingFilters{
-		Status:       string(models.UserMappingStatusMapped),
-		HasMannequin: &hasMannequin,
-		Limit:        0, // Get all
-	}
-
-	mappings, _, err := h.db.ListUserMappings(ctx, filters)
+	// Get all mapped users with mannequin info from user_mannequins table for this org
+	mappingsWithMannequins, err := h.db.ListMappingsWithMannequins(ctx, req.DestinationOrg, string(models.UserMappingStatusMapped))
 	if err != nil {
-		h.logger.Error("Failed to list user mappings", "error", err)
+		h.logger.Error("Failed to list mappings with mannequins", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("user mappings"))
 		return
 	}
 
 	// Filter to only those not yet reclaimed
-	var pendingReclaims []*models.UserMapping
-	for _, m := range mappings {
+	var pendingReclaims []*storage.MappingWithMannequin
+	for _, m := range mappingsWithMannequins {
 		if m.ReclaimStatus == nil || *m.ReclaimStatus != string(models.ReclaimStatusCompleted) {
 			pendingReclaims = append(pendingReclaims, m)
 		}
@@ -859,10 +864,10 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark mappings as pending reclaim
+	// Mark mannequins as pending reclaim in user_mannequins table
 	for _, m := range pendingReclaims {
 		reclaimStatus := string(models.ReclaimStatusPending)
-		_ = h.db.UpdateReclaimStatus(ctx, m.SourceLogin, reclaimStatus, nil)
+		_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, req.DestinationOrg, reclaimStatus, nil)
 	}
 
 	// Generate instructions for manual reclaim (gh gei reclaim-mannequin requires CLI)
@@ -873,7 +878,7 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendJSON(w, http.StatusOK, map[string]any{
-		"message":       fmt.Sprintf("Found %d mannequins pending reclaim", len(pendingReclaims)),
+		"message":       fmt.Sprintf("Found %d mannequins pending reclaim in %s", len(pendingReclaims), req.DestinationOrg),
 		"pending_count": len(pendingReclaims),
 		"mappings":      pendingReclaims,
 		"instructions":  instructions,
@@ -1011,7 +1016,9 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				destEmail = *destMember.Email
 			}
 
-			// Upsert user mapping: source_login = mannequin.Login, destination_login = destMember.Login
+			// Upsert user mapping - include mannequin fields for backward compatibility with frontend
+			// The legacy fields (MannequinID, MannequinLogin, MannequinOrg) are kept for UI display
+			// while user_mannequins table stores per-org data for multi-org CSV generation
 			mapping := &models.UserMapping{
 				SourceLogin:      sourceLogin,
 				SourceEmail:      stringPtr(mannequin.Email),
@@ -1032,9 +1039,21 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				continue
 			}
 
+			// Also save mannequin info to user_mannequins table (supports multiple orgs per user)
+			userMannequin := &models.UserMannequin{
+				SourceLogin:    sourceLogin,
+				MannequinOrg:   destOrg,
+				MannequinID:    mannequin.ID,
+				MannequinLogin: stringPtr(mannequin.Login),
+			}
 			// Check if mannequin was already claimed
 			if mannequin.Claimant != nil {
-				_ = h.db.UpdateReclaimStatus(ctx, sourceLogin, string(models.ReclaimStatusCompleted), nil)
+				reclaimStatus := string(models.ReclaimStatusCompleted)
+				userMannequin.ReclaimStatus = &reclaimStatus
+			}
+
+			if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
+				h.logger.Warn("Failed to save user mannequin", "source_login", sourceLogin, "org", destOrg, "error", err)
 			}
 
 			matched++
@@ -1045,6 +1064,7 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				"reason", reason)
 		} else {
 			// No match found - create user mapping with source info only
+			// Include mannequin fields for backward compatibility with frontend
 			mapping := &models.UserMapping{
 				SourceLogin:    sourceLogin,
 				SourceEmail:    stringPtr(mannequin.Email),
@@ -1059,9 +1079,21 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				h.logger.Warn("Failed to save unmatched user mapping", "source_login", sourceLogin, "error", err)
 			}
 
+			// Also save mannequin info to user_mannequins table (supports multiple orgs per user)
+			userMannequin := &models.UserMannequin{
+				SourceLogin:    sourceLogin,
+				MannequinOrg:   destOrg,
+				MannequinID:    mannequin.ID,
+				MannequinLogin: stringPtr(mannequin.Login),
+			}
 			// Check if mannequin was already claimed even if we didn't match
 			if mannequin.Claimant != nil {
-				_ = h.db.UpdateReclaimStatus(ctx, sourceLogin, string(models.ReclaimStatusCompleted), nil)
+				reclaimStatus := string(models.ReclaimStatusCompleted)
+				userMannequin.ReclaimStatus = &reclaimStatus
+			}
+
+			if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
+				h.logger.Warn("Failed to save user mannequin", "source_login", sourceLogin, "org", destOrg, "error", err)
 			}
 
 			unmatched++
@@ -1205,11 +1237,23 @@ func decodePathComponent(s string) (string, error) {
 }
 
 // validateMappingForInvitation validates that a mapping has all required fields for sending an invitation
+// Deprecated: Use validateMappingWithMannequin instead for new mannequin workflow
 func validateMappingForInvitation(mapping *models.UserMapping) error {
 	if mapping.MannequinID == nil || *mapping.MannequinID == "" {
 		return fmt.Errorf("user has no mannequin associated - run 'Fetch Mannequins' first")
 	}
 	if mapping.DestinationLogin == nil || *mapping.DestinationLogin == "" {
+		return fmt.Errorf("user has no destination login mapped")
+	}
+	return nil
+}
+
+// validateMappingWithMannequin validates a mapping with mannequin data from user_mannequins table
+func validateMappingWithMannequin(m *storage.MappingWithMannequin) error {
+	if m.MannequinID == "" {
+		return fmt.Errorf("user has no mannequin associated - run 'Fetch Mannequins' first")
+	}
+	if m.DestinationLogin == nil || *m.DestinationLogin == "" {
 		return fmt.Errorf("user has no destination login mapped")
 	}
 	return nil
@@ -1266,8 +1310,20 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 		WriteError(w, ErrNotFound.WithDetails("User mapping not found"))
 		return
 	}
-	if err := validateMappingForInvitation(mapping); err != nil {
-		WriteError(w, ErrBadRequest.WithDetails(err.Error()))
+	if mapping.DestinationLogin == nil || *mapping.DestinationLogin == "" {
+		WriteError(w, ErrBadRequest.WithDetails("User has no destination login mapped"))
+		return
+	}
+
+	// Get mannequin info from user_mannequins table for this org
+	mannequin, err := h.db.GetUserMannequin(ctx, sourceLogin, req.DestinationOrg)
+	if err != nil {
+		h.logger.Error("Failed to get user mannequin", "source_login", sourceLogin, "org", req.DestinationOrg, "error", err)
+		WriteError(w, ErrDatabaseFetch.WithDetails("user mannequin"))
+		return
+	}
+	if mannequin == nil {
+		WriteError(w, ErrBadRequest.WithDetails(fmt.Sprintf("No mannequin found for user '%s' in org '%s' - run 'Fetch Mannequins' first", sourceLogin, req.DestinationOrg)))
 		return
 	}
 
@@ -1296,20 +1352,20 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Send the attribution invitation
-	result, err := destClient.CreateAttributionInvitation(ctx, orgID, *mapping.MannequinID, targetUser.ID)
+	// Send the attribution invitation using mannequin ID from user_mannequins table
+	result, err := destClient.CreateAttributionInvitation(ctx, orgID, mannequin.MannequinID, targetUser.ID)
 	if err != nil {
 		h.logger.Error("Failed to create attribution invitation",
-			"mannequin_id", *mapping.MannequinID,
+			"mannequin_id", mannequin.MannequinID,
 			"target_user", targetUser.Login,
 			"error", err)
 		errMsg := err.Error()
-		_ = h.db.UpdateReclaimStatus(ctx, sourceLogin, string(models.ReclaimStatusFailed), &errMsg)
+		_ = h.db.UpdateMannequinReclaimStatus(ctx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusFailed), &errMsg)
 		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Failed to send invitation: %s", err.Error())))
 		return
 	}
 
-	_ = h.db.UpdateReclaimStatus(ctx, sourceLogin, string(models.ReclaimStatusInvited), nil)
+	_ = h.db.UpdateMannequinReclaimStatus(ctx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusInvited), nil)
 
 	h.logger.Info("Attribution invitation sent",
 		"source_login", sourceLogin,
@@ -1354,6 +1410,35 @@ func filterPendingMappings(mappings []*models.UserMapping) []*models.UserMapping
 	return pending
 }
 
+// filterMappingsWithMannequinsByLogins filters mappings to only include those with matching source logins
+func filterMappingsWithMannequinsByLogins(mappings []*storage.MappingWithMannequin, sourceLogins []string) []*storage.MappingWithMannequin {
+	if len(sourceLogins) == 0 {
+		return mappings
+	}
+	loginSet := make(map[string]bool)
+	for _, login := range sourceLogins {
+		loginSet[login] = true
+	}
+	var filtered []*storage.MappingWithMannequin
+	for _, m := range mappings {
+		if loginSet[m.SourceLogin] {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered
+}
+
+// filterPendingMappingsWithMannequins returns only mappings not yet invited or reclaimed
+func filterPendingMappingsWithMannequins(mappings []*storage.MappingWithMannequin) []*storage.MappingWithMannequin {
+	var pending []*storage.MappingWithMannequin
+	for _, m := range mappings {
+		if m.ReclaimStatus == nil || (*m.ReclaimStatus != string(models.ReclaimStatusInvited) && *m.ReclaimStatus != string(models.ReclaimStatusCompleted)) {
+			pending = append(pending, m)
+		}
+	}
+	return pending
+}
+
 // bulkInvitationResult holds the results of bulk invitation processing
 type bulkInvitationResult struct {
 	invited int
@@ -1363,6 +1448,7 @@ type bulkInvitationResult struct {
 }
 
 // processBulkInvitations sends invitations for a list of mappings
+// Deprecated: Use processBulkInvitationsWithMannequins for new mannequin workflow
 func (h *Handler) processBulkInvitations(ctx context.Context, destClient *github.Client, orgID string, mappings []*models.UserMapping) bulkInvitationResult {
 	result := bulkInvitationResult{}
 
@@ -1388,6 +1474,38 @@ func (h *Handler) processBulkInvitations(ctx context.Context, destClient *github
 		} else {
 			result.invited++
 			_ = h.db.UpdateReclaimStatus(ctx, mapping.SourceLogin, string(models.ReclaimStatusInvited), nil)
+		}
+	}
+
+	return result
+}
+
+// processBulkInvitationsWithMannequins sends invitations for mappings with mannequin data from user_mannequins table
+func (h *Handler) processBulkInvitationsWithMannequins(ctx context.Context, destClient *github.Client, orgID, destOrg string, mappings []*storage.MappingWithMannequin) bulkInvitationResult {
+	result := bulkInvitationResult{}
+
+	for _, m := range mappings {
+		if err := validateMappingWithMannequin(m); err != nil {
+			result.skipped++
+			continue
+		}
+
+		targetUser, err := destClient.GetUserByLogin(ctx, *m.DestinationLogin)
+		if err != nil || targetUser == nil {
+			result.failed++
+			result.errors = append(result.errors, fmt.Sprintf("%s: destination user not found", m.SourceLogin))
+			continue
+		}
+
+		_, err = destClient.CreateAttributionInvitation(ctx, orgID, m.MannequinID, targetUser.ID)
+		if err != nil {
+			result.failed++
+			errMsg := err.Error()
+			result.errors = append(result.errors, fmt.Sprintf("%s: %s", m.SourceLogin, errMsg))
+			_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusFailed), &errMsg)
+		} else {
+			result.invited++
+			_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusInvited), nil)
 		}
 	}
 
@@ -1424,37 +1542,30 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// Get mappings to process
-	hasMannequin := true
-	filters := storage.UserMappingFilters{
-		Status:       string(models.UserMappingStatusMapped),
-		HasMannequin: &hasMannequin,
-		Limit:        0,
-	}
-
-	mappings, _, err := h.db.ListUserMappings(ctx, filters)
+	// Get mappings with mannequin data from user_mannequins table for this org
+	mappingsWithMannequins, err := h.db.ListMappingsWithMannequins(ctx, req.DestinationOrg, string(models.UserMappingStatusMapped))
 	if err != nil {
-		h.logger.Error("Failed to list user mappings", "error", err)
+		h.logger.Error("Failed to list mappings with mannequins", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("user mappings"))
 		return
 	}
 
 	// Apply filters
-	mappings = filterMappingsByLogins(mappings, req.SourceLogins)
-	pendingMappings := filterPendingMappings(mappings)
+	mappingsWithMannequins = filterMappingsWithMannequinsByLogins(mappingsWithMannequins, req.SourceLogins)
+	pendingMappings := filterPendingMappingsWithMannequins(mappingsWithMannequins)
 
 	if len(pendingMappings) == 0 {
 		h.sendJSON(w, http.StatusOK, map[string]any{
 			"success": true,
 			"invited": 0,
 			"failed":  0,
-			"skipped": len(mappings),
+			"skipped": len(mappingsWithMannequins),
 			"message": "No pending mappings to invite",
 		})
 		return
 	}
 
-	result := h.processBulkInvitations(ctx, destClient, orgID, pendingMappings)
+	result := h.processBulkInvitationsWithMannequins(ctx, destClient, orgID, req.DestinationOrg, pendingMappings)
 
 	h.logger.Info("Bulk invitation complete",
 		"invited", result.invited,

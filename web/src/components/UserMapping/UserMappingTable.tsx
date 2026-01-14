@@ -285,8 +285,8 @@ export function UserMappingTable() {
           showError(result.message);
         }
       } else if (action === 'generate_gei') {
-        // Generate GEI CSV filtered by destination org
-        const blob = await api.generateGEICSV(undefined, destinationOrg);
+        // Generate GEI CSV filtered by destination org (org is required)
+        const blob = await api.generateGEICSV(destinationOrg);
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;

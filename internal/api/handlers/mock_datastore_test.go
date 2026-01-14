@@ -25,7 +25,8 @@ type MockDataStore struct {
 	Dependencies     map[int64][]*models.RepositoryDependency
 	Users            map[string]*models.GitHubUser
 	UserMappings     map[string]*models.UserMapping
-	Teams            map[string]*models.GitHubTeam // key: "org/slug"
+	UserMannequins   map[string]*models.UserMannequin // key: "source_login/mannequin_org"
+	Teams            map[string]*models.GitHubTeam    // key: "org/slug"
 	TeamMappings     map[string]*models.TeamMapping
 	ADOProjects      map[string]*models.ADOProject // key: "org/project"
 
@@ -73,6 +74,7 @@ func NewMockDataStore() *MockDataStore {
 		Dependencies:     make(map[int64][]*models.RepositoryDependency),
 		Users:            make(map[string]*models.GitHubUser),
 		UserMappings:     make(map[string]*models.UserMapping),
+		UserMannequins:   make(map[string]*models.UserMannequin),
 		Teams:            make(map[string]*models.GitHubTeam),
 		TeamMappings:     make(map[string]*models.TeamMapping),
 		ADOProjects:      make(map[string]*models.ADOProject),
@@ -594,6 +596,140 @@ func (m *MockDataStore) UpdateReclaimStatus(_ context.Context, sourceLogin strin
 		mapping.ReclaimStatus = &status
 	}
 	return nil
+}
+
+// ============================================================================
+// User Mannequin Operations
+// ============================================================================
+
+func (m *MockDataStore) SaveUserMannequin(_ context.Context, mannequin *models.UserMannequin) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Use source_login + mannequin_org as key
+	key := mannequin.SourceLogin + "/" + mannequin.MannequinOrg
+	if m.UserMannequins == nil {
+		m.UserMannequins = make(map[string]*models.UserMannequin)
+	}
+	m.UserMannequins[key] = mannequin
+	return nil
+}
+
+func (m *MockDataStore) GetUserMannequin(_ context.Context, sourceLogin, mannequinOrg string) (*models.UserMannequin, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.UserMannequins == nil {
+		return nil, nil
+	}
+	key := sourceLogin + "/" + mannequinOrg
+	return m.UserMannequins[key], nil
+}
+
+func (m *MockDataStore) GetUserMannequinsBySourceLogin(_ context.Context, sourceLogin string) ([]*models.UserMannequin, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []*models.UserMannequin
+	if m.UserMannequins == nil {
+		return result, nil
+	}
+	for key, mannequin := range m.UserMannequins {
+		if len(key) > len(sourceLogin) && key[:len(sourceLogin)+1] == sourceLogin+"/" {
+			result = append(result, mannequin)
+		}
+	}
+	return result, nil
+}
+
+func (m *MockDataStore) ListUserMannequins(_ context.Context, filters storage.UserMannequinFilters) ([]*models.UserMannequin, int64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []*models.UserMannequin
+	if m.UserMannequins == nil {
+		return result, 0, nil
+	}
+	for _, mannequin := range m.UserMannequins {
+		if filters.MannequinOrg != "" && mannequin.MannequinOrg != filters.MannequinOrg {
+			continue
+		}
+		result = append(result, mannequin)
+	}
+	return result, int64(len(result)), nil
+}
+
+func (m *MockDataStore) UpdateMannequinReclaimStatus(_ context.Context, sourceLogin, mannequinOrg, status string, _ *string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.UserMannequins == nil {
+		return nil
+	}
+	key := sourceLogin + "/" + mannequinOrg
+	if mannequin := m.UserMannequins[key]; mannequin != nil {
+		mannequin.ReclaimStatus = &status
+	}
+	return nil
+}
+
+func (m *MockDataStore) GetMannequinOrgs(_ context.Context) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	orgsMap := make(map[string]bool)
+	if m.UserMannequins != nil {
+		for _, mannequin := range m.UserMannequins {
+			orgsMap[mannequin.MannequinOrg] = true
+		}
+	}
+	var orgs []string
+	for org := range orgsMap {
+		orgs = append(orgs, org)
+	}
+	return orgs, nil
+}
+
+func (m *MockDataStore) DeleteUserMannequin(_ context.Context, sourceLogin, mannequinOrg string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.UserMannequins == nil {
+		return nil
+	}
+	key := sourceLogin + "/" + mannequinOrg
+	delete(m.UserMannequins, key)
+	return nil
+}
+
+func (m *MockDataStore) ListMappingsWithMannequins(_ context.Context, mannequinOrg string, status string) ([]*storage.MappingWithMannequin, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []*storage.MappingWithMannequin
+	if m.UserMannequins == nil {
+		return result, nil
+	}
+	for _, mannequin := range m.UserMannequins {
+		if mannequin.MannequinOrg != mannequinOrg {
+			continue
+		}
+		mapping := m.UserMappings[mannequin.SourceLogin]
+		if mapping == nil {
+			continue
+		}
+		if status != "" && mapping.MappingStatus != status {
+			continue
+		}
+		result = append(result, &storage.MappingWithMannequin{
+			SourceLogin:      mannequin.SourceLogin,
+			SourceEmail:      mapping.SourceEmail,
+			SourceName:       mapping.SourceName,
+			DestinationLogin: mapping.DestinationLogin,
+			DestinationEmail: mapping.DestinationEmail,
+			MappingStatus:    mapping.MappingStatus,
+			MatchConfidence:  mapping.MatchConfidence,
+			MatchReason:      mapping.MatchReason,
+			MannequinID:      mannequin.MannequinID,
+			MannequinLogin:   mannequin.MannequinLogin,
+			MannequinOrg:     mannequin.MannequinOrg,
+			ReclaimStatus:    mannequin.ReclaimStatus,
+			ReclaimError:     mannequin.ReclaimError,
+		})
+	}
+	return result, nil
 }
 
 // ============================================================================

@@ -40,11 +40,14 @@ func createTestUserMapping(sourceLogin string) *models.UserMapping {
 	}
 }
 
+// TestListUserMappings_MannequinOrgFilter tests the deprecated MannequinOrg filter on user_mappings table.
+// NOTE: Mannequin data should now be stored in the user_mannequins table for multi-org support.
+// This test remains for backward compatibility with existing data.
 func TestListUserMappings_MannequinOrgFilter(t *testing.T) {
 	db := setupUserMappingsTestDB(t)
 	ctx := context.Background()
 
-	// Create user mappings with different mannequin orgs
+	// Create user mappings with different mannequin orgs (deprecated pattern)
 	mapping1 := createTestUserMapping("user1")
 	mapping1.MannequinID = strPtr("MDEyOk1hbm5lcXVpbjEyMzQ1")
 	mapping1.MannequinLogin = strPtr("user1-mona")

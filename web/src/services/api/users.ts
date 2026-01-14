@@ -103,11 +103,16 @@ export const usersApi = {
     return data;
   },
 
-  async generateGEICSV(mannequinsOnly?: boolean, org?: string): Promise<Blob> {
+  async generateGEICSV(org: string, status?: string): Promise<Blob> {
     const { data } = await client.get('/user-mappings/generate-gei-csv', {
-      params: { mannequins_only: mannequinsOnly, org },
+      params: { org, status },
       responseType: 'blob',
     });
+    return data;
+  },
+
+  async getMannequinOrgs(): Promise<{ orgs: string[] }> {
+    const { data } = await client.get('/user-mappings/mannequin-orgs');
     return data;
   },
 

@@ -360,6 +360,24 @@ CREATE INDEX idx_user_mappings_source_org ON user_mappings(source_org);
 CREATE INDEX idx_user_mappings_dest ON user_mappings(destination_login);
 CREATE INDEX idx_user_mappings_mannequin_org ON user_mappings(mannequin_org);
 
+-- User Mannequins table: tracks mannequin info per org (a user can have mannequins in multiple orgs)
+CREATE TABLE IF NOT EXISTS user_mannequins (
+    id BIGSERIAL PRIMARY KEY,
+    source_login TEXT NOT NULL,
+    mannequin_org TEXT NOT NULL,
+    mannequin_id TEXT NOT NULL,
+    mannequin_login TEXT,
+    reclaim_status TEXT,
+    reclaim_error TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source_login, mannequin_org)
+);
+
+CREATE INDEX idx_user_mannequins_source ON user_mannequins(source_login);
+CREATE INDEX idx_user_mannequins_org ON user_mannequins(mannequin_org);
+CREATE INDEX idx_user_mannequins_status ON user_mannequins(reclaim_status);
+
 CREATE TABLE IF NOT EXISTS team_mappings (
     id BIGSERIAL PRIMARY KEY,
     source_id BIGINT REFERENCES sources(id),
