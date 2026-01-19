@@ -1086,11 +1086,13 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				MappingStatus:  string(models.UserMappingStatusUnmapped),
 			}
 
-			if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
-				h.logger.Warn("Failed to save unmatched user mapping", "source_login", sourceLogin, "error", err)
-				// Don't count since we couldn't persist
-				continue
-			}
+		if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
+			h.logger.Warn("Failed to save unmatched user mapping", "source_login", sourceLogin, "error", err)
+			// Still count as unmatched to maintain accurate totals (matched + unmatched = total mannequins)
+			// This is consistent with the matched case which also counts save failures as unmatched
+			unmatched++
+			continue
+		}
 
 			// Also save mannequin info to user_mannequins table (supports multiple orgs per user)
 			userMannequin := &models.UserMannequin{
