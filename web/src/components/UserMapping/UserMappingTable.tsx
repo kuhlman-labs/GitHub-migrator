@@ -243,10 +243,6 @@ export function UserMappingTable() {
     }
   }, [refetch, showError, showSuccess]);
 
-  const handleGenerateGEI = useCallback(() => {
-    destOrgDialog.open({ action: 'generate_gei' });
-  }, [destOrgDialog]);
-
   // Action handlers that require destination org
   const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite' | 'generate_gei', sourceLogin?: string) => {
     // Pre-fill the destination org if we know it from the last fetch (except for 'fetch' which should start fresh)
@@ -258,6 +254,10 @@ export function UserMappingTable() {
     }
     destOrgDialog.open({ action, sourceLogin });
   }, [destOrgDialog, lastFetchedDestOrg]);
+
+  const handleGenerateGEI = useCallback(() => {
+    openDestOrgDialog('generate_gei');
+  }, [openDestOrgDialog]);
 
   const handleConfirmDestOrg = useCallback(async () => {
     if (!destinationOrg || !destOrgDialog.data) return;

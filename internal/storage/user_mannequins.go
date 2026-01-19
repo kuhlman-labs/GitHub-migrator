@@ -206,8 +206,7 @@ func (d *Database) ListMappingsWithMannequins(ctx context.Context, mannequinOrg 
 			umq.reclaim_status,
 			umq.reclaim_error
 		`).
-		Joins("INNER JOIN user_mannequins umq ON um.source_login = umq.source_login").
-		Where("umq.mannequin_org = ?", mannequinOrg)
+		Joins("INNER JOIN user_mannequins umq ON um.source_login = umq.source_login AND umq.mannequin_org = ?", mannequinOrg)
 
 	if status != "" {
 		query = query.Where("um.mapping_status = ?", status)

@@ -331,6 +331,7 @@ var (
 	_ AnalyticsStore        = (*Database)(nil)
 	_ UserStore             = (*Database)(nil)
 	_ UserMappingStore      = (*Database)(nil)
+	_ UserMannequinStore    = (*Database)(nil)
 	_ TeamStore             = (*Database)(nil)
 	_ TeamMappingStore      = (*Database)(nil)
 	_ SourceStore           = (*Database)(nil)

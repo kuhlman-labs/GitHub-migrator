@@ -1039,35 +1039,36 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				MatchReason:      stringPtr(reason),
 			}
 
-			if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
-				h.logger.Warn("Failed to save user mapping", "source_login", sourceLogin, "error", err)
-				unmatched++
-				continue
-			}
+		// First save mannequin info to user_mannequins table (required for GenerateGEICSV)
+		// Save this first so we don't create orphaned UserMapping records
+		userMannequin := &models.UserMannequin{
+			SourceLogin:    sourceLogin,
+			MannequinOrg:   destOrg,
+			MannequinID:    mannequin.ID,
+			MannequinLogin: stringPtr(mannequin.Login),
+		}
+		// Check if mannequin was already claimed
+		if mannequin.Claimant != nil {
+			reclaimStatus := string(models.ReclaimStatusCompleted)
+			userMannequin.ReclaimStatus = &reclaimStatus
+		}
 
-			// Also save mannequin info to user_mannequins table (supports multiple orgs per user)
-			userMannequin := &models.UserMannequin{
-				SourceLogin:    sourceLogin,
-				MannequinOrg:   destOrg,
-				MannequinID:    mannequin.ID,
-				MannequinLogin: stringPtr(mannequin.Login),
-			}
-			// Check if mannequin was already claimed
-			if mannequin.Claimant != nil {
-				reclaimStatus := string(models.ReclaimStatusCompleted)
-				userMannequin.ReclaimStatus = &reclaimStatus
-			}
+		if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
+			h.logger.Error("Failed to save user mannequin",
+				"source_login", sourceLogin, "org", destOrg, "error", err)
+			unmatched++
+			continue
+		}
 
-			if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
-				// If SaveUserMannequin fails, the mapping won't appear in GenerateGEICSV
-				// which uses INNER JOIN on user_mannequins. Count as unmatched so user knows to retry.
-				h.logger.Error("Failed to save user mannequin - mannequin will be missing from GEI CSV",
-					"source_login", sourceLogin, "org", destOrg, "error", err)
-				unmatched++
-				continue
-			}
+		if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
+			h.logger.Warn("Failed to save user mapping", "source_login", sourceLogin, "error", err)
+			// UserMannequin was saved but UserMapping failed - this is acceptable
+			// as the mannequin data exists and can be retried
+			unmatched++
+			continue
+		}
 
-			matched++
+		matched++
 			h.logger.Debug("Matched mannequin to destination member",
 				"source_login", sourceLogin,
 				"destination_login", destMember.Login,
@@ -1086,15 +1087,8 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				MappingStatus:  string(models.UserMappingStatusUnmapped),
 			}
 
-			if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
-				h.logger.Warn("Failed to save unmatched user mapping", "source_login", sourceLogin, "error", err)
-				// Still count as unmatched to maintain accurate totals (matched + unmatched = total mannequins)
-				// This is consistent with the matched case which also counts save failures as unmatched
-				unmatched++
-				continue
-			}
-
-			// Also save mannequin info to user_mannequins table (supports multiple orgs per user)
+			// First save mannequin info to user_mannequins table (required for GenerateGEICSV)
+			// Save this first so we don't create orphaned UserMapping records
 			userMannequin := &models.UserMannequin{
 				SourceLogin:    sourceLogin,
 				MannequinOrg:   destOrg,
@@ -1108,11 +1102,16 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 			}
 
 			if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
-				// If SaveUserMannequin fails, the mapping won't appear in GenerateGEICSV
-				// which uses INNER JOIN on user_mannequins. Count as unmatched and continue
-				// to maintain consistency with the matched case error handling.
-				h.logger.Error("Failed to save user mannequin - mannequin will be missing from GEI CSV",
+				h.logger.Error("Failed to save user mannequin",
 					"source_login", sourceLogin, "org", destOrg, "error", err)
+				unmatched++
+				continue
+			}
+
+			if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
+				h.logger.Warn("Failed to save unmatched user mapping", "source_login", sourceLogin, "error", err)
+				// UserMannequin was saved but UserMapping failed - this is acceptable
+				// as the mannequin data exists and can be retried
 				unmatched++
 				continue
 			}
