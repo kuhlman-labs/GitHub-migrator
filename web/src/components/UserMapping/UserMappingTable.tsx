@@ -250,8 +250,11 @@ export function UserMappingTable() {
   // Action handlers that require destination org
   const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite' | 'generate_gei', sourceLogin?: string) => {
     // Pre-fill the destination org if we know it from the last fetch (except for 'fetch' which should start fresh)
+    // Always explicitly set the value to prevent stale state from previous dialog interactions
     if (action !== 'fetch' && lastFetchedDestOrg) {
       setDestinationOrg(lastFetchedDestOrg);
+    } else {
+      setDestinationOrg('');
     }
     destOrgDialog.open({ action, sourceLogin });
   }, [destOrgDialog, lastFetchedDestOrg]);
@@ -308,11 +311,13 @@ export function UserMappingTable() {
       showError(`Action failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
     
+    setDestinationOrg('');
     setEmuShortcode('');
   }, [destinationOrg, emuShortcode, destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations, showSuccess, showError]);
 
   const cancelDestOrgDialog = useCallback(() => {
     destOrgDialog.close();
+    setDestinationOrg('');
     setEmuShortcode('');
   }, [destOrgDialog]);
 
