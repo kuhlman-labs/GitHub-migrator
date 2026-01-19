@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   TextInput,
   Flash,
@@ -118,6 +118,12 @@ export function UserMappingTable() {
   const [destinationOrg, setDestinationOrg] = useState('');
   const [lastFetchedDestOrg, setLastFetchedDestOrg] = useState<string | null>(null);
   const [emuShortcode, setEmuShortcode] = useState('');
+  
+  // Refs to avoid stale closure issues in callbacks
+  const destinationOrgRef = useRef(destinationOrg);
+  const emuShortcodeRef = useRef(emuShortcode);
+  destinationOrgRef.current = destinationOrg;
+  emuShortcodeRef.current = emuShortcode;
   const [discoverOrg, setDiscoverOrg] = useState('');
   const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
   
@@ -260,7 +266,11 @@ export function UserMappingTable() {
   }, [openDestOrgDialog]);
 
   const handleConfirmDestOrg = useCallback(async () => {
-    if (!destinationOrg || !destOrgDialog.data) return;
+    // Use refs to get the current values, avoiding stale closure issues
+    const currentDestOrg = destinationOrgRef.current;
+    const currentEmuShortcode = emuShortcodeRef.current;
+    
+    if (!currentDestOrg || !destOrgDialog.data) return;
     
     const { action, sourceLogin } = destOrgDialog.data;
     destOrgDialog.close();
@@ -269,16 +279,16 @@ export function UserMappingTable() {
       if (action === 'fetch') {
         // Fetch mannequins and match to destination org members
         const result = await fetchMannequins.mutateAsync({
-          destinationOrg,
-          emuShortcode: emuShortcode || undefined,
+          destinationOrg: currentDestOrg,
+          emuShortcode: currentEmuShortcode || undefined,
         });
         // Remember the destination org for subsequent actions
-        setLastFetchedDestOrg(destinationOrg);
+        setLastFetchedDestOrg(currentDestOrg);
         showSuccess(result.message);
       } else if (action === 'invite' && sourceLogin) {
         const result = await sendInvitation.mutateAsync({
           sourceLogin,
-          destinationOrg,
+          destinationOrg: currentDestOrg,
         });
         if (result.success) {
           showSuccess(result.message);
@@ -287,7 +297,7 @@ export function UserMappingTable() {
         }
       } else if (action === 'bulk_invite') {
         const result = await bulkSendInvitations.mutateAsync({
-          destinationOrg,
+          destinationOrg: currentDestOrg,
         });
         if (result.success) {
           showSuccess(result.message);
@@ -296,16 +306,16 @@ export function UserMappingTable() {
         }
       } else if (action === 'generate_gei') {
         // Generate GEI CSV filtered by destination org (org is required)
-        const blob = await api.generateGEICSV(destinationOrg);
+        const blob = await api.generateGEICSV(currentDestOrg);
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `mannequin-mappings-${destinationOrg}.csv`;
+        a.download = `mannequin-mappings-${currentDestOrg}.csv`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        showSuccess(`GEI CSV generated for ${destinationOrg}`);
+        showSuccess(`GEI CSV generated for ${currentDestOrg}`);
       }
     } catch (err) {
       showError(`Action failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -313,7 +323,7 @@ export function UserMappingTable() {
     
     setDestinationOrg('');
     setEmuShortcode('');
-  }, [destinationOrg, emuShortcode, destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations, showSuccess, showError]);
+  }, [destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations, showSuccess, showError]);
 
   const cancelDestOrgDialog = useCallback(() => {
     destOrgDialog.close();
