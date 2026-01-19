@@ -116,6 +116,7 @@ export function UserMappingTable() {
   
   // Form state for dialogs
   const [destinationOrg, setDestinationOrg] = useState('');
+  const [lastFetchedDestOrg, setLastFetchedDestOrg] = useState<string | null>(null);
   const [emuShortcode, setEmuShortcode] = useState('');
   const [discoverOrg, setDiscoverOrg] = useState('');
   const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
@@ -248,8 +249,12 @@ export function UserMappingTable() {
 
   // Action handlers that require destination org
   const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite' | 'generate_gei', sourceLogin?: string) => {
+    // Pre-fill the destination org if we know it from the last fetch (except for 'fetch' which should start fresh)
+    if (action !== 'fetch' && lastFetchedDestOrg) {
+      setDestinationOrg(lastFetchedDestOrg);
+    }
     destOrgDialog.open({ action, sourceLogin });
-  }, [destOrgDialog]);
+  }, [destOrgDialog, lastFetchedDestOrg]);
 
   const handleConfirmDestOrg = useCallback(async () => {
     if (!destinationOrg || !destOrgDialog.data) return;
@@ -264,6 +269,8 @@ export function UserMappingTable() {
           destinationOrg,
           emuShortcode: emuShortcode || undefined,
         });
+        // Remember the destination org for subsequent actions
+        setLastFetchedDestOrg(destinationOrg);
         showSuccess(result.message);
       } else if (action === 'invite' && sourceLogin) {
         const result = await sendInvitation.mutateAsync({
@@ -406,7 +413,11 @@ export function UserMappingTable() {
               leadingVisual={MailIcon}
               disabled={bulkSendInvitations.isPending}
             >
-              {bulkSendInvitations.isPending ? 'Sending...' : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''}`}
+              {bulkSendInvitations.isPending 
+                ? 'Sending...' 
+                : lastFetchedDestOrg 
+                  ? `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''} to ${lastFetchedDestOrg}`
+                  : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''}`}
             </SuccessButton>
           )}
         </div>

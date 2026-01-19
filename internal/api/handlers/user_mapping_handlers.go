@@ -892,8 +892,6 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 // We match mannequins to destination org members using login, email, and name matching.
 // For EMU migrations, an optional shortcode can be provided to match "jsmith" -> "jsmith_coinbase".
 func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	var req AutoMapUsersRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -912,9 +910,16 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use a detached context with a longer timeout for GitHub API operations.
+	// This prevents HTTP request timeouts from canceling long-running API calls
+	// (e.g., when fetching members from large orgs or waiting for rate limit resets).
+	// The 10-minute timeout is generous to handle rate limit waits.
+	apiCtx, apiCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer apiCancel()
+
 	// Step 1: Fetch mannequins from destination org
 	// The mannequin's login IS the source user's login
-	mannequins, err := destClient.ListMannequins(ctx, req.DestinationOrg)
+	mannequins, err := destClient.ListMannequins(apiCtx, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch mannequins", "org", req.DestinationOrg, "error", err)
 		WriteError(w, ErrInternal.WithDetails("Failed to fetch mannequins from destination"))
@@ -924,7 +929,7 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Fetched mannequins from destination", "org", req.DestinationOrg, "count", len(mannequins))
 
 	// Step 2: Fetch destination org members to match against
-	destMembers, err := destClient.ListOrgMembers(ctx, req.DestinationOrg)
+	destMembers, err := destClient.ListOrgMembers(apiCtx, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch destination org members", "org", req.DestinationOrg, "error", err)
 		WriteError(w, ErrInternal.WithDetails("Failed to fetch destination organization members"))
@@ -934,7 +939,8 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Fetched destination org members", "org", req.DestinationOrg, "count", len(destMembers))
 
 	// Step 3: Match mannequins to destination members
-	matched, unmatched, err := h.matchMannequinsToDestMembers(ctx, mannequins, destMembers, req.EMUShortcode, req.DestinationOrg)
+	// Use apiCtx for database operations too (saving mappings)
+	matched, unmatched, err := h.matchMannequinsToDestMembers(apiCtx, mannequins, destMembers, req.EMUShortcode, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to match mannequins to destination members", "error", err)
 		WriteError(w, ErrInternal.WithDetails("Failed to match mannequins to destination members"))
@@ -1274,8 +1280,6 @@ func (h *Handler) getOrgIDFromMannequins(ctx context.Context, destClient *github
 // SendAttributionInvitation handles POST /api/v1/user-mappings/{sourceLogin}/send-invitation
 // Sends an attribution invitation for a single user mapping to reclaim a mannequin
 func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	// Extract source login from URL path
 	path := r.URL.Path
 	sourceLogin := strings.TrimPrefix(path, "/api/v1/user-mappings/")
@@ -1299,8 +1303,13 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Use a detached context with a longer timeout for GitHub API operations.
+	// This prevents HTTP request timeouts from canceling API calls.
+	apiCtx, apiCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer apiCancel()
+
 	// Get and validate the mapping
-	mapping, err := h.db.GetUserMappingBySourceLogin(ctx, sourceLogin)
+	mapping, err := h.db.GetUserMappingBySourceLogin(apiCtx, sourceLogin)
 	if err != nil {
 		h.logger.Error("Failed to get user mapping", "source_login", sourceLogin, "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("user mapping"))
@@ -1316,7 +1325,7 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Get mannequin info from user_mannequins table for this org
-	mannequin, err := h.db.GetUserMannequin(ctx, sourceLogin, req.DestinationOrg)
+	mannequin, err := h.db.GetUserMannequin(apiCtx, sourceLogin, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to get user mannequin", "source_login", sourceLogin, "org", req.DestinationOrg, "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("user mannequin"))
@@ -1334,7 +1343,7 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Get target user and org ID
-	targetUser, err := destClient.GetUserByLogin(ctx, *mapping.DestinationLogin)
+	targetUser, err := destClient.GetUserByLogin(apiCtx, *mapping.DestinationLogin)
 	if err != nil {
 		h.logger.Error("Failed to get destination user", "login", *mapping.DestinationLogin, "error", err)
 		WriteError(w, ErrInternal.WithDetails("Failed to look up destination user"))
@@ -1345,7 +1354,7 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	orgID, err := h.getOrgIDFromMannequins(ctx, destClient, req.DestinationOrg)
+	orgID, err := h.getOrgIDFromMannequins(apiCtx, destClient, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch mannequins for org ID", "org", req.DestinationOrg, "error", err)
 		WriteError(w, ErrInternal.WithDetails(err.Error()))
@@ -1353,19 +1362,19 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Send the attribution invitation using mannequin ID from user_mannequins table
-	result, err := destClient.CreateAttributionInvitation(ctx, orgID, mannequin.MannequinID, targetUser.ID)
+	result, err := destClient.CreateAttributionInvitation(apiCtx, orgID, mannequin.MannequinID, targetUser.ID)
 	if err != nil {
 		h.logger.Error("Failed to create attribution invitation",
 			"mannequin_id", mannequin.MannequinID,
 			"target_user", targetUser.Login,
 			"error", err)
 		errMsg := err.Error()
-		_ = h.db.UpdateMannequinReclaimStatus(ctx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusFailed), &errMsg)
+		_ = h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusFailed), &errMsg)
 		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Failed to send invitation: %s", err.Error())))
 		return
 	}
 
-	_ = h.db.UpdateMannequinReclaimStatus(ctx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusInvited), nil)
+	_ = h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusInvited), nil)
 
 	h.logger.Info("Attribution invitation sent",
 		"source_login", sourceLogin,
@@ -1515,8 +1524,6 @@ func (h *Handler) processBulkInvitationsWithMannequins(ctx context.Context, dest
 // BulkSendAttributionInvitations handles POST /api/v1/user-mappings/send-invitations
 // Sends attribution invitations for multiple user mappings
 func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	var req MigrateUsersRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1535,7 +1542,12 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 		return
 	}
 
-	orgID, err := h.getOrgIDFromMannequins(ctx, destClient, req.DestinationOrg)
+	// Use a detached context with a longer timeout for GitHub API operations.
+	// Bulk operations can take a long time for many users.
+	apiCtx, apiCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer apiCancel()
+
+	orgID, err := h.getOrgIDFromMannequins(apiCtx, destClient, req.DestinationOrg)
 	if err != nil {
 		h.logger.Error("Failed to fetch mannequins", "org", req.DestinationOrg, "error", err)
 		WriteError(w, ErrInternal.WithDetails(err.Error()))
@@ -1543,7 +1555,7 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 	}
 
 	// Get mappings with mannequin data from user_mannequins table for this org
-	mappingsWithMannequins, err := h.db.ListMappingsWithMannequins(ctx, req.DestinationOrg, string(models.UserMappingStatusMapped))
+	mappingsWithMannequins, err := h.db.ListMappingsWithMannequins(apiCtx, req.DestinationOrg, string(models.UserMappingStatusMapped))
 	if err != nil {
 		h.logger.Error("Failed to list mappings with mannequins", "error", err)
 		WriteError(w, ErrDatabaseFetch.WithDetails("user mappings"))
@@ -1565,7 +1577,7 @@ func (h *Handler) BulkSendAttributionInvitations(w http.ResponseWriter, r *http.
 		return
 	}
 
-	result := h.processBulkInvitationsWithMannequins(ctx, destClient, orgID, req.DestinationOrg, pendingMappings)
+	result := h.processBulkInvitationsWithMannequins(apiCtx, destClient, orgID, req.DestinationOrg, pendingMappings)
 
 	h.logger.Info("Bulk invitation complete",
 		"invited", result.invited,
