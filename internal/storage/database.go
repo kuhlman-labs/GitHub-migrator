@@ -121,6 +121,11 @@ func (d *Database) Migrate() error {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
 
+	// Run pre-migration fixes for schema compatibility issues
+	if err := d.runPreMigrationFixes(); err != nil {
+		return fmt.Errorf("failed to run pre-migration fixes: %w", err)
+	}
+
 	// Get list of applied migrations
 	applied, err := d.getAppliedMigrations()
 	if err != nil {
@@ -205,6 +210,43 @@ func (d *Database) createMigrationsTable() error {
 	// Use GORM AutoMigrate for schema_migrations table
 	err := d.db.AutoMigrate(&SchemaMigration{})
 	return err
+}
+
+// runPreMigrationFixes handles schema compatibility issues that can't be easily
+// addressed in SQL migrations (e.g., SQLite doesn't support ADD COLUMN IF NOT EXISTS)
+func (d *Database) runPreMigrationFixes() error {
+	// Only apply fixes for SQLite - other databases handle this in SQL migrations
+	if d.cfg.Type != DBTypeSQLite && d.cfg.Type != "sqlite3" {
+		return nil
+	}
+
+	// Check if user_mappings table exists before trying to add columns
+	var tableExists int
+	err := d.db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='user_mappings'").Scan(&tableExists).Error
+	if err != nil {
+		return fmt.Errorf("failed to check if user_mappings table exists: %w", err)
+	}
+	if tableExists == 0 {
+		// Table doesn't exist yet, it will be created by migrations with the column
+		return nil
+	}
+
+	// Check if mannequin_org column exists in user_mappings
+	var columnExists int
+	err = d.db.Raw("SELECT COUNT(*) FROM pragma_table_info('user_mappings') WHERE name='mannequin_org'").Scan(&columnExists).Error
+	if err != nil {
+		return fmt.Errorf("failed to check if mannequin_org column exists: %w", err)
+	}
+
+	if columnExists == 0 {
+		slog.Info("Adding mannequin_org column to user_mappings table (SQLite pre-migration fix)")
+		if err := d.db.Exec("ALTER TABLE user_mappings ADD COLUMN mannequin_org TEXT").Error; err != nil {
+			return fmt.Errorf("failed to add mannequin_org column: %w", err)
+		}
+		slog.Info("Successfully added mannequin_org column")
+	}
+
+	return nil
 }
 
 func (d *Database) getAppliedMigrations() (map[string]bool, error) {

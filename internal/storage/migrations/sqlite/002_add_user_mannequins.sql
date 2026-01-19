@@ -4,10 +4,9 @@
 -- For existing databases with old 001_schema.sql, these statements add the missing schema.
 -- All statements use IF NOT EXISTS or are idempotent to work in both cases.
 
--- Note: We skip ALTER TABLE ADD COLUMN mannequin_org because:
--- 1. New databases already have it in 001_schema.sql
--- 2. SQLite doesn't support ADD COLUMN IF NOT EXISTS
--- 3. Existing databases that need the column should use manual migration or app-level handling
+-- Note: The mannequin_org column is added by the Go pre-migration fix in database.go
+-- (runPreMigrationFixes) because SQLite doesn't support ADD COLUMN IF NOT EXISTS.
+-- This ensures the column exists before this migration runs.
 
 -- Create index for mannequin_org (IF NOT EXISTS is supported for indexes)
 CREATE INDEX IF NOT EXISTS idx_user_mappings_mannequin_org ON user_mappings(mannequin_org);
