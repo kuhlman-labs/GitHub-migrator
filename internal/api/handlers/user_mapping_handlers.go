@@ -1109,10 +1109,12 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 
 			if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
 				// If SaveUserMannequin fails, the mapping won't appear in GenerateGEICSV
-				// which uses INNER JOIN on user_mannequins. Log error but still count as unmatched
-				// since the user mapping was saved successfully.
+				// which uses INNER JOIN on user_mannequins. Count as unmatched and continue
+				// to maintain consistency with the matched case error handling.
 				h.logger.Error("Failed to save user mannequin - mannequin will be missing from GEI CSV",
 					"source_login", sourceLogin, "org", destOrg, "error", err)
+				unmatched++
+				continue
 			}
 
 			unmatched++
