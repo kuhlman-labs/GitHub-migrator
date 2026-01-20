@@ -184,6 +184,59 @@ func (d *Database) DeleteUserMannequin(ctx context.Context, sourceLogin, mannequ
 	return nil
 }
 
+// MannequinOrgStats contains statistics for mannequins in a specific organization
+type MannequinOrgStats struct {
+	Total     int64 `json:"total"`     // Total mannequins in this org
+	Invitable int64 `json:"invitable"` // Mannequins that can be invited (mapped + not completed)
+	Pending   int64 `json:"pending"`   // Mannequins with pending invitations
+	Completed int64 `json:"completed"` // Mannequins already reclaimed
+}
+
+// GetMannequinOrgStats returns statistics for mannequins in a specific organization
+func (d *Database) GetMannequinOrgStats(ctx context.Context, mannequinOrg string) (*MannequinOrgStats, error) {
+	var stats MannequinOrgStats
+
+	// Total mannequins in this org
+	if err := d.db.WithContext(ctx).
+		Model(&models.UserMannequin{}).
+		Where("mannequin_org = ?", mannequinOrg).
+		Count(&stats.Total).Error; err != nil {
+		return nil, fmt.Errorf("failed to count total mannequins: %w", err)
+	}
+
+	// Invitable: has a mapping with destination_login AND reclaim_status is NOT 'completed'
+	// This requires joining with user_mappings
+	if err := d.db.WithContext(ctx).
+		Table("user_mannequins umq").
+		Joins("INNER JOIN user_mappings um ON umq.source_login = um.source_login").
+		Where("umq.mannequin_org = ?", mannequinOrg).
+		Where("um.destination_login IS NOT NULL AND um.destination_login != ''").
+		Where("(umq.reclaim_status IS NULL OR umq.reclaim_status != ?)", string(models.ReclaimStatusCompleted)).
+		Count(&stats.Invitable).Error; err != nil {
+		return nil, fmt.Errorf("failed to count invitable mannequins: %w", err)
+	}
+
+	// Pending invitations
+	if err := d.db.WithContext(ctx).
+		Model(&models.UserMannequin{}).
+		Where("mannequin_org = ?", mannequinOrg).
+		Where("reclaim_status = ?", string(models.ReclaimStatusPending)).
+		Count(&stats.Pending).Error; err != nil {
+		return nil, fmt.Errorf("failed to count pending mannequins: %w", err)
+	}
+
+	// Completed (already reclaimed)
+	if err := d.db.WithContext(ctx).
+		Model(&models.UserMannequin{}).
+		Where("mannequin_org = ?", mannequinOrg).
+		Where("reclaim_status = ?", string(models.ReclaimStatusCompleted)).
+		Count(&stats.Completed).Error; err != nil {
+		return nil, fmt.Errorf("failed to count completed mannequins: %w", err)
+	}
+
+	return &stats, nil
+}
+
 // ListMappingsWithMannequins returns user mappings joined with their mannequin data for a specific org
 // This is used for generating GEI CSV files
 func (d *Database) ListMappingsWithMannequins(ctx context.Context, mannequinOrg string, status string) ([]*MappingWithMannequin, error) {

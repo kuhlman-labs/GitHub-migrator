@@ -732,6 +732,44 @@ func (m *MockDataStore) ListMappingsWithMannequins(_ context.Context, mannequinO
 	return result, nil
 }
 
+func (m *MockDataStore) GetMannequinOrgStats(_ context.Context, mannequinOrg string) (*storage.MannequinOrgStats, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	stats := &storage.MannequinOrgStats{}
+	if m.UserMannequins == nil {
+		return stats, nil
+	}
+
+	for _, mannequin := range m.UserMannequins {
+		if mannequin.MannequinOrg != mannequinOrg {
+			continue
+		}
+		stats.Total++
+
+		// Check reclaim status
+		if mannequin.ReclaimStatus != nil {
+			switch *mannequin.ReclaimStatus {
+			case string(models.ReclaimStatusCompleted):
+				stats.Completed++
+			case string(models.ReclaimStatusPending):
+				stats.Pending++
+			}
+		}
+
+		// Check if invitable (has destination mapping and not completed)
+		if mapping := m.UserMappings[mannequin.SourceLogin]; mapping != nil {
+			if mapping.DestinationLogin != nil && *mapping.DestinationLogin != "" {
+				if mannequin.ReclaimStatus == nil || *mannequin.ReclaimStatus != string(models.ReclaimStatusCompleted) {
+					stats.Invitable++
+				}
+			}
+		}
+	}
+
+	return stats, nil
+}
+
 // ============================================================================
 // Team Operations
 // ============================================================================

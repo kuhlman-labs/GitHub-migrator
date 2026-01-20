@@ -136,6 +136,9 @@ export const usersApi = {
     unmatched: number;
     destination_org: string;
     emu_shortcode_applied: boolean;
+    invitable: number;
+    pending: number;
+    completed: number;
     message: string;
   }> {
     const { data } = await client.post('/user-mappings/fetch-mannequins', {

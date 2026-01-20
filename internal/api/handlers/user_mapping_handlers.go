@@ -947,6 +947,15 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Step 4: Get org-specific stats for the response
+	// This gives the frontend accurate invitable count for this specific org
+	orgStats, err := h.db.GetMannequinOrgStats(apiCtx, req.DestinationOrg)
+	if err != nil {
+		h.logger.Warn("Failed to get mannequin org stats", "org", req.DestinationOrg, "error", err)
+		// Don't fail the request, just use zeros
+		orgStats = &storage.MannequinOrgStats{}
+	}
+
 	h.sendJSON(w, http.StatusOK, map[string]any{
 		"total_mannequins":      len(mannequins),
 		"total_dest_members":    len(destMembers),
@@ -954,7 +963,10 @@ func (h *Handler) FetchMannequins(w http.ResponseWriter, r *http.Request) {
 		"unmatched":             unmatched,
 		"destination_org":       req.DestinationOrg,
 		"emu_shortcode_applied": req.EMUShortcode != "",
-		"message":               fmt.Sprintf("Processed %d mannequins from '%s': %d matched to destination members, %d unmatched", len(mannequins), req.DestinationOrg, matched, unmatched),
+		"invitable":             orgStats.Invitable,
+		"pending":               orgStats.Pending,
+		"completed":             orgStats.Completed,
+		"message":               fmt.Sprintf("Processed %d mannequins from '%s': %d matched to destination members, %d unmatched, %d invitable", len(mannequins), req.DestinationOrg, matched, unmatched, orgStats.Invitable),
 	})
 }
 

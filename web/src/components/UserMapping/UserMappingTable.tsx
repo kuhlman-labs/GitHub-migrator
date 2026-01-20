@@ -117,6 +117,7 @@ export function UserMappingTable() {
   // Form state for dialogs
   const [destinationOrg, setDestinationOrg] = useState('');
   const [lastFetchedDestOrg, setLastFetchedDestOrg] = useState<string | null>(null);
+  const [orgInvitableCount, setOrgInvitableCount] = useState<number>(0);
   const [emuShortcode, setEmuShortcode] = useState('');
   
   // Refs to avoid stale closure issues in callbacks
@@ -282,8 +283,9 @@ export function UserMappingTable() {
           destinationOrg: currentDestOrg,
           emuShortcode: currentEmuShortcode || undefined,
         });
-        // Remember the destination org for subsequent actions
+        // Remember the destination org and invitable count for subsequent actions
         setLastFetchedDestOrg(currentDestOrg);
+        setOrgInvitableCount(result.invitable || 0);
         showSuccess(result.message);
       } else if (action === 'invite' && sourceLogin) {
         const result = await sendInvitation.mutateAsync({
@@ -291,6 +293,8 @@ export function UserMappingTable() {
           destinationOrg: currentDestOrg,
         });
         if (result.success) {
+          // Decrement invitable count since this user was invited
+          setOrgInvitableCount(prev => Math.max(0, prev - 1));
           showSuccess(result.message);
         } else {
           showError(result.message);
@@ -300,6 +304,8 @@ export function UserMappingTable() {
           destinationOrg: currentDestOrg,
         });
         if (result.success) {
+          // Update invitable count: subtract invited, keep those that failed/skipped
+          setOrgInvitableCount(prev => Math.max(0, prev - result.invited));
           showSuccess(result.message);
         } else {
           showError(result.message);
@@ -331,8 +337,9 @@ export function UserMappingTable() {
     setEmuShortcode('');
   }, [destOrgDialog]);
 
-  // Get invitable count from stats (not from paginated mappings)
-  const invitableCount = stats?.invitable || 0;
+  // Get invitable count: use org-specific count when we have a fetched org,
+  // otherwise fall back to global stats (though button won't show without org)
+  const invitableCount = lastFetchedDestOrg ? orgInvitableCount : (stats?.invitable || 0);
 
   if (error) {
     return (
@@ -421,8 +428,8 @@ export function UserMappingTable() {
             {fetchMannequins.isPending ? 'Fetching...' : 'Fetch Mannequins'}
           </PrimaryButton>
           
-          {/* Primary action - Send Invitations */}
-          {invitableCount > 0 && (
+          {/* Primary action - Send Invitations (only show after fetching mannequins for an org) */}
+          {lastFetchedDestOrg && invitableCount > 0 && (
             <SuccessButton
               onClick={() => openDestOrgDialog('bulk_invite')}
               leadingVisual={MailIcon}
@@ -430,9 +437,7 @@ export function UserMappingTable() {
             >
               {bulkSendInvitations.isPending 
                 ? 'Sending...' 
-                : lastFetchedDestOrg 
-                  ? `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''} to ${lastFetchedDestOrg}`
-                  : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''}`}
+                : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''} to ${lastFetchedDestOrg}`}
             </SuccessButton>
           )}
         </div>

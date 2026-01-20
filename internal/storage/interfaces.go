@@ -201,6 +201,8 @@ type UserMannequinStore interface {
 	DeleteUserMannequin(ctx context.Context, sourceLogin, mannequinOrg string) error
 	// ListMappingsWithMannequins returns user mappings joined with mannequin data.
 	ListMappingsWithMannequins(ctx context.Context, mannequinOrg string, status string) ([]*MappingWithMannequin, error)
+	// GetMannequinOrgStats returns statistics for mannequins in a specific organization.
+	GetMannequinOrgStats(ctx context.Context, mannequinOrg string) (*MannequinOrgStats, error)
 }
 
 // TeamStore defines operations for teams.
