@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Box, Text, TextInput, Button, Flash, Spinner, Avatar, IconButton } from '@primer/react';
+import { useState, useRef, useEffect } from 'react';
+import { Text, TextInput, Button, Flash, Spinner, Avatar, IconButton } from '@primer/react';
 import { CopilotIcon, PaperAirplaneIcon, TrashIcon, PlusIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { copilotApi } from '../../services/api/copilot';
@@ -132,103 +132,102 @@ export function CopilotAssistant() {
   // Show loading state
   if (statusLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+      <div className="flex justify-center items-center" style={{ height: '60vh' }}>
         <Spinner size="large" />
-      </Box>
+      </div>
     );
   }
 
   // Show error state
   if (statusError) {
     return (
-      <Box sx={{ p: 4 }}>
+      <div className="p-4">
         <Flash variant="danger">
           Failed to load Copilot status. Please try again later.
         </Flash>
-      </Box>
+      </div>
     );
   }
 
   // Show unavailable state
   if (!status?.available) {
     return (
-      <Box sx={{ p: 4 }}>
+      <div className="p-4">
         <PageHeader
           title="Copilot Assistant"
           subtitle="AI-powered migration planning and execution"
         />
-        <Box sx={{ mt: 4, maxWidth: 600 }}>
+        <div className="mt-4" style={{ maxWidth: 600 }}>
           <Flash variant="warning">
-            <Text sx={{ fontWeight: 'bold' }}>Copilot is not available</Text>
-            <Text sx={{ display: 'block', mt: 1 }}>
+            <Text className="font-bold">Copilot is not available</Text>
+            <Text className="block mt-1">
               {status?.unavailable_reason || 'Please enable Copilot in Settings to use this feature.'}
             </Text>
             {!status?.cli_installed && (
-              <Text sx={{ display: 'block', mt: 2, fontSize: 1 }}>
+              <Text className="block mt-2 text-sm">
                 The Copilot CLI must be installed and configured. Go to Settings &gt; Copilot to configure.
               </Text>
             )}
             {status?.license_required && !status?.license_valid && (
-              <Text sx={{ display: 'block', mt: 2, fontSize: 1 }}>
+              <Text className="block mt-2 text-sm">
                 A valid GitHub Copilot license is required. {status?.license_message}
               </Text>
             )}
           </Flash>
-        </Box>
-      </Box>
+        </div>
+      </div>
     );
   }
 
   const sessions = sessionsData?.sessions || [];
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 120px)' }}>
+    <div className="flex" style={{ height: 'calc(100vh - 120px)' }}>
       {/* Sidebar - Session list */}
-      <Box
-        sx={{
+      <div
+        className="flex flex-col"
+        style={{
           width: 280,
-          borderRight: '1px solid',
-          borderColor: 'border.default',
-          display: 'flex',
-          flexDirection: 'column',
-          bg: 'canvas.subtle',
+          borderRight: '1px solid var(--borderColor-default)',
+          backgroundColor: 'var(--bgColor-muted)',
         }}
       >
-        <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'border.default' }}>
-          <Button onClick={handleNewChat} leadingVisual={PlusIcon} sx={{ width: '100%' }}>
+        <div className="p-3" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
+          <Button onClick={handleNewChat} leadingVisual={PlusIcon} className="w-full">
             New Chat
           </Button>
-        </Box>
-        <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
           {sessions.length === 0 ? (
-            <Text sx={{ color: 'fg.muted', fontSize: 1, textAlign: 'center', mt: 4 }}>
+            <Text className="text-center mt-4" style={{ color: 'var(--fgColor-muted)', fontSize: '0.875rem' }}>
               No previous chats
             </Text>
           ) : (
             sessions.map((session) => (
-              <Box
+              <div
                 key={session.id}
                 onClick={() => handleSelectSession(session)}
-                sx={{
-                  p: 2,
-                  mb: 1,
-                  borderRadius: 2,
-                  cursor: 'pointer',
-                  bg: currentSessionId === session.id ? 'accent.subtle' : 'transparent',
-                  '&:hover': { bg: 'canvas.inset' },
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                className="p-2 mb-1 rounded cursor-pointer flex justify-between items-center"
+                style={{
+                  backgroundColor: currentSessionId === session.id ? 'var(--bgColor-accent-muted)' : 'transparent',
+                }}
+                onMouseEnter={(e) => {
+                  if (currentSessionId !== session.id) {
+                    e.currentTarget.style.backgroundColor = 'var(--bgColor-inset)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = currentSessionId === session.id ? 'var(--bgColor-accent-muted)' : 'transparent';
                 }}
               >
-                <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                  <Text sx={{ fontWeight: 'semibold', fontSize: 1, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div className="flex-1 overflow-hidden">
+                  <Text className="font-semibold block overflow-hidden text-ellipsis whitespace-nowrap" style={{ fontSize: '0.875rem' }}>
                     {session.title || 'New Chat'}
                   </Text>
-                  <Text sx={{ color: 'fg.muted', fontSize: 0 }}>
+                  <Text style={{ color: 'var(--fgColor-muted)', fontSize: '0.75rem' }}>
                     {session.message_count} messages
                   </Text>
-                </Box>
+                </div>
                 <IconButton
                   icon={TrashIcon}
                   aria-label="Delete session"
@@ -239,40 +238,40 @@ export function CopilotAssistant() {
                     deleteSessionMutation.mutate(session.id);
                   }}
                 />
-              </Box>
+              </div>
             ))
           )}
-        </Box>
-      </Box>
+        </div>
+      </div>
 
       {/* Main chat area */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div className="flex-1 flex flex-col">
         {/* Header */}
-        <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'border.default' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <div className="p-3" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
+          <div className="flex items-center gap-2">
             <CopilotIcon size={24} />
-            <Box>
-              <Text sx={{ fontWeight: 'bold', fontSize: 2 }}>Copilot Assistant</Text>
-              <Text sx={{ color: 'fg.muted', fontSize: 1, display: 'block' }}>
+            <div>
+              <Text className="font-bold" style={{ fontSize: '1rem' }}>Copilot Assistant</Text>
+              <Text className="block" style={{ color: 'var(--fgColor-muted)', fontSize: '0.875rem' }}>
                 AI-powered migration planning and execution
               </Text>
-            </Box>
-          </Box>
-        </Box>
+            </div>
+          </div>
+        </div>
 
         {/* Messages */}
-        <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
+        <div className="flex-1 overflow-y-auto p-3">
           {messages.length === 0 ? (
-            <Box sx={{ textAlign: 'center', mt: 8 }}>
+            <div className="text-center mt-8">
               <CopilotIcon size={48} />
-              <Text sx={{ display: 'block', fontSize: 2, fontWeight: 'bold', mt: 3 }}>
+              <Text className="block font-bold mt-3" style={{ fontSize: '1rem' }}>
                 How can I help with your migration?
               </Text>
-              <Text sx={{ color: 'fg.muted', display: 'block', mt: 2, maxWidth: 500, mx: 'auto' }}>
+              <Text className="block mt-2 mx-auto" style={{ color: 'var(--fgColor-muted)', maxWidth: 500 }}>
                 I can analyze repositories, find dependencies, create batches, plan migration waves, and more.
                 Try asking something like:
               </Text>
-              <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+              <div className="mt-3 flex flex-col gap-2 items-center">
                 {[
                   'Find repositories suitable for a pilot migration',
                   'What are the dependencies for my-org/my-repo?',
@@ -284,81 +283,78 @@ export function CopilotAssistant() {
                     variant="outline"
                     size="small"
                     onClick={() => setMessage(suggestion)}
-                    sx={{ maxWidth: 400 }}
+                    style={{ maxWidth: 400 }}
                   >
                     {suggestion}
                   </Button>
                 ))}
-              </Box>
-            </Box>
+              </div>
+            </div>
           ) : (
             <>
               {messages.map((msg) => (
-                <Box
+                <div
                   key={msg.id}
-                  sx={{
-                    display: 'flex',
-                    gap: 2,
-                    mb: 3,
+                  className="flex gap-2 mb-3"
+                  style={{
                     flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
                   }}
                 >
                   <Avatar
                     size={32}
                     src={msg.role === 'user' ? undefined : undefined}
-                    sx={{ flexShrink: 0 }}
+                    style={{ flexShrink: 0 }}
                   />
-                  <Box
-                    sx={{
+                  <div
+                    className="p-3 rounded"
+                    style={{
                       maxWidth: '70%',
-                      p: 3,
-                      borderRadius: 2,
-                      bg: msg.role === 'user' ? 'accent.subtle' : 'canvas.subtle',
+                      backgroundColor: msg.role === 'user' ? 'var(--bgColor-accent-muted)' : 'var(--bgColor-muted)',
                     }}
                   >
-                    <Text sx={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
+                    <Text style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
                     {msg.tool_calls && msg.tool_calls.length > 0 && (
-                      <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'border.default' }}>
-                        <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 'bold' }}>
+                      <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+                        <Text className="font-bold" style={{ fontSize: '0.75rem', color: 'var(--fgColor-muted)' }}>
                           Tools Used:
                         </Text>
                         {msg.tool_calls.map((tool) => (
-                          <Text key={tool.id} sx={{ fontSize: 0, color: 'fg.muted', display: 'block' }}>
+                          <Text key={tool.id} className="block" style={{ fontSize: '0.75rem', color: 'var(--fgColor-muted)' }}>
                             {tool.name} ({tool.status})
                           </Text>
                         ))}
-                      </Box>
+                      </div>
                     )}
-                  </Box>
-                </Box>
+                  </div>
+                </div>
               ))}
               {sendMessageMutation.isPending && (
-                <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                <div className="flex gap-2 mb-3">
                   <Avatar size={32} />
-                  <Box sx={{ p: 3, borderRadius: 2, bg: 'canvas.subtle' }}>
+                  <div className="p-3 rounded" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                     <Spinner size="small" />
-                  </Box>
-                </Box>
+                  </div>
+                </div>
               )}
               <div ref={messagesEndRef} />
             </>
           )}
-        </Box>
+        </div>
 
         {/* Input */}
-        <Box sx={{ p: 3, borderTop: '1px solid', borderColor: 'border.default' }}>
+        <div className="p-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
           {sendMessageMutation.isError && (
-            <Flash variant="danger" sx={{ mb: 2 }}>
+            <Flash variant="danger" className="mb-2">
               Failed to send message. Please try again.
             </Flash>
           )}
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <div className="flex gap-2">
             <TextInput
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask about repositories, dependencies, batches, migration planning..."
-              sx={{ flex: 1 }}
+              className="flex-1"
               disabled={sendMessageMutation.isPending}
             />
             <Button
@@ -368,10 +364,10 @@ export function CopilotAssistant() {
             >
               <PaperAirplaneIcon />
             </Button>
-          </Box>
-        </Box>
-      </Box>
-    </Box>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

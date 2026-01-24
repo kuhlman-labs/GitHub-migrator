@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FormControl, Checkbox, TextInput, Text, Heading, Flash, Label, Button, Box } from '@primer/react';
+import { FormControl, Checkbox, TextInput, Text, Heading, Flash, Label, Button } from '@primer/react';
 import { AlertIcon, SyncIcon, CheckCircleIcon, CopilotIcon, CheckIcon, XIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../services/api/settings';
@@ -102,10 +102,10 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
 
   return (
     <div className="max-w-2xl">
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+      <div className="flex items-center gap-2 mb-2">
         <CopilotIcon size={24} />
         <Heading as="h2" className="text-lg">Copilot Assistant</Heading>
-      </Box>
+      </div>
       <Text className="block mb-6" style={{ color: 'var(--fgColor-muted)' }}>
         Configure the AI-powered migration assistant. Copilot helps analyze repositories, 
         plan migration waves, create batches, and execute migrations through natural language.
@@ -151,7 +151,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
             <FormControl.Caption>
               Path to the Copilot CLI executable. Leave empty to use 'copilot' from PATH.
             </FormControl.Caption>
-            <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+            <div className="flex gap-2 mt-2">
               <TextInput
                 value={cliPath}
                 onChange={(e) => {
@@ -160,7 +160,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
                 }}
                 placeholder="/usr/local/bin/copilot"
                 disabled={readOnly}
-                sx={{ flex: 1 }}
+                className="flex-1"
               />
               <Button
                 onClick={handleValidateCLI}
@@ -175,24 +175,24 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
               >
                 Save
               </Button>
-            </Box>
+            </div>
           </FormControl>
 
           {validateCliMutation.data && (
             <Flash 
               variant={validateCliMutation.data.available ? 'success' : 'danger'} 
-              sx={{ mt: 3 }}
+              className="mt-3"
             >
               {validateCliMutation.data.available ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <div className="flex items-center gap-2">
                   <CheckIcon size={16} />
                   <span>CLI is available. Version: {validateCliMutation.data.version || 'Unknown'}</span>
-                </Box>
+                </div>
               ) : (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <div className="flex items-center gap-2">
                   <XIcon size={16} />
                   <span>{validateCliMutation.data.error || 'CLI not found'}</span>
-                </Box>
+                </div>
               )}
             </Flash>
           )}
@@ -253,7 +253,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
           </div>
 
           {copilotStatus?.unavailable_reason && (
-            <Flash variant="warning" sx={{ mt: 3 }}>
+            <Flash variant="warning" className="mt-3">
               <AlertIcon size={16} />
               <span className="ml-2">{copilotStatus.unavailable_reason}</span>
             </Flash>
