@@ -65,6 +65,7 @@ func (d *Database) GetCopilotSession(ctx context.Context, id string) (*models.Co
 func (d *Database) ListCopilotSessions(ctx context.Context, userID string) ([]*models.CopilotSession, error) {
 	var sessions []*models.CopilotSession
 	result := d.db.WithContext(ctx).
+		Preload("Messages").
 		Where("user_id = ?", userID).
 		Where("expires_at > ?", time.Now()).
 		Order("updated_at DESC").
@@ -72,17 +73,6 @@ func (d *Database) ListCopilotSessions(ctx context.Context, userID string) ([]*m
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("failed to list Copilot sessions: %w", result.Error)
-	}
-
-	// Get message counts for each session
-	for _, session := range sessions {
-		var count int64
-		d.db.WithContext(ctx).
-			Model(&models.CopilotMessage{}).
-			Where("session_id = ?", session.ID).
-			Count(&count)
-		// The count will be reflected in ToResponse() through len(Messages)
-		// We could optimize by adding a message_count column
 	}
 
 	return sessions, nil

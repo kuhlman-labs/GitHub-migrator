@@ -15,26 +15,34 @@ import (
 
 // CopilotHandler handles Copilot API requests
 type CopilotHandler struct {
-	db      *storage.Database
-	logger  *slog.Logger
-	service *copilot.Service
+	db            *storage.Database
+	logger        *slog.Logger
+	service       *copilot.Service
+	gitHubBaseURL string
 }
 
 // NewCopilotHandler creates a new CopilotHandler
 func NewCopilotHandler(db *storage.Database, logger *slog.Logger, gitHubBaseURL string) *CopilotHandler {
 	// Service will be initialized when settings are loaded
 	return &CopilotHandler{
-		db:     db,
-		logger: logger,
+		db:            db,
+		logger:        logger,
+		gitHubBaseURL: gitHubBaseURL,
 	}
 }
 
 // initService initializes the Copilot service with current settings
 func (h *CopilotHandler) initService(settings *models.Settings) *copilot.Service {
+	// Use the configured base URL, falling back to settings if available
+	baseURL := h.gitHubBaseURL
+	if baseURL == "" && settings.DestinationBaseURL != "" {
+		baseURL = settings.DestinationBaseURL
+	}
+
 	config := copilot.ServiceConfig{
 		RequireLicense:    settings.CopilotRequireLicense,
 		SessionTimeoutMin: settings.CopilotSessionTimeoutMin,
-		GitHubBaseURL:     settings.DestinationBaseURL,
+		GitHubBaseURL:     baseURL,
 	}
 
 	if settings.CopilotCLIPath != nil {
