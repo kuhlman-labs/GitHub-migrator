@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Text, TextInput, Button, Flash, Spinner, Avatar, IconButton } from '@primer/react';
 import { CopilotIcon, PaperAirplaneIcon, TrashIcon, PlusIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ export function CopilotAssistant() {
   const [message, setMessage] = useState('');
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
+  const [isTransmitting, setIsTransmitting] = useState(false); // Track active message transmission
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -29,11 +30,10 @@ export function CopilotAssistant() {
   // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: copilotApi.sendMessage,
+    onMutate: () => {
+      setIsTransmitting(true);
+    },
     onSuccess: (response) => {
-      // Update current session ID if new session was created
-      if (!currentSessionId) {
-        setCurrentSessionId(response.session_id);
-      }
       // Add assistant message
       setMessages(prev => [...prev, {
         id: response.message_id,
@@ -44,8 +44,15 @@ export function CopilotAssistant() {
         tool_results: response.tool_results,
         created_at: new Date().toISOString(),
       }]);
+      // Update current session ID if new session was created (do this after adding message)
+      if (!currentSessionId) {
+        setCurrentSessionId(response.session_id);
+      }
       // Invalidate sessions query to update list
       queryClient.invalidateQueries({ queryKey: ['copilot-sessions'] });
+    },
+    onSettled: () => {
+      setIsTransmitting(false);
     },
   });
 
@@ -61,18 +68,23 @@ export function CopilotAssistant() {
     },
   });
 
-  // Load session history when session changes
+  // Load session history when session changes (but not during active transmission)
   useEffect(() => {
-    if (currentSessionId) {
+    if (currentSessionId && !isTransmitting) {
       copilotApi.getSessionHistory(currentSessionId).then(response => {
-        setMessages(response.messages);
+        // Only update if we're still not transmitting (avoid race condition)
+        setMessages(prev => {
+          // If we have local messages that aren't in the server response yet, preserve them
+          if (isTransmitting) return prev;
+          return response.messages;
+        });
       }).catch(() => {
         // Session may have expired
         setCurrentSessionId(null);
         setMessages([]);
       });
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, isTransmitting]);
 
   // Scroll to bottom when messages change
   useEffect(() => {

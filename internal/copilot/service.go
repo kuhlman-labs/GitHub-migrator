@@ -298,9 +298,10 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 		Content:   userMessage,
 		CreatedAt: userMsg.CreatedAt,
 	}
-	msgID, err := s.db.CreateCopilotMessage(ctx, userMsgModel)
+	userMsgID, err := s.db.CreateCopilotMessage(ctx, userMsgModel)
 	if err != nil {
 		s.logger.Error("Failed to persist user message", "error", err)
+		return nil, fmt.Errorf("failed to persist user message: %w", err)
 	}
 
 	// Process with Copilot
@@ -322,8 +323,16 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 	session.UpdatedAt = time.Now()
 
 	// Persist assistant message
-	toolCallsJSON, _ := json.Marshal(response.ToolCalls)
-	toolResultsJSON, _ := json.Marshal(response.ToolResults)
+	toolCallsJSON, err := json.Marshal(response.ToolCalls)
+	if err != nil {
+		s.logger.Error("Failed to marshal tool calls", "error", err)
+		toolCallsJSON = nil
+	}
+	toolResultsJSON, err := json.Marshal(response.ToolResults)
+	if err != nil {
+		s.logger.Error("Failed to marshal tool results", "error", err)
+		toolResultsJSON = nil
+	}
 	assistantMsgModel := &models.CopilotMessage{
 		SessionID:   sessionID,
 		Role:        models.RoleAssistant,
@@ -335,9 +344,13 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 	assistantMsgID, err := s.db.CreateCopilotMessage(ctx, assistantMsgModel)
 	if err != nil {
 		s.logger.Error("Failed to persist assistant message", "error", err)
+		return nil, fmt.Errorf("failed to persist assistant message: %w", err)
 	}
 
-	_ = msgID // silence unused variable warning
+	s.logger.Debug("Messages persisted successfully",
+		"session_id", sessionID,
+		"user_msg_id", userMsgID,
+		"assistant_msg_id", assistantMsgID)
 
 	return &models.ChatResponse{
 		SessionID:   sessionID,

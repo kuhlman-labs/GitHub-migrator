@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FormControl, Checkbox, TextInput, Text, Heading, Flash, Label, Button, Box } from '@primer/react';
 import { AlertIcon, SyncIcon, CheckCircleIcon, CopilotIcon, CheckIcon, XIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
   const queryClient = useQueryClient();
   const [cliPath, setCliPath] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   // Get current settings
   const { data: settingsData, isLoading, error } = useQuery({
@@ -44,10 +45,20 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
 
   const settings = settingsData?.settings;
 
-  // Initialize CLI path from settings
-  if (settings?.copilot_cli_path && !cliPath && !hasChanges) {
-    setCliPath(settings.copilot_cli_path);
-  }
+  // Initialize CLI path from settings (properly in useEffect)
+  useEffect(() => {
+    if (settings?.copilot_cli_path !== undefined && !isInitialized) {
+      setCliPath(settings.copilot_cli_path || '');
+      setIsInitialized(true);
+    }
+  }, [settings?.copilot_cli_path, isInitialized]);
+
+  // Reset initialization when settings refetch with new data (e.g., after save)
+  useEffect(() => {
+    if (!hasChanges && settings?.copilot_cli_path !== undefined) {
+      setCliPath(settings.copilot_cli_path || '');
+    }
+  }, [settings?.copilot_cli_path, hasChanges]);
 
   const handleToggleEnabled = (checked: boolean) => {
     updateMutation.mutate({ copilot_enabled: checked });
