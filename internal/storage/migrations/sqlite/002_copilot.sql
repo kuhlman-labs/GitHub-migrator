@@ -1,12 +1,33 @@
 -- +goose Up
+-- +goose NO TRANSACTION
 -- Add Copilot settings columns to the settings table
+-- Note: SQLite doesn't support IF NOT EXISTS for ADD COLUMN.
+-- Using NO TRANSACTION mode allows individual statements to fail gracefully
+-- if columns already exist (making migration idempotent for re-runs).
 
+-- +goose StatementBegin
 ALTER TABLE settings ADD COLUMN copilot_enabled INTEGER NOT NULL DEFAULT 0;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE settings ADD COLUMN copilot_require_license INTEGER NOT NULL DEFAULT 1;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE settings ADD COLUMN copilot_cli_path TEXT;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE settings ADD COLUMN copilot_model TEXT;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE settings ADD COLUMN copilot_max_tokens INTEGER;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE settings ADD COLUMN copilot_session_timeout_min INTEGER NOT NULL DEFAULT 30;
+-- +goose StatementEnd
 
 -- Create table for Copilot chat sessions
 CREATE TABLE IF NOT EXISTS copilot_sessions (

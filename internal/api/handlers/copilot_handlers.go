@@ -140,10 +140,11 @@ func (h *CopilotHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	// Initialize service with current settings
 	service := h.initService(settings)
 
-	// Create new session if no session ID provided
+	userIDStr := strconv.FormatInt(user.ID, 10)
+
+	// Create new session if no session ID provided, or verify ownership of existing session
 	sessionID := req.SessionID
 	if sessionID == "" {
-		userIDStr := strconv.FormatInt(user.ID, 10)
 		session, err := service.CreateSession(ctx, userIDStr, user.Login, settings.CopilotSessionTimeoutMin)
 		if err != nil {
 			h.logger.Error("Failed to create session", "error", err, "user", user.Login)
@@ -151,6 +152,18 @@ func (h *CopilotHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sessionID = session.ID
+	} else {
+		// Verify the session belongs to the authenticated user
+		session, err := service.GetSession(ctx, sessionID)
+		if err != nil {
+			h.logger.Error("Failed to get session", "error", err, "session_id", sessionID)
+			h.sendError(w, http.StatusNotFound, "Session not found")
+			return
+		}
+		if session.UserID != userIDStr {
+			h.sendError(w, http.StatusForbidden, "Access denied")
+			return
+		}
 	}
 
 	// Send message
