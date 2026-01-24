@@ -183,6 +183,28 @@ type UserMappingStore interface {
 	GetUserMappingStats(ctx context.Context, org string) (map[string]any, error)
 }
 
+// UserMannequinStore defines operations for user mannequins (mannequin info per org).
+type UserMannequinStore interface {
+	// SaveUserMannequin creates or updates a user mannequin.
+	SaveUserMannequin(ctx context.Context, mannequin *models.UserMannequin) error
+	// GetUserMannequin retrieves a mannequin by source login and org.
+	GetUserMannequin(ctx context.Context, sourceLogin, mannequinOrg string) (*models.UserMannequin, error)
+	// GetUserMannequinsBySourceLogin retrieves all mannequins for a source user.
+	GetUserMannequinsBySourceLogin(ctx context.Context, sourceLogin string) ([]*models.UserMannequin, error)
+	// ListUserMannequins lists mannequins with filters.
+	ListUserMannequins(ctx context.Context, filters UserMannequinFilters) ([]*models.UserMannequin, int64, error)
+	// UpdateMannequinReclaimStatus updates the reclaim status for a mannequin.
+	UpdateMannequinReclaimStatus(ctx context.Context, sourceLogin, mannequinOrg, status string, errorMsg *string) error
+	// GetMannequinOrgs returns a list of unique mannequin organizations.
+	GetMannequinOrgs(ctx context.Context) ([]string, error)
+	// DeleteUserMannequin removes a mannequin record.
+	DeleteUserMannequin(ctx context.Context, sourceLogin, mannequinOrg string) error
+	// ListMappingsWithMannequins returns user mappings joined with mannequin data.
+	ListMappingsWithMannequins(ctx context.Context, mannequinOrg string, status string) ([]*MappingWithMannequin, error)
+	// GetMannequinOrgStats returns statistics for mannequins in a specific organization.
+	GetMannequinOrgStats(ctx context.Context, mannequinOrg string) (*MannequinOrgStats, error)
+}
+
 // TeamStore defines operations for teams.
 type TeamStore interface {
 	// ListTeams lists teams for an organization.
@@ -311,6 +333,7 @@ var (
 	_ AnalyticsStore        = (*Database)(nil)
 	_ UserStore             = (*Database)(nil)
 	_ UserMappingStore      = (*Database)(nil)
+	_ UserMannequinStore    = (*Database)(nil)
 	_ TeamStore             = (*Database)(nil)
 	_ TeamMappingStore      = (*Database)(nil)
 	_ SourceStore           = (*Database)(nil)

@@ -330,6 +330,7 @@ func (s *Server) Router() http.Handler {
 	protect("POST /api/v1/user-mappings/import", s.handler.ImportUserMappings)
 	protect("GET /api/v1/user-mappings/export", s.handler.ExportUserMappings)
 	protect("GET /api/v1/user-mappings/generate-gei-csv", s.handler.GenerateGEICSV)
+	protect("GET /api/v1/user-mappings/mannequin-orgs", s.handler.GetMannequinOrgs)
 	protect("POST /api/v1/user-mappings/suggest", s.handler.SuggestUserMappings)
 	protect("POST /api/v1/user-mappings/sync", s.handler.SyncUserMappingsFromDiscovery)
 	protect("POST /api/v1/user-mappings/fetch-mannequins", s.handler.FetchMannequins)

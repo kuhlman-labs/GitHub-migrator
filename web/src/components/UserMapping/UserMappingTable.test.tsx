@@ -340,10 +340,14 @@ describe('UserMappingTable', () => {
     });
   });
 
-  it('shows send invitation button when there are invitable users', () => {
+  it('does not show send invitation button until mannequins are fetched for an org', () => {
+    // The Send Invitation button only appears after fetching mannequins for a specific org
+    // Before that, only the "Fetch Mannequins" button is shown
     render(<UserMappingTable />);
 
-    expect(screen.getByRole('button', { name: /Send 1 Invitation/i })).toBeInTheDocument();
+    // Should have Fetch Mannequins button but not Send Invitations button
+    expect(screen.getByRole('button', { name: /Fetch Mannequins/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Send.*Invitation/i })).not.toBeInTheDocument();
   });
 
   it('does not show send invitation button when no invitable users', () => {

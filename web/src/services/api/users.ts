@@ -103,11 +103,16 @@ export const usersApi = {
     return data;
   },
 
-  async generateGEICSV(mannequinsOnly?: boolean): Promise<Blob> {
+  async generateGEICSV(org: string, status?: string): Promise<Blob> {
     const { data } = await client.get('/user-mappings/generate-gei-csv', {
-      params: { mannequins_only: mannequinsOnly },
+      params: { org, status },
       responseType: 'blob',
     });
+    return data;
+  },
+
+  async getMannequinOrgs(): Promise<{ orgs: string[] }> {
+    const { data } = await client.get('/user-mappings/mannequin-orgs');
     return data;
   },
 
@@ -131,6 +136,9 @@ export const usersApi = {
     unmatched: number;
     destination_org: string;
     emu_shortcode_applied: boolean;
+    invitable: number;
+    pending: number;
+    completed: number;
     message: string;
   }> {
     const { data } = await client.post('/user-mappings/fetch-mannequins', {

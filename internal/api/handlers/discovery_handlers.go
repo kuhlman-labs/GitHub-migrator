@@ -833,7 +833,10 @@ func (h *Handler) ForceResetDiscovery(w http.ResponseWriter, r *http.Request) {
 
 	// Also clean up any in-memory cancel functions for this discovery
 	h.discoveryMu.Lock()
-	delete(h.discoveryCancel, progress.ID)
+	if cancelFn, exists := h.discoveryCancel[progress.ID]; exists {
+		cancelFn() // Call cancel function to stop any running goroutine
+		delete(h.discoveryCancel, progress.ID)
+	}
 	h.discoveryMu.Unlock()
 
 	// Handle race condition: discovery may have completed between our check and reset

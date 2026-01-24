@@ -1859,6 +1859,7 @@ func TestListRepositories_ADOPropertiesLoading(t *testing.T) {
 
 		if foundADORepo == nil {
 			t.Fatal("ADO repository not found in results")
+			return
 		}
 
 		// Without include_details, ADOProperties should be nil
@@ -1904,17 +1905,20 @@ func TestListRepositories_ADOPropertiesLoading(t *testing.T) {
 
 		if foundADORepo == nil {
 			t.Fatal("ADO repository not found in results")
+			return
 		}
 
 		// With include_details, ADOProperties should be loaded
 		if foundADORepo.ADOProperties == nil {
 			t.Fatal("Expected ADOProperties to be loaded with include_details")
+			return
 		}
 
 		// GetADOProject should return the project name
 		adoProject := foundADORepo.GetADOProject()
 		if adoProject == nil {
 			t.Fatal("Expected GetADOProject() to return non-nil with include_details")
+			return
 		}
 
 		if *adoProject != "Test Project" {

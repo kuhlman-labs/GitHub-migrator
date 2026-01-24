@@ -80,6 +80,7 @@ type DataStore interface {
 	// User and team stores
 	storage.UserStore
 	storage.UserMappingStore
+	storage.UserMannequinStore
 	storage.TeamStore
 	storage.TeamMappingStore
 

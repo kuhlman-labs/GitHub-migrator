@@ -217,17 +217,42 @@ describe('usersApi', () => {
   });
 
   describe('generateGEICSV', () => {
-    it('should generate GEI CSV', async () => {
+    it('should generate GEI CSV with required org parameter', async () => {
       const mockBlob = new Blob(['csv,data']);
       mockClient.get.mockResolvedValue({ data: mockBlob });
 
-      const result = await usersApi.generateGEICSV(true);
+      const result = await usersApi.generateGEICSV('my-org');
 
       expect(mockClient.get).toHaveBeenCalledWith('/user-mappings/generate-gei-csv', {
-        params: { mannequins_only: true },
+        params: { org: 'my-org', status: undefined },
         responseType: 'blob',
       });
       expect(result).toEqual(mockBlob);
+    });
+
+    it('should generate GEI CSV with org and status filter', async () => {
+      const mockBlob = new Blob(['csv,data']);
+      mockClient.get.mockResolvedValue({ data: mockBlob });
+
+      const result = await usersApi.generateGEICSV('target-org', 'mapped');
+
+      expect(mockClient.get).toHaveBeenCalledWith('/user-mappings/generate-gei-csv', {
+        params: { org: 'target-org', status: 'mapped' },
+        responseType: 'blob',
+      });
+      expect(result).toEqual(mockBlob);
+    });
+  });
+
+  describe('getMannequinOrgs', () => {
+    it('should get list of mannequin organizations', async () => {
+      const mockResponse = { orgs: ['org-alpha', 'org-beta'] };
+      mockClient.get.mockResolvedValue({ data: mockResponse });
+
+      const result = await usersApi.getMannequinOrgs();
+
+      expect(mockClient.get).toHaveBeenCalledWith('/user-mappings/mannequin-orgs');
+      expect(result).toEqual(mockResponse);
     });
   });
 

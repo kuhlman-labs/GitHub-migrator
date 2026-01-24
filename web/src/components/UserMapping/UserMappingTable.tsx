@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   TextInput,
   Flash,
@@ -112,11 +112,27 @@ export function UserMappingTable() {
   // Dialog state using shared hooks
   const deleteDialog = useDialogState<string>(); // stores the source login to delete
   const discoverDialog = useDialogState();
-  const destOrgDialog = useDialogState<{ action: 'fetch' | 'invite' | 'bulk_invite'; sourceLogin?: string }>();
+  const destOrgDialog = useDialogState<{ action: 'fetch' | 'invite' | 'bulk_invite' | 'generate_gei'; sourceLogin?: string }>();
   
   // Form state for dialogs
   const [destinationOrg, setDestinationOrg] = useState('');
+  const [lastFetchedDestOrg, setLastFetchedDestOrg] = useState<string | null>(null);
+  const [orgInvitableCount, setOrgInvitableCount] = useState<number>(0);
   const [emuShortcode, setEmuShortcode] = useState('');
+  
+  // Refs to avoid stale closure issues in callbacks
+  const destinationOrgRef = useRef(destinationOrg);
+  const emuShortcodeRef = useRef(emuShortcode);
+  
+  // Update refs in useEffect to avoid updating during render
+  useEffect(() => {
+    destinationOrgRef.current = destinationOrg;
+  }, [destinationOrg]);
+  
+  useEffect(() => {
+    emuShortcodeRef.current = emuShortcode;
+  }, [emuShortcode]);
+  
   const [discoverOrg, setDiscoverOrg] = useState('');
   const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
   
@@ -242,29 +258,28 @@ export function UserMappingTable() {
     }
   }, [refetch, showError, showSuccess]);
 
-  const handleGenerateGEI = useCallback(async () => {
-    try {
-      const blob = await api.generateGEICSV();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'mannequin-mappings.csv';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      handleApiError(error, showError, 'Failed to generate GEI CSV');
-    }
-  }, [showError]);
-
   // Action handlers that require destination org
-  const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite', sourceLogin?: string) => {
+  const openDestOrgDialog = useCallback((action: 'fetch' | 'invite' | 'bulk_invite' | 'generate_gei', sourceLogin?: string) => {
+    // Pre-fill the destination org if we know it from the last fetch (except for 'fetch' which should start fresh)
+    // Always explicitly set the value to prevent stale state from previous dialog interactions
+    if (action !== 'fetch' && lastFetchedDestOrg) {
+      setDestinationOrg(lastFetchedDestOrg);
+    } else {
+      setDestinationOrg('');
+    }
     destOrgDialog.open({ action, sourceLogin });
-  }, [destOrgDialog]);
+  }, [destOrgDialog, lastFetchedDestOrg]);
+
+  const handleGenerateGEI = useCallback(() => {
+    openDestOrgDialog('generate_gei');
+  }, [openDestOrgDialog]);
 
   const handleConfirmDestOrg = useCallback(async () => {
-    if (!destinationOrg || !destOrgDialog.data) return;
+    // Use refs to get the current values, avoiding stale closure issues
+    const currentDestOrg = destinationOrgRef.current;
+    const currentEmuShortcode = emuShortcodeRef.current;
+    
+    if (!currentDestOrg || !destOrgDialog.data) return;
     
     const { action, sourceLogin } = destOrgDialog.data;
     destOrgDialog.close();
@@ -273,44 +288,66 @@ export function UserMappingTable() {
       if (action === 'fetch') {
         // Fetch mannequins and match to destination org members
         const result = await fetchMannequins.mutateAsync({
-          destinationOrg,
-          emuShortcode: emuShortcode || undefined,
+          destinationOrg: currentDestOrg,
+          emuShortcode: currentEmuShortcode || undefined,
         });
+        // Remember the destination org and invitable count for subsequent actions
+        setLastFetchedDestOrg(currentDestOrg);
+        setOrgInvitableCount(result.invitable || 0);
         showSuccess(result.message);
       } else if (action === 'invite' && sourceLogin) {
         const result = await sendInvitation.mutateAsync({
           sourceLogin,
-          destinationOrg,
+          destinationOrg: currentDestOrg,
         });
         if (result.success) {
+          // Decrement invitable count since this user was invited
+          setOrgInvitableCount(prev => Math.max(0, prev - 1));
           showSuccess(result.message);
         } else {
           showError(result.message);
         }
       } else if (action === 'bulk_invite') {
         const result = await bulkSendInvitations.mutateAsync({
-          destinationOrg,
+          destinationOrg: currentDestOrg,
         });
         if (result.success) {
+          // Update invitable count: subtract invited, keep those that failed/skipped
+          setOrgInvitableCount(prev => Math.max(0, prev - result.invited));
           showSuccess(result.message);
         } else {
           showError(result.message);
         }
+      } else if (action === 'generate_gei') {
+        // Generate GEI CSV filtered by destination org (org is required)
+        const blob = await api.generateGEICSV(currentDestOrg);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mannequin-mappings-${currentDestOrg}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        showSuccess(`GEI CSV generated for ${currentDestOrg}`);
       }
     } catch (err) {
       showError(`Action failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
     
+    setDestinationOrg('');
     setEmuShortcode('');
-  }, [destinationOrg, emuShortcode, destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations, showSuccess, showError]);
+  }, [destOrgDialog, fetchMannequins, sendInvitation, bulkSendInvitations, showSuccess, showError]);
 
   const cancelDestOrgDialog = useCallback(() => {
     destOrgDialog.close();
+    setDestinationOrg('');
     setEmuShortcode('');
   }, [destOrgDialog]);
 
-  // Get invitable count from stats (not from paginated mappings)
-  const invitableCount = stats?.invitable || 0;
+  // Get invitable count: use org-specific count when we have a fetched org,
+  // otherwise fall back to global stats (though button won't show without org)
+  const invitableCount = lastFetchedDestOrg ? orgInvitableCount : (stats?.invitable || 0);
 
   if (error) {
     return (
@@ -399,14 +436,16 @@ export function UserMappingTable() {
             {fetchMannequins.isPending ? 'Fetching...' : 'Fetch Mannequins'}
           </PrimaryButton>
           
-          {/* Primary action - Send Invitations */}
-          {invitableCount > 0 && (
+          {/* Primary action - Send Invitations (only show after fetching mannequins for an org) */}
+          {lastFetchedDestOrg && invitableCount > 0 && (
             <SuccessButton
               onClick={() => openDestOrgDialog('bulk_invite')}
               leadingVisual={MailIcon}
               disabled={bulkSendInvitations.isPending}
             >
-              {bulkSendInvitations.isPending ? 'Sending...' : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''}`}
+              {bulkSendInvitations.isPending 
+                ? 'Sending...' 
+                : `Send ${invitableCount} Invitation${invitableCount !== 1 ? 's' : ''} to ${lastFetchedDestOrg}`}
             </SuccessButton>
           )}
         </div>
@@ -844,11 +883,13 @@ export function UserMappingTable() {
           title={
             destOrgDialog.data.action === 'fetch' ? 'Fetch Mannequins' :
             destOrgDialog.data.action === 'invite' ? 'Send Attribution Invitation' :
+            destOrgDialog.data.action === 'generate_gei' ? 'Generate GEI Reclaim CSV' :
             'Send Attribution Invitations'
           }
           submitLabel={
             destOrgDialog.data.action === 'fetch' ? 'Fetch' :
             destOrgDialog.data.action === 'invite' ? 'Send Invitation' :
+            destOrgDialog.data.action === 'generate_gei' ? 'Generate CSV' :
             'Send All'
           }
           onSubmit={handleConfirmDestOrg}
@@ -862,6 +903,8 @@ export function UserMappingTable() {
               `Send an attribution invitation for ${destOrgDialog.data.sourceLogin} to reclaim their mannequin.`}
             {destOrgDialog.data.action === 'bulk_invite' && 
               `Send attribution invitations to all ${invitableCount} mapped users with mannequins.`}
+            {destOrgDialog.data.action === 'generate_gei' && 
+              'Enter the destination organization to generate a GEI-compatible CSV for mannequin reclaim. The CSV will only include mannequins from this organization.'}
           </p>
           <FormControl>
             <FormControl.Label>Destination Organization</FormControl.Label>
