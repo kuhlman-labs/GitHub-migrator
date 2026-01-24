@@ -5,6 +5,7 @@ go 1.25
 require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v75 v75.0.0
+	github.com/google/uuid v1.6.0
 	github.com/jferrl/go-githubauth v1.5.0
 	github.com/lmittmann/tint v1.1.2
 	github.com/mattn/go-isatty v0.0.20
@@ -30,7 +31,6 @@ require (
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.6.0 // indirect

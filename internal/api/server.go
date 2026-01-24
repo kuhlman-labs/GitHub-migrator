@@ -30,6 +30,7 @@ type Server struct {
 	adoHandler      *handlers.ADOHandler
 	sourceHandler   *handlers.SourceHandler
 	settingsHandler *handlers.SettingsHandler
+	copilotHandler  *handlers.CopilotHandler
 	configSvc       *configsvc.Service
 	shutdownChan    chan struct{}
 }
@@ -121,15 +122,23 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	// Create source handler for multi-source management
 	sourceHandler := handlers.NewSourceHandler(db, logger)
 
+	// Create Copilot handler
+	destBaseURL := cfg.Destination.BaseURL
+	if destBaseURL == "" {
+		destBaseURL = defaultGitHubAPIURL
+	}
+	copilotHandler := handlers.NewCopilotHandler(db, logger, destBaseURL)
+
 	return &Server{
-		config:        cfg,
-		db:            db,
-		logger:        logger,
-		handler:       mainHandler,
-		authHandler:   authHandler,
-		adoHandler:    adoHandler,
-		sourceHandler: sourceHandler,
-		shutdownChan:  make(chan struct{}),
+		config:         cfg,
+		db:             db,
+		logger:         logger,
+		handler:        mainHandler,
+		authHandler:    authHandler,
+		adoHandler:     adoHandler,
+		sourceHandler:  sourceHandler,
+		copilotHandler: copilotHandler,
+		shutdownChan:   make(chan struct{}),
 	}
 }
 
@@ -381,6 +390,15 @@ func (s *Server) Router() http.Handler {
 
 	// Self-service endpoints
 	protect("POST /api/v1/self-service/migrate", s.handler.HandleSelfServiceMigration)
+
+	// Copilot endpoints
+	// Status check is protected but available to all authenticated users
+	protect("GET /api/v1/copilot/status", s.copilotHandler.GetStatus)
+	protect("POST /api/v1/copilot/chat", s.copilotHandler.SendMessage)
+	protect("GET /api/v1/copilot/sessions", s.copilotHandler.ListSessions)
+	protect("GET /api/v1/copilot/sessions/{id}/history", s.copilotHandler.GetSessionHistory)
+	protect("DELETE /api/v1/copilot/sessions/{id}", s.copilotHandler.DeleteSession)
+	protect("POST /api/v1/copilot/validate-cli", s.copilotHandler.ValidateCLI)
 
 	// Source management endpoints (multi-source support)
 	// Read operations - accessible to all authenticated users

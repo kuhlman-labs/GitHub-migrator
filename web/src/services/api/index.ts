@@ -20,6 +20,7 @@ import { analyticsApi } from './analytics';
 import { configApi } from './config';
 import { sourcesApi } from './sources';
 import { settingsApi } from './settings';
+import { copilotApi } from './copilot';
 
 // Export domain-specific APIs for direct access
 export { repositoriesApi } from './repositories';
@@ -32,6 +33,7 @@ export { analyticsApi } from './analytics';
 export { configApi } from './config';
 export { sourcesApi } from './sources';
 export { settingsApi } from './settings';
+export { copilotApi } from './copilot';
 export { client } from './client';
 
 // Unified API object for backwards compatibility
@@ -179,5 +181,13 @@ export const api = {
   getSetupProgress: settingsApi.getSetupProgress,
   updateSettings: settingsApi.updateSettings,
   validateDestination: settingsApi.validateDestination,
+
+  // Copilot
+  getCopilotStatus: copilotApi.getStatus,
+  sendCopilotMessage: copilotApi.sendMessage,
+  getCopilotSessions: copilotApi.getSessions,
+  getCopilotSessionHistory: copilotApi.getSessionHistory,
+  deleteCopilotSession: copilotApi.deleteSession,
+  validateCopilotCLI: copilotApi.validateCLI,
 };
 

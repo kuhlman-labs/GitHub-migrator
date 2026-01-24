@@ -1,6 +1,6 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { TextInput } from '@primer/react';
-import { MarkGithubIcon, SearchIcon, GearIcon } from '@primer/octicons-react';
+import { MarkGithubIcon, SearchIcon, GearIcon, CopilotIcon } from '@primer/octicons-react';
 import { IconButton } from '@primer/react';
 import { UserProfile } from './UserProfile';
 import { SourceSelector } from './SourceSelector';
@@ -213,6 +213,18 @@ export function Navigation() {
                   }}
                 >
                   Batches
+                </Link>
+                <Link 
+                  to="/copilot" 
+                  className={linkClass('/copilot')}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/copilot') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                  title="AI-powered migration assistant"
+                >
+                  <CopilotIcon size={16} className="mr-1" />
+                  Copilot
                 </Link>
                 
                 {/* Separator: Execute → Report */}
