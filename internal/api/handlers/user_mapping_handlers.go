@@ -1051,36 +1051,36 @@ func (h *Handler) matchMannequinsToDestMembers(ctx context.Context, mannequins [
 				MatchReason:      stringPtr(reason),
 			}
 
-		// First save mannequin info to user_mannequins table (required for GenerateGEICSV)
-		// Save this first so we don't create orphaned UserMapping records
-		userMannequin := &models.UserMannequin{
-			SourceLogin:    sourceLogin,
-			MannequinOrg:   destOrg,
-			MannequinID:    mannequin.ID,
-			MannequinLogin: stringPtr(mannequin.Login),
-		}
-		// Check if mannequin was already claimed
-		if mannequin.Claimant != nil {
-			reclaimStatus := string(models.ReclaimStatusCompleted)
-			userMannequin.ReclaimStatus = &reclaimStatus
-		}
+			// First save mannequin info to user_mannequins table (required for GenerateGEICSV)
+			// Save this first so we don't create orphaned UserMapping records
+			userMannequin := &models.UserMannequin{
+				SourceLogin:    sourceLogin,
+				MannequinOrg:   destOrg,
+				MannequinID:    mannequin.ID,
+				MannequinLogin: stringPtr(mannequin.Login),
+			}
+			// Check if mannequin was already claimed
+			if mannequin.Claimant != nil {
+				reclaimStatus := string(models.ReclaimStatusCompleted)
+				userMannequin.ReclaimStatus = &reclaimStatus
+			}
 
-		if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
-			h.logger.Error("Failed to save user mannequin",
-				"source_login", sourceLogin, "org", destOrg, "error", err)
-			unmatched++
-			continue
-		}
+			if err := h.db.SaveUserMannequin(ctx, userMannequin); err != nil {
+				h.logger.Error("Failed to save user mannequin",
+					"source_login", sourceLogin, "org", destOrg, "error", err)
+				unmatched++
+				continue
+			}
 
-		if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
-			h.logger.Warn("Failed to save user mapping", "source_login", sourceLogin, "error", err)
-			// UserMannequin was saved but UserMapping failed - this is acceptable
-			// as the mannequin data exists and can be retried
-			unmatched++
-			continue
-		}
+			if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
+				h.logger.Warn("Failed to save user mapping", "source_login", sourceLogin, "error", err)
+				// UserMannequin was saved but UserMapping failed - this is acceptable
+				// as the mannequin data exists and can be retried
+				unmatched++
+				continue
+			}
 
-		matched++
+			matched++
 			h.logger.Debug("Matched mannequin to destination member",
 				"source_login", sourceLogin,
 				"destination_login", destMember.Login,
@@ -1268,18 +1268,6 @@ func decodePathComponent(s string) (string, error) {
 	return decoded, nil
 }
 
-// validateMappingForInvitation validates that a mapping has all required fields for sending an invitation
-// Deprecated: Use validateMappingWithMannequin instead for new mannequin workflow
-func validateMappingForInvitation(mapping *models.UserMapping) error {
-	if mapping.MannequinID == nil || *mapping.MannequinID == "" {
-		return fmt.Errorf("user has no mannequin associated - run 'Fetch Mannequins' first")
-	}
-	if mapping.DestinationLogin == nil || *mapping.DestinationLogin == "" {
-		return fmt.Errorf("user has no destination login mapped")
-	}
-	return nil
-}
-
 // validateMappingWithMannequin validates a mapping with mannequin data from user_mannequins table
 func validateMappingWithMannequin(m *storage.MappingWithMannequin) error {
 	if m.MannequinID == "" {
@@ -1416,35 +1404,6 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// filterMappingsByLogins filters mappings to only include those with matching source logins
-func filterMappingsByLogins(mappings []*models.UserMapping, sourceLogins []string) []*models.UserMapping {
-	if len(sourceLogins) == 0 {
-		return mappings
-	}
-	loginSet := make(map[string]bool)
-	for _, login := range sourceLogins {
-		loginSet[login] = true
-	}
-	var filtered []*models.UserMapping
-	for _, m := range mappings {
-		if loginSet[m.SourceLogin] {
-			filtered = append(filtered, m)
-		}
-	}
-	return filtered
-}
-
-// filterPendingMappings returns only mappings not yet invited or reclaimed
-func filterPendingMappings(mappings []*models.UserMapping) []*models.UserMapping {
-	var pending []*models.UserMapping
-	for _, m := range mappings {
-		if m.ReclaimStatus == nil || (*m.ReclaimStatus != string(models.ReclaimStatusInvited) && *m.ReclaimStatus != string(models.ReclaimStatusCompleted)) {
-			pending = append(pending, m)
-		}
-	}
-	return pending
-}
-
 // filterMappingsWithMannequinsByLogins filters mappings to only include those with matching source logins
 func filterMappingsWithMannequinsByLogins(mappings []*storage.MappingWithMannequin, sourceLogins []string) []*storage.MappingWithMannequin {
 	if len(sourceLogins) == 0 {
@@ -1480,39 +1439,6 @@ type bulkInvitationResult struct {
 	failed  int
 	skipped int
 	errors  []string
-}
-
-// processBulkInvitations sends invitations for a list of mappings
-// Deprecated: Use processBulkInvitationsWithMannequins for new mannequin workflow
-func (h *Handler) processBulkInvitations(ctx context.Context, destClient *github.Client, orgID string, mappings []*models.UserMapping) bulkInvitationResult {
-	result := bulkInvitationResult{}
-
-	for _, mapping := range mappings {
-		if err := validateMappingForInvitation(mapping); err != nil {
-			result.skipped++
-			continue
-		}
-
-		targetUser, err := destClient.GetUserByLogin(ctx, *mapping.DestinationLogin)
-		if err != nil || targetUser == nil {
-			result.failed++
-			result.errors = append(result.errors, fmt.Sprintf("%s: destination user not found", mapping.SourceLogin))
-			continue
-		}
-
-		_, err = destClient.CreateAttributionInvitation(ctx, orgID, *mapping.MannequinID, targetUser.ID)
-		if err != nil {
-			result.failed++
-			errMsg := err.Error()
-			result.errors = append(result.errors, fmt.Sprintf("%s: %s", mapping.SourceLogin, errMsg))
-			_ = h.db.UpdateReclaimStatus(ctx, mapping.SourceLogin, string(models.ReclaimStatusFailed), &errMsg)
-		} else {
-			result.invited++
-			_ = h.db.UpdateReclaimStatus(ctx, mapping.SourceLogin, string(models.ReclaimStatusInvited), nil)
-		}
-	}
-
-	return result
 }
 
 // processBulkInvitationsWithMannequins sends invitations for mappings with mannequin data from user_mannequins table

@@ -209,9 +209,9 @@ func TestGenerateGEICSV_MultiOrgMannequins(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Len(t, records, 2, "expected header + 1 data row")
-		require.Equal(t, "multi-org-user-mona-A", records[1][0]) // mannequin-user
+		require.Equal(t, "multi-org-user-mona-A", records[1][0])    // mannequin-user
 		require.Equal(t, "MDEyOk1hbm5lcXVpbk9yZ0E=", records[1][1]) // mannequin-id
-		require.Equal(t, "multi-org-user-dest", records[1][2]) // target-user
+		require.Equal(t, "multi-org-user-dest", records[1][2])      // target-user
 	})
 
 	t.Run("CSV for org-B has correct mannequin ID", func(t *testing.T) {
@@ -227,9 +227,9 @@ func TestGenerateGEICSV_MultiOrgMannequins(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Len(t, records, 2, "expected header + 1 data row")
-		require.Equal(t, "multi-org-user-mona-B", records[1][0]) // mannequin-user
+		require.Equal(t, "multi-org-user-mona-B", records[1][0])    // mannequin-user
 		require.Equal(t, "MDEyOk1hbm5lcXVpbk9yZ0I=", records[1][1]) // mannequin-id
-		require.Equal(t, "multi-org-user-dest", records[1][2]) // target-user
+		require.Equal(t, "multi-org-user-dest", records[1][2])      // target-user
 	})
 }
 

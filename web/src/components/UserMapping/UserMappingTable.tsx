@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   TextInput,
   Flash,
@@ -123,8 +123,16 @@ export function UserMappingTable() {
   // Refs to avoid stale closure issues in callbacks
   const destinationOrgRef = useRef(destinationOrg);
   const emuShortcodeRef = useRef(emuShortcode);
-  destinationOrgRef.current = destinationOrg;
-  emuShortcodeRef.current = emuShortcode;
+  
+  // Update refs in useEffect to avoid updating during render
+  useEffect(() => {
+    destinationOrgRef.current = destinationOrg;
+  }, [destinationOrg]);
+  
+  useEffect(() => {
+    emuShortcodeRef.current = emuShortcode;
+  }, [emuShortcode]);
+  
   const [discoverOrg, setDiscoverOrg] = useState('');
   const [discoverSourceId, setDiscoverSourceId] = useState<number | null>(null);
   

@@ -553,7 +553,7 @@ func TestMigrationHistory_Structure(t *testing.T) {
 	if history.RepositoryID != 42 {
 		t.Errorf("Expected RepositoryID=42, got %d", history.RepositoryID)
 	}
-	if history.Status != "failed" {
+	if history.Status != BatchStatusFailed {
 		t.Errorf("Expected Status='failed', got %q", history.Status)
 	}
 	if history.ErrorMessage == nil || *history.ErrorMessage != "test error" {

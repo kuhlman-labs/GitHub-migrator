@@ -1149,15 +1149,15 @@ func (UserMapping) TableName() string {
 // UserMannequin tracks mannequin info per organization
 // A user can have mannequins in multiple destination orgs, each with different IDs
 type UserMannequin struct {
-	ID            int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	SourceLogin   string    `json:"source_login" gorm:"column:source_login;not null;uniqueIndex:idx_user_mannequin_unique,priority:1"`
-	MannequinOrg  string    `json:"mannequin_org" gorm:"column:mannequin_org;not null;uniqueIndex:idx_user_mannequin_unique,priority:2;index"`
-	MannequinID   string    `json:"mannequin_id" gorm:"column:mannequin_id;not null"`
-	MannequinLogin *string  `json:"mannequin_login,omitempty" gorm:"column:mannequin_login"`
-	ReclaimStatus *string   `json:"reclaim_status,omitempty" gorm:"column:reclaim_status;index"` // pending, invited, completed, failed
-	ReclaimError  *string   `json:"reclaim_error,omitempty" gorm:"column:reclaim_error;type:text"`
-	CreatedAt     time.Time `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
-	UpdatedAt     time.Time `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	SourceLogin    string    `json:"source_login" gorm:"column:source_login;not null;uniqueIndex:idx_user_mannequin_unique,priority:1"`
+	MannequinOrg   string    `json:"mannequin_org" gorm:"column:mannequin_org;not null;uniqueIndex:idx_user_mannequin_unique,priority:2;index"`
+	MannequinID    string    `json:"mannequin_id" gorm:"column:mannequin_id;not null"`
+	MannequinLogin *string   `json:"mannequin_login,omitempty" gorm:"column:mannequin_login"`
+	ReclaimStatus  *string   `json:"reclaim_status,omitempty" gorm:"column:reclaim_status;index"` // pending, invited, completed, failed
+	ReclaimError   *string   `json:"reclaim_error,omitempty" gorm:"column:reclaim_error;type:text"`
+	CreatedAt      time.Time `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt      time.Time `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
 }
 
 // TableName specifies the table name for UserMannequin model

@@ -187,7 +187,7 @@ func (d *Database) DeleteUserMannequin(ctx context.Context, sourceLogin, mannequ
 // MannequinOrgStats contains statistics for mannequins in a specific organization
 type MannequinOrgStats struct {
 	Total     int64 `json:"total"`     // Total mannequins in this org
-	Invitable int64 `json:"invitable"` // Mannequins that can be invited (mapped + not completed)
+	Invitable int64 `json:"invitable"` // Mannequins that can be invited (mapped + not invited/completed)
 	Pending   int64 `json:"pending"`   // Mannequins with pending invitations
 	Completed int64 `json:"completed"` // Mannequins already reclaimed
 }
@@ -204,14 +204,15 @@ func (d *Database) GetMannequinOrgStats(ctx context.Context, mannequinOrg string
 		return nil, fmt.Errorf("failed to count total mannequins: %w", err)
 	}
 
-	// Invitable: has a mapping with destination_login AND reclaim_status is NOT 'completed'
+	// Invitable: has a mapping with destination_login AND reclaim_status is NOT 'invited' or 'completed'
+	// This must match filterPendingMappingsWithMannequins logic to ensure UI count matches actual invitations sent
 	// This requires joining with user_mappings
 	if err := d.db.WithContext(ctx).
 		Table("user_mannequins umq").
 		Joins("INNER JOIN user_mappings um ON umq.source_login = um.source_login").
 		Where("umq.mannequin_org = ?", mannequinOrg).
 		Where("um.destination_login IS NOT NULL AND um.destination_login != ''").
-		Where("(umq.reclaim_status IS NULL OR umq.reclaim_status != ?)", string(models.ReclaimStatusCompleted)).
+		Where("(umq.reclaim_status IS NULL OR (umq.reclaim_status != ? AND umq.reclaim_status != ?))", string(models.ReclaimStatusInvited), string(models.ReclaimStatusCompleted)).
 		Count(&stats.Invitable).Error; err != nil {
 		return nil, fmt.Errorf("failed to count invitable mannequins: %w", err)
 	}

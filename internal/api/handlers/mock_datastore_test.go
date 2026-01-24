@@ -677,7 +677,7 @@ func (m *MockDataStore) GetMannequinOrgs(_ context.Context) ([]string, error) {
 			orgsMap[mannequin.MannequinOrg] = true
 		}
 	}
-	var orgs []string
+	orgs := make([]string, 0, len(orgsMap))
 	for org := range orgsMap {
 		orgs = append(orgs, org)
 	}
@@ -757,10 +757,11 @@ func (m *MockDataStore) GetMannequinOrgStats(_ context.Context, mannequinOrg str
 			}
 		}
 
-		// Check if invitable (has destination mapping and not completed)
+		// Check if invitable (has destination mapping and not invited or completed)
+		// This must match filterPendingMappingsWithMannequins logic
 		if mapping := m.UserMappings[mannequin.SourceLogin]; mapping != nil {
 			if mapping.DestinationLogin != nil && *mapping.DestinationLogin != "" {
-				if mannequin.ReclaimStatus == nil || *mannequin.ReclaimStatus != string(models.ReclaimStatusCompleted) {
+				if mannequin.ReclaimStatus == nil || (*mannequin.ReclaimStatus != string(models.ReclaimStatusInvited) && *mannequin.ReclaimStatus != string(models.ReclaimStatusCompleted)) {
 					stats.Invitable++
 				}
 			}
