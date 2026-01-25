@@ -27,14 +27,14 @@ type LicenseValidator struct {
 
 // LicenseStatus represents the Copilot license status for a user
 type LicenseStatus struct {
-	Valid       bool      `json:"valid"`
-	HasSeat     bool      `json:"has_seat"`
-	SeatType    string    `json:"seat_type,omitempty"`    // "assigned", "pending"
-	AssignedAt  time.Time `json:"assigned_at,omitempty"`  // When the seat was assigned
-	Message     string    `json:"message,omitempty"`      // Human-readable status message
-	CheckedAt   time.Time `json:"checked_at"`             // When this status was checked
-	ExpiresAt   time.Time `json:"expires_at"`             // When this cache entry expires
-	Error       string    `json:"error,omitempty"`        // Error message if check failed
+	Valid      bool      `json:"valid"`
+	HasSeat    bool      `json:"has_seat"`
+	SeatType   string    `json:"seat_type,omitempty"`   // "assigned", "pending"
+	AssignedAt time.Time `json:"assigned_at,omitempty"` // When the seat was assigned
+	Message    string    `json:"message,omitempty"`     // Human-readable status message
+	CheckedAt  time.Time `json:"checked_at"`            // When this status was checked
+	ExpiresAt  time.Time `json:"expires_at"`            // When this cache entry expires
+	Error      string    `json:"error,omitempty"`       // Error message if check failed
 }
 
 // licenseCache stores license status to avoid repeated API calls
@@ -203,16 +203,16 @@ func (v *LicenseValidator) queryLicenseStatus(ctx context.Context, userLogin str
 
 	if copilotResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(copilotResp.Body)
-		return nil, fmt.Errorf("Copilot API returned status %d: %s", copilotResp.StatusCode, string(body))
+		return nil, fmt.Errorf("copilot API returned status %d: %s", copilotResp.StatusCode, string(body))
 	}
 
 	// Parse the response
 	var seatInfo struct {
-		SeatType          string    `json:"seat_type"`            // e.g., "assigned"
-		SeatManagementSetting string `json:"seat_management_setting"` // e.g., "assign_all", "assign_selected"
-		CreatedAt         time.Time `json:"created_at"`
-		UpdatedAt         time.Time `json:"updated_at"`
-		PendingCancellationDate *string `json:"pending_cancellation_date"`
+		SeatType                string    `json:"seat_type"`               // e.g., "assigned"
+		SeatManagementSetting   string    `json:"seat_management_setting"` // e.g., "assign_all", "assign_selected"
+		CreatedAt               time.Time `json:"created_at"`
+		UpdatedAt               time.Time `json:"updated_at"`
+		PendingCancellationDate *string   `json:"pending_cancellation_date"`
 	}
 
 	if err := json.NewDecoder(copilotResp.Body).Decode(&seatInfo); err != nil {
@@ -265,7 +265,7 @@ func CheckCLIAvailable(cliPath string) (bool, string, error) {
 		if err != nil {
 			// Check if the executable exists at all
 			if _, statErr := exec.LookPath(cliPath); statErr != nil {
-				return false, "", fmt.Errorf("Copilot CLI not found at path: %s", cliPath)
+				return false, "", fmt.Errorf("copilot CLI not found at path: %s", cliPath)
 			}
 			return false, "", fmt.Errorf("failed to execute Copilot CLI: %v", err)
 		}

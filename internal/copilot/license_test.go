@@ -14,9 +14,9 @@ func TestNewLicenseValidator(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	tests := []struct {
-		name      string
-		baseURL   string
-		wantURL   string
+		name    string
+		baseURL string
+		wantURL string
 	}{
 		{
 			name:    "default URL",

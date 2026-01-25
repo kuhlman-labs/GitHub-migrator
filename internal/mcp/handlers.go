@@ -217,7 +217,7 @@ func (s *Server) handleCheckDependencies(ctx context.Context, req mcp.CallToolRe
 			depRepo, err := s.db.GetRepository(ctx, dep.DependencyFullName)
 			if err == nil && depRepo != nil {
 				info.MigrationStatus = depRepo.Status
-				info.IsMigrated = depRepo.Status == "completed" || depRepo.Status == "migration_complete"
+				info.IsMigrated = depRepo.Status == StatusCompleted || depRepo.Status == StatusMigrationComplete
 			}
 		}
 
@@ -241,7 +241,7 @@ func (s *Server) handleCheckDependencies(ctx context.Context, req mcp.CallToolRe
 					DependencyType:     "depends_on_this",
 					IsLocal:            true,
 					MigrationStatus:    repo.Status,
-					IsMigrated:         repo.Status == "completed" || repo.Status == "migration_complete",
+					IsMigrated:         repo.Status == StatusCompleted || repo.Status == StatusMigrationComplete,
 				})
 			}
 			output.Message = fmt.Sprintf("Found %d dependencies and %d reverse dependencies for %s",
@@ -262,8 +262,8 @@ func (s *Server) handleFindPilotCandidates(ctx context.Context, req mcp.CallTool
 
 	// Find simple, pending repositories with few dependencies
 	filters := map[string]any{
-		"status":          "pending",
-		"max_complexity":  5, // Simple complexity
+		"status":          StatusPending,
+		"max_complexity":  5,            // Simple complexity
 		"limit":           maxCount * 2, // Get extra to filter by dependencies
 		"include_details": true,
 	}
@@ -382,7 +382,7 @@ func (s *Server) handleCreateBatch(ctx context.Context, req mcp.CallToolRequest)
 		Name:            name,
 		Description:     &description,
 		Type:            "custom",
-		Status:          "pending",
+		Status:          StatusPending,
 		RepositoryCount: len(repos),
 	}
 
@@ -417,6 +417,7 @@ func (s *Server) handleCreateBatch(ctx context.Context, req mcp.CallToolRequest)
 }
 
 // handlePlanWaves implements the plan_waves tool
+// nolint:gocyclo // Wave planning requires handling multiple scenarios (dependencies, sorting, circular deps)
 func (s *Server) handlePlanWaves(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	waveSize := req.GetInt("wave_size", 10)
 	if waveSize > 100 {
@@ -426,7 +427,7 @@ func (s *Server) handlePlanWaves(ctx context.Context, req mcp.CallToolRequest) (
 
 	// Get all pending repositories
 	filters := map[string]any{
-		"status":          "pending",
+		"status":          StatusPending,
 		"include_details": true,
 	}
 	if org != "" {
@@ -589,13 +590,13 @@ func (s *Server) handleGetTeamRepositories(ctx context.Context, req mcp.CallTool
 	// Convert to summaries
 	repos := make([]RepositorySummary, 0)
 	for _, tr := range teamDetail.Repositories {
-		status := "pending"
+		status := StatusPending
 		if tr.MigrationStatus != nil {
 			status = *tr.MigrationStatus
 		}
 
 		// Filter out migrated if not requested
-		if !includeMigrated && (status == "completed" || status == "complete" || status == "migration_complete") {
+		if !includeMigrated && (status == StatusCompleted || status == StatusComplete || status == StatusMigrationComplete) {
 			continue
 		}
 

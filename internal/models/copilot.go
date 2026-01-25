@@ -97,13 +97,13 @@ func (s *CopilotSession) ToResponse() *CopilotSessionResponse {
 
 // CopilotStatus represents the current status of Copilot availability
 type CopilotStatus struct {
-	Enabled          bool   `json:"enabled"`
-	Available        bool   `json:"available"`
-	CLIInstalled     bool   `json:"cli_installed"`
-	CLIVersion       string `json:"cli_version,omitempty"`
-	LicenseRequired  bool   `json:"license_required"`
-	LicenseValid     bool   `json:"license_valid"`
-	LicenseMessage   string `json:"license_message,omitempty"`
+	Enabled           bool   `json:"enabled"`
+	Available         bool   `json:"available"`
+	CLIInstalled      bool   `json:"cli_installed"`
+	CLIVersion        string `json:"cli_version,omitempty"`
+	LicenseRequired   bool   `json:"license_required"`
+	LicenseValid      bool   `json:"license_valid"`
+	LicenseMessage    string `json:"license_message,omitempty"`
 	UnavailableReason string `json:"unavailable_reason,omitempty"`
 }
 

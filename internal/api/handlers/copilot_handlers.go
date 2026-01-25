@@ -17,7 +17,6 @@ import (
 type CopilotHandler struct {
 	db            *storage.Database
 	logger        *slog.Logger
-	service       *copilot.Service
 	gitHubBaseURL string
 }
 

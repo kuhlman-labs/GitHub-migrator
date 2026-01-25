@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+// Status constants for migration status checks
+const (
+	StatusPending           = "pending"
+	StatusCompleted         = "completed"
+	StatusComplete          = "complete"
+	StatusMigrationComplete = "migration_complete"
+)
+
 // RepositorySummary represents a summarized view of a repository for tool responses
 type RepositorySummary struct {
 	FullName         string    `json:"full_name"`
@@ -24,12 +32,12 @@ type RepositorySummary struct {
 
 // ComplexityBreakdown represents detailed complexity information
 type ComplexityBreakdown struct {
-	TotalScore    int                    `json:"total_score"`
-	Rating        string                 `json:"rating"`
-	Components    map[string]int         `json:"components"`
-	Blockers      []string               `json:"blockers,omitempty"`
-	Warnings      []string               `json:"warnings,omitempty"`
-	Recommendations []string             `json:"recommendations,omitempty"`
+	TotalScore      int            `json:"total_score"`
+	Rating          string         `json:"rating"`
+	Components      map[string]int `json:"components"`
+	Blockers        []string       `json:"blockers,omitempty"`
+	Warnings        []string       `json:"warnings,omitempty"`
+	Recommendations []string       `json:"recommendations,omitempty"`
 }
 
 // DependencyInfo represents a repository dependency
@@ -43,11 +51,11 @@ type DependencyInfo struct {
 
 // WavePlan represents a planned migration wave
 type WavePlan struct {
-	WaveNumber   int                 `json:"wave_number"`
-	Repositories []RepositorySummary `json:"repositories"`
-	TotalSize    int64               `json:"total_size_kb"`
-	AvgComplexity float64            `json:"avg_complexity"`
-	Dependencies  int                `json:"dependency_count"`
+	WaveNumber    int                 `json:"wave_number"`
+	Repositories  []RepositorySummary `json:"repositories"`
+	TotalSize     int64               `json:"total_size_kb"`
+	AvgComplexity float64             `json:"avg_complexity"`
+	Dependencies  int                 `json:"dependency_count"`
 }
 
 // BatchInfo represents batch information
@@ -161,10 +169,10 @@ type CreateBatchOutput struct {
 
 // PlanWavesOutput is the output for plan_waves tool
 type PlanWavesOutput struct {
-	Waves            []WavePlan `json:"waves"`
-	TotalWaves       int        `json:"total_waves"`
-	TotalRepositories int       `json:"total_repositories"`
-	Message          string     `json:"message"`
+	Waves             []WavePlan `json:"waves"`
+	TotalWaves        int        `json:"total_waves"`
+	TotalRepositories int        `json:"total_repositories"`
+	Message           string     `json:"message"`
 }
 
 // GetTeamRepositoriesOutput is the output for get_team_repositories tool

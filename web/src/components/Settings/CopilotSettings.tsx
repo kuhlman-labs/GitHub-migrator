@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { FormControl, Checkbox, TextInput, Text, Heading, Flash, Label, Button } from '@primer/react';
 import { AlertIcon, SyncIcon, CheckCircleIcon, CopilotIcon, CheckIcon, XIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -11,9 +11,8 @@ interface CopilotSettingsProps {
 
 export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
   const queryClient = useQueryClient();
-  const [cliPath, setCliPath] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+  // Track local edits separately from server state
+  const [localCliPath, setLocalCliPath] = useState<string | null>(null);
   
   // Get current settings
   const { data: settingsData, isLoading, error } = useQuery({
@@ -39,26 +38,27 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['copilot-status'] });
-      setHasChanges(false);
+      setLocalCliPath(null); // Clear local edits after save
     },
   });
 
   const settings = settingsData;
 
-  // Initialize CLI path from settings (properly in useEffect)
-  useEffect(() => {
-    if (settings?.copilot_cli_path !== undefined && !isInitialized) {
-      setCliPath(settings.copilot_cli_path || '');
-      setIsInitialized(true);
+  // Derive displayed CLI path: use local edits if present, otherwise server value
+  const cliPath = useMemo(() => {
+    if (localCliPath !== null) {
+      return localCliPath;
     }
-  }, [settings?.copilot_cli_path, isInitialized]);
+    return settings?.copilot_cli_path || '';
+  }, [localCliPath, settings?.copilot_cli_path]);
 
-  // Reset initialization when settings refetch with new data (e.g., after save)
-  useEffect(() => {
-    if (!hasChanges && settings?.copilot_cli_path !== undefined) {
-      setCliPath(settings.copilot_cli_path || '');
-    }
-  }, [settings?.copilot_cli_path, hasChanges]);
+  // Check if there are unsaved changes
+  const hasChanges = localCliPath !== null && localCliPath !== (settings?.copilot_cli_path || '');
+
+  // Handler for CLI path changes
+  const setCliPath = (value: string) => {
+    setLocalCliPath(value);
+  };
 
   const handleToggleEnabled = (checked: boolean) => {
     updateMutation.mutate({ copilot_enabled: checked });
@@ -154,10 +154,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
             <div className="flex gap-2 mt-2">
               <TextInput
                 value={cliPath}
-                onChange={(e) => {
-                  setCliPath(e.target.value);
-                  setHasChanges(true);
-                }}
+                onChange={(e) => setCliPath(e.target.value)}
                 placeholder="/usr/local/bin/copilot"
                 disabled={readOnly}
                 className="flex-1"

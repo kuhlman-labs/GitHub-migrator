@@ -21,19 +21,22 @@ type Service struct {
 	logger           *slog.Logger
 	licenseValidator *LicenseValidator
 	toolRegistry     *ToolRegistry
+	intentDetector   *IntentDetector
+	toolExecutor     *ToolExecutor
 	sessions         map[string]*Session
 	sessionsMu       sync.RWMutex
 }
 
 // Session represents an active Copilot chat session
 type Session struct {
-	ID        string
-	UserID    string
-	UserLogin string
-	Messages  []Message
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	ExpiresAt time.Time
+	ID             string
+	UserID         string
+	UserLogin      string
+	Messages       []Message
+	LastToolResult *ToolExecutionResult // Last tool execution result for follow-up actions
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ExpiresAt      time.Time
 }
 
 // Message represents a chat message
@@ -77,12 +80,16 @@ type ServiceConfig struct {
 func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig) *Service {
 	licenseValidator := NewLicenseValidator(config.GitHubBaseURL, logger)
 	toolRegistry := NewToolRegistry(logger)
+	intentDetector := NewIntentDetector()
+	toolExecutor := NewToolExecutor(db, logger)
 
 	return &Service{
 		db:               db,
 		logger:           logger,
 		licenseValidator: licenseValidator,
 		toolRegistry:     toolRegistry,
+		intentDetector:   intentDetector,
+		toolExecutor:     toolExecutor,
 		sessions:         make(map[string]*Session),
 	}
 }
@@ -314,15 +321,16 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 	}
 
 	// Process with Copilot using the copied messages (avoids holding lock during CLI call)
-	// Create a temporary session view for processing
+	// Create a temporary session view for processing - include LastToolResult for follow-ups
 	sessionView := &Session{
-		ID:        session.ID,
-		UserID:    session.UserID,
-		UserLogin: session.UserLogin,
-		Messages:  messagesCopy,
-		CreatedAt: session.CreatedAt,
-		UpdatedAt: session.UpdatedAt,
-		ExpiresAt: session.ExpiresAt,
+		ID:             session.ID,
+		UserID:         session.UserID,
+		UserLogin:      session.UserLogin,
+		Messages:       messagesCopy,
+		LastToolResult: session.LastToolResult, // Carry over for follow-up detection
+		CreatedAt:      session.CreatedAt,
+		UpdatedAt:      session.UpdatedAt,
+		ExpiresAt:      session.ExpiresAt,
 	}
 	response, err := s.processMessage(ctx, sessionView, userMessage, settings)
 	if err != nil {
@@ -340,6 +348,10 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 	s.sessionsMu.Lock()
 	session.Messages = append(session.Messages, assistantMsg)
 	session.UpdatedAt = time.Now()
+	// Preserve the LastToolResult from processing for future follow-ups
+	if sessionView.LastToolResult != nil {
+		session.LastToolResult = sessionView.LastToolResult
+	}
 	s.sessionsMu.Unlock()
 
 	// Persist assistant message
@@ -390,12 +402,59 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 		cliPath = *settings.CopilotCLIPath
 	}
 
+	// Detect intent from user message
+	var toolResult *ToolExecutionResult
+	intent := s.intentDetector.DetectIntent(userMessage)
+
+	// Check for follow-up batch creation
+	if s.intentDetector.IsFollowUpBatchCreate(userMessage) && session.LastToolResult != nil && session.LastToolResult.FollowUp != nil {
+		// Extract batch name from message or use default
+		batchName := s.intentDetector.ExtractBatchNameFromFollowUp(userMessage)
+		if batchName == "" {
+			batchName = session.LastToolResult.FollowUp.DefaultName
+		}
+
+		// Create batch from previous results
+		batchIntent := &DetectedIntent{
+			Tool: "create_batch",
+			Args: map[string]any{
+				"name": batchName,
+			},
+			Confidence: 1.0,
+		}
+		result, err := s.toolExecutor.ExecuteTool(ctx, batchIntent, session.LastToolResult)
+		if err != nil {
+			s.logger.Error("Failed to execute batch creation", "error", err)
+		} else {
+			toolResult = result
+		}
+	} else if intent != nil && intent.IsConfident() {
+		// Execute the detected tool
+		s.logger.Info("Detected intent", "tool", intent.Tool, "confidence", intent.Confidence)
+		result, err := s.toolExecutor.ExecuteTool(ctx, intent, session.LastToolResult)
+		if err != nil {
+			s.logger.Error("Failed to execute tool", "tool", intent.Tool, "error", err)
+		} else {
+			toolResult = result
+		}
+	}
+
+	// Store the tool result for potential follow-ups
+	if toolResult != nil {
+		session.LastToolResult = toolResult
+	}
+
 	// Fetch migration context from database
 	migrationContext := s.getMigrationContext(ctx, settings)
 
 	// Build the system prompt with context about available tools and environment
 	tools := s.toolRegistry.GetTools()
 	systemPrompt := s.buildSystemPrompt(tools, migrationContext)
+
+	// If we have tool results, enhance the prompt with them
+	if toolResult != nil {
+		systemPrompt += s.formatToolResultsForPrompt(toolResult)
+	}
 
 	// Get MCP configuration from settings
 	mcpEnabled := settings.CopilotMCPEnabled
@@ -408,14 +467,38 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 	response, err := s.callCopilotCLI(ctx, cliPath, systemPrompt, session.Messages, userMessage, mcpEnabled, mcpPort)
 	if err != nil {
 		s.logger.Error("Failed to call Copilot CLI, using fallback response", "error", err)
-		// Return a helpful error message instead of failing completely
-		response = s.generateFallbackResponse(userMessage, err)
+		// If we have tool results, generate a response from them instead
+		if toolResult != nil {
+			response = s.generateResponseFromToolResult(toolResult)
+		} else {
+			response = s.generateFallbackResponse(userMessage, err)
+		}
+	}
+
+	// Build tool calls and results for the message
+	var toolCalls []ToolCall
+	var toolResults []ToolResult
+	if toolResult != nil {
+		toolCalls = []ToolCall{{
+			ID:     fmt.Sprintf("call_%d", time.Now().UnixNano()),
+			Name:   toolResult.Tool,
+			Args:   intent.Args,
+			Status: "completed",
+		}}
+		toolResults = []ToolResult{{
+			ToolCallID: toolCalls[0].ID,
+			Success:    toolResult.Success,
+			Result:     toolResult.Result,
+			Error:      toolResult.Error,
+		}}
 	}
 
 	return &Message{
-		Role:      models.RoleAssistant,
-		Content:   response,
-		CreatedAt: time.Now(),
+		Role:        models.RoleAssistant,
+		Content:     response,
+		ToolCalls:   toolCalls,
+		ToolResults: toolResults,
+		CreatedAt:   time.Now(),
 	}, nil
 }
 
@@ -439,8 +522,8 @@ type MigrationContext struct {
 	AvgComplexityScore float64
 
 	// Batch info
-	TotalBatches    int
-	PendingBatches  int
+	TotalBatches     int
+	PendingBatches   int
 	ScheduledBatches int
 }
 
@@ -564,11 +647,26 @@ You have access to the following capabilities:
 	prompt.WriteString("\n")
 
 	// Instructions for using context
-	prompt.WriteString(`When answering questions:
+	prompt.WriteString(`## Response Guidelines
+
+When answering questions:
 - Use the migration context above to provide specific, actionable responses
-- Use the available tools to query real data when needed
+- Present data in tables or lists when showing multiple items
 - Don't ask clarifying questions if you can answer from context
 - Be concise but thorough in your explanations
+
+When presenting tool results:
+- Format data in a clear, readable way (use markdown tables for lists)
+- Offer specific follow-up actions the user can take
+- For pilot candidates: Offer to create a batch with the selected repositories
+- For batches: Offer to schedule them for migration
+- For dependencies: Explain the migration implications
+- Always suggest a natural next step the user can take
+
+Example follow-up offers:
+- "Would you like me to create a batch with these repositories?"
+- "Should I schedule this batch for migration?"
+- "Would you like to see more details about any of these repositories?"
 
 `)
 
@@ -627,6 +725,7 @@ func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt stri
 	// For the CLI, we pass the prompt with context that describes the available tools.
 	args := []string{"-p", fullPrompt}
 
+	// #nosec G204 - CLI path is configured by admin in settings, not user-controlled input
 	cmd := exec.CommandContext(cmdCtx, cliPath, args...)
 	output, err := cmd.CombinedOutput()
 
@@ -645,6 +744,133 @@ func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt stri
 
 	s.logger.Debug("Copilot CLI response received", "response_length", len(response))
 	return response, nil
+}
+
+// formatToolResultsForPrompt formats tool execution results for inclusion in the system prompt
+func (s *Service) formatToolResultsForPrompt(result *ToolExecutionResult) string {
+	var prompt strings.Builder
+
+	prompt.WriteString("\n\n## Tool Execution Results\n\n")
+	prompt.WriteString(fmt.Sprintf("I executed the **%s** tool and got the following results:\n\n", result.Tool))
+
+	if result.Success {
+		prompt.WriteString(fmt.Sprintf("**Summary:** %s\n\n", result.Summary))
+
+		// Format the result based on the tool type
+		if data, err := json.MarshalIndent(result.Result, "", "  "); err == nil {
+			prompt.WriteString("**Data:**\n```json\n")
+			prompt.WriteString(string(data))
+			prompt.WriteString("\n```\n\n")
+		}
+
+		// Add suggestions if present
+		if len(result.Suggestions) > 0 {
+			prompt.WriteString("**Notes:**\n")
+			for _, s := range result.Suggestions {
+				prompt.WriteString(fmt.Sprintf("- %s\n", s))
+			}
+			prompt.WriteString("\n")
+		}
+
+		// Add follow-up action if available
+		if result.FollowUp != nil {
+			prompt.WriteString(fmt.Sprintf("**Suggested Follow-up:** %s\n\n", result.FollowUp.Description))
+		}
+	} else {
+		prompt.WriteString(fmt.Sprintf("**Error:** %s\n\n", result.Error))
+	}
+
+	prompt.WriteString(`**Instructions for Response:**
+- Present these results clearly to the user in a readable format
+- If there are candidates/repositories, show them in a table or list
+- Offer the follow-up action if one is suggested
+- Be specific about what the user can do next
+`)
+
+	return prompt.String()
+}
+
+// generateResponseFromToolResult creates a response directly from tool results when CLI fails
+func (s *Service) generateResponseFromToolResult(result *ToolExecutionResult) string {
+	var response strings.Builder
+
+	if !result.Success {
+		response.WriteString(fmt.Sprintf("I encountered an issue: %s\n\n", result.Error))
+		return response.String()
+	}
+
+	response.WriteString(fmt.Sprintf("%s\n\n", result.Summary))
+
+	// Format results based on tool type
+	switch result.Tool {
+	case "find_pilot_candidates":
+		if candidates, ok := result.Result.([]map[string]any); ok && len(candidates) > 0 {
+			response.WriteString("| Repository | Complexity | Size |\n")
+			response.WriteString("|------------|------------|------|\n")
+			for _, c := range candidates {
+				response.WriteString(fmt.Sprintf("| %s | %s (%v) | %v KB |\n",
+					c["full_name"], c["complexity_rating"], c["complexity_score"], c["size_kb"]))
+			}
+			response.WriteString("\n")
+		}
+
+	case "analyze_repositories":
+		if repos, ok := result.Result.([]map[string]any); ok && len(repos) > 0 {
+			response.WriteString("| Repository | Status | Complexity |\n")
+			response.WriteString("|------------|--------|------------|\n")
+			for _, r := range repos {
+				response.WriteString(fmt.Sprintf("| %s | %s | %s |\n",
+					r["full_name"], r["status"], r["complexity_rating"]))
+			}
+			response.WriteString("\n")
+		}
+
+	case "create_batch":
+		if batch, ok := result.Result.(map[string]any); ok {
+			response.WriteString("**Batch Details:**\n")
+			response.WriteString(fmt.Sprintf("- Name: %s\n", batch["batch_name"]))
+			response.WriteString(fmt.Sprintf("- ID: %v\n", batch["batch_id"]))
+			response.WriteString(fmt.Sprintf("- Repositories: %v\n", batch["repository_count"]))
+			response.WriteString(fmt.Sprintf("- Status: %s\n\n", batch["status"]))
+		}
+
+	case "plan_waves":
+		if waves, ok := result.Result.([]map[string]any); ok {
+			for _, w := range waves {
+				response.WriteString(fmt.Sprintf("**Wave %v** (%v repos):\n", w["wave_number"], w["count"]))
+				if repos, ok := w["repositories"].([]string); ok {
+					for _, r := range repos {
+						response.WriteString(fmt.Sprintf("- %s\n", r))
+					}
+				}
+				response.WriteString("\n")
+			}
+		}
+
+	default:
+		// Generic JSON output
+		if data, err := json.MarshalIndent(result.Result, "", "  "); err == nil {
+			response.WriteString("```json\n")
+			response.WriteString(string(data))
+			response.WriteString("\n```\n\n")
+		}
+	}
+
+	// Add suggestions
+	if len(result.Suggestions) > 0 {
+		response.WriteString("**Notes:**\n")
+		for _, s := range result.Suggestions {
+			response.WriteString(fmt.Sprintf("- %s\n", s))
+		}
+		response.WriteString("\n")
+	}
+
+	// Add follow-up action
+	if result.FollowUp != nil {
+		response.WriteString(fmt.Sprintf("\n%s\n", result.FollowUp.Description))
+	}
+
+	return response.String()
 }
 
 // generateFallbackResponse creates a helpful response when CLI fails

@@ -1,8 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@primer/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CopilotAssistant } from './index';
+
+// Mock scrollIntoView which doesn't exist in JSDOM
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 // Mock the copilot API
 const mockGetStatus = vi.fn();
@@ -53,8 +58,8 @@ describe('CopilotAssistant', () => {
       </TestWrapper>
     );
     
-    // Loading state should show spinner
-    expect(document.querySelector('[data-testid="spinner"]') || screen.queryByRole('status')).toBeTruthy;
+    // Loading state should show spinner with "Loading" accessible text
+    expect(screen.getByText('Loading')).toBeInTheDocument();
   });
 
   it('shows unavailable message when Copilot is not available', async () => {
@@ -246,7 +251,8 @@ describe('CopilotAssistant', () => {
       expect(screen.getByText('Copilot is not available')).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/No Copilot license found/)).toBeInTheDocument();
+    // Use getAllByText since the message appears in multiple places
+    expect(screen.getAllByText(/No Copilot license found/).length).toBeGreaterThan(0);
   });
 
   it('shows CLI not installed warning', async () => {
