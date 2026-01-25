@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -245,15 +246,44 @@ func (v *LicenseValidator) queryLicenseStatus(ctx context.Context, userLogin str
 // CheckCLIAvailable checks if the Copilot CLI is installed and accessible
 func CheckCLIAvailable(cliPath string) (bool, string, error) {
 	if cliPath == "" {
-		// Try common default locations
-		cliPath = "copilot" // Will look in PATH
+		// Try common default locations - look for 'copilot' in PATH
+		cliPath = "copilot"
 	}
 
-	// For now, we'll just check if the path exists or is in PATH
-	// In a full implementation, we'd actually execute the CLI to verify it works
-	// and get version info
+	// Try to execute the CLI to verify it works and get version info
+	// Use --version or version command to check
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	// This is a placeholder - actual implementation would run:
-	// copilot --version or similar
-	return false, "", fmt.Errorf("Copilot CLI not configured - please set the CLI path in settings")
+	// Try --version first (common for most CLIs)
+	cmd := exec.CommandContext(ctx, cliPath, "--version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Try without arguments - some CLIs print version info
+		cmd = exec.CommandContext(ctx, cliPath, "version")
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			// Check if the executable exists at all
+			if _, statErr := exec.LookPath(cliPath); statErr != nil {
+				return false, "", fmt.Errorf("Copilot CLI not found at path: %s", cliPath)
+			}
+			return false, "", fmt.Errorf("failed to execute Copilot CLI: %v", err)
+		}
+	}
+
+	// Parse version from output
+	version := strings.TrimSpace(string(output))
+	if version == "" {
+		version = "unknown"
+	}
+	// Truncate long output (only keep first line)
+	if idx := strings.Index(version, "\n"); idx > 0 {
+		version = version[:idx]
+	}
+	// Limit length
+	if len(version) > 100 {
+		version = version[:100] + "..."
+	}
+
+	return true, version, nil
 }

@@ -10,15 +10,11 @@ export function CopilotAssistant() {
   const [message, setMessage] = useState('');
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
-  const [isTransmitting, setIsTransmitting] = useState(false); // Track active message transmission
-  const isTransmittingRef = useRef(false); // Ref to track current transmitting state (avoids stale closure)
+  // Track whether a session change requires fetching history (only when user explicitly selects a session)
+  const [shouldFetchHistory, setShouldFetchHistory] = useState(false);
+  const fetchRequestIdRef = useRef(0); // Track fetch requests to ignore stale responses
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-
-  // Keep ref in sync with state
-  useEffect(() => {
-    isTransmittingRef.current = isTransmitting;
-  }, [isTransmitting]);
 
   // Check Copilot status
   const { data: status, isLoading: statusLoading, error: statusError } = useQuery({
@@ -36,9 +32,6 @@ export function CopilotAssistant() {
   // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: copilotApi.sendMessage,
-    onMutate: () => {
-      setIsTransmitting(true);
-    },
     onSuccess: (response) => {
       // Add assistant message
       setMessages(prev => [...prev, {
@@ -50,15 +43,13 @@ export function CopilotAssistant() {
         tool_results: response.tool_results,
         created_at: new Date().toISOString(),
       }]);
-      // Update current session ID if new session was created (do this after adding message)
+      // Update current session ID if new session was created
+      // Note: We DON'T set shouldFetchHistory here because we already have the messages locally
       if (!currentSessionId) {
         setCurrentSessionId(response.session_id);
       }
       // Invalidate sessions query to update list
       queryClient.invalidateQueries({ queryKey: ['copilot-sessions'] });
-    },
-    onSettled: () => {
-      setIsTransmitting(false);
     },
   });
 
@@ -74,22 +65,34 @@ export function CopilotAssistant() {
     },
   });
 
-  // Load session history when session changes (but not during active transmission)
+  // Load session history only when user explicitly selects a session from the sidebar
+  // This prevents overwriting locally-added messages when a new session is created via sending a message
   useEffect(() => {
-    if (currentSessionId && !isTransmitting) {
+    if (currentSessionId && shouldFetchHistory) {
+      // Increment request ID to track this specific fetch
+      const requestId = ++fetchRequestIdRef.current;
+      
       copilotApi.getSessionHistory(currentSessionId).then(response => {
-        // Only update if we're still not transmitting (avoid race condition)
-        // Use ref to get current value, not stale closure value
-        if (!isTransmittingRef.current) {
+        // Only update if this is still the latest request (ignore stale responses)
+        // This prevents race conditions when switching sessions quickly
+        if (requestId === fetchRequestIdRef.current) {
           setMessages(response.messages);
         }
       }).catch(() => {
-        // Session may have expired
-        setCurrentSessionId(null);
-        setMessages([]);
+        // Only handle error if this is still the latest request
+        if (requestId === fetchRequestIdRef.current) {
+          // Session may have expired
+          setCurrentSessionId(null);
+          setMessages([]);
+        }
+      }).finally(() => {
+        // Reset the flag after fetch completes (only if this is the latest request)
+        if (requestId === fetchRequestIdRef.current) {
+          setShouldFetchHistory(false);
+        }
       });
     }
-  }, [currentSessionId, isTransmitting]);
+  }, [currentSessionId, shouldFetchHistory]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -126,11 +129,16 @@ export function CopilotAssistant() {
   };
 
   const handleNewChat = () => {
+    // Increment request ID to cancel any pending fetch
+    fetchRequestIdRef.current++;
+    setShouldFetchHistory(false);
     setCurrentSessionId(null);
     setMessages([]);
   };
 
   const handleSelectSession = (session: CopilotSession) => {
+    // User explicitly selected a session, so we should fetch its history
+    setShouldFetchHistory(true);
     setCurrentSessionId(session.id);
   };
 
