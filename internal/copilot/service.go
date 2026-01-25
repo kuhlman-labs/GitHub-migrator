@@ -391,9 +391,12 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 		cliPath = *settings.CopilotCLIPath
 	}
 
-	// Build the system prompt with context about available tools
+	// Fetch migration context from database
+	migrationContext := s.getMigrationContext(ctx, settings)
+
+	// Build the system prompt with context about available tools and environment
 	tools := s.toolRegistry.GetTools()
-	systemPrompt := s.buildSystemPrompt(tools)
+	systemPrompt := s.buildSystemPrompt(tools, migrationContext)
 
 	// Get MCP configuration from settings
 	mcpEnabled := settings.CopilotMCPEnabled
@@ -417,9 +420,87 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 	}, nil
 }
 
-// buildSystemPrompt creates the system prompt with tool descriptions
-func (s *Service) buildSystemPrompt(tools []Tool) string {
-	prompt := `You are the GitHub Migrator Copilot assistant. You help users plan and execute GitHub migrations.
+// MigrationContext holds context about the current migration environment
+type MigrationContext struct {
+	// Source info
+	SourceType string
+	SourceURL  string
+	SourceOrgs []string
+
+	// Destination info
+	DestinationURL            string
+	DestinationEnterpriseSlug string
+
+	// Repository stats
+	TotalRepositories  int
+	PendingRepos       int
+	InProgressRepos    int
+	CompletedRepos     int
+	FailedRepos        int
+	AvgComplexityScore float64
+
+	// Batch info
+	TotalBatches    int
+	PendingBatches  int
+	ScheduledBatches int
+}
+
+// getMigrationContext fetches the current migration context from the database
+func (s *Service) getMigrationContext(ctx context.Context, settings *models.Settings) *MigrationContext {
+	mc := &MigrationContext{}
+
+	// Get destination configuration from settings
+	mc.DestinationURL = settings.DestinationBaseURL
+	if settings.DestinationEnterpriseSlug != nil {
+		mc.DestinationEnterpriseSlug = *settings.DestinationEnterpriseSlug
+	}
+
+	// Get source organizations from repositories
+	orgs, err := s.db.GetDistinctOrganizations(ctx)
+	if err == nil {
+		mc.SourceOrgs = orgs
+	}
+
+	// Get repository statistics by status
+	stats, err := s.db.GetRepositoryStatsByStatus(ctx)
+	if err == nil {
+		for status, count := range stats {
+			mc.TotalRepositories += count
+			switch status {
+			case "pending", "not_started":
+				mc.PendingRepos += count
+			case "in_progress", "queued", "exporting", "importing":
+				mc.InProgressRepos += count
+			case "completed", "complete", "migration_complete":
+				mc.CompletedRepos += count
+			case "failed", "error":
+				mc.FailedRepos += count
+			}
+		}
+	}
+
+	// Get batch counts
+	batches, err := s.db.ListBatches(ctx)
+	if err == nil {
+		mc.TotalBatches = len(batches)
+		for _, batch := range batches {
+			switch batch.Status {
+			case "pending":
+				mc.PendingBatches++
+			case "scheduled":
+				mc.ScheduledBatches++
+			}
+		}
+	}
+
+	return mc
+}
+
+// buildSystemPrompt creates the system prompt with tool descriptions and environment context
+func (s *Service) buildSystemPrompt(tools []Tool, mc *MigrationContext) string {
+	var prompt strings.Builder
+
+	prompt.WriteString(`You are the GitHub Migrator Copilot assistant. You help users plan and execute GitHub migrations.
 
 You have access to the following capabilities:
 - Analyze repositories for migration complexity and readiness
@@ -429,17 +510,78 @@ You have access to the following capabilities:
 - Identify repositories suitable for pilot migrations
 - Get migration status and history
 
-When users ask about migrations, provide helpful, actionable advice based on their needs.
-Be concise but thorough in your explanations.`
+`)
 
-	if len(tools) > 0 {
-		prompt += "\n\nAvailable tools:\n"
-		for _, tool := range tools {
-			prompt += fmt.Sprintf("- %s: %s\n", tool.Name, tool.Description)
+	// Add environment context
+	prompt.WriteString("## Current Migration Environment\n\n")
+
+	// Source info
+	if len(mc.SourceOrgs) > 0 {
+		prompt.WriteString("**Source Organizations:** ")
+		if len(mc.SourceOrgs) <= 5 {
+			prompt.WriteString(strings.Join(mc.SourceOrgs, ", "))
+		} else {
+			prompt.WriteString(fmt.Sprintf("%s, and %d more", strings.Join(mc.SourceOrgs[:5], ", "), len(mc.SourceOrgs)-5))
+		}
+		prompt.WriteString("\n")
+	}
+
+	// Destination info
+	if mc.DestinationURL != "" {
+		prompt.WriteString(fmt.Sprintf("**Destination:** %s", mc.DestinationURL))
+		if mc.DestinationEnterpriseSlug != "" {
+			prompt.WriteString(fmt.Sprintf(" (Enterprise: %s)", mc.DestinationEnterpriseSlug))
+		}
+		prompt.WriteString("\n")
+	}
+
+	// Repository stats
+	if mc.TotalRepositories > 0 {
+		prompt.WriteString(fmt.Sprintf("\n**Repository Summary:** %d total repositories\n", mc.TotalRepositories))
+		prompt.WriteString(fmt.Sprintf("- Pending: %d\n", mc.PendingRepos))
+		if mc.InProgressRepos > 0 {
+			prompt.WriteString(fmt.Sprintf("- In Progress: %d\n", mc.InProgressRepos))
+		}
+		if mc.CompletedRepos > 0 {
+			prompt.WriteString(fmt.Sprintf("- Completed: %d\n", mc.CompletedRepos))
+		}
+		if mc.FailedRepos > 0 {
+			prompt.WriteString(fmt.Sprintf("- Failed: %d\n", mc.FailedRepos))
 		}
 	}
 
-	return prompt
+	// Batch info
+	if mc.TotalBatches > 0 {
+		prompt.WriteString(fmt.Sprintf("\n**Batches:** %d total", mc.TotalBatches))
+		if mc.PendingBatches > 0 {
+			prompt.WriteString(fmt.Sprintf(", %d pending", mc.PendingBatches))
+		}
+		if mc.ScheduledBatches > 0 {
+			prompt.WriteString(fmt.Sprintf(", %d scheduled", mc.ScheduledBatches))
+		}
+		prompt.WriteString("\n")
+	}
+
+	prompt.WriteString("\n")
+
+	// Instructions for using context
+	prompt.WriteString(`When answering questions:
+- Use the migration context above to provide specific, actionable responses
+- Use the available tools to query real data when needed
+- Don't ask clarifying questions if you can answer from context
+- Be concise but thorough in your explanations
+
+`)
+
+	// Add tool descriptions
+	if len(tools) > 0 {
+		prompt.WriteString("## Available Tools\n\n")
+		for _, tool := range tools {
+			prompt.WriteString(fmt.Sprintf("- **%s**: %s\n", tool.Name, tool.Description))
+		}
+	}
+
+	return prompt.String()
 }
 
 // callCopilotCLI calls the Copilot CLI with the given message
