@@ -30,6 +30,14 @@ export interface SettingsResponse {
   auth_callback_url?: string;
   auth_frontend_url: string;
   authorization_rules: AuthorizationRulesResponse;
+  // Copilot settings
+  copilot_enabled: boolean;
+  copilot_require_license: boolean;
+  copilot_cli_path?: string;
+  copilot_cli_configured: boolean;
+  copilot_model?: string;
+  copilot_max_tokens?: number;
+  copilot_session_timeout_min: number;
   destination_configured: boolean;
   updated_at: string;
 }
@@ -71,6 +79,13 @@ export interface UpdateSettingsRequest {
   auth_callback_url?: string;
   auth_frontend_url?: string;
   authorization_rules?: UpdateAuthorizationRulesRequest;
+  // Copilot settings
+  copilot_enabled?: boolean;
+  copilot_require_license?: boolean;
+  copilot_cli_path?: string;
+  copilot_model?: string;
+  copilot_max_tokens?: number;
+  copilot_session_timeout_min?: number;
 }
 
 export interface ValidateDestinationRequest {

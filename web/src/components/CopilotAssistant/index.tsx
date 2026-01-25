@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Text, TextInput, Button, Flash, Spinner, Avatar, IconButton } from '@primer/react';
-import { CopilotIcon, PaperAirplaneIcon, TrashIcon, PlusIcon } from '@primer/octicons-react';
+import { Text, TextInput, Button, Flash, Spinner, IconButton } from '@primer/react';
+import { CopilotIcon, PaperAirplaneIcon, TrashIcon, PlusIcon, PersonIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { copilotApi } from '../../services/api/copilot';
 import type { CopilotMessage, CopilotSession } from '../../types/copilot';
@@ -11,8 +11,14 @@ export function CopilotAssistant() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
   const [isTransmitting, setIsTransmitting] = useState(false); // Track active message transmission
+  const isTransmittingRef = useRef(false); // Ref to track current transmitting state (avoids stale closure)
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isTransmittingRef.current = isTransmitting;
+  }, [isTransmitting]);
 
   // Check Copilot status
   const { data: status, isLoading: statusLoading, error: statusError } = useQuery({
@@ -73,11 +79,10 @@ export function CopilotAssistant() {
     if (currentSessionId && !isTransmitting) {
       copilotApi.getSessionHistory(currentSessionId).then(response => {
         // Only update if we're still not transmitting (avoid race condition)
-        setMessages(prev => {
-          // If we have local messages that aren't in the server response yet, preserve them
-          if (isTransmitting) return prev;
-          return response.messages;
-        });
+        // Use ref to get current value, not stale closure value
+        if (!isTransmittingRef.current) {
+          setMessages(response.messages);
+        }
       }).catch(() => {
         // Session may have expired
         setCurrentSessionId(null);
@@ -155,7 +160,7 @@ export function CopilotAssistant() {
       <div className="p-4">
         <PageHeader
           title="Copilot Assistant"
-          subtitle="AI-powered migration planning and execution"
+          description="AI-powered migration planning and execution"
         />
         <div className="mt-4" style={{ maxWidth: 600 }}>
           <Flash variant="warning">
@@ -280,10 +285,10 @@ export function CopilotAssistant() {
                 ].map((suggestion) => (
                   <Button
                     key={suggestion}
-                    variant="outline"
                     size="small"
                     onClick={() => setMessage(suggestion)}
-                    style={{ maxWidth: 400 }}
+                    className="border"
+                    style={{ maxWidth: 400, borderColor: 'var(--borderColor-default)' }}
                   >
                     {suggestion}
                   </Button>
@@ -300,11 +305,21 @@ export function CopilotAssistant() {
                     flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
                   }}
                 >
-                  <Avatar
-                    size={32}
-                    src={msg.role === 'user' ? undefined : undefined}
-                    style={{ flexShrink: 0 }}
-                  />
+                  <div
+                    className="flex items-center justify-center rounded-full"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      flexShrink: 0,
+                      backgroundColor: msg.role === 'user' ? 'var(--bgColor-accent-emphasis)' : 'var(--bgColor-success-emphasis)',
+                    }}
+                  >
+                    {msg.role === 'user' ? (
+                      <PersonIcon size={16} fill="white" />
+                    ) : (
+                      <CopilotIcon size={16} fill="white" />
+                    )}
+                  </div>
                   <div
                     className="p-3 rounded"
                     style={{
@@ -330,7 +345,17 @@ export function CopilotAssistant() {
               ))}
               {sendMessageMutation.isPending && (
                 <div className="flex gap-2 mb-3">
-                  <Avatar size={32} />
+                  <div
+                    className="flex items-center justify-center rounded-full"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      flexShrink: 0,
+                      backgroundColor: 'var(--bgColor-success-emphasis)',
+                    }}
+                  >
+                    <CopilotIcon size={16} fill="white" />
+                  </div>
                   <div className="p-3 rounded" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
                     <Spinner size="small" />
                   </div>

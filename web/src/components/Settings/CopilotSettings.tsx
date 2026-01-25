@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { FormControl, Checkbox, TextInput, Text, Heading, Flash, Label, Button } from '@primer/react';
 import { AlertIcon, SyncIcon, CheckCircleIcon, CopilotIcon, CheckIcon, XIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { settingsApi } from '../../services/api/settings';
+import { settingsApi, type UpdateSettingsRequest } from '../../services/api/settings';
 import { copilotApi } from '../../services/api/copilot';
 
 interface CopilotSettingsProps {
@@ -35,7 +35,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
 
   // Update settings mutation
   const updateMutation = useMutation({
-    mutationFn: (updates: Record<string, unknown>) => settingsApi.updateSettings(updates),
+    mutationFn: (updates: UpdateSettingsRequest) => settingsApi.updateSettings(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['copilot-status'] });
@@ -43,7 +43,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
     },
   });
 
-  const settings = settingsData?.settings;
+  const settings = settingsData;
 
   // Initialize CLI path from settings (properly in useEffect)
   useEffect(() => {
