@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -282,14 +284,19 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	// Add user message to session
+	// Add user message to session (with lock to prevent race conditions)
 	userMsg := Message{
 		Role:      models.RoleUser,
 		Content:   userMessage,
 		CreatedAt: time.Now(),
 	}
+	s.sessionsMu.Lock()
 	session.Messages = append(session.Messages, userMsg)
 	session.UpdatedAt = time.Now()
+	// Make a copy of messages for processing (to release lock during CLI call)
+	messagesCopy := make([]Message, len(session.Messages))
+	copy(messagesCopy, session.Messages)
+	s.sessionsMu.Unlock()
 
 	// Persist user message
 	userMsgModel := &models.CopilotMessage{
@@ -304,14 +311,23 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 		return nil, fmt.Errorf("failed to persist user message: %w", err)
 	}
 
-	// Process with Copilot
-	// For now, we'll simulate a response since the SDK integration requires the CLI
-	response, err := s.processMessage(ctx, session, userMessage, settings)
+	// Process with Copilot using the copied messages (avoids holding lock during CLI call)
+	// Create a temporary session view for processing
+	sessionView := &Session{
+		ID:        session.ID,
+		UserID:    session.UserID,
+		UserLogin: session.UserLogin,
+		Messages:  messagesCopy,
+		CreatedAt: session.CreatedAt,
+		UpdatedAt: session.UpdatedAt,
+		ExpiresAt: session.ExpiresAt,
+	}
+	response, err := s.processMessage(ctx, sessionView, userMessage, settings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process message: %w", err)
 	}
 
-	// Add assistant response to session
+	// Add assistant response to session (with lock)
 	assistantMsg := Message{
 		Role:        models.RoleAssistant,
 		Content:     response.Content,
@@ -319,8 +335,10 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 		ToolResults: response.ToolResults,
 		CreatedAt:   time.Now(),
 	}
+	s.sessionsMu.Lock()
 	session.Messages = append(session.Messages, assistantMsg)
 	session.UpdatedAt = time.Now()
+	s.sessionsMu.Unlock()
 
 	// Persist assistant message
 	toolCallsJSON, err := json.Marshal(response.ToolCalls)
@@ -364,38 +382,137 @@ func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string
 
 // processMessage processes a user message and generates a response
 func (s *Service) processMessage(ctx context.Context, session *Session, userMessage string, settings *models.Settings) (*Message, error) {
-	// Build the system prompt with available tools
-	tools := s.toolRegistry.GetTools()
+	// Get CLI path from settings
+	cliPath := "copilot"
+	if settings.CopilotCLIPath != nil && *settings.CopilotCLIPath != "" {
+		cliPath = *settings.CopilotCLIPath
+	}
 
-	// For now, we'll use a simple pattern matching approach
-	// In a full implementation, this would call the Copilot SDK
-	response, toolCalls, toolResults := s.generateResponse(ctx, userMessage, tools)
+	// Build the system prompt with context about available tools
+	tools := s.toolRegistry.GetTools()
+	systemPrompt := s.buildSystemPrompt(tools)
+
+	// Try to call the Copilot CLI
+	response, err := s.callCopilotCLI(ctx, cliPath, systemPrompt, session.Messages, userMessage)
+	if err != nil {
+		s.logger.Error("Failed to call Copilot CLI, using fallback response", "error", err)
+		// Return a helpful error message instead of failing completely
+		response = s.generateFallbackResponse(userMessage, err)
+	}
 
 	return &Message{
-		Role:        models.RoleAssistant,
-		Content:     response,
-		ToolCalls:   toolCalls,
-		ToolResults: toolResults,
-		CreatedAt:   time.Now(),
+		Role:      models.RoleAssistant,
+		Content:   response,
+		CreatedAt: time.Now(),
 	}, nil
 }
 
-// generateResponse generates a response based on the user message
-// This is a placeholder that will be replaced with actual Copilot SDK integration
-func (s *Service) generateResponse(ctx context.Context, userMessage string, tools []Tool) (string, []ToolCall, []ToolResult) {
-	// This is a simplified implementation that demonstrates the tool-calling pattern
-	// In production, this would be replaced with actual Copilot SDK calls
+// buildSystemPrompt creates the system prompt with tool descriptions
+func (s *Service) buildSystemPrompt(tools []Tool) string {
+	prompt := `You are the GitHub Migrator Copilot assistant. You help users plan and execute GitHub migrations.
 
-	response := fmt.Sprintf("I received your message: %q\n\nI'm the GitHub Migrator Copilot assistant. ", userMessage)
-	response += "I can help you with:\n"
+You have access to the following capabilities:
+- Analyze repositories for migration complexity and readiness
+- Find and check dependencies between repositories
+- Create and manage migration batches
+- Plan migration waves to minimize downtime
+- Identify repositories suitable for pilot migrations
+- Get migration status and history
+
+When users ask about migrations, provide helpful, actionable advice based on their needs.
+Be concise but thorough in your explanations.`
+
+	if len(tools) > 0 {
+		prompt += "\n\nAvailable tools:\n"
+		for _, tool := range tools {
+			prompt += fmt.Sprintf("- %s: %s\n", tool.Name, tool.Description)
+		}
+	}
+
+	return prompt
+}
+
+// callCopilotCLI calls the Copilot CLI with the given message
+func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt string, history []Message, userMessage string) (string, error) {
+	// Create a timeout context for the CLI call
+	cmdCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	// Build the full prompt with system context and history
+	var promptBuilder strings.Builder
+	promptBuilder.WriteString("You are a GitHub migration assistant. ")
+	promptBuilder.WriteString(systemPrompt)
+	promptBuilder.WriteString("\n\n")
+
+	// Include conversation history for context
+	if len(history) > 0 {
+		promptBuilder.WriteString("Previous conversation:\n")
+		// Include last few messages for context (limit to avoid token limits)
+		startIdx := 0
+		if len(history) > 6 {
+			startIdx = len(history) - 6
+		}
+		for _, msg := range history[startIdx:] {
+			role := "User"
+			if msg.Role == "assistant" {
+				role = "Assistant"
+			}
+			promptBuilder.WriteString(fmt.Sprintf("%s: %s\n", role, msg.Content))
+		}
+		promptBuilder.WriteString("\n")
+	}
+
+	promptBuilder.WriteString("Current request: ")
+	promptBuilder.WriteString(userMessage)
+	promptBuilder.WriteString("\n\nProvide a helpful response for this GitHub migration question. Be concise and actionable.")
+
+	fullPrompt := promptBuilder.String()
+
+	s.logger.Debug("Calling Copilot CLI", "cli_path", cliPath, "prompt_length", len(fullPrompt))
+
+	// Use the -p flag for non-interactive mode with --allow-all-tools for automated execution
+	cmd := exec.CommandContext(cmdCtx, cliPath, "-p", fullPrompt, "--allow-all-tools", "--no-color")
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		s.logger.Error("Copilot CLI execution failed",
+			"error", err,
+			"output", string(output),
+			"cli_path", cliPath)
+		return "", fmt.Errorf("copilot CLI execution failed: %w (output: %s)", err, strings.TrimSpace(string(output)))
+	}
+
+	response := strings.TrimSpace(string(output))
+	if response == "" {
+		return "", fmt.Errorf("copilot CLI returned empty response")
+	}
+
+	s.logger.Debug("Copilot CLI response received", "response_length", len(response))
+	return response, nil
+}
+
+// generateFallbackResponse creates a helpful response when CLI fails
+func (s *Service) generateFallbackResponse(userMessage string, cliErr error) string {
+	response := fmt.Sprintf("I received your message: %q\n\n", userMessage)
+	response += "I'm the GitHub Migrator Copilot assistant. I can help you with:\n"
 	response += "- Analyzing repositories for migration readiness\n"
 	response += "- Finding dependencies between repositories\n"
 	response += "- Creating and managing migration batches\n"
 	response += "- Planning migration waves\n"
 	response += "- Identifying pilot candidates\n\n"
-	response += "**Note**: Full Copilot SDK integration is pending. Please ensure the Copilot CLI is installed and configured in settings."
 
-	return response, nil, nil
+	response += "**Note**: I encountered an issue communicating with the Copilot CLI.\n"
+	response += fmt.Sprintf("Error details: %v\n\n", cliErr)
+	response += "Please verify:\n"
+	response += "1. The Copilot CLI is correctly installed at the configured path\n"
+	response += "2. You are authenticated with the Copilot CLI (run `copilot auth login`)\n"
+	response += "3. Your GitHub Copilot license is active\n\n"
+	response += "In the meantime, you can use the tool-specific features in the application:\n"
+	response += "- View repository complexity on the Repositories page\n"
+	response += "- Check dependencies on the Dependencies page\n"
+	response += "- Create and manage batches on the Batches page"
+
+	return response
 }
 
 // GetSessionHistory returns the message history for a session

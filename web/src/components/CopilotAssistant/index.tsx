@@ -56,8 +56,9 @@ export function CopilotAssistant() {
   // Delete session mutation
   const deleteSessionMutation = useMutation({
     mutationFn: copilotApi.deleteSession,
-    onSuccess: () => {
-      if (currentSessionId) {
+    onSuccess: (_data, deletedSessionId) => {
+      // Only clear the view if the deleted session is the one currently being viewed
+      if (currentSessionId === deletedSessionId) {
         setCurrentSessionId(null);
         setMessages([]);
       }
