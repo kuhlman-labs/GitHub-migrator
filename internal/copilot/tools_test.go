@@ -24,6 +24,7 @@ func TestToolRegistry(t *testing.T) {
 			"check_dependencies",
 			"find_pilot_candidates",
 			"create_batch",
+			"configure_batch",
 			"plan_waves",
 			"get_team_repositories",
 			"get_migration_status",
@@ -47,9 +48,9 @@ func TestToolRegistry(t *testing.T) {
 		registry := NewToolRegistry(logger)
 		tools := registry.GetTools()
 
-		// We expect 9 tools
-		if len(tools) != 9 {
-			t.Errorf("expected 9 tools, got %d", len(tools))
+		// We expect 10 tools (including configure_batch)
+		if len(tools) != 10 {
+			t.Errorf("expected 10 tools, got %d", len(tools))
 		}
 	})
 

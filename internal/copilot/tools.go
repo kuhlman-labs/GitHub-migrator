@@ -77,6 +77,10 @@ func (r *ToolRegistry) registerToolDescriptions() {
 			Name:        "schedule_batch",
 			Description: "Schedule a batch for migration execution at a specific date/time.",
 		},
+		{
+			Name:        "configure_batch",
+			Description: "Configure batch settings including destination organization and migration API (GEI or ELM). Use this to set where repositories in a batch will be migrated to.",
+		},
 	}
 
 	for _, tool := range r.tools {

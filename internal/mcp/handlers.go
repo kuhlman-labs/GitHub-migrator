@@ -726,6 +726,82 @@ func (s *Server) handleScheduleBatch(ctx context.Context, req mcp.CallToolReques
 	return s.jsonResult(output)
 }
 
+// handleConfigureBatch implements the configure_batch tool
+func (s *Server) handleConfigureBatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract batch name or ID
+	batchName := req.GetString("batch_name", "")
+	batchID := int64(req.GetInt("batch_id", 0))
+
+	// Extract settings to configure
+	destinationOrg := req.GetString("destination_org", "")
+	migrationAPI := req.GetString("migration_api", "")
+
+	if batchName == "" && batchID == 0 {
+		return mcp.NewToolResultError("batch_name or batch_id is required"), nil
+	}
+
+	if destinationOrg == "" && migrationAPI == "" {
+		return mcp.NewToolResultError("At least one setting must be specified (destination_org or migration_api)"), nil
+	}
+
+	// Find batch
+	batches, err := s.db.ListBatches(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to list batches: %v", err)), nil
+	}
+
+	var batch *models.Batch
+	for _, b := range batches {
+		if (batchName != "" && b.Name == batchName) || (batchID != 0 && b.ID == batchID) {
+			batch = b
+			break
+		}
+	}
+
+	if batch == nil {
+		searchTerm := batchName
+		if batchID != 0 {
+			searchTerm = fmt.Sprintf("ID %d", batchID)
+		}
+		return mcp.NewToolResultError(fmt.Sprintf("Batch not found: %s", searchTerm)), nil
+	}
+
+	// Update batch settings
+	changes := []string{}
+	if destinationOrg != "" {
+		batch.DestinationOrg = &destinationOrg
+		changes = append(changes, fmt.Sprintf("destination organization set to '%s'", destinationOrg))
+	}
+	if migrationAPI != "" {
+		migrationAPI = strings.ToUpper(migrationAPI)
+		if migrationAPI != models.MigrationAPIGEI && migrationAPI != models.MigrationAPIELM {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid migration_api '%s'. Must be 'GEI' or 'ELM'", migrationAPI)), nil
+		}
+		batch.MigrationAPI = migrationAPI
+		changes = append(changes, fmt.Sprintf("migration API set to '%s'", migrationAPI))
+	}
+
+	if err := s.db.UpdateBatch(ctx, batch); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to update batch: %v", err)), nil
+	}
+
+	output := ConfigureBatchOutput{
+		Batch: BatchInfo{
+			ID:              batch.ID,
+			Name:            batch.Name,
+			Status:          batch.Status,
+			RepositoryCount: batch.RepositoryCount,
+			DestinationOrg:  batch.DestinationOrg,
+			MigrationAPI:    batch.MigrationAPI,
+			CreatedAt:       batch.CreatedAt,
+		},
+		Success: true,
+		Message: fmt.Sprintf("Batch '%s' updated: %s", batch.Name, strings.Join(changes, ", ")),
+	}
+
+	return s.jsonResult(output)
+}
+
 // jsonResult creates a JSON tool result
 func (s *Server) jsonResult(data any) (*mcp.CallToolResult, error) {
 	jsonBytes, err := json.MarshalIndent(data, "", "  ")

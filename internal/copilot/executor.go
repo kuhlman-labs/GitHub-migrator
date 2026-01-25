@@ -20,6 +20,7 @@ const (
 	ToolFindPilotCandidates = "find_pilot_candidates"
 	ToolAnalyzeRepositories = "analyze_repositories"
 	ToolCreateBatch         = "create_batch"
+	ToolConfigureBatch      = "configure_batch"
 	ToolCheckDependencies   = "check_dependencies"
 	ToolPlanWaves           = "plan_waves"
 	ToolGetComplexityBreak  = "get_complexity_breakdown"
@@ -31,6 +32,7 @@ const (
 // Status constants
 const (
 	StatusPending           = "pending"
+	StatusScheduled         = "scheduled"
 	StatusCompleted         = "completed"
 	StatusMigrationComplete = "migration_complete"
 	RatingUnknown           = "unknown"
@@ -98,7 +100,9 @@ func (e *ToolExecutor) ExecuteTool(ctx context.Context, intent *DetectedIntent, 
 	case ToolGetMigrationStatus:
 		return e.executeGetMigrationStatus(ctx, intent.Args)
 	case ToolScheduleBatch:
-		return e.executeScheduleBatch(ctx, intent.Args)
+		return e.executeScheduleBatch(ctx, intent.Args, previousResult)
+	case ToolConfigureBatch:
+		return e.executeConfigureBatch(ctx, intent.Args, previousResult)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", intent.Tool)
 	}
@@ -312,6 +316,12 @@ func (e *ToolExecutor) executeCreateBatch(ctx context.Context, args map[string]a
 		name = fmt.Sprintf("batch-%s", time.Now().Format("20060102-150405"))
 	}
 
+	// Get destination organization if specified
+	destinationOrg := ""
+	if v, ok := args["destination_org"].(string); ok {
+		destinationOrg = v
+	}
+
 	// Get repositories - from args or previous result
 	var repoNames []string
 	if v, ok := args["repositories"].([]string); ok {
@@ -355,8 +365,13 @@ func (e *ToolExecutor) executeCreateBatch(ctx context.Context, args map[string]a
 		Name:            name,
 		Description:     &description,
 		Type:            "custom",
-		Status:          "pending",
+		Status:          StatusPending,
 		RepositoryCount: len(repos),
+	}
+
+	// Set destination organization if specified
+	if destinationOrg != "" {
+		batch.DestinationOrg = &destinationOrg
 	}
 
 	if err := e.db.CreateBatch(ctx, batch); err != nil {
@@ -383,20 +398,30 @@ func (e *ToolExecutor) executeCreateBatch(ctx context.Context, args map[string]a
 		}, nil
 	}
 
+	result := map[string]any{
+		"batch_id":         batch.ID,
+		"batch_name":       batch.Name,
+		"repository_count": batch.RepositoryCount,
+		"status":           batch.Status,
+	}
+	summary := fmt.Sprintf("Created batch '%s' with %d repositories", name, len(repos))
+	suggestions := []string{
+		fmt.Sprintf("Batch ID: %d", batch.ID),
+		"You can schedule this batch for migration or view it on the Batches page",
+	}
+
+	if destinationOrg != "" {
+		result["destination_org"] = destinationOrg
+		summary = fmt.Sprintf("Created batch '%s' with %d repositories, destination: %s", name, len(repos), destinationOrg)
+		suggestions = append(suggestions, fmt.Sprintf("Destination organization: %s", destinationOrg))
+	}
+
 	return &ToolExecutionResult{
-		Tool:    ToolCreateBatch,
-		Success: true,
-		Result: map[string]any{
-			"batch_id":         batch.ID,
-			"batch_name":       batch.Name,
-			"repository_count": batch.RepositoryCount,
-			"status":           batch.Status,
-		},
-		Summary: fmt.Sprintf("Created batch '%s' with %d repositories", name, len(repos)),
-		Suggestions: []string{
-			fmt.Sprintf("Batch ID: %d", batch.ID),
-			"You can schedule this batch for migration or view it on the Batches page",
-		},
+		Tool:        ToolCreateBatch,
+		Success:     true,
+		Result:      result,
+		Summary:     summary,
+		Suggestions: suggestions,
 		FollowUp: &FollowUpAction{
 			Action:      ToolScheduleBatch,
 			Description: fmt.Sprintf("Would you like to schedule batch '%s' for migration?", name),
@@ -805,10 +830,14 @@ func (e *ToolExecutor) executeGetMigrationStatus(ctx context.Context, args map[s
 }
 
 // executeScheduleBatch schedules a batch for migration
-func (e *ToolExecutor) executeScheduleBatch(ctx context.Context, args map[string]any) (*ToolExecutionResult, error) {
+func (e *ToolExecutor) executeScheduleBatch(ctx context.Context, args map[string]any, previousResult *ToolExecutionResult) (*ToolExecutionResult, error) {
 	batchName := ""
 	if v, ok := args["batch_name"].(string); ok {
 		batchName = v
+	}
+	// Try to get batch name from previous result (after create_batch or configure_batch)
+	if batchName == "" && previousResult != nil && previousResult.FollowUp != nil {
+		batchName = previousResult.FollowUp.DefaultName
 	}
 
 	scheduledAtStr := ""
@@ -816,27 +845,38 @@ func (e *ToolExecutor) executeScheduleBatch(ctx context.Context, args map[string
 		scheduledAtStr = v
 	}
 
-	if batchName == "" || scheduledAtStr == "" {
+	// Also check for destination_org to set during scheduling
+	destinationOrg := ""
+	if v, ok := args["destination_org"].(string); ok {
+		destinationOrg = v
+	}
+
+	if batchName == "" {
 		return &ToolExecutionResult{
 			Tool:       ToolScheduleBatch,
 			Success:    false,
-			Error:      "batch_name and scheduled_at are required",
+			Error:      "batch_name is required",
 			ExecutedAt: time.Now(),
 		}, nil
 	}
 
-	scheduledAt, err := time.Parse(time.RFC3339, scheduledAtStr)
-	if err != nil {
-		// Try other common formats
-		scheduledAt, err = time.Parse("2006-01-02", scheduledAtStr)
+	// Parse scheduled time if provided
+	var scheduledAt *time.Time
+	if scheduledAtStr != "" {
+		parsed, err := time.Parse(time.RFC3339, scheduledAtStr)
 		if err != nil {
-			return &ToolExecutionResult{
-				Tool:       ToolScheduleBatch,
-				Success:    false,
-				Error:      "Invalid datetime format. Use ISO 8601 (e.g., 2024-01-15T09:00:00Z)",
-				ExecutedAt: time.Now(),
-			}, nil
+			// Try other common formats
+			parsed, err = time.Parse("2006-01-02", scheduledAtStr)
+			if err != nil {
+				return &ToolExecutionResult{
+					Tool:       ToolScheduleBatch,
+					Success:    false,
+					Error:      "Invalid datetime format. Use ISO 8601 (e.g., 2024-01-15T09:00:00Z)",
+					ExecutedAt: time.Now(),
+				}, nil
+			}
 		}
+		scheduledAt = &parsed
 	}
 
 	batches, err := e.db.ListBatches(ctx)
@@ -866,8 +906,22 @@ func (e *ToolExecutor) executeScheduleBatch(ctx context.Context, args map[string
 		}, nil
 	}
 
-	batch.ScheduledAt = &scheduledAt
-	batch.Status = "scheduled"
+	// Set destination org if provided
+	if destinationOrg != "" {
+		batch.DestinationOrg = &destinationOrg
+	}
+
+	// Set scheduled time
+	if scheduledAt != nil {
+		batch.ScheduledAt = scheduledAt
+		batch.Status = StatusScheduled
+	} else {
+		// Schedule for now if no time specified
+		now := time.Now()
+		batch.ScheduledAt = &now
+		batch.Status = StatusScheduled
+		scheduledAt = &now
+	}
 
 	if err := e.db.UpdateBatch(ctx, batch); err != nil {
 		return &ToolExecutionResult{
@@ -878,16 +932,162 @@ func (e *ToolExecutor) executeScheduleBatch(ctx context.Context, args map[string
 		}, nil
 	}
 
+	result := map[string]any{
+		"batch_id":     batch.ID,
+		"batch_name":   batch.Name,
+		"status":       batch.Status,
+		"scheduled_at": scheduledAt.Format(time.RFC3339),
+	}
+	summary := fmt.Sprintf("Batch '%s' scheduled for %s", batchName, scheduledAt.Format("2006-01-02 15:04:05"))
+
+	if destinationOrg != "" {
+		result["destination_org"] = destinationOrg
+		summary = fmt.Sprintf("Batch '%s' configured for destination '%s' and scheduled for %s", batchName, destinationOrg, scheduledAt.Format("2006-01-02 15:04:05"))
+	}
+
 	return &ToolExecutionResult{
-		Tool:    ToolScheduleBatch,
+		Tool:       ToolScheduleBatch,
+		Success:    true,
+		Result:     result,
+		Summary:    summary,
+		ExecutedAt: time.Now(),
+	}, nil
+}
+
+// executeConfigureBatch configures batch settings including destination organization
+func (e *ToolExecutor) executeConfigureBatch(ctx context.Context, args map[string]any, previousResult *ToolExecutionResult) (*ToolExecutionResult, error) {
+	batchName := ""
+	if v, ok := args["batch_name"].(string); ok {
+		batchName = v
+	}
+	// Try batch ID
+	var batchID int64
+	if v, ok := args["batch_id"].(string); ok {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			batchID = parsed
+		}
+	} else if v, ok := args["batch_id"].(float64); ok {
+		batchID = int64(v)
+	} else if v, ok := args["batch_id"].(int64); ok {
+		batchID = v
+	}
+
+	// Try to get batch name from previous result
+	if batchName == "" && batchID == 0 && previousResult != nil && previousResult.FollowUp != nil {
+		batchName = previousResult.FollowUp.DefaultName
+	}
+
+	destinationOrg := ""
+	if v, ok := args["destination_org"].(string); ok {
+		destinationOrg = v
+	}
+
+	migrationAPI := ""
+	if v, ok := args["migration_api"].(string); ok {
+		migrationAPI = strings.ToUpper(v)
+	}
+
+	if batchName == "" && batchID == 0 {
+		return &ToolExecutionResult{
+			Tool:       ToolConfigureBatch,
+			Success:    false,
+			Error:      "batch_name or batch_id is required",
+			ExecutedAt: time.Now(),
+		}, nil
+	}
+
+	if destinationOrg == "" && migrationAPI == "" {
+		return &ToolExecutionResult{
+			Tool:       ToolConfigureBatch,
+			Success:    false,
+			Error:      "At least one setting must be specified (destination_org or migration_api)",
+			ExecutedAt: time.Now(),
+		}, nil
+	}
+
+	// Find the batch
+	batches, err := e.db.ListBatches(ctx)
+	if err != nil {
+		return &ToolExecutionResult{
+			Tool:       ToolConfigureBatch,
+			Success:    false,
+			Error:      fmt.Sprintf("Failed to list batches: %v", err),
+			ExecutedAt: time.Now(),
+		}, nil
+	}
+
+	var batch *models.Batch
+	for _, b := range batches {
+		if (batchName != "" && b.Name == batchName) || (batchID != 0 && b.ID == batchID) {
+			batch = b
+			break
+		}
+	}
+
+	if batch == nil {
+		searchTerm := batchName
+		if batchID != 0 {
+			searchTerm = fmt.Sprintf("ID %d", batchID)
+		}
+		return &ToolExecutionResult{
+			Tool:       ToolConfigureBatch,
+			Success:    false,
+			Error:      fmt.Sprintf("Batch not found: %s", searchTerm),
+			ExecutedAt: time.Now(),
+		}, nil
+	}
+
+	// Update batch settings
+	changes := make([]string, 0)
+	if destinationOrg != "" {
+		batch.DestinationOrg = &destinationOrg
+		changes = append(changes, fmt.Sprintf("destination organization set to '%s'", destinationOrg))
+	}
+	if migrationAPI != "" {
+		if migrationAPI != models.MigrationAPIGEI && migrationAPI != models.MigrationAPIELM {
+			return &ToolExecutionResult{
+				Tool:       ToolConfigureBatch,
+				Success:    false,
+				Error:      fmt.Sprintf("Invalid migration_api '%s'. Must be 'GEI' or 'ELM'", migrationAPI),
+				ExecutedAt: time.Now(),
+			}, nil
+		}
+		batch.MigrationAPI = migrationAPI
+		changes = append(changes, fmt.Sprintf("migration API set to '%s'", migrationAPI))
+	}
+
+	if err := e.db.UpdateBatch(ctx, batch); err != nil {
+		return &ToolExecutionResult{
+			Tool:       ToolConfigureBatch,
+			Success:    false,
+			Error:      fmt.Sprintf("Failed to update batch: %v", err),
+			ExecutedAt: time.Now(),
+		}, nil
+	}
+
+	result := map[string]any{
+		"batch_id":   batch.ID,
+		"batch_name": batch.Name,
+		"status":     batch.Status,
+	}
+	if batch.DestinationOrg != nil {
+		result["destination_org"] = *batch.DestinationOrg
+	}
+	result["migration_api"] = batch.MigrationAPI
+
+	return &ToolExecutionResult{
+		Tool:    ToolConfigureBatch,
 		Success: true,
-		Result: map[string]any{
-			"batch_id":     batch.ID,
-			"batch_name":   batch.Name,
-			"status":       batch.Status,
-			"scheduled_at": scheduledAt.Format(time.RFC3339),
+		Result:  result,
+		Summary: fmt.Sprintf("Batch '%s' updated: %s", batch.Name, strings.Join(changes, ", ")),
+		Suggestions: []string{
+			"You can now schedule this batch for migration",
 		},
-		Summary:    fmt.Sprintf("Batch '%s' scheduled for %s", batchName, scheduledAt.Format("2006-01-02 15:04:05")),
+		FollowUp: &FollowUpAction{
+			Action:      ToolScheduleBatch,
+			Description: fmt.Sprintf("Would you like to schedule batch '%s' for migration now?", batch.Name),
+			DefaultName: batch.Name,
+		},
 		ExecutedAt: time.Now(),
 	}, nil
 }

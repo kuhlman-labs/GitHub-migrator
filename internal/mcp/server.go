@@ -271,5 +271,25 @@ func (s *Server) registerTools() {
 		s.handleScheduleBatch,
 	)
 
-	s.logger.Info("Registered MCP tools", "count", 9)
+	// configure_batch - Configure batch settings
+	s.mcpServer.AddTool(
+		mcp.NewTool("configure_batch",
+			mcp.WithDescription("Configure batch settings including destination organization and migration API. Use this to set where repositories in a batch will be migrated to."),
+			mcp.WithString("batch_name",
+				mcp.Description("Name of the batch to configure"),
+			),
+			mcp.WithNumber("batch_id",
+				mcp.Description("ID of the batch to configure (alternative to batch_name)"),
+			),
+			mcp.WithString("destination_org",
+				mcp.Description("Destination organization within the configured enterprise where repositories will be migrated"),
+			),
+			mcp.WithString("migration_api",
+				mcp.Description("Migration API to use: 'GEI' (GitHub Enterprise Importer) or 'ELM' (Enterprise Live Migrator)"),
+			),
+		),
+		s.handleConfigureBatch,
+	)
+
+	s.logger.Info("Registered MCP tools", "count", 10)
 }

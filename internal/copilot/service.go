@@ -423,16 +423,24 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 			batchName = session.LastToolResult.FollowUp.DefaultName
 		}
 
+		// Extract destination organization if mentioned
+		destinationOrg := s.intentDetector.ExtractDestinationOrg(userMessage)
+
 		// Create batch from previous results
 		s.logger.Info("Executing follow-up batch creation",
 			"batch_name", batchName,
 			"repository_count", len(session.LastToolResult.FollowUp.Repositories),
+			"destination_org", destinationOrg,
 		)
+		batchArgs := map[string]any{
+			"name": batchName,
+		}
+		if destinationOrg != "" {
+			batchArgs["destination_org"] = destinationOrg
+		}
 		batchIntent := &DetectedIntent{
-			Tool: ToolCreateBatch,
-			Args: map[string]any{
-				"name": batchName,
-			},
+			Tool:       ToolCreateBatch,
+			Args:       batchArgs,
 			Confidence: 1.0,
 		}
 		result, err := s.toolExecutor.ExecuteTool(ctx, batchIntent, session.LastToolResult)
@@ -588,9 +596,9 @@ func (s *Service) getMigrationContext(ctx context.Context, settings *models.Sett
 		mc.TotalBatches = len(batches)
 		for _, batch := range batches {
 			switch batch.Status {
-			case "pending":
+			case StatusPending:
 				mc.PendingBatches++
-			case "scheduled":
+			case StatusScheduled:
 				mc.ScheduledBatches++
 			}
 		}

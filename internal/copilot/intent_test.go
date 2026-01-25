@@ -278,6 +278,21 @@ func TestIntentDetector_IsFollowUpBatchCreate(t *testing.T) {
 			message:  "What about dependencies?",
 			expected: false,
 		},
+		{
+			name:     "create the batch",
+			message:  "create the batch",
+			expected: true,
+		},
+		{
+			name:     "create the batch with destination",
+			message:  "create the batch and set the destination organization to kuhlman-labs-org-emu",
+			expected: true,
+		},
+		{
+			name:     "make the batch",
+			message:  "make the batch",
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -318,11 +333,76 @@ func TestIntentDetector_ExtractBatchNameFromFollowUp(t *testing.T) {
 			message:  "Create batch 'test-batch'",
 			expected: "test-batch",
 		},
+		{
+			name:     "batch and set destination should use default",
+			message:  "create the batch and set the destination organization to kuhlman-labs-org-emu",
+			expected: "",
+		},
+		{
+			name:     "please create the batch should use default",
+			message:  "please create the batch",
+			expected: "",
+		},
+		{
+			name:     "explicit name with destination",
+			message:  "create a batch called pilot-migration and set destination to my-org",
+			expected: "pilot-migration",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := detector.ExtractBatchNameFromFollowUp(tt.message)
+			if result != tt.expected {
+				t.Errorf("Expected %q for message %q, got %q", tt.expected, tt.message, result)
+			}
+		})
+	}
+}
+
+func TestIntentDetector_ExtractDestinationOrg(t *testing.T) {
+	detector := NewIntentDetector()
+
+	tests := []struct {
+		name     string
+		message  string
+		expected string
+	}{
+		{
+			name:     "destination organization to",
+			message:  "set the destination organization to kuhlman-labs-org-emu",
+			expected: "kuhlman-labs-org-emu",
+		},
+		{
+			name:     "destination org",
+			message:  "destination org my-org",
+			expected: "my-org",
+		},
+		{
+			name:     "migrate to org",
+			message:  "migrate to the org target-org-123",
+			expected: "target-org-123",
+		},
+		{
+			name:     "set destination to",
+			message:  "set destination to production-org",
+			expected: "production-org",
+		},
+		{
+			name:     "no destination",
+			message:  "create the batch please",
+			expected: "",
+		},
+		{
+			name:     "complex message with destination",
+			message:  "create the batch and set the destination organization to kuhlman-labs-org-emu",
+			expected: "kuhlman-labs-org-emu",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detector.ExtractDestinationOrg(tt.message)
 			if result != tt.expected {
 				t.Errorf("Expected %q for message %q, got %q", tt.expected, tt.message, result)
 			}

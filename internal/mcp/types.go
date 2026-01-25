@@ -65,6 +65,8 @@ type BatchInfo struct {
 	Description     string    `json:"description,omitempty"`
 	Status          string    `json:"status"`
 	RepositoryCount int       `json:"repository_count"`
+	DestinationOrg  *string   `json:"destination_org,omitempty"`
+	MigrationAPI    string    `json:"migration_api,omitempty"`
 	ScheduledAt     *string   `json:"scheduled_at,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 }
@@ -125,6 +127,14 @@ type GetMigrationStatusInput struct {
 type ScheduleBatchInput struct {
 	BatchName   string `json:"batch_name" jsonschema:"required" jsonschema_description:"Name of the batch to schedule"`
 	ScheduledAt string `json:"scheduled_at" jsonschema:"required" jsonschema_description:"ISO 8601 datetime for when to execute the batch"`
+}
+
+// ConfigureBatchInput is the input for configure_batch tool
+type ConfigureBatchInput struct {
+	BatchName      string `json:"batch_name,omitempty" jsonschema_description:"Name of the batch to configure"`
+	BatchID        int64  `json:"batch_id,omitempty" jsonschema_description:"ID of the batch to configure (alternative to batch_name)"`
+	DestinationOrg string `json:"destination_org,omitempty" jsonschema_description:"Destination organization within the configured enterprise"`
+	MigrationAPI   string `json:"migration_api,omitempty" jsonschema:"enum=GEI,enum=ELM" jsonschema_description:"Migration API to use: GEI or ELM"`
 }
 
 // ------- Tool Output Types -------
@@ -192,6 +202,13 @@ type GetMigrationStatusOutput struct {
 
 // ScheduleBatchOutput is the output for schedule_batch tool
 type ScheduleBatchOutput struct {
+	Batch   BatchInfo `json:"batch"`
+	Success bool      `json:"success"`
+	Message string    `json:"message"`
+}
+
+// ConfigureBatchOutput is the output for configure_batch tool
+type ConfigureBatchOutput struct {
 	Batch   BatchInfo `json:"batch"`
 	Success bool      `json:"success"`
 	Message string    `json:"message"`

@@ -164,9 +164,23 @@ func (d *IntentDetector) registerPatterns() {
 		{regex: regexp.MustCompile(`(set|plan)\s+(the\s+)?execution\s+(date|time)`), weight: 0.7},
 		{regex: regexp.MustCompile(`batch\s+.+\s+(at|on|for)\s+\d`), weight: 0.8},
 	}
+
+	// configure_batch patterns - for setting destination org, migration API, etc.
+	d.patterns["configure_batch"] = []intentPattern{
+		{regex: regexp.MustCompile(`(set|configure|change|update)\s+(the\s+)?destination\s+(org|organization)`), weight: 0.95},
+		{regex: regexp.MustCompile(`migrate\s+(to|into)\s+(the\s+)?(org|organization)\s+`), weight: 0.9},
+		{regex: regexp.MustCompile(`destination\s+(org|organization)\s+(to|for|is)\s+`), weight: 0.9},
+		{regex: regexp.MustCompile(`(to|into)\s+["']?[\w-]+["']?\s+(org|organization|destination)`), weight: 0.85},
+		{regex: regexp.MustCompile(`(set|use|target)\s+["']?[\w-]+["']?\s+(as\s+)?(the\s+)?destination`), weight: 0.85},
+		{regex: regexp.MustCompile(`batch\s+.+\s+(migrate|go)\s+to\s+`), weight: 0.8},
+		{regex: regexp.MustCompile(`(configure|set)\s+(the\s+)?batch\s+`), weight: 0.7},
+		{regex: regexp.MustCompile(`(use|set)\s+(gei|elm)\s+(api|for)`), weight: 0.8},
+	}
 }
 
-// extractArgs extracts arguments from the message based on the tool type
+// extractArgs extracts arguments from the message based on the tool type.
+// Each tool has unique argument extraction patterns, so complexity is inherent.
+// nolint:gocyclo
 func (d *IntentDetector) extractArgs(tool, message string) map[string]any {
 	args := make(map[string]any)
 
@@ -201,6 +215,22 @@ func (d *IntentDetector) extractArgs(tool, message string) map[string]any {
 		// Extract batch name
 		if nameMatch := regexp.MustCompile(`(called|named)\s+["']?([^"'\s]+)["']?`).FindStringSubmatch(message); len(nameMatch) > 2 {
 			args["name"] = nameMatch[2]
+		}
+		// Extract destination organization if specified
+		destPatterns := []*regexp.Regexp{
+			regexp.MustCompile(`destination\s+(?:org(?:anization)?\s+)?(?:to\s+)?["']?([\w][\w-]*[\w])["']?`),
+			regexp.MustCompile(`(?:set|configure)\s+(?:the\s+)?destination\s+(?:org(?:anization)?\s+)?(?:to\s+)?["']?([\w][\w-]*[\w])["']?`),
+			regexp.MustCompile(`(?:migrate|send)\s+(?:to|into)\s+(?:the\s+)?(?:org(?:anization)?\s+)?["']?([\w][\w-]*[\w])["']?`),
+		}
+		for _, p := range destPatterns {
+			if destMatch := p.FindStringSubmatch(message); len(destMatch) > 1 {
+				dest := destMatch[1]
+				commonWords := map[string]bool{"the": true, "org": true, "organization": true, "to": true, "a": true, "set": true, "and": true}
+				if !commonWords[dest] {
+					args["destination_org"] = dest
+					break
+				}
+			}
 		}
 		// Note: repositories will be filled from previous tool results
 
@@ -239,6 +269,53 @@ func (d *IntentDetector) extractArgs(tool, message string) map[string]any {
 		if timeMatch := regexp.MustCompile(`(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z?)?)`).FindStringSubmatch(message); len(timeMatch) > 1 {
 			args["scheduled_at"] = timeMatch[1]
 		}
+		// Also extract destination org if mentioned
+		if destMatch := regexp.MustCompile(`(?:to|into|destination)\s+(?:org(?:anization)?\s+)?["']?([\w][\w-]*[\w])["']?`).FindStringSubmatch(message); len(destMatch) > 1 {
+			args["destination_org"] = destMatch[1]
+		}
+
+	case "configure_batch":
+		// Extract batch name or ID - be more specific to avoid matching common words
+		if nameMatch := regexp.MustCompile(`batch\s+(?:named|called)?\s*["']?([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']?`).FindStringSubmatch(message); len(nameMatch) > 1 {
+			name := nameMatch[1]
+			// Filter out common words that aren't batch names
+			commonWords := map[string]bool{"to": true, "with": true, "for": true, "the": true, "and": true, "or": true, "set": true, "from": true, "into": true}
+			if !commonWords[name] {
+				args["batch_name"] = name
+			}
+		}
+		if idMatch := regexp.MustCompile(`batch\s+(?:id\s+)?#?(\d+)`).FindStringSubmatch(message); len(idMatch) > 1 {
+			args["batch_id"] = idMatch[1]
+		}
+
+		// Extract destination organization - multiple patterns
+		destPatterns := []*regexp.Regexp{
+			// "destination org kuhlman-labs-org-emu"
+			regexp.MustCompile(`destination\s+(?:org(?:anization)?\s+)?["']?([\w][\w-]*[\w])["']?`),
+			// "to the kuhlman-labs-org-emu organization"
+			regexp.MustCompile(`(?:to|into)\s+(?:the\s+)?["']?([\w][\w-]*[\w])["']?\s+(?:org|organization|dest)`),
+			// "migrate to kuhlman-labs-org-emu"
+			regexp.MustCompile(`migrate\s+(?:to|into)\s+(?:the\s+)?(?:org(?:anization)?\s+)?["']?([\w][\w-]*[\w])["']?`),
+			// "set destination to kuhlman-labs-org-emu"
+			regexp.MustCompile(`(?:set|use|target)\s+(?:destination\s+)?(?:to\s+)?["']?([\w][\w-]*[\w])["']?`),
+			// "kuhlman-labs-org-emu destination"
+			regexp.MustCompile(`["']?([\w][\w-]*[\w])["']?\s+(?:as\s+)?destination`),
+		}
+		for _, p := range destPatterns {
+			if destMatch := p.FindStringSubmatch(message); len(destMatch) > 1 {
+				dest := destMatch[1]
+				// Filter out common words
+				if dest != "the" && dest != "org" && dest != "organization" && dest != "to" && dest != "a" && dest != "set" {
+					args["destination_org"] = dest
+					break
+				}
+			}
+		}
+
+		// Extract migration API
+		if apiMatch := regexp.MustCompile(`(?:use|set|with)\s+(gei|elm)\s*(?:api)?`).FindStringSubmatch(message); len(apiMatch) > 1 {
+			args["migration_api"] = strings.ToUpper(apiMatch[1])
+		}
 	}
 
 	return args
@@ -256,12 +333,14 @@ func (d *DetectedIntent) IsConfident() bool {
 func (d *IntentDetector) IsFollowUpBatchCreate(message string) bool {
 	message = strings.ToLower(message)
 	patterns := []string{
-		`(yes|ok|sure|please|yeah|yep|absolutely)`,
-		`create\s+(a\s+)?batch\s+(with\s+)?(these|those|them)`,
+		`^(yes|ok|sure|please|yeah|yep|absolutely)`,            // Simple affirmative at start
+		`(yes|ok|sure|please|yeah|yep|absolutely)\s*[,.]?\s*$`, // Simple affirmative at end
+		`create\s+(a\s+|the\s+)?batch`,                         // "create the batch" or "create a batch"
 		`(batch|group)\s+(these|those|them)`,
 		`sounds?\s+good`,
 		`let'?s?\s+do\s+(it|that)`,
 		`go\s+ahead`,
+		`make\s+(a\s+|the\s+)?batch`,
 	}
 
 	for _, pattern := range patterns {
@@ -272,24 +351,71 @@ func (d *IntentDetector) IsFollowUpBatchCreate(message string) bool {
 	return false
 }
 
-// ExtractBatchNameFromFollowUp extracts a batch name from a follow-up message
+// ExtractBatchNameFromFollowUp extracts a batch name from a follow-up message.
+// Only extracts names that are EXPLICITLY specified by the user.
+// Returns empty string to use the default name if no explicit name is given.
 func (d *IntentDetector) ExtractBatchNameFromFollowUp(message string) string {
 	message = strings.ToLower(message)
 
-	// Try to find explicit name
+	// Only match explicit naming patterns - don't try to extract names from general text
 	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`(called|named)\s+["']?([^"'\s,]+)["']?`),
-		regexp.MustCompile(`batch\s+["']?([^"'\s,]+)["']?`),
-		regexp.MustCompile(`name[:\s]+["']?([^"'\s,]+)["']?`),
+		// "batch called my-batch" or "batch named my-batch"
+		regexp.MustCompile(`batch\s+(?:called|named)\s+["']?([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']?`),
+		// "called my-batch" or "named my-batch"
+		regexp.MustCompile(`(?:called|named)\s+["']?([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']?`),
+		// "name it my-batch" or "name: my-batch"
+		regexp.MustCompile(`name\s+(?:it\s+)?["']?([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']?`),
+		// Explicit quoted name after "batch": 'my-batch' or "my-batch"
+		regexp.MustCompile(`batch\s+["']([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']`),
+	}
+
+	// Common words that should never be batch names
+	commonWords := map[string]bool{
+		"with": true, "these": true, "those": true, "them": true, "it": true,
+		"please": true, "yes": true, "and": true, "or": true, "the": true,
+		"for": true, "to": true, "from": true, "into": true, "set": true,
+		"create": true, "make": true, "batch": true, "a": true, "an": true,
 	}
 
 	for _, p := range patterns {
 		if match := p.FindStringSubmatch(message); len(match) > 1 {
-			name := match[len(match)-1]
-			// Filter out common words
-			if name != "with" && name != "these" && name != "those" && name != "them" &&
-				name != "it" && name != "please" && name != "yes" {
+			name := match[1]
+			// Only return if it's not a common word and has reasonable length
+			if !commonWords[name] && len(name) >= 2 {
 				return name
+			}
+		}
+	}
+
+	return ""
+}
+
+// ExtractDestinationOrg extracts a destination organization from a message
+func (d *IntentDetector) ExtractDestinationOrg(message string) string {
+	message = strings.ToLower(message)
+
+	// Patterns to match destination organization
+	patterns := []*regexp.Regexp{
+		// "destination organization to kuhlman-labs-org-emu" or "destination org kuhlman-labs-org-emu"
+		regexp.MustCompile(`destination\s+(?:org(?:anization)?\s+)?(?:to\s+)?["']?([\w][\w-]*[\w])["']?`),
+		// "set the destination to kuhlman-labs-org-emu"
+		regexp.MustCompile(`set\s+(?:the\s+)?destination\s+(?:org(?:anization)?\s+)?(?:to\s+)?["']?([\w][\w-]*[\w])["']?`),
+		// "migrate to kuhlman-labs-org-emu"
+		regexp.MustCompile(`migrate\s+(?:to|into)\s+(?:the\s+)?(?:org(?:anization)?\s+)?["']?([\w][\w-]*[\w])["']?`),
+		// "to the kuhlman-labs-org-emu organization"
+		regexp.MustCompile(`(?:to|into)\s+(?:the\s+)?["']?([\w][\w-]*[\w])["']?\s+(?:org|organization)`),
+	}
+
+	commonWords := map[string]bool{
+		"the": true, "org": true, "organization": true, "to": true, "a": true,
+		"set": true, "and": true, "batch": true, "create": true, "with": true,
+	}
+
+	for _, p := range patterns {
+		if match := p.FindStringSubmatch(message); len(match) > 1 {
+			dest := match[1]
+			if !commonWords[dest] && len(dest) > 2 {
+				return dest
 			}
 		}
 	}
