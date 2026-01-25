@@ -12,6 +12,12 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// Migration status constants for checking batch progress
+const (
+	StatusDryRunQueued       = string(models.StatusDryRunQueued)
+	StatusQueuedForMigration = string(models.StatusQueuedForMigration)
+)
+
 // Helper function to convert repository to summary
 func (s *Server) repoToSummary(repo *models.Repository) RepositorySummary {
 	summary := RepositorySummary{
@@ -800,6 +806,429 @@ func (s *Server) handleConfigureBatch(ctx context.Context, req mcp.CallToolReque
 	}
 
 	return s.jsonResult(output)
+}
+
+// handleStartMigration implements the start_migration tool
+// nolint:gocyclo // Migration starting requires handling multiple scenarios (batch, single repo, multiple repos)
+func (s *Server) handleStartMigration(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract parameters
+	batchName := req.GetString("batch_name", "")
+	batchID := int64(req.GetInt("batch_id", 0))
+	repository := req.GetString("repository", "")
+	dryRun := req.GetBool("dry_run", true) // Default to dry-run for safety
+
+	// Get repositories array if provided
+	var repoNames []string
+	args := req.GetArguments()
+	if reposArg, ok := args["repositories"]; ok {
+		switch v := reposArg.(type) {
+		case []interface{}:
+			for _, r := range v {
+				if str, ok := r.(string); ok {
+					repoNames = append(repoNames, str)
+				}
+			}
+		case []string:
+			repoNames = v
+		}
+	}
+
+	// Validate that at least one target is specified
+	if batchName == "" && batchID == 0 && repository == "" && len(repoNames) == 0 {
+		return mcp.NewToolResultError("At least one of batch_name, batch_id, repository, or repositories must be specified"), nil
+	}
+
+	// Determine target status based on dry_run flag
+	targetStatus := models.StatusQueuedForMigration
+	if dryRun {
+		targetStatus = models.StatusDryRunQueued
+	}
+
+	var queuedRepos []RepositorySummary
+	var batch *models.Batch
+	skippedCount := 0
+
+	// Handle batch migration
+	if batchName != "" || batchID != 0 {
+		batches, err := s.db.ListBatches(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list batches: %v", err)), nil
+		}
+
+		for _, b := range batches {
+			if (batchName != "" && b.Name == batchName) || (batchID != 0 && b.ID == batchID) {
+				batch = b
+				break
+			}
+		}
+
+		if batch == nil {
+			searchTerm := batchName
+			if batchID != 0 {
+				searchTerm = fmt.Sprintf("ID %d", batchID)
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("Batch not found: %s", searchTerm)), nil
+		}
+
+		// Validate batch status
+		if batch.Status == models.BatchStatusInProgress {
+			return mcp.NewToolResultError(fmt.Sprintf("Batch '%s' is already running", batch.Name)), nil
+		}
+
+		// Get batch repositories
+		repos, err := s.db.ListRepositories(ctx, map[string]any{
+			"batch_id": batch.ID,
+		})
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get batch repositories: %v", err)), nil
+		}
+
+		if len(repos) == 0 {
+			return mcp.NewToolResultError(fmt.Sprintf("Batch '%s' has no repositories", batch.Name)), nil
+		}
+
+		// Update batch status
+		batch.Status = models.BatchStatusInProgress
+		now := time.Now()
+		if dryRun {
+			batch.DryRunStartedAt = &now
+			batch.LastDryRunAt = &now
+		} else {
+			batch.StartedAt = &now
+			batch.LastMigrationAttemptAt = &now
+		}
+		if err := s.db.UpdateBatch(ctx, batch); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to update batch status: %v", err)), nil
+		}
+
+		// Queue repositories
+		priority := 0
+		if batch.Type == models.BatchTypePilot {
+			priority = 1
+		}
+
+		for _, repo := range repos {
+			if canQueueForMigration(repo.Status, dryRun) {
+				repo.Status = string(targetStatus)
+				repo.Priority = priority
+				if err := s.db.UpdateRepository(ctx, repo); err != nil {
+					s.logger.Error("Failed to queue repository", "repo", repo.FullName, "error", err)
+					continue
+				}
+				queuedRepos = append(queuedRepos, s.repoToSummary(repo))
+			} else {
+				skippedCount++
+			}
+		}
+	}
+
+	// Handle single repository
+	if repository != "" {
+		repo, err := s.db.GetRepository(ctx, repository)
+		if err != nil || repo == nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Repository not found: %s", repository)), nil
+		}
+
+		if !canQueueForMigration(repo.Status, dryRun) {
+			return mcp.NewToolResultError(fmt.Sprintf("Repository '%s' cannot be queued for migration (status: %s)", repository, repo.Status)), nil
+		}
+
+		repo.Status = string(targetStatus)
+		if err := s.db.UpdateRepository(ctx, repo); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to queue repository: %v", err)), nil
+		}
+		queuedRepos = append(queuedRepos, s.repoToSummary(repo))
+	}
+
+	// Handle multiple repositories
+	if len(repoNames) > 0 {
+		repos, err := s.db.GetRepositoriesByNames(ctx, repoNames)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get repositories: %v", err)), nil
+		}
+
+		for _, repo := range repos {
+			if canQueueForMigration(repo.Status, dryRun) {
+				repo.Status = string(targetStatus)
+				if err := s.db.UpdateRepository(ctx, repo); err != nil {
+					s.logger.Error("Failed to queue repository", "repo", repo.FullName, "error", err)
+					continue
+				}
+				queuedRepos = append(queuedRepos, s.repoToSummary(repo))
+			} else {
+				skippedCount++
+			}
+		}
+	}
+
+	if len(queuedRepos) == 0 {
+		return mcp.NewToolResultError("No repositories could be queued for migration"), nil
+	}
+
+	// Build output message
+	migrationType := "production migration"
+	if dryRun {
+		migrationType = "dry-run"
+	}
+
+	output := StartMigrationOutput{
+		Repositories: queuedRepos,
+		QueuedCount:  len(queuedRepos),
+		SkippedCount: skippedCount,
+		DryRun:       dryRun,
+		Success:      true,
+		Message:      fmt.Sprintf("Started %s for %d repositories", migrationType, len(queuedRepos)),
+	}
+
+	if batch != nil {
+		output.BatchID = batch.ID
+		output.BatchName = batch.Name
+		output.Message = fmt.Sprintf("Started %s for batch '%s' (%d repositories)", migrationType, batch.Name, len(queuedRepos))
+	}
+
+	// Add next steps
+	if dryRun {
+		output.NextSteps = []string{
+			"Monitor progress with get_migration_progress",
+			"After dry-run completes, start production migration with start_migration(dry_run=false)",
+		}
+	} else {
+		output.NextSteps = []string{
+			"Monitor progress with get_migration_progress",
+			"Migrations will be processed by the worker pool",
+		}
+	}
+
+	return s.jsonResult(output)
+}
+
+// handleCancelMigration implements the cancel_migration tool
+func (s *Server) handleCancelMigration(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	batchName := req.GetString("batch_name", "")
+	batchID := int64(req.GetInt("batch_id", 0))
+	repository := req.GetString("repository", "")
+
+	if batchName == "" && batchID == 0 && repository == "" {
+		return mcp.NewToolResultError("At least one of batch_name, batch_id, or repository must be specified"), nil
+	}
+
+	cancelledCount := 0
+
+	// Handle batch cancellation
+	if batchName != "" || batchID != 0 {
+		batches, err := s.db.ListBatches(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list batches: %v", err)), nil
+		}
+
+		var batch *models.Batch
+		for _, b := range batches {
+			if (batchName != "" && b.Name == batchName) || (batchID != 0 && b.ID == batchID) {
+				batch = b
+				break
+			}
+		}
+
+		if batch == nil {
+			searchTerm := batchName
+			if batchID != 0 {
+				searchTerm = fmt.Sprintf("ID %d", batchID)
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("Batch not found: %s", searchTerm)), nil
+		}
+
+		// Get batch repositories
+		repos, err := s.db.ListRepositories(ctx, map[string]any{
+			"batch_id": batch.ID,
+		})
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get batch repositories: %v", err)), nil
+		}
+
+		// Cancel queued repositories
+		for _, repo := range repos {
+			if isInQueuedOrInProgressState(repo.Status) {
+				repo.Status = string(models.StatusPending)
+				if err := s.db.UpdateRepository(ctx, repo); err != nil {
+					s.logger.Error("Failed to cancel repository", "repo", repo.FullName, "error", err)
+					continue
+				}
+				cancelledCount++
+			}
+		}
+
+		// Update batch status
+		batch.Status = models.BatchStatusCancelled
+		if err := s.db.UpdateBatch(ctx, batch); err != nil {
+			s.logger.Error("Failed to update batch status", "batch", batch.Name, "error", err)
+		}
+
+		return s.jsonResult(CancelMigrationOutput{
+			BatchID:        batch.ID,
+			BatchName:      batch.Name,
+			CancelledCount: cancelledCount,
+			Success:        true,
+			Message:        fmt.Sprintf("Cancelled batch '%s' (%d repositories)", batch.Name, cancelledCount),
+		})
+	}
+
+	// Handle single repository cancellation
+	if repository != "" {
+		repo, err := s.db.GetRepository(ctx, repository)
+		if err != nil || repo == nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Repository not found: %s", repository)), nil
+		}
+
+		if !isInQueuedOrInProgressState(repo.Status) {
+			return mcp.NewToolResultError(fmt.Sprintf("Repository '%s' is not in a cancellable state (status: %s)", repository, repo.Status)), nil
+		}
+
+		repo.Status = string(models.StatusPending)
+		if err := s.db.UpdateRepository(ctx, repo); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to cancel repository: %v", err)), nil
+		}
+
+		return s.jsonResult(CancelMigrationOutput{
+			Repository:     repository,
+			CancelledCount: 1,
+			Success:        true,
+			Message:        fmt.Sprintf("Cancelled migration for repository '%s'", repository),
+		})
+	}
+
+	return mcp.NewToolResultError("No target specified for cancellation"), nil
+}
+
+// handleGetMigrationProgress implements the get_migration_progress tool
+func (s *Server) handleGetMigrationProgress(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	batchName := req.GetString("batch_name", "")
+	batchID := int64(req.GetInt("batch_id", 0))
+	repository := req.GetString("repository", "")
+
+	// Handle single repository progress
+	if repository != "" {
+		repo, err := s.db.GetRepository(ctx, repository)
+		if err != nil || repo == nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Repository not found: %s", repository)), nil
+		}
+
+		progress := MigrationProgress{TotalCount: 1}
+		updateProgressFromStatus(&progress, repo.Status)
+
+		return s.jsonResult(GetMigrationProgressOutput{
+			Repository:   repository,
+			Progress:     progress,
+			Repositories: []RepositorySummary{s.repoToSummary(repo)},
+			Message:      fmt.Sprintf("Repository '%s' status: %s", repository, repo.Status),
+		})
+	}
+
+	// Handle batch progress
+	if batchName != "" || batchID != 0 {
+		batches, err := s.db.ListBatches(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list batches: %v", err)), nil
+		}
+
+		var batch *models.Batch
+		for _, b := range batches {
+			if (batchName != "" && b.Name == batchName) || (batchID != 0 && b.ID == batchID) {
+				batch = b
+				break
+			}
+		}
+
+		if batch == nil {
+			searchTerm := batchName
+			if batchID != 0 {
+				searchTerm = fmt.Sprintf("ID %d", batchID)
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("Batch not found: %s", searchTerm)), nil
+		}
+
+		// Get batch repositories
+		repos, err := s.db.ListRepositories(ctx, map[string]any{
+			"batch_id": batch.ID,
+		})
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get batch repositories: %v", err)), nil
+		}
+
+		progress := MigrationProgress{TotalCount: len(repos)}
+		summaries := make([]RepositorySummary, 0, len(repos))
+
+		for _, repo := range repos {
+			updateProgressFromStatus(&progress, repo.Status)
+			summaries = append(summaries, s.repoToSummary(repo))
+		}
+
+		// Calculate percent complete
+		if progress.TotalCount > 0 {
+			progress.PercentComplete = float64(progress.CompletedCount) / float64(progress.TotalCount) * 100
+		}
+
+		return s.jsonResult(GetMigrationProgressOutput{
+			BatchID:      batch.ID,
+			BatchName:    batch.Name,
+			BatchStatus:  batch.Status,
+			Progress:     progress,
+			Repositories: summaries,
+			Message: fmt.Sprintf("Batch '%s': %d/%d complete (%.1f%%)",
+				batch.Name, progress.CompletedCount, progress.TotalCount, progress.PercentComplete),
+		})
+	}
+
+	return mcp.NewToolResultError("At least one of batch_name, batch_id, or repository must be specified"), nil
+}
+
+// canQueueForMigration checks if a repository can be queued for migration
+func canQueueForMigration(status string, dryRun bool) bool {
+	switch models.MigrationStatus(status) {
+	case models.StatusPending,
+		models.StatusDryRunFailed,
+		models.StatusMigrationFailed,
+		models.StatusRolledBack:
+		return true
+	case models.StatusDryRunComplete:
+		// After dry-run, can do production migration
+		return !dryRun
+	default:
+		return false
+	}
+}
+
+// isInQueuedOrInProgressState checks if a repository is in a cancellable state
+func isInQueuedOrInProgressState(status string) bool {
+	switch models.MigrationStatus(status) {
+	case models.StatusDryRunQueued,
+		models.StatusDryRunInProgress,
+		models.StatusQueuedForMigration,
+		models.StatusMigratingContent,
+		models.StatusArchiveGenerating,
+		models.StatusPreMigration:
+		return true
+	default:
+		return false
+	}
+}
+
+// updateProgressFromStatus updates progress counters based on repository status
+func updateProgressFromStatus(progress *MigrationProgress, status string) {
+	switch models.MigrationStatus(status) {
+	case models.StatusPending:
+		progress.PendingCount++
+	case models.StatusDryRunQueued, models.StatusQueuedForMigration:
+		progress.QueuedCount++
+	case models.StatusDryRunInProgress, models.StatusMigratingContent,
+		models.StatusArchiveGenerating, models.StatusPreMigration, models.StatusPostMigration:
+		progress.InProgressCount++
+	case models.StatusDryRunComplete, models.StatusMigrationComplete, models.StatusComplete:
+		progress.CompletedCount++
+	case models.StatusDryRunFailed, models.StatusMigrationFailed:
+		progress.FailedCount++
+	case models.StatusWontMigrate:
+		progress.SkippedCount++
+	}
 }
 
 // jsonResult creates a JSON tool result

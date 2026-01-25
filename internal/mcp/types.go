@@ -213,3 +213,74 @@ type ConfigureBatchOutput struct {
 	Success bool      `json:"success"`
 	Message string    `json:"message"`
 }
+
+// ------- Migration Execution Types -------
+
+// StartMigrationInput is the input for start_migration tool
+type StartMigrationInput struct {
+	BatchName    string   `json:"batch_name,omitempty" jsonschema_description:"Name of batch to migrate"`
+	BatchID      int64    `json:"batch_id,omitempty" jsonschema_description:"ID of batch to migrate"`
+	Repository   string   `json:"repository,omitempty" jsonschema_description:"Single repository to migrate (format: org/repo)"`
+	Repositories []string `json:"repositories,omitempty" jsonschema_description:"List of repositories to migrate"`
+	DryRun       bool     `json:"dry_run" jsonschema:"default=true" jsonschema_description:"If true, perform dry-run only (default: true for safety)"`
+}
+
+// StartMigrationOutput is the output for start_migration tool
+type StartMigrationOutput struct {
+	BatchID      int64               `json:"batch_id,omitempty"`
+	BatchName    string              `json:"batch_name,omitempty"`
+	Repositories []RepositorySummary `json:"repositories"`
+	QueuedCount  int                 `json:"queued_count"`
+	SkippedCount int                 `json:"skipped_count"`
+	DryRun       bool                `json:"dry_run"`
+	Success      bool                `json:"success"`
+	Message      string              `json:"message"`
+	NextSteps    []string            `json:"next_steps,omitempty"`
+}
+
+// CancelMigrationInput is the input for cancel_migration tool
+type CancelMigrationInput struct {
+	BatchName  string `json:"batch_name,omitempty" jsonschema_description:"Name of batch to cancel"`
+	BatchID    int64  `json:"batch_id,omitempty" jsonschema_description:"ID of batch to cancel"`
+	Repository string `json:"repository,omitempty" jsonschema_description:"Single repository to cancel"`
+}
+
+// CancelMigrationOutput is the output for cancel_migration tool
+type CancelMigrationOutput struct {
+	BatchID        int64  `json:"batch_id,omitempty"`
+	BatchName      string `json:"batch_name,omitempty"`
+	Repository     string `json:"repository,omitempty"`
+	CancelledCount int    `json:"cancelled_count"`
+	Success        bool   `json:"success"`
+	Message        string `json:"message"`
+}
+
+// GetMigrationProgressInput is the input for get_migration_progress tool
+type GetMigrationProgressInput struct {
+	BatchName  string `json:"batch_name,omitempty" jsonschema_description:"Name of batch to check progress"`
+	BatchID    int64  `json:"batch_id,omitempty" jsonschema_description:"ID of batch to check progress"`
+	Repository string `json:"repository,omitempty" jsonschema_description:"Single repository to check progress"`
+}
+
+// MigrationProgress represents progress information
+type MigrationProgress struct {
+	TotalCount      int     `json:"total_count"`
+	PendingCount    int     `json:"pending_count"`
+	QueuedCount     int     `json:"queued_count"`
+	InProgressCount int     `json:"in_progress_count"`
+	CompletedCount  int     `json:"completed_count"`
+	FailedCount     int     `json:"failed_count"`
+	SkippedCount    int     `json:"skipped_count"`
+	PercentComplete float64 `json:"percent_complete"`
+}
+
+// GetMigrationProgressOutput is the output for get_migration_progress tool
+type GetMigrationProgressOutput struct {
+	BatchID      int64               `json:"batch_id,omitempty"`
+	BatchName    string              `json:"batch_name,omitempty"`
+	BatchStatus  string              `json:"batch_status,omitempty"`
+	Repository   string              `json:"repository,omitempty"`
+	Progress     MigrationProgress   `json:"progress"`
+	Repositories []RepositorySummary `json:"repositories,omitempty"`
+	Message      string              `json:"message"`
+}

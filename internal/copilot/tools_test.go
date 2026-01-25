@@ -29,6 +29,9 @@ func TestToolRegistry(t *testing.T) {
 			"get_team_repositories",
 			"get_migration_status",
 			"schedule_batch",
+			"start_migration",
+			"cancel_migration",
+			"get_migration_progress",
 		}
 
 		// Create a map for quick lookup
@@ -48,9 +51,9 @@ func TestToolRegistry(t *testing.T) {
 		registry := NewToolRegistry(logger)
 		tools := registry.GetTools()
 
-		// We expect 10 tools (including configure_batch)
-		if len(tools) != 10 {
-			t.Errorf("expected 10 tools, got %d", len(tools))
+		// We expect 13 tools (including migration execution tools)
+		if len(tools) != 13 {
+			t.Errorf("expected 13 tools, got %d", len(tools))
 		}
 	})
 

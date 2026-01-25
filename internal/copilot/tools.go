@@ -81,6 +81,18 @@ func (r *ToolRegistry) registerToolDescriptions() {
 			Name:        "configure_batch",
 			Description: "Configure batch settings including destination organization and migration API (GEI or ELM). Use this to set where repositories in a batch will be migrated to.",
 		},
+		{
+			Name:        "start_migration",
+			Description: "Start a migration (dry-run or production) for a batch, single repository, or list of repositories. Defaults to dry-run for safety. Use dry_run=false for production migration.",
+		},
+		{
+			Name:        "cancel_migration",
+			Description: "Cancel a running migration for a batch or specific repository. Repositories will be reset to pending status.",
+		},
+		{
+			Name:        "get_migration_progress",
+			Description: "Get real-time progress of running migrations for a batch or specific repository. Shows status breakdown and completion percentage.",
+		},
 	}
 
 	for _, tool := range r.tools {

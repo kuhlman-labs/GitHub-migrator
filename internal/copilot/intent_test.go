@@ -137,6 +137,66 @@ func TestIntentDetector_DetectIntent(t *testing.T) {
 			shouldMatch:  true,
 		},
 
+		// start_migration tests
+		{
+			name:         "dry run batch",
+			message:      "Run a dry-run on the pilot batch",
+			expectedTool: "start_migration",
+			shouldMatch:  true,
+		},
+		{
+			name:         "start migration explicit",
+			message:      "Start migration for batch pilot-wave-1",
+			expectedTool: "start_migration",
+			shouldMatch:  true,
+		},
+		{
+			name:         "execute dry run",
+			message:      "Execute a dry run for the batch",
+			expectedTool: "start_migration",
+			shouldMatch:  true,
+		},
+		{
+			name:         "run production migration",
+			message:      "Run the production migration",
+			expectedTool: "start_migration",
+			shouldMatch:  true,
+		},
+
+		// cancel_migration tests
+		{
+			name:         "cancel migration",
+			message:      "Cancel the migration for pilot-batch",
+			expectedTool: "cancel_migration",
+			shouldMatch:  true,
+		},
+		{
+			name:         "stop the batch",
+			message:      "Stop the batch migration",
+			expectedTool: "cancel_migration",
+			shouldMatch:  true,
+		},
+
+		// get_migration_progress tests
+		{
+			name:         "check progress",
+			message:      "What's the migration progress?",
+			expectedTool: "get_migration_progress",
+			shouldMatch:  true,
+		},
+		{
+			name:         "how is migration going",
+			message:      "What is the migration progress?",
+			expectedTool: "get_migration_progress",
+			shouldMatch:  true,
+		},
+		{
+			name:         "batch progress",
+			message:      "Show progress for batch pilot-wave-1",
+			expectedTool: "get_migration_progress",
+			shouldMatch:  true,
+		},
+
 		// No match tests
 		{
 			name:         "general question",

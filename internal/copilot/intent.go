@@ -176,6 +176,36 @@ func (d *IntentDetector) registerPatterns() {
 		{regex: regexp.MustCompile(`(configure|set)\s+(the\s+)?batch\s+`), weight: 0.7},
 		{regex: regexp.MustCompile(`(use|set)\s+(gei|elm)\s+(api|for)`), weight: 0.8},
 	}
+
+	// start_migration patterns - for starting dry-run or production migrations
+	d.patterns["start_migration"] = []intentPattern{
+		{regex: regexp.MustCompile(`(start|run|execute|begin)\s+(a\s+)?dry[\s-]?run`), weight: 0.95},
+		{regex: regexp.MustCompile(`dry[\s-]?run\s+(the\s+)?(batch|repos?|migration)`), weight: 0.95},
+		{regex: regexp.MustCompile(`(start|run|execute|begin|kick[\s-]?off)\s+(the\s+)?(migration|batch)`), weight: 0.9},
+		{regex: regexp.MustCompile(`(migrate|run)\s+(the\s+)?pilot\s+(batch)?`), weight: 0.9},
+		{regex: regexp.MustCompile(`(test|validate)\s+(the\s+)?migration`), weight: 0.8},
+		{regex: regexp.MustCompile(`(yes|ok|sure|please)\s*,?\s*(start|run|execute)\s+(the\s+)?(migration|dry[\s-]?run)`), weight: 0.95},
+		{regex: regexp.MustCompile(`(production|real|actual)\s+migration`), weight: 0.8},
+		{regex: regexp.MustCompile(`(run|start)\s+migration\s+(for|on)`), weight: 0.85},
+	}
+
+	// cancel_migration patterns - for cancelling running migrations
+	d.patterns["cancel_migration"] = []intentPattern{
+		{regex: regexp.MustCompile(`(cancel|stop|abort|halt)\s+(the\s+)?(migration|batch|dry[\s-]?run)`), weight: 0.95},
+		{regex: regexp.MustCompile(`(stop|cancel)\s+(migrating|running)`), weight: 0.9},
+		{regex: regexp.MustCompile(`(don't|do\s+not)\s+(continue|proceed)`), weight: 0.7},
+		{regex: regexp.MustCompile(`(abort|kill)\s+(the\s+)?batch`), weight: 0.85},
+	}
+
+	// get_migration_progress patterns - for checking migration progress
+	d.patterns["get_migration_progress"] = []intentPattern{
+		{regex: regexp.MustCompile(`(migration|batch)\s+(progress|status)`), weight: 0.9},
+		{regex: regexp.MustCompile(`(how\s+is|what's)\s+(the\s+)?(migration|batch)\s+(going|doing|progressing)`), weight: 0.9},
+		{regex: regexp.MustCompile(`(check|show|get)\s+(the\s+)?progress`), weight: 0.85},
+		{regex: regexp.MustCompile(`(progress|status)\s+(of|for)\s+(the\s+)?(migration|batch)`), weight: 0.9},
+		{regex: regexp.MustCompile(`how\s+(many|much)\s+(repos?|is)\s+(complete|done|migrated)`), weight: 0.8},
+		{regex: regexp.MustCompile(`(are\s+)?we\s+(done|finished)`), weight: 0.6},
+	}
 }
 
 // extractArgs extracts arguments from the message based on the tool type.
@@ -315,6 +345,54 @@ func (d *IntentDetector) extractArgs(tool, message string) map[string]any {
 		// Extract migration API
 		if apiMatch := regexp.MustCompile(`(?:use|set|with)\s+(gei|elm)\s*(?:api)?`).FindStringSubmatch(message); len(apiMatch) > 1 {
 			args["migration_api"] = strings.ToUpper(apiMatch[1])
+		}
+
+	case "start_migration":
+		// Extract batch name
+		if nameMatch := regexp.MustCompile(`batch\s+["']?([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']?`).FindStringSubmatch(message); len(nameMatch) > 1 {
+			name := nameMatch[1]
+			commonWords := map[string]bool{"the": true, "a": true, "this": true}
+			if !commonWords[name] {
+				args["batch_name"] = name
+			}
+		}
+		// Extract repository
+		if repoMatch := regexp.MustCompile(`(?:repo(?:sitory)?|migrate)\s+["']?([\w-]+/[\w.-]+)["']?`).FindStringSubmatch(message); len(repoMatch) > 1 {
+			args["repository"] = repoMatch[1]
+		}
+		// Check if dry-run is explicitly disabled (default is true)
+		if regexp.MustCompile(`(?:production|real|actual|not?\s+dry[\s-]?run|dry[\s-]?run\s*=?\s*false)`).MatchString(message) {
+			args["dry_run"] = false
+		} else {
+			args["dry_run"] = true // Default to dry-run for safety
+		}
+
+	case "cancel_migration":
+		// Extract batch name
+		if nameMatch := regexp.MustCompile(`(?:batch|cancel|stop)\s+["']?([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']?`).FindStringSubmatch(message); len(nameMatch) > 1 {
+			name := nameMatch[1]
+			commonWords := map[string]bool{"the": true, "a": true, "this": true, "migration": true, "running": true}
+			if !commonWords[name] {
+				args["batch_name"] = name
+			}
+		}
+		// Extract repository
+		if repoMatch := regexp.MustCompile(`(?:repo(?:sitory)?|cancel)\s+["']?([\w-]+/[\w.-]+)["']?`).FindStringSubmatch(message); len(repoMatch) > 1 {
+			args["repository"] = repoMatch[1]
+		}
+
+	case "get_migration_progress":
+		// Extract batch name
+		if nameMatch := regexp.MustCompile(`(?:batch|progress)\s+(?:for\s+)?["']?([a-zA-Z0-9][\w-]*[a-zA-Z0-9])["']?`).FindStringSubmatch(message); len(nameMatch) > 1 {
+			name := nameMatch[1]
+			commonWords := map[string]bool{"the": true, "a": true, "this": true, "of": true, "for": true}
+			if !commonWords[name] {
+				args["batch_name"] = name
+			}
+		}
+		// Extract repository
+		if repoMatch := regexp.MustCompile(`(?:repo(?:sitory)?|progress\s+(?:of|for))\s+["']?([\w-]+/[\w.-]+)["']?`).FindStringSubmatch(message); len(repoMatch) > 1 {
+			args["repository"] = repoMatch[1]
 		}
 	}
 

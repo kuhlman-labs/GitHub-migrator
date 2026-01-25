@@ -291,5 +291,63 @@ func (s *Server) registerTools() {
 		s.handleConfigureBatch,
 	)
 
-	s.logger.Info("Registered MCP tools", "count", 10)
+	// start_migration - Start a migration (dry-run or production)
+	s.mcpServer.AddTool(
+		mcp.NewTool("start_migration",
+			mcp.WithDescription("Start a migration (dry-run or production) for a batch, single repository, or list of repositories. Defaults to dry-run for safety."),
+			mcp.WithString("batch_name",
+				mcp.Description("Name of batch to migrate"),
+			),
+			mcp.WithNumber("batch_id",
+				mcp.Description("ID of batch to migrate"),
+			),
+			mcp.WithString("repository",
+				mcp.Description("Single repository to migrate (format: org/repo)"),
+			),
+			mcp.WithArray("repositories",
+				mcp.Description("List of repositories to migrate"),
+				mcp.Items(map[string]any{"type": "string"}),
+			),
+			mcp.WithBoolean("dry_run",
+				mcp.Description("If true, perform dry-run only. Defaults to true for safety. Set to false for production migration."),
+			),
+		),
+		s.handleStartMigration,
+	)
+
+	// cancel_migration - Cancel a running migration
+	s.mcpServer.AddTool(
+		mcp.NewTool("cancel_migration",
+			mcp.WithDescription("Cancel a running migration for a batch or specific repository."),
+			mcp.WithString("batch_name",
+				mcp.Description("Name of batch to cancel"),
+			),
+			mcp.WithNumber("batch_id",
+				mcp.Description("ID of batch to cancel"),
+			),
+			mcp.WithString("repository",
+				mcp.Description("Single repository to cancel (format: org/repo)"),
+			),
+		),
+		s.handleCancelMigration,
+	)
+
+	// get_migration_progress - Get real-time progress of migrations
+	s.mcpServer.AddTool(
+		mcp.NewTool("get_migration_progress",
+			mcp.WithDescription("Get real-time progress of running migrations for a batch or specific repository."),
+			mcp.WithString("batch_name",
+				mcp.Description("Name of batch to check progress"),
+			),
+			mcp.WithNumber("batch_id",
+				mcp.Description("ID of batch to check progress"),
+			),
+			mcp.WithString("repository",
+				mcp.Description("Single repository to check progress (format: org/repo)"),
+			),
+		),
+		s.handleGetMigrationProgress,
+	)
+
+	s.logger.Info("Registered MCP tools", "count", 13)
 }
