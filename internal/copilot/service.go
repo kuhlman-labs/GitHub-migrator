@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -77,7 +76,7 @@ type ServiceConfig struct {
 // NewService creates a new Copilot service
 func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig) *Service {
 	licenseValidator := NewLicenseValidator(config.GitHubBaseURL, logger)
-	toolRegistry := NewToolRegistry(db, logger)
+	toolRegistry := NewToolRegistry(logger)
 
 	return &Service{
 		db:               db,
@@ -497,7 +496,7 @@ func (s *Service) getMigrationContext(ctx context.Context, settings *models.Sett
 }
 
 // buildSystemPrompt creates the system prompt with tool descriptions and environment context
-func (s *Service) buildSystemPrompt(tools []Tool, mc *MigrationContext) string {
+func (s *Service) buildSystemPrompt(tools []ToolDescription, mc *MigrationContext) string {
 	var prompt strings.Builder
 
 	prompt.WriteString(`You are the GitHub Migrator Copilot assistant. You help users plan and execute GitHub migrations.
@@ -623,19 +622,10 @@ func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt stri
 	s.logger.Debug("Calling Copilot CLI", "cli_path", cliPath, "prompt_length", len(fullPrompt), "mcp_enabled", mcpEnabled, "mcp_port", mcpPort)
 
 	// Build command arguments
-	args := []string{"-p", fullPrompt, "--allow-all-tools", "--no-color"}
-
-	// If MCP is enabled, create a temporary config file and pass it to the CLI
-	if mcpEnabled && mcpPort > 0 {
-		mcpConfigPath, cleanup, err := s.createMCPConfig(mcpPort)
-		if err != nil {
-			s.logger.Warn("Failed to create MCP config, continuing without MCP", "error", err)
-		} else {
-			defer cleanup()
-			args = append(args, "--mcp-config", mcpConfigPath)
-			s.logger.Debug("Using MCP config", "config_path", mcpConfigPath, "port", mcpPort)
-		}
-	}
+	// Note: The Copilot CLI doesn't support --mcp-config flag directly.
+	// The MCP server runs separately and can be used by MCP-compatible clients.
+	// For the CLI, we pass the prompt with context that describes the available tools.
+	args := []string{"-p", fullPrompt}
 
 	cmd := exec.CommandContext(cmdCtx, cliPath, args...)
 	output, err := cmd.CombinedOutput()
@@ -655,45 +645,6 @@ func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt stri
 
 	s.logger.Debug("Copilot CLI response received", "response_length", len(response))
 	return response, nil
-}
-
-// createMCPConfig creates a temporary MCP configuration file and returns its path and a cleanup function
-func (s *Service) createMCPConfig(mcpPort int) (string, func(), error) {
-	// Create MCP configuration JSON
-	mcpConfig := fmt.Sprintf(`{
-  "mcpServers": {
-    "github-migrator": {
-      "type": "sse",
-      "url": "http://localhost:%d/sse",
-      "tools": ["*"]
-    }
-  }
-}`, mcpPort)
-
-	// Create temporary file
-	tmpFile, err := os.CreateTemp("", "mcp-config-*.json")
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-
-	// Write config to file
-	if _, err := tmpFile.WriteString(mcpConfig); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return "", nil, fmt.Errorf("failed to write config: %w", err)
-	}
-
-	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpFile.Name())
-		return "", nil, fmt.Errorf("failed to close config file: %w", err)
-	}
-
-	// Return path and cleanup function
-	cleanup := func() {
-		os.Remove(tmpFile.Name())
-	}
-
-	return tmpFile.Name(), cleanup, nil
 }
 
 // generateFallbackResponse creates a helpful response when CLI fails
