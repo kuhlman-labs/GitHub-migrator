@@ -7,6 +7,8 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS copilot_cli_path TEXT;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS copilot_model TEXT;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS copilot_max_tokens INTEGER;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS copilot_session_timeout_min INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS copilot_mcp_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS copilot_mcp_port INTEGER NOT NULL DEFAULT 8081;
 
 -- Create table for Copilot chat sessions
 CREATE TABLE IF NOT EXISTS copilot_sessions (
@@ -44,3 +46,5 @@ ALTER TABLE settings DROP COLUMN IF EXISTS copilot_cli_path;
 ALTER TABLE settings DROP COLUMN IF EXISTS copilot_model;
 ALTER TABLE settings DROP COLUMN IF EXISTS copilot_max_tokens;
 ALTER TABLE settings DROP COLUMN IF EXISTS copilot_session_timeout_min;
+ALTER TABLE settings DROP COLUMN IF EXISTS copilot_mcp_enabled;
+ALTER TABLE settings DROP COLUMN IF EXISTS copilot_mcp_port;

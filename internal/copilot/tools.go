@@ -1,3 +1,11 @@
+// Package copilot provides the Copilot chat service integration.
+//
+// DEPRECATION NOTICE: The tool implementations in this file are stubs.
+// Real tool execution is now handled by the MCP server in internal/mcp/.
+// The ToolRegistry is kept for backward compatibility to provide tool
+// descriptions for the system prompt. When the Copilot CLI connects to
+// the MCP server, tools are executed via the MCP protocol with full
+// database access.
 package copilot
 
 import (
@@ -7,7 +15,9 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
-// Tool represents a custom tool that Copilot can use
+// Tool represents a custom tool that Copilot can use.
+// NOTE: Tool execution is now handled by the MCP server.
+// This struct is kept for building system prompts with tool descriptions.
 type Tool struct {
 	Name        string                                                      `json:"name"`
 	Description string                                                      `json:"description"`
@@ -268,76 +278,87 @@ func (r *ToolRegistry) registerDefaultTools() {
 	})
 }
 
-// Tool implementation stubs - these will be fully implemented in the tools package
+// Tool execution stubs - real implementations are in internal/mcp/handlers.go
+// These stubs are kept for backward compatibility but tools should be executed
+// via the MCP server for full functionality with database access.
+
 func (r *ToolRegistry) analyzeRepositories(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing analyze_repositories tool", "args", args)
-	// TODO: Implement with actual database queries
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "analyze_repositories")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "analyze_repositories",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) getComplexityBreakdown(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing get_complexity_breakdown tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "get_complexity_breakdown")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "get_complexity_breakdown",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) checkDependencies(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing check_dependencies tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "check_dependencies")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "check_dependencies",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) findPilotCandidates(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing find_pilot_candidates tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "find_pilot_candidates")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "find_pilot_candidates",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) createBatch(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing create_batch tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "create_batch")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "create_batch",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) planWaves(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing plan_waves tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "plan_waves")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "plan_waves",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) getTeamRepositories(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing get_team_repositories tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "get_team_repositories")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "get_team_repositories",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) getMigrationStatus(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing get_migration_status tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "get_migration_status")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "get_migration_status",
 		"args":    args,
 	}, nil
 }
 
 func (r *ToolRegistry) scheduleBatch(ctx context.Context, args map[string]any) (any, error) {
-	r.logger.Info("Executing schedule_batch tool", "args", args)
+	r.logger.Debug("Tool called via legacy path - use MCP server for full functionality", "tool", "schedule_batch")
 	return map[string]any{
-		"message": "Tool execution pending full implementation",
+		"message": "This tool should be executed via the MCP server for full functionality. Enable MCP in Copilot settings.",
+		"tool":    "schedule_batch",
 		"args":    args,
 	}, nil
 }

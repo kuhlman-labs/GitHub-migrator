@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -69,6 +70,8 @@ type ServiceConfig struct {
 	SessionTimeoutMin int
 	RequireLicense    bool
 	GitHubBaseURL     string
+	MCPEnabled        bool
+	MCPPort           int
 }
 
 // NewService creates a new Copilot service
@@ -392,8 +395,15 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 	tools := s.toolRegistry.GetTools()
 	systemPrompt := s.buildSystemPrompt(tools)
 
-	// Try to call the Copilot CLI
-	response, err := s.callCopilotCLI(ctx, cliPath, systemPrompt, session.Messages, userMessage)
+	// Get MCP configuration from settings
+	mcpEnabled := settings.CopilotMCPEnabled
+	mcpPort := settings.CopilotMCPPort
+	if mcpPort == 0 {
+		mcpPort = 8081 // Default port
+	}
+
+	// Try to call the Copilot CLI with MCP configuration
+	response, err := s.callCopilotCLI(ctx, cliPath, systemPrompt, session.Messages, userMessage, mcpEnabled, mcpPort)
 	if err != nil {
 		s.logger.Error("Failed to call Copilot CLI, using fallback response", "error", err)
 		// Return a helpful error message instead of failing completely
@@ -433,7 +443,7 @@ Be concise but thorough in your explanations.`
 }
 
 // callCopilotCLI calls the Copilot CLI with the given message
-func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt string, history []Message, userMessage string) (string, error) {
+func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt string, history []Message, userMessage string, mcpEnabled bool, mcpPort int) (string, error) {
 	// Create a timeout context for the CLI call
 	cmdCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
@@ -468,10 +478,24 @@ func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt stri
 
 	fullPrompt := promptBuilder.String()
 
-	s.logger.Debug("Calling Copilot CLI", "cli_path", cliPath, "prompt_length", len(fullPrompt))
+	s.logger.Debug("Calling Copilot CLI", "cli_path", cliPath, "prompt_length", len(fullPrompt), "mcp_enabled", mcpEnabled, "mcp_port", mcpPort)
 
-	// Use the -p flag for non-interactive mode with --allow-all-tools for automated execution
-	cmd := exec.CommandContext(cmdCtx, cliPath, "-p", fullPrompt, "--allow-all-tools", "--no-color")
+	// Build command arguments
+	args := []string{"-p", fullPrompt, "--allow-all-tools", "--no-color"}
+
+	// If MCP is enabled, create a temporary config file and pass it to the CLI
+	if mcpEnabled && mcpPort > 0 {
+		mcpConfigPath, cleanup, err := s.createMCPConfig(mcpPort)
+		if err != nil {
+			s.logger.Warn("Failed to create MCP config, continuing without MCP", "error", err)
+		} else {
+			defer cleanup()
+			args = append(args, "--mcp-config", mcpConfigPath)
+			s.logger.Debug("Using MCP config", "config_path", mcpConfigPath, "port", mcpPort)
+		}
+	}
+
+	cmd := exec.CommandContext(cmdCtx, cliPath, args...)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -489,6 +513,45 @@ func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt stri
 
 	s.logger.Debug("Copilot CLI response received", "response_length", len(response))
 	return response, nil
+}
+
+// createMCPConfig creates a temporary MCP configuration file and returns its path and a cleanup function
+func (s *Service) createMCPConfig(mcpPort int) (string, func(), error) {
+	// Create MCP configuration JSON
+	mcpConfig := fmt.Sprintf(`{
+  "mcpServers": {
+    "github-migrator": {
+      "type": "sse",
+      "url": "http://localhost:%d/sse",
+      "tools": ["*"]
+    }
+  }
+}`, mcpPort)
+
+	// Create temporary file
+	tmpFile, err := os.CreateTemp("", "mcp-config-*.json")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	// Write config to file
+	if _, err := tmpFile.WriteString(mcpConfig); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return "", nil, fmt.Errorf("failed to write config: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpFile.Name())
+		return "", nil, fmt.Errorf("failed to close config file: %w", err)
+	}
+
+	// Return path and cleanup function
+	cleanup := func() {
+		os.Remove(tmpFile.Name())
+	}
+
+	return tmpFile.Name(), cleanup, nil
 }
 
 // generateFallbackResponse creates a helpful response when CLI fails

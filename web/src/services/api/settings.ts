@@ -38,6 +38,8 @@ export interface SettingsResponse {
   copilot_model?: string;
   copilot_max_tokens?: number;
   copilot_session_timeout_min: number;
+  copilot_mcp_enabled: boolean;
+  copilot_mcp_port: number;
   destination_configured: boolean;
   updated_at: string;
 }
@@ -86,6 +88,8 @@ export interface UpdateSettingsRequest {
   copilot_model?: string;
   copilot_max_tokens?: number;
   copilot_session_timeout_min?: number;
+  copilot_mcp_enabled?: boolean;
+  copilot_mcp_port?: number;
 }
 
 export interface ValidateDestinationRequest {

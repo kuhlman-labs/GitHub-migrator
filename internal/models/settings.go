@@ -48,6 +48,8 @@ type Settings struct {
 	CopilotModel             *string `json:"copilot_model,omitempty" db:"copilot_model" gorm:"column:copilot_model"`
 	CopilotMaxTokens         *int    `json:"copilot_max_tokens,omitempty" db:"copilot_max_tokens" gorm:"column:copilot_max_tokens"`
 	CopilotSessionTimeoutMin int     `json:"copilot_session_timeout_min" db:"copilot_session_timeout_min" gorm:"column:copilot_session_timeout_min;not null;default:30"`
+	CopilotMCPEnabled        bool    `json:"copilot_mcp_enabled" db:"copilot_mcp_enabled" gorm:"column:copilot_mcp_enabled;not null;default:true"`
+	CopilotMCPPort           int     `json:"copilot_mcp_port" db:"copilot_mcp_port" gorm:"column:copilot_mcp_port;not null;default:8081"`
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"column:created_at"`
@@ -114,6 +116,8 @@ type SettingsResponse struct {
 	CopilotModel             string `json:"copilot_model,omitempty"`
 	CopilotMaxTokens         *int   `json:"copilot_max_tokens,omitempty"`
 	CopilotSessionTimeoutMin int    `json:"copilot_session_timeout_min"`
+	CopilotMCPEnabled        bool   `json:"copilot_mcp_enabled"`
+	CopilotMCPPort           int    `json:"copilot_mcp_port"`
 
 	// Status
 	DestinationConfigured bool      `json:"destination_configured"`
@@ -192,6 +196,8 @@ func (s *Settings) ToResponse() *SettingsResponse {
 		CopilotModel:             getStringOrEmpty(s.CopilotModel),
 		CopilotMaxTokens:         s.CopilotMaxTokens,
 		CopilotSessionTimeoutMin: s.CopilotSessionTimeoutMin,
+		CopilotMCPEnabled:        s.CopilotMCPEnabled,
+		CopilotMCPPort:           s.CopilotMCPPort,
 
 		// Status
 		DestinationConfigured: s.HasDestination(),
@@ -235,6 +241,8 @@ type UpdateSettingsRequest struct {
 	CopilotModel             *string `json:"copilot_model,omitempty"`
 	CopilotMaxTokens         *int    `json:"copilot_max_tokens,omitempty"`
 	CopilotSessionTimeoutMin *int    `json:"copilot_session_timeout_min,omitempty"`
+	CopilotMCPEnabled        *bool   `json:"copilot_mcp_enabled,omitempty"`
+	CopilotMCPPort           *int    `json:"copilot_mcp_port,omitempty"`
 }
 
 // UpdateAuthorizationRulesRequest is the request to update authorization rules
@@ -355,5 +363,11 @@ func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
 	}
 	if req.CopilotSessionTimeoutMin != nil {
 		s.CopilotSessionTimeoutMin = *req.CopilotSessionTimeoutMin
+	}
+	if req.CopilotMCPEnabled != nil {
+		s.CopilotMCPEnabled = *req.CopilotMCPEnabled
+	}
+	if req.CopilotMCPPort != nil {
+		s.CopilotMCPPort = *req.CopilotMCPPort
 	}
 }

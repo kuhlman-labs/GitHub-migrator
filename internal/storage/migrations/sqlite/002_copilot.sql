@@ -29,6 +29,14 @@ ALTER TABLE settings ADD COLUMN copilot_max_tokens INTEGER;
 ALTER TABLE settings ADD COLUMN copilot_session_timeout_min INTEGER NOT NULL DEFAULT 30;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+ALTER TABLE settings ADD COLUMN copilot_mcp_enabled INTEGER NOT NULL DEFAULT 1;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE settings ADD COLUMN copilot_mcp_port INTEGER NOT NULL DEFAULT 8081;
+-- +goose StatementEnd
+
 -- Create table for Copilot chat sessions
 CREATE TABLE IF NOT EXISTS copilot_sessions (
     id TEXT PRIMARY KEY,

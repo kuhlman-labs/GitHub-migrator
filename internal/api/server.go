@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
+	"github.com/kuhlman-labs/github-migrator/internal/mcp"
 	"github.com/kuhlman-labs/github-migrator/internal/source"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
@@ -31,6 +34,7 @@ type Server struct {
 	sourceHandler   *handlers.SourceHandler
 	settingsHandler *handlers.SettingsHandler
 	copilotHandler  *handlers.CopilotHandler
+	mcpServer       *mcp.Server
 	configSvc       *configsvc.Service
 	shutdownChan    chan struct{}
 }
@@ -129,6 +133,12 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	}
 	copilotHandler := handlers.NewCopilotHandler(db, logger, destBaseURL)
 
+	// Create MCP server for AI tool access
+	// Default port is 8081, can be configured via settings
+	mcpServer := mcp.NewServer(db, logger, mcp.Config{
+		Address: ":8081",
+	})
+
 	return &Server{
 		config:         cfg,
 		db:             db,
@@ -138,6 +148,7 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		adoHandler:     adoHandler,
 		sourceHandler:  sourceHandler,
 		copilotHandler: copilotHandler,
+		mcpServer:      mcpServer,
 		shutdownChan:   make(chan struct{}),
 	}
 }
@@ -145,6 +156,57 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 // ShutdownChan returns the shutdown channel for graceful server shutdown
 func (s *Server) ShutdownChan() chan struct{} {
 	return s.shutdownChan
+}
+
+// StartMCPServer starts the MCP server in a goroutine
+func (s *Server) StartMCPServer() {
+	if s.mcpServer == nil {
+		return
+	}
+
+	go func() {
+		s.logger.Info("Starting MCP server", "address", s.mcpServer.Address())
+		if err := s.mcpServer.Start(); err != nil {
+			s.logger.Error("MCP server error", "error", err)
+		}
+	}()
+}
+
+// StopMCPServer gracefully shuts down the MCP server
+func (s *Server) StopMCPServer(ctx context.Context) error {
+	if s.mcpServer == nil {
+		return nil
+	}
+	return s.mcpServer.Stop(ctx)
+}
+
+// MCPServer returns the MCP server instance
+func (s *Server) MCPServer() *mcp.Server {
+	return s.mcpServer
+}
+
+// GetMCPAddress returns the MCP server's address (e.g., ":8081")
+func (s *Server) GetMCPAddress() string {
+	if s.mcpServer == nil {
+		return ""
+	}
+	return s.mcpServer.Address()
+}
+
+// UpdateMCPConfig updates the MCP server configuration from settings
+// This can be called when settings change to update the MCP port
+func (s *Server) UpdateMCPConfig(port int) error {
+	if s.mcpServer != nil && s.mcpServer.IsRunning() {
+		// Can't change port while running - would need restart
+		s.logger.Warn("Cannot update MCP port while server is running", "requested_port", port)
+		return fmt.Errorf("cannot change MCP port while server is running")
+	}
+
+	// Create new MCP server with updated config
+	s.mcpServer = mcp.NewServer(s.db, s.logger, mcp.Config{
+		Address: fmt.Sprintf(":%d", port),
+	})
+	return nil
 }
 
 // SetConfigService sets the dynamic configuration service and creates the settings handler

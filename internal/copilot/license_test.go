@@ -186,13 +186,26 @@ func TestCheckLicense(t *testing.T) {
 }
 
 func TestCheckCLIAvailable(t *testing.T) {
-	t.Run("empty path", func(t *testing.T) {
-		available, _, err := CheckCLIAvailable("")
+	t.Run("empty path uses default copilot", func(t *testing.T) {
+		// Empty path defaults to "copilot" in PATH
+		// This may succeed or fail depending on the environment
+		available, version, err := CheckCLIAvailable("")
 		if available {
-			t.Error("expected not available with empty path")
+			// If copilot is in PATH, we should get a version
+			t.Logf("copilot found in PATH, version: %s", version)
+		} else {
+			// If copilot is not in PATH, we should get an error
+			t.Logf("copilot not found in PATH: %v", err)
+		}
+	})
+
+	t.Run("non-existent path", func(t *testing.T) {
+		available, _, err := CheckCLIAvailable("/nonexistent/path/to/copilot-cli-that-does-not-exist")
+		if available {
+			t.Error("expected not available with non-existent path")
 		}
 		if err == nil {
-			t.Error("expected error for unconfigured CLI")
+			t.Error("expected error for non-existent path")
 		}
 	})
 }
