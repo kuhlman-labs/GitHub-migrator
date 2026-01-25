@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
 	"github.com/kuhlman-labs/github-migrator/internal/copilot"
@@ -18,11 +19,14 @@ type CopilotHandler struct {
 	db            *storage.Database
 	logger        *slog.Logger
 	gitHubBaseURL string
+
+	// Persistent service instance to maintain session state
+	service   *copilot.Service
+	serviceMu sync.RWMutex
 }
 
 // NewCopilotHandler creates a new CopilotHandler
 func NewCopilotHandler(db *storage.Database, logger *slog.Logger, gitHubBaseURL string) *CopilotHandler {
-	// Service will be initialized when settings are loaded
 	return &CopilotHandler{
 		db:            db,
 		logger:        logger,
@@ -30,8 +34,25 @@ func NewCopilotHandler(db *storage.Database, logger *slog.Logger, gitHubBaseURL 
 	}
 }
 
-// initService initializes the Copilot service with current settings
-func (h *CopilotHandler) initService(settings *models.Settings) *copilot.Service {
+// getOrCreateService returns the persistent service instance, creating it if needed
+// This ensures session state (including LastToolResult) is preserved across requests
+func (h *CopilotHandler) getOrCreateService(settings *models.Settings) *copilot.Service {
+	h.serviceMu.RLock()
+	if h.service != nil {
+		h.serviceMu.RUnlock()
+		return h.service
+	}
+	h.serviceMu.RUnlock()
+
+	// Need to create the service
+	h.serviceMu.Lock()
+	defer h.serviceMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if h.service != nil {
+		return h.service
+	}
+
 	// Use the configured base URL, falling back to settings if available
 	baseURL := h.gitHubBaseURL
 	if baseURL == "" && settings.DestinationBaseURL != "" {
@@ -54,7 +75,9 @@ func (h *CopilotHandler) initService(settings *models.Settings) *copilot.Service
 		config.MaxTokens = *settings.CopilotMaxTokens
 	}
 
-	return copilot.NewService(h.db, h.logger, config)
+	h.service = copilot.NewService(h.db, h.logger, config)
+	h.logger.Info("Created persistent Copilot service")
+	return h.service
 }
 
 // GetStatus handles GET /api/v1/copilot/status
@@ -85,7 +108,7 @@ func (h *CopilotHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initialize service with current settings
-	service := h.initService(settings)
+	service := h.getOrCreateService(settings)
 
 	// Get status
 	status, err := service.GetStatus(ctx, user.Login, token, settings)
@@ -137,7 +160,7 @@ func (h *CopilotHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initialize service with current settings
-	service := h.initService(settings)
+	service := h.getOrCreateService(settings)
 
 	userIDStr := strconv.FormatInt(user.ID, 10)
 
@@ -197,7 +220,7 @@ func (h *CopilotHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initialize service with current settings
-	service := h.initService(settings)
+	service := h.getOrCreateService(settings)
 
 	// List sessions
 	userIDStr := strconv.FormatInt(user.ID, 10)
@@ -242,7 +265,7 @@ func (h *CopilotHandler) GetSessionHistory(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Initialize service with current settings
-	service := h.initService(settings)
+	service := h.getOrCreateService(settings)
 
 	// Get session to verify ownership
 	session, err := service.GetSession(ctx, sessionID)
@@ -302,7 +325,7 @@ func (h *CopilotHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initialize service with current settings
-	service := h.initService(settings)
+	service := h.getOrCreateService(settings)
 
 	// Get session to verify ownership
 	session, err := service.GetSession(ctx, sessionID)

@@ -407,7 +407,16 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 	intent := s.intentDetector.DetectIntent(userMessage)
 
 	// Check for follow-up batch creation
-	if s.intentDetector.IsFollowUpBatchCreate(userMessage) && session.LastToolResult != nil && session.LastToolResult.FollowUp != nil {
+	isFollowUp := s.intentDetector.IsFollowUpBatchCreate(userMessage)
+	s.logger.Debug("Intent detection",
+		"user_message", userMessage,
+		"is_follow_up", isFollowUp,
+		"has_last_result", session.LastToolResult != nil,
+		"has_follow_up_action", session.LastToolResult != nil && session.LastToolResult.FollowUp != nil,
+		"detected_intent", intent != nil,
+	)
+
+	if isFollowUp && session.LastToolResult != nil && session.LastToolResult.FollowUp != nil {
 		// Extract batch name from message or use default
 		batchName := s.intentDetector.ExtractBatchNameFromFollowUp(userMessage)
 		if batchName == "" {
@@ -415,8 +424,12 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 		}
 
 		// Create batch from previous results
+		s.logger.Info("Executing follow-up batch creation",
+			"batch_name", batchName,
+			"repository_count", len(session.LastToolResult.FollowUp.Repositories),
+		)
 		batchIntent := &DetectedIntent{
-			Tool: "create_batch",
+			Tool: ToolCreateBatch,
 			Args: map[string]any{
 				"name": batchName,
 			},
@@ -426,6 +439,7 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 		if err != nil {
 			s.logger.Error("Failed to execute batch creation", "error", err)
 		} else {
+			s.logger.Info("Batch creation completed", "success", result.Success, "summary", result.Summary)
 			toolResult = result
 		}
 	} else if intent != nil && intent.IsConfident() {
@@ -479,10 +493,17 @@ func (s *Service) processMessage(ctx context.Context, session *Session, userMess
 	var toolCalls []ToolCall
 	var toolResults []ToolResult
 	if toolResult != nil {
+		// Use intent.Args if available, otherwise create empty args
+		var args map[string]any
+		if intent != nil {
+			args = intent.Args
+		} else {
+			args = make(map[string]any)
+		}
 		toolCalls = []ToolCall{{
 			ID:     fmt.Sprintf("call_%d", time.Now().UnixNano()),
 			Name:   toolResult.Tool,
-			Args:   intent.Args,
+			Args:   args,
 			Status: "completed",
 		}}
 		toolResults = []ToolResult{{
