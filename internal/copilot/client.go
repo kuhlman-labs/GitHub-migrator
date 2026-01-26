@@ -371,6 +371,17 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*SDKSession,
 	return sess, nil
 }
 
+// UpdateSessionAuth updates the authorization context for an existing session.
+// This should be called by handlers to ensure the session uses the current user's permissions.
+func (c *Client) UpdateSessionAuth(sessionID string, authCtx *AuthContext) {
+	c.sessionsMu.Lock()
+	defer c.sessionsMu.Unlock()
+
+	if sess, ok := c.sessions[sessionID]; ok {
+		sess.Auth = authCtx
+	}
+}
+
 // DeleteSession removes a session.
 func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 	c.sessionsMu.Lock()
@@ -495,6 +506,7 @@ func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, o
 	// Track accumulated content for persistence
 	var fullContent string
 	done := make(chan struct{})
+	var closeOnce sync.Once
 
 	// Set up event handler for streaming
 	unsubscribe := sess.Session.On(func(event copilot.SessionEvent) {
@@ -548,7 +560,7 @@ func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, o
 					Content: fullContent,
 				},
 			})
-			close(done)
+			closeOnce.Do(func() { close(done) })
 
 		case "error":
 			errMsg := "Unknown error"
@@ -561,7 +573,7 @@ func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, o
 					Error: errMsg,
 				},
 			})
-			close(done)
+			closeOnce.Do(func() { close(done) })
 		}
 	})
 	defer unsubscribe()

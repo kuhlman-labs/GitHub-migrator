@@ -151,6 +151,11 @@ func (s *Service) GetSession(ctx context.Context, sessionID string) (*SDKSession
 	return s.client.GetSession(ctx, sessionID)
 }
 
+// UpdateSessionAuth updates the authorization context for an existing session.
+func (s *Service) UpdateSessionAuth(sessionID string, authCtx *AuthContext) {
+	s.client.UpdateSessionAuth(sessionID, authCtx)
+}
+
 // ListSessions returns all sessions for a user.
 func (s *Service) ListSessions(ctx context.Context, userID string) ([]*models.CopilotSessionResponse, error) {
 	return s.client.ListSessions(ctx, userID)

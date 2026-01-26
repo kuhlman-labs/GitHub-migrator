@@ -79,7 +79,8 @@ func (h *CopilotHandler) getOrCreateSession(
 		return "", &sessionError{http.StatusForbidden, "Access denied"}
 	}
 	// Update the session's auth context in case permissions changed
-	session.Auth = authCtx
+	// This persists the auth to the cached session for subsequent operations
+	service.UpdateSessionAuth(sessionID, authCtx)
 	return sessionID, nil
 }
 
