@@ -121,141 +121,141 @@ func (c *Client) checkToolAuthorization(toolName string, auth *AuthContext) erro
 
 // FindPilotParams defines parameters for find_pilot_candidates tool.
 type FindPilotParams struct {
-	MaxCount     int    `json:"max_count,omitempty" jsonschema:"description=Maximum number of candidates to return (default 10, max 50)"`
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization name"`
+	MaxCount     int    `json:"max_count,omitempty" jsonschema:"Maximum number of candidates to return (default 10, max 50)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization name"`
 }
 
 // AnalyzeRepositoriesParams defines parameters for analyze_repositories tool.
 type AnalyzeRepositoriesParams struct {
-	Organization  string `json:"organization,omitempty" jsonschema:"description=Filter by organization name"`
-	Status        string `json:"status,omitempty" jsonschema:"description=Filter by migration status (pending, completed, failed, etc.)"`
-	MaxComplexity int    `json:"max_complexity,omitempty" jsonschema:"description=Filter by maximum complexity score"`
+	Organization  string `json:"organization,omitempty" jsonschema:"Filter by organization name"`
+	Status        string `json:"status,omitempty" jsonschema:"Filter by migration status (pending, completed, failed, etc.)"`
+	MaxComplexity int    `json:"max_complexity,omitempty" jsonschema:"Filter by maximum complexity score"`
 }
 
 // CreateBatchParams defines parameters for create_batch tool.
 type CreateBatchParams struct {
-	Name           string   `json:"name" jsonschema:"description=Name for the batch"`
-	Repositories   []string `json:"repositories,omitempty" jsonschema:"description=List of repository full names to include"`
-	DestinationOrg string   `json:"destination_org,omitempty" jsonschema:"description=Destination organization for migration"`
+	Name           string   `json:"name" jsonschema:"Name for the batch"`
+	Repositories   []string `json:"repositories,omitempty" jsonschema:"List of repository full names to include"`
+	DestinationOrg string   `json:"destination_org,omitempty" jsonschema:"Destination organization for migration"`
 }
 
 // ConfigureBatchParams defines parameters for configure_batch tool.
 type ConfigureBatchParams struct {
-	BatchName      string `json:"batch_name,omitempty" jsonschema:"description=Name of the batch to configure"`
-	BatchID        int64  `json:"batch_id,omitempty" jsonschema:"description=ID of the batch to configure"`
-	DestinationOrg string `json:"destination_org,omitempty" jsonschema:"description=Destination organization for migration"`
-	MigrationAPI   string `json:"migration_api,omitempty" jsonschema:"description=Migration API to use (GEI or ELM)"`
+	BatchName      string `json:"batch_name,omitempty" jsonschema:"Name of the batch to configure"`
+	BatchID        int64  `json:"batch_id,omitempty" jsonschema:"ID of the batch to configure"`
+	DestinationOrg string `json:"destination_org,omitempty" jsonschema:"Destination organization for migration"`
+	MigrationAPI   string `json:"migration_api,omitempty" jsonschema:"Migration API to use (GEI or ELM)"`
 }
 
 // CheckDependenciesParams defines parameters for check_dependencies tool.
 type CheckDependenciesParams struct {
-	Repository     string `json:"repository" jsonschema:"description=Repository full name (org/repo)"`
-	IncludeReverse bool   `json:"include_reverse,omitempty" jsonschema:"description=Include repositories that depend on this one"`
+	Repository     string `json:"repository" jsonschema:"Repository full name (org/repo)"`
+	IncludeReverse bool   `json:"include_reverse,omitempty" jsonschema:"Include repositories that depend on this one"`
 }
 
 // PlanWavesParams defines parameters for plan_waves tool.
 type PlanWavesParams struct {
-	WaveSize     int    `json:"wave_size,omitempty" jsonschema:"description=Maximum repositories per wave (default 10, max 100)"`
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization name"`
+	WaveSize     int    `json:"wave_size,omitempty" jsonschema:"Maximum repositories per wave (default 10, max 100)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization name"`
 }
 
 // GetComplexityParams defines parameters for get_complexity_breakdown tool.
 type GetComplexityParams struct {
-	Repository string `json:"repository" jsonschema:"description=Repository full name (org/repo)"`
+	Repository string `json:"repository" jsonschema:"Repository full name (org/repo)"`
 }
 
 // GetTeamRepositoriesParams defines parameters for get_team_repositories tool.
 type GetTeamRepositoriesParams struct {
-	Team string `json:"team" jsonschema:"description=Team identifier in format org/team-slug"`
+	Team string `json:"team" jsonschema:"Team identifier in format org/team-slug"`
 }
 
 // GetMigrationStatusParams defines parameters for get_migration_status tool.
 type GetMigrationStatusParams struct {
-	Repositories []string `json:"repositories" jsonschema:"description=List of repository full names to check"`
+	Repositories []string `json:"repositories" jsonschema:"List of repository full names to check"`
 }
 
 // ScheduleBatchParams defines parameters for schedule_batch tool.
 type ScheduleBatchParams struct {
-	BatchName      string `json:"batch_name" jsonschema:"description=Name of the batch to schedule"`
-	ScheduledAt    string `json:"scheduled_at,omitempty" jsonschema:"description=ISO 8601 datetime for scheduling (defaults to now)"`
-	DestinationOrg string `json:"destination_org,omitempty" jsonschema:"description=Destination organization for migration"`
+	BatchName      string `json:"batch_name" jsonschema:"Name of the batch to schedule"`
+	ScheduledAt    string `json:"scheduled_at,omitempty" jsonschema:"ISO 8601 datetime for scheduling (defaults to now)"`
+	DestinationOrg string `json:"destination_org,omitempty" jsonschema:"Destination organization for migration"`
 }
 
 // StartMigrationParams defines parameters for start_migration tool.
 type StartMigrationParams struct {
-	BatchName  string `json:"batch_name,omitempty" jsonschema:"description=Name of the batch to migrate"`
-	BatchID    int64  `json:"batch_id,omitempty" jsonschema:"description=ID of the batch to migrate"`
-	Repository string `json:"repository,omitempty" jsonschema:"description=Single repository to migrate"`
-	DryRun     bool   `json:"dry_run" jsonschema:"description=If true, perform a dry run (default: true for safety)"`
+	BatchName  string `json:"batch_name,omitempty" jsonschema:"Name of the batch to migrate"`
+	BatchID    int64  `json:"batch_id,omitempty" jsonschema:"ID of the batch to migrate"`
+	Repository string `json:"repository,omitempty" jsonschema:"Single repository to migrate"`
+	DryRun     bool   `json:"dry_run" jsonschema:"If true, perform a dry run (default: true for safety)"`
 }
 
 // CancelMigrationParams defines parameters for cancel_migration tool.
 type CancelMigrationParams struct {
-	BatchName  string `json:"batch_name,omitempty" jsonschema:"description=Name of the batch to cancel"`
-	BatchID    int64  `json:"batch_id,omitempty" jsonschema:"description=ID of the batch to cancel"`
-	Repository string `json:"repository,omitempty" jsonschema:"description=Single repository to cancel"`
+	BatchName  string `json:"batch_name,omitempty" jsonschema:"Name of the batch to cancel"`
+	BatchID    int64  `json:"batch_id,omitempty" jsonschema:"ID of the batch to cancel"`
+	Repository string `json:"repository,omitempty" jsonschema:"Single repository to cancel"`
 }
 
 // GetMigrationProgressParams defines parameters for get_migration_progress tool.
 type GetMigrationProgressParams struct {
-	BatchName  string `json:"batch_name,omitempty" jsonschema:"description=Name of the batch to check"`
-	BatchID    int64  `json:"batch_id,omitempty" jsonschema:"description=ID of the batch to check"`
-	Repository string `json:"repository,omitempty" jsonschema:"description=Single repository to check"`
+	BatchName  string `json:"batch_name,omitempty" jsonschema:"Name of the batch to check"`
+	BatchID    int64  `json:"batch_id,omitempty" jsonschema:"ID of the batch to check"`
+	Repository string `json:"repository,omitempty" jsonschema:"Single repository to check"`
 }
 
 // GetTopComplexRepositoriesParams defines parameters for finding most complex repos.
 type GetTopComplexRepositoriesParams struct {
-	Count        int    `json:"count,omitempty" jsonschema:"description=Number of repositories to return (default 10, max 50)"`
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization name"`
+	Count        int    `json:"count,omitempty" jsonschema:"Number of repositories to return (default 10, max 50)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization name"`
 }
 
 // GetRepositoriesWithMostDependenciesParams defines parameters for repos with most dependencies.
 type GetRepositoriesWithMostDependenciesParams struct {
-	Count        int    `json:"count,omitempty" jsonschema:"description=Number of repositories to return (default 10, max 50)"`
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization name"`
+	Count        int    `json:"count,omitempty" jsonschema:"Number of repositories to return (default 10, max 50)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization name"`
 }
 
 // GetTeamMigrationStatsParams defines parameters for team migration statistics.
 type GetTeamMigrationStatsParams struct {
-	Team string `json:"team" jsonschema:"description=Team identifier in format org/team-slug"`
+	Team string `json:"team" jsonschema:"Team identifier in format org/team-slug"`
 }
 
 // ListMannequinsParams defines parameters for listing mannequins.
 type ListMannequinsParams struct {
-	Organization  string `json:"organization" jsonschema:"description=Organization to list mannequins for"`
-	ReclaimStatus string `json:"reclaim_status,omitempty" jsonschema:"description=Filter by status: pending, invited, completed, failed"`
-	MaxCount      int    `json:"max_count,omitempty" jsonschema:"description=Maximum number to return (default 20, max 100)"`
+	Organization  string `json:"organization" jsonschema:"Organization to list mannequins for"`
+	ReclaimStatus string `json:"reclaim_status,omitempty" jsonschema:"Filter by status: pending, invited, completed, failed"`
+	MaxCount      int    `json:"max_count,omitempty" jsonschema:"Maximum number to return (default 20, max 100)"`
 }
 
 // SendMannequinInvitationsParams defines parameters for sending reclaim invitations.
 type SendMannequinInvitationsParams struct {
-	Organization string   `json:"organization" jsonschema:"description=Organization containing the mannequins"`
-	SourceLogins []string `json:"source_logins,omitempty" jsonschema:"description=Specific source logins to invite (if empty, invites all eligible)"`
-	DryRun       bool     `json:"dry_run" jsonschema:"description=If true, only show what would be invited without sending"`
+	Organization string   `json:"organization" jsonschema:"Organization containing the mannequins"`
+	SourceLogins []string `json:"source_logins,omitempty" jsonschema:"Specific source logins to invite (if empty, invites all eligible)"`
+	DryRun       bool     `json:"dry_run" jsonschema:"If true, only show what would be invited without sending"`
 }
 
 // ListTeamsParams defines parameters for listing teams.
 type ListTeamsParams struct {
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization name"`
-	MaxCount     int    `json:"max_count,omitempty" jsonschema:"description=Maximum number to return (default 20, max 100)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization name"`
+	MaxCount     int    `json:"max_count,omitempty" jsonschema:"Maximum number to return (default 20, max 100)"`
 }
 
 // MigrateTeamParams defines parameters for migrating a team.
 type MigrateTeamParams struct {
-	Team                string `json:"team" jsonschema:"description=Team identifier in format org/team-slug"`
-	DestinationOrg      string `json:"destination_org,omitempty" jsonschema:"description=Destination organization"`
-	DestinationTeam     string `json:"destination_team,omitempty" jsonschema:"description=Destination team slug (defaults to same as source)"`
-	IncludeMembers      bool   `json:"include_members" jsonschema:"description=Whether to migrate team members"`
-	IncludeRepositories bool   `json:"include_repositories" jsonschema:"description=Whether to assign repositories to team in destination"`
+	Team                string `json:"team" jsonschema:"Team identifier in format org/team-slug"`
+	DestinationOrg      string `json:"destination_org,omitempty" jsonschema:"Destination organization"`
+	DestinationTeam     string `json:"destination_team,omitempty" jsonschema:"Destination team slug (defaults to same as source)"`
+	IncludeMembers      bool   `json:"include_members" jsonschema:"Whether to migrate team members"`
+	IncludeRepositories bool   `json:"include_repositories" jsonschema:"Whether to assign repositories to team in destination"`
 }
 
 // --- Group 1: Discovery Operations ---
 
 // StartDiscoveryParams defines parameters for starting discovery.
 type StartDiscoveryParams struct {
-	Organization   string `json:"organization,omitempty" jsonschema:"description=Organization name to discover"`
-	EnterpriseSlug string `json:"enterprise_slug,omitempty" jsonschema:"description=Enterprise slug for enterprise-wide discovery"`
-	SourceID       *int64 `json:"source_id,omitempty" jsonschema:"description=Source ID for multi-source environments"`
+	Organization   string `json:"organization,omitempty" jsonschema:"Organization name to discover"`
+	EnterpriseSlug string `json:"enterprise_slug,omitempty" jsonschema:"Enterprise slug for enterprise-wide discovery"`
+	SourceID       *int64 `json:"source_id,omitempty" jsonschema:"Source ID for multi-source environments"`
 }
 
 // GetDiscoveryStatusParams defines parameters for checking discovery status.
@@ -266,121 +266,121 @@ type CancelDiscoveryParams struct{}
 
 // DiscoverTeamsParams defines parameters for team discovery.
 type DiscoverTeamsParams struct {
-	Organization string `json:"organization" jsonschema:"description=Organization to discover teams for"`
+	Organization string `json:"organization" jsonschema:"Organization to discover teams for"`
 }
 
 // --- Group 2: Repository Operations ---
 
 // GetRepositoryDetailsParams defines parameters for getting repository details.
 type GetRepositoryDetailsParams struct {
-	Repository string `json:"repository" jsonschema:"description=Repository full name (org/repo)"`
+	Repository string `json:"repository" jsonschema:"Repository full name (org/repo)"`
 }
 
 // ValidateRepositoryParams defines parameters for validating a repository.
 type ValidateRepositoryParams struct {
-	Repository string `json:"repository" jsonschema:"description=Repository full name (org/repo)"`
+	Repository string `json:"repository" jsonschema:"Repository full name (org/repo)"`
 }
 
 // UpdateRepositoryStatusParams defines parameters for updating repository status.
 type UpdateRepositoryStatusParams struct {
-	Repository string `json:"repository" jsonschema:"description=Repository full name (org/repo)"`
-	Status     string `json:"status" jsonschema:"description=New status (pending, wont_migrate, remediation_required, etc.)"`
-	Reason     string `json:"reason,omitempty" jsonschema:"description=Reason for the status change"`
+	Repository string `json:"repository" jsonschema:"Repository full name (org/repo)"`
+	Status     string `json:"status" jsonschema:"New status (pending, wont_migrate, remediation_required, etc.)"`
+	Reason     string `json:"reason,omitempty" jsonschema:"Reason for the status change"`
 }
 
 // --- Group 3: Batch Operations ---
 
 // ListBatchesParams defines parameters for listing batches.
 type ListBatchesParams struct {
-	Status string `json:"status,omitempty" jsonschema:"description=Filter by batch status (draft, scheduled, in_progress, completed, failed)"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"description=Maximum number of batches to return (default 20)"`
+	Status string `json:"status,omitempty" jsonschema:"Filter by batch status (draft, scheduled, in_progress, completed, failed)"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of batches to return (default 20)"`
 }
 
 // GetBatchDetailsParams defines parameters for getting batch details.
 type GetBatchDetailsParams struct {
-	BatchID   int64  `json:"batch_id,omitempty" jsonschema:"description=ID of the batch"`
-	BatchName string `json:"batch_name,omitempty" jsonschema:"description=Name of the batch"`
+	BatchID   int64  `json:"batch_id,omitempty" jsonschema:"ID of the batch"`
+	BatchName string `json:"batch_name,omitempty" jsonschema:"Name of the batch"`
 }
 
 // AddReposToBatchParams defines parameters for adding repos to a batch.
 type AddReposToBatchParams struct {
-	BatchID      int64    `json:"batch_id,omitempty" jsonschema:"description=ID of the batch"`
-	BatchName    string   `json:"batch_name,omitempty" jsonschema:"description=Name of the batch"`
-	Repositories []string `json:"repositories" jsonschema:"description=List of repository full names to add"`
+	BatchID      int64    `json:"batch_id,omitempty" jsonschema:"ID of the batch"`
+	BatchName    string   `json:"batch_name,omitempty" jsonschema:"Name of the batch"`
+	Repositories []string `json:"repositories" jsonschema:"List of repository full names to add"`
 }
 
 // RemoveReposFromBatchParams defines parameters for removing repos from a batch.
 type RemoveReposFromBatchParams struct {
-	BatchID      int64    `json:"batch_id,omitempty" jsonschema:"description=ID of the batch"`
-	BatchName    string   `json:"batch_name,omitempty" jsonschema:"description=Name of the batch"`
-	Repositories []string `json:"repositories" jsonschema:"description=List of repository full names to remove"`
+	BatchID      int64    `json:"batch_id,omitempty" jsonschema:"ID of the batch"`
+	BatchName    string   `json:"batch_name,omitempty" jsonschema:"Name of the batch"`
+	Repositories []string `json:"repositories" jsonschema:"List of repository full names to remove"`
 }
 
 // RetryBatchFailuresParams defines parameters for retrying failed migrations.
 type RetryBatchFailuresParams struct {
-	BatchID   int64  `json:"batch_id,omitempty" jsonschema:"description=ID of the batch"`
-	BatchName string `json:"batch_name,omitempty" jsonschema:"description=Name of the batch"`
+	BatchID   int64  `json:"batch_id,omitempty" jsonschema:"ID of the batch"`
+	BatchName string `json:"batch_name,omitempty" jsonschema:"Name of the batch"`
 }
 
 // --- Group 4: User Mapping Operations ---
 
 // ListUsersParams defines parameters for listing discovered users.
 type ListUsersParams struct {
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization"`
-	MaxCount     int    `json:"max_count,omitempty" jsonschema:"description=Maximum number to return (default 50)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization"`
+	MaxCount     int    `json:"max_count,omitempty" jsonschema:"Maximum number to return (default 50)"`
 }
 
 // GetUserStatsParams defines parameters for user statistics.
 type GetUserStatsParams struct {
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization"`
 }
 
 // ListUserMappingsParams defines parameters for listing user mappings.
 type ListUserMappingsParams struct {
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by source organization"`
-	Status       string `json:"status,omitempty" jsonschema:"description=Filter by mapping status (mapped, unmapped, suggested)"`
-	MaxCount     int    `json:"max_count,omitempty" jsonschema:"description=Maximum number to return (default 50)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by source organization"`
+	Status       string `json:"status,omitempty" jsonschema:"Filter by mapping status (mapped, unmapped, suggested)"`
+	MaxCount     int    `json:"max_count,omitempty" jsonschema:"Maximum number to return (default 50)"`
 }
 
 // SuggestUserMappingsParams defines parameters for suggesting user mappings.
 type SuggestUserMappingsParams struct {
-	Organization    string `json:"organization,omitempty" jsonschema:"description=Filter by source organization"`
-	DestinationOrg  string `json:"destination_org" jsonschema:"description=Destination organization to match against"`
-	OverwriteManual bool   `json:"overwrite_manual,omitempty" jsonschema:"description=Whether to overwrite manually set mappings"`
+	Organization    string `json:"organization,omitempty" jsonschema:"Filter by source organization"`
+	DestinationOrg  string `json:"destination_org" jsonschema:"Destination organization to match against"`
+	OverwriteManual bool   `json:"overwrite_manual,omitempty" jsonschema:"Whether to overwrite manually set mappings"`
 }
 
 // UpdateUserMappingParams defines parameters for updating a user mapping.
 type UpdateUserMappingParams struct {
-	SourceLogin      string `json:"source_login" jsonschema:"description=Source user login"`
-	DestinationLogin string `json:"destination_login,omitempty" jsonschema:"description=Destination user login to map to"`
-	Status           string `json:"status,omitempty" jsonschema:"description=Mapping status"`
+	SourceLogin      string `json:"source_login" jsonschema:"Source user login"`
+	DestinationLogin string `json:"destination_login,omitempty" jsonschema:"Destination user login to map to"`
+	Status           string `json:"status,omitempty" jsonschema:"Mapping status"`
 }
 
 // FetchMannequinsParams defines parameters for fetching mannequins.
 type FetchMannequinsParams struct {
-	Organization string `json:"organization" jsonschema:"description=Destination organization to fetch mannequins from"`
+	Organization string `json:"organization" jsonschema:"Destination organization to fetch mannequins from"`
 }
 
 // --- Group 5: Team Mapping Operations ---
 
 // ListTeamMappingsParams defines parameters for listing team mappings.
 type ListTeamMappingsParams struct {
-	SourceOrg string `json:"source_org,omitempty" jsonschema:"description=Filter by source organization"`
-	Status    string `json:"status,omitempty" jsonschema:"description=Filter by migration status"`
-	MaxCount  int    `json:"max_count,omitempty" jsonschema:"description=Maximum number to return (default 50)"`
+	SourceOrg string `json:"source_org,omitempty" jsonschema:"Filter by source organization"`
+	Status    string `json:"status,omitempty" jsonschema:"Filter by migration status"`
+	MaxCount  int    `json:"max_count,omitempty" jsonschema:"Maximum number to return (default 50)"`
 }
 
 // SuggestTeamMappingsParams defines parameters for suggesting team mappings.
 type SuggestTeamMappingsParams struct {
-	SourceOrg      string `json:"source_org,omitempty" jsonschema:"description=Filter by source organization"`
-	DestinationOrg string `json:"destination_org" jsonschema:"description=Destination organization to match against"`
+	SourceOrg      string `json:"source_org,omitempty" jsonschema:"Filter by source organization"`
+	DestinationOrg string `json:"destination_org" jsonschema:"Destination organization to match against"`
 }
 
 // ExecuteTeamMigrationParams defines parameters for executing team migration.
 type ExecuteTeamMigrationParams struct {
-	SourceOrg      string `json:"source_org,omitempty" jsonschema:"description=Filter by source organization"`
-	DestinationOrg string `json:"destination_org" jsonschema:"description=Destination organization"`
-	DryRun         bool   `json:"dry_run" jsonschema:"description=If true, only validate without executing"`
+	SourceOrg      string `json:"source_org,omitempty" jsonschema:"Filter by source organization"`
+	DestinationOrg string `json:"destination_org" jsonschema:"Destination organization"`
+	DryRun         bool   `json:"dry_run" jsonschema:"If true, only validate without executing"`
 }
 
 // GetTeamMigrationExecutionStatusParams defines parameters for team migration status.
@@ -390,26 +390,26 @@ type GetTeamMigrationExecutionStatusParams struct{}
 
 // GetAnalyticsSummaryParams defines parameters for analytics summary.
 type GetAnalyticsSummaryParams struct {
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization"`
-	SourceID     *int64 `json:"source_id,omitempty" jsonschema:"description=Filter by source ID"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization"`
+	SourceID     *int64 `json:"source_id,omitempty" jsonschema:"Filter by source ID"`
 }
 
 // GetExecutiveReportParams defines parameters for executive report.
 type GetExecutiveReportParams struct {
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization"`
 }
 
 // GetPermissionAuditParams defines parameters for permission audit.
 type GetPermissionAuditParams struct {
-	Organization string `json:"organization,omitempty" jsonschema:"description=Filter by organization"`
-	Team         string `json:"team,omitempty" jsonschema:"description=Filter by team (org/team-slug format)"`
+	Organization string `json:"organization,omitempty" jsonschema:"Filter by organization"`
+	Team         string `json:"team,omitempty" jsonschema:"Filter by team (org/team-slug format)"`
 }
 
 // --- Group 7: Organization Operations ---
 
 // ListOrganizationsParams defines parameters for listing organizations.
 type ListOrganizationsParams struct {
-	SourceID *int64 `json:"source_id,omitempty" jsonschema:"description=Filter by source ID"`
+	SourceID *int64 `json:"source_id,omitempty" jsonschema:"Filter by source ID"`
 }
 
 // registerTools registers all migration tools with the SDK client.
