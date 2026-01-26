@@ -58,10 +58,12 @@ type Client struct {
 	sessions   map[string]*SDKSession
 	sessionsMu sync.RWMutex
 
-	// Current auth context for tool execution
-	// Set before sending messages, used by tools during execution
-	currentAuth   *AuthContext
-	currentAuthMu sync.RWMutex
+	// Message processing serialization
+	// The Copilot SDK's tool execution model doesn't support passing auth context
+	// per-request, so we serialize message processing to prevent race conditions
+	// where concurrent requests could access each other's auth context.
+	messageMu   sync.Mutex
+	currentAuth *AuthContext // Protected by messageMu during message processing
 
 	// Lifecycle
 	started bool
@@ -221,25 +223,25 @@ func (c *Client) IsStarted() bool {
 	return c.started
 }
 
-// setCurrentAuth sets the auth context for the current message processing.
-func (c *Client) setCurrentAuth(auth *AuthContext) {
-	c.currentAuthMu.Lock()
-	defer c.currentAuthMu.Unlock()
-	c.currentAuth = auth
-}
-
-// clearCurrentAuth clears the auth context after message processing.
-func (c *Client) clearCurrentAuth() {
-	c.currentAuthMu.Lock()
-	defer c.currentAuthMu.Unlock()
-	c.currentAuth = nil
-}
-
 // getCurrentAuth returns the current auth context for tool authorization.
+// This must only be called while messageMu is held (during message processing).
 func (c *Client) getCurrentAuth() *AuthContext {
-	c.currentAuthMu.RLock()
-	defer c.currentAuthMu.RUnlock()
 	return c.currentAuth
+}
+
+// setCurrentAuth sets the auth context for testing purposes.
+// In production, auth is set by acquiring messageMu in SendMessage/StreamMessage.
+func (c *Client) setCurrentAuth(auth *AuthContext) {
+	c.messageMu.Lock()
+	c.currentAuth = auth
+	c.messageMu.Unlock()
+}
+
+// clearCurrentAuth clears the auth context for testing purposes.
+func (c *Client) clearCurrentAuth() {
+	c.messageMu.Lock()
+	c.currentAuth = nil
+	c.messageMu.Unlock()
 }
 
 // CreateSession creates a new SDK session for a user with authorization context.
@@ -319,6 +321,8 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*SDKSession,
 
 	if ok {
 		if time.Now().After(sess.ExpiresAt) {
+			// Clean up expired session to prevent memory leaks
+			c.cleanupExpiredSession(sessionID, sess)
 			return nil, fmt.Errorf("session expired")
 		}
 		return sess, nil
@@ -378,6 +382,22 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*SDKSession,
 	return sess, nil
 }
 
+// cleanupExpiredSession removes an expired session from memory and destroys its SDK resources.
+// This prevents memory leaks from accumulated expired sessions.
+func (c *Client) cleanupExpiredSession(sessionID string, sess *SDKSession) {
+	c.sessionsMu.Lock()
+	defer c.sessionsMu.Unlock()
+
+	// Double-check the session is still in the map (another goroutine may have cleaned it)
+	if existingSess, ok := c.sessions[sessionID]; ok && existingSess == sess {
+		if sess.Session != nil {
+			_ = sess.Session.Destroy()
+		}
+		delete(c.sessions, sessionID)
+		c.logger.Debug("Cleaned up expired session", "session_id", sessionID)
+	}
+}
+
 // UpdateSessionAuth updates the authorization context for an existing session.
 // This should be called by handlers to ensure the session uses the current user's permissions.
 func (c *Client) UpdateSessionAuth(sessionID string, authCtx *AuthContext) {
@@ -429,9 +449,15 @@ func (c *Client) SendMessage(ctx context.Context, sessionID, message string) (*m
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	// Set auth context for tool authorization during this message
-	c.setCurrentAuth(sess.Auth)
-	defer c.clearCurrentAuth()
+	// Serialize message processing to prevent auth context race conditions.
+	// The Copilot SDK's tool execution model doesn't support per-request context,
+	// so we must ensure only one message is processed at a time.
+	c.messageMu.Lock()
+	c.currentAuth = sess.Auth
+	defer func() {
+		c.currentAuth = nil
+		c.messageMu.Unlock()
+	}()
 
 	// Persist user message
 	userMsg := &models.CopilotMessage{
@@ -495,9 +521,15 @@ func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, o
 		return fmt.Errorf("failed to get session: %w", err)
 	}
 
-	// Set auth context for tool authorization during this message
-	c.setCurrentAuth(sess.Auth)
-	defer c.clearCurrentAuth()
+	// Serialize message processing to prevent auth context race conditions.
+	// The Copilot SDK's tool execution model doesn't support per-request context,
+	// so we must ensure only one message is processed at a time.
+	c.messageMu.Lock()
+	c.currentAuth = sess.Auth
+	defer func() {
+		c.currentAuth = nil
+		c.messageMu.Unlock()
+	}()
 
 	// Persist user message
 	userMsg := &models.CopilotMessage{
