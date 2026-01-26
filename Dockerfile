@@ -57,8 +57,9 @@ RUN if [ "$(uname -m)" = "aarch64" ]; then \
 
 # Install GitHub Copilot CLI globally
 # The CLI is required for the Copilot SDK to function
-RUN npm install -g @githubnext/github-copilot-cli && \
-    ln -sf /usr/local/lib/node_modules/@githubnext/github-copilot-cli/bin/copilot /usr/local/bin/copilot
+# Note: Alpine's npm installs to /usr/lib/node_modules/, not /usr/local/lib/node_modules/
+RUN npm install -g @github/copilot && \
+    ln -sf /usr/lib/node_modules/@github/copilot/bin/copilot /usr/local/bin/copilot
 
 WORKDIR /app
 
