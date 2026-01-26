@@ -13,17 +13,14 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings'
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_model')
     ALTER TABLE settings ADD copilot_model NVARCHAR(MAX);
 
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_max_tokens')
-    ALTER TABLE settings ADD copilot_max_tokens INT;
-
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_session_timeout_min')
     ALTER TABLE settings ADD copilot_session_timeout_min INT NOT NULL DEFAULT 30;
 
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_mcp_enabled')
-    ALTER TABLE settings ADD copilot_mcp_enabled BIT NOT NULL DEFAULT 1;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_streaming')
+    ALTER TABLE settings ADD copilot_streaming BIT NOT NULL DEFAULT 1;
 
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_mcp_port')
-    ALTER TABLE settings ADD copilot_mcp_port INT NOT NULL DEFAULT 8081;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_log_level')
+    ALTER TABLE settings ADD copilot_log_level NVARCHAR(50) NOT NULL DEFAULT 'info';
 
 -- Create table for Copilot chat sessions
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'copilot_sessions')
@@ -69,11 +66,9 @@ IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AN
     ALTER TABLE settings DROP COLUMN copilot_cli_path;
 IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_model')
     ALTER TABLE settings DROP COLUMN copilot_model;
-IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_max_tokens')
-    ALTER TABLE settings DROP COLUMN copilot_max_tokens;
 IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_session_timeout_min')
     ALTER TABLE settings DROP COLUMN copilot_session_timeout_min;
-IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_mcp_enabled')
-    ALTER TABLE settings DROP COLUMN copilot_mcp_enabled;
-IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_mcp_port')
-    ALTER TABLE settings DROP COLUMN copilot_mcp_port;
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_streaming')
+    ALTER TABLE settings DROP COLUMN copilot_streaming;
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'settings') AND name = 'copilot_log_level')
+    ALTER TABLE settings DROP COLUMN copilot_log_level;

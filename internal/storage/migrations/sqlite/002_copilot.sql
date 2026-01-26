@@ -22,19 +22,15 @@ ALTER TABLE settings ADD COLUMN copilot_model TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE settings ADD COLUMN copilot_max_tokens INTEGER;
--- +goose StatementEnd
-
--- +goose StatementBegin
 ALTER TABLE settings ADD COLUMN copilot_session_timeout_min INTEGER NOT NULL DEFAULT 30;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE settings ADD COLUMN copilot_mcp_enabled INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE settings ADD COLUMN copilot_streaming INTEGER NOT NULL DEFAULT 1;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE settings ADD COLUMN copilot_mcp_port INTEGER NOT NULL DEFAULT 8081;
+ALTER TABLE settings ADD COLUMN copilot_log_level TEXT NOT NULL DEFAULT 'info';
 -- +goose StatementEnd
 
 -- Create table for Copilot chat sessions
