@@ -143,7 +143,7 @@ func (s *Service) GetStatus(ctx context.Context, userLogin string, token string,
 
 // CreateSession creates a new chat session with authorization context.
 func (s *Service) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext) (*SDKSession, error) {
-	return s.client.CreateSession(ctx, userID, userLogin, authCtx)
+	return s.client.CreateSession(ctx, userID, userLogin, timeoutMin, authCtx)
 }
 
 // GetSession retrieves a session by ID.

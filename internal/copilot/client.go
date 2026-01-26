@@ -243,7 +243,8 @@ func (c *Client) getCurrentAuth() *AuthContext {
 }
 
 // CreateSession creates a new SDK session for a user with authorization context.
-func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, authCtx *AuthContext) (*SDKSession, error) {
+// If timeoutMin is 0 or negative, the client's configured default timeout is used.
+func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext) (*SDKSession, error) {
 	if !c.IsStarted() {
 		if err := c.Start(); err != nil {
 			return nil, err
@@ -252,7 +253,13 @@ func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, au
 
 	sessionID := uuid.New().String()
 	now := time.Now()
-	expiresAt := now.Add(time.Duration(c.config.SessionTimeoutMin) * time.Minute)
+
+	// Use provided timeout or fall back to client config
+	timeout := timeoutMin
+	if timeout <= 0 {
+		timeout = c.config.SessionTimeoutMin
+	}
+	expiresAt := now.Add(time.Duration(timeout) * time.Minute)
 
 	// Build system message with migration context and permissions
 	systemMessage := c.buildSystemMessage(ctx, authCtx)
