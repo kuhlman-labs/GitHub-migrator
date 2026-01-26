@@ -18,6 +18,14 @@ export default defineConfig({
             req.setTimeout(120000);
             res.setTimeout(120000);
           });
+          // Log proxy errors for debugging
+          proxy.on('error', (err, req, res) => {
+            console.error('Proxy error:', err.message, 'for', req.url);
+          });
+          // Log when proxy request is made
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('Proxying:', req.method, req.url, '-> http://localhost:8080');
+          });
         },
       },
     },

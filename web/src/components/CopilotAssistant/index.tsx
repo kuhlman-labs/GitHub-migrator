@@ -157,8 +157,25 @@ export function CopilotAssistant() {
     }
   }, [failedMessageContent]);
 
-  const handleSendStreaming = useCallback(() => {
+  const handleSendStreaming = useCallback(async () => {
     if (!message.trim() || isStreaming) return;
+    
+    // Verify copilot is still available before sending
+    if (!status?.available) {
+      showError('Copilot is not available. Please check the status and settings.');
+      return;
+    }
+
+    // For the first message in a session, test the connection first
+    if (!currentSessionId) {
+      console.log('Testing copilot connection before first message...');
+      const testResult = await copilotApi.testConnection();
+      if (!testResult.ok) {
+        showError(`Connection test failed: ${testResult.error}`);
+        return;
+      }
+      console.log('Connection test passed');
+    }
 
     const userMessageContent = message;
     setMessage('');
@@ -250,7 +267,7 @@ export function CopilotAssistant() {
     );
 
     streamAbortRef.current = abort;
-  }, [message, currentSessionId, isStreaming, queryClient, showError]);
+  }, [message, currentSessionId, isStreaming, queryClient, showError, status]);
 
   const handleStopStreaming = useCallback(() => {
     if (streamAbortRef.current) {

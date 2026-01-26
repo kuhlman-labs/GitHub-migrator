@@ -34,6 +34,44 @@ export const copilotApi = {
   },
 
   /**
+   * Test the stream endpoint connection without sending a real message.
+   * This helps diagnose connection issues before attempting to stream.
+   */
+  testConnection: async (): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      // Use fetch with a HEAD request to test the endpoint
+      const baseUrl = client.defaults.baseURL || '/api/v1';
+      const response = await fetch(`${baseUrl}/copilot/chat/stream?message=test`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'text/event-stream',
+        },
+      });
+      
+      // Even if we get an error response, we at least know the endpoint is reachable
+      console.log('Copilot connection test response:', response.status, response.statusText);
+      
+      if (response.status === 401) {
+        return { ok: false, error: 'Authentication required - you may need to log in again' };
+      }
+      if (response.status === 403) {
+        return { ok: false, error: 'Copilot is not enabled in settings' };
+      }
+      if (!response.ok) {
+        return { ok: false, error: `Server returned ${response.status}: ${response.statusText}` };
+      }
+      
+      // Close the connection since this is just a test
+      response.body?.cancel();
+      return { ok: true };
+    } catch (err) {
+      console.error('Copilot connection test failed:', err);
+      return { ok: false, error: `Connection failed: ${err}` };
+    }
+  },
+
+  /**
    * Send a message to Copilot (non-streaming)
    */
   sendMessage: async (request: ChatRequest): Promise<ChatResponse> => {
@@ -60,8 +98,28 @@ export const copilotApi = {
     const baseUrl = client.defaults.baseURL || '/api/v1';
     const url = `${baseUrl}/copilot/chat/stream?${params.toString()}`;
     
-    const eventSource = new EventSource(url, {
-      withCredentials: true,
+    console.log('Copilot: Creating EventSource connection to:', url);
+    
+    let eventSource: EventSource;
+    try {
+      eventSource = new EventSource(url, {
+        withCredentials: true,
+      });
+      console.log('Copilot: EventSource created, readyState:', eventSource.readyState);
+    } catch (err) {
+      console.error('Copilot: Failed to create EventSource:', err);
+      if (callbacks?.onError) {
+        callbacks.onError(`Failed to create connection: ${err}`);
+      }
+      return {
+        eventSource: null as unknown as EventSource,
+        abort: () => {},
+      };
+    }
+
+    // Log when connection opens successfully
+    eventSource.addEventListener('open', () => {
+      console.log('Copilot: EventSource connection opened successfully');
     });
 
     // Handle session event (provides session ID for new sessions)
@@ -136,13 +194,22 @@ export const copilotApi = {
         } catch {
           // If it's not a JSON error, it might be a connection error
           if (callbacks?.onError) {
-            callbacks.onError('Connection error');
+            callbacks.onError('Connection error: Failed to parse server response');
           }
         }
       } else {
-        // Connection error
+        // Connection error - EventSource couldn't connect or received non-SSE response
+        // Check the readyState to get more info
+        const readyState = eventSource.readyState;
+        let errorMessage = 'Connection error';
+        if (readyState === EventSource.CONNECTING) {
+          errorMessage = 'Connection failed: Unable to connect to server. This may be due to authentication issues.';
+        } else if (readyState === EventSource.CLOSED) {
+          errorMessage = 'Connection closed: Server rejected the connection. Please check if you are logged in.';
+        }
+        console.error('EventSource error:', { readyState, event, url });
         if (callbacks?.onError) {
-          callbacks.onError('Connection error');
+          callbacks.onError(errorMessage);
         }
       }
       eventSource.close();
