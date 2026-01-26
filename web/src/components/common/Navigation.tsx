@@ -149,6 +149,18 @@ export function Navigation() {
                 >
                   Dashboard
                 </Link>
+                <Link 
+                  to="/copilot" 
+                  className={`${linkClass('/copilot')} inline-flex items-center`}
+                  style={{ 
+                    color: 'var(--fgColor-default)',
+                    backgroundColor: isActive('/copilot') ? 'var(--bgColor-neutral-muted)' : 'transparent'
+                  }}
+                  title="AI-powered migration assistant"
+                >
+                  <CopilotIcon size={16} className="mr-1.5" />
+                  Migration Copilot
+                </Link>
                 
                 {/* Separator: Overview → Explore */}
                 <div className="w-px h-4 mx-2" style={{ backgroundColor: 'var(--borderColor-muted)' }} />
@@ -213,18 +225,6 @@ export function Navigation() {
                   }}
                 >
                   Batches
-                </Link>
-                <Link 
-                  to="/copilot" 
-                  className={linkClass('/copilot')}
-                  style={{ 
-                    color: 'var(--fgColor-default)',
-                    backgroundColor: isActive('/copilot') ? 'var(--bgColor-neutral-muted)' : 'transparent'
-                  }}
-                  title="AI-powered migration assistant"
-                >
-                  <CopilotIcon size={16} className="mr-1" />
-                  Copilot
                 </Link>
                 
                 {/* Separator: Execute → Report */}

@@ -3,6 +3,7 @@ module github.com/kuhlman-labs/github-migrator
 go 1.25
 
 require (
+	github.com/github/copilot-sdk/go v0.1.18
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v75 v75.0.0
 	github.com/google/uuid v1.6.0
@@ -34,6 +35,7 @@ require (
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

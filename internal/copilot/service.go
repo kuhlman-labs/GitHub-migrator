@@ -1,100 +1,86 @@
+// Package copilot provides the Copilot chat service integration using the official SDK.
 package copilot
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
-	"os/exec"
-	"strings"
-	"sync"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
 
-// Service manages Copilot interactions and sessions
+// Service manages Copilot interactions using the SDK client.
+// This is a facade that delegates to the SDK Client.
 type Service struct {
+	client           *Client
 	db               *storage.Database
 	logger           *slog.Logger
 	licenseValidator *LicenseValidator
-	toolRegistry     *ToolRegistry
-	intentDetector   *IntentDetector
-	toolExecutor     *ToolExecutor
-	sessions         map[string]*Session
-	sessionsMu       sync.RWMutex
 }
 
-// Session represents an active Copilot chat session
-type Session struct {
-	ID             string
-	UserID         string
-	UserLogin      string
-	Messages       []Message
-	LastToolResult *ToolExecutionResult // Last tool execution result for follow-up actions
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	ExpiresAt      time.Time
-}
-
-// Message represents a chat message
-type Message struct {
-	Role        string       `json:"role"` // "user", "assistant", "system"
-	Content     string       `json:"content"`
-	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
-	ToolResults []ToolResult `json:"tool_results,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
-}
-
-// ToolCall represents a tool invocation
-type ToolCall struct {
-	ID     string         `json:"id"`
-	Name   string         `json:"name"`
-	Args   map[string]any `json:"args"`
-	Status string         `json:"status"` // "pending", "completed", "failed"
-}
-
-// ToolResult represents the result of a tool execution
-type ToolResult struct {
-	ToolCallID string `json:"tool_call_id"`
-	Success    bool   `json:"success"`
-	Result     any    `json:"result,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
-
-// ServiceConfig configures the Copilot service
+// ServiceConfig configures the Copilot service using the SDK.
 type ServiceConfig struct {
-	CLIPath           string
-	Model             string
-	MaxTokens         int
-	SessionTimeoutMin int
-	RequireLicense    bool
-	GitHubBaseURL     string
-	MCPEnabled        bool
-	MCPPort           int
+	CLIPath           string // Path to Copilot CLI executable
+	CLIUrl            string // URL of existing CLI server (optional)
+	Model             string // AI model to use (e.g., DefaultModel)
+	SessionTimeoutMin int    // Session timeout in minutes
+	RequireLicense    bool   // Require valid Copilot license
+	GitHubBaseURL     string // GitHub base URL for license validation
+	Streaming         bool   // Enable streaming responses
+	LogLevel          string // SDK log level (debug, info, warn, error)
 }
 
-// NewService creates a new Copilot service
+// NewService creates a new Copilot service that uses the SDK.
 func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig) *Service {
 	licenseValidator := NewLicenseValidator(config.GitHubBaseURL, logger)
-	toolRegistry := NewToolRegistry(logger)
-	intentDetector := NewIntentDetector()
-	toolExecutor := NewToolExecutor(db, logger)
+
+	// Create SDK client configuration
+	clientConfig := ClientConfig{
+		CLIPath:           config.CLIPath,
+		CLIUrl:            config.CLIUrl,
+		Model:             config.Model,
+		LogLevel:          config.LogLevel,
+		SessionTimeoutMin: config.SessionTimeoutMin,
+		Streaming:         config.Streaming,
+	}
+
+	// Set defaults
+	if clientConfig.Model == "" {
+		clientConfig.Model = DefaultModel
+	}
+	if clientConfig.SessionTimeoutMin == 0 {
+		clientConfig.SessionTimeoutMin = 30
+	}
+	if clientConfig.LogLevel == "" {
+		clientConfig.LogLevel = DefaultLogLevel
+	}
+
+	client := NewClient(db, logger, clientConfig)
 
 	return &Service{
+		client:           client,
 		db:               db,
 		logger:           logger,
 		licenseValidator: licenseValidator,
-		toolRegistry:     toolRegistry,
-		intentDetector:   intentDetector,
-		toolExecutor:     toolExecutor,
-		sessions:         make(map[string]*Session),
 	}
 }
 
-// GetStatus returns the current Copilot status for a user
+// Start initializes the SDK client.
+func (s *Service) Start() error {
+	return s.client.Start()
+}
+
+// Stop shuts down the SDK client.
+func (s *Service) Stop() error {
+	return s.client.Stop()
+}
+
+// GetClient returns the underlying SDK client.
+func (s *Service) GetClient() *Client {
+	return s.client
+}
+
+// GetStatus returns the current Copilot status for a user.
 func (s *Service) GetStatus(ctx context.Context, userLogin string, token string, settings *models.Settings) (*models.CopilotStatus, error) {
 	status := &models.CopilotStatus{
 		Enabled:         settings.CopilotEnabled,
@@ -155,809 +141,118 @@ func (s *Service) GetStatus(ctx context.Context, userLogin string, token string,
 	return status, nil
 }
 
-// CreateSession creates a new chat session
-func (s *Service) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int) (*Session, error) {
-	sessionID := uuid.New().String()
-	now := time.Now()
-	expiresAt := now.Add(time.Duration(timeoutMin) * time.Minute)
-
-	session := &Session{
-		ID:        sessionID,
-		UserID:    userID,
-		UserLogin: userLogin,
-		Messages:  []Message{},
-		CreatedAt: now,
-		UpdatedAt: now,
-		ExpiresAt: expiresAt,
-	}
-
-	// Store in memory
-	s.sessionsMu.Lock()
-	s.sessions[sessionID] = session
-	s.sessionsMu.Unlock()
-
-	// Also persist to database
-	dbSession := &models.CopilotSession{
-		ID:        sessionID,
-		UserID:    userID,
-		UserLogin: userLogin,
-		CreatedAt: now,
-		UpdatedAt: now,
-		ExpiresAt: expiresAt,
-	}
-	if err := s.db.CreateCopilotSession(ctx, dbSession); err != nil {
-		s.logger.Error("Failed to persist Copilot session", "error", err, "session_id", sessionID)
-		// Continue anyway - in-memory session is still valid
-	}
-
-	s.logger.Info("Created Copilot session", "session_id", sessionID, "user", userLogin)
-	return session, nil
+// CreateSession creates a new chat session with authorization context.
+func (s *Service) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext) (*SDKSession, error) {
+	return s.client.CreateSession(ctx, userID, userLogin, authCtx)
 }
 
-// GetSession retrieves a session by ID
-func (s *Service) GetSession(ctx context.Context, sessionID string) (*Session, error) {
-	s.sessionsMu.RLock()
-	session, ok := s.sessions[sessionID]
-	s.sessionsMu.RUnlock()
-
-	if ok {
-		if time.Now().After(session.ExpiresAt) {
-			return nil, fmt.Errorf("session expired")
-		}
-		return session, nil
-	}
-
-	// Try to load from database
-	dbSession, err := s.db.GetCopilotSession(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("session not found: %w", err)
-	}
-
-	if dbSession == nil {
-		return nil, fmt.Errorf("session not found")
-	}
-
-	if dbSession.IsExpired() {
-		return nil, fmt.Errorf("session expired")
-	}
-
-	// Reconstruct session
-	session = &Session{
-		ID:        dbSession.ID,
-		UserID:    dbSession.UserID,
-		UserLogin: dbSession.UserLogin,
-		Messages:  make([]Message, 0, len(dbSession.Messages)),
-		CreatedAt: dbSession.CreatedAt,
-		UpdatedAt: dbSession.UpdatedAt,
-		ExpiresAt: dbSession.ExpiresAt,
-	}
-
-	// Convert messages
-	for _, msg := range dbSession.Messages {
-		message := Message{
-			Role:      msg.Role,
-			Content:   msg.Content,
-			CreatedAt: msg.CreatedAt,
-		}
-		if msg.ToolCalls != nil {
-			_ = json.Unmarshal(msg.ToolCalls, &message.ToolCalls)
-		}
-		if msg.ToolResults != nil {
-			_ = json.Unmarshal(msg.ToolResults, &message.ToolResults)
-		}
-		session.Messages = append(session.Messages, message)
-	}
-
-	// Cache in memory
-	s.sessionsMu.Lock()
-	s.sessions[sessionID] = session
-	s.sessionsMu.Unlock()
-
-	return session, nil
+// GetSession retrieves a session by ID.
+func (s *Service) GetSession(ctx context.Context, sessionID string) (*SDKSession, error) {
+	return s.client.GetSession(ctx, sessionID)
 }
 
-// ListSessions returns all sessions for a user
+// ListSessions returns all sessions for a user.
 func (s *Service) ListSessions(ctx context.Context, userID string) ([]*models.CopilotSessionResponse, error) {
-	sessions, err := s.db.ListCopilotSessions(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list sessions: %w", err)
-	}
-
-	responses := make([]*models.CopilotSessionResponse, 0, len(sessions))
-	for _, session := range sessions {
-		responses = append(responses, session.ToResponse())
-	}
-	return responses, nil
+	return s.client.ListSessions(ctx, userID)
 }
 
-// DeleteSession deletes a session
+// DeleteSession deletes a session.
 func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
-	// Remove from memory
-	s.sessionsMu.Lock()
-	delete(s.sessions, sessionID)
-	s.sessionsMu.Unlock()
-
-	// Remove from database
-	if err := s.db.DeleteCopilotSession(ctx, sessionID); err != nil {
-		return fmt.Errorf("failed to delete session: %w", err)
-	}
-
-	s.logger.Info("Deleted Copilot session", "session_id", sessionID)
-	return nil
+	return s.client.DeleteSession(ctx, sessionID)
 }
 
-// SendMessage sends a message to Copilot and returns the response
+// SendMessage sends a message to Copilot and returns the response.
 func (s *Service) SendMessage(ctx context.Context, sessionID, userMessage string, settings *models.Settings) (*models.ChatResponse, error) {
-	session, err := s.GetSession(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %w", err)
-	}
-
-	// Add user message to session (with lock to prevent race conditions)
-	userMsg := Message{
-		Role:      models.RoleUser,
-		Content:   userMessage,
-		CreatedAt: time.Now(),
-	}
-	s.sessionsMu.Lock()
-	session.Messages = append(session.Messages, userMsg)
-	session.UpdatedAt = time.Now()
-	// Make a copy of messages for processing (to release lock during CLI call)
-	messagesCopy := make([]Message, len(session.Messages))
-	copy(messagesCopy, session.Messages)
-	s.sessionsMu.Unlock()
-
-	// Persist user message
-	userMsgModel := &models.CopilotMessage{
-		SessionID: sessionID,
-		Role:      models.RoleUser,
-		Content:   userMessage,
-		CreatedAt: userMsg.CreatedAt,
-	}
-	userMsgID, err := s.db.CreateCopilotMessage(ctx, userMsgModel)
-	if err != nil {
-		s.logger.Error("Failed to persist user message", "error", err)
-		return nil, fmt.Errorf("failed to persist user message: %w", err)
-	}
-
-	// Process with Copilot using the copied messages (avoids holding lock during CLI call)
-	// Create a temporary session view for processing - include LastToolResult for follow-ups
-	sessionView := &Session{
-		ID:             session.ID,
-		UserID:         session.UserID,
-		UserLogin:      session.UserLogin,
-		Messages:       messagesCopy,
-		LastToolResult: session.LastToolResult, // Carry over for follow-up detection
-		CreatedAt:      session.CreatedAt,
-		UpdatedAt:      session.UpdatedAt,
-		ExpiresAt:      session.ExpiresAt,
-	}
-	response, err := s.processMessage(ctx, sessionView, userMessage, settings)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process message: %w", err)
-	}
-
-	// Add assistant response to session (with lock)
-	assistantMsg := Message{
-		Role:        models.RoleAssistant,
-		Content:     response.Content,
-		ToolCalls:   response.ToolCalls,
-		ToolResults: response.ToolResults,
-		CreatedAt:   time.Now(),
-	}
-	s.sessionsMu.Lock()
-	session.Messages = append(session.Messages, assistantMsg)
-	session.UpdatedAt = time.Now()
-	// Preserve the LastToolResult from processing for future follow-ups
-	if sessionView.LastToolResult != nil {
-		session.LastToolResult = sessionView.LastToolResult
-	}
-	s.sessionsMu.Unlock()
-
-	// Persist assistant message
-	toolCallsJSON, err := json.Marshal(response.ToolCalls)
-	if err != nil {
-		s.logger.Error("Failed to marshal tool calls", "error", err)
-		toolCallsJSON = nil
-	}
-	toolResultsJSON, err := json.Marshal(response.ToolResults)
-	if err != nil {
-		s.logger.Error("Failed to marshal tool results", "error", err)
-		toolResultsJSON = nil
-	}
-	assistantMsgModel := &models.CopilotMessage{
-		SessionID:   sessionID,
-		Role:        models.RoleAssistant,
-		Content:     response.Content,
-		ToolCalls:   toolCallsJSON,
-		ToolResults: toolResultsJSON,
-		CreatedAt:   assistantMsg.CreatedAt,
-	}
-	assistantMsgID, err := s.db.CreateCopilotMessage(ctx, assistantMsgModel)
-	if err != nil {
-		s.logger.Error("Failed to persist assistant message", "error", err)
-		return nil, fmt.Errorf("failed to persist assistant message: %w", err)
-	}
-
-	s.logger.Debug("Messages persisted successfully",
-		"session_id", sessionID,
-		"user_msg_id", userMsgID,
-		"assistant_msg_id", assistantMsgID)
-
-	return &models.ChatResponse{
-		SessionID:   sessionID,
-		MessageID:   assistantMsgID,
-		Content:     response.Content,
-		ToolCalls:   convertToolCalls(response.ToolCalls),
-		ToolResults: convertToolResults(response.ToolResults),
-		Done:        true,
-	}, nil
+	return s.client.SendMessage(ctx, sessionID, userMessage)
 }
 
-// processMessage processes a user message and generates a response
-func (s *Service) processMessage(ctx context.Context, session *Session, userMessage string, settings *models.Settings) (*Message, error) {
-	// Get CLI path from settings
-	cliPath := "copilot"
-	if settings.CopilotCLIPath != nil && *settings.CopilotCLIPath != "" {
-		cliPath = *settings.CopilotCLIPath
-	}
-
-	// Detect intent from user message
-	var toolResult *ToolExecutionResult
-	intent := s.intentDetector.DetectIntent(userMessage)
-
-	// Check for follow-up batch creation
-	isFollowUp := s.intentDetector.IsFollowUpBatchCreate(userMessage)
-	s.logger.Debug("Intent detection",
-		"user_message", userMessage,
-		"is_follow_up", isFollowUp,
-		"has_last_result", session.LastToolResult != nil,
-		"has_follow_up_action", session.LastToolResult != nil && session.LastToolResult.FollowUp != nil,
-		"detected_intent", intent != nil,
-	)
-
-	if isFollowUp && session.LastToolResult != nil && session.LastToolResult.FollowUp != nil {
-		// Extract batch name from message or use default
-		batchName := s.intentDetector.ExtractBatchNameFromFollowUp(userMessage)
-		if batchName == "" {
-			batchName = session.LastToolResult.FollowUp.DefaultName
-		}
-
-		// Extract destination organization if mentioned
-		destinationOrg := s.intentDetector.ExtractDestinationOrg(userMessage)
-
-		// Create batch from previous results
-		s.logger.Info("Executing follow-up batch creation",
-			"batch_name", batchName,
-			"repository_count", len(session.LastToolResult.FollowUp.Repositories),
-			"destination_org", destinationOrg,
-		)
-		batchArgs := map[string]any{
-			"name": batchName,
-		}
-		if destinationOrg != "" {
-			batchArgs["destination_org"] = destinationOrg
-		}
-		batchIntent := &DetectedIntent{
-			Tool:       ToolCreateBatch,
-			Args:       batchArgs,
-			Confidence: 1.0,
-		}
-		result, err := s.toolExecutor.ExecuteTool(ctx, batchIntent, session.LastToolResult)
-		if err != nil {
-			s.logger.Error("Failed to execute batch creation", "error", err)
-		} else {
-			s.logger.Info("Batch creation completed", "success", result.Success, "summary", result.Summary)
-			toolResult = result
-		}
-	} else if intent != nil && intent.IsConfident() {
-		// Execute the detected tool
-		s.logger.Info("Detected intent", "tool", intent.Tool, "confidence", intent.Confidence)
-		result, err := s.toolExecutor.ExecuteTool(ctx, intent, session.LastToolResult)
-		if err != nil {
-			s.logger.Error("Failed to execute tool", "tool", intent.Tool, "error", err)
-		} else {
-			toolResult = result
-		}
-	}
-
-	// Store the tool result for potential follow-ups
-	if toolResult != nil {
-		session.LastToolResult = toolResult
-	}
-
-	// Fetch migration context from database
-	migrationContext := s.getMigrationContext(ctx, settings)
-
-	// Build the system prompt with context about available tools and environment
-	tools := s.toolRegistry.GetTools()
-	systemPrompt := s.buildSystemPrompt(tools, migrationContext)
-
-	// If we have tool results, enhance the prompt with them
-	if toolResult != nil {
-		systemPrompt += s.formatToolResultsForPrompt(toolResult)
-	}
-
-	// Get MCP configuration from settings
-	mcpEnabled := settings.CopilotMCPEnabled
-	mcpPort := settings.CopilotMCPPort
-	if mcpPort == 0 {
-		mcpPort = 8081 // Default port
-	}
-
-	// Try to call the Copilot CLI with MCP configuration
-	response, err := s.callCopilotCLI(ctx, cliPath, systemPrompt, session.Messages, userMessage, mcpEnabled, mcpPort)
-	if err != nil {
-		s.logger.Error("Failed to call Copilot CLI, using fallback response", "error", err)
-		// If we have tool results, generate a response from them instead
-		if toolResult != nil {
-			response = s.generateResponseFromToolResult(toolResult)
-		} else {
-			response = s.generateFallbackResponse(userMessage, err)
-		}
-	}
-
-	// Build tool calls and results for the message
-	var toolCalls []ToolCall
-	var toolResults []ToolResult
-	if toolResult != nil {
-		// Use intent.Args if available, otherwise create empty args
-		var args map[string]any
-		if intent != nil {
-			args = intent.Args
-		} else {
-			args = make(map[string]any)
-		}
-		toolCalls = []ToolCall{{
-			ID:     fmt.Sprintf("call_%d", time.Now().UnixNano()),
-			Name:   toolResult.Tool,
-			Args:   args,
-			Status: "completed",
-		}}
-		toolResults = []ToolResult{{
-			ToolCallID: toolCalls[0].ID,
-			Success:    toolResult.Success,
-			Result:     toolResult.Result,
-			Error:      toolResult.Error,
-		}}
-	}
-
-	return &Message{
-		Role:        models.RoleAssistant,
-		Content:     response,
-		ToolCalls:   toolCalls,
-		ToolResults: toolResults,
-		CreatedAt:   time.Now(),
-	}, nil
+// StreamMessage sends a message and streams the response via a callback.
+func (s *Service) StreamMessage(ctx context.Context, sessionID, message string, onEvent func(event StreamEvent)) error {
+	return s.client.StreamMessage(ctx, sessionID, message, onEvent)
 }
 
-// MigrationContext holds context about the current migration environment
-type MigrationContext struct {
-	// Source info
-	SourceType string
-	SourceURL  string
-	SourceOrgs []string
-
-	// Destination info
-	DestinationURL            string
-	DestinationEnterpriseSlug string
-
-	// Repository stats
-	TotalRepositories  int
-	PendingRepos       int
-	InProgressRepos    int
-	CompletedRepos     int
-	FailedRepos        int
-	AvgComplexityScore float64
-
-	// Batch info
-	TotalBatches     int
-	PendingBatches   int
-	ScheduledBatches int
-}
-
-// getMigrationContext fetches the current migration context from the database
-func (s *Service) getMigrationContext(ctx context.Context, settings *models.Settings) *MigrationContext {
-	mc := &MigrationContext{}
-
-	// Get destination configuration from settings
-	mc.DestinationURL = settings.DestinationBaseURL
-	if settings.DestinationEnterpriseSlug != nil {
-		mc.DestinationEnterpriseSlug = *settings.DestinationEnterpriseSlug
-	}
-
-	// Get source organizations from repositories
-	orgs, err := s.db.GetDistinctOrganizations(ctx)
-	if err == nil {
-		mc.SourceOrgs = orgs
-	}
-
-	// Get repository statistics by status
-	stats, err := s.db.GetRepositoryStatsByStatus(ctx)
-	if err == nil {
-		for status, count := range stats {
-			mc.TotalRepositories += count
-			switch status {
-			case "pending", "not_started":
-				mc.PendingRepos += count
-			case "in_progress", "queued", "exporting", "importing":
-				mc.InProgressRepos += count
-			case "completed", "complete", "migration_complete":
-				mc.CompletedRepos += count
-			case "failed", "error":
-				mc.FailedRepos += count
-			}
-		}
-	}
-
-	// Get batch counts
-	batches, err := s.db.ListBatches(ctx)
-	if err == nil {
-		mc.TotalBatches = len(batches)
-		for _, batch := range batches {
-			switch batch.Status {
-			case StatusPending:
-				mc.PendingBatches++
-			case StatusScheduled:
-				mc.ScheduledBatches++
-			}
-		}
-	}
-
-	return mc
-}
-
-// buildSystemPrompt creates the system prompt with tool descriptions and environment context
-func (s *Service) buildSystemPrompt(tools []ToolDescription, mc *MigrationContext) string {
-	var prompt strings.Builder
-
-	prompt.WriteString(`You are the GitHub Migrator Copilot assistant. You help users plan and execute GitHub migrations.
-
-You have access to the following capabilities:
-- Analyze repositories for migration complexity and readiness
-- Find and check dependencies between repositories
-- Create and manage migration batches
-- Plan migration waves to minimize downtime
-- Identify repositories suitable for pilot migrations
-- Get migration status and history
-
-`)
-
-	// Add environment context
-	prompt.WriteString("## Current Migration Environment\n\n")
-
-	// Source info
-	if len(mc.SourceOrgs) > 0 {
-		prompt.WriteString("**Source Organizations:** ")
-		if len(mc.SourceOrgs) <= 5 {
-			prompt.WriteString(strings.Join(mc.SourceOrgs, ", "))
-		} else {
-			prompt.WriteString(fmt.Sprintf("%s, and %d more", strings.Join(mc.SourceOrgs[:5], ", "), len(mc.SourceOrgs)-5))
-		}
-		prompt.WriteString("\n")
-	}
-
-	// Destination info
-	if mc.DestinationURL != "" {
-		prompt.WriteString(fmt.Sprintf("**Destination:** %s", mc.DestinationURL))
-		if mc.DestinationEnterpriseSlug != "" {
-			prompt.WriteString(fmt.Sprintf(" (Enterprise: %s)", mc.DestinationEnterpriseSlug))
-		}
-		prompt.WriteString("\n")
-	}
-
-	// Repository stats
-	if mc.TotalRepositories > 0 {
-		prompt.WriteString(fmt.Sprintf("\n**Repository Summary:** %d total repositories\n", mc.TotalRepositories))
-		prompt.WriteString(fmt.Sprintf("- Pending: %d\n", mc.PendingRepos))
-		if mc.InProgressRepos > 0 {
-			prompt.WriteString(fmt.Sprintf("- In Progress: %d\n", mc.InProgressRepos))
-		}
-		if mc.CompletedRepos > 0 {
-			prompt.WriteString(fmt.Sprintf("- Completed: %d\n", mc.CompletedRepos))
-		}
-		if mc.FailedRepos > 0 {
-			prompt.WriteString(fmt.Sprintf("- Failed: %d\n", mc.FailedRepos))
-		}
-	}
-
-	// Batch info
-	if mc.TotalBatches > 0 {
-		prompt.WriteString(fmt.Sprintf("\n**Batches:** %d total", mc.TotalBatches))
-		if mc.PendingBatches > 0 {
-			prompt.WriteString(fmt.Sprintf(", %d pending", mc.PendingBatches))
-		}
-		if mc.ScheduledBatches > 0 {
-			prompt.WriteString(fmt.Sprintf(", %d scheduled", mc.ScheduledBatches))
-		}
-		prompt.WriteString("\n")
-	}
-
-	prompt.WriteString("\n")
-
-	// Instructions for using context
-	prompt.WriteString(`## Response Guidelines
-
-When answering questions:
-- Use the migration context above to provide specific, actionable responses
-- Present data in tables or lists when showing multiple items
-- Don't ask clarifying questions if you can answer from context
-- Be concise but thorough in your explanations
-
-When presenting tool results:
-- Format data in a clear, readable way (use markdown tables for lists)
-- Offer specific follow-up actions the user can take
-- For pilot candidates: Offer to create a batch with the selected repositories
-- For batches: Offer to schedule them for migration
-- For dependencies: Explain the migration implications
-- Always suggest a natural next step the user can take
-
-Example follow-up offers:
-- "Would you like me to create a batch with these repositories?"
-- "Should I schedule this batch for migration?"
-- "Would you like to see more details about any of these repositories?"
-
-`)
-
-	// Add tool descriptions
-	if len(tools) > 0 {
-		prompt.WriteString("## Available Tools\n\n")
-		for _, tool := range tools {
-			prompt.WriteString(fmt.Sprintf("- **%s**: %s\n", tool.Name, tool.Description))
-		}
-	}
-
-	return prompt.String()
-}
-
-// callCopilotCLI calls the Copilot CLI with the given message
-func (s *Service) callCopilotCLI(ctx context.Context, cliPath, systemPrompt string, history []Message, userMessage string, mcpEnabled bool, mcpPort int) (string, error) {
-	// Create a timeout context for the CLI call
-	cmdCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
-	defer cancel()
-
-	// Build the full prompt with system context and history
-	var promptBuilder strings.Builder
-	promptBuilder.WriteString("You are a GitHub migration assistant. ")
-	promptBuilder.WriteString(systemPrompt)
-	promptBuilder.WriteString("\n\n")
-
-	// Include conversation history for context
-	if len(history) > 0 {
-		promptBuilder.WriteString("Previous conversation:\n")
-		// Include last few messages for context (limit to avoid token limits)
-		startIdx := 0
-		if len(history) > 6 {
-			startIdx = len(history) - 6
-		}
-		for _, msg := range history[startIdx:] {
-			role := "User"
-			if msg.Role == "assistant" {
-				role = "Assistant"
-			}
-			promptBuilder.WriteString(fmt.Sprintf("%s: %s\n", role, msg.Content))
-		}
-		promptBuilder.WriteString("\n")
-	}
-
-	promptBuilder.WriteString("Current request: ")
-	promptBuilder.WriteString(userMessage)
-	promptBuilder.WriteString("\n\nProvide a helpful response for this GitHub migration question. Be concise and actionable.")
-
-	fullPrompt := promptBuilder.String()
-
-	s.logger.Debug("Calling Copilot CLI", "cli_path", cliPath, "prompt_length", len(fullPrompt), "mcp_enabled", mcpEnabled, "mcp_port", mcpPort)
-
-	// Build command arguments
-	// Note: The Copilot CLI doesn't support --mcp-config flag directly.
-	// The MCP server runs separately and can be used by MCP-compatible clients.
-	// For the CLI, we pass the prompt with context that describes the available tools.
-	args := []string{"-p", fullPrompt}
-
-	// #nosec G204 - CLI path is configured by admin in settings, not user-controlled input
-	cmd := exec.CommandContext(cmdCtx, cliPath, args...)
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		s.logger.Error("Copilot CLI execution failed",
-			"error", err,
-			"output", string(output),
-			"cli_path", cliPath)
-		return "", fmt.Errorf("copilot CLI execution failed: %w (output: %s)", err, strings.TrimSpace(string(output)))
-	}
-
-	response := strings.TrimSpace(string(output))
-	if response == "" {
-		return "", fmt.Errorf("copilot CLI returned empty response")
-	}
-
-	s.logger.Debug("Copilot CLI response received", "response_length", len(response))
-	return response, nil
-}
-
-// formatToolResultsForPrompt formats tool execution results for inclusion in the system prompt
-func (s *Service) formatToolResultsForPrompt(result *ToolExecutionResult) string {
-	var prompt strings.Builder
-
-	prompt.WriteString("\n\n## Tool Execution Results\n\n")
-	prompt.WriteString(fmt.Sprintf("I executed the **%s** tool and got the following results:\n\n", result.Tool))
-
-	if result.Success {
-		prompt.WriteString(fmt.Sprintf("**Summary:** %s\n\n", result.Summary))
-
-		// Format the result based on the tool type
-		if data, err := json.MarshalIndent(result.Result, "", "  "); err == nil {
-			prompt.WriteString("**Data:**\n```json\n")
-			prompt.WriteString(string(data))
-			prompt.WriteString("\n```\n\n")
-		}
-
-		// Add suggestions if present
-		if len(result.Suggestions) > 0 {
-			prompt.WriteString("**Notes:**\n")
-			for _, s := range result.Suggestions {
-				prompt.WriteString(fmt.Sprintf("- %s\n", s))
-			}
-			prompt.WriteString("\n")
-		}
-
-		// Add follow-up action if available
-		if result.FollowUp != nil {
-			prompt.WriteString(fmt.Sprintf("**Suggested Follow-up:** %s\n\n", result.FollowUp.Description))
-		}
-	} else {
-		prompt.WriteString(fmt.Sprintf("**Error:** %s\n\n", result.Error))
-	}
-
-	prompt.WriteString(`**Instructions for Response:**
-- Present these results clearly to the user in a readable format
-- If there are candidates/repositories, show them in a table or list
-- Offer the follow-up action if one is suggested
-- Be specific about what the user can do next
-`)
-
-	return prompt.String()
-}
-
-// generateResponseFromToolResult creates a response directly from tool results when CLI fails
-func (s *Service) generateResponseFromToolResult(result *ToolExecutionResult) string {
-	var response strings.Builder
-
-	if !result.Success {
-		response.WriteString(fmt.Sprintf("I encountered an issue: %s\n\n", result.Error))
-		return response.String()
-	}
-
-	response.WriteString(fmt.Sprintf("%s\n\n", result.Summary))
-
-	// Format results based on tool type
-	switch result.Tool {
-	case "find_pilot_candidates":
-		if candidates, ok := result.Result.([]map[string]any); ok && len(candidates) > 0 {
-			response.WriteString("| Repository | Complexity | Size |\n")
-			response.WriteString("|------------|------------|------|\n")
-			for _, c := range candidates {
-				response.WriteString(fmt.Sprintf("| %s | %s (%v) | %v KB |\n",
-					c["full_name"], c["complexity_rating"], c["complexity_score"], c["size_kb"]))
-			}
-			response.WriteString("\n")
-		}
-
-	case "analyze_repositories":
-		if repos, ok := result.Result.([]map[string]any); ok && len(repos) > 0 {
-			response.WriteString("| Repository | Status | Complexity |\n")
-			response.WriteString("|------------|--------|------------|\n")
-			for _, r := range repos {
-				response.WriteString(fmt.Sprintf("| %s | %s | %s |\n",
-					r["full_name"], r["status"], r["complexity_rating"]))
-			}
-			response.WriteString("\n")
-		}
-
-	case "create_batch":
-		if batch, ok := result.Result.(map[string]any); ok {
-			response.WriteString("**Batch Details:**\n")
-			response.WriteString(fmt.Sprintf("- Name: %s\n", batch["batch_name"]))
-			response.WriteString(fmt.Sprintf("- ID: %v\n", batch["batch_id"]))
-			response.WriteString(fmt.Sprintf("- Repositories: %v\n", batch["repository_count"]))
-			response.WriteString(fmt.Sprintf("- Status: %s\n\n", batch["status"]))
-		}
-
-	case "plan_waves":
-		if waves, ok := result.Result.([]map[string]any); ok {
-			for _, w := range waves {
-				response.WriteString(fmt.Sprintf("**Wave %v** (%v repos):\n", w["wave_number"], w["count"]))
-				if repos, ok := w["repositories"].([]string); ok {
-					for _, r := range repos {
-						response.WriteString(fmt.Sprintf("- %s\n", r))
-					}
-				}
-				response.WriteString("\n")
-			}
-		}
-
-	default:
-		// Generic JSON output
-		if data, err := json.MarshalIndent(result.Result, "", "  "); err == nil {
-			response.WriteString("```json\n")
-			response.WriteString(string(data))
-			response.WriteString("\n```\n\n")
-		}
-	}
-
-	// Add suggestions
-	if len(result.Suggestions) > 0 {
-		response.WriteString("**Notes:**\n")
-		for _, s := range result.Suggestions {
-			response.WriteString(fmt.Sprintf("- %s\n", s))
-		}
-		response.WriteString("\n")
-	}
-
-	// Add follow-up action
-	if result.FollowUp != nil {
-		response.WriteString(fmt.Sprintf("\n%s\n", result.FollowUp.Description))
-	}
-
-	return response.String()
-}
-
-// generateFallbackResponse creates a helpful response when CLI fails
-func (s *Service) generateFallbackResponse(userMessage string, cliErr error) string {
-	response := fmt.Sprintf("I received your message: %q\n\n", userMessage)
-	response += "I'm the GitHub Migrator Copilot assistant. I can help you with:\n"
-	response += "- Analyzing repositories for migration readiness\n"
-	response += "- Finding dependencies between repositories\n"
-	response += "- Creating and managing migration batches\n"
-	response += "- Planning migration waves\n"
-	response += "- Identifying pilot candidates\n\n"
-
-	response += "**Note**: I encountered an issue communicating with the Copilot CLI.\n"
-	response += fmt.Sprintf("Error details: %v\n\n", cliErr)
-	response += "Please verify:\n"
-	response += "1. The Copilot CLI is correctly installed at the configured path\n"
-	response += "2. You are authenticated with the Copilot CLI (run `copilot auth login`)\n"
-	response += "3. Your GitHub Copilot license is active\n\n"
-	response += "In the meantime, you can use the tool-specific features in the application:\n"
-	response += "- View repository complexity on the Repositories page\n"
-	response += "- Check dependencies on the Dependencies page\n"
-	response += "- Create and manage batches on the Batches page"
-
-	return response
-}
-
-// GetSessionHistory returns the message history for a session
+// GetSessionHistory returns the message history for a session.
 func (s *Service) GetSessionHistory(ctx context.Context, sessionID string) ([]models.CopilotMessage, error) {
-	messages, err := s.db.GetCopilotMessages(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get messages: %w", err)
-	}
-	return messages, nil
+	return s.client.GetSessionHistory(ctx, sessionID)
 }
 
-// Helper functions to convert between types
-func convertToolCalls(calls []ToolCall) []models.ToolCall {
-	result := make([]models.ToolCall, len(calls))
-	for i, c := range calls {
-		result[i] = models.ToolCall{
-			ID:     c.ID,
-			Name:   c.Name,
-			Args:   c.Args,
-			Status: c.Status,
-		}
+// Note: CheckCLIAvailable is defined in license.go
+
+// Status constants for tool implementations.
+const (
+	StatusPending           = "pending"
+	StatusScheduled         = "scheduled"
+	StatusCompleted         = "completed"
+	StatusMigrationComplete = "migration_complete"
+	RatingUnknown           = "unknown"
+)
+
+// canQueueForMigration checks if a repository can be queued for migration.
+func canQueueForMigration(status string, dryRun bool) bool {
+	switch models.MigrationStatus(status) {
+	case models.StatusPending,
+		models.StatusDryRunFailed,
+		models.StatusMigrationFailed,
+		models.StatusRolledBack:
+		return true
+	case models.StatusDryRunComplete:
+		return !dryRun
+	default:
+		return false
 	}
-	return result
 }
 
-func convertToolResults(results []ToolResult) []models.ToolResult {
-	result := make([]models.ToolResult, len(results))
-	for i, r := range results {
-		result[i] = models.ToolResult{
-			ToolCallID: r.ToolCallID,
-			Success:    r.Success,
-			Result:     r.Result,
-			Error:      r.Error,
+// isInQueuedOrInProgressState checks if a repository is in a cancellable state.
+func isInQueuedOrInProgressState(status string) bool {
+	switch models.MigrationStatus(status) {
+	case models.StatusDryRunQueued,
+		models.StatusDryRunInProgress,
+		models.StatusQueuedForMigration,
+		models.StatusMigratingContent,
+		models.StatusArchiveGenerating,
+		models.StatusPreMigration:
+		return true
+	default:
+		return false
+	}
+}
+
+// calculateProgress calculates progress metrics from a list of statuses.
+func calculateProgress(statuses []string) map[string]any {
+	var pendingCount, queuedCount, inProgressCount, completedCount, failedCount, skippedCount int
+	totalCount := len(statuses)
+
+	for _, status := range statuses {
+		switch models.MigrationStatus(status) {
+		case models.StatusPending:
+			pendingCount++
+		case models.StatusDryRunQueued, models.StatusQueuedForMigration:
+			queuedCount++
+		case models.StatusDryRunInProgress, models.StatusMigratingContent,
+			models.StatusArchiveGenerating, models.StatusPreMigration, models.StatusPostMigration:
+			inProgressCount++
+		case models.StatusDryRunComplete, models.StatusMigrationComplete, models.StatusComplete:
+			completedCount++
+		case models.StatusDryRunFailed, models.StatusMigrationFailed:
+			failedCount++
+		case models.StatusWontMigrate:
+			skippedCount++
 		}
 	}
-	return result
+
+	var percentComplete float64
+	if totalCount > 0 {
+		percentComplete = float64(completedCount) / float64(totalCount) * 100
+	}
+
+	return map[string]any{
+		"total_count":       totalCount,
+		"pending_count":     pendingCount,
+		"queued_count":      queuedCount,
+		"in_progress_count": inProgressCount,
+		"completed_count":   completedCount,
+		"failed_count":      failedCount,
+		"skipped_count":     skippedCount,
+		"percent_complete":  percentComplete,
+	}
 }

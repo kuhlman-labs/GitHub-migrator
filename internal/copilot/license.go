@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -246,8 +247,27 @@ func (v *LicenseValidator) queryLicenseStatus(ctx context.Context, userLogin str
 // CheckCLIAvailable checks if the Copilot CLI is installed and accessible
 func CheckCLIAvailable(cliPath string) (bool, string, error) {
 	if cliPath == "" {
-		// Try common default locations - look for 'copilot' in PATH
-		cliPath = "copilot"
+		// Check environment variable first
+		if envPath := os.Getenv("COPILOT_CLI_PATH"); envPath != "" {
+			cliPath = envPath
+		} else {
+			// Try well-known paths in order of preference
+			knownPaths := []string{
+				"/usr/local/bin/copilot", // Docker/Linux standard
+				"/usr/bin/copilot",       // System-wide install
+				"copilot",                // In PATH (fallback)
+			}
+			for _, path := range knownPaths {
+				if _, err := exec.LookPath(path); err == nil {
+					cliPath = path
+					break
+				}
+			}
+			// If none found, use "copilot" and let the error handling below report it
+			if cliPath == "" {
+				cliPath = "copilot"
+			}
+		}
 	}
 
 	// Try to execute the CLI to verify it works and get version info

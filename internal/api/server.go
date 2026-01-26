@@ -268,6 +268,11 @@ func (s *Server) Router() http.Handler {
 		jwtManager, _ := auth.NewJWTManager(effectiveAuthCfg.SessionSecret, effectiveAuthCfg.SessionDurationHours)
 		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, s.config.Source.BaseURL)
 		authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
+
+		// Set authorizer on Copilot handler for tool authorization
+		if s.copilotHandler != nil {
+			s.copilotHandler.SetAuthorizer(authorizer, &effectiveAuthCfg)
+		}
 	}
 
 	// Public auth endpoints (no authentication required)
@@ -457,6 +462,7 @@ func (s *Server) Router() http.Handler {
 	// Status check is protected but available to all authenticated users
 	protect("GET /api/v1/copilot/status", s.copilotHandler.GetStatus)
 	protect("POST /api/v1/copilot/chat", s.copilotHandler.SendMessage)
+	protect("GET /api/v1/copilot/chat/stream", s.copilotHandler.StreamChat)
 	protect("GET /api/v1/copilot/sessions", s.copilotHandler.ListSessions)
 	protect("GET /api/v1/copilot/sessions/{id}/history", s.copilotHandler.GetSessionHistory)
 	protect("DELETE /api/v1/copilot/sessions/{id}", s.copilotHandler.DeleteSession)

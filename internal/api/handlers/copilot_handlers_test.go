@@ -188,3 +188,209 @@ func TestCopilotHandler_ValidateCLI_InvalidJSON(t *testing.T) {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
 }
+
+// =============================================================================
+// Streaming Tests
+// =============================================================================
+
+func TestCopilotHandler_StreamChat_Unauthenticated(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/copilot/chat/stream?message=hello", nil)
+	rec := httptest.NewRecorder()
+
+	handler.StreamChat(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestCopilotHandler_StreamChat_EmptyMessage(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	// Create authenticated context
+	user := &auth.GitHubUser{
+		ID:    123,
+		Login: "testuser",
+	}
+	ctx := withAuthUser(context.Background(), user, "test-token")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/copilot/chat/stream?message=", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	handler.StreamChat(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestCopilotHandler_StreamChat_WhitespaceMessage(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	// Create authenticated context
+	user := &auth.GitHubUser{
+		ID:    123,
+		Login: "testuser",
+	}
+	ctx := withAuthUser(context.Background(), user, "test-token")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/copilot/chat/stream?message=%20%20%20", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	handler.StreamChat(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+// =============================================================================
+// Authorization Context Tests
+// =============================================================================
+
+func TestCopilotHandler_GetUserAuthContext_NoAuthorizer(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	// Don't set authorizer - should default to admin
+	user := &auth.GitHubUser{
+		ID:    123,
+		Login: "testuser",
+	}
+	ctx := context.Background()
+
+	authCtx := handler.getUserAuthContext(ctx, user, "token")
+
+	if authCtx == nil {
+		t.Fatal("expected auth context, got nil")
+	}
+
+	// Without authorizer, should default to admin
+	if authCtx.Tier != "admin" {
+		t.Errorf("expected tier 'admin' without authorizer, got '%s'", authCtx.Tier)
+	}
+	if !authCtx.Permissions.CanMigrateAll {
+		t.Error("expected CanMigrateAll true without authorizer")
+	}
+}
+
+func TestCopilotHandler_GetUserAuthContext_UserInfo(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	user := &auth.GitHubUser{
+		ID:    456,
+		Login: "myuser",
+	}
+	ctx := context.Background()
+
+	authCtx := handler.getUserAuthContext(ctx, user, "token")
+
+	if authCtx.UserID != "456" {
+		t.Errorf("expected UserID '456', got '%s'", authCtx.UserID)
+	}
+	if authCtx.UserLogin != "myuser" {
+		t.Errorf("expected UserLogin 'myuser', got '%s'", authCtx.UserLogin)
+	}
+}
+
+// =============================================================================
+// Session History Tests
+// =============================================================================
+
+func TestCopilotHandler_GetSessionHistory_Unauthenticated(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	// Note: Without proper routing (mux), PathValue doesn't work.
+	// The handler checks session ID first, returning 400 if empty.
+	// In production with mux, this would return 401 for unauthenticated requests.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/copilot/sessions/abc123/history", nil)
+	rec := httptest.NewRecorder()
+
+	handler.GetSessionHistory(rec, req)
+
+	// Without mux, PathValue returns empty, so handler returns 400 (session ID required)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d (no mux path value), got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestCopilotHandler_GetSessionHistory_NoSessionID(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	// Create authenticated context
+	user := &auth.GitHubUser{
+		ID:    123,
+		Login: "testuser",
+	}
+	ctx := withAuthUser(context.Background(), user, "test-token")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/copilot/sessions//history", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	handler.GetSessionHistory(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+// =============================================================================
+// Handler Helper Tests
+// =============================================================================
+
+func TestCopilotHandler_sendJSON(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	rec := httptest.NewRecorder()
+
+	data := map[string]string{"message": "hello"}
+	handler.sendJSON(rec, http.StatusOK, data)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	if rec.Header().Get("Content-Type") != testContentTypeJSON {
+		t.Errorf("expected Content-Type %s, got %s", testContentTypeJSON, rec.Header().Get("Content-Type"))
+	}
+
+	var response map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response["message"] != "hello" {
+		t.Errorf("expected message 'hello', got '%s'", response["message"])
+	}
+}
+
+func TestCopilotHandler_sendError(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	handler := NewCopilotHandler(nil, logger, "https://api.github.com")
+
+	rec := httptest.NewRecorder()
+
+	handler.sendError(rec, http.StatusBadRequest, "Something went wrong")
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+
+	var response map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response["error"] != "Something went wrong" {
+		t.Errorf("expected error 'Something went wrong', got '%s'", response["error"])
+	}
+}

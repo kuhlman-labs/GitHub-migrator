@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -9,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
+	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/copilot"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
@@ -19,6 +22,8 @@ type CopilotHandler struct {
 	db            *storage.Database
 	logger        *slog.Logger
 	gitHubBaseURL string
+	authorizer    *auth.Authorizer
+	authConfig    *config.AuthConfig
 
 	// Persistent service instance to maintain session state
 	service   *copilot.Service
@@ -34,8 +39,98 @@ func NewCopilotHandler(db *storage.Database, logger *slog.Logger, gitHubBaseURL 
 	}
 }
 
+// SetAuthorizer sets the authorizer for authorization checks
+func (h *CopilotHandler) SetAuthorizer(authorizer *auth.Authorizer, authConfig *config.AuthConfig) {
+	h.authorizer = authorizer
+	h.authConfig = authConfig
+}
+
+// sessionError represents an error during session handling
+type sessionError struct {
+	StatusCode int
+	Message    string
+}
+
+// getOrCreateSession creates a new session or verifies ownership of existing one.
+// Returns the session ID to use, or a sessionError if something went wrong.
+func (h *CopilotHandler) getOrCreateSession(
+	ctx context.Context,
+	service *copilot.Service,
+	sessionID, userIDStr, userLogin string,
+	timeoutMin int,
+	authCtx *copilot.AuthContext,
+) (string, *sessionError) {
+	if sessionID == "" {
+		session, err := service.CreateSession(ctx, userIDStr, userLogin, timeoutMin, authCtx)
+		if err != nil {
+			h.logger.Error("Failed to create session", "error", err, "user", userLogin)
+			return "", &sessionError{http.StatusInternalServerError, "Failed to create session"}
+		}
+		return session.ID, nil
+	}
+
+	// Verify the session belongs to the authenticated user
+	session, err := service.GetSession(ctx, sessionID)
+	if err != nil {
+		h.logger.Error("Failed to get session", "error", err, "session_id", sessionID)
+		return "", &sessionError{http.StatusNotFound, "Session not found"}
+	}
+	if session.UserID != userIDStr {
+		return "", &sessionError{http.StatusForbidden, "Access denied"}
+	}
+	// Update the session's auth context in case permissions changed
+	session.Auth = authCtx
+	return sessionID, nil
+}
+
+// getUserAuthContext gets the authorization context for the current user
+func (h *CopilotHandler) getUserAuthContext(ctx context.Context, user *auth.GitHubUser, token string) *copilot.AuthContext {
+	authCtx := &copilot.AuthContext{
+		UserID:    strconv.FormatInt(user.ID, 10),
+		UserLogin: user.Login,
+		Tier:      "read_only", // Default
+		Permissions: copilot.ToolPermissions{
+			CanRead:           true,
+			CanMigrateOwn:     false,
+			CanMigrateAll:     false,
+			CanManageSettings: false,
+		},
+	}
+
+	// If no authorizer configured, default to admin (backward compatibility)
+	if h.authorizer == nil {
+		authCtx.Tier = copilot.AuthTierAdmin
+		authCtx.Permissions.CanMigrateOwn = true
+		authCtx.Permissions.CanMigrateAll = true
+		authCtx.Permissions.CanManageSettings = true
+		return authCtx
+	}
+
+	// Get user's authorization tier
+	tierInfo, err := h.authorizer.GetUserAuthorizationTier(ctx, user, token)
+	if err != nil {
+		h.logger.Warn("Failed to get user authorization tier, defaulting to read-only", "user", user.Login, "error", err)
+		return authCtx
+	}
+
+	// Convert auth tier to copilot auth context
+	switch tierInfo.Tier {
+	case auth.TierAdmin:
+		authCtx.Tier = copilot.AuthTierAdmin
+		authCtx.Permissions.CanMigrateOwn = true
+		authCtx.Permissions.CanMigrateAll = true
+		authCtx.Permissions.CanManageSettings = true
+	case auth.TierSelfService:
+		authCtx.Tier = copilot.AuthTierSelfService
+		authCtx.Permissions.CanMigrateOwn = true
+	case auth.TierReadOnly:
+		authCtx.Tier = copilot.AuthTierReadOnly
+	}
+
+	return authCtx
+}
+
 // getOrCreateService returns the persistent service instance, creating it if needed
-// This ensures session state (including LastToolResult) is preserved across requests
 func (h *CopilotHandler) getOrCreateService(settings *models.Settings) *copilot.Service {
 	h.serviceMu.RLock()
 	if h.service != nil {
@@ -63,6 +158,8 @@ func (h *CopilotHandler) getOrCreateService(settings *models.Settings) *copilot.
 		RequireLicense:    settings.CopilotRequireLicense,
 		SessionTimeoutMin: settings.CopilotSessionTimeoutMin,
 		GitHubBaseURL:     baseURL,
+		Streaming:         settings.CopilotStreaming,
+		LogLevel:          settings.CopilotLogLevel,
 	}
 
 	if settings.CopilotCLIPath != nil {
@@ -71,17 +168,13 @@ func (h *CopilotHandler) getOrCreateService(settings *models.Settings) *copilot.
 	if settings.CopilotModel != nil {
 		config.Model = *settings.CopilotModel
 	}
-	if settings.CopilotMaxTokens != nil {
-		config.MaxTokens = *settings.CopilotMaxTokens
-	}
 
 	h.service = copilot.NewService(h.db, h.logger, config)
-	h.logger.Info("Created persistent Copilot service")
+	h.logger.Info("Created persistent Copilot service with SDK")
 	return h.service
 }
 
 // GetStatus handles GET /api/v1/copilot/status
-// Returns the current Copilot availability status for the authenticated user
 func (h *CopilotHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -122,7 +215,6 @@ func (h *CopilotHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendMessage handles POST /api/v1/copilot/chat
-// Sends a message to Copilot and returns the response
 func (h *CopilotHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -164,28 +256,17 @@ func (h *CopilotHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	userIDStr := strconv.FormatInt(user.ID, 10)
 
+	// Get user's OAuth token for authorization checks
+	token, _ := auth.GetTokenFromContext(ctx)
+
+	// Get authorization context for this user
+	authCtx := h.getUserAuthContext(ctx, user, token)
+
 	// Create new session if no session ID provided, or verify ownership of existing session
-	sessionID := req.SessionID
-	if sessionID == "" {
-		session, err := service.CreateSession(ctx, userIDStr, user.Login, settings.CopilotSessionTimeoutMin)
-		if err != nil {
-			h.logger.Error("Failed to create session", "error", err, "user", user.Login)
-			h.sendError(w, http.StatusInternalServerError, "Failed to create session")
-			return
-		}
-		sessionID = session.ID
-	} else {
-		// Verify the session belongs to the authenticated user
-		session, err := service.GetSession(ctx, sessionID)
-		if err != nil {
-			h.logger.Error("Failed to get session", "error", err, "session_id", sessionID)
-			h.sendError(w, http.StatusNotFound, "Session not found")
-			return
-		}
-		if session.UserID != userIDStr {
-			h.sendError(w, http.StatusForbidden, "Access denied")
-			return
-		}
+	sessionID, sessionErr := h.getOrCreateSession(ctx, service, req.SessionID, userIDStr, user.Login, settings.CopilotSessionTimeoutMin, authCtx)
+	if sessionErr != nil {
+		h.sendError(w, sessionErr.StatusCode, sessionErr.Message)
+		return
 	}
 
 	// Send message
@@ -199,8 +280,120 @@ func (h *CopilotHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, response)
 }
 
+// StreamChat handles GET /api/v1/copilot/chat/stream
+// This endpoint uses Server-Sent Events (SSE) for streaming responses.
+func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get authenticated user
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok || user == nil {
+		h.sendError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	// Get parameters from query string
+	sessionID := r.URL.Query().Get("session_id")
+	message := r.URL.Query().Get("message")
+
+	if strings.TrimSpace(message) == "" {
+		h.sendError(w, http.StatusBadRequest, "Message is required")
+		return
+	}
+
+	// Get current settings
+	settings, err := h.db.GetSettings(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get settings", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to get settings")
+		return
+	}
+
+	// Check if Copilot is enabled
+	if !settings.CopilotEnabled {
+		h.sendError(w, http.StatusForbidden, "Copilot is not enabled")
+		return
+	}
+
+	// Initialize service with current settings
+	service := h.getOrCreateService(settings)
+
+	userIDStr := strconv.FormatInt(user.ID, 10)
+
+	// Get user's OAuth token for authorization checks
+	token, _ := auth.GetTokenFromContext(ctx)
+
+	// Get authorization context for this user
+	authCtx := h.getUserAuthContext(ctx, user, token)
+
+	// Create new session if no session ID provided, or verify ownership of existing one
+	sessionID, sessionErr := h.getOrCreateSession(ctx, service, sessionID, userIDStr, user.Login, settings.CopilotSessionTimeoutMin, authCtx)
+	if sessionErr != nil {
+		h.sendError(w, sessionErr.StatusCode, sessionErr.Message)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+
+	// Get the flusher interface
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		h.sendError(w, http.StatusInternalServerError, "Streaming not supported")
+		return
+	}
+
+	// Send initial session_id event
+	h.writeSSEEvent(w, flusher, "session", map[string]string{"session_id": sessionID})
+
+	// Stream the response
+	err = service.StreamMessage(ctx, sessionID, message, func(event copilot.StreamEvent) {
+		eventData := map[string]any{
+			"type": string(event.Type),
+		}
+
+		switch event.Type {
+		case copilot.StreamEventDelta:
+			eventData["content"] = event.Data.Content
+		case copilot.StreamEventToolCall:
+			if event.Data.ToolCall != nil {
+				eventData["tool_call"] = event.Data.ToolCall
+			}
+		case copilot.StreamEventToolResult:
+			if event.Data.ToolResult != nil {
+				eventData["tool_result"] = event.Data.ToolResult
+			}
+		case copilot.StreamEventDone:
+			eventData["content"] = event.Data.Content
+		case copilot.StreamEventError:
+			eventData["error"] = event.Data.Error
+		}
+
+		h.writeSSEEvent(w, flusher, string(event.Type), eventData)
+	})
+
+	if err != nil {
+		h.logger.Error("Stream error", "error", err, "session_id", sessionID)
+		h.writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+	}
+}
+
+// writeSSEEvent writes an SSE event to the response.
+func (h *CopilotHandler) writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, eventType string, data any) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		h.logger.Error("Failed to marshal SSE event data", "error", err)
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, string(jsonData))
+	flusher.Flush()
+}
+
 // ListSessions handles GET /api/v1/copilot/sessions
-// Returns all chat sessions for the authenticated user
 func (h *CopilotHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -238,7 +431,6 @@ func (h *CopilotHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetSessionHistory handles GET /api/v1/copilot/sessions/{id}/history
-// Returns the message history for a specific session
 func (h *CopilotHandler) GetSessionHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -298,7 +490,6 @@ func (h *CopilotHandler) GetSessionHistory(w http.ResponseWriter, r *http.Reques
 }
 
 // DeleteSession handles DELETE /api/v1/copilot/sessions/{id}
-// Deletes a chat session
 func (h *CopilotHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -355,7 +546,6 @@ func (h *CopilotHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // ValidateCLI handles POST /api/v1/copilot/validate-cli
-// Tests if the Copilot CLI is accessible at the configured path
 func (h *CopilotHandler) ValidateCLI(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		CLIPath string `json:"cli_path"`

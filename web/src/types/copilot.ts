@@ -75,3 +75,45 @@ export interface CLIValidationResponse {
   version?: string;
   error?: string;
 }
+
+// Streaming types for SSE events
+
+export type StreamEventType = 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'session';
+
+export interface StreamEvent {
+  type: StreamEventType;
+  content?: string;
+  tool_call?: ToolCall;
+  tool_result?: ToolResult;
+  error?: string;
+  session_id?: string;
+}
+
+export interface StreamSessionEvent {
+  session_id: string;
+}
+
+export interface StreamDeltaEvent {
+  type: 'delta';
+  content: string;
+}
+
+export interface StreamToolCallEvent {
+  type: 'tool_call';
+  tool_call: ToolCall;
+}
+
+export interface StreamToolResultEvent {
+  type: 'tool_result';
+  tool_result: ToolResult;
+}
+
+export interface StreamDoneEvent {
+  type: 'done';
+  content: string;
+}
+
+export interface StreamErrorEvent {
+  type: 'error';
+  error: string;
+}

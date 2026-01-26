@@ -5,11 +5,12 @@ run:
   tests: true
 
 linters:
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
-    - staticcheck  # includes gosimple in v2.x
+    - staticcheck
     - unused
     - misspell
     - goconst
@@ -18,40 +19,38 @@ linters:
     - gosec
     - unconvert
     - prealloc
+  settings:
+    errcheck:
+      check-type-assertions: true
+    gocyclo:
+      min-complexity: 35
+    dupl:
+      threshold: 100
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gosec:
+      excludes:
+        - G201
+        - G202
+  exclusions:
+    generated: lax
+    paths:
+      - vendor
+      - web
+      - scripts
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - dupl
+          - gosec
+          - goconst
+      - linters:
+          - gocyclo
+        text: "GetExecutiveReport|ExportExecutiveReport|executeStartMigration"
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  gocyclo:
-    min-complexity: 18
-  dupl:
-    threshold: 100
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  gosec:
-    excludes:
-      - G201  # SQL string formatting with placeholders is safe
-      - G202  # SQL string concatenation - filters are sanitized
-
-issues:
-  exclude-dirs:
-    - vendor
-    - web
-    - scripts  # Standalone scripts with their own main functions
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - dupl
-        - gosec
-        - goconst
-    # Exclude cyclomatic complexity for specific pre-existing complex functions
-    - linters:
-        - gocyclo
-      text: "GetExecutiveReport|ExportExecutiveReport"

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { client } from './client';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { client, setAuthEnabled } from './client';
 
 describe('API client', () => {
   describe('configuration', () => {
@@ -23,6 +23,9 @@ describe('API client', () => {
       // Reset mocks
       vi.clearAllMocks();
       
+      // Enable auth for tests (unless explicitly disabled in test)
+      setAuthEnabled(true);
+      
       // Mock window.location
       delete (window as { location?: Location }).location;
       window.location = {
@@ -34,6 +37,8 @@ describe('API client', () => {
 
     afterEach(() => {
       window.location = originalLocation;
+      // Reset authEnabled state
+      setAuthEnabled(false);
     });
 
     it('should redirect to login on 401 error', async () => {
@@ -139,6 +144,30 @@ describe('API client', () => {
         await expect(rejectedHandler(error)).rejects.toEqual(error);
         // Should not redirect for 500 errors
         expect(window.location.href).not.toBe('/login');
+      }
+    });
+
+    it('should not redirect on 401 when auth is disabled', async () => {
+      // Disable auth for this test
+      setAuthEnabled(false);
+
+      const error = {
+        response: { status: 401 },
+      };
+
+      const interceptors = client.interceptors.response as unknown as {
+        handlers: Array<{ rejected?: (error: unknown) => unknown }>;
+      };
+      const rejectedHandler = interceptors.handlers[0]?.rejected;
+
+      if (rejectedHandler) {
+        try {
+          await rejectedHandler(error);
+        } catch {
+          // Expected to reject
+        }
+        // Should not redirect when auth is disabled
+        expect(window.location.href).toBe('');
       }
     });
   });

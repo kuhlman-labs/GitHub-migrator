@@ -1,20 +1,72 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Text, TextInput, Button, Flash, Spinner, IconButton } from '@primer/react';
-import { CopilotIcon, PaperAirplaneIcon, TrashIcon, PlusIcon, PersonIcon } from '@primer/octicons-react';
+import { 
+  CopilotIcon, 
+  PaperAirplaneIcon, 
+  TrashIcon, 
+  PlusIcon, 
+  PersonIcon, 
+  StopIcon,
+  CopyIcon,
+  CheckIcon,
+  SyncIcon,
+  SidebarCollapseIcon,
+  SidebarExpandIcon,
+  ToolsIcon,
+  CheckCircleFillIcon,
+  XCircleFillIcon,
+  ClockIcon,
+  ShieldLockIcon,
+  GearIcon
+} from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { copilotApi } from '../../services/api/copilot';
-import type { CopilotMessage, CopilotSession } from '../../types/copilot';
+import type { CopilotMessage, CopilotSession, ToolCall } from '../../types/copilot';
 import { PageHeader } from '../common/PageHeader';
+import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
+
+// Breakpoint for mobile responsiveness
+const MOBILE_BREAKPOINT = 768;
 
 export function CopilotAssistant() {
   const [message, setMessage] = useState('');
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
-  // Track whether a session change requires fetching history (only when user explicitly selects a session)
+  const [streamingContent, setStreamingContent] = useState<string>('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [shouldFetchHistory, setShouldFetchHistory] = useState(false);
-  const fetchRequestIdRef = useRef(0); // Track fetch requests to ignore stale responses
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
+  const [failedMessageContent, setFailedMessageContent] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const [focusedSessionIndex, setFocusedSessionIndex] = useState(-1);
+  
+  const fetchRequestIdRef = useRef(0);
+  const streamAbortRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const sessionListRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  const { showError, showSuccess } = useToast();
+  const { authEnabled, login } = useAuth();
+
+  // Check for mobile viewport
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      setIsMobile(mobile);
+      if (mobile) {
+        setSidebarOpen(false);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Check Copilot status
   const { data: status, isLoading: statusLoading, error: statusError } = useQuery({
@@ -29,141 +81,382 @@ export function CopilotAssistant() {
     enabled: status?.available,
   });
 
-  // Send message mutation
-  const sendMessageMutation = useMutation({
-    mutationFn: copilotApi.sendMessage,
-    onSuccess: (response) => {
-      // Add assistant message
-      setMessages(prev => [...prev, {
-        id: response.message_id,
-        session_id: response.session_id,
-        role: 'assistant',
-        content: response.content,
-        tool_calls: response.tool_calls,
-        tool_results: response.tool_results,
-        created_at: new Date().toISOString(),
-      }]);
-      // Update current session ID if new session was created
-      // Note: We DON'T set shouldFetchHistory here because we already have the messages locally
-      if (!currentSessionId) {
-        setCurrentSessionId(response.session_id);
-      }
-      // Invalidate sessions query to update list
-      queryClient.invalidateQueries({ queryKey: ['copilot-sessions'] });
-    },
-  });
-
   // Delete session mutation
   const deleteSessionMutation = useMutation({
     mutationFn: copilotApi.deleteSession,
     onSuccess: (_data, deletedSessionId) => {
-      // Only clear the view if the deleted session is the one currently being viewed
       if (currentSessionId === deletedSessionId) {
         setCurrentSessionId(null);
         setMessages([]);
       }
       queryClient.invalidateQueries({ queryKey: ['copilot-sessions'] });
+      showSuccess('Chat deleted');
+    },
+    onError: () => {
+      showError('Failed to delete chat');
     },
   });
 
-  // Load session history only when user explicitly selects a session from the sidebar
-  // This prevents overwriting locally-added messages when a new session is created via sending a message
+  // Load session history
   useEffect(() => {
     if (currentSessionId && shouldFetchHistory) {
-      // Increment request ID to track this specific fetch
       const requestId = ++fetchRequestIdRef.current;
       
       copilotApi.getSessionHistory(currentSessionId).then(response => {
-        // Only update if this is still the latest request (ignore stale responses)
-        // This prevents race conditions when switching sessions quickly
         if (requestId === fetchRequestIdRef.current) {
           setMessages(response.messages);
         }
       }).catch(() => {
-        // Only handle error if this is still the latest request
         if (requestId === fetchRequestIdRef.current) {
-          // Session may have expired
           setCurrentSessionId(null);
           setMessages([]);
+          showError('Failed to load chat history');
         }
       }).finally(() => {
-        // Reset the flag after fetch completes (only if this is the latest request)
         if (requestId === fetchRequestIdRef.current) {
           setShouldFetchHistory(false);
         }
       });
     }
-  }, [currentSessionId, shouldFetchHistory]);
+  }, [currentSessionId, shouldFetchHistory, showError]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
-  const handleSend = () => {
-    if (!message.trim() || sendMessageMutation.isPending) return;
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current();
+      }
+    };
+  }, []);
 
-    // Add user message immediately
+  // Copy message to clipboard
+  const handleCopyMessage = useCallback(async (messageId: number, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch {
+      showError('Failed to copy to clipboard');
+    }
+  }, [showError]);
+
+  // Retry failed message
+  const handleRetry = useCallback(() => {
+    if (failedMessageContent) {
+      setMessage(failedMessageContent);
+      setFailedMessageContent(null);
+      // Remove the error message
+      setMessages(prev => prev.filter(m => !m.content.startsWith('Error:')));
+      // Focus input
+      inputRef.current?.focus();
+    }
+  }, [failedMessageContent]);
+
+  const handleSendStreaming = useCallback(() => {
+    if (!message.trim() || isStreaming) return;
+
+    const userMessageContent = message;
+    setMessage('');
+    setFailedMessageContent(null);
+
     const userMessage: CopilotMessage = {
       id: Date.now(),
       session_id: currentSessionId || '',
       role: 'user',
-      content: message,
+      content: userMessageContent,
       created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMessage]);
+    setIsStreaming(true);
+    setStreamingContent('');
+    setActiveToolCalls([]);
 
-    // Send to API
-    sendMessageMutation.mutate({
-      session_id: currentSessionId || undefined,
-      message: message,
-    });
+    // Capture tool calls at the start for closure safety
+    let capturedToolCalls: ToolCall[] = [];
 
-    setMessage('');
-  };
+    const { abort } = copilotApi.streamMessage(
+      userMessageContent,
+      currentSessionId || undefined,
+      {
+        onSessionId: (sessionId) => {
+          if (!currentSessionId) {
+            setCurrentSessionId(sessionId);
+          }
+        },
+        onDelta: (content) => {
+          setStreamingContent(prev => prev + content);
+        },
+        onToolCall: (toolCall) => {
+          if (toolCall) {
+            capturedToolCalls = [...capturedToolCalls, toolCall];
+            setActiveToolCalls(capturedToolCalls);
+          }
+        },
+        onToolResult: (toolResult) => {
+          if (toolResult) {
+            capturedToolCalls = capturedToolCalls.map(tc => 
+              tc.id === toolResult.tool_call_id 
+                ? { ...tc, status: toolResult.success ? 'completed' : 'failed' as const }
+                : tc
+            );
+            setActiveToolCalls(capturedToolCalls);
+          }
+        },
+        onDone: (content) => {
+          setStreamingContent(prevContent => {
+            const finalContent = content || prevContent;
+            const assistantMessage: CopilotMessage = {
+              id: Date.now() + 1,
+              session_id: currentSessionId || '',
+              role: 'assistant',
+              content: finalContent,
+              tool_calls: capturedToolCalls.length > 0 ? capturedToolCalls : undefined,
+              created_at: new Date().toISOString(),
+            };
+            setMessages(prev => [...prev, assistantMessage]);
+            return '';
+          });
+          setActiveToolCalls([]);
+          setIsStreaming(false);
+          streamAbortRef.current = null;
+          queryClient.invalidateQueries({ queryKey: ['copilot-sessions'] });
+          // Return focus to input
+          setTimeout(() => inputRef.current?.focus(), 100);
+        },
+        onError: (error) => {
+          console.error('Stream error:', error);
+          showError(`Chat error: ${error}`);
+          setFailedMessageContent(userMessageContent);
+          
+          const errorMessage: CopilotMessage = {
+            id: Date.now() + 1,
+            session_id: currentSessionId || '',
+            role: 'assistant',
+            content: `Error: ${error}`,
+            created_at: new Date().toISOString(),
+          };
+          setMessages(prev => [...prev, errorMessage]);
+          setStreamingContent('');
+          setActiveToolCalls([]);
+          setIsStreaming(false);
+          streamAbortRef.current = null;
+        },
+      }
+    );
+
+    streamAbortRef.current = abort;
+  }, [message, currentSessionId, isStreaming, queryClient, showError]);
+
+  const handleStopStreaming = useCallback(() => {
+    if (streamAbortRef.current) {
+      streamAbortRef.current();
+      streamAbortRef.current = null;
+    }
+    
+    if (streamingContent) {
+      const assistantMessage: CopilotMessage = {
+        id: Date.now() + 1,
+        session_id: currentSessionId || '',
+        role: 'assistant',
+        content: streamingContent + '\n\n[Stopped]',
+        tool_calls: activeToolCalls.length > 0 ? activeToolCalls : undefined,
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+    }
+    
+    setStreamingContent('');
+    setActiveToolCalls([]);
+    setIsStreaming(false);
+    showSuccess('Response stopped');
+  }, [currentSessionId, streamingContent, activeToolCalls, showSuccess]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSendStreaming();
     }
   };
 
   const handleNewChat = () => {
-    // Increment request ID to cancel any pending fetch
+    if (streamAbortRef.current) {
+      streamAbortRef.current();
+      streamAbortRef.current = null;
+    }
     fetchRequestIdRef.current++;
     setShouldFetchHistory(false);
     setCurrentSessionId(null);
     setMessages([]);
+    setStreamingContent('');
+    setActiveToolCalls([]);
+    setIsStreaming(false);
+    setFailedMessageContent(null);
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+    inputRef.current?.focus();
   };
 
-  const handleSelectSession = (session: CopilotSession) => {
-    // User explicitly selected a session, so we should fetch its history
+  const handleSelectSession = useCallback((session: CopilotSession) => {
+    if (streamAbortRef.current) {
+      streamAbortRef.current();
+      streamAbortRef.current = null;
+    }
+    setStreamingContent('');
+    setActiveToolCalls([]);
+    setIsStreaming(false);
+    setFailedMessageContent(null);
     setShouldFetchHistory(true);
     setCurrentSessionId(session.id);
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  }, [isMobile]);
+
+  // Keyboard navigation for session list
+  const handleSessionKeyDown = useCallback((e: React.KeyboardEvent, sessions: CopilotSession[]) => {
+    if (!sessions.length) return;
+    
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setFocusedSessionIndex(prev => Math.min(prev + 1, sessions.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setFocusedSessionIndex(prev => Math.max(prev - 1, 0));
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        if (focusedSessionIndex >= 0 && focusedSessionIndex < sessions.length) {
+          handleSelectSession(sessions[focusedSessionIndex]);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setFocusedSessionIndex(-1);
+        inputRef.current?.focus();
+        break;
+    }
+  }, [focusedSessionIndex, handleSelectSession]);
+
+  // Render tool call with status icon
+  const renderToolCall = (tool: ToolCall, isActive: boolean = false) => {
+    const StatusIcon = {
+      pending: ClockIcon,
+      completed: CheckCircleFillIcon,
+      failed: XCircleFillIcon,
+    }[tool.status];
+
+    const statusColor = {
+      pending: 'var(--fgColor-attention)',
+      completed: 'var(--fgColor-success)',
+      failed: 'var(--fgColor-danger)',
+    }[tool.status];
+
+    return (
+      <div 
+        key={tool.id} 
+        className="flex items-center gap-1 py-0.5"
+        role="status"
+        aria-label={`Tool ${tool.name} ${tool.status}`}
+      >
+        {isActive && tool.status === 'pending' ? (
+          <Spinner size="small" />
+        ) : (
+          <StatusIcon size={12} fill={statusColor} />
+        )}
+        <Text style={{ fontSize: '0.75rem', color: statusColor }}>
+          {tool.name}
+        </Text>
+      </div>
+    );
   };
 
-  // Show loading state
+  // Loading state
   if (statusLoading) {
     return (
-      <div className="flex justify-center items-center" style={{ height: '60vh' }}>
+      <div 
+        className="flex justify-center items-center"
+        style={{ height: '60vh' }}
+        role="status"
+        aria-label="Loading Copilot"
+      >
         <Spinner size="large" />
       </div>
     );
   }
 
-  // Show error state
-  if (statusError) {
+  // Check if authentication is required but not configured/authenticated
+  // This handles 401 errors from the API when auth is needed
+  const isAuthError = statusError && 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((statusError as any)?.response?.status === 401 || (statusError as any)?.status === 401);
+
+  if (isAuthError) {
     return (
       <div className="p-4">
-        <Flash variant="danger">
-          Failed to load Copilot status. Please try again later.
-        </Flash>
+        <PageHeader
+          title="Migration Copilot"
+          description="AI-powered migration planning and execution"
+        />
+        <div className="mt-4" style={{ maxWidth: 600 }}>
+          <Flash variant="warning">
+            <div className="flex items-start gap-3">
+              <ShieldLockIcon size={24} className="flex-shrink-0 mt-0.5" />
+              <div>
+                <Text className="font-bold block">Authentication Required</Text>
+                <Text className="block mt-1">
+                  Migration Copilot requires authentication to access your GitHub account and perform migrations.
+                </Text>
+                {authEnabled ? (
+                  <div className="mt-3">
+                    <Button onClick={login} variant="primary">
+                      Sign in with GitHub
+                    </Button>
+                  </div>
+                ) : (
+                  <Text className="block mt-2 text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                    Authentication is not enabled in this deployment. To use Migration Copilot, 
+                    please configure GitHub OAuth authentication in the{' '}
+                    <Link to="/settings" className="underline" style={{ color: 'var(--fgColor-accent)' }}>
+                      <GearIcon size={12} className="inline mr-1" />
+                      Settings
+                    </Link>.
+                  </Text>
+                )}
+              </div>
+            </div>
+          </Flash>
+        </div>
       </div>
     );
   }
 
-  // Show unavailable state
+  // General error state (non-auth errors)
+  if (statusError) {
+    return (
+      <div className="p-4">
+        <PageHeader
+          title="Migration Copilot"
+          description="AI-powered migration planning and execution"
+        />
+        <div className="mt-4" style={{ maxWidth: 600 }}>
+          <Flash variant="danger">
+            Failed to load Copilot status. Please try again later.
+          </Flash>
+        </div>
+      </div>
+    );
+  }
+
+  // Unavailable state
   if (!status?.available) {
     return (
       <div className="p-4">
@@ -196,34 +489,91 @@ export function CopilotAssistant() {
   const sessions = sessionsData?.sessions || [];
 
   return (
-    <div className="flex" style={{ height: 'calc(100vh - 120px)' }}>
+    <div 
+      className="flex"
+      style={{ 
+        height: 'calc(100vh - 120px)',
+        position: 'relative',
+      }}
+    >
+      {/* Mobile overlay */}
+      {isMobile && sidebarOpen && (
+        <div
+          className="fixed inset-0"
+          style={{ 
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 10 
+          }}
+          onClick={() => setSidebarOpen(false)}
+          role="presentation"
+        />
+      )}
+
       {/* Sidebar - Session list */}
-      <div
+      <aside
         className="flex flex-col"
         style={{
-          width: 280,
-          borderRight: '1px solid var(--borderColor-default)',
+          width: sidebarOpen ? (isMobile ? '85%' : 280) : 0,
+          maxWidth: isMobile ? 320 : 280,
+          borderRight: sidebarOpen ? '1px solid var(--borderColor-default)' : 'none',
           backgroundColor: 'var(--bgColor-muted)',
+          overflow: 'hidden',
+          transition: 'width 0.2s ease-in-out',
+          position: isMobile ? 'fixed' : 'relative',
+          left: 0,
+          top: isMobile ? 60 : 0,
+          bottom: 0,
+          zIndex: isMobile ? 20 : 1,
         }}
+        role="complementary"
+        aria-label="Chat history sidebar"
       >
         <div className="p-3" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
-          <Button onClick={handleNewChat} leadingVisual={PlusIcon} className="w-full">
+          <Button 
+            onClick={handleNewChat} 
+            leadingVisual={PlusIcon} 
+            className="w-full"
+            aria-label="Start new chat"
+          >
             New Chat
           </Button>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
+        <div 
+          ref={sessionListRef}
+          className="flex-1 overflow-y-auto p-2"
+          role="listbox"
+          aria-label="Previous chats"
+          tabIndex={0}
+          onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => handleSessionKeyDown(e, sessions)}
+        >
           {sessions.length === 0 ? (
-            <Text className="text-center mt-4" style={{ color: 'var(--fgColor-muted)', fontSize: '0.875rem' }}>
+            <Text className="text-center block mt-4" style={{ color: 'var(--fgColor-muted)', fontSize: '0.875rem' }}>
               No previous chats
             </Text>
           ) : (
-            sessions.map((session) => (
+            sessions.map((session, index) => (
               <div
                 key={session.id}
                 onClick={() => handleSelectSession(session)}
-                className="p-2 mb-1 rounded cursor-pointer flex justify-between items-center"
+                onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleSelectSession(session);
+                  }
+                }}
+                className="p-2 mb-1 rounded flex justify-between items-center"
+                role="option"
+                aria-selected={currentSessionId === session.id}
+                tabIndex={focusedSessionIndex === index ? 0 : -1}
                 style={{
-                  backgroundColor: currentSessionId === session.id ? 'var(--bgColor-accent-muted)' : 'transparent',
+                  cursor: 'pointer',
+                  backgroundColor: currentSessionId === session.id 
+                    ? 'var(--bgColor-accent-muted)' 
+                    : focusedSessionIndex === index 
+                    ? 'var(--bgColor-inset)' 
+                    : 'transparent',
+                  outline: focusedSessionIndex === index ? '2px solid var(--color-accent-emphasis)' : 'none',
+                  outlineOffset: -2,
                 }}
                 onMouseEnter={(e) => {
                   if (currentSessionId !== session.id) {
@@ -231,11 +581,16 @@ export function CopilotAssistant() {
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = currentSessionId === session.id ? 'var(--bgColor-accent-muted)' : 'transparent';
+                  e.currentTarget.style.backgroundColor = currentSessionId === session.id 
+                    ? 'var(--bgColor-accent-muted)' 
+                    : 'transparent';
                 }}
               >
                 <div className="flex-1 overflow-hidden">
-                  <Text className="font-semibold block overflow-hidden text-ellipsis whitespace-nowrap" style={{ fontSize: '0.875rem' }}>
+                  <Text 
+                    className="font-semibold block overflow-hidden text-ellipsis whitespace-nowrap" 
+                    style={{ fontSize: '0.875rem' }}
+                  >
                     {session.title || 'New Chat'}
                   </Text>
                   <Text style={{ color: 'var(--fgColor-muted)', fontSize: '0.75rem' }}>
@@ -244,7 +599,7 @@ export function CopilotAssistant() {
                 </div>
                 <IconButton
                   icon={TrashIcon}
-                  aria-label="Delete session"
+                  aria-label={`Delete chat: ${session.title || 'New Chat'}`}
                   variant="invisible"
                   size="small"
                   onClick={(e) => {
@@ -256,13 +611,19 @@ export function CopilotAssistant() {
             ))
           )}
         </div>
-      </div>
+      </aside>
 
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="p-3" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
+        <header className="p-3" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
           <div className="flex items-center gap-2">
+            <IconButton
+              icon={sidebarOpen ? SidebarCollapseIcon : SidebarExpandIcon}
+              aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+              variant="invisible"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            />
             <CopilotIcon size={24} />
             <div>
               <Text className="font-bold" style={{ fontSize: '1rem' }}>Copilot Assistant</Text>
@@ -271,11 +632,17 @@ export function CopilotAssistant() {
               </Text>
             </div>
           </div>
-        </div>
+        </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-3">
-          {messages.length === 0 ? (
+        <div 
+          className="flex-1 overflow-y-auto p-3"
+          role="log"
+          aria-label="Chat messages"
+          aria-live="polite"
+          aria-atomic="false"
+        >
+          {messages.length === 0 && !streamingContent ? (
             <div className="text-center mt-8">
               <CopilotIcon size={48} />
               <Text className="block font-bold mt-3" style={{ fontSize: '1rem' }}>
@@ -295,9 +662,15 @@ export function CopilotAssistant() {
                   <Button
                     key={suggestion}
                     size="small"
-                    onClick={() => setMessage(suggestion)}
+                    onClick={() => {
+                      setMessage(suggestion);
+                      inputRef.current?.focus();
+                    }}
                     className="border"
-                    style={{ maxWidth: 400, borderColor: 'var(--borderColor-default)' }}
+                    style={{ 
+                      maxWidth: isMobile ? '100%' : 400, 
+                      borderColor: 'var(--borderColor-default)',
+                    }}
                   >
                     {suggestion}
                   </Button>
@@ -306,54 +679,98 @@ export function CopilotAssistant() {
             </div>
           ) : (
             <>
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className="flex gap-2 mb-3"
-                  style={{
-                    flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-                  }}
-                >
-                  <div
-                    className="flex items-center justify-center rounded-full"
+              {messages.map((msg) => {
+                const isError = msg.content.startsWith('Error:');
+                
+                return (
+                  <article
+                    key={msg.id}
+                    className="flex gap-2 mb-3 group"
                     style={{
-                      width: 32,
-                      height: 32,
-                      flexShrink: 0,
-                      backgroundColor: msg.role === 'user' ? 'var(--bgColor-accent-emphasis)' : 'var(--bgColor-success-emphasis)',
+                      flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
                     }}
+                    aria-label={`${msg.role === 'user' ? 'You' : 'Copilot'}`}
                   >
-                    {msg.role === 'user' ? (
-                      <PersonIcon size={16} fill="white" />
-                    ) : (
-                      <CopilotIcon size={16} fill="white" />
-                    )}
-                  </div>
-                  <div
-                    className="p-3 rounded"
-                    style={{
-                      maxWidth: '70%',
-                      backgroundColor: msg.role === 'user' ? 'var(--bgColor-accent-muted)' : 'var(--bgColor-muted)',
-                    }}
-                  >
-                    <Text style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
-                    {msg.tool_calls && msg.tool_calls.length > 0 && (
-                      <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
-                        <Text className="font-bold" style={{ fontSize: '0.75rem', color: 'var(--fgColor-muted)' }}>
-                          Tools Used:
-                        </Text>
-                        {msg.tool_calls.map((tool) => (
-                          <Text key={tool.id} className="block" style={{ fontSize: '0.75rem', color: 'var(--fgColor-muted)' }}>
-                            {tool.name} ({tool.status})
-                          </Text>
-                        ))}
+                    <div
+                      className="flex items-center justify-center rounded-full"
+                      style={{
+                        width: 32,
+                        height: 32,
+                        flexShrink: 0,
+                        backgroundColor: msg.role === 'user' 
+                          ? 'var(--bgColor-accent-emphasis)' 
+                          : isError 
+                          ? 'var(--bgColor-danger-emphasis)'
+                          : 'var(--bgColor-success-emphasis)',
+                      }}
+                    >
+                      {msg.role === 'user' ? (
+                        <PersonIcon size={16} fill="white" />
+                      ) : (
+                        <CopilotIcon size={16} fill="white" />
+                      )}
+                    </div>
+                    <div
+                      className="p-3 rounded relative"
+                      style={{
+                        maxWidth: isMobile ? '85%' : '70%',
+                        backgroundColor: msg.role === 'user' 
+                          ? 'var(--bgColor-accent-muted)' 
+                          : isError
+                          ? 'var(--bgColor-danger-muted)'
+                          : 'var(--bgColor-muted)',
+                      }}
+                    >
+                      <Text style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
+                      
+                      {/* Tool calls */}
+                      {msg.tool_calls && msg.tool_calls.length > 0 && (
+                        <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+                          <div className="flex items-center gap-1 mb-1">
+                            <ToolsIcon size={12} />
+                            <Text className="font-bold" style={{ fontSize: '0.75rem', color: 'var(--fgColor-muted)' }}>
+                              Tools Used:
+                            </Text>
+                          </div>
+                          {msg.tool_calls.map((tool) => renderToolCall(tool))}
+                        </div>
+                      )}
+                      
+                      {/* Action buttons - show on hover */}
+                      <div 
+                        className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        {msg.role === 'assistant' && !isError && (
+                          <IconButton
+                            icon={copiedMessageId === msg.id ? CheckIcon : CopyIcon}
+                            aria-label={copiedMessageId === msg.id ? 'Copied!' : 'Copy message'}
+                            variant="invisible"
+                            size="small"
+                            onClick={() => handleCopyMessage(msg.id, msg.content)}
+                          />
+                        )}
+                        {isError && failedMessageContent && (
+                          <IconButton
+                            icon={SyncIcon}
+                            aria-label="Retry message"
+                            variant="invisible"
+                            size="small"
+                            onClick={handleRetry}
+                          />
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {sendMessageMutation.isPending && (
-                <div className="flex gap-2 mb-3">
+                    </div>
+                  </article>
+                );
+              })}
+              
+              {/* Streaming response */}
+              {isStreaming && (
+                <div 
+                  className="flex gap-2 mb-3"
+                  role="status"
+                  aria-label="Copilot is responding"
+                >
                   <div
                     className="flex items-center justify-center rounded-full"
                     style={{
@@ -365,8 +782,34 @@ export function CopilotAssistant() {
                   >
                     <CopilotIcon size={16} fill="white" />
                   </div>
-                  <div className="p-3 rounded" style={{ backgroundColor: 'var(--bgColor-muted)' }}>
-                    <Spinner size="small" />
+                  <div 
+                    className="p-3 rounded" 
+                    style={{ 
+                      maxWidth: isMobile ? '85%' : '70%', 
+                      backgroundColor: 'var(--bgColor-muted)' 
+                    }}
+                  >
+                    {streamingContent ? (
+                      <Text style={{ whiteSpace: 'pre-wrap' }}>{streamingContent}</Text>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Spinner size="small" />
+                        <Text style={{ color: 'var(--fgColor-muted)', fontSize: '0.875rem' }}>
+                          Thinking...
+                        </Text>
+                      </div>
+                    )}
+                    {activeToolCalls.length > 0 && (
+                      <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+                        <div className="flex items-center gap-1 mb-1">
+                          <ToolsIcon size={12} />
+                          <Text className="font-bold" style={{ fontSize: '0.75rem', color: 'var(--fgColor-muted)' }}>
+                            Tools in use:
+                          </Text>
+                        </div>
+                        {activeToolCalls.map((tool) => renderToolCall(tool, true))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -376,31 +819,70 @@ export function CopilotAssistant() {
         </div>
 
         {/* Input */}
-        <div className="p-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
-          {sendMessageMutation.isError && (
-            <Flash variant="danger" className="mb-2">
-              Failed to send message. Please try again.
-            </Flash>
-          )}
+        <footer className="p-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
           <div className="flex gap-2">
             <TextInput
+              ref={inputRef}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask about repositories, dependencies, batches, migration planning..."
               className="flex-1"
-              disabled={sendMessageMutation.isPending}
+              disabled={isStreaming}
+              aria-label="Message input"
+              aria-describedby="chat-input-hint"
             />
-            <Button
-              onClick={handleSend}
-              disabled={!message.trim() || sendMessageMutation.isPending}
-              variant="primary"
-            >
-              <PaperAirplaneIcon />
-            </Button>
+            <span id="chat-input-hint" className="sr-only">
+              Press Enter to send, Shift+Enter for new line
+            </span>
+            {isStreaming ? (
+              <Button
+                onClick={handleStopStreaming}
+                variant="danger"
+                aria-label="Stop response"
+              >
+                <StopIcon />
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSendStreaming}
+                disabled={!message.trim()}
+                variant="primary"
+                aria-label="Send message"
+              >
+                <PaperAirplaneIcon />
+              </Button>
+            )}
           </div>
-        </div>
+          {failedMessageContent && (
+            <div className="mt-2">
+              <Button 
+                size="small" 
+                leadingVisual={SyncIcon}
+                onClick={handleRetry}
+                aria-label="Retry last message"
+              >
+                Retry last message
+              </Button>
+            </div>
+          )}
+        </footer>
       </div>
+
+      {/* Screen reader only CSS */}
+      <style>{`
+        .sr-only {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
+      `}</style>
     </div>
   );
 }

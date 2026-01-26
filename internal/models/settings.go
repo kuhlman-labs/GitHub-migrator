@@ -41,15 +41,14 @@ type Settings struct {
 	AuthAllowEnterpriseAdminMigrations bool    `json:"auth_allow_enterprise_admin_migrations" db:"auth_allow_enterprise_admin_migrations" gorm:"column:auth_allow_enterprise_admin_migrations;not null;default:false"`
 	AuthEnableSelfService              bool    `json:"auth_enable_self_service" db:"auth_enable_self_service" gorm:"column:auth_enable_self_service;not null;default:false"`
 
-	// Copilot settings
+	// Copilot SDK settings
 	CopilotEnabled           bool    `json:"copilot_enabled" db:"copilot_enabled" gorm:"column:copilot_enabled;not null;default:false"`
 	CopilotRequireLicense    bool    `json:"copilot_require_license" db:"copilot_require_license" gorm:"column:copilot_require_license;not null;default:true"`
 	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty" db:"copilot_cli_path" gorm:"column:copilot_cli_path"`
 	CopilotModel             *string `json:"copilot_model,omitempty" db:"copilot_model" gorm:"column:copilot_model"`
-	CopilotMaxTokens         *int    `json:"copilot_max_tokens,omitempty" db:"copilot_max_tokens" gorm:"column:copilot_max_tokens"`
 	CopilotSessionTimeoutMin int     `json:"copilot_session_timeout_min" db:"copilot_session_timeout_min" gorm:"column:copilot_session_timeout_min;not null;default:30"`
-	CopilotMCPEnabled        bool    `json:"copilot_mcp_enabled" db:"copilot_mcp_enabled" gorm:"column:copilot_mcp_enabled;not null;default:true"`
-	CopilotMCPPort           int     `json:"copilot_mcp_port" db:"copilot_mcp_port" gorm:"column:copilot_mcp_port;not null;default:8081"`
+	CopilotStreaming         bool    `json:"copilot_streaming" db:"copilot_streaming" gorm:"column:copilot_streaming;not null;default:true"`
+	CopilotLogLevel          string  `json:"copilot_log_level" db:"copilot_log_level" gorm:"column:copilot_log_level;not null;default:'info'"`
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"column:created_at"`
@@ -108,16 +107,15 @@ type SettingsResponse struct {
 	// Authorization rules
 	AuthorizationRules AuthorizationRulesResponse `json:"authorization_rules"`
 
-	// Copilot settings
+	// Copilot SDK settings
 	CopilotEnabled           bool   `json:"copilot_enabled"`
 	CopilotRequireLicense    bool   `json:"copilot_require_license"`
 	CopilotCLIPath           string `json:"copilot_cli_path,omitempty"`
 	CopilotCLIConfigured     bool   `json:"copilot_cli_configured"`
 	CopilotModel             string `json:"copilot_model,omitempty"`
-	CopilotMaxTokens         *int   `json:"copilot_max_tokens,omitempty"`
 	CopilotSessionTimeoutMin int    `json:"copilot_session_timeout_min"`
-	CopilotMCPEnabled        bool   `json:"copilot_mcp_enabled"`
-	CopilotMCPPort           int    `json:"copilot_mcp_port"`
+	CopilotStreaming         bool   `json:"copilot_streaming"`
+	CopilotLogLevel          string `json:"copilot_log_level"`
 
 	// Status
 	DestinationConfigured bool      `json:"destination_configured"`
@@ -188,16 +186,15 @@ func (s *Settings) ToResponse() *SettingsResponse {
 			EnableSelfService:              s.AuthEnableSelfService,
 		},
 
-		// Copilot
+		// Copilot SDK
 		CopilotEnabled:           s.CopilotEnabled,
 		CopilotRequireLicense:    s.CopilotRequireLicense,
 		CopilotCLIPath:           getStringOrEmpty(s.CopilotCLIPath),
 		CopilotCLIConfigured:     s.CopilotCLIPath != nil && *s.CopilotCLIPath != "",
 		CopilotModel:             getStringOrEmpty(s.CopilotModel),
-		CopilotMaxTokens:         s.CopilotMaxTokens,
 		CopilotSessionTimeoutMin: s.CopilotSessionTimeoutMin,
-		CopilotMCPEnabled:        s.CopilotMCPEnabled,
-		CopilotMCPPort:           s.CopilotMCPPort,
+		CopilotStreaming:         s.CopilotStreaming,
+		CopilotLogLevel:          s.CopilotLogLevel,
 
 		// Status
 		DestinationConfigured: s.HasDestination(),
@@ -234,15 +231,14 @@ type UpdateSettingsRequest struct {
 	// Authorization rules
 	AuthorizationRules *UpdateAuthorizationRulesRequest `json:"authorization_rules,omitempty"`
 
-	// Copilot settings
+	// Copilot SDK settings
 	CopilotEnabled           *bool   `json:"copilot_enabled,omitempty"`
 	CopilotRequireLicense    *bool   `json:"copilot_require_license,omitempty"`
 	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty"`
 	CopilotModel             *string `json:"copilot_model,omitempty"`
-	CopilotMaxTokens         *int    `json:"copilot_max_tokens,omitempty"`
 	CopilotSessionTimeoutMin *int    `json:"copilot_session_timeout_min,omitempty"`
-	CopilotMCPEnabled        *bool   `json:"copilot_mcp_enabled,omitempty"`
-	CopilotMCPPort           *int    `json:"copilot_mcp_port,omitempty"`
+	CopilotStreaming         *bool   `json:"copilot_streaming,omitempty"`
+	CopilotLogLevel          *string `json:"copilot_log_level,omitempty"`
 }
 
 // UpdateAuthorizationRulesRequest is the request to update authorization rules
@@ -344,7 +340,7 @@ func (s *Settings) applyAuthUpdates(req *UpdateSettingsRequest) {
 	}
 }
 
-// applyCopilotUpdates applies Copilot-related updates
+// applyCopilotUpdates applies Copilot SDK-related updates
 func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
 	if req.CopilotEnabled != nil {
 		s.CopilotEnabled = *req.CopilotEnabled
@@ -358,16 +354,13 @@ func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
 	if req.CopilotModel != nil {
 		s.CopilotModel = req.CopilotModel
 	}
-	if req.CopilotMaxTokens != nil {
-		s.CopilotMaxTokens = req.CopilotMaxTokens
-	}
 	if req.CopilotSessionTimeoutMin != nil {
 		s.CopilotSessionTimeoutMin = *req.CopilotSessionTimeoutMin
 	}
-	if req.CopilotMCPEnabled != nil {
-		s.CopilotMCPEnabled = *req.CopilotMCPEnabled
+	if req.CopilotStreaming != nil {
+		s.CopilotStreaming = *req.CopilotStreaming
 	}
-	if req.CopilotMCPPort != nil {
-		s.CopilotMCPPort = *req.CopilotMCPPort
+	if req.CopilotLogLevel != nil {
+		s.CopilotLogLevel = *req.CopilotLogLevel
 	}
 }
