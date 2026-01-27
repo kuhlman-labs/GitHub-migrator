@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,53 @@ const (
 	defaultGitHubAPIURL = "https://api.github.com"
 	licenseCacheTTL     = 5 * time.Minute
 )
+
+// validateCLIPath validates that a CLI path is safe to execute.
+// This prevents command injection by ensuring the path:
+// - Does not contain shell metacharacters
+// - Is a valid executable path (exists or is in PATH)
+// Returns the sanitized path or an error if validation fails.
+func validateCLIPath(cliPath string) (string, error) {
+	if cliPath == "" {
+		return "", fmt.Errorf("CLI path cannot be empty")
+	}
+
+	// Check for dangerous shell metacharacters that could enable command injection
+	// These characters have special meaning in shells and could be exploited
+	dangerousChars := []string{";", "&", "|", "$", "`", "(", ")", "{", "}", "<", ">", "\n", "\r", "\\", "'", "\"", "*", "?", "[", "]", "!", "~"}
+	for _, char := range dangerousChars {
+		if strings.Contains(cliPath, char) {
+			return "", fmt.Errorf("CLI path contains invalid character: %q", char)
+		}
+	}
+
+	// Clean the path to normalize it (removes .., extra slashes, etc.)
+	cleanPath := filepath.Clean(cliPath)
+
+	// If it's an absolute path, verify the file exists
+	if filepath.IsAbs(cleanPath) {
+		info, err := os.Stat(cleanPath)
+		if err != nil {
+			return "", fmt.Errorf("CLI path does not exist: %s", cleanPath)
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("CLI path is a directory, not an executable: %s", cleanPath)
+		}
+		// Check if the file is executable (on Unix systems)
+		if info.Mode()&0111 == 0 {
+			return "", fmt.Errorf("CLI path is not executable: %s", cleanPath)
+		}
+		return cleanPath, nil
+	}
+
+	// For relative paths or bare command names, verify it can be found in PATH
+	resolvedPath, err := exec.LookPath(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("CLI not found in PATH: %s", cleanPath)
+	}
+
+	return resolvedPath, nil
+}
 
 // LicenseValidator validates Copilot license/subscription status
 type LicenseValidator struct {
@@ -270,23 +318,28 @@ func CheckCLIAvailable(cliPath string) (bool, string, error) {
 		}
 	}
 
+	// Validate the CLI path to prevent command injection (G204)
+	// This ensures the path is safe before passing to exec.CommandContext
+	validatedPath, err := validateCLIPath(cliPath)
+	if err != nil {
+		return false, "", fmt.Errorf("invalid CLI path: %w", err)
+	}
+
 	// Try to execute the CLI to verify it works and get version info
 	// Use --version or version command to check
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Try --version first (common for most CLIs)
-	cmd := exec.CommandContext(ctx, cliPath, "--version")
+	// #nosec G204 -- validatedPath has been sanitized by validateCLIPath
+	cmd := exec.CommandContext(ctx, validatedPath, "--version")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Try without arguments - some CLIs print version info
-		cmd = exec.CommandContext(ctx, cliPath, "version")
+		// #nosec G204 -- validatedPath has been sanitized by validateCLIPath
+		cmd = exec.CommandContext(ctx, validatedPath, "version")
 		output, err = cmd.CombinedOutput()
 		if err != nil {
-			// Check if the executable exists at all
-			if _, statErr := exec.LookPath(cliPath); statErr != nil {
-				return false, "", fmt.Errorf("copilot CLI not found at path: %s", cliPath)
-			}
 			return false, "", fmt.Errorf("failed to execute Copilot CLI: %v", err)
 		}
 	}
