@@ -549,6 +549,19 @@ func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, o
 
 	// Set up event handler for streaming
 	unsubscribe := sess.Session.On(func(event copilot.SessionEvent) {
+		// Log event details for debugging
+		logFields := []any{"type", event.Type, "session_id", sessionID}
+		if event.Data.Content != nil {
+			logFields = append(logFields, "content_length", len(*event.Data.Content))
+		}
+		if event.Data.ToolName != nil {
+			logFields = append(logFields, "tool_name", *event.Data.ToolName)
+		}
+		if event.Data.DeltaContent != nil {
+			logFields = append(logFields, "delta_length", len(*event.Data.DeltaContent))
+		}
+		c.logger.Debug("SDK event received", logFields...)
+
 		switch event.Type {
 		case "assistant.message_delta":
 			if event.Data.DeltaContent != nil {
@@ -601,34 +614,58 @@ func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, o
 			})
 			closeOnce.Do(func() { close(done) })
 
-		case "error":
+		case "error", "session.error":
 			errMsg := "Unknown error"
-			if event.Data.Content != nil {
+			// session.error events have error info in Message/ErrorType fields
+			if event.Data.Message != nil {
+				errMsg = *event.Data.Message
+			} else if event.Data.Content != nil {
 				errMsg = *event.Data.Content
 			}
+			// Log the error with full details
+			logFields := []any{
+				"session_id", sessionID,
+				"error", errMsg,
+				"event_type", event.Type,
+			}
+			if event.Data.ErrorType != nil {
+				logFields = append(logFields, "error_type", *event.Data.ErrorType)
+			}
+			if event.Data.Stack != nil {
+				logFields = append(logFields, "stack", *event.Data.Stack)
+			}
+			c.logger.Error("Copilot SDK session error", logFields...)
+
 			onEvent(StreamEvent{
 				Type: StreamEventError,
 				Data: StreamEventData{
 					Error: errMsg,
 				},
 			})
-			closeOnce.Do(func() { close(done) })
+			// Don't close done channel for session.error - let session.idle handle it
+			if event.Type == "error" {
+				closeOnce.Do(func() { close(done) })
+			}
 		}
 	})
 	defer unsubscribe()
 
 	// Send the message
+	c.logger.Debug("Sending message to Copilot SDK", "session_id", sessionID, "message_length", len(message))
 	_, err = sess.Session.Send(copilot.MessageOptions{
 		Prompt: message,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
+	c.logger.Debug("Message sent, waiting for response", "session_id", sessionID)
 
 	// Wait for completion or context cancellation
 	select {
 	case <-done:
+		c.logger.Debug("Stream completed", "session_id", sessionID)
 	case <-ctx.Done():
+		c.logger.Debug("Context cancelled, aborting stream", "session_id", sessionID)
 		_ = sess.Session.Abort()
 		return ctx.Err()
 	}

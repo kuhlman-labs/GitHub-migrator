@@ -259,10 +259,18 @@ type StartDiscoveryParams struct {
 }
 
 // GetDiscoveryStatusParams defines parameters for checking discovery status.
-type GetDiscoveryStatusParams struct{}
+// Note: Empty structs need at least one field for valid JSON schema generation.
+type GetDiscoveryStatusParams struct {
+	// Verbose returns additional details when true (optional)
+	Verbose bool `json:"verbose,omitempty" jsonschema:"Return additional discovery details"`
+}
 
 // CancelDiscoveryParams defines parameters for canceling discovery.
-type CancelDiscoveryParams struct{}
+// Note: Empty structs need at least one field for valid JSON schema generation.
+type CancelDiscoveryParams struct {
+	// Force cancels even if in critical section (optional)
+	Force bool `json:"force,omitempty" jsonschema:"Force cancel even if in critical section"`
+}
 
 // DiscoverTeamsParams defines parameters for team discovery.
 type DiscoverTeamsParams struct {
@@ -384,7 +392,11 @@ type ExecuteTeamMigrationParams struct {
 }
 
 // GetTeamMigrationExecutionStatusParams defines parameters for team migration status.
-type GetTeamMigrationExecutionStatusParams struct{}
+// Note: Empty structs need at least one field for valid JSON schema generation.
+type GetTeamMigrationExecutionStatusParams struct {
+	// IncludeHistory returns historical execution data when true (optional)
+	IncludeHistory bool `json:"include_history,omitempty" jsonschema:"Include historical execution data"`
+}
 
 // --- Group 6: Analytics and Reporting ---
 

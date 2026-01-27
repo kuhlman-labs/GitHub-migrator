@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/auth"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
@@ -350,8 +351,31 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 	// Send initial session_id event
 	h.writeSSEEvent(w, flusher, "session", map[string]string{"session_id": sessionID})
 
+	h.logger.Debug("Starting stream for message", "session_id", sessionID, "message_length", len(message))
+
+	// Start keepalive goroutine to prevent connection timeout
+	// SSE comments (lines starting with :) are ignored by clients but keep the connection alive
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Send SSE comment as keepalive
+				_, _ = fmt.Fprintf(w, ": keepalive\n\n")
+				flusher.Flush()
+			}
+		}
+	}()
+
 	// Stream the response
 	err = service.StreamMessage(ctx, sessionID, message, func(event copilot.StreamEvent) {
+		h.logger.Debug("Received stream event", "type", event.Type, "session_id", sessionID)
 		eventData := map[string]any{
 			"type": string(event.Type),
 		}
@@ -375,6 +399,9 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 
 		h.writeSSEEvent(w, flusher, string(event.Type), eventData)
 	})
+
+	// Stop keepalive goroutine
+	close(done)
 
 	if err != nil {
 		h.logger.Error("Stream error", "error", err, "session_id", sessionID)

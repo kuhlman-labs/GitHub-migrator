@@ -30,6 +30,12 @@ import { useAuth } from '../../contexts/AuthContext';
 // Breakpoint for mobile responsiveness
 const MOBILE_BREAKPOINT = 768;
 
+// Generate unique IDs for messages to avoid React key collisions
+let messageIdCounter = 0;
+function generateMessageId(): number {
+  return Date.now() * 1000 + (messageIdCounter++ % 1000);
+}
+
 export function CopilotAssistant() {
   const [message, setMessage] = useState('');
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -49,6 +55,8 @@ export function CopilotAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionListRef = useRef<HTMLDivElement>(null);
+  const streamingContentRef = useRef<string>('');
+  const messageAddedRef = useRef(false);
   const queryClient = useQueryClient();
   const { showError, showSuccess } = useToast();
   const { authEnabled, login } = useAuth();
@@ -165,7 +173,7 @@ export function CopilotAssistant() {
     setFailedMessageContent(null);
 
     const userMessage: CopilotMessage = {
-      id: Date.now(),
+      id: generateMessageId(),
       session_id: currentSessionId || '',
       role: 'user',
       content: userMessageContent,
@@ -174,6 +182,8 @@ export function CopilotAssistant() {
     setMessages(prev => [...prev, userMessage]);
     setIsStreaming(true);
     setStreamingContent('');
+    streamingContentRef.current = '';
+    messageAddedRef.current = false;
     setActiveToolCalls([]);
 
     // Capture tool calls at the start for closure safety
@@ -189,6 +199,7 @@ export function CopilotAssistant() {
           }
         },
         onDelta: (content) => {
+          streamingContentRef.current += content;
           setStreamingContent(prev => prev + content);
         },
         onToolCall: (toolCall) => {
@@ -208,19 +219,25 @@ export function CopilotAssistant() {
           }
         },
         onDone: (content) => {
-          setStreamingContent(prevContent => {
-            const finalContent = content || prevContent;
-            const assistantMessage: CopilotMessage = {
-              id: Date.now() + 1,
-              session_id: currentSessionId || '',
-              role: 'assistant',
-              content: finalContent,
-              tool_calls: capturedToolCalls.length > 0 ? capturedToolCalls : undefined,
-              created_at: new Date().toISOString(),
-            };
-            setMessages(prev => [...prev, assistantMessage]);
-            return '';
-          });
+          // Prevent duplicate message addition (React Strict Mode can call this twice)
+          if (messageAddedRef.current) {
+            return;
+          }
+          messageAddedRef.current = true;
+          
+          // Use the ref to get the final content
+          const finalContent = content || streamingContentRef.current;
+          const assistantMessage: CopilotMessage = {
+            id: generateMessageId(),
+            session_id: currentSessionId || '',
+            role: 'assistant',
+            content: finalContent,
+            tool_calls: capturedToolCalls.length > 0 ? capturedToolCalls : undefined,
+            created_at: new Date().toISOString(),
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setStreamingContent('');
+          streamingContentRef.current = '';
           setActiveToolCalls([]);
           setIsStreaming(false);
           streamAbortRef.current = null;
@@ -229,12 +246,18 @@ export function CopilotAssistant() {
           setTimeout(() => inputRef.current?.focus(), 100);
         },
         onError: (error) => {
+          // Prevent duplicate error message addition
+          if (messageAddedRef.current) {
+            return;
+          }
+          messageAddedRef.current = true;
+          
           console.error('Stream error:', error);
           showError(`Chat error: ${error}`);
           setFailedMessageContent(userMessageContent);
           
           const errorMessage: CopilotMessage = {
-            id: Date.now() + 1,
+            id: generateMessageId(),
             session_id: currentSessionId || '',
             role: 'assistant',
             content: `Error: ${error}`,
@@ -242,6 +265,7 @@ export function CopilotAssistant() {
           };
           setMessages(prev => [...prev, errorMessage]);
           setStreamingContent('');
+          streamingContentRef.current = '';
           setActiveToolCalls([]);
           setIsStreaming(false);
           streamAbortRef.current = null;
@@ -260,7 +284,7 @@ export function CopilotAssistant() {
     
     if (streamingContent) {
       const assistantMessage: CopilotMessage = {
-        id: Date.now() + 1,
+        id: generateMessageId(),
         session_id: currentSessionId || '',
         role: 'assistant',
         content: streamingContent + '\n\n[Stopped]',
