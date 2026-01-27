@@ -258,15 +258,23 @@ func (s *Server) Router() http.Handler {
 	// Create auth middleware if enabled (from static config OR database settings)
 	var authMiddleware *auth.Middleware
 	if authEnabled && s.authHandler != nil {
-		// Get effective auth config (merges static config with database settings)
+		// Get effective config (merges static config with database settings)
 		var effectiveAuthCfg config.AuthConfig
+		var destBaseURL string
 		if s.configSvc != nil {
 			effectiveAuthCfg = s.configSvc.GetEffectiveAuthConfig()
+			destBaseURL = s.configSvc.GetDestinationConfig().BaseURL
 		} else {
 			effectiveAuthCfg = s.config.Auth
+			destBaseURL = s.config.Destination.BaseURL
+		}
+		if destBaseURL == "" {
+			destBaseURL = defaultGitHubAPIURL
 		}
 		jwtManager, _ := auth.NewJWTManager(effectiveAuthCfg.SessionSecret, effectiveAuthCfg.SessionDurationHours)
-		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, s.config.Source.BaseURL)
+		// Use destination GitHub URL for authorization checks (enterprise admin, org membership)
+		// since users authenticate via GitHub OAuth against the destination instance
+		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, destBaseURL)
 		authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
 
 		// Set authorizer on Copilot handler for tool authorization
