@@ -15,13 +15,19 @@ COPY web/ ./
 # Build frontend
 RUN npm run build
 
-# Build stage - Backend
-FROM golang:1.25-alpine AS backend-builder
+# Build stage - Backend (using Debian-based Go image for glibc compatibility)
+FROM golang:1.25-bookworm AS backend-builder
 
 WORKDIR /app
 
-# Install dependencies (including curl for downloading binaries)
-RUN apk add --no-cache git gcc musl-dev sqlite-dev curl bash
+# Install dependencies (including curl and unzip for downloading binaries)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    gcc \
+    libsqlite3-dev \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy go mod files
 COPY go.mod go.sum ./
