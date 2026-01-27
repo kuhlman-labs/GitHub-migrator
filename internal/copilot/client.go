@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	copilot "github.com/github/copilot-sdk/go"
 	"github.com/google/uuid"
@@ -20,7 +22,62 @@ import (
 const (
 	DefaultLogLevel = "info"
 	DefaultModel    = "gpt-4.1"
+	MaxTitleLength  = 50
+	TitleWordLimit  = 8
 )
+
+// generateSessionTitle creates a concise title from the first user message.
+// It takes the first few words and truncates to a reasonable length.
+func generateSessionTitle(message string) string {
+	// Clean up the message - remove newlines and extra whitespace
+	cleaned := strings.TrimSpace(message)
+	cleaned = strings.ReplaceAll(cleaned, "\n", " ")
+	cleaned = strings.ReplaceAll(cleaned, "\r", " ")
+
+	// Collapse multiple spaces
+	for strings.Contains(cleaned, "  ") {
+		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
+	}
+
+	// Split into words
+	words := strings.Fields(cleaned)
+	if len(words) == 0 {
+		return "New Chat"
+	}
+
+	// Take first N words
+	if len(words) > TitleWordLimit {
+		words = words[:TitleWordLimit]
+	}
+
+	title := strings.Join(words, " ")
+
+	// Truncate to max length, respecting word boundaries
+	if len(title) > MaxTitleLength {
+		// Find the last space before MaxTitleLength
+		truncated := title[:MaxTitleLength]
+		lastSpace := strings.LastIndex(truncated, " ")
+		if lastSpace > MaxTitleLength/2 {
+			title = truncated[:lastSpace]
+		} else {
+			title = truncated
+		}
+		// Remove trailing punctuation and add ellipsis
+		title = strings.TrimRightFunc(title, func(r rune) bool {
+			return unicode.IsPunct(r) || unicode.IsSpace(r)
+		})
+		title += "..."
+	}
+
+	// Capitalize first letter if not already
+	if len(title) > 0 {
+		runes := []rune(title)
+		runes[0] = unicode.ToUpper(runes[0])
+		title = string(runes)
+	}
+
+	return title
+}
 
 // resolveCLIPath finds the Copilot CLI path using environment variable or well-known locations.
 func resolveCLIPath() string {
@@ -98,6 +155,7 @@ type SDKSession struct {
 	ID        string
 	UserID    string
 	UserLogin string
+	Title     string // Session title (generated from first message)
 	Session   *copilot.Session
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -283,6 +341,7 @@ func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, ti
 		ID:        sessionID,
 		UserID:    userID,
 		UserLogin: userLogin,
+		Title:     "", // Will be generated from first message
 		Session:   sdkSession,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -363,10 +422,15 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*SDKSession,
 		return nil, fmt.Errorf("failed to recreate SDK session: %w", err)
 	}
 
+	title := ""
+	if dbSession.Title != nil {
+		title = *dbSession.Title
+	}
 	sess = &SDKSession{
 		ID:        dbSession.ID,
 		UserID:    dbSession.UserID,
 		UserLogin: dbSession.UserLogin,
+		Title:     title,
 		Session:   sdkSession,
 		CreatedAt: dbSession.CreatedAt,
 		UpdatedAt: dbSession.UpdatedAt,
@@ -471,6 +535,26 @@ func (c *Client) SendMessage(ctx context.Context, sessionID, message string) (*m
 		c.logger.Error("Failed to persist user message", "error", err)
 	}
 
+	// Generate session title from first message if not already set
+	if sess.Title == "" {
+		title := generateSessionTitle(message)
+		sess.Title = title
+		dbSession := &models.CopilotSession{
+			ID:        sessionID,
+			UserID:    sess.UserID,
+			UserLogin: sess.UserLogin,
+			Title:     &title,
+			CreatedAt: sess.CreatedAt,
+			UpdatedAt: time.Now(),
+			ExpiresAt: sess.ExpiresAt,
+		}
+		if err := c.db.UpdateCopilotSession(ctx, dbSession); err != nil {
+			c.logger.Error("Failed to update session title", "error", err, "session_id", sessionID)
+		} else {
+			c.logger.Debug("Generated session title", "session_id", sessionID, "title", title)
+		}
+	}
+
 	// Send message and wait for response
 	response, err := sess.Session.SendAndWait(copilot.MessageOptions{
 		Prompt: message,
@@ -540,6 +624,26 @@ func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, o
 	}
 	if _, err := c.db.CreateCopilotMessage(ctx, userMsg); err != nil {
 		c.logger.Error("Failed to persist user message", "error", err)
+	}
+
+	// Generate session title from first message if not already set
+	if sess.Title == "" {
+		title := generateSessionTitle(message)
+		sess.Title = title
+		dbSession := &models.CopilotSession{
+			ID:        sessionID,
+			UserID:    sess.UserID,
+			UserLogin: sess.UserLogin,
+			Title:     &title,
+			CreatedAt: sess.CreatedAt,
+			UpdatedAt: time.Now(),
+			ExpiresAt: sess.ExpiresAt,
+		}
+		if err := c.db.UpdateCopilotSession(ctx, dbSession); err != nil {
+			c.logger.Error("Failed to update session title", "error", err, "session_id", sessionID)
+		} else {
+			c.logger.Debug("Generated session title", "session_id", sessionID, "title", title)
+		}
 	}
 
 	// Track accumulated content for persistence
