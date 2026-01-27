@@ -11,6 +11,7 @@ import (
 	"time"
 
 	ghapi "github.com/google/go-github/v75/github"
+	"github.com/kuhlman-labs/github-migrator/internal/discovery"
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
@@ -408,8 +409,18 @@ func (h *Handler) rediscoverADORepository(w http.ResponseWriter, ctx context.Con
 
 // rediscoverGitHubRepository handles rediscovery of GitHub repositories
 func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.Context, decodedFullName string) {
-	if h.collector == nil {
-		WriteError(w, ErrClientNotConfigured.WithDetails("GitHub discovery service"))
+	// Get the repository to find its source ID
+	repo, err := h.db.GetRepository(ctx, decodedFullName)
+	if err != nil || repo == nil {
+		WriteError(w, ErrRepositoryNotFound)
+		return
+	}
+
+	// Get the collector for this repository's source
+	collector, err := h.getCollectorForSource(ctx, repo.SourceID)
+	if err != nil {
+		h.logger.Error("Failed to get collector for source", "error", err, "source_id", repo.SourceID)
+		WriteError(w, ErrClientNotConfigured.WithDetails(err.Error()))
 		return
 	}
 
@@ -420,7 +431,8 @@ func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.
 	}
 	org, repoName := parts[0], parts[1]
 
-	client, err := h.GetClientForOrg(ctx, org)
+	// Use the collector's client which is properly configured for this source
+	client, err := collector.GetClientForOrg(ctx, org)
 	if err != nil {
 		h.logger.Error("Failed to get client for organization", "error", err, "org", org)
 		WriteError(w, ErrInternal.WithDetails("Failed to initialize client for repository"))
@@ -434,7 +446,7 @@ func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.
 		return
 	}
 
-	h.startAsyncRediscovery(ghRepo, decodedFullName)
+	h.startAsyncRediscovery(collector, ghRepo, decodedFullName)
 
 	h.sendJSON(w, http.StatusAccepted, map[string]string{
 		"message":   "Re-discovery started",
@@ -444,10 +456,10 @@ func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.
 }
 
 // startAsyncRediscovery runs repository discovery asynchronously
-func (h *Handler) startAsyncRediscovery(ghRepo *ghapi.Repository, decodedFullName string) {
+func (h *Handler) startAsyncRediscovery(collector *discovery.Collector, ghRepo *ghapi.Repository, decodedFullName string) {
 	go func() {
 		bgCtx := context.Background()
-		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {
+		if err := collector.ProfileRepository(bgCtx, ghRepo); err != nil {
 			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
 		} else {
 			h.logger.Info("Re-discovery completed", "repo", decodedFullName)

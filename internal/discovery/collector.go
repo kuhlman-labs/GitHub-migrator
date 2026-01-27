@@ -116,6 +116,12 @@ func (c *Collector) getOrCreateOrgClient(ctx context.Context, org string) (*gith
 	return c.client, nil
 }
 
+// GetClientForOrg returns a GitHub client suitable for operations on the given organization.
+// This is a public wrapper around getOrCreateOrgClient for use by handlers.
+func (c *Collector) GetClientForOrg(ctx context.Context, org string) (*github.Client, error) {
+	return c.getOrCreateOrgClient(ctx, org)
+}
+
 // initProfilerForOrg creates a profiler and loads caches for an organization
 func (c *Collector) initProfilerForOrg(ctx context.Context, org string, client *github.Client) *Profiler {
 	profiler := NewProfiler(client, c.logger)
