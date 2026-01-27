@@ -42,18 +42,42 @@ func validateCLIPath(cliPath string) (string, error) {
 	// Clean the path to normalize it (removes .., extra slashes, etc.)
 	cleanPath := filepath.Clean(cliPath)
 
-	// If it's an absolute path, verify the file exists
+	// If it's an absolute path, verify the file exists and is executable
 	if filepath.IsAbs(cleanPath) {
-		info, err := os.Stat(cleanPath)
-		if err != nil {
+		// First check if it's a symlink and get info about the link itself
+		linkInfo, linkErr := os.Lstat(cleanPath)
+		if linkErr != nil {
 			return "", fmt.Errorf("CLI path does not exist: %s", cleanPath)
 		}
-		if info.IsDir() {
-			return "", fmt.Errorf("CLI path is a directory, not an executable: %s", cleanPath)
+
+		// If it's a symlink, follow it and check the target
+		targetPath := cleanPath
+		if linkInfo.Mode()&os.ModeSymlink != 0 {
+			var err error
+			targetPath, err = filepath.EvalSymlinks(cleanPath)
+			if err != nil {
+				return "", fmt.Errorf("CLI path symlink is broken or target does not exist: %s -> %v", cleanPath, err)
+			}
 		}
+
+		// Now check the actual file (following symlinks)
+		info, err := os.Stat(targetPath)
+		if err != nil {
+			return "", fmt.Errorf("CLI path target does not exist: %s", targetPath)
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("CLI path is a directory, not an executable: %s", targetPath)
+		}
+
 		// Check if the file is executable (on Unix systems)
+		// For script files (like node.js scripts), the executable bit may not be set
+		// but exec.LookPath will still find them if they're in PATH
 		if info.Mode()&0111 == 0 {
-			return "", fmt.Errorf("CLI path is not executable: %s", cleanPath)
+			// Try exec.LookPath as a fallback - it handles shebang scripts
+			if _, lookErr := exec.LookPath(cleanPath); lookErr == nil {
+				return cleanPath, nil
+			}
+			return "", fmt.Errorf("CLI path is not executable (mode: %s): %s - try running: chmod +x %s", info.Mode().String(), targetPath, targetPath)
 		}
 		return cleanPath, nil
 	}
