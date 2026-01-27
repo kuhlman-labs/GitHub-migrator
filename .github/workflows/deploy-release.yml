@@ -58,11 +58,14 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Explicitly disable default SHA tags to prevent malformed tag generation
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}},value=${{ steps.get-tag.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.get-tag.outputs.tag }}
             type=semver,pattern={{major}},value=${{ steps.get-tag.outputs.tag }}
-            type=raw,value=prod
+            type=sha,prefix=sha-,format=short
             type=raw,value=latest
 
       - name: Build and push Docker image
