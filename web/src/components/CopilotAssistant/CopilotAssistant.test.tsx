@@ -7,9 +7,10 @@ import { CopilotAssistant } from './index';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { AuthProvider } from '../../contexts/AuthContext';
 
-// Mock scrollIntoView which doesn't exist in JSDOM
+// Mock scroll methods which don't exist in JSDOM
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.scrollTo = vi.fn();
   
   // Mock matchMedia for responsive behavior
   Object.defineProperty(window, 'matchMedia', {

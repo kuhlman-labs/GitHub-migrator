@@ -348,8 +348,20 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Mutex to protect concurrent writes to ResponseWriter.
+	// The keepalive goroutine and SDK event callbacks can write concurrently,
+	// and http.ResponseWriter is not thread-safe.
+	var writeMu sync.Mutex
+
+	// Helper to write SSE events with mutex protection
+	writeEvent := func(eventType string, data any) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		h.writeSSEEvent(w, flusher, eventType, data)
+	}
+
 	// Send initial session_id event
-	h.writeSSEEvent(w, flusher, "session", map[string]string{"session_id": sessionID})
+	writeEvent("session", map[string]string{"session_id": sessionID})
 
 	h.logger.Debug("Starting stream for message", "session_id", sessionID, "message_length", len(message))
 
@@ -366,9 +378,11 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// Send SSE comment as keepalive
+				// Send SSE comment as keepalive (with mutex protection)
+				writeMu.Lock()
 				_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 				flusher.Flush()
+				writeMu.Unlock()
 			}
 		}
 	}()
@@ -397,7 +411,7 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 			eventData["error"] = event.Data.Error
 		}
 
-		h.writeSSEEvent(w, flusher, string(event.Type), eventData)
+		writeEvent(string(event.Type), eventData)
 	})
 
 	// Stop keepalive goroutine
@@ -405,7 +419,7 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		h.logger.Error("Stream error", "error", err, "session_id", sessionID)
-		h.writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+		writeEvent("error", map[string]string{"error": err.Error()})
 	}
 }
 

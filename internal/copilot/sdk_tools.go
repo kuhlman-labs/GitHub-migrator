@@ -186,7 +186,7 @@ type StartMigrationParams struct {
 	BatchName  string `json:"batch_name,omitempty" jsonschema:"Name of the batch to migrate"`
 	BatchID    int64  `json:"batch_id,omitempty" jsonschema:"ID of the batch to migrate"`
 	Repository string `json:"repository,omitempty" jsonschema:"Single repository to migrate"`
-	DryRun     bool   `json:"dry_run" jsonschema:"If true, perform a dry run (default: true for safety)"`
+	DryRun     *bool  `json:"dry_run,omitempty" jsonschema:"If true, perform a dry run. Defaults to true for safety. Set to false for production migration."`
 }
 
 // CancelMigrationParams defines parameters for cancel_migration tool.
@@ -1606,10 +1606,12 @@ func (c *Client) executeStartMigration(ctx context.Context, params StartMigratio
 		return nil, fmt.Errorf("at least one of batch_name, batch_id, or repository must be specified")
 	}
 
-	// Default to dry-run for safety
+	// Default to dry-run for safety when not explicitly specified.
+	// Using pointer allows us to distinguish between "not set" (nil) and "explicitly false".
 	dryRun := true
-	// The params.DryRun field defaults to false in Go, so we need special handling
-	// For now, we'll treat the explicit false as intentional production migration
+	if params.DryRun != nil {
+		dryRun = *params.DryRun
+	}
 
 	targetStatus := models.StatusQueuedForMigration
 	if dryRun {

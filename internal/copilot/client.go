@@ -282,8 +282,9 @@ func (c *Client) IsStarted() bool {
 }
 
 // getCurrentAuth returns the current auth context for tool authorization.
-// This must only be called while messageMu is held (during message processing).
 func (c *Client) getCurrentAuth() *AuthContext {
+	c.messageMu.Lock()
+	defer c.messageMu.Unlock()
 	return c.currentAuth
 }
 
