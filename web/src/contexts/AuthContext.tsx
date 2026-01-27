@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { api } from '../services/api';
+import { setAuthEnabled } from '../services/api/client';
 
 interface User {
   id: number;
@@ -66,6 +67,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         const config = await api.getAuthConfig();
         setAuthConfig(config);
+        
+        // Update the API client's auth state to prevent unwanted redirects
+        setAuthEnabled(config.enabled);
         
         // If auth is enabled, fetch current user
         if (config.enabled) {

@@ -43,7 +43,7 @@ FROM alpine:latest
 # Install runtime dependencies including glibc compatibility for git-sizer
 # git-sizer is built for glibc, but Alpine uses musl libc
 # We need gcompat to run glibc binaries on Alpine
-RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs gcompat
+RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs gcompat nodejs npm
 
 # For linux/arm64, install Go and build git-sizer from source since no pre-built binary exists
 # This is only needed on Apple Silicon Macs running Docker
@@ -54,6 +54,12 @@ RUN if [ "$(uname -m)" = "aarch64" ]; then \
         apk del go && \
         rm -rf /root/go; \
     fi
+
+# Install GitHub Copilot CLI globally
+# The CLI is required for the Copilot SDK to function
+# Note: Alpine's npm installs to /usr/lib/node_modules/, not /usr/local/lib/node_modules/
+RUN npm install -g @github/copilot && \
+    ln -sf /usr/lib/node_modules/@github/copilot/bin/copilot /usr/local/bin/copilot
 
 WORKDIR /app
 

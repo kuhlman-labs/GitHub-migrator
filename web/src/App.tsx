@@ -13,6 +13,7 @@ import { UserMappingTable } from './components/UserMapping';
 import { TeamMappingTable } from './components/TeamMapping';
 import { SourcesPage } from './components/Sources';
 import { SettingsPage } from './components/Settings';
+import { CopilotAssistant } from './components/CopilotAssistant';
 import { Navigation } from './components/common/Navigation';
 import { PageLayout } from './components/common/PageLayout';
 import { Login } from './components/Auth/Login';
@@ -145,6 +146,7 @@ function ProtectedRoutes() {
       <Route path="/repositories" element={<PageLayout><Repositories /></PageLayout>} />
       <Route path="/dependencies" element={<PageLayout><Dependencies /></PageLayout>} />
       <Route path="/batches" element={<PageLayout><BatchManagement /></PageLayout>} />
+      <Route path="/copilot" element={<PageLayout fullWidth><CopilotAssistant /></PageLayout>} />
       <Route path="/history" element={<PageLayout><MigrationHistory /></PageLayout>} />
       <Route path="/user-mappings" element={<PageLayout><UserMappingTable /></PageLayout>} />
       <Route path="/team-mappings" element={<PageLayout><TeamMappingTable /></PageLayout>} />

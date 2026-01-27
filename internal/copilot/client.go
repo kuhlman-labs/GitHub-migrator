@@ -1,0 +1,883 @@
+// Package copilot provides the Copilot chat service integration using the official SDK.
+package copilot
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
+
+	copilot "github.com/github/copilot-sdk/go"
+	"github.com/google/uuid"
+	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"github.com/kuhlman-labs/github-migrator/internal/storage"
+)
+
+// Default configuration values
+const (
+	DefaultLogLevel = "info"
+	DefaultModel    = "gpt-4.1"
+	MaxTitleLength  = 50
+	TitleWordLimit  = 8
+)
+
+// generateSessionTitle creates a concise title from the first user message.
+// It takes the first few words and truncates to a reasonable length.
+func generateSessionTitle(message string) string {
+	// Clean up the message - remove newlines and extra whitespace
+	cleaned := strings.TrimSpace(message)
+	cleaned = strings.ReplaceAll(cleaned, "\n", " ")
+	cleaned = strings.ReplaceAll(cleaned, "\r", " ")
+
+	// Collapse multiple spaces
+	for strings.Contains(cleaned, "  ") {
+		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
+	}
+
+	// Split into words
+	words := strings.Fields(cleaned)
+	if len(words) == 0 {
+		return "New Chat"
+	}
+
+	// Take first N words
+	if len(words) > TitleWordLimit {
+		words = words[:TitleWordLimit]
+	}
+
+	title := strings.Join(words, " ")
+
+	// Truncate to max length, respecting word boundaries
+	if len(title) > MaxTitleLength {
+		// Find the last space before MaxTitleLength
+		truncated := title[:MaxTitleLength]
+		lastSpace := strings.LastIndex(truncated, " ")
+		if lastSpace > MaxTitleLength/2 {
+			title = truncated[:lastSpace]
+		} else {
+			title = truncated
+		}
+		// Remove trailing punctuation and add ellipsis
+		title = strings.TrimRightFunc(title, func(r rune) bool {
+			return unicode.IsPunct(r) || unicode.IsSpace(r)
+		})
+		title += "..."
+	}
+
+	// Capitalize first letter if not already
+	if len(title) > 0 {
+		runes := []rune(title)
+		runes[0] = unicode.ToUpper(runes[0])
+		title = string(runes)
+	}
+
+	return title
+}
+
+// resolveCLIPath finds the Copilot CLI path using environment variable or well-known locations.
+func resolveCLIPath() string {
+	// Check environment variable first
+	if envPath := os.Getenv("COPILOT_CLI_PATH"); envPath != "" {
+		return envPath
+	}
+
+	// Try well-known paths in order of preference
+	knownPaths := []string{
+		"/usr/local/bin/copilot", // Docker/Linux standard
+		"/usr/bin/copilot",       // System-wide install
+		"copilot",                // In PATH (fallback)
+	}
+
+	for _, path := range knownPaths {
+		if _, err := exec.LookPath(path); err == nil {
+			return path
+		}
+	}
+
+	// Return empty to let SDK use its default
+	return ""
+}
+
+// Client wraps the Copilot SDK client and manages sessions.
+type Client struct {
+	sdkClient *copilot.Client
+	db        *storage.Database
+	logger    *slog.Logger
+	tools     []copilot.Tool
+	config    ClientConfig
+
+	// Session management
+	sessions   map[string]*SDKSession
+	sessionsMu sync.RWMutex
+
+	// Message processing serialization
+	// The Copilot SDK's tool execution model doesn't support passing auth context
+	// per-request, so we serialize message processing to prevent race conditions
+	// where concurrent requests could access each other's auth context.
+	messageMu   sync.Mutex
+	currentAuth *AuthContext // Protected by messageMu during message processing
+
+	// Lifecycle
+	started bool
+	mu      sync.Mutex
+}
+
+// Authorization tier constants for AuthContext.Tier
+const (
+	AuthTierAdmin       = "admin"
+	AuthTierSelfService = "self_service"
+	AuthTierReadOnly    = "read_only"
+)
+
+// AuthContext carries authorization information for tool execution.
+type AuthContext struct {
+	UserID      string
+	UserLogin   string
+	Tier        string // AuthTierAdmin, AuthTierSelfService, or AuthTierReadOnly
+	Permissions ToolPermissions
+}
+
+// ToolPermissions defines what tool categories the user can execute.
+type ToolPermissions struct {
+	CanRead           bool // Can use read-only tools (analytics, listings)
+	CanMigrateOwn     bool // Can migrate repos they have admin access to
+	CanMigrateAll     bool // Can migrate any repository
+	CanManageSettings bool // Can modify system settings
+}
+
+// SDKSession wraps an SDK session with additional metadata.
+type SDKSession struct {
+	ID        string
+	UserID    string
+	UserLogin string
+	Title     string // Session title (generated from first message)
+	Session   *copilot.Session
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ExpiresAt time.Time
+	Auth      *AuthContext // Authorization context for this session
+}
+
+// ClientConfig holds configuration for the Copilot SDK client.
+type ClientConfig struct {
+	CLIPath           string
+	CLIUrl            string // URL of existing CLI server (optional)
+	Model             string
+	LogLevel          string
+	SessionTimeoutMin int
+	Streaming         bool
+}
+
+// NewClient creates a new Copilot SDK client wrapper.
+func NewClient(db *storage.Database, logger *slog.Logger, cfg ClientConfig) *Client {
+	// Set defaults
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = DefaultLogLevel
+	}
+	if cfg.SessionTimeoutMin == 0 {
+		cfg.SessionTimeoutMin = 30
+	}
+	if cfg.Model == "" {
+		cfg.Model = DefaultModel
+	}
+
+	c := &Client{
+		db:       db,
+		logger:   logger,
+		config:   cfg,
+		sessions: make(map[string]*SDKSession),
+	}
+
+	return c
+}
+
+// Start initializes the SDK client and starts the CLI server.
+func (c *Client) Start() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.started {
+		return nil
+	}
+
+	opts := &copilot.ClientOptions{
+		LogLevel: c.config.LogLevel,
+	}
+
+	// Resolve CLI path using the same logic as CheckCLIAvailable
+	cliPath := c.config.CLIPath
+	if cliPath == "" {
+		cliPath = resolveCLIPath()
+	}
+	if cliPath != "" {
+		opts.CLIPath = cliPath
+	}
+
+	// Set CLI URL if connecting to external server
+	if c.config.CLIUrl != "" {
+		opts.CLIUrl = c.config.CLIUrl
+	}
+
+	c.sdkClient = copilot.NewClient(opts)
+
+	if err := c.sdkClient.Start(); err != nil {
+		return fmt.Errorf("failed to start Copilot SDK client: %w", err)
+	}
+
+	// Register tools after client is started
+	c.registerTools()
+
+	c.started = true
+	c.logger.Info("Copilot SDK client started",
+		"cli_path", c.config.CLIPath,
+		"model", c.config.Model,
+		"streaming", c.config.Streaming,
+	)
+
+	return nil
+}
+
+// Stop gracefully shuts down the SDK client.
+func (c *Client) Stop() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.started {
+		return nil
+	}
+
+	// Destroy all active sessions
+	c.sessionsMu.Lock()
+	for _, sess := range c.sessions {
+		if sess.Session != nil {
+			_ = sess.Session.Destroy()
+		}
+	}
+	c.sessions = make(map[string]*SDKSession)
+	c.sessionsMu.Unlock()
+
+	// Stop the SDK client
+	errs := c.sdkClient.Stop()
+	if len(errs) > 0 {
+		c.logger.Error("Errors stopping Copilot SDK client", "errors", errs)
+		return errs[0]
+	}
+
+	c.started = false
+	c.logger.Info("Copilot SDK client stopped")
+
+	return nil
+}
+
+// IsStarted returns whether the client is running.
+func (c *Client) IsStarted() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.started
+}
+
+// getCurrentAuth returns the current auth context for tool authorization.
+func (c *Client) getCurrentAuth() *AuthContext {
+	c.messageMu.Lock()
+	defer c.messageMu.Unlock()
+	return c.currentAuth
+}
+
+// setCurrentAuth sets the auth context for testing purposes.
+// In production, auth is set by acquiring messageMu in SendMessage/StreamMessage.
+func (c *Client) setCurrentAuth(auth *AuthContext) {
+	c.messageMu.Lock()
+	c.currentAuth = auth
+	c.messageMu.Unlock()
+}
+
+// clearCurrentAuth clears the auth context for testing purposes.
+func (c *Client) clearCurrentAuth() {
+	c.messageMu.Lock()
+	c.currentAuth = nil
+	c.messageMu.Unlock()
+}
+
+// CreateSession creates a new SDK session for a user with authorization context.
+// If timeoutMin is 0 or negative, the client's configured default timeout is used.
+func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext) (*SDKSession, error) {
+	if !c.IsStarted() {
+		if err := c.Start(); err != nil {
+			return nil, err
+		}
+	}
+
+	sessionID := uuid.New().String()
+	now := time.Now()
+
+	// Use provided timeout or fall back to client config
+	timeout := timeoutMin
+	if timeout <= 0 {
+		timeout = c.config.SessionTimeoutMin
+	}
+	expiresAt := now.Add(time.Duration(timeout) * time.Minute)
+
+	// Build system message with migration context and permissions
+	systemMessage := c.buildSystemMessage(ctx, authCtx)
+
+	// Create SDK session with tools
+	sdkSession, err := c.sdkClient.CreateSession(&copilot.SessionConfig{
+		Model:     c.config.Model,
+		Streaming: c.config.Streaming,
+		Tools:     c.tools,
+		SystemMessage: &copilot.SystemMessageConfig{
+			Content: systemMessage,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SDK session: %w", err)
+	}
+
+	sess := &SDKSession{
+		ID:        sessionID,
+		UserID:    userID,
+		UserLogin: userLogin,
+		Title:     "", // Will be generated from first message
+		Session:   sdkSession,
+		CreatedAt: now,
+		UpdatedAt: now,
+		ExpiresAt: expiresAt,
+		Auth:      authCtx,
+	}
+
+	// Store in memory
+	c.sessionsMu.Lock()
+	c.sessions[sessionID] = sess
+	c.sessionsMu.Unlock()
+
+	// Persist to database
+	dbSession := &models.CopilotSession{
+		ID:        sessionID,
+		UserID:    userID,
+		UserLogin: userLogin,
+		CreatedAt: now,
+		UpdatedAt: now,
+		ExpiresAt: expiresAt,
+	}
+	if err := c.db.CreateCopilotSession(ctx, dbSession); err != nil {
+		c.logger.Error("Failed to persist Copilot session", "error", err, "session_id", sessionID)
+	}
+
+	c.logger.Info("Created Copilot SDK session", "session_id", sessionID, "user", userLogin)
+
+	return sess, nil
+}
+
+// GetSession retrieves a session by ID.
+func (c *Client) GetSession(ctx context.Context, sessionID string) (*SDKSession, error) {
+	c.sessionsMu.RLock()
+	sess, ok := c.sessions[sessionID]
+	c.sessionsMu.RUnlock()
+
+	if ok {
+		if time.Now().After(sess.ExpiresAt) {
+			// Clean up expired session to prevent memory leaks
+			c.cleanupExpiredSession(sessionID, sess)
+			return nil, fmt.Errorf("session expired")
+		}
+		return sess, nil
+	}
+
+	// Try to load from database and recreate SDK session
+	dbSession, err := c.db.GetCopilotSession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+
+	if dbSession == nil {
+		return nil, fmt.Errorf("session not found")
+	}
+
+	if dbSession.IsExpired() {
+		return nil, fmt.Errorf("session expired")
+	}
+
+	// Recreate SDK session (note: message history won't be preserved in SDK)
+	if !c.IsStarted() {
+		if err := c.Start(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Auth context will be set by the handler when the session is used
+	systemMessage := c.buildSystemMessage(ctx, nil)
+	sdkSession, err := c.sdkClient.CreateSession(&copilot.SessionConfig{
+		Model:     c.config.Model,
+		Streaming: c.config.Streaming,
+		Tools:     c.tools,
+		SystemMessage: &copilot.SystemMessageConfig{
+			Content: systemMessage,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to recreate SDK session: %w", err)
+	}
+
+	title := ""
+	if dbSession.Title != nil {
+		title = *dbSession.Title
+	}
+	sess = &SDKSession{
+		ID:        dbSession.ID,
+		UserID:    dbSession.UserID,
+		UserLogin: dbSession.UserLogin,
+		Title:     title,
+		Session:   sdkSession,
+		CreatedAt: dbSession.CreatedAt,
+		UpdatedAt: dbSession.UpdatedAt,
+		ExpiresAt: dbSession.ExpiresAt,
+		Auth:      nil, // Auth context will be set by handler when session is used
+	}
+
+	// Cache in memory
+	c.sessionsMu.Lock()
+	c.sessions[sessionID] = sess
+	c.sessionsMu.Unlock()
+
+	return sess, nil
+}
+
+// cleanupExpiredSession removes an expired session from memory and destroys its SDK resources.
+// This prevents memory leaks from accumulated expired sessions.
+func (c *Client) cleanupExpiredSession(sessionID string, sess *SDKSession) {
+	c.sessionsMu.Lock()
+	defer c.sessionsMu.Unlock()
+
+	// Double-check the session is still in the map (another goroutine may have cleaned it)
+	if existingSess, ok := c.sessions[sessionID]; ok && existingSess == sess {
+		if sess.Session != nil {
+			_ = sess.Session.Destroy()
+		}
+		delete(c.sessions, sessionID)
+		c.logger.Debug("Cleaned up expired session", "session_id", sessionID)
+	}
+}
+
+// UpdateSessionAuth updates the authorization context for an existing session.
+// This should be called by handlers to ensure the session uses the current user's permissions.
+func (c *Client) UpdateSessionAuth(sessionID string, authCtx *AuthContext) {
+	c.sessionsMu.Lock()
+	defer c.sessionsMu.Unlock()
+
+	if sess, ok := c.sessions[sessionID]; ok {
+		sess.Auth = authCtx
+	}
+}
+
+// DeleteSession removes a session.
+func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
+	c.sessionsMu.Lock()
+	if sess, ok := c.sessions[sessionID]; ok {
+		if sess.Session != nil {
+			_ = sess.Session.Destroy()
+		}
+		delete(c.sessions, sessionID)
+	}
+	c.sessionsMu.Unlock()
+
+	if err := c.db.DeleteCopilotSession(ctx, sessionID); err != nil {
+		return fmt.Errorf("failed to delete session: %w", err)
+	}
+
+	c.logger.Info("Deleted Copilot session", "session_id", sessionID)
+	return nil
+}
+
+// ListSessions returns all sessions for a user.
+func (c *Client) ListSessions(ctx context.Context, userID string) ([]*models.CopilotSessionResponse, error) {
+	sessions, err := c.db.ListCopilotSessions(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	responses := make([]*models.CopilotSessionResponse, 0, len(sessions))
+	for _, session := range sessions {
+		responses = append(responses, session.ToResponse())
+	}
+	return responses, nil
+}
+
+// SendMessage sends a message and waits for the complete response.
+func (c *Client) SendMessage(ctx context.Context, sessionID, message string) (*models.ChatResponse, error) {
+	sess, err := c.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+
+	// Serialize message processing to prevent auth context race conditions.
+	// The Copilot SDK's tool execution model doesn't support per-request context,
+	// so we must ensure only one message is processed at a time.
+	c.messageMu.Lock()
+	c.currentAuth = sess.Auth
+	defer func() {
+		c.currentAuth = nil
+		c.messageMu.Unlock()
+	}()
+
+	// Persist user message
+	userMsg := &models.CopilotMessage{
+		SessionID: sessionID,
+		Role:      models.RoleUser,
+		Content:   message,
+		CreatedAt: time.Now(),
+	}
+	userMsgID, err := c.db.CreateCopilotMessage(ctx, userMsg)
+	if err != nil {
+		c.logger.Error("Failed to persist user message", "error", err)
+	}
+
+	// Generate session title from first message if not already set
+	if sess.Title == "" {
+		title := generateSessionTitle(message)
+		sess.Title = title
+		dbSession := &models.CopilotSession{
+			ID:        sessionID,
+			UserID:    sess.UserID,
+			UserLogin: sess.UserLogin,
+			Title:     &title,
+			CreatedAt: sess.CreatedAt,
+			UpdatedAt: time.Now(),
+			ExpiresAt: sess.ExpiresAt,
+		}
+		if err := c.db.UpdateCopilotSession(ctx, dbSession); err != nil {
+			c.logger.Error("Failed to update session title", "error", err, "session_id", sessionID)
+		} else {
+			c.logger.Debug("Generated session title", "session_id", sessionID, "title", title)
+		}
+	}
+
+	// Send message and wait for response
+	response, err := sess.Session.SendAndWait(copilot.MessageOptions{
+		Prompt: message,
+	}, 120000) // 2 minute timeout
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message: %w", err)
+	}
+
+	// Extract content from response
+	content := ""
+	if response != nil && response.Data.Content != nil {
+		content = *response.Data.Content
+	}
+
+	// Persist assistant message
+	assistantMsg := &models.CopilotMessage{
+		SessionID: sessionID,
+		Role:      models.RoleAssistant,
+		Content:   content,
+		CreatedAt: time.Now(),
+	}
+	assistantMsgID, err := c.db.CreateCopilotMessage(ctx, assistantMsg)
+	if err != nil {
+		c.logger.Error("Failed to persist assistant message", "error", err)
+	}
+
+	// Update session timestamp
+	sess.UpdatedAt = time.Now()
+
+	c.logger.Debug("Message exchange completed",
+		"session_id", sessionID,
+		"user_msg_id", userMsgID,
+		"assistant_msg_id", assistantMsgID,
+	)
+
+	return &models.ChatResponse{
+		SessionID: sessionID,
+		MessageID: assistantMsgID,
+		Content:   content,
+		Done:      true,
+	}, nil
+}
+
+// StreamMessage sends a message and streams the response via a callback.
+func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, onEvent func(event StreamEvent)) error {
+	sess, err := c.GetSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	// Serialize message processing to prevent auth context race conditions.
+	// The Copilot SDK's tool execution model doesn't support per-request context,
+	// so we must ensure only one message is processed at a time.
+	c.messageMu.Lock()
+	c.currentAuth = sess.Auth
+	defer func() {
+		c.currentAuth = nil
+		c.messageMu.Unlock()
+	}()
+
+	// Persist user message
+	userMsg := &models.CopilotMessage{
+		SessionID: sessionID,
+		Role:      models.RoleUser,
+		Content:   message,
+		CreatedAt: time.Now(),
+	}
+	if _, err := c.db.CreateCopilotMessage(ctx, userMsg); err != nil {
+		c.logger.Error("Failed to persist user message", "error", err)
+	}
+
+	// Generate session title from first message if not already set
+	if sess.Title == "" {
+		title := generateSessionTitle(message)
+		sess.Title = title
+		dbSession := &models.CopilotSession{
+			ID:        sessionID,
+			UserID:    sess.UserID,
+			UserLogin: sess.UserLogin,
+			Title:     &title,
+			CreatedAt: sess.CreatedAt,
+			UpdatedAt: time.Now(),
+			ExpiresAt: sess.ExpiresAt,
+		}
+		if err := c.db.UpdateCopilotSession(ctx, dbSession); err != nil {
+			c.logger.Error("Failed to update session title", "error", err, "session_id", sessionID)
+		} else {
+			c.logger.Debug("Generated session title", "session_id", sessionID, "title", title)
+		}
+	}
+
+	// Track accumulated content for persistence
+	var fullContent string
+	done := make(chan struct{})
+	var closeOnce sync.Once
+
+	// Set up event handler for streaming
+	unsubscribe := sess.Session.On(func(event copilot.SessionEvent) {
+		// Log event details for debugging
+		logFields := []any{"type", event.Type, "session_id", sessionID}
+		if event.Data.Content != nil {
+			logFields = append(logFields, "content_length", len(*event.Data.Content))
+		}
+		if event.Data.ToolName != nil {
+			logFields = append(logFields, "tool_name", *event.Data.ToolName)
+		}
+		if event.Data.DeltaContent != nil {
+			logFields = append(logFields, "delta_length", len(*event.Data.DeltaContent))
+		}
+		c.logger.Debug("SDK event received", logFields...)
+
+		switch event.Type {
+		case "assistant.message_delta":
+			if event.Data.DeltaContent != nil {
+				fullContent += *event.Data.DeltaContent
+				onEvent(StreamEvent{
+					Type: StreamEventDelta,
+					Data: StreamEventData{
+						Content: *event.Data.DeltaContent,
+					},
+				})
+			}
+
+		case "tool.execution_start":
+			if event.Data.ToolName != nil {
+				onEvent(StreamEvent{
+					Type: StreamEventToolCall,
+					Data: StreamEventData{
+						ToolCall: &models.ToolCall{
+							ID:     getStringOrDefault(event.Data.ToolCallID, ""),
+							Name:   *event.Data.ToolName,
+							Status: "pending",
+						},
+					},
+				})
+			}
+
+		case "tool.execution_complete":
+			onEvent(StreamEvent{
+				Type: StreamEventToolResult,
+				Data: StreamEventData{
+					ToolResult: &models.ToolResult{
+						ToolCallID: getStringOrDefault(event.Data.ToolCallID, ""),
+						Success:    true,
+					},
+				},
+			})
+
+		case "assistant.message":
+			// Final message received
+			if event.Data.Content != nil {
+				fullContent = *event.Data.Content
+			}
+
+		case "session.idle":
+			onEvent(StreamEvent{
+				Type: StreamEventDone,
+				Data: StreamEventData{
+					Content: fullContent,
+				},
+			})
+			closeOnce.Do(func() { close(done) })
+
+		case "error", "session.error":
+			errMsg := "Unknown error"
+			// session.error events have error info in Message/ErrorType fields
+			if event.Data.Message != nil {
+				errMsg = *event.Data.Message
+			} else if event.Data.Content != nil {
+				errMsg = *event.Data.Content
+			}
+			// Log the error with full details
+			logFields := []any{
+				"session_id", sessionID,
+				"error", errMsg,
+				"event_type", event.Type,
+			}
+			if event.Data.ErrorType != nil {
+				logFields = append(logFields, "error_type", *event.Data.ErrorType)
+			}
+			if event.Data.Stack != nil {
+				logFields = append(logFields, "stack", *event.Data.Stack)
+			}
+			c.logger.Error("Copilot SDK session error", logFields...)
+
+			onEvent(StreamEvent{
+				Type: StreamEventError,
+				Data: StreamEventData{
+					Error: errMsg,
+				},
+			})
+			// Don't close done channel for session.error - let session.idle handle it
+			if event.Type == "error" {
+				closeOnce.Do(func() { close(done) })
+			}
+		}
+	})
+	defer unsubscribe()
+
+	// Send the message
+	c.logger.Debug("Sending message to Copilot SDK", "session_id", sessionID, "message_length", len(message))
+	_, err = sess.Session.Send(copilot.MessageOptions{
+		Prompt: message,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+	c.logger.Debug("Message sent, waiting for response", "session_id", sessionID)
+
+	// Wait for completion or context cancellation
+	select {
+	case <-done:
+		c.logger.Debug("Stream completed", "session_id", sessionID)
+	case <-ctx.Done():
+		c.logger.Debug("Context cancelled, aborting stream", "session_id", sessionID)
+		_ = sess.Session.Abort()
+		return ctx.Err()
+	}
+
+	// Persist assistant message
+	assistantMsg := &models.CopilotMessage{
+		SessionID: sessionID,
+		Role:      models.RoleAssistant,
+		Content:   fullContent,
+		CreatedAt: time.Now(),
+	}
+	if _, err := c.db.CreateCopilotMessage(ctx, assistantMsg); err != nil {
+		c.logger.Error("Failed to persist assistant message", "error", err)
+	}
+
+	sess.UpdatedAt = time.Now()
+
+	return nil
+}
+
+// GetSessionHistory returns the message history for a session.
+func (c *Client) GetSessionHistory(ctx context.Context, sessionID string) ([]models.CopilotMessage, error) {
+	messages, err := c.db.GetCopilotMessages(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages: %w", err)
+	}
+	return messages, nil
+}
+
+// buildSystemMessage creates the system prompt with migration context.
+func (c *Client) buildSystemMessage(ctx context.Context, authCtx *AuthContext) string {
+	baseMessage := `You are the GitHub Migrator Copilot assistant. You help users plan and execute GitHub migrations.
+
+You have access to tools that can:
+- Analyze repositories for migration complexity and readiness
+- Find and check dependencies between repositories
+- Create and manage migration batches
+- Plan migration waves to minimize downtime
+- Identify repositories suitable for pilot migrations
+- Get migration status and history
+- Start, cancel, and monitor migrations
+
+When users ask about migrations, use the appropriate tools to gather information and perform actions.
+Be concise but thorough in your explanations. Present data in tables or lists when showing multiple items.
+After performing actions, offer specific follow-up actions the user can take.`
+
+	// Add authorization-specific guidance
+	if authCtx != nil {
+		switch authCtx.Tier {
+		case "admin":
+			baseMessage += `
+
+You are interacting with an administrator who has full migration rights. They can:
+- Start and manage migrations for any repository
+- Create and modify batches
+- Execute team migrations
+- Modify system settings`
+		case "self_service":
+			baseMessage += `
+
+You are interacting with a self-service user. They can:
+- View analytics and migration status
+- Migrate repositories where they have admin access on the source
+- Create batches for their own repositories
+NOTE: If they request operations on repositories they don't own, politely explain they need admin rights.`
+		case "read_only":
+			baseMessage += `
+
+You are interacting with a read-only user. They can:
+- View analytics, repository information, and migration status
+- Get reports and audit information
+NOTE: If they request migration operations, explain they need elevated permissions.`
+		}
+	}
+
+	return baseMessage
+}
+
+// StreamEvent represents a streaming event sent to the client.
+type StreamEvent struct {
+	Type StreamEventType `json:"type"`
+	Data StreamEventData `json:"data"`
+}
+
+// StreamEventType defines the type of streaming event.
+type StreamEventType string
+
+const (
+	StreamEventDelta      StreamEventType = "delta"
+	StreamEventToolCall   StreamEventType = "tool_call"
+	StreamEventToolResult StreamEventType = "tool_result"
+	StreamEventDone       StreamEventType = "done"
+	StreamEventError      StreamEventType = "error"
+)
+
+// StreamEventData contains the data for a streaming event.
+type StreamEventData struct {
+	Content    string             `json:"content,omitempty"`
+	ToolCall   *models.ToolCall   `json:"tool_call,omitempty"`
+	ToolResult *models.ToolResult `json:"tool_result,omitempty"`
+	Error      string             `json:"error,omitempty"`
+}
+
+// Helper function to safely get string value or default.
+func getStringOrDefault(s *string, defaultVal string) string {
+	if s != nil {
+		return *s
+	}
+	return defaultVal
+}

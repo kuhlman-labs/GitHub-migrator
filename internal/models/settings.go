@@ -41,6 +41,15 @@ type Settings struct {
 	AuthAllowEnterpriseAdminMigrations bool    `json:"auth_allow_enterprise_admin_migrations" db:"auth_allow_enterprise_admin_migrations" gorm:"column:auth_allow_enterprise_admin_migrations;not null;default:false"`
 	AuthEnableSelfService              bool    `json:"auth_enable_self_service" db:"auth_enable_self_service" gorm:"column:auth_enable_self_service;not null;default:false"`
 
+	// Copilot SDK settings
+	CopilotEnabled           bool    `json:"copilot_enabled" db:"copilot_enabled" gorm:"column:copilot_enabled;not null;default:false"`
+	CopilotRequireLicense    bool    `json:"copilot_require_license" db:"copilot_require_license" gorm:"column:copilot_require_license;not null;default:true"`
+	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty" db:"copilot_cli_path" gorm:"column:copilot_cli_path"`
+	CopilotModel             *string `json:"copilot_model,omitempty" db:"copilot_model" gorm:"column:copilot_model"`
+	CopilotSessionTimeoutMin int     `json:"copilot_session_timeout_min" db:"copilot_session_timeout_min" gorm:"column:copilot_session_timeout_min;not null;default:30"`
+	CopilotStreaming         bool    `json:"copilot_streaming" db:"copilot_streaming" gorm:"column:copilot_streaming;not null;default:true"`
+	CopilotLogLevel          string  `json:"copilot_log_level" db:"copilot_log_level" gorm:"column:copilot_log_level;not null;default:'info'"`
+
 	// Timestamps
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"column:created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at" gorm:"column:updated_at"`
@@ -97,6 +106,16 @@ type SettingsResponse struct {
 
 	// Authorization rules
 	AuthorizationRules AuthorizationRulesResponse `json:"authorization_rules"`
+
+	// Copilot SDK settings
+	CopilotEnabled           bool   `json:"copilot_enabled"`
+	CopilotRequireLicense    bool   `json:"copilot_require_license"`
+	CopilotCLIPath           string `json:"copilot_cli_path,omitempty"`
+	CopilotCLIConfigured     bool   `json:"copilot_cli_configured"`
+	CopilotModel             string `json:"copilot_model,omitempty"`
+	CopilotSessionTimeoutMin int    `json:"copilot_session_timeout_min"`
+	CopilotStreaming         bool   `json:"copilot_streaming"`
+	CopilotLogLevel          string `json:"copilot_log_level"`
 
 	// Status
 	DestinationConfigured bool      `json:"destination_configured"`
@@ -167,6 +186,16 @@ func (s *Settings) ToResponse() *SettingsResponse {
 			EnableSelfService:              s.AuthEnableSelfService,
 		},
 
+		// Copilot SDK
+		CopilotEnabled:           s.CopilotEnabled,
+		CopilotRequireLicense:    s.CopilotRequireLicense,
+		CopilotCLIPath:           getStringOrEmpty(s.CopilotCLIPath),
+		CopilotCLIConfigured:     s.CopilotCLIPath != nil && *s.CopilotCLIPath != "",
+		CopilotModel:             getStringOrEmpty(s.CopilotModel),
+		CopilotSessionTimeoutMin: s.CopilotSessionTimeoutMin,
+		CopilotStreaming:         s.CopilotStreaming,
+		CopilotLogLevel:          s.CopilotLogLevel,
+
 		// Status
 		DestinationConfigured: s.HasDestination(),
 		UpdatedAt:             s.UpdatedAt,
@@ -201,6 +230,15 @@ type UpdateSettingsRequest struct {
 
 	// Authorization rules
 	AuthorizationRules *UpdateAuthorizationRulesRequest `json:"authorization_rules,omitempty"`
+
+	// Copilot SDK settings
+	CopilotEnabled           *bool   `json:"copilot_enabled,omitempty"`
+	CopilotRequireLicense    *bool   `json:"copilot_require_license,omitempty"`
+	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty"`
+	CopilotModel             *string `json:"copilot_model,omitempty"`
+	CopilotSessionTimeoutMin *int    `json:"copilot_session_timeout_min,omitempty"`
+	CopilotStreaming         *bool   `json:"copilot_streaming,omitempty"`
+	CopilotLogLevel          *string `json:"copilot_log_level,omitempty"`
 }
 
 // UpdateAuthorizationRulesRequest is the request to update authorization rules
@@ -216,6 +254,7 @@ func (s *Settings) ApplyUpdates(req *UpdateSettingsRequest) {
 	s.applyDestinationUpdates(req)
 	s.applyMigrationUpdates(req)
 	s.applyAuthUpdates(req)
+	s.applyCopilotUpdates(req)
 }
 
 // applyDestinationUpdates applies destination-related updates
@@ -298,5 +337,30 @@ func (s *Settings) applyAuthUpdates(req *UpdateSettingsRequest) {
 		if req.AuthorizationRules.EnableSelfService != nil {
 			s.AuthEnableSelfService = *req.AuthorizationRules.EnableSelfService
 		}
+	}
+}
+
+// applyCopilotUpdates applies Copilot SDK-related updates
+func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
+	if req.CopilotEnabled != nil {
+		s.CopilotEnabled = *req.CopilotEnabled
+	}
+	if req.CopilotRequireLicense != nil {
+		s.CopilotRequireLicense = *req.CopilotRequireLicense
+	}
+	if req.CopilotCLIPath != nil {
+		s.CopilotCLIPath = req.CopilotCLIPath
+	}
+	if req.CopilotModel != nil {
+		s.CopilotModel = req.CopilotModel
+	}
+	if req.CopilotSessionTimeoutMin != nil {
+		s.CopilotSessionTimeoutMin = *req.CopilotSessionTimeoutMin
+	}
+	if req.CopilotStreaming != nil {
+		s.CopilotStreaming = *req.CopilotStreaming
+	}
+	if req.CopilotLogLevel != nil {
+		s.CopilotLogLevel = *req.CopilotLogLevel
 	}
 }

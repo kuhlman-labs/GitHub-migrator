@@ -124,3 +124,17 @@ export type {
   SourceValidationResponse,
   SetSourceActiveResponse,
 } from './source';
+
+// Copilot types
+export type {
+  CopilotStatus,
+  CopilotSession,
+  CopilotMessage,
+  ToolCall,
+  ToolResult,
+  ChatRequest,
+  ChatResponse,
+  SessionsResponse,
+  SessionHistoryResponse,
+  CLIValidationResponse,
+} from './copilot';

@@ -87,6 +87,9 @@ func main() {
 	// Set ConfigService for dynamic settings management
 	server.SetConfigService(cfgSvc)
 
+	// Start MCP server for AI tool access (runs in background goroutine)
+	server.StartMCPServer()
+
 	// Create cancellable context for all background workers (must be created before callback registration)
 	workerCtx, cancelWorkers := context.WithCancel(context.Background())
 	defer cancelWorkers()
@@ -226,6 +229,14 @@ func main() {
 		slog.Info("Stopping batch status updater...")
 		statusUpdater.Stop()
 	}
+
+	// Stop MCP server
+	slog.Info("Stopping MCP server...")
+	mcpCtx, mcpCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := server.StopMCPServer(mcpCtx); err != nil {
+		slog.Error("Failed to stop MCP server", "error", err)
+	}
+	mcpCancel()
 
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

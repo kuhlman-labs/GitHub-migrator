@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UnderlineNav, Heading, Text, Flash, Spinner } from '@primer/react';
-import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon, RepoIcon, AlertIcon, LogIcon } from '@primer/octicons-react';
+import { GearIcon, ServerIcon, ShieldCheckIcon, SyncIcon, RepoIcon, AlertIcon, LogIcon, CopilotIcon } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../services/api/settings';
 import { configApi } from '../../services/api/config';
@@ -9,12 +9,13 @@ import { DestinationSettings } from './DestinationSettings';
 import { MigrationSettings } from './MigrationSettings';
 import { AuthSettings } from './AuthSettings';
 import { LoggingSettings } from './LoggingSettings';
+import { CopilotSettings } from './CopilotSettings';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import type { SettingsResponse, UpdateSettingsRequest } from '../../services/api/settings';
 import { AxiosError } from 'axios';
 
-type SettingsTab = 'sources' | 'destination' | 'migration' | 'auth' | 'logging';
+type SettingsTab = 'sources' | 'destination' | 'migration' | 'auth' | 'logging' | 'copilot';
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('sources');
@@ -142,6 +143,13 @@ export function SettingsPage() {
         >
           Logging
         </UnderlineNav.Item>
+        <UnderlineNav.Item
+          aria-current={activeTab === 'copilot' ? 'page' : undefined}
+          onClick={() => setActiveTab('copilot')}
+          icon={CopilotIcon}
+        >
+          Copilot
+        </UnderlineNav.Item>
       </UnderlineNav>
 
       {/* Tab Content */}
@@ -175,6 +183,9 @@ export function SettingsPage() {
         )}
         {activeTab === 'logging' && (
           <LoggingSettings readOnly={!isAdmin} />
+        )}
+        {activeTab === 'copilot' && (
+          <CopilotSettings readOnly={!isAdmin} />
         )}
       </div>
     </div>
