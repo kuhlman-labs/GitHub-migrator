@@ -52,7 +52,7 @@ export function CopilotAssistant() {
   
   const fetchRequestIdRef = useRef(0);
   const streamAbortRef = useRef<(() => void) | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionListRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef<string>('');
@@ -130,7 +130,14 @@ export function CopilotAssistant() {
 
   // Scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (container) {
+      // Scroll the container directly to avoid page scroll
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
   }, [messages, streamingContent]);
 
   // Cleanup on unmount
@@ -660,6 +667,7 @@ export function CopilotAssistant() {
 
         {/* Messages */}
         <div 
+          ref={messagesContainerRef}
           className="flex-1 overflow-y-auto p-3"
           role="log"
           aria-label="Chat messages"
@@ -837,7 +845,6 @@ export function CopilotAssistant() {
                   </div>
                 </div>
               )}
-              <div ref={messagesEndRef} />
             </>
           )}
         </div>
