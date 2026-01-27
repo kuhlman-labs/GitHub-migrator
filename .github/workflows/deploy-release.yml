@@ -58,16 +58,15 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Disable all automatic tag generation
           flavor: |
             latest=false
-            prefix=
-            suffix=
           tags: |
             type=semver,pattern={{version}},value=${{ steps.get-tag.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.get-tag.outputs.tag }}
             type=semver,pattern={{major}},value=${{ steps.get-tag.outputs.tag }}
-            type=raw,value=latest,enable=true
+            type=sha,enable=false
+            type=raw,value=prod
+            type=raw,value=latest
 
       - name: Build and push Docker image
         id: push
