@@ -37,32 +37,35 @@ RUN chmod +x scripts/download-git-sizer.sh && \
 # Build binaries with embedded git-sizer
 RUN GOTOOLCHAIN=auto CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o server cmd/server/main.go
 
-# Final stage
-FROM alpine:latest
+# Final stage - Debian slim for glibc compatibility with Copilot CLI
+FROM debian:bookworm-slim
 
-# Install runtime dependencies including glibc compatibility for git-sizer
-# git-sizer is built for glibc, but Alpine uses musl libc
-# We need gcompat to run glibc binaries on Alpine
-RUN apk --no-cache add ca-certificates sqlite-libs git git-lfs gcompat nodejs npm
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    git-lfs \
+    curl \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
 
-# For linux/arm64, install Go and build git-sizer from source since no pre-built binary exists
-# This is only needed on Apple Silicon Macs running Docker
-RUN if [ "$(uname -m)" = "aarch64" ]; then \
-        apk add --no-cache go && \
+# Install git-sizer for repository analysis
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then \
+        curl -fsSL https://github.com/github/git-sizer/releases/download/v1.5.0/git-sizer-1.5.0-linux-amd64.tar.gz | tar xz -C /usr/local/bin git-sizer; \
+    elif [ "$ARCH" = "arm64" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends golang-go && \
         go install github.com/github/git-sizer@v1.5.0 && \
         mv /root/go/bin/git-sizer /usr/local/bin/ && \
-        apk del go && \
-        rm -rf /root/go; \
+        apt-get purge -y golang-go && apt-get autoremove -y && \
+        rm -rf /var/lib/apt/lists/* /root/go; \
     fi
 
 # Install GitHub Copilot CLI globally
 # The CLI is required for the Copilot SDK to function
-# Note: Alpine's npm installs to /usr/lib/node_modules/, not /usr/local/lib/node_modules/
-# We explicitly set executable permissions as npm may not preserve them in all environments
 RUN npm install -g @github/copilot && \
-    chmod +x /usr/lib/node_modules/@github/copilot/bin/copilot && \
-    ln -sf /usr/lib/node_modules/@github/copilot/bin/copilot /usr/local/bin/copilot && \
-    chmod +x /usr/local/bin/copilot
+    copilot --version
 
 WORKDIR /app
 
