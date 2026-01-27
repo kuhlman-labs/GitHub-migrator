@@ -52,14 +52,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     git-lfs \
     curl \
+    unzip \
     nodejs \
     npm \
     && rm -rf /var/lib/apt/lists/*
 
-# Install git-sizer for repository analysis
+# Install git-sizer for repository analysis (releases are .zip format)
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then \
-        curl -fsSL https://github.com/github/git-sizer/releases/download/v1.5.0/git-sizer-1.5.0-linux-amd64.tar.gz | tar xz -C /usr/local/bin git-sizer; \
+        curl -fsSL -o /tmp/git-sizer.zip https://github.com/github/git-sizer/releases/download/v1.5.0/git-sizer-1.5.0-linux-amd64.zip && \
+        unzip -j /tmp/git-sizer.zip git-sizer -d /usr/local/bin && \
+        rm /tmp/git-sizer.zip && \
+        chmod +x /usr/local/bin/git-sizer; \
     elif [ "$ARCH" = "arm64" ]; then \
         apt-get update && apt-get install -y --no-install-recommends golang-go && \
         go install github.com/github/git-sizer@v1.5.0 && \
