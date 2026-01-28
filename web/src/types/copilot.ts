@@ -5,9 +5,6 @@ export interface CopilotStatus {
   available: boolean;
   cli_installed: boolean;
   cli_version?: string;
-  license_required: boolean;
-  license_valid: boolean;
-  license_message?: string;
   unavailable_reason?: string;
 }
 

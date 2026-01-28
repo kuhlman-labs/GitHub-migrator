@@ -86,10 +86,6 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
     updateMutation.mutate({ copilot_enabled: checked });
   };
 
-  const handleToggleLicense = (checked: boolean) => {
-    updateMutation.mutate({ copilot_require_license: checked });
-  };
-
   const handleToggleStreaming = (checked: boolean) => {
     updateMutation.mutate({ copilot_streaming: checked });
   };
@@ -130,7 +126,6 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
   }
 
   const copilotEnabled = settings?.copilot_enabled ?? false;
-  const requireLicense = settings?.copilot_require_license ?? true;
   const streaming = settings?.copilot_streaming ?? true;
 
   return (
@@ -337,27 +332,6 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
           </Text>
         </div>
 
-        {/* License Requirement */}
-        <div className="p-4 rounded-lg border" style={{ borderColor: 'var(--borderColor-default)' }}>
-          <div className="flex items-start gap-3">
-            <FormControl disabled={readOnly || updateMutation.isPending}>
-              <Checkbox
-                checked={requireLicense}
-                onChange={(e) => handleToggleLicense(e.target.checked)}
-                disabled={readOnly || updateMutation.isPending}
-              />
-              <FormControl.Label className="font-semibold">
-                Require Copilot License
-              </FormControl.Label>
-            </FormControl>
-          </div>
-          
-          <Text className="block mt-2 ml-6" style={{ color: 'var(--fgColor-muted)' }}>
-            When enabled, users must have a valid GitHub Copilot subscription to use the assistant.
-            This is validated against the destination GitHub instance.
-          </Text>
-        </div>
-
         {/* Current Status */}
         <div className="p-4 rounded-lg border" style={{ borderColor: 'var(--borderColor-default)' }}>
           <Heading as="h3" className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
@@ -381,12 +355,6 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
               <Text style={{ color: 'var(--fgColor-muted)' }}>CLI Installed:</Text>
               <Label variant={copilotStatus?.cli_installed ? 'success' : 'secondary'}>
                 {copilotStatus?.cli_installed ? 'Yes' : 'No'}
-              </Label>
-            </div>
-            <div className="flex justify-between">
-              <Text style={{ color: 'var(--fgColor-muted)' }}>License Valid:</Text>
-              <Label variant={copilotStatus?.license_valid ? 'success' : 'secondary'}>
-                {copilotStatus?.license_valid ? 'Yes' : 'N/A'}
               </Label>
             </div>
             <div className="flex justify-between">

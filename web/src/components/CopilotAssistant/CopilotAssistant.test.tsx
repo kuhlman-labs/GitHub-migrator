@@ -102,8 +102,6 @@ describe('CopilotAssistant', () => {
       enabled: false,
       available: false,
       cli_installed: false,
-      license_required: false,
-      license_valid: false,
       unavailable_reason: 'Copilot is not enabled in settings',
     });
 
@@ -125,8 +123,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -151,8 +147,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
     
     // Mock streamMessage to return an abort function and call the callbacks
@@ -202,8 +196,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -222,8 +214,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -242,8 +232,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     mockGetSessions.mockResolvedValue({
@@ -278,8 +266,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: false,
       cli_installed: true,
-      license_required: true,
-      license_valid: false,
       license_message: 'No Copilot license found',
       unavailable_reason: 'No Copilot license found',
     });
@@ -303,8 +289,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: false,
       cli_installed: false,
-      license_required: false,
-      license_valid: true,
       unavailable_reason: 'Copilot CLI is not installed',
     });
 
@@ -326,8 +310,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -354,8 +336,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -379,8 +359,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -404,8 +382,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -427,8 +403,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     // Mock streamMessage to simulate loading state (never completes)
@@ -467,8 +441,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     // Mock streamMessage to simulate an error
@@ -509,8 +481,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     mockGetSessions.mockResolvedValue({

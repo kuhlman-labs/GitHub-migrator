@@ -102,9 +102,6 @@ type CopilotStatus struct {
 	Available         bool   `json:"available"`
 	CLIInstalled      bool   `json:"cli_installed"`
 	CLIVersion        string `json:"cli_version,omitempty"`
-	LicenseRequired   bool   `json:"license_required"`
-	LicenseValid      bool   `json:"license_valid"`
-	LicenseMessage    string `json:"license_message,omitempty"`
 	UnavailableReason string `json:"unavailable_reason,omitempty"`
 }
 

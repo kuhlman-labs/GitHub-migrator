@@ -526,11 +526,6 @@ export function CopilotAssistant() {
                 The Copilot CLI must be installed and configured. Go to Settings &gt; Copilot to configure.
               </Text>
             )}
-            {status?.license_required && !status?.license_valid && (
-              <Text className="block mt-2 text-sm">
-                A valid GitHub Copilot license is required. {status?.license_message}
-              </Text>
-            )}
           </Flash>
         </div>
       </div>

@@ -32,7 +32,6 @@ export interface SettingsResponse {
   authorization_rules: AuthorizationRulesResponse;
   // Copilot SDK settings
   copilot_enabled: boolean;
-  copilot_require_license: boolean;
   copilot_cli_path?: string;
   copilot_cli_configured: boolean;
   copilot_model?: string;
@@ -83,7 +82,6 @@ export interface UpdateSettingsRequest {
   authorization_rules?: UpdateAuthorizationRulesRequest;
   // Copilot SDK settings
   copilot_enabled?: boolean;
-  copilot_require_license?: boolean;
   copilot_cli_path?: string;
   copilot_model?: string;
   copilot_session_timeout_min?: number;

@@ -43,7 +43,6 @@ type Settings struct {
 
 	// Copilot SDK settings
 	CopilotEnabled           bool    `json:"copilot_enabled" db:"copilot_enabled" gorm:"column:copilot_enabled;not null;default:false"`
-	CopilotRequireLicense    bool    `json:"copilot_require_license" db:"copilot_require_license" gorm:"column:copilot_require_license;not null;default:true"`
 	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty" db:"copilot_cli_path" gorm:"column:copilot_cli_path"`
 	CopilotModel             *string `json:"copilot_model,omitempty" db:"copilot_model" gorm:"column:copilot_model"`
 	CopilotSessionTimeoutMin int     `json:"copilot_session_timeout_min" db:"copilot_session_timeout_min" gorm:"column:copilot_session_timeout_min;not null;default:30"`
@@ -110,7 +109,6 @@ type SettingsResponse struct {
 
 	// Copilot SDK settings
 	CopilotEnabled           bool   `json:"copilot_enabled"`
-	CopilotRequireLicense    bool   `json:"copilot_require_license"`
 	CopilotCLIPath           string `json:"copilot_cli_path,omitempty"`
 	CopilotCLIConfigured     bool   `json:"copilot_cli_configured"`
 	CopilotModel             string `json:"copilot_model,omitempty"`
@@ -190,7 +188,6 @@ func (s *Settings) ToResponse() *SettingsResponse {
 
 		// Copilot SDK
 		CopilotEnabled:           s.CopilotEnabled,
-		CopilotRequireLicense:    s.CopilotRequireLicense,
 		CopilotCLIPath:           getStringOrEmpty(s.CopilotCLIPath),
 		CopilotCLIConfigured:     s.CopilotCLIPath != nil && *s.CopilotCLIPath != "",
 		CopilotModel:             getStringOrEmpty(s.CopilotModel),
@@ -236,7 +233,6 @@ type UpdateSettingsRequest struct {
 
 	// Copilot SDK settings
 	CopilotEnabled           *bool   `json:"copilot_enabled,omitempty"`
-	CopilotRequireLicense    *bool   `json:"copilot_require_license,omitempty"`
 	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty"`
 	CopilotModel             *string `json:"copilot_model,omitempty"`
 	CopilotSessionTimeoutMin *int    `json:"copilot_session_timeout_min,omitempty"`
@@ -348,9 +344,6 @@ func (s *Settings) applyAuthUpdates(req *UpdateSettingsRequest) {
 func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
 	if req.CopilotEnabled != nil {
 		s.CopilotEnabled = *req.CopilotEnabled
-	}
-	if req.CopilotRequireLicense != nil {
-		s.CopilotRequireLicense = *req.CopilotRequireLicense
 	}
 	if req.CopilotCLIPath != nil {
 		s.CopilotCLIPath = req.CopilotCLIPath

@@ -12,10 +12,9 @@ import (
 // Service manages Copilot interactions using the SDK client.
 // This is a facade that delegates to the SDK Client.
 type Service struct {
-	client           *Client
-	db               *storage.Database
-	logger           *slog.Logger
-	licenseValidator *LicenseValidator
+	client *Client
+	db     *storage.Database
+	logger *slog.Logger
 }
 
 // ServiceConfig configures the Copilot service using the SDK.
@@ -24,8 +23,6 @@ type ServiceConfig struct {
 	CLIUrl            string // URL of existing CLI server (optional)
 	Model             string // AI model to use (e.g., DefaultModel)
 	SessionTimeoutMin int    // Session timeout in minutes
-	RequireLicense    bool   // Require valid Copilot license
-	GitHubBaseURL     string // GitHub base URL for license validation
 	Streaming         bool   // Enable streaming responses
 	LogLevel          string // SDK log level (debug, info, warn, error)
 	GHToken           string // GitHub token for Copilot CLI authentication (optional)
@@ -33,8 +30,6 @@ type ServiceConfig struct {
 
 // NewService creates a new Copilot service that uses the SDK.
 func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig) *Service {
-	licenseValidator := NewLicenseValidator(config.GitHubBaseURL, logger)
-
 	// Create SDK client configuration
 	clientConfig := ClientConfig{
 		CLIPath:           config.CLIPath,
@@ -60,10 +55,9 @@ func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig)
 	client := NewClient(db, logger, clientConfig)
 
 	return &Service{
-		client:           client,
-		db:               db,
-		logger:           logger,
-		licenseValidator: licenseValidator,
+		client: client,
+		db:     db,
+		logger: logger,
 	}
 }
 
@@ -85,8 +79,7 @@ func (s *Service) GetClient() *Client {
 // GetStatus returns the current Copilot status for a user.
 func (s *Service) GetStatus(ctx context.Context, userLogin string, token string, settings *models.Settings) (*models.CopilotStatus, error) {
 	status := &models.CopilotStatus{
-		Enabled:         settings.CopilotEnabled,
-		LicenseRequired: settings.CopilotRequireLicense,
+		Enabled: settings.CopilotEnabled,
 	}
 
 	// Check if Copilot is enabled in settings
@@ -113,29 +106,6 @@ func (s *Service) GetStatus(ctx context.Context, userLogin string, token string,
 			status.UnavailableReason = "Copilot CLI is not installed or not accessible"
 		}
 		return status, nil
-	}
-
-	// Check license if required
-	if settings.CopilotRequireLicense {
-		licenseStatus, err := s.licenseValidator.CheckLicense(ctx, userLogin, token)
-		if err != nil {
-			s.logger.Error("Failed to check Copilot license", "error", err, "user", userLogin)
-			status.LicenseValid = false
-			status.LicenseMessage = "Failed to verify license"
-		} else {
-			status.LicenseValid = licenseStatus.Valid
-			status.LicenseMessage = licenseStatus.Message
-		}
-
-		if !status.LicenseValid {
-			status.Available = false
-			status.UnavailableReason = status.LicenseMessage
-			return status, nil
-		}
-	} else {
-		// License not required, mark as valid
-		status.LicenseValid = true
-		status.LicenseMessage = "License validation disabled"
 	}
 
 	// All checks passed

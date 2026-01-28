@@ -153,16 +153,8 @@ func (h *CopilotHandler) getOrCreateService(settings *models.Settings) *copilot.
 		return h.service
 	}
 
-	// Use the configured base URL, falling back to settings if available
-	baseURL := h.gitHubBaseURL
-	if baseURL == "" && settings.DestinationBaseURL != "" {
-		baseURL = settings.DestinationBaseURL
-	}
-
 	config := copilot.ServiceConfig{
-		RequireLicense:    settings.CopilotRequireLicense,
 		SessionTimeoutMin: settings.CopilotSessionTimeoutMin,
-		GitHubBaseURL:     baseURL,
 		Streaming:         settings.CopilotStreaming,
 		LogLevel:          settings.CopilotLogLevel,
 	}
