@@ -1,5 +1,5 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { TextInput, Button } from '@primer/react';
+import { TextInput } from '@primer/react';
 import { MarkGithubIcon, SearchIcon, GearIcon, CopilotIcon } from '@primer/octicons-react';
 import { IconButton } from '@primer/react';
 import { useQuery } from '@tanstack/react-query';
@@ -277,14 +277,12 @@ export function Navigation() {
               {/* Copilot Assistant - only shown when enabled */}
               {copilotEnabled && (
                 <Link to="/copilot">
-                  <Button
-                    leadingVisual={CopilotIcon}
+                  <IconButton
+                    icon={CopilotIcon}
                     variant={isActive('/copilot') ? 'default' : 'invisible'}
                     size="small"
                     aria-label="Migration Copilot - AI-powered assistant"
-                  >
-                    Copilot
-                  </Button>
+                  />
                 </Link>
               )}
               <Link to="/settings">
