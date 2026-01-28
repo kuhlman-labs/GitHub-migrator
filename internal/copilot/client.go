@@ -228,11 +228,12 @@ func (c *Client) Start() error {
 	// Pass GH_TOKEN to CLI for authentication if configured
 	// This allows the CLI to authenticate without interactive login
 	if c.config.GHToken != "" {
-		// Filter out any existing GH_TOKEN to avoid duplicate/conflicting entries
+		// Filter out any existing GH_TOKEN and GITHUB_TOKEN to avoid duplicate/conflicting entries
+		// The Copilot CLI accepts either variable, so we must filter both
 		env := os.Environ()
 		filteredEnv := make([]string, 0, len(env)+1)
 		for _, e := range env {
-			if !strings.HasPrefix(e, "GH_TOKEN=") {
+			if !strings.HasPrefix(e, "GH_TOKEN=") && !strings.HasPrefix(e, "GITHUB_TOKEN=") {
 				filteredEnv = append(filteredEnv, e)
 			}
 		}
@@ -835,18 +836,34 @@ func (c *Client) GetSessionHistory(ctx context.Context, sessionID string) ([]mod
 
 // ListModels returns the available AI models.
 // It attempts to get models from the SDK, falling back to a default list if unavailable.
+// The configured default model is always included in the returned list to ensure UI consistency.
 func (c *Client) ListModels(ctx context.Context) ([]models.ModelInfo, error) {
+	configuredModel := c.GetDefaultModel()
+
 	// Try to get models from SDK if client is started
 	if c.IsStarted() && c.sdkClient != nil {
 		sdkModels, err := c.sdkClient.ListModels()
 		if err == nil && len(sdkModels) > 0 {
-			result := make([]models.ModelInfo, 0, len(sdkModels))
+			result := make([]models.ModelInfo, 0, len(sdkModels)+1)
+			foundConfigured := false
 			for _, m := range sdkModels {
+				isDefault := m.ID == configuredModel
+				if isDefault {
+					foundConfigured = true
+				}
 				result = append(result, models.ModelInfo{
 					ID:        m.ID,
 					Name:      m.Name,
-					IsDefault: m.ID == c.config.Model,
+					IsDefault: isDefault,
 				})
+			}
+			// Ensure the configured default model is always in the list
+			if !foundConfigured && configuredModel != "" {
+				result = append([]models.ModelInfo{{
+					ID:        configuredModel,
+					Name:      configuredModel, // Use ID as name for custom models
+					IsDefault: true,
+				}}, result...)
 			}
 			c.logger.Debug("Retrieved models from SDK", "count", len(result))
 			return result, nil
@@ -862,18 +879,39 @@ func (c *Client) ListModels(ctx context.Context) ([]models.ModelInfo, error) {
 }
 
 // getDefaultModels returns a fallback list of commonly available models.
+// The configured default model is always included to ensure UI consistency.
 func (c *Client) getDefaultModels() []models.ModelInfo {
-	configuredModel := c.config.Model
-	if configuredModel == "" {
-		configuredModel = DefaultModel
+	configuredModel := c.GetDefaultModel()
+
+	// Predefined list of common models
+	knownModels := []models.ModelInfo{
+		{ID: "gpt-4.1", Name: "GPT-4.1", Description: "Latest GPT-4 model with improved capabilities"},
+		{ID: "gpt-4o", Name: "GPT-4o", Description: "Optimized GPT-4 for faster responses"},
+		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Smaller, faster GPT-4 variant"},
+		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Description: "Anthropic Claude Sonnet model"},
+		{ID: "o3-mini", Name: "o3-mini", Description: "OpenAI o3 mini reasoning model"},
 	}
-	return []models.ModelInfo{
-		{ID: "gpt-4.1", Name: "GPT-4.1", Description: "Latest GPT-4 model with improved capabilities", IsDefault: configuredModel == "gpt-4.1"},
-		{ID: "gpt-4o", Name: "GPT-4o", Description: "Optimized GPT-4 for faster responses", IsDefault: configuredModel == "gpt-4o"},
-		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Smaller, faster GPT-4 variant", IsDefault: configuredModel == "gpt-4o-mini"},
-		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Description: "Anthropic Claude Sonnet model", IsDefault: configuredModel == "claude-sonnet-4"},
-		{ID: "o3-mini", Name: "o3-mini", Description: "OpenAI o3 mini reasoning model", IsDefault: configuredModel == "o3-mini"},
+
+	// Set IsDefault flag and check if configured model is in the list
+	foundConfigured := false
+	for i := range knownModels {
+		if knownModels[i].ID == configuredModel {
+			knownModels[i].IsDefault = true
+			foundConfigured = true
+		}
 	}
+
+	// If configured model is not in the known list, prepend it
+	if !foundConfigured && configuredModel != "" {
+		customModel := models.ModelInfo{
+			ID:        configuredModel,
+			Name:      configuredModel, // Use ID as name for custom models
+			IsDefault: true,
+		}
+		return append([]models.ModelInfo{customModel}, knownModels...)
+	}
+
+	return knownModels
 }
 
 // GetDefaultModel returns the configured default model.
