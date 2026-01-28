@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Text, TextInput, Button, Flash, Spinner, IconButton } from '@primer/react';
+import { Text, TextInput, Button, Flash, Spinner, IconButton, ActionMenu, ActionList } from '@primer/react';
 import { 
   CopilotIcon, 
   PaperAirplaneIcon, 
@@ -18,11 +18,12 @@ import {
   XCircleFillIcon,
   ClockIcon,
   ShieldLockIcon,
-  GearIcon
+  GearIcon,
+  ChevronDownIcon
 } from '@primer/octicons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { copilotApi } from '../../services/api/copilot';
-import type { CopilotMessage, CopilotSession, ToolCall } from '../../types/copilot';
+import type { CopilotMessage, CopilotSession, ToolCall, ModelInfo } from '../../types/copilot';
 import { PageHeader } from '../common/PageHeader';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -49,6 +50,7 @@ export function CopilotAssistant() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [focusedSessionIndex, setFocusedSessionIndex] = useState(-1);
+  const [selectedModel, setSelectedModel] = useState<string>('');
   
   const fetchRequestIdRef = useRef(0);
   const streamAbortRef = useRef<(() => void) | null>(null);
@@ -88,6 +90,20 @@ export function CopilotAssistant() {
     queryFn: copilotApi.getSessions,
     enabled: status?.available,
   });
+
+  // Get available models
+  const { data: modelsData } = useQuery({
+    queryKey: ['copilot-models'],
+    queryFn: copilotApi.getModels,
+    enabled: status?.available,
+  });
+
+  // Compute effective model: use selected if set, otherwise fall back to default from API
+  const defaultModelId = modelsData?.default_model || modelsData?.models[0]?.id || '';
+  const effectiveModel = selectedModel || defaultModelId;
+
+  // Helper to get current model display name
+  const currentModelName = modelsData?.models.find((m: ModelInfo) => m.id === effectiveModel)?.name || effectiveModel || 'Select Model';
 
   // Delete session mutation
   const deleteSessionMutation = useMutation({
@@ -196,9 +212,13 @@ export function CopilotAssistant() {
     // Capture tool calls at the start for closure safety
     let capturedToolCalls: ToolCall[] = [];
 
+    // Only pass model for new sessions (no currentSessionId)
+    const modelForRequest = currentSessionId ? undefined : effectiveModel || undefined;
+
     const { abort } = copilotApi.streamMessage(
       userMessageContent,
       currentSessionId || undefined,
+      modelForRequest,
       {
         onSessionId: (sessionId) => {
           if (!currentSessionId) {
@@ -281,7 +301,7 @@ export function CopilotAssistant() {
     );
 
     streamAbortRef.current = abort;
-  }, [message, currentSessionId, isStreaming, queryClient, showError]);
+  }, [message, currentSessionId, isStreaming, queryClient, showError, effectiveModel]);
 
   const handleStopStreaming = useCallback(() => {
     if (streamAbortRef.current) {
@@ -648,20 +668,56 @@ export function CopilotAssistant() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header className="p-3" style={{ borderBottom: '1px solid var(--borderColor-default)' }}>
-          <div className="flex items-center gap-2">
-            <IconButton
-              icon={sidebarOpen ? SidebarCollapseIcon : SidebarExpandIcon}
-              aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-              variant="invisible"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            />
-            <CopilotIcon size={24} />
-            <div>
-              <Text className="font-bold" style={{ fontSize: '1rem' }}>Copilot Assistant</Text>
-              <Text className="block" style={{ color: 'var(--fgColor-muted)', fontSize: '0.875rem' }}>
-                AI-powered migration planning and execution
-              </Text>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <IconButton
+                icon={sidebarOpen ? SidebarCollapseIcon : SidebarExpandIcon}
+                aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+                variant="invisible"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+              />
+              <CopilotIcon size={24} />
+              <div>
+                <Text className="font-bold" style={{ fontSize: '1rem' }}>Copilot Assistant</Text>
+                <Text className="block" style={{ color: 'var(--fgColor-muted)', fontSize: '0.875rem' }}>
+                  AI-powered migration planning and execution
+                </Text>
+              </div>
             </div>
+            {/* Model Selector */}
+            {modelsData && modelsData.models.length > 0 && (
+              <ActionMenu>
+                <ActionMenu.Button
+                  disabled={isStreaming}
+                  size="small"
+                  trailingVisual={ChevronDownIcon}
+                  aria-label="Select AI model"
+                >
+                  {currentModelName}
+                </ActionMenu.Button>
+                <ActionMenu.Overlay width="medium">
+                  <ActionList selectionVariant="single">
+                    {modelsData.models.map((model: ModelInfo) => (
+                      <ActionList.Item
+                        key={model.id}
+                        selected={effectiveModel === model.id}
+                        onSelect={() => setSelectedModel(model.id)}
+                      >
+                        <ActionList.LeadingVisual>
+                          {model.is_default && <CheckIcon size={16} />}
+                        </ActionList.LeadingVisual>
+                        {model.name}
+                        {model.description && (
+                          <ActionList.Description variant="block">
+                            {model.description}
+                          </ActionList.Description>
+                        )}
+                      </ActionList.Item>
+                    ))}
+                  </ActionList>
+                </ActionMenu.Overlay>
+              </ActionMenu>
+            )}
           </div>
         </header>
 

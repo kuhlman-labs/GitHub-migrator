@@ -48,6 +48,19 @@ export interface ToolResult {
 export interface ChatRequest {
   session_id?: string;
   message: string;
+  model?: string;
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  description?: string;
+  is_default?: boolean;
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[];
+  default_model: string;
 }
 
 export interface ChatResponse {

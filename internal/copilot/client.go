@@ -156,6 +156,7 @@ type SDKSession struct {
 	UserID    string
 	UserLogin string
 	Title     string // Session title (generated from first message)
+	Model     string // AI model used for this session
 	Session   *copilot.Session
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -171,6 +172,7 @@ type ClientConfig struct {
 	LogLevel          string
 	SessionTimeoutMin int
 	Streaming         bool
+	GHToken           string // GitHub token for Copilot CLI authentication (optional)
 }
 
 // NewClient creates a new Copilot SDK client wrapper.
@@ -221,6 +223,21 @@ func (c *Client) Start() error {
 	// Set CLI URL if connecting to external server
 	if c.config.CLIUrl != "" {
 		opts.CLIUrl = c.config.CLIUrl
+	}
+
+	// Pass GH_TOKEN to CLI for authentication if configured
+	// This allows the CLI to authenticate without interactive login
+	if c.config.GHToken != "" {
+		// Filter out any existing GH_TOKEN to avoid duplicate/conflicting entries
+		env := os.Environ()
+		filteredEnv := make([]string, 0, len(env)+1)
+		for _, e := range env {
+			if !strings.HasPrefix(e, "GH_TOKEN=") {
+				filteredEnv = append(filteredEnv, e)
+			}
+		}
+		opts.Env = append(filteredEnv, "GH_TOKEN="+c.config.GHToken)
+		c.logger.Debug("Copilot SDK client using configured GH_TOKEN for authentication")
 	}
 
 	c.sdkClient = copilot.NewClient(opts)
@@ -305,7 +322,8 @@ func (c *Client) clearCurrentAuth() {
 
 // CreateSession creates a new SDK session for a user with authorization context.
 // If timeoutMin is 0 or negative, the client's configured default timeout is used.
-func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext) (*SDKSession, error) {
+// If model is empty, the client's configured default model is used.
+func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext, model string) (*SDKSession, error) {
 	if !c.IsStarted() {
 		if err := c.Start(); err != nil {
 			return nil, err
@@ -322,12 +340,18 @@ func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, ti
 	}
 	expiresAt := now.Add(time.Duration(timeout) * time.Minute)
 
+	// Use provided model or fall back to client config
+	sessionModel := model
+	if sessionModel == "" {
+		sessionModel = c.config.Model
+	}
+
 	// Build system message with migration context and permissions
 	systemMessage := c.buildSystemMessage(ctx, authCtx)
 
 	// Create SDK session with tools
 	sdkSession, err := c.sdkClient.CreateSession(&copilot.SessionConfig{
-		Model:     c.config.Model,
+		Model:     sessionModel,
 		Streaming: c.config.Streaming,
 		Tools:     c.tools,
 		SystemMessage: &copilot.SystemMessageConfig{
@@ -348,6 +372,7 @@ func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, ti
 		UpdatedAt: now,
 		ExpiresAt: expiresAt,
 		Auth:      authCtx,
+		Model:     sessionModel,
 	}
 
 	// Store in memory
@@ -360,6 +385,7 @@ func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, ti
 		ID:        sessionID,
 		UserID:    userID,
 		UserLogin: userLogin,
+		Model:     &sessionModel,
 		CreatedAt: now,
 		UpdatedAt: now,
 		ExpiresAt: expiresAt,
@@ -368,7 +394,7 @@ func (c *Client) CreateSession(ctx context.Context, userID, userLogin string, ti
 		c.logger.Error("Failed to persist Copilot session", "error", err, "session_id", sessionID)
 	}
 
-	c.logger.Info("Created Copilot SDK session", "session_id", sessionID, "user", userLogin)
+	c.logger.Info("Created Copilot SDK session", "session_id", sessionID, "user", userLogin, "model", sessionModel)
 
 	return sess, nil
 }
@@ -409,10 +435,16 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*SDKSession,
 		}
 	}
 
+	// Use stored model or fall back to default
+	sessionModel := c.config.Model
+	if dbSession.Model != nil && *dbSession.Model != "" {
+		sessionModel = *dbSession.Model
+	}
+
 	// Auth context will be set by the handler when the session is used
 	systemMessage := c.buildSystemMessage(ctx, nil)
 	sdkSession, err := c.sdkClient.CreateSession(&copilot.SessionConfig{
-		Model:     c.config.Model,
+		Model:     sessionModel,
 		Streaming: c.config.Streaming,
 		Tools:     c.tools,
 		SystemMessage: &copilot.SystemMessageConfig{
@@ -432,6 +464,7 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*SDKSession,
 		UserID:    dbSession.UserID,
 		UserLogin: dbSession.UserLogin,
 		Title:     title,
+		Model:     sessionModel,
 		Session:   sdkSession,
 		CreatedAt: dbSession.CreatedAt,
 		UpdatedAt: dbSession.UpdatedAt,
@@ -798,6 +831,57 @@ func (c *Client) GetSessionHistory(ctx context.Context, sessionID string) ([]mod
 		return nil, fmt.Errorf("failed to get messages: %w", err)
 	}
 	return messages, nil
+}
+
+// ListModels returns the available AI models.
+// It attempts to get models from the SDK, falling back to a default list if unavailable.
+func (c *Client) ListModels(ctx context.Context) ([]models.ModelInfo, error) {
+	// Try to get models from SDK if client is started
+	if c.IsStarted() && c.sdkClient != nil {
+		sdkModels, err := c.sdkClient.ListModels()
+		if err == nil && len(sdkModels) > 0 {
+			result := make([]models.ModelInfo, 0, len(sdkModels))
+			for _, m := range sdkModels {
+				result = append(result, models.ModelInfo{
+					ID:        m.ID,
+					Name:      m.Name,
+					IsDefault: m.ID == c.config.Model,
+				})
+			}
+			c.logger.Debug("Retrieved models from SDK", "count", len(result))
+			return result, nil
+		}
+		// Log the error but fall back to defaults
+		if err != nil {
+			c.logger.Debug("Failed to get models from SDK, using defaults", "error", err)
+		}
+	}
+
+	// Return fallback list of common models
+	return c.getDefaultModels(), nil
+}
+
+// getDefaultModels returns a fallback list of commonly available models.
+func (c *Client) getDefaultModels() []models.ModelInfo {
+	configuredModel := c.config.Model
+	if configuredModel == "" {
+		configuredModel = DefaultModel
+	}
+	return []models.ModelInfo{
+		{ID: "gpt-4.1", Name: "GPT-4.1", Description: "Latest GPT-4 model with improved capabilities", IsDefault: configuredModel == "gpt-4.1"},
+		{ID: "gpt-4o", Name: "GPT-4o", Description: "Optimized GPT-4 for faster responses", IsDefault: configuredModel == "gpt-4o"},
+		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Smaller, faster GPT-4 variant", IsDefault: configuredModel == "gpt-4o-mini"},
+		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Description: "Anthropic Claude Sonnet model", IsDefault: configuredModel == "claude-sonnet-4"},
+		{ID: "o3-mini", Name: "o3-mini", Description: "OpenAI o3 mini reasoning model", IsDefault: configuredModel == "o3-mini"},
+	}
+}
+
+// GetDefaultModel returns the configured default model.
+func (c *Client) GetDefaultModel() string {
+	if c.config.Model == "" {
+		return DefaultModel
+	}
+	return c.config.Model
 }
 
 // buildSystemMessage creates the system prompt with migration context.

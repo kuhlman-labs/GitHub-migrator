@@ -49,6 +49,7 @@ type Settings struct {
 	CopilotSessionTimeoutMin int     `json:"copilot_session_timeout_min" db:"copilot_session_timeout_min" gorm:"column:copilot_session_timeout_min;not null;default:30"`
 	CopilotStreaming         bool    `json:"copilot_streaming" db:"copilot_streaming" gorm:"column:copilot_streaming;not null;default:true"`
 	CopilotLogLevel          string  `json:"copilot_log_level" db:"copilot_log_level" gorm:"column:copilot_log_level;not null;default:'info'"`
+	CopilotGHToken           *string `json:"-" db:"copilot_gh_token" gorm:"column:copilot_gh_token"` // GitHub token for Copilot CLI auth (not exposed in JSON)
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"column:created_at"`
@@ -116,6 +117,7 @@ type SettingsResponse struct {
 	CopilotSessionTimeoutMin int    `json:"copilot_session_timeout_min"`
 	CopilotStreaming         bool   `json:"copilot_streaming"`
 	CopilotLogLevel          string `json:"copilot_log_level"`
+	CopilotGHTokenConfigured bool   `json:"copilot_gh_token_configured"` // Indicates if a GH token is configured for Copilot auth
 
 	// Status
 	DestinationConfigured bool      `json:"destination_configured"`
@@ -195,6 +197,7 @@ func (s *Settings) ToResponse() *SettingsResponse {
 		CopilotSessionTimeoutMin: s.CopilotSessionTimeoutMin,
 		CopilotStreaming:         s.CopilotStreaming,
 		CopilotLogLevel:          s.CopilotLogLevel,
+		CopilotGHTokenConfigured: s.CopilotGHToken != nil && *s.CopilotGHToken != "",
 
 		// Status
 		DestinationConfigured: s.HasDestination(),
@@ -239,6 +242,7 @@ type UpdateSettingsRequest struct {
 	CopilotSessionTimeoutMin *int    `json:"copilot_session_timeout_min,omitempty"`
 	CopilotStreaming         *bool   `json:"copilot_streaming,omitempty"`
 	CopilotLogLevel          *string `json:"copilot_log_level,omitempty"`
+	CopilotGHToken           *string `json:"copilot_gh_token,omitempty"` // GitHub PAT with "Copilot Requests" permission
 }
 
 // UpdateAuthorizationRulesRequest is the request to update authorization rules
@@ -362,5 +366,8 @@ func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
 	}
 	if req.CopilotLogLevel != nil {
 		s.CopilotLogLevel = *req.CopilotLogLevel
+	}
+	if req.CopilotGHToken != nil {
+		s.CopilotGHToken = req.CopilotGHToken
 	}
 }

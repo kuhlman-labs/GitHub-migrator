@@ -164,6 +164,65 @@ See [OPERATIONS.md](../OPERATIONS.md#database-setup) for PostgreSQL setup instru
 
 ---
 
+## Copilot Authentication
+
+The Copilot Assistant feature requires authentication to GitHub's Copilot API. There are several ways to configure this:
+
+### Local Development
+
+**Option A: Interactive Login (Easiest)**
+
+```bash
+# Install the Copilot CLI
+brew install copilot-cli  # macOS
+# or: npm install -g @github/copilot
+
+# Authenticate via browser
+copilot auth login
+```
+
+This stores credentials in `~/.copilot/` and the SDK will automatically use them.
+
+**Option B: Token-Based**
+
+Create a fine-grained PAT at https://github.com/settings/personal-access-tokens/new with the **"Copilot Requests"** permission enabled, then:
+
+```bash
+export GH_TOKEN=github_pat_xxx
+make run-server
+```
+
+### Server Deployment
+
+For production/server deployments, set the token via environment variable:
+
+```bash
+# In Docker/Kubernetes environment
+GH_TOKEN=github_pat_xxx  # Service account PAT with "Copilot Requests" permission
+```
+
+Or use the app-specific environment variable:
+
+```bash
+GHMIG_COPILOT_GH_TOKEN=github_pat_xxx
+```
+
+### Token Priority
+
+The system checks for Copilot authentication in this order:
+
+1. Token configured in Settings UI (stored in database)
+2. `GHMIG_COPILOT_GH_TOKEN` environment variable
+3. `GH_TOKEN` or `GITHUB_TOKEN` environment variable
+4. Cached credentials from `copilot auth login` in `~/.copilot/`
+
+### Requirements
+
+- A GitHub account with an active Copilot subscription (Individual, Business, or Enterprise)
+- For token-based auth: A fine-grained PAT with "Copilot Requests" permission
+
+---
+
 ## Production Considerations
 
 ### Security

@@ -11,6 +11,7 @@ type CopilotSession struct {
 	UserID    string    `json:"user_id" gorm:"column:user_id;not null"`
 	UserLogin string    `json:"user_login" gorm:"column:user_login;not null"`
 	Title     *string   `json:"title,omitempty" gorm:"column:title"`
+	Model     *string   `json:"model,omitempty" gorm:"column:model"`
 	CreatedAt time.Time `json:"created_at" gorm:"column:created_at"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at"`
 	ExpiresAt time.Time `json:"expires_at" gorm:"column:expires_at"`
@@ -109,8 +110,23 @@ type CopilotStatus struct {
 
 // ChatRequest represents a request to send a message to Copilot
 type ChatRequest struct {
-	SessionID string `json:"session_id,omitempty"` // Empty to create new session
-	Message   string `json:"message"`
+	SessionID string  `json:"session_id,omitempty"` // Empty to create new session
+	Message   string  `json:"message"`
+	Model     *string `json:"model,omitempty"` // Optional model override for this request
+}
+
+// ModelInfo represents an available AI model
+type ModelInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	IsDefault   bool   `json:"is_default,omitempty"`
+}
+
+// ModelsResponse is the API response for listing models
+type ModelsResponse struct {
+	Models       []ModelInfo `json:"models"`
+	DefaultModel string      `json:"default_model"`
 }
 
 // ChatResponse represents a response from Copilot
