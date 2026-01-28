@@ -39,6 +39,7 @@ export interface SettingsResponse {
   copilot_session_timeout_min: number;
   copilot_streaming: boolean;
   copilot_log_level: string;
+  copilot_gh_token_configured: boolean;
   destination_configured: boolean;
   updated_at: string;
 }
@@ -88,6 +89,7 @@ export interface UpdateSettingsRequest {
   copilot_session_timeout_min?: number;
   copilot_streaming?: boolean;
   copilot_log_level?: string;
+  copilot_gh_token?: string;
 }
 
 export interface ValidateDestinationRequest {

@@ -16,6 +16,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
   const [localModel, setLocalModel] = useState<string | null>(null);
   const [localSessionTimeout, setLocalSessionTimeout] = useState<number | null>(null);
   const [localLogLevel, setLocalLogLevel] = useState<string | null>(null);
+  const [localGHToken, setLocalGHToken] = useState<string | null>(null);
   
   // Get current settings
   const { data: settingsData, isLoading, error } = useQuery({
@@ -46,6 +47,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
       setLocalModel(null);
       setLocalSessionTimeout(null);
       setLocalLogLevel(null);
+      setLocalGHToken(null);
     },
   });
 
@@ -77,7 +79,8 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
     (localCliPath !== null && localCliPath !== (settings?.copilot_cli_path || '')) ||
     (localModel !== null && localModel !== (settings?.copilot_model || 'gpt-4.1')) ||
     (localSessionTimeout !== null && localSessionTimeout !== (settings?.copilot_session_timeout_min || 30)) ||
-    (localLogLevel !== null && localLogLevel !== (settings?.copilot_log_level || 'info'));
+    (localLogLevel !== null && localLogLevel !== (settings?.copilot_log_level || 'info')) ||
+    (localGHToken !== null && localGHToken !== '');
 
   const handleToggleEnabled = (checked: boolean) => {
     updateMutation.mutate({ copilot_enabled: checked });
@@ -97,6 +100,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
     if (localModel !== null) updates.copilot_model = localModel;
     if (localSessionTimeout !== null) updates.copilot_session_timeout_min = localSessionTimeout;
     if (localLogLevel !== null) updates.copilot_log_level = localLogLevel;
+    if (localGHToken !== null) updates.copilot_gh_token = localGHToken;
     updateMutation.mutate(updates);
   };
 
@@ -219,9 +223,35 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
           )}
 
           <FormControl className="mb-4">
-            <FormControl.Label>Model</FormControl.Label>
+            <FormControl.Label>
+              GitHub Token (Optional)
+              {settings?.copilot_gh_token_configured && (
+                <Label variant="success" className="ml-2">Configured</Label>
+              )}
+            </FormControl.Label>
             <FormControl.Caption>
-              The AI model to use for conversations. Different models have different capabilities.
+              A GitHub PAT with "Copilot Requests" permission for server deployments. 
+              Leave empty to use interactive login (copilot auth login) or environment variables (GH_TOKEN, GITHUB_TOKEN).
+            </FormControl.Caption>
+            <TextInput
+              type="password"
+              value={localGHToken !== null ? localGHToken : ''}
+              onChange={(e) => setLocalGHToken(e.target.value)}
+              placeholder={settings?.copilot_gh_token_configured ? '••••••••••••••••' : 'github_pat_...'}
+              disabled={readOnly}
+              className="mt-2"
+            />
+            {settings?.copilot_gh_token_configured && localGHToken === null && (
+              <Text className="mt-1 text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+                A token is currently configured. Enter a new value to replace it, or leave blank to keep the existing token.
+              </Text>
+            )}
+          </FormControl>
+
+          <FormControl className="mb-4">
+            <FormControl.Label>Default Model</FormControl.Label>
+            <FormControl.Caption>
+              The default AI model for new conversations. Users can override this per-session using the model selector in the chat interface.
             </FormControl.Caption>
             <Select
               value={model}
@@ -231,8 +261,9 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
             >
               <Select.Option value="gpt-4.1">GPT-4.1 (Recommended)</Select.Option>
               <Select.Option value="gpt-4o">GPT-4o</Select.Option>
-              <Select.Option value="gpt-5">GPT-5</Select.Option>
+              <Select.Option value="gpt-4o-mini">GPT-4o Mini</Select.Option>
               <Select.Option value="claude-sonnet-4">Claude Sonnet 4</Select.Option>
+              <Select.Option value="o3-mini">o3-mini</Select.Option>
             </Select>
           </FormControl>
 
@@ -368,6 +399,12 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
               <Text style={{ color: 'var(--fgColor-muted)' }}>CLI Version:</Text>
               <Label variant="secondary">
                 {copilotStatus?.cli_version || 'Unknown'}
+              </Label>
+            </div>
+            <div className="flex justify-between">
+              <Text style={{ color: 'var(--fgColor-muted)' }}>GH Token:</Text>
+              <Label variant={settings?.copilot_gh_token_configured ? 'success' : 'secondary'}>
+                {settings?.copilot_gh_token_configured ? 'Configured' : 'Not Set'}
               </Label>
             </div>
           </div>

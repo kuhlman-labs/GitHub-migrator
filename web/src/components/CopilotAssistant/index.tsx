@@ -703,10 +703,7 @@ export function CopilotAssistant() {
                         selected={effectiveModel === model.id}
                         onSelect={() => setSelectedModel(model.id)}
                       >
-                        <ActionList.LeadingVisual>
-                          {model.is_default && <CheckIcon size={16} />}
-                        </ActionList.LeadingVisual>
-                        {model.name}
+                        {model.name}{model.is_default ? ' (default)' : ''}
                         {model.description && (
                           <ActionList.Description variant="block">
                             {model.description}
