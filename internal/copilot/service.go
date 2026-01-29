@@ -12,10 +12,9 @@ import (
 // Service manages Copilot interactions using the SDK client.
 // This is a facade that delegates to the SDK Client.
 type Service struct {
-	client           *Client
-	db               *storage.Database
-	logger           *slog.Logger
-	licenseValidator *LicenseValidator
+	client *Client
+	db     *storage.Database
+	logger *slog.Logger
 }
 
 // ServiceConfig configures the Copilot service using the SDK.
@@ -24,16 +23,13 @@ type ServiceConfig struct {
 	CLIUrl            string // URL of existing CLI server (optional)
 	Model             string // AI model to use (e.g., DefaultModel)
 	SessionTimeoutMin int    // Session timeout in minutes
-	RequireLicense    bool   // Require valid Copilot license
-	GitHubBaseURL     string // GitHub base URL for license validation
 	Streaming         bool   // Enable streaming responses
 	LogLevel          string // SDK log level (debug, info, warn, error)
+	GHToken           string // GitHub token for Copilot CLI authentication (optional)
 }
 
 // NewService creates a new Copilot service that uses the SDK.
 func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig) *Service {
-	licenseValidator := NewLicenseValidator(config.GitHubBaseURL, logger)
-
 	// Create SDK client configuration
 	clientConfig := ClientConfig{
 		CLIPath:           config.CLIPath,
@@ -42,6 +38,7 @@ func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig)
 		LogLevel:          config.LogLevel,
 		SessionTimeoutMin: config.SessionTimeoutMin,
 		Streaming:         config.Streaming,
+		GHToken:           config.GHToken,
 	}
 
 	// Set defaults
@@ -58,10 +55,9 @@ func NewService(db *storage.Database, logger *slog.Logger, config ServiceConfig)
 	client := NewClient(db, logger, clientConfig)
 
 	return &Service{
-		client:           client,
-		db:               db,
-		logger:           logger,
-		licenseValidator: licenseValidator,
+		client: client,
+		db:     db,
+		logger: logger,
 	}
 }
 
@@ -83,8 +79,7 @@ func (s *Service) GetClient() *Client {
 // GetStatus returns the current Copilot status for a user.
 func (s *Service) GetStatus(ctx context.Context, userLogin string, token string, settings *models.Settings) (*models.CopilotStatus, error) {
 	status := &models.CopilotStatus{
-		Enabled:         settings.CopilotEnabled,
-		LicenseRequired: settings.CopilotRequireLicense,
+		Enabled: settings.CopilotEnabled,
 	}
 
 	// Check if Copilot is enabled in settings
@@ -113,37 +108,15 @@ func (s *Service) GetStatus(ctx context.Context, userLogin string, token string,
 		return status, nil
 	}
 
-	// Check license if required
-	if settings.CopilotRequireLicense {
-		licenseStatus, err := s.licenseValidator.CheckLicense(ctx, userLogin, token)
-		if err != nil {
-			s.logger.Error("Failed to check Copilot license", "error", err, "user", userLogin)
-			status.LicenseValid = false
-			status.LicenseMessage = "Failed to verify license"
-		} else {
-			status.LicenseValid = licenseStatus.Valid
-			status.LicenseMessage = licenseStatus.Message
-		}
-
-		if !status.LicenseValid {
-			status.Available = false
-			status.UnavailableReason = status.LicenseMessage
-			return status, nil
-		}
-	} else {
-		// License not required, mark as valid
-		status.LicenseValid = true
-		status.LicenseMessage = "License validation disabled"
-	}
-
 	// All checks passed
 	status.Available = true
 	return status, nil
 }
 
 // CreateSession creates a new chat session with authorization context.
-func (s *Service) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext) (*SDKSession, error) {
-	return s.client.CreateSession(ctx, userID, userLogin, timeoutMin, authCtx)
+// If model is empty, the configured default model is used.
+func (s *Service) CreateSession(ctx context.Context, userID, userLogin string, timeoutMin int, authCtx *AuthContext, model string) (*SDKSession, error) {
+	return s.client.CreateSession(ctx, userID, userLogin, timeoutMin, authCtx, model)
 }
 
 // GetSession retrieves a session by ID.
@@ -179,6 +152,16 @@ func (s *Service) StreamMessage(ctx context.Context, sessionID, message string, 
 // GetSessionHistory returns the message history for a session.
 func (s *Service) GetSessionHistory(ctx context.Context, sessionID string) ([]models.CopilotMessage, error) {
 	return s.client.GetSessionHistory(ctx, sessionID)
+}
+
+// ListModels returns the available AI models.
+func (s *Service) ListModels(ctx context.Context) ([]models.ModelInfo, error) {
+	return s.client.ListModels(ctx)
+}
+
+// GetDefaultModel returns the configured default model.
+func (s *Service) GetDefaultModel() string {
+	return s.client.GetDefaultModel()
 }
 
 // Note: CheckCLIAvailable is defined in license.go

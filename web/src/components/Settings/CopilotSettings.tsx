@@ -16,6 +16,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
   const [localModel, setLocalModel] = useState<string | null>(null);
   const [localSessionTimeout, setLocalSessionTimeout] = useState<number | null>(null);
   const [localLogLevel, setLocalLogLevel] = useState<string | null>(null);
+  const [localGHToken, setLocalGHToken] = useState<string | null>(null);
   
   // Get current settings
   const { data: settingsData, isLoading, error } = useQuery({
@@ -46,6 +47,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
       setLocalModel(null);
       setLocalSessionTimeout(null);
       setLocalLogLevel(null);
+      setLocalGHToken(null);
     },
   });
 
@@ -77,14 +79,11 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
     (localCliPath !== null && localCliPath !== (settings?.copilot_cli_path || '')) ||
     (localModel !== null && localModel !== (settings?.copilot_model || 'gpt-4.1')) ||
     (localSessionTimeout !== null && localSessionTimeout !== (settings?.copilot_session_timeout_min || 30)) ||
-    (localLogLevel !== null && localLogLevel !== (settings?.copilot_log_level || 'info'));
+    (localLogLevel !== null && localLogLevel !== (settings?.copilot_log_level || 'info')) ||
+    (localGHToken !== null && localGHToken !== '');
 
   const handleToggleEnabled = (checked: boolean) => {
     updateMutation.mutate({ copilot_enabled: checked });
-  };
-
-  const handleToggleLicense = (checked: boolean) => {
-    updateMutation.mutate({ copilot_require_license: checked });
   };
 
   const handleToggleStreaming = (checked: boolean) => {
@@ -97,6 +96,7 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
     if (localModel !== null) updates.copilot_model = localModel;
     if (localSessionTimeout !== null) updates.copilot_session_timeout_min = localSessionTimeout;
     if (localLogLevel !== null) updates.copilot_log_level = localLogLevel;
+    if (localGHToken !== null) updates.copilot_gh_token = localGHToken;
     updateMutation.mutate(updates);
   };
 
@@ -126,7 +126,6 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
   }
 
   const copilotEnabled = settings?.copilot_enabled ?? false;
-  const requireLicense = settings?.copilot_require_license ?? true;
   const streaming = settings?.copilot_streaming ?? true;
 
   return (
@@ -219,9 +218,35 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
           )}
 
           <FormControl className="mb-4">
-            <FormControl.Label>Model</FormControl.Label>
+            <FormControl.Label>
+              GitHub Token (Optional)
+              {settings?.copilot_gh_token_configured && (
+                <Label variant="success" className="ml-2">Configured</Label>
+              )}
+            </FormControl.Label>
             <FormControl.Caption>
-              The AI model to use for conversations. Different models have different capabilities.
+              A GitHub PAT with "Copilot Requests" permission for server deployments. 
+              Leave empty to use interactive login (copilot auth login) or environment variables (GH_TOKEN, GITHUB_TOKEN).
+            </FormControl.Caption>
+            <TextInput
+              type="password"
+              value={localGHToken !== null ? localGHToken : ''}
+              onChange={(e) => setLocalGHToken(e.target.value)}
+              placeholder={settings?.copilot_gh_token_configured ? '••••••••••••••••' : 'github_pat_...'}
+              disabled={readOnly}
+              className="mt-2"
+            />
+            {settings?.copilot_gh_token_configured && localGHToken === null && (
+              <Text className="mt-1 text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+                A token is currently configured. Enter a new value to replace it, or leave blank to keep the existing token.
+              </Text>
+            )}
+          </FormControl>
+
+          <FormControl className="mb-4">
+            <FormControl.Label>Default Model</FormControl.Label>
+            <FormControl.Caption>
+              The default AI model for new conversations. Users can override this per-session using the model selector in the chat interface.
             </FormControl.Caption>
             <Select
               value={model}
@@ -231,8 +256,9 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
             >
               <Select.Option value="gpt-4.1">GPT-4.1 (Recommended)</Select.Option>
               <Select.Option value="gpt-4o">GPT-4o</Select.Option>
-              <Select.Option value="gpt-5">GPT-5</Select.Option>
+              <Select.Option value="gpt-4o-mini">GPT-4o Mini</Select.Option>
               <Select.Option value="claude-sonnet-4">Claude Sonnet 4</Select.Option>
+              <Select.Option value="o3-mini">o3-mini</Select.Option>
             </Select>
           </FormControl>
 
@@ -306,27 +332,6 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
           </Text>
         </div>
 
-        {/* License Requirement */}
-        <div className="p-4 rounded-lg border" style={{ borderColor: 'var(--borderColor-default)' }}>
-          <div className="flex items-start gap-3">
-            <FormControl disabled={readOnly || updateMutation.isPending}>
-              <Checkbox
-                checked={requireLicense}
-                onChange={(e) => handleToggleLicense(e.target.checked)}
-                disabled={readOnly || updateMutation.isPending}
-              />
-              <FormControl.Label className="font-semibold">
-                Require Copilot License
-              </FormControl.Label>
-            </FormControl>
-          </div>
-          
-          <Text className="block mt-2 ml-6" style={{ color: 'var(--fgColor-muted)' }}>
-            When enabled, users must have a valid GitHub Copilot subscription to use the assistant.
-            This is validated against the destination GitHub instance.
-          </Text>
-        </div>
-
         {/* Current Status */}
         <div className="p-4 rounded-lg border" style={{ borderColor: 'var(--borderColor-default)' }}>
           <Heading as="h3" className="text-sm mb-3" style={{ color: 'var(--fgColor-muted)' }}>
@@ -353,12 +358,6 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
               </Label>
             </div>
             <div className="flex justify-between">
-              <Text style={{ color: 'var(--fgColor-muted)' }}>License Valid:</Text>
-              <Label variant={copilotStatus?.license_valid ? 'success' : 'secondary'}>
-                {copilotStatus?.license_valid ? 'Yes' : 'N/A'}
-              </Label>
-            </div>
-            <div className="flex justify-between">
               <Text style={{ color: 'var(--fgColor-muted)' }}>Streaming:</Text>
               <Label variant={streaming ? 'success' : 'secondary'}>
                 {streaming ? 'Enabled' : 'Disabled'}
@@ -368,6 +367,12 @@ export function CopilotSettings({ readOnly = false }: CopilotSettingsProps) {
               <Text style={{ color: 'var(--fgColor-muted)' }}>CLI Version:</Text>
               <Label variant="secondary">
                 {copilotStatus?.cli_version || 'Unknown'}
+              </Label>
+            </div>
+            <div className="flex justify-between">
+              <Text style={{ color: 'var(--fgColor-muted)' }}>GH Token:</Text>
+              <Label variant={settings?.copilot_gh_token_configured ? 'success' : 'secondary'}>
+                {settings?.copilot_gh_token_configured ? 'Configured' : 'Not Set'}
               </Label>
             </div>
           </div>

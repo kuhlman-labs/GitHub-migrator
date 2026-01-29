@@ -7,6 +7,7 @@ import type {
   SessionHistoryResponse,
   CLIValidationResponse,
   StreamEvent,
+  ModelsResponse,
 } from '../../types/copilot';
 
 /**
@@ -34,6 +35,14 @@ export const copilotApi = {
   },
 
   /**
+   * Get available AI models
+   */
+  getModels: async (): Promise<ModelsResponse> => {
+    const response = await client.get<ModelsResponse>('/copilot/models');
+    return response.data;
+  },
+
+  /**
    * Send a message to Copilot (non-streaming)
    */
   sendMessage: async (request: ChatRequest): Promise<ChatResponse> => {
@@ -48,6 +57,7 @@ export const copilotApi = {
   streamMessage: (
     message: string,
     sessionId?: string,
+    model?: string,
     callbacks?: StreamCallbacks
   ): { eventSource: EventSource; abort: () => void } => {
     const params = new URLSearchParams({
@@ -55,6 +65,9 @@ export const copilotApi = {
     });
     if (sessionId) {
       params.append('session_id', sessionId);
+    }
+    if (model) {
+      params.append('model', model);
     }
 
     const baseUrl = client.defaults.baseURL || '/api/v1';

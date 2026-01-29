@@ -43,12 +43,12 @@ type Settings struct {
 
 	// Copilot SDK settings
 	CopilotEnabled           bool    `json:"copilot_enabled" db:"copilot_enabled" gorm:"column:copilot_enabled;not null;default:false"`
-	CopilotRequireLicense    bool    `json:"copilot_require_license" db:"copilot_require_license" gorm:"column:copilot_require_license;not null;default:true"`
 	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty" db:"copilot_cli_path" gorm:"column:copilot_cli_path"`
 	CopilotModel             *string `json:"copilot_model,omitempty" db:"copilot_model" gorm:"column:copilot_model"`
 	CopilotSessionTimeoutMin int     `json:"copilot_session_timeout_min" db:"copilot_session_timeout_min" gorm:"column:copilot_session_timeout_min;not null;default:30"`
 	CopilotStreaming         bool    `json:"copilot_streaming" db:"copilot_streaming" gorm:"column:copilot_streaming;not null;default:true"`
 	CopilotLogLevel          string  `json:"copilot_log_level" db:"copilot_log_level" gorm:"column:copilot_log_level;not null;default:'info'"`
+	CopilotGHToken           *string `json:"-" db:"copilot_gh_token" gorm:"column:copilot_gh_token"` // GitHub token for Copilot CLI auth (not exposed in JSON)
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"column:created_at"`
@@ -109,13 +109,13 @@ type SettingsResponse struct {
 
 	// Copilot SDK settings
 	CopilotEnabled           bool   `json:"copilot_enabled"`
-	CopilotRequireLicense    bool   `json:"copilot_require_license"`
 	CopilotCLIPath           string `json:"copilot_cli_path,omitempty"`
 	CopilotCLIConfigured     bool   `json:"copilot_cli_configured"`
 	CopilotModel             string `json:"copilot_model,omitempty"`
 	CopilotSessionTimeoutMin int    `json:"copilot_session_timeout_min"`
 	CopilotStreaming         bool   `json:"copilot_streaming"`
 	CopilotLogLevel          string `json:"copilot_log_level"`
+	CopilotGHTokenConfigured bool   `json:"copilot_gh_token_configured"` // Indicates if a GH token is configured for Copilot auth
 
 	// Status
 	DestinationConfigured bool      `json:"destination_configured"`
@@ -188,13 +188,13 @@ func (s *Settings) ToResponse() *SettingsResponse {
 
 		// Copilot SDK
 		CopilotEnabled:           s.CopilotEnabled,
-		CopilotRequireLicense:    s.CopilotRequireLicense,
 		CopilotCLIPath:           getStringOrEmpty(s.CopilotCLIPath),
 		CopilotCLIConfigured:     s.CopilotCLIPath != nil && *s.CopilotCLIPath != "",
 		CopilotModel:             getStringOrEmpty(s.CopilotModel),
 		CopilotSessionTimeoutMin: s.CopilotSessionTimeoutMin,
 		CopilotStreaming:         s.CopilotStreaming,
 		CopilotLogLevel:          s.CopilotLogLevel,
+		CopilotGHTokenConfigured: s.CopilotGHToken != nil && *s.CopilotGHToken != "",
 
 		// Status
 		DestinationConfigured: s.HasDestination(),
@@ -233,12 +233,12 @@ type UpdateSettingsRequest struct {
 
 	// Copilot SDK settings
 	CopilotEnabled           *bool   `json:"copilot_enabled,omitempty"`
-	CopilotRequireLicense    *bool   `json:"copilot_require_license,omitempty"`
 	CopilotCLIPath           *string `json:"copilot_cli_path,omitempty"`
 	CopilotModel             *string `json:"copilot_model,omitempty"`
 	CopilotSessionTimeoutMin *int    `json:"copilot_session_timeout_min,omitempty"`
 	CopilotStreaming         *bool   `json:"copilot_streaming,omitempty"`
 	CopilotLogLevel          *string `json:"copilot_log_level,omitempty"`
+	CopilotGHToken           *string `json:"copilot_gh_token,omitempty"` // GitHub PAT with "Copilot Requests" permission
 }
 
 // UpdateAuthorizationRulesRequest is the request to update authorization rules
@@ -345,9 +345,6 @@ func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
 	if req.CopilotEnabled != nil {
 		s.CopilotEnabled = *req.CopilotEnabled
 	}
-	if req.CopilotRequireLicense != nil {
-		s.CopilotRequireLicense = *req.CopilotRequireLicense
-	}
 	if req.CopilotCLIPath != nil {
 		s.CopilotCLIPath = req.CopilotCLIPath
 	}
@@ -362,5 +359,8 @@ func (s *Settings) applyCopilotUpdates(req *UpdateSettingsRequest) {
 	}
 	if req.CopilotLogLevel != nil {
 		s.CopilotLogLevel = *req.CopilotLogLevel
+	}
+	if req.CopilotGHToken != nil {
+		s.CopilotGHToken = req.CopilotGHToken
 	}
 }

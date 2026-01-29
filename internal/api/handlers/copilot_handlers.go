@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,15 +55,17 @@ type sessionError struct {
 
 // getOrCreateSession creates a new session or verifies ownership of existing one.
 // Returns the session ID to use, or a sessionError if something went wrong.
+// If model is provided and a new session is created, it will use that model.
 func (h *CopilotHandler) getOrCreateSession(
 	ctx context.Context,
 	service *copilot.Service,
 	sessionID, userIDStr, userLogin string,
 	timeoutMin int,
 	authCtx *copilot.AuthContext,
+	model string,
 ) (string, *sessionError) {
 	if sessionID == "" {
-		session, err := service.CreateSession(ctx, userIDStr, userLogin, timeoutMin, authCtx)
+		session, err := service.CreateSession(ctx, userIDStr, userLogin, timeoutMin, authCtx, model)
 		if err != nil {
 			h.logger.Error("Failed to create session", "error", err, "user", userLogin)
 			return "", &sessionError{http.StatusInternalServerError, "Failed to create session"}
@@ -150,16 +153,8 @@ func (h *CopilotHandler) getOrCreateService(settings *models.Settings) *copilot.
 		return h.service
 	}
 
-	// Use the configured base URL, falling back to settings if available
-	baseURL := h.gitHubBaseURL
-	if baseURL == "" && settings.DestinationBaseURL != "" {
-		baseURL = settings.DestinationBaseURL
-	}
-
 	config := copilot.ServiceConfig{
-		RequireLicense:    settings.CopilotRequireLicense,
 		SessionTimeoutMin: settings.CopilotSessionTimeoutMin,
-		GitHubBaseURL:     baseURL,
 		Streaming:         settings.CopilotStreaming,
 		LogLevel:          settings.CopilotLogLevel,
 	}
@@ -169,6 +164,17 @@ func (h *CopilotHandler) getOrCreateService(settings *models.Settings) *copilot.
 	}
 	if settings.CopilotModel != nil {
 		config.Model = *settings.CopilotModel
+	}
+
+	// Load GH token for Copilot CLI authentication
+	// Priority: Settings > GHMIG_COPILOT_GH_TOKEN env var
+	// If neither is set, CLI falls back to GH_TOKEN env var or cached credentials
+	if settings.CopilotGHToken != nil && *settings.CopilotGHToken != "" {
+		config.GHToken = *settings.CopilotGHToken
+		h.logger.Debug("Using Copilot GH token from settings")
+	} else if envToken := os.Getenv("GHMIG_COPILOT_GH_TOKEN"); envToken != "" {
+		config.GHToken = envToken
+		h.logger.Debug("Using Copilot GH token from GHMIG_COPILOT_GH_TOKEN env var")
 	}
 
 	h.service = copilot.NewService(h.db, h.logger, config)
@@ -264,8 +270,14 @@ func (h *CopilotHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	// Get authorization context for this user
 	authCtx := h.getUserAuthContext(ctx, user, token)
 
+	// Get model from request (empty string means use default)
+	model := ""
+	if req.Model != nil {
+		model = *req.Model
+	}
+
 	// Create new session if no session ID provided, or verify ownership of existing session
-	sessionID, sessionErr := h.getOrCreateSession(ctx, service, req.SessionID, userIDStr, user.Login, settings.CopilotSessionTimeoutMin, authCtx)
+	sessionID, sessionErr := h.getOrCreateSession(ctx, service, req.SessionID, userIDStr, user.Login, settings.CopilotSessionTimeoutMin, authCtx, model)
 	if sessionErr != nil {
 		h.sendError(w, sessionErr.StatusCode, sessionErr.Message)
 		return
@@ -297,6 +309,7 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 	// Get parameters from query string
 	sessionID := r.URL.Query().Get("session_id")
 	message := r.URL.Query().Get("message")
+	model := r.URL.Query().Get("model")
 
 	if strings.TrimSpace(message) == "" {
 		h.sendError(w, http.StatusBadRequest, "Message is required")
@@ -329,7 +342,7 @@ func (h *CopilotHandler) StreamChat(w http.ResponseWriter, r *http.Request) {
 	authCtx := h.getUserAuthContext(ctx, user, token)
 
 	// Create new session if no session ID provided, or verify ownership of existing one
-	sessionID, sessionErr := h.getOrCreateSession(ctx, service, sessionID, userIDStr, user.Login, settings.CopilotSessionTimeoutMin, authCtx)
+	sessionID, sessionErr := h.getOrCreateSession(ctx, service, sessionID, userIDStr, user.Login, settings.CopilotSessionTimeoutMin, authCtx, model)
 	if sessionErr != nil {
 		h.sendError(w, sessionErr.StatusCode, sessionErr.Message)
 		return
@@ -584,6 +597,43 @@ func (h *CopilotHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 
 	h.sendJSON(w, http.StatusOK, map[string]string{
 		"message": "Session deleted",
+	})
+}
+
+// GetModels handles GET /api/v1/copilot/models
+// Returns the list of available AI models for the chat interface.
+func (h *CopilotHandler) GetModels(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get authenticated user
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok || user == nil {
+		h.sendError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	// Get current settings
+	settings, err := h.db.GetSettings(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get settings", "error", err)
+		h.sendError(w, http.StatusInternalServerError, "Failed to get settings")
+		return
+	}
+
+	// Initialize service with current settings
+	service := h.getOrCreateService(settings)
+
+	// Get available models
+	modelsList, err := service.ListModels(ctx)
+	if err != nil {
+		h.logger.Error("Failed to list models", "error", err, "user", user.Login)
+		h.sendError(w, http.StatusInternalServerError, "Failed to list models")
+		return
+	}
+
+	h.sendJSON(w, http.StatusOK, models.ModelsResponse{
+		Models:       modelsList,
+		DefaultModel: service.GetDefaultModel(),
 	})
 }
 

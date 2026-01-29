@@ -2,12 +2,23 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { TextInput } from '@primer/react';
 import { MarkGithubIcon, SearchIcon, GearIcon, CopilotIcon } from '@primer/octicons-react';
 import { IconButton } from '@primer/react';
+import { useQuery } from '@tanstack/react-query';
 import { UserProfile } from './UserProfile';
 import { SourceSelector } from './SourceSelector';
+import { settingsApi } from '../../services/api/settings';
 
 export function Navigation() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Fetch settings to check if Copilot is enabled
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.getSettings,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes to avoid excessive requests
+  });
+  
+  const copilotEnabled = settings?.copilot_enabled ?? false;
   
   const isActive = (path: string) => location.pathname === path;
   
@@ -149,18 +160,6 @@ export function Navigation() {
                 >
                   Dashboard
                 </Link>
-                <Link 
-                  to="/copilot" 
-                  className={`${linkClass('/copilot')} inline-flex items-center`}
-                  style={{ 
-                    color: 'var(--fgColor-default)',
-                    backgroundColor: isActive('/copilot') ? 'var(--bgColor-neutral-muted)' : 'transparent'
-                  }}
-                  title="AI-powered migration assistant"
-                >
-                  <CopilotIcon size={16} className="mr-1.5" />
-                  Migration Copilot
-                </Link>
                 
                 {/* Separator: Overview → Explore */}
                 <div className="w-px h-4 mx-2" style={{ backgroundColor: 'var(--borderColor-muted)' }} />
@@ -275,6 +274,17 @@ export function Navigation() {
             
             {/* Utility Icons (fixed position on right) */}
             <div className="flex items-center gap-2">
+              {/* Copilot Assistant - only shown when enabled */}
+              {copilotEnabled && (
+                <Link to="/copilot">
+                  <IconButton
+                    icon={CopilotIcon}
+                    variant={isActive('/copilot') ? 'default' : 'invisible'}
+                    size="small"
+                    aria-label="Migration Copilot - AI-powered assistant"
+                  />
+                </Link>
+              )}
               <Link to="/settings">
                 <IconButton 
                   icon={GearIcon} 

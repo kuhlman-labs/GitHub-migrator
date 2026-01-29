@@ -39,7 +39,8 @@ vi.mock('../../services/api/copilot', () => ({
   copilotApi: {
     getStatus: () => mockGetStatus(),
     getSessions: () => mockGetSessions(),
-    streamMessage: (message: string, sessionId: string | undefined, callbacks: unknown) => mockStreamMessage(message, sessionId, callbacks),
+    getModels: () => Promise.resolve({ models: [{ id: 'gpt-4.1', name: 'GPT-4.1', is_default: true }], default_model: 'gpt-4.1' }),
+    streamMessage: (message: string, sessionId: string | undefined, model: string | undefined, callbacks: unknown) => mockStreamMessage(message, sessionId, model, callbacks),
     deleteSession: (id: string) => mockDeleteSession(id),
     getSessionHistory: (id: string) => mockGetSessionHistory(id),
     validateCLI: vi.fn(),
@@ -101,8 +102,6 @@ describe('CopilotAssistant', () => {
       enabled: false,
       available: false,
       cli_installed: false,
-      license_required: false,
-      license_valid: false,
       unavailable_reason: 'Copilot is not enabled in settings',
     });
 
@@ -124,8 +123,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -150,19 +147,17 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
     
     // Mock streamMessage to return an abort function and call the callbacks
-    mockStreamMessage.mockImplementation((_message: string, _sessionId: string | undefined, callbacks: {
+    mockStreamMessage.mockImplementation((_message: string, _sessionId: string | undefined, _model: string | undefined, callbacks: {
       onSessionId?: (sessionId: string) => void;
       onDone?: (content: string) => void;
     }) => {
       // Simulate streaming behavior
       setTimeout(() => {
-        callbacks.onSessionId?.('new-session-123');
-        callbacks.onDone?.('I can help you find repositories for migration.');
+        callbacks?.onSessionId?.('new-session-123');
+        callbacks?.onDone?.('I can help you find repositories for migration.');
       }, 10);
       return { abort: vi.fn() };
     });
@@ -190,6 +185,7 @@ describe('CopilotAssistant', () => {
       expect(mockStreamMessage).toHaveBeenCalledWith(
         'Find pilot repos',
         undefined,
+        expect.any(String),
         expect.any(Object)
       );
     });
@@ -200,8 +196,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -220,8 +214,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -240,8 +232,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     mockGetSessions.mockResolvedValue({
@@ -276,8 +266,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: false,
       cli_installed: true,
-      license_required: true,
-      license_valid: false,
       license_message: 'No Copilot license found',
       unavailable_reason: 'No Copilot license found',
     });
@@ -301,8 +289,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: false,
       cli_installed: false,
-      license_required: false,
-      license_valid: true,
       unavailable_reason: 'Copilot CLI is not installed',
     });
 
@@ -324,8 +310,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -352,8 +336,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -377,8 +359,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -402,8 +382,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     render(
@@ -425,8 +403,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     // Mock streamMessage to simulate loading state (never completes)
@@ -465,16 +441,14 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     // Mock streamMessage to simulate an error
-    mockStreamMessage.mockImplementation((_message: string, _sessionId: string | undefined, callbacks: {
+    mockStreamMessage.mockImplementation((_message: string, _sessionId: string | undefined, _model: string | undefined, callbacks: {
       onError?: (error: string) => void;
     }) => {
       setTimeout(() => {
-        callbacks.onError?.('Connection failed');
+        callbacks?.onError?.('Connection failed');
       }, 10);
       return { abort: vi.fn() };
     });
@@ -507,8 +481,6 @@ describe('CopilotAssistant', () => {
       enabled: true,
       available: true,
       cli_installed: true,
-      license_required: false,
-      license_valid: true,
     });
 
     mockGetSessions.mockResolvedValue({

@@ -53,9 +53,6 @@ func TestNewService_DefaultConfig(t *testing.T) {
 	if service.db == nil {
 		t.Error("expected service to have database")
 	}
-	if service.licenseValidator == nil {
-		t.Error("expected service to have license validator")
-	}
 }
 
 func TestNewService_CustomConfig(t *testing.T) {
@@ -66,8 +63,6 @@ func TestNewService_CustomConfig(t *testing.T) {
 		CLIPath:           "/custom/copilot",
 		Model:             "gpt-4",
 		SessionTimeoutMin: 45,
-		RequireLicense:    true,
-		GitHubBaseURL:     "https://github.example.com",
 		Streaming:         true,
 		LogLevel:          "debug",
 	}
@@ -134,8 +129,7 @@ func TestService_GetStatus_CLINotInstalled(t *testing.T) {
 
 	// Copilot enabled but CLI not available
 	settings := &models.Settings{
-		CopilotEnabled:        true,
-		CopilotRequireLicense: false,
+		CopilotEnabled: true,
 	}
 
 	status, err := service.GetStatus(ctx, "testuser", "token", settings)

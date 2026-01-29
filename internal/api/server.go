@@ -469,6 +469,7 @@ func (s *Server) Router() http.Handler {
 	// Copilot endpoints
 	// Status check is protected but available to all authenticated users
 	protect("GET /api/v1/copilot/status", s.copilotHandler.GetStatus)
+	protect("GET /api/v1/copilot/models", s.copilotHandler.GetModels)
 	protect("POST /api/v1/copilot/chat", s.copilotHandler.SendMessage)
 	protect("GET /api/v1/copilot/chat/stream", s.copilotHandler.StreamChat)
 	protect("GET /api/v1/copilot/sessions", s.copilotHandler.ListSessions)
