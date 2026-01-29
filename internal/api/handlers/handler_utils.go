@@ -80,8 +80,9 @@ func (u *HandlerUtils) getEffectiveAuthConfig() *config.AuthConfig {
 // - Tier 2 (Self-Service): Access to repos where mapped source identity has admin rights
 // - Tier 3 (Read-Only): No migration access
 func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName string) error {
-	// If auth is not enabled, allow access
-	if u.authConfig == nil || !u.authConfig.Enabled {
+	// Use effective auth config which merges static config with database settings
+	effectiveAuthConfig := u.getEffectiveAuthConfig()
+	if effectiveAuthConfig == nil || !effectiveAuthConfig.Enabled {
 		return nil
 	}
 
@@ -92,12 +93,18 @@ func (u *HandlerUtils) CheckRepositoryAccess(ctx context.Context, repoFullName s
 		return fmt.Errorf("authentication required")
 	}
 
-	// Check user's authorization tier
+	// Get destination URL - prefer config service (database settings) over static config
 	destURL := u.destBaseURL
+	if u.configSvc != nil {
+		destConfig := u.configSvc.GetDestinationConfig()
+		if destConfig.BaseURL != "" {
+			destURL = destConfig.BaseURL
+		}
+	}
 	if destURL == "" {
 		destURL = "https://api.github.com"
 	}
-	authorizer := auth.NewAuthorizer(u.getEffectiveAuthConfig(), u.logger, destURL)
+	authorizer := auth.NewAuthorizer(effectiveAuthConfig, u.logger, destURL)
 
 	// Check for Tier 1: Full migration rights
 	hasFullAccess, reason, err := authorizer.CheckDestinationMigrationRights(ctx, user, token)
@@ -272,8 +279,10 @@ func (u *HandlerUtils) getRepositorySource(ctx context.Context, repoFullName str
 // CheckRepositoriesAccess validates that the user has access to all specified repositories.
 // Returns an error if auth is enabled and user doesn't have access to any repository.
 func (u *HandlerUtils) CheckRepositoriesAccess(ctx context.Context, repoFullNames []string) error {
-	// If auth is not enabled, allow access
-	if u.authConfig == nil || !u.authConfig.Enabled {
+	// Use effective auth config which merges static config with database settings
+	// This ensures consistency with CheckRepositoryAccess and the middleware
+	effectiveAuthConfig := u.getEffectiveAuthConfig()
+	if effectiveAuthConfig == nil || !effectiveAuthConfig.Enabled {
 		return nil
 	}
 
@@ -290,7 +299,10 @@ func (u *HandlerUtils) CheckRepositoriesAccess(ctx context.Context, repoFullName
 // GetUserAuthorizationStatus returns the current user's authorization tier and details
 // This is used by the authorization-status API endpoint
 func (u *HandlerUtils) GetUserAuthorizationStatus(ctx context.Context) (*UserAuthorizationStatus, error) {
-	if u.authConfig == nil || !u.authConfig.Enabled {
+	// Use effective auth config which merges static config with database settings
+	// This ensures consistency with the middleware which also uses effective config
+	effectiveAuthConfig := u.getEffectiveAuthConfig()
+	if effectiveAuthConfig == nil || !effectiveAuthConfig.Enabled {
 		return &UserAuthorizationStatus{
 			Tier:     string(auth.TierAdmin),
 			TierName: "Full Migration Rights",
@@ -313,12 +325,18 @@ func (u *HandlerUtils) GetUserAuthorizationStatus(ctx context.Context) (*UserAut
 		return nil, fmt.Errorf("authentication required")
 	}
 
-	// Get base tier from authorizer
+	// Get destination URL - prefer config service (database settings) over static config
 	destURL := u.destBaseURL
+	if u.configSvc != nil {
+		destConfig := u.configSvc.GetDestinationConfig()
+		if destConfig.BaseURL != "" {
+			destURL = destConfig.BaseURL
+		}
+	}
 	if destURL == "" {
 		destURL = "https://api.github.com"
 	}
-	authorizer := auth.NewAuthorizer(u.getEffectiveAuthConfig(), u.logger, destURL)
+	authorizer := auth.NewAuthorizer(effectiveAuthConfig, u.logger, destURL)
 
 	tierInfo, err := authorizer.GetUserAuthorizationTier(ctx, user, token)
 	if err != nil {

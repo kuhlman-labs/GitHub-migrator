@@ -310,11 +310,29 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 		return false, nil
 	}
 
+	// Check if enterprise was found in the response
+	if result.Data.Enterprise.Slug == "" {
+		a.logger.Warn("Enterprise not found in GraphQL response - user may not have access or enterprise slug may be incorrect",
+			"username", username,
+			"enterprise", enterpriseSlug,
+			"hint", "Ensure the OAuth app has been approved for enterprise access and the enterprise slug is correct")
+		return false, nil
+	}
+
 	isAdmin := result.Data.Enterprise.ViewerIsAdmin
 	a.logger.Info("Enterprise admin check result",
 		"username", username,
 		"enterprise", enterpriseSlug,
+		"enterprise_found", result.Data.Enterprise.Slug,
 		"is_admin", isAdmin)
+
+	// If user is not admin, log additional guidance
+	if !isAdmin {
+		a.logger.Warn("User is not enterprise admin - check OAuth app permissions",
+			"username", username,
+			"enterprise", enterpriseSlug,
+			"hint", "Ensure the OAuth app has 'admin:enterprise' scope approved by an enterprise admin at: https://github.com/enterprises/<slug>/settings/oauth_application_policy")
+	}
 
 	return isAdmin, nil
 }

@@ -277,6 +277,14 @@ func (s *Server) Router() http.Handler {
 		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, destBaseURL)
 		authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
 
+		// Set dynamic auth enabled check so middleware respects runtime config changes
+		if s.configSvc != nil {
+			authMiddleware.SetAuthEnabledFunc(func() bool {
+				cfg := s.configSvc.GetEffectiveAuthConfig()
+				return cfg.Enabled
+			})
+		}
+
 		// Set authorizer on Copilot handler for tool authorization
 		if s.copilotHandler != nil {
 			s.copilotHandler.SetAuthorizer(authorizer, &effectiveAuthCfg)

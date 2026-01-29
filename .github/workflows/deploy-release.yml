@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Docker image tag to deploy (e.g., v1.0.0)'
+        description: 'Docker image tag to deploy (e.g., 1.0.0 or v1.0.0 - v prefix will be stripped)'
         required: true
         type: string
 
@@ -36,12 +36,14 @@ jobs:
         id: get-tag
         run: |
           if [ "${{ github.event_name }}" == "release" ]; then
-            TAG="${{ github.event.release.tag_name }}"
+            RAW_TAG="${{ github.event.release.tag_name }}"
           else
-            TAG="${{ github.event.inputs.image_tag }}"
+            RAW_TAG="${{ github.event.inputs.image_tag }}"
           fi
+          # Strip 'v' prefix if present to match semver pattern output (e.g., v1.0.0 -> 1.0.0)
+          TAG="${RAW_TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Using image tag: ${TAG}"
+          echo "Using image tag: ${TAG} (from ${RAW_TAG})"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

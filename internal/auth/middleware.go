@@ -11,10 +11,11 @@ import (
 
 // Middleware handles authentication middleware
 type Middleware struct {
-	jwtManager *JWTManager
-	authorizer *Authorizer
-	logger     *slog.Logger
-	enabled    bool
+	jwtManager      *JWTManager
+	authorizer      *Authorizer
+	logger          *slog.Logger
+	enabled         bool        // Static enabled flag (fallback)
+	authEnabledFunc func() bool // Dynamic check for auth enabled state (optional)
 }
 
 // NewMiddleware creates a new authentication middleware
@@ -25,6 +26,21 @@ func NewMiddleware(jwtManager *JWTManager, authorizer *Authorizer, logger *slog.
 		logger:     logger,
 		enabled:    enabled,
 	}
+}
+
+// SetAuthEnabledFunc sets a callback to dynamically check if auth is enabled.
+// This allows the middleware to respect runtime config changes from the database.
+func (m *Middleware) SetAuthEnabledFunc(fn func() bool) {
+	m.authEnabledFunc = fn
+}
+
+// isAuthEnabled returns whether authentication is currently enabled.
+// Uses the dynamic callback if set, otherwise falls back to the static flag.
+func (m *Middleware) isAuthEnabled() bool {
+	if m.authEnabledFunc != nil {
+		return m.authEnabledFunc()
+	}
+	return m.enabled
 }
 
 // Context keys for storing user information
@@ -39,8 +55,8 @@ const (
 // RequireAuth is middleware that requires authentication
 func (m *Middleware) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// If auth is disabled, allow request through
-		if !m.enabled {
+		// If auth is disabled (check dynamically if callback is set), allow request through
+		if !m.isAuthEnabled() {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -94,8 +110,8 @@ func (m *Middleware) RequireAuth(next http.Handler) http.Handler {
 func (m *Middleware) RequireRole(role string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// If auth is disabled, allow request through
-			if !m.enabled {
+			// If auth is disabled (check dynamically if callback is set), allow request through
+			if !m.isAuthEnabled() {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -124,8 +140,8 @@ func (m *Middleware) RequireRole(role string) func(http.Handler) http.Handler {
 // This is used to protect sensitive endpoints like settings and source management
 func (m *Middleware) RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// If auth is disabled, allow request through
-		if !m.enabled {
+		// If auth is disabled (check dynamically if callback is set), allow request through
+		if !m.isAuthEnabled() {
 			next.ServeHTTP(w, r)
 			return
 		}
