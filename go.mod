@@ -3,7 +3,7 @@ module github.com/kuhlman-labs/github-migrator
 go 1.25
 
 require (
-	github.com/github/copilot-sdk/go v0.1.18
+	github.com/github/copilot-sdk/go v0.1.20
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v75 v75.0.0
 	github.com/google/uuid v1.6.0
