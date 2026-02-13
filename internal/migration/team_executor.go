@@ -273,7 +273,10 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 	if err != nil {
 		errMsg := err.Error()
 		if !dryRun {
-			_ = e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusFailed, &errMsg)
+			if dbErr := e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusFailed, &errMsg); dbErr != nil {
+				e.logger.Warn("Failed to update team migration status to failed",
+					"source_org", mapping.SourceOrg, "source_team_slug", mapping.SourceTeamSlug, "error", dbErr)
+			}
 		}
 		return fmt.Errorf("failed to check if destination team exists: %w", err)
 	}
@@ -305,7 +308,10 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 			})
 			if err != nil {
 				errMsg := err.Error()
-				_ = e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusFailed, &errMsg)
+				if dbErr := e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusFailed, &errMsg); dbErr != nil {
+					e.logger.Warn("Failed to update team migration status to failed",
+						"source_org", mapping.SourceOrg, "source_team_slug", mapping.SourceTeamSlug, "error", dbErr)
+				}
 				return fmt.Errorf("failed to create team: %w", err)
 			}
 
@@ -374,7 +380,10 @@ func (e *TeamExecutor) processTeamMapping(ctx context.Context, mapping *models.T
 			"source_team_slug", mapping.SourceTeamSlug)
 		// Still mark as completed if team was created
 		if !dryRun {
-			_ = e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusCompleted, nil)
+			if dbErr := e.storage.UpdateTeamMigrationStatus(ctx, mapping.SourceOrg, mapping.SourceTeamSlug, storage.TeamMigrationStatusCompleted, nil); dbErr != nil {
+				e.logger.Warn("Failed to update team migration status to completed",
+					"source_org", mapping.SourceOrg, "source_team_slug", mapping.SourceTeamSlug, "error", dbErr)
+			}
 		}
 		return nil
 	}

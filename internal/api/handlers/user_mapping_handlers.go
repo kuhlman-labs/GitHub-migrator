@@ -867,7 +867,10 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 	// Mark mannequins as pending reclaim in user_mannequins table
 	for _, m := range pendingReclaims {
 		reclaimStatus := string(models.ReclaimStatusPending)
-		_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, req.DestinationOrg, reclaimStatus, nil)
+		if err := h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, req.DestinationOrg, reclaimStatus, nil); err != nil {
+			h.logger.Warn("Failed to update mannequin reclaim status to pending",
+				"source_login", m.SourceLogin, "error", err)
+		}
 	}
 
 	// Generate instructions for manual reclaim (gh gei reclaim-mannequin requires CLI)
@@ -1383,12 +1386,18 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 			"target_user", targetUser.Login,
 			"error", err)
 		errMsg := err.Error()
-		_ = h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusFailed), &errMsg)
+		if dbErr := h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusFailed), &errMsg); dbErr != nil {
+			h.logger.Warn("Failed to update mannequin reclaim status to failed",
+				"source_login", sourceLogin, "error", dbErr)
+		}
 		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Failed to send invitation: %s", err.Error())))
 		return
 	}
 
-	_ = h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusInvited), nil)
+	if dbErr := h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusInvited), nil); dbErr != nil {
+		h.logger.Warn("Failed to update mannequin reclaim status to invited",
+			"source_login", sourceLogin, "error", dbErr)
+	}
 
 	h.logger.Info("Attribution invitation sent",
 		"source_login", sourceLogin,
@@ -1463,10 +1472,16 @@ func (h *Handler) processBulkInvitationsWithMannequins(ctx context.Context, dest
 			result.failed++
 			errMsg := err.Error()
 			result.errors = append(result.errors, fmt.Sprintf("%s: %s", m.SourceLogin, errMsg))
-			_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusFailed), &errMsg)
+			if dbErr := h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusFailed), &errMsg); dbErr != nil {
+				h.logger.Warn("Failed to update mannequin reclaim status to failed",
+					"source_login", m.SourceLogin, "error", dbErr)
+			}
 		} else {
 			result.invited++
-			_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusInvited), nil)
+			if dbErr := h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusInvited), nil); dbErr != nil {
+				h.logger.Warn("Failed to update mannequin reclaim status to invited",
+					"source_login", m.SourceLogin, "error", dbErr)
+			}
 		}
 	}
 
