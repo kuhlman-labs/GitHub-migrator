@@ -420,12 +420,12 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 				e.logger.Info("Migration completed successfully",
 					"repo", repo.FullName,
 					"elapsed", elapsed.Round(time.Second))
-			completedStatus := models.StatusMigrationComplete
-			if len(dryRun) > 0 && dryRun[0] {
-				completedStatus = models.StatusDryRunComplete
-			}
-			repo.Status = string(completedStatus)
-			// Set destination details using the correct destination org and repo name
+				completedStatus := models.StatusMigrationComplete
+				if len(dryRun) > 0 && dryRun[0] {
+					completedStatus = models.StatusDryRunComplete
+				}
+				repo.Status = string(completedStatus)
+				// Set destination details using the correct destination org and repo name
 				destOrg := e.getDestinationOrg(repo, batch)
 				destRepoName := e.getDestinationRepoName(repo)
 				destFullName := fmt.Sprintf("%s/%s", destOrg, destRepoName)
