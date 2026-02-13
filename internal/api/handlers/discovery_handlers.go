@@ -140,8 +140,8 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 
 // runDiscoveryAsync executes a discovery operation asynchronously and updates progress
 func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgressTracker, discoverFn func(context.Context) error, discoveryType, target string, sourceID *int64) {
-	// Create cancellable context
-	ctx, cancel := context.WithCancel(context.Background())
+	// Create cancellable context with a safety-net timeout to prevent permanent goroutine leaks
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 
 	// Register cancel function for this discovery
 	h.discoveryMu.Lock()
@@ -214,7 +214,7 @@ func (h *Handler) DiscoveryStatus(w http.ResponseWriter, r *http.Request) {
 	// Count total repositories discovered
 	count, err := h.db.CountRepositories(ctx, nil)
 	if err != nil {
-		if h.handleContextError(ctx, err, "count repositories", r) {
+		if h.handleContextError(ctx, err, "count repositories", r, w) {
 			return
 		}
 		h.logger.Error("Failed to count repositories", "error", err)
@@ -350,9 +350,10 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 		collector.SetSourceID(nil)
 	}
 
-	// Start discovery asynchronously
+	// Start discovery asynchronously with a bounded timeout to prevent goroutine leaks
 	go func() {
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
 		if err := collector.DiscoverRepositories(ctx, req.Organization); err != nil {
 			h.logger.Error("Repository discovery failed", "error", err, "org", req.Organization)
 		}
@@ -541,8 +542,8 @@ func (h *Handler) startDynamicADOOrgDiscovery(w http.ResponseWriter, req *StartA
 
 // runDynamicADOOrgDiscovery executes org discovery in background
 func (h *Handler) runDynamicADOOrgDiscovery(organization string, sourceID, progressID int64, collector *discovery.ADOCollector, tracker *discovery.DBProgressTracker) {
-	// Create cancellable context
-	ctx, cancel := context.WithCancel(context.Background())
+	// Create cancellable context with a safety-net timeout to prevent permanent goroutine leaks
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 
 	// Register cancel function for this discovery
 	h.discoveryMu.Lock()
@@ -614,8 +615,8 @@ func (h *Handler) startDynamicADOProjectDiscovery(w http.ResponseWriter, req *St
 
 // runDynamicADOProjectDiscovery executes project discovery in background
 func (h *Handler) runDynamicADOProjectDiscovery(organization string, projects []string, sourceID, progressID int64, collector *discovery.ADOCollector, tracker *discovery.DBProgressTracker) {
-	// Create cancellable context
-	ctx, cancel := context.WithCancel(context.Background())
+	// Create cancellable context with a safety-net timeout to prevent permanent goroutine leaks
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 
 	// Register cancel function for this discovery
 	h.discoveryMu.Lock()

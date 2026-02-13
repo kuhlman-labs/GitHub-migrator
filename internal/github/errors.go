@@ -74,6 +74,12 @@ func WrapError(err error, method, url string) error {
 	// Check if it's already a GitHub error response
 	var ghErr *github.ErrorResponse
 	if errors.As(err, &ghErr) {
+		// Guard against a nil Response -- the go-github library normally sets it,
+		// but a malformed or manually constructed ErrorResponse may omit it.
+		if ghErr.Response == nil {
+			return fmt.Errorf("%s %s: %w", method, url, err)
+		}
+
 		apiErr := &APIError{
 			StatusCode: ghErr.Response.StatusCode,
 			Message:    ghErr.Message,

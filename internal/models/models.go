@@ -778,6 +778,8 @@ func (r *Repository) DestinationRepoName() string {
 			repoName := sanitizeRepoName(parts[len(parts)-1])
 			return project + "-" + repoName
 		}
+		// Malformed ADO name (fewer than 3 parts) -- sanitize the last segment as a fallback
+		return sanitizeRepoName(parts[len(parts)-1])
 	}
 
 	// For GitHub repos (org/repo format), use just the repo name

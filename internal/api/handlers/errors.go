@@ -215,7 +215,9 @@ func WriteErrorFromErr(w http.ResponseWriter, err error) {
 		WriteError(w, apiErr)
 		return
 	}
-	WriteError(w, ErrInternal.WithDetails(err.Error()))
+	// Don't expose raw internal error messages to clients to avoid information disclosure.
+	// The actual error is already logged server-side by callers.
+	WriteError(w, ErrInternal)
 }
 
 // NewValidationError creates a validation error for a specific field.

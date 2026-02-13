@@ -58,6 +58,14 @@ func (d *Database) createRepository(tx *gorm.DB, repo *models.Repository) error 
 	adoProps := repo.ADOProperties
 	validation := repo.Validation
 
+	// Always restore sub-properties on the caller's repo object, even on error
+	defer func() {
+		repo.GitProperties = gitProps
+		repo.Features = features
+		repo.ADOProperties = adoProps
+		repo.Validation = validation
+	}()
+
 	repo.GitProperties = nil
 	repo.Features = nil
 	repo.ADOProperties = nil
@@ -435,6 +443,9 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 		if result.Error != nil {
 			return fmt.Errorf("failed to update repository: %w", result.Error)
 		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("repository not found: %s", repo.FullName)
+		}
 
 		// Get the repository ID for related table updates
 		var existing models.Repository
@@ -495,8 +506,13 @@ func (d *Database) UpdateRepositoryStatus(ctx context.Context, fullName string, 
 			"status":     string(status),
 			"updated_at": time.Now().UTC(),
 		})
-
-	return result.Error
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("repository not found: %s", fullName)
+	}
+	return nil
 }
 
 // UpdateRepositoryDryRunTimestamp updates the last_dry_run_at timestamp for a repository using GORM
@@ -516,7 +532,13 @@ func (d *Database) UpdateRepositoryDryRunTimestamp(ctx context.Context, fullName
 // Related tables are automatically deleted via ON DELETE CASCADE
 func (d *Database) DeleteRepository(ctx context.Context, fullName string) error {
 	result := d.db.WithContext(ctx).Where("full_name = ?", fullName).Delete(&models.Repository{})
-	return result.Error
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("repository not found: %s", fullName)
+	}
+	return nil
 }
 
 // CountRepositories returns the total count of repositories with optional filters using GORM
@@ -662,9 +684,10 @@ func (d *Database) UpdateRepositoryValidation(ctx context.Context, fullName stri
 	})
 }
 
-// RollbackRepository marks a repository as rolled back and creates a migration history entry using GORM
+// RollbackRepository marks a repository as rolled back and creates a migration history entry using GORM.
+// All operations are wrapped in a single transaction to prevent partial state corruption.
 func (d *Database) RollbackRepository(ctx context.Context, fullName string, reason string) error {
-	// Get the repository
+	// Get the repository outside the transaction (read-only)
 	repo, err := d.GetRepository(ctx, fullName)
 	if err != nil {
 		return fmt.Errorf("failed to get repository: %w", err)
@@ -675,46 +698,50 @@ func (d *Database) RollbackRepository(ctx context.Context, fullName string, reas
 
 	oldBatchID := repo.BatchID
 
-	// Update repository status to rolled_back and clear batch assignment using GORM
-	now := time.Now().UTC()
-	result := d.db.WithContext(ctx).Model(&models.Repository{}).
-		Where("full_name = ?", fullName).
-		Updates(map[string]any{
-			"status":     string(models.StatusRolledBack),
-			"batch_id":   nil,
-			"updated_at": now,
-		})
+	err = d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Update repository status to rolled_back and clear batch assignment
+		now := time.Now().UTC()
+		result := tx.Model(&models.Repository{}).
+			Where("full_name = ?", fullName).
+			Updates(map[string]any{
+				"status":     string(models.StatusRolledBack),
+				"batch_id":   nil,
+				"updated_at": now,
+			})
 
-	if result.Error != nil {
-		return fmt.Errorf("failed to update repository status: %w", result.Error)
-	}
-
-	// Update the old batch's repository count if it was in a batch
-	if oldBatchID != nil {
-		if err := d.updateBatchRepositoryCount(ctx, *oldBatchID); err != nil {
-			// Log but don't fail the rollback
-			return fmt.Errorf("failed to update batch repository count: %w", err)
+		if result.Error != nil {
+			return fmt.Errorf("failed to update repository status: %w", result.Error)
 		}
+
+		// Create migration history entry for rollback
+		message := "Repository rolled back"
+		if reason != "" {
+			message = reason
+		}
+
+		history := &models.MigrationHistory{
+			RepositoryID: repo.ID,
+			Status:       "rolled_back",
+			Phase:        "rollback",
+			Message:      &message,
+			StartedAt:    now,
+			CompletedAt:  &now,
+		}
+
+		if err := tx.Create(history).Error; err != nil {
+			return fmt.Errorf("failed to create rollback history: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
-	// Create migration history entry for rollback using GORM
-	message := "Repository rolled back"
-	if reason != "" {
-		message = reason
-	}
-
-	history := &models.MigrationHistory{
-		RepositoryID: repo.ID,
-		Status:       "rolled_back",
-		Phase:        "rollback",
-		Message:      &message,
-		StartedAt:    now,
-		CompletedAt:  &now,
-	}
-
-	result = d.db.WithContext(ctx).Create(history)
-	if result.Error != nil {
-		return fmt.Errorf("failed to create rollback history: %w", result.Error)
+	// Update the old batch's repository count outside the transaction to avoid
+	// SQLite deadlocks. Non-critical: don't fail the rollback if this update fails.
+	if oldBatchID != nil {
+		_ = d.updateBatchRepositoryCount(ctx, *oldBatchID)
 	}
 
 	return nil

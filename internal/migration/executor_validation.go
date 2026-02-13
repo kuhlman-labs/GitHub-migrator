@@ -251,11 +251,21 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 	repo.SetHasWiki(ghRepo.GetHasWiki())
 	repo.SetHasPages(ghRepo.GetHasPages())
 
-	// Get branch count
-	branches, _, err := e.destClient.REST().Repositories.ListBranches(ctx, org, name, nil)
-	if err == nil {
-		repo.SetBranchCount(len(branches))
+	// Get branch count using pagination
+	branchCount := 0
+	branchOpts := &ghapi.BranchListOptions{ListOptions: ghapi.ListOptions{PerPage: 100}}
+	for {
+		branches, resp, err := e.destClient.REST().Repositories.ListBranches(ctx, org, name, branchOpts)
+		if err != nil {
+			break
+		}
+		branchCount += len(branches)
+		if resp.NextPage == 0 {
+			break
+		}
+		branchOpts.Page = resp.NextPage
 	}
+	repo.SetBranchCount(branchCount)
 
 	// Get last commit SHA from default branch
 	if defaultBranch != "" {
@@ -266,24 +276,43 @@ func (e *Executor) profileDestinationRepository(ctx context.Context, fullName st
 		}
 	}
 
-	// Get commit count (approximation from contributors API)
-	contributors, _, err := e.destClient.REST().Repositories.ListContributors(ctx, org, name, nil)
-	if err == nil {
-		totalCommits := 0
+	// Get commit count (approximation from contributors API) using pagination
+	totalCommits := 0
+	contribOpts := &ghapi.ListContributorsOptions{ListOptions: ghapi.ListOptions{PerPage: 100}}
+	for {
+		contributors, resp, err := e.destClient.REST().Repositories.ListContributors(ctx, org, name, contribOpts)
+		if err != nil {
+			e.logger.Warn("Failed to get contributors for commit count", "repo", fullName, "error", err)
+			break
+		}
 		for _, contributor := range contributors {
 			totalCommits += contributor.GetContributions()
 		}
+		if resp.NextPage == 0 {
+			break
+		}
+		contribOpts.Page = resp.NextPage
+	}
+	if totalCommits > 0 {
 		repo.SetCommitCount(totalCommits)
-		e.logger.Debug("Retrieved commit count from contributors", "repo", fullName, "commits", totalCommits, "contributors", len(contributors))
-	} else {
-		e.logger.Warn("Failed to get contributors for commit count", "repo", fullName, "error", err)
+		e.logger.Debug("Retrieved commit count from contributors", "repo", fullName, "commits", totalCommits)
 	}
 
-	// Get tag count
-	tags, _, err := e.destClient.REST().Repositories.ListTags(ctx, org, name, nil)
-	if err == nil {
-		repo.SetTagCount(len(tags))
+	// Get tag count using pagination
+	tagCount := 0
+	tagOpts := &ghapi.ListOptions{PerPage: 100}
+	for {
+		tags, resp, err := e.destClient.REST().Repositories.ListTags(ctx, org, name, tagOpts)
+		if err != nil {
+			break
+		}
+		tagCount += len(tags)
+		if resp.NextPage == 0 {
+			break
+		}
+		tagOpts.Page = resp.NextPage
 	}
+	repo.SetTagCount(tagCount)
 
 	// Get issue and PR counts using pagination
 	issueCount := 0

@@ -93,9 +93,10 @@ func validateCLIPath(cliPath string) (string, error) {
 
 // LicenseValidator validates Copilot license/subscription status
 type LicenseValidator struct {
-	baseURL string
-	logger  *slog.Logger
-	cache   *licenseCache
+	baseURL    string
+	logger     *slog.Logger
+	cache      *licenseCache
+	httpClient *http.Client
 }
 
 // LicenseStatus represents the Copilot license status for a user
@@ -160,9 +161,10 @@ func NewLicenseValidator(baseURL string, logger *slog.Logger) *LicenseValidator 
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &LicenseValidator{
-		baseURL: baseURL,
-		logger:  logger,
-		cache:   newLicenseCache(),
+		baseURL:    baseURL,
+		logger:     logger,
+		cache:      newLicenseCache(),
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -218,15 +220,17 @@ func (v *LicenseValidator) queryLicenseStatus(ctx context.Context, userLogin str
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query GitHub API: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("GitHub API returned status %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -242,7 +246,7 @@ func (v *LicenseValidator) queryLicenseStatus(ctx context.Context, userLogin str
 	copilotReq.Header.Set("Accept", "application/vnd.github+json")
 	copilotReq.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	copilotResp, err := client.Do(copilotReq)
+	copilotResp, err := v.httpClient.Do(copilotReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Copilot API: %w", err)
 	}
@@ -263,19 +267,26 @@ func (v *LicenseValidator) queryLicenseStatus(ctx context.Context, userLogin str
 
 	// 401/403 means authentication issue or insufficient permissions
 	if copilotResp.StatusCode == http.StatusUnauthorized || copilotResp.StatusCode == http.StatusForbidden {
-		body, _ := io.ReadAll(copilotResp.Body)
+		body, readErr := io.ReadAll(copilotResp.Body)
+		errDetail := string(body)
+		if readErr != nil {
+			errDetail = fmt.Sprintf("(failed to read body: %v)", readErr)
+		}
 		return &LicenseStatus{
 			Valid:     false,
 			HasSeat:   false,
 			Message:   "Unable to verify Copilot license - insufficient permissions",
 			CheckedAt: now,
 			ExpiresAt: now.Add(licenseCacheTTL),
-			Error:     string(body),
+			Error:     errDetail,
 		}, nil
 	}
 
 	if copilotResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(copilotResp.Body)
+		body, readErr := io.ReadAll(copilotResp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("copilot API returned status %d (failed to read body: %w)", copilotResp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("copilot API returned status %d: %s", copilotResp.StatusCode, string(body))
 	}
 

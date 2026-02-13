@@ -179,9 +179,11 @@ func (h *RepositoryHandler) UpdateRepository(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Update fields if provided
+	// Update fields if provided (status field is intentionally excluded from
+	// direct updates to prevent bypassing the migration lifecycle)
 	if updateReq.Status != nil {
-		repo.Status = *updateReq.Status
+		h.sendError(w, http.StatusBadRequest, "Cannot set repository status directly; use migration endpoints instead")
+		return
 	}
 	if updateReq.BatchID != nil {
 		repo.BatchID = updateReq.BatchID

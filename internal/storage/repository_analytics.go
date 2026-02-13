@@ -322,8 +322,8 @@ func (d *Database) GetComplexityDistribution(ctx context.Context, orgFilter, pro
 			SELECT 
 				CASE 
 					WHEN COALESCE(v.complexity_score, 0) <= 5 THEN 'simple'
-					WHEN v.complexity_score <= 10 THEN 'medium'
-					WHEN v.complexity_score <= 17 THEN 'complex'
+					WHEN COALESCE(v.complexity_score, 0) <= 10 THEN 'medium'
+					WHEN COALESCE(v.complexity_score, 0) <= 17 THEN 'complex'
 					ELSE 'very_complex'
 				END as category
 			FROM repositories r
@@ -375,18 +375,23 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
-	// Use dialect-specific date arithmetic via DialectDialer interface
-	dateCondition := "AND mh.completed_at >= " + d.dialect.DateIntervalAgo(days)
-	args := make([]any, 0, len(orgArgs)+len(projectArgs)+len(batchArgs)+len(sourceArgs))
+	// Use parameterized date arithmetic to keep queries safe and consistent
+	dateSQL, _ := d.dialect.DateIntervalAgoParam()
+	dateCondition := "AND mh.completed_at >= " + dateSQL
+	args := make([]any, 0, 1+len(orgArgs)+len(projectArgs)+len(batchArgs)+len(sourceArgs))
+	args = append(args, days)
 	args = append(args, orgArgs...)
 	args = append(args, projectArgs...)
 	args = append(args, batchArgs...)
 	args = append(args, sourceArgs...)
 
+	projectJoin := d.buildProjectFilterJoin(projectFilter)
+
 	query := `
 		SELECT COUNT(DISTINCT r.id) as total_completed
 		FROM repositories r
 		INNER JOIN migration_history mh ON r.id = mh.repository_id
+		` + projectJoin + `
 		WHERE mh.status = 'completed' 
 			AND mh.phase = 'migration'
 			` + dateCondition + `
@@ -404,6 +409,10 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&result).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration velocity: %w", err)
+	}
+
+	if days <= 0 {
+		return &MigrationVelocity{}, nil
 	}
 
 	velocity := &MigrationVelocity{
@@ -430,8 +439,10 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projec
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
-	// Use dialect-specific date arithmetic via DialectDialer interface
-	dateCondition := "AND mh.completed_at >= " + d.dialect.DateIntervalAgo(30)
+	// Use parameterized date arithmetic to keep queries safe and consistent
+	dateSQL, _ := d.dialect.DateIntervalAgoParam()
+	dateCondition := "AND mh.completed_at >= " + dateSQL
+	projectJoin := d.buildProjectFilterJoin(projectFilter)
 
 	query := `
 		SELECT 
@@ -439,6 +450,7 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projec
 			COUNT(DISTINCT r.id) as count
 		FROM repositories r
 		INNER JOIN migration_history mh ON r.id = mh.repository_id
+		` + projectJoin + `
 		WHERE mh.status = 'completed'
 			AND mh.phase = 'migration'
 			` + dateCondition + `
@@ -451,8 +463,11 @@ func (d *Database) GetMigrationTimeSeries(ctx context.Context, orgFilter, projec
 		ORDER BY date ASC
 	`
 
-	// Combine all arguments
-	args := append(orgArgs, projectArgs...)
+	// Combine all arguments (days parameter first for the date condition)
+	args := make([]any, 0, 1+len(orgArgs)+len(projectArgs)+len(batchArgs)+len(sourceArgs))
+	args = append(args, 30) // Last 30 days
+	args = append(args, orgArgs...)
+	args = append(args, projectArgs...)
 	args = append(args, batchArgs...)
 	args = append(args, sourceArgs...)
 
@@ -474,10 +489,13 @@ func (d *Database) GetAverageMigrationTime(ctx context.Context, orgFilter, proje
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
+	projectJoin := d.buildProjectFilterJoin(projectFilter)
+
 	query := `
 		SELECT AVG(mh.duration_seconds) as avg_duration
 		FROM repositories r
 		INNER JOIN migration_history mh ON r.id = mh.repository_id
+		` + projectJoin + `
 		WHERE mh.status = 'completed'
 			AND mh.phase = 'migration'
 			AND mh.duration_seconds IS NOT NULL
@@ -518,6 +536,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Use dialect-specific median calculation via DialectDialer interface
+	projectJoin := d.buildProjectFilterJoin(projectFilter)
 	var query string
 	if d.dialect.SupportsPercentileCont() {
 		// PostgreSQL and SQL Server support PERCENTILE_CONT
@@ -526,6 +545,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 			SELECT ` + medianExpr + ` as median_duration
 			FROM repositories r
 			INNER JOIN migration_history mh ON r.id = mh.repository_id
+			` + projectJoin + `
 			WHERE mh.status = 'completed'
 				AND mh.phase = 'migration'
 				AND mh.duration_seconds IS NOT NULL
@@ -544,6 +564,7 @@ func (d *Database) GetMedianMigrationTime(ctx context.Context, orgFilter, projec
 					COUNT(*) OVER () as total_count
 				FROM repositories r
 				INNER JOIN migration_history mh ON r.id = mh.repository_id
+				` + projectJoin + `
 				WHERE mh.status = 'completed'
 					AND mh.phase = 'migration'
 					AND mh.duration_seconds IS NOT NULL
@@ -617,12 +638,32 @@ func (d *Database) buildSourceFilter(sourceID *int64) (string, []any) {
 	return " AND r.source_id = ?", []any{*sourceID}
 }
 
-// buildProjectFilter builds SQL filter for ADO project (project field in repository_ado_properties)
+// buildProjectFilter builds SQL filter for ADO project (project field in repository_ado_properties).
+// Returns both the required JOIN clause and the WHERE clause fragment, plus any bind arguments.
+// Callers that use this filter MUST include the JOIN in their query.
 func (d *Database) buildProjectFilter(projectFilter string) (string, []any) {
 	if projectFilter == "" {
 		return "", nil
 	}
 	return " AND a.project = ?", []any{projectFilter}
+}
+
+// buildProjectFilterWithAlias is like buildProjectFilter but uses a custom table alias.
+// Useful when the query already joins repository_ado_properties under a different alias.
+func (d *Database) buildProjectFilterWithAlias(projectFilter string, alias string) (string, []any) {
+	if projectFilter == "" {
+		return "", nil
+	}
+	return " AND " + alias + ".project = ?", []any{projectFilter}
+}
+
+// buildProjectFilterJoin returns the LEFT JOIN needed when using buildProjectFilter.
+// Add this to queries that don't already join repository_ado_properties as alias "a".
+func (d *Database) buildProjectFilterJoin(projectFilter string) string {
+	if projectFilter == "" {
+		return ""
+	}
+	return " LEFT JOIN repository_ado_properties a ON r.id = a.repository_id"
 }
 
 // GetRepositoryStatsByStatusFiltered returns repository counts by status with filters
@@ -681,6 +722,7 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, p
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
 	// Note: PostgreSQL doesn't allow GROUP BY on column aliases, so we use a subquery
+	projectJoin := d.buildProjectFilterJoin(projectFilter)
 	query := `
 		SELECT 
 			category,
@@ -696,6 +738,7 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, p
 				END as category
 			FROM repositories r
 			LEFT JOIN repository_git_properties gp ON r.id = gp.repository_id
+			` + projectJoin + `
 			WHERE 1=1
 				AND r.status != 'wont_migrate'
 				` + orgFilterSQL + `
@@ -733,7 +776,9 @@ func (d *Database) GetSizeDistributionFiltered(ctx context.Context, orgFilter, p
 func (d *Database) GetFeatureStatsFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) (*FeatureStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
-	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
+	// This query already joins repository_ado_properties as "ap", so use that alias
+	// instead of the default "a" from buildProjectFilter.
+	projectFilterSQL, projectArgs := d.buildProjectFilterWithAlias(projectFilter, "ap")
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
@@ -821,6 +866,8 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 
 	// Group by organization (extracted from full_name), source, and status
 	// Join with sources table to get source name and type
+	projectJoin := d.buildProjectFilterJoin(projectFilter)
+
 	query := fmt.Sprintf(`
 		SELECT 
 			%s as org,
@@ -833,6 +880,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 			COUNT(*) as status_count
 		FROM repositories r
 		LEFT JOIN sources s ON r.source_id = s.id
+		%s
 		WHERE %s > 0
 			AND r.status != 'wont_migrate'
 			%s
@@ -841,7 +889,7 @@ func (d *Database) GetOrganizationStatsFiltered(ctx context.Context, orgFilter, 
 			%s
 		GROUP BY org, r.source, r.source_id, s.name, s.type, r.status
 		ORDER BY total DESC, org ASC
-	`, extractOrg, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
+	`, extractOrg, projectJoin, findSlash, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)

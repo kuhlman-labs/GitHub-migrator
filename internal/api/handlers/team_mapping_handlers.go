@@ -73,7 +73,7 @@ func (h *Handler) ListTeamMappings(w http.ResponseWriter, r *http.Request) {
 
 	teams, total, err := h.db.ListTeamsWithMappings(ctx, filters)
 	if err != nil {
-		if h.handleContextError(ctx, err, "list teams with mappings", r) {
+		if h.handleContextError(ctx, err, "list teams with mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to list teams with mappings", "error", err)
@@ -123,7 +123,7 @@ func (h *Handler) DiscoverTeams(w http.ResponseWriter, r *http.Request) {
 	// Run discovery synchronously since it provides immediate feedback
 	teamsDiscovered, membersDiscovered, err := collector.DiscoverTeamsOnly(ctx, req.Organization)
 	if err != nil {
-		if h.handleContextError(ctx, err, "discover teams", r) {
+		if h.handleContextError(ctx, err, "discover teams", r, w) {
 			return
 		}
 		h.logger.Error("Team discovery failed", "error", err, "org", req.Organization)
@@ -160,7 +160,7 @@ func (h *Handler) GetTeamSourceOrgs(w http.ResponseWriter, r *http.Request) {
 
 	orgs, err := h.db.GetTeamSourceOrgs(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get team source orgs", r) {
+		if h.handleContextError(ctx, err, "get team source orgs", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get team source orgs", "error", err)
@@ -213,7 +213,7 @@ func (h *Handler) CreateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.SaveTeamMapping(ctx, mapping); err != nil {
-		if h.handleContextError(ctx, err, "save team mapping", r) {
+		if h.handleContextError(ctx, err, "save team mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to save team mapping", "error", err)
@@ -251,7 +251,7 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	// Get existing mapping
 	existing, err := h.db.GetTeamMapping(ctx, sourceOrg, sourceTeamSlug)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get team mapping", r) {
+		if h.handleContextError(ctx, err, "get team mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get team mapping", "error", err)
@@ -303,7 +303,7 @@ func (h *Handler) UpdateTeamMapping(w http.ResponseWriter, r *http.Request) {
 	existing.UpdatedAt = time.Now()
 
 	if err := h.db.SaveTeamMapping(ctx, existing); err != nil {
-		if h.handleContextError(ctx, err, "update team mapping", r) {
+		if h.handleContextError(ctx, err, "update team mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to update team mapping", "error", err)
@@ -330,7 +330,7 @@ func (h *Handler) DeleteTeamMapping(w http.ResponseWriter, r *http.Request) {
 	sourceTeamSlug, _ := decodePathComponent(parts[1])
 
 	if err := h.db.DeleteTeamMapping(ctx, sourceOrg, sourceTeamSlug); err != nil {
-		if h.handleContextError(ctx, err, "delete team mapping", r) {
+		if h.handleContextError(ctx, err, "delete team mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to delete team mapping", "error", err)
@@ -530,7 +530,7 @@ func (h *Handler) ExportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	// joined with their mapping info (from team_mappings)
 	teams, _, err := h.db.ListTeamsWithMappings(ctx, filters)
 	if err != nil {
-		if h.handleContextError(ctx, err, "export team mappings", r) {
+		if h.handleContextError(ctx, err, "export team mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to export team mappings", "error", err)
@@ -596,7 +596,7 @@ func (h *Handler) SuggestTeamMappings(w http.ResponseWriter, r *http.Request) {
 
 	suggestions, err := h.db.SuggestTeamMappings(ctx, req.DestinationOrg, req.DestTeamSlugs)
 	if err != nil {
-		if h.handleContextError(ctx, err, "suggest team mappings", r) {
+		if h.handleContextError(ctx, err, "suggest team mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to suggest team mappings", "error", err)
@@ -635,7 +635,7 @@ func (h *Handler) SyncTeamMappingsFromDiscovery(w http.ResponseWriter, r *http.R
 
 	created, err := h.db.SyncTeamMappingsFromTeams(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "sync team mappings", r) {
+		if h.handleContextError(ctx, err, "sync team mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to sync team mappings", "error", err)
@@ -669,7 +669,7 @@ func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 
 	members, err := h.db.GetTeamMembersByOrgAndSlug(ctx, org, teamSlug)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get team members", r) {
+		if h.handleContextError(ctx, err, "get team members", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get team members", "error", err)
@@ -702,7 +702,7 @@ func (h *Handler) GetTeamDetail(w http.ResponseWriter, r *http.Request) {
 
 	detail, err := h.db.GetTeamDetail(ctx, org, teamSlug)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get team detail", r) {
+		if h.handleContextError(ctx, err, "get team detail", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get team detail", "error", err)
@@ -1077,7 +1077,7 @@ func (h *Handler) ResetTeamMigrationStatus(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.db.ResetTeamMigrationStatus(ctx, sourceOrg); err != nil {
-		if h.handleContextError(ctx, err, "reset team migration status", r) {
+		if h.handleContextError(ctx, err, "reset team migration status", r, w) {
 			return
 		}
 		h.logger.Error("Failed to reset team migration status", "error", err)

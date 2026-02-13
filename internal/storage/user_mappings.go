@@ -9,46 +9,47 @@ import (
 	"gorm.io/gorm"
 )
 
-// SaveUserMapping inserts or updates a user mapping in the database
+// SaveUserMapping inserts or updates a user mapping in the database.
+// Uses a transaction to prevent the TOCTOU race where two concurrent
+// requests both see "not found" and both try to insert.
 func (d *Database) SaveUserMapping(ctx context.Context, mapping *models.UserMapping) error {
-	// Check if mapping already exists
-	var existing models.UserMapping
-	err := d.db.WithContext(ctx).
-		Where("source_login = ?", mapping.SourceLogin).
-		First(&existing).Error
+	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing models.UserMapping
+		err := tx.
+			Where("source_login = ?", mapping.SourceLogin).
+			First(&existing).Error
 
-	if err == gorm.ErrRecordNotFound {
-		// Insert new mapping
-		if mapping.CreatedAt.IsZero() {
-			mapping.CreatedAt = time.Now()
-		}
-		if mapping.UpdatedAt.IsZero() {
-			mapping.UpdatedAt = time.Now()
-		}
-		if mapping.MappingStatus == "" {
-			mapping.MappingStatus = string(models.UserMappingStatusUnmapped)
+		if err == gorm.ErrRecordNotFound {
+			// Insert new mapping
+			if mapping.CreatedAt.IsZero() {
+				mapping.CreatedAt = time.Now()
+			}
+			if mapping.UpdatedAt.IsZero() {
+				mapping.UpdatedAt = time.Now()
+			}
+			if mapping.MappingStatus == "" {
+				mapping.MappingStatus = string(models.UserMappingStatusUnmapped)
+			}
+
+			if result := tx.Create(mapping); result.Error != nil {
+				return fmt.Errorf("failed to create user mapping: %w", result.Error)
+			}
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("failed to check existing user mapping: %w", err)
 		}
 
-		result := d.db.WithContext(ctx).Create(mapping)
-		if result.Error != nil {
-			return fmt.Errorf("failed to create user mapping: %w", result.Error)
+		// Mapping exists - update it
+		mapping.ID = existing.ID
+		mapping.CreatedAt = existing.CreatedAt
+		mapping.UpdatedAt = time.Now()
+
+		if result := tx.Save(mapping); result.Error != nil {
+			return fmt.Errorf("failed to update user mapping: %w", result.Error)
 		}
+
 		return nil
-	} else if err != nil {
-		return fmt.Errorf("failed to check existing user mapping: %w", err)
-	}
-
-	// Mapping exists - update it
-	mapping.ID = existing.ID
-	mapping.CreatedAt = existing.CreatedAt
-	mapping.UpdatedAt = time.Now()
-
-	result := d.db.WithContext(ctx).Save(mapping)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update user mapping: %w", result.Error)
-	}
-
-	return nil
+	})
 }
 
 // GetUserMappingBySourceLogin retrieves a user mapping by source login

@@ -381,11 +381,21 @@ func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Re
 		repo.SetLastCommitDate(&pushTime)
 	}
 
-	// Get branch count
-	branches, _, err := e.sourceClient.REST().Repositories.ListBranches(ctx, repo.Organization(), repo.Name(), nil)
-	if err == nil {
-		repo.SetBranchCount(len(branches))
+	// Get branch count using pagination
+	branchCount := 0
+	branchOpts := &ghapi.BranchListOptions{ListOptions: ghapi.ListOptions{PerPage: 100}}
+	for {
+		branches, resp, err := e.sourceClient.REST().Repositories.ListBranches(ctx, repo.Organization(), repo.Name(), branchOpts)
+		if err != nil {
+			break
+		}
+		branchCount += len(branches)
+		if resp.NextPage == 0 {
+			break
+		}
+		branchOpts.Page = resp.NextPage
 	}
+	repo.SetBranchCount(branchCount)
 
 	// Get last commit SHA from default branch
 	if defaultBranch != "" {
@@ -396,11 +406,21 @@ func (e *Executor) runPreMigrationDiscovery(ctx context.Context, repo *models.Re
 		}
 	}
 
-	// Get tag count
-	tags, _, err := e.sourceClient.REST().Repositories.ListTags(ctx, repo.Organization(), repo.Name(), nil)
-	if err == nil {
-		repo.SetTagCount(len(tags))
+	// Get tag count using pagination
+	tagCount := 0
+	tagOpts := &ghapi.ListOptions{PerPage: 100}
+	for {
+		tags, resp, err := e.sourceClient.REST().Repositories.ListTags(ctx, repo.Organization(), repo.Name(), tagOpts)
+		if err != nil {
+			break
+		}
+		tagCount += len(tags)
+		if resp.NextPage == 0 {
+			break
+		}
+		tagOpts.Page = resp.NextPage
 	}
+	repo.SetTagCount(tagCount)
 
 	// Update repository in database
 	repo.UpdatedAt = time.Now()

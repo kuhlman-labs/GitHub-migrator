@@ -271,15 +271,19 @@ func (s *Server) Router() http.Handler {
 		if destBaseURL == "" {
 			destBaseURL = defaultGitHubAPIURL
 		}
-		jwtManager, _ := auth.NewJWTManager(effectiveAuthCfg.SessionSecret, effectiveAuthCfg.SessionDurationHours)
-		// Use destination GitHub URL for authorization checks (enterprise admin, org membership)
-		// since users authenticate via GitHub OAuth against the destination instance
-		authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, destBaseURL)
-		authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
+		jwtManager, err := auth.NewJWTManager(effectiveAuthCfg.SessionSecret, effectiveAuthCfg.SessionDurationHours)
+		if err != nil {
+			s.logger.Error("Failed to create JWT manager, authentication will be disabled", "error", err)
+		} else {
+			// Use destination GitHub URL for authorization checks (enterprise admin, org membership)
+			// since users authenticate via GitHub OAuth against the destination instance
+			authorizer := auth.NewAuthorizer(&effectiveAuthCfg, s.logger, destBaseURL)
+			authMiddleware = auth.NewMiddleware(jwtManager, authorizer, s.logger, true)
 
-		// Set authorizer on Copilot handler for tool authorization
-		if s.copilotHandler != nil {
-			s.copilotHandler.SetAuthorizer(authorizer, &effectiveAuthCfg)
+			// Set authorizer on Copilot handler for tool authorization
+			if s.copilotHandler != nil {
+				s.copilotHandler.SetAuthorizer(authorizer, &effectiveAuthCfg)
+			}
 		}
 	}
 
@@ -322,21 +326,30 @@ func (s *Server) Router() http.Handler {
 		mux.HandleFunc("POST /api/v1/settings/oauth/validate", s.settingsHandler.ValidateOAuth)
 	}
 
-	// Helper to conditionally wrap with auth
+	// Helper to conditionally wrap with auth.
+	// When auth is enabled but the middleware failed to initialize (e.g., bad secret),
+	// endpoints are blocked with 503 to prevent silent unauthenticated access.
 	protect := func(pattern string, handler http.HandlerFunc) {
 		if authMiddleware != nil {
 			mux.Handle(pattern, authMiddleware.RequireAuth(handler))
+		} else if authEnabled {
+			mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Authentication service unavailable", http.StatusServiceUnavailable)
+			})
 		} else {
 			mux.HandleFunc(pattern, handler)
 		}
 	}
 
-	// Helper for admin-only endpoints (requires Tier 1 authorization)
-	// This chains RequireAuth -> RequireAdmin for endpoints that modify system configuration
+	// Helper for admin-only endpoints (requires Tier 1 authorization).
+	// This chains RequireAuth -> RequireAdmin for endpoints that modify system configuration.
 	adminOnly := func(pattern string, handler http.HandlerFunc) {
 		if authMiddleware != nil {
-			// Chain: RequireAuth validates authentication, RequireAdmin validates Tier 1 access
 			mux.Handle(pattern, authMiddleware.RequireAuth(authMiddleware.RequireAdmin(handler)))
+		} else if authEnabled {
+			mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Authentication service unavailable", http.StatusServiceUnavailable)
+			})
 		} else {
 			mux.HandleFunc(pattern, handler)
 		}
@@ -494,10 +507,21 @@ func (s *Server) Router() http.Handler {
 	// Serve static frontend files for SPA
 	mux.HandleFunc("/", s.serveFrontend)
 
-	// Apply middleware
-	handler := middleware.CORS(
-		middleware.Logging(s.logger)(
-			middleware.Recovery(s.logger)(mux),
+	// Build the CORS allowlist from the configured frontend URL
+	allowedOrigins := []string{
+		fmt.Sprintf("http://localhost:%d", s.config.Server.Port),
+	}
+	frontendURL := s.config.Auth.FrontendURL
+	if frontendURL != "" {
+		allowedOrigins = append(allowedOrigins, strings.TrimSuffix(frontendURL, "/"))
+	}
+
+	// Apply middleware (outermost first: CORS -> body limit -> logging -> recovery)
+	handler := middleware.CORS(allowedOrigins,
+		middleware.BodySizeLimit(middleware.MaxRequestBodySize)(
+			middleware.Logging(s.logger)(
+				middleware.Recovery(s.logger)(mux),
+			),
 		),
 	)
 

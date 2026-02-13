@@ -41,7 +41,8 @@ func (d *Database) GetBatch(ctx context.Context, id int64) (*models.Batch, error
 	return &batch, nil
 }
 
-// UpdateBatch updates a batch using GORM
+// UpdateBatch updates a batch using GORM.
+// Uses Save() for a full-model replacement; callers must provide a complete batch.
 func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
 	result := d.db.WithContext(ctx).Save(batch)
 	return result.Error
@@ -50,19 +51,29 @@ func (d *Database) UpdateBatch(ctx context.Context, batch *models.Batch) error {
 // ListBatches retrieves all batches using GORM
 func (d *Database) ListBatches(ctx context.Context) ([]*models.Batch, error) {
 	var batches []*models.Batch
-	err := d.db.WithContext(ctx).Order("created_at DESC").Find(&batches).Error
+	err := d.db.WithContext(ctx).Order("created_at DESC, id DESC").Find(&batches).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list batches: %w", err)
 	}
 
-	// Ensure repository_count is accurate by querying the actual count
-	// This prevents data inconsistency issues where the count may be stale
-	for _, batch := range batches {
-		var count int64
-		if err := d.db.WithContext(ctx).Model(&models.Repository{}).
-			Where("batch_id = ?", batch.ID).
-			Count(&count).Error; err == nil {
-			batch.RepositoryCount = int(count)
+	// Ensure repository_count is accurate with a single aggregate query
+	// instead of querying each batch individually (N+1).
+	type batchCount struct {
+		BatchID int64 `gorm:"column:batch_id"`
+		Count   int64 `gorm:"column:count"`
+	}
+	var counts []batchCount
+	if err := d.db.WithContext(ctx).Model(&models.Repository{}).
+		Select("batch_id, COUNT(*) as count").
+		Where("batch_id IS NOT NULL").
+		Group("batch_id").
+		Find(&counts).Error; err == nil {
+		countMap := make(map[int64]int64, len(counts))
+		for _, c := range counts {
+			countMap[c.BatchID] = c.Count
+		}
+		for _, batch := range batches {
+			batch.RepositoryCount = int(countMap[batch.ID])
 		}
 	}
 
@@ -168,25 +179,37 @@ func (d *Database) AddRepositoriesToBatch(ctx context.Context, batchID int64, re
 		return nil
 	}
 
-	// Use GORM to update batch_id for specified repositories
-	now := time.Now().UTC()
-	result := d.db.WithContext(ctx).Model(&models.Repository{}).
-		Where("id IN ?", repoIDs).
-		Updates(map[string]any{
-			"batch_id":   batchID,
-			"updated_at": now,
-		})
+	var rowsAffected int64
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Update batch_id for specified repositories
+		now := time.Now().UTC()
+		result := tx.Model(&models.Repository{}).
+			Where("id IN ?", repoIDs).
+			Updates(map[string]any{
+				"batch_id":   batchID,
+				"updated_at": now,
+			})
 
-	if result.Error != nil {
-		return fmt.Errorf("failed to add repositories to batch: %w", result.Error)
+		if result.Error != nil {
+			return fmt.Errorf("failed to add repositories to batch: %w", result.Error)
+		}
+
+		rowsAffected = result.RowsAffected
+		if rowsAffected > 0 {
+			// Update batch repository count within the transaction
+			if err := d.updateBatchRepositoryCountTx(tx, batchID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
-	// Update batch repository count and status
-	if result.RowsAffected > 0 {
-		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
-			return err
-		}
-		// Recalculate batch status based on repository dry run readiness
+	// Recalculate batch status outside the transaction to avoid SQLite deadlocks
+	if rowsAffected > 0 {
 		if err := d.UpdateBatchStatus(ctx, batchID); err != nil {
 			return err
 		}
@@ -201,26 +224,37 @@ func (d *Database) RemoveRepositoriesFromBatch(ctx context.Context, batchID int6
 		return nil
 	}
 
-	// Use GORM to clear batch_id for specified repositories
-	now := time.Now().UTC()
-	result := d.db.WithContext(ctx).Model(&models.Repository{}).
-		Where("batch_id = ? AND id IN ?", batchID, repoIDs).
-		Updates(map[string]any{
-			"batch_id":   nil,
-			"updated_at": now,
-		})
+	var rowsAffected int64
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Clear batch_id for specified repositories
+		now := time.Now().UTC()
+		result := tx.Model(&models.Repository{}).
+			Where("batch_id = ? AND id IN ?", batchID, repoIDs).
+			Updates(map[string]any{
+				"batch_id":   nil,
+				"updated_at": now,
+			})
 
-	if result.Error != nil {
-		return fmt.Errorf("failed to remove repositories from batch: %w", result.Error)
+		if result.Error != nil {
+			return fmt.Errorf("failed to remove repositories from batch: %w", result.Error)
+		}
+
+		rowsAffected = result.RowsAffected
+		if rowsAffected > 0 {
+			// Update batch repository count within the transaction
+			if err := d.updateBatchRepositoryCountTx(tx, batchID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
-	// Update batch repository count and status
-	rowsAffected := result.RowsAffected
+	// Recalculate batch status outside the transaction to avoid SQLite deadlocks
 	if rowsAffected > 0 {
-		if err := d.updateBatchRepositoryCount(ctx, batchID); err != nil {
-			return err
-		}
-		// Recalculate batch status after removal
 		if err := d.UpdateBatchStatus(ctx, batchID); err != nil {
 			return err
 		}
@@ -231,6 +265,12 @@ func (d *Database) RemoveRepositoriesFromBatch(ctx context.Context, batchID int6
 
 // updateBatchRepositoryCount updates the repository count for a batch
 func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64) error {
+	return d.updateBatchRepositoryCountTx(d.db.WithContext(ctx), batchID)
+}
+
+// updateBatchRepositoryCountTx updates the repository count using the provided DB handle
+// (which may be a transaction). This avoids SQLite deadlocks when called from within a transaction.
+func (d *Database) updateBatchRepositoryCountTx(tx *gorm.DB, batchID int64) error {
 	query := `
 		UPDATE batches 
 		SET repository_count = (
@@ -239,8 +279,7 @@ func (d *Database) updateBatchRepositoryCount(ctx context.Context, batchID int64
 		WHERE id = ?
 	`
 
-	// Use GORM Raw() for complex query with subquery
-	err := d.db.WithContext(ctx).Exec(query, batchID, batchID).Error
+	err := tx.Exec(query, batchID, batchID).Error
 	if err != nil {
 		return fmt.Errorf("failed to update batch repository count: %w", err)
 	}

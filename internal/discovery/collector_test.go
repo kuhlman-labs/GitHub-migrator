@@ -689,9 +689,12 @@ func TestWorkerStopsOnCancellation(t *testing.T) {
 	// Create a context that we'll cancel after a short delay
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Create channels for the worker
+	// Create job channel for the worker
 	jobs := make(chan *ghapi.Repository, 5)
-	errChan := make(chan error, 5)
+
+	// Mutex-guarded error slice (matches the updated worker signature)
+	var errMu sync.Mutex
+	var errs []error
 
 	// Add multiple repos to the job queue
 	for i := 0; i < 5; i++ {
@@ -714,18 +717,11 @@ func TestWorkerStopsOnCancellation(t *testing.T) {
 	// Run worker
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go collector.workerWithProfilerTracked(ctx, &wg, jobs, errChan, profiler, tracker)
+	go collector.workerWithProfilerTracked(ctx, &wg, jobs, &errMu, &errs, profiler, tracker)
 	wg.Wait()
-	close(errChan)
 
 	// Worker should have stopped early due to cancellation
-	// Count errors - shouldn't have many since we cancelled quickly
-	errorCount := 0
-	for range errChan {
-		errorCount++
-	}
-
 	// The worker may have processed 0 or 1 repos before noticing cancellation
 	// The key is that it doesn't process all 5
-	t.Logf("Worker processed and reported %d errors before stopping (5 repos in queue)", errorCount)
+	t.Logf("Worker processed and reported %d errors before stopping (5 repos in queue)", len(errs))
 }

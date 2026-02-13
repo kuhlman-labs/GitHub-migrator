@@ -79,20 +79,34 @@ func (s *Scheduler) ScheduleBatch(ctx context.Context, batchID int64, scheduledA
 func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool) error {
 	s.logger.Info("Starting batch execution", "batch_id", batchID, "dry_run", dryRun)
 
-	// Check if batch is already running
-	s.mu.RLock()
+	// Atomically check if batch is already running and register it if not.
+	// Uses a single write lock to prevent TOCTOU race conditions.
+	batchCtx, cancel := context.WithCancel(ctx)
+	s.mu.Lock()
 	if _, running := s.running[batchID]; running {
-		s.mu.RUnlock()
+		s.mu.Unlock()
+		cancel()
 		return fmt.Errorf("batch %d is already running", batchID)
 	}
-	s.mu.RUnlock()
+	s.running[batchID] = cancel
+	s.mu.Unlock()
+
+	// If any setup step fails, clean up the running registration
+	cleanupOnError := func() {
+		s.mu.Lock()
+		delete(s.running, batchID)
+		s.mu.Unlock()
+		cancel()
+	}
 
 	// Get batch
 	batch, err := s.storage.GetBatch(ctx, batchID)
 	if err != nil {
+		cleanupOnError()
 		return fmt.Errorf("failed to get batch: %w", err)
 	}
 	if batch == nil {
+		cleanupOnError()
 		return fmt.Errorf("batch not found")
 	}
 
@@ -101,10 +115,12 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 		"batch_id": batchID,
 	})
 	if err != nil {
+		cleanupOnError()
 		return fmt.Errorf("failed to list batch repositories: %w", err)
 	}
 
 	if len(repos) == 0 {
+		cleanupOnError()
 		return fmt.Errorf("batch has no repositories")
 	}
 
@@ -117,6 +133,7 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 	}
 
 	if len(migratable) == 0 {
+		cleanupOnError()
 		return fmt.Errorf("no repositories in batch can be migrated")
 	}
 
@@ -135,16 +152,9 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 		batch.LastMigrationAttemptAt = &now
 	}
 	if err := s.storage.UpdateBatch(ctx, batch); err != nil {
+		cleanupOnError()
 		return fmt.Errorf("failed to update batch status: %w", err)
 	}
-
-	// Create cancellable context for this batch
-	batchCtx, cancel := context.WithCancel(ctx)
-
-	// Register running batch
-	s.mu.Lock()
-	s.running[batchID] = cancel
-	s.mu.Unlock()
 
 	// Start batch execution in background
 	go s.executeBatchAsync(batchCtx, batch, migratable, dryRun)
@@ -180,12 +190,34 @@ func (s *Scheduler) executeBatchAsync(ctx context.Context, batch *models.Batch, 
 		targetStatus = models.StatusDryRunQueued
 	}
 
+	// Track repos that have already been queued so we can revert them on cancellation
+	var queuedRepos []*models.Repository
+
 	for _, repo := range repos {
 		select {
 		case <-ctx.Done():
 			s.logger.Warn("Batch execution cancelled during queueing",
 				"batch_id", batch.ID,
 				"queued", queuedCount)
+
+			// Revert already-queued repos so the worker pool doesn't pick them up
+			revertCtx, revertCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer revertCancel()
+			for _, qr := range queuedRepos {
+				qr.Status = string(models.StatusPending)
+				if err := s.storage.UpdateRepository(revertCtx, qr); err != nil {
+					s.logger.Error("Failed to revert queued repository on cancellation",
+						"batch_id", batch.ID,
+						"repo", qr.FullName,
+						"error", err)
+				}
+			}
+
+			// Best-effort batch status update
+			batch.Status = models.BatchStatusCancelled
+			if err := s.storage.UpdateBatch(revertCtx, batch); err != nil {
+				s.logger.Error("Failed to update batch status on cancellation", "batch_id", batch.ID, "error", err)
+			}
 			return
 		default:
 		}
@@ -206,6 +238,7 @@ func (s *Scheduler) executeBatchAsync(ctx context.Context, batch *models.Batch, 
 				"error", err)
 			continue
 		}
+		queuedRepos = append(queuedRepos, repo)
 		queuedCount++
 	}
 
@@ -227,6 +260,9 @@ func (s *Scheduler) CancelBatch(ctx context.Context, batchID int64) error {
 		s.mu.Unlock()
 		return fmt.Errorf("batch %d is not running", batchID)
 	}
+	// Remove from running map immediately while holding the lock.
+	// executeBatchAsync's deferred delete is also mutex-guarded, and
+	// deleting a non-existent key is a safe no-op.
 	delete(s.running, batchID)
 	s.mu.Unlock()
 
@@ -287,7 +323,10 @@ func (s *Scheduler) ExecuteSequentialBatches(ctx context.Context, batchIDs []int
 	return nil
 }
 
-// waitForBatchCompletion waits for a batch to complete execution
+// waitForBatchCompletion polls the database until the batch reaches a terminal
+// status (completed, failed, completed_with_errors, or cancelled). The previous
+// implementation checked s.running, but executeBatchAsync removes the batch from
+// that map right after queueing -- long before migrations actually finish.
 func (s *Scheduler) waitForBatchCompletion(ctx context.Context, batchID int64) error {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -301,13 +340,12 @@ func (s *Scheduler) waitForBatchCompletion(ctx context.Context, batchID int64) e
 		case <-timeout:
 			return fmt.Errorf("batch completion timeout exceeded")
 		case <-ticker.C:
-			// Check if batch is still running
-			s.mu.RLock()
-			_, running := s.running[batchID]
-			s.mu.RUnlock()
-
-			if !running {
-				// Batch completed
+			batch, err := s.storage.GetBatch(ctx, batchID)
+			if err != nil {
+				s.logger.Warn("Failed to check batch status during wait", "batch_id", batchID, "error", err)
+				continue
+			}
+			if batch != nil && IsTerminalStatus(batch.Status) {
 				return nil
 			}
 		}

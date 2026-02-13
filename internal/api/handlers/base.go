@@ -163,9 +163,10 @@ func (h *Handler) sendError(w http.ResponseWriter, status int, message string) {
 	h.sendJSON(w, status, map[string]string{"error": message})
 }
 
-// handleContextError checks if an error is due to request cancellation and logs appropriately
-// Returns true if the error is a context cancellation (caller should return early)
-func (h *Handler) handleContextError(ctx context.Context, err error, operation string, r *http.Request) bool {
+// handleContextError checks if an error is due to request cancellation or timeout and logs appropriately.
+// For deadline exceeded, a 504 response is sent so the client receives a meaningful error.
+// Returns true if the error is a context cancellation/timeout (caller should return early).
+func (h *Handler) handleContextError(ctx context.Context, err error, operation string, r *http.Request, w http.ResponseWriter) bool {
 	if ctx.Err() == context.Canceled {
 		h.logger.Debug("Request canceled by client",
 			"operation", operation,
@@ -179,6 +180,7 @@ func (h *Handler) handleContextError(ctx context.Context, err error, operation s
 			"path", r.URL.Path,
 			"method", r.Method,
 			"error", err)
+		h.sendError(w, http.StatusGatewayTimeout, "Request timed out")
 		return true
 	}
 	return false
@@ -386,6 +388,23 @@ type PaginationParams struct {
 // DefaultPaginationLimit is the default number of items per page
 const DefaultPaginationLimit = 100
 
+// MaxPaginationLimit caps the maximum number of items a client can request in one page
+const MaxPaginationLimit = 1000
+
+// MaxBatchArraySize caps the number of items allowed in a single batch request array
+const MaxBatchArraySize = 10000
+
+// ParsePositiveID extracts a path parameter by name and parses it as a positive int64.
+// Returns an error if the value is empty, non-numeric, or not positive.
+func ParsePositiveID(r *http.Request, param string) (int64, error) {
+	idStr := r.PathValue(param)
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("invalid %s", param)
+	}
+	return id, nil
+}
+
 // ParsePagination extracts and validates pagination parameters from a request.
 // Returns default values (limit=100, offset=0) if parameters are missing or invalid.
 func ParsePagination(r *http.Request) PaginationParams {
@@ -399,7 +418,11 @@ func ParsePaginationWithDefaults(r *http.Request, defaultLimit, defaultOffset in
 
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
+			if l > MaxPaginationLimit {
+				limit = MaxPaginationLimit
+			} else {
+				limit = l
+			}
 		}
 	}
 
@@ -423,7 +446,11 @@ func ParsePageParams(r *http.Request, defaultPerPage int) PaginationParams {
 
 	if perPageStr := r.URL.Query().Get("per_page"); perPageStr != "" {
 		if pp, err := strconv.Atoi(perPageStr); err == nil && pp > 0 {
-			perPage = pp
+			if pp > MaxPaginationLimit {
+				perPage = MaxPaginationLimit
+			} else {
+				perPage = pp
+			}
 		}
 	}
 
@@ -456,12 +483,17 @@ var batchEligibleStatuses = []string{
 	string(models.StatusRolledBack),
 }
 
-// migrationAllowedStatuses extends batchEligibleStatuses with additional statuses
-// that allow re-queuing for migration (like DryRunQueued for re-runs).
-var migrationAllowedStatuses = append(
-	batchEligibleStatuses,
+// migrationAllowedStatuses includes all statuses that allow re-queuing for
+// migration. Built as an explicit literal to avoid mutating batchEligibleStatuses
+// via the shared backing array from append.
+var migrationAllowedStatuses = []string{
+	string(models.StatusPending),
+	string(models.StatusDryRunComplete),
+	string(models.StatusDryRunFailed),
+	string(models.StatusMigrationFailed),
+	string(models.StatusRolledBack),
 	string(models.StatusDryRunQueued), // Allow re-queuing dry runs
-)
+}
 
 func canMigrate(status string) bool {
 	// Cannot migrate repositories marked as wont_migrate

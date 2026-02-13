@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/github"
@@ -37,10 +36,6 @@ type ExecutorFactory struct {
 	// Static fallback values used when no configProvider is set
 	staticDestRepoExistsAction DestinationRepoExistsAction
 	staticVisibilityHandling   VisibilityHandling
-
-	// Cache of executors per source ID
-	executorCache map[int64]*Executor
-	cacheMu       sync.RWMutex
 }
 
 // ExecutorFactoryConfig configures the executor factory
@@ -93,7 +88,6 @@ func NewExecutorFactory(cfg ExecutorFactoryConfig) (*ExecutorFactory, error) {
 		configProvider:             cfg.ConfigProvider,
 		staticDestRepoExistsAction: destRepoAction,
 		staticVisibilityHandling:   visibilityHandling,
-		executorCache:              make(map[int64]*Executor),
 	}, nil
 }
 
@@ -227,29 +221,6 @@ func (f *ExecutorFactory) createExecutorForSource(source *models.Source) (*Execu
 	}
 
 	return NewExecutor(cfg)
-}
-
-// InvalidateCache removes a cached executor for the given source ID.
-// Call this when source credentials are updated.
-func (f *ExecutorFactory) InvalidateCache(sourceID int64) {
-	f.cacheMu.Lock()
-	defer f.cacheMu.Unlock()
-
-	if _, exists := f.executorCache[sourceID]; exists {
-		delete(f.executorCache, sourceID)
-		f.logger.Info("Invalidated cached executor", "source_id", sourceID)
-	}
-}
-
-// InvalidateAllCaches clears all cached executors.
-// Call this when settings that affect all executors are changed.
-func (f *ExecutorFactory) InvalidateAllCaches() {
-	f.cacheMu.Lock()
-	defer f.cacheMu.Unlock()
-
-	count := len(f.executorCache)
-	f.executorCache = make(map[int64]*Executor)
-	f.logger.Info("Invalidated all cached executors", "count", count)
 }
 
 // ExecuteWithStrategy executes a migration for the repository using the appropriate source.

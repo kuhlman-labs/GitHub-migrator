@@ -87,7 +87,7 @@ func TestCanMigrate_Comprehensive(t *testing.T) {
 	}
 }
 
-// TestIsTerminalStatus tests the isTerminalStatus helper function
+// TestIsTerminalStatus tests the IsTerminalStatus helper function
 func TestIsTerminalStatus(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -140,9 +140,9 @@ func TestIsTerminalStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isTerminalStatus(tt.status)
+			result := IsTerminalStatus(tt.status)
 			if result != tt.expected {
-				t.Errorf("isTerminalStatus(%q) = %v, want %v", tt.status, result, tt.expected)
+				t.Errorf("IsTerminalStatus(%q) = %v, want %v", tt.status, result, tt.expected)
 			}
 		})
 	}
@@ -161,12 +161,12 @@ func TestCalculateBatchStatusFromRepos(t *testing.T) {
 			expectedStatus: models.BatchStatusCompleted, // totalRepos == 0 and completedCount == 0, so 0 == 0 is true
 		},
 		{
-			name: "all pending - ready",
+			name: "all pending - in progress",
 			repos: []*models.Repository{
 				{Status: string(models.StatusPending)},
 				{Status: string(models.StatusPending)},
 			},
-			expectedStatus: models.BatchStatusReady,
+			expectedStatus: models.BatchStatusInProgress,
 		},
 		{
 			name: "all complete - completed",
@@ -340,20 +340,20 @@ func TestBatchStatusFlow(t *testing.T) {
 		// 1. Batch starts as pending or ready
 		initialStatuses := []string{models.BatchStatusPending, models.BatchStatusReady}
 		for _, s := range initialStatuses {
-			if isTerminalStatus(s) {
+			if IsTerminalStatus(s) {
 				t.Errorf("Initial status %q should not be terminal", s)
 			}
 		}
 
 		// 2. Batch goes in_progress when executing
-		if isTerminalStatus(models.BatchStatusInProgress) {
+		if IsTerminalStatus(models.BatchStatusInProgress) {
 			t.Error("in_progress should not be terminal")
 		}
 
 		// 3. Batch ends in a terminal state
 		terminalStatuses := []string{models.BatchStatusCompleted, models.BatchStatusFailed, models.BatchStatusCompletedWithErrors, models.BatchStatusCancelled}
 		for _, s := range terminalStatuses {
-			if !isTerminalStatus(s) {
+			if !IsTerminalStatus(s) {
 				t.Errorf("Terminal status %q should be marked as terminal", s)
 			}
 		}

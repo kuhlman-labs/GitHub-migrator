@@ -98,6 +98,7 @@ func main() {
 	// (callback runs asynchronously, shutdown code runs in main goroutine)
 	var workerMu sync.Mutex
 	shuttingDown := false
+	schedulerStarted := false
 
 	// Initialize migration executor and worker (destination client required)
 	// Source clients are created dynamically per-source by ExecutorFactory
@@ -156,8 +157,9 @@ func main() {
 			)
 			if newDestClient != nil {
 				schedulerWorker = initializeSchedulerWorker(cfg, cfgSvc, newDestClient, db, logger)
-				if schedulerWorker != nil {
+				if schedulerWorker != nil && !schedulerStarted {
 					go schedulerWorker.Start(workerCtx)
+					schedulerStarted = true
 					slog.Info("Scheduler worker started after destination configuration")
 				}
 			}
@@ -173,8 +175,9 @@ func main() {
 
 	// Start scheduler worker with mutex protection (callback may modify schedulerWorker concurrently)
 	workerMu.Lock()
-	if schedulerWorker != nil {
+	if schedulerWorker != nil && !schedulerStarted {
 		go schedulerWorker.Start(workerCtx)
+		schedulerStarted = true
 	}
 	workerMu.Unlock()
 

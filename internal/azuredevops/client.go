@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
@@ -144,19 +146,41 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}, nil
 }
 
-// GetProjects returns all projects in the organization
+// GetProjects returns all projects in the organization, paginating through
+// results so that organizations with many projects are fully captured.
 func (c *Client) GetProjects(ctx context.Context) ([]core.TeamProjectReference, error) {
-	// Get all projects with all states
-	projects, err := c.coreClient.GetProjects(ctx, core.GetProjectsArgs{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get projects: %w", err)
+	var allProjects []core.TeamProjectReference
+	var continuationToken *int
+
+	for {
+		projects, err := c.coreClient.GetProjects(ctx, core.GetProjectsArgs{
+			ContinuationToken: continuationToken,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get projects: %w", err)
+		}
+
+		if projects == nil || projects.Value == nil {
+			break
+		}
+
+		allProjects = append(allProjects, projects.Value...)
+
+		// The ContinuationToken is a string; an empty value means no more pages
+		if projects.ContinuationToken == "" {
+			break
+		}
+		token, parseErr := strconv.Atoi(projects.ContinuationToken)
+		if parseErr != nil {
+			// Unable to parse the token -- return what we have rather than loop forever
+			c.logger.Warn("Unparseable project continuation token, returning partial results",
+				"token", projects.ContinuationToken, "projects_so_far", len(allProjects))
+			break
+		}
+		continuationToken = &token
 	}
 
-	if projects == nil || projects.Value == nil {
-		return []core.TeamProjectReference{}, nil
-	}
-
-	return projects.Value, nil
+	return allProjects, nil
 }
 
 // GetProject returns a specific project by name
@@ -219,26 +243,46 @@ func (c *Client) GetBranches(ctx context.Context, projectName, repoName string) 
 	return *branches, nil
 }
 
-// GetPullRequests returns all pull requests in a repository
+// prPageSize is the number of pull requests fetched per page.
+const prPageSize = 100
+
+// GetPullRequests returns all pull requests in a repository, paginating
+// through the ADO API so that repos with many PRs are fully captured.
 func (c *Client) GetPullRequests(ctx context.Context, projectName, repoID string) ([]git.GitPullRequest, error) {
 	searchCriteria := git.GitPullRequestSearchCriteria{
 		Status: &git.PullRequestStatusValues.All,
 	}
 
-	prs, err := c.gitClient.GetPullRequests(ctx, git.GetPullRequestsArgs{
-		RepositoryId:   &repoID,
-		Project:        &projectName,
-		SearchCriteria: &searchCriteria,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pull requests: %w", err)
+	var allPRs []git.GitPullRequest
+	skip := 0
+	top := prPageSize
+
+	for {
+		prs, err := c.gitClient.GetPullRequests(ctx, git.GetPullRequestsArgs{
+			RepositoryId:   &repoID,
+			Project:        &projectName,
+			SearchCriteria: &searchCriteria,
+			Top:            &top,
+			Skip:           &skip,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pull requests: %w", err)
+		}
+
+		if prs == nil || len(*prs) == 0 {
+			break
+		}
+
+		allPRs = append(allPRs, *prs...)
+
+		// If we got fewer results than requested, we've reached the last page
+		if len(*prs) < prPageSize {
+			break
+		}
+		skip += prPageSize
 	}
 
-	if prs == nil {
-		return []git.GitPullRequest{}, nil
-	}
-
-	return *prs, nil
+	return allPRs, nil
 }
 
 // GetCommitCount returns the number of commits in a repository
@@ -310,8 +354,7 @@ func (c *Client) HasAzurePipelines(ctx context.Context, projectName, repoID stri
 		Top:            &top,
 	})
 	if err != nil {
-		c.logger.Debug("Failed to get build definitions", "error", err)
-		return false, nil
+		return false, fmt.Errorf("failed to check pipelines: %w", err)
 	}
 
 	return definitions != nil && len(definitions.Value) > 0, nil
@@ -400,7 +443,8 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projectName, repoID
 			DefinitionId: defRef.Id,
 		})
 		if err != nil {
-			// Log error but continue with other definitions
+			c.logger.Warn("Failed to get full pipeline definition, skipping",
+				"project", projectName, "definition_id", *defRef.Id, "error", err)
 			continue
 		}
 		if fullDef != nil {
@@ -411,10 +455,16 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projectName, repoID
 	return fullDefs, nil
 }
 
-// GetPipelineRuns gets recent pipeline runs for a repository
+// pipelineRunCap is the maximum number of pipeline runs fetched per query.
+// Repositories with more runs will report this cap -- callers should treat
+// the returned count as "at least N" when it equals the cap.
+const pipelineRunCap = 100
+
+// GetPipelineRuns gets recent pipeline runs for a repository.
+// The count is capped at pipelineRunCap; a result equal to the cap indicates
+// there may be more runs than reported.
 func (c *Client) GetPipelineRuns(ctx context.Context, projectName, repoID string) (int, error) {
-	// Get builds from the last 30 days with top 100
-	top := 100
+	top := pipelineRunCap
 	repoType := TfsGitRepositoryType
 	builds, err := c.buildClient.GetBuilds(ctx, build.GetBuildsArgs{
 		Project:        &projectName,
@@ -423,8 +473,7 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projectName, repoID string
 		Top:            &top,
 	})
 	if err != nil {
-		c.logger.Debug("Failed to get pipeline runs", "error", err)
-		return 0, nil
+		return 0, fmt.Errorf("failed to get pipeline runs: %w", err)
 	}
 
 	if builds == nil || builds.Value == nil {
@@ -441,8 +490,7 @@ func (c *Client) GetServiceConnections(ctx context.Context, projectName string) 
 		Project: &projectName,
 	})
 	if err != nil {
-		c.logger.Debug("Failed to get service endpoints", "project", projectName, "error", err)
-		return 0, nil // Return 0 on error to avoid breaking discovery
+		return 0, fmt.Errorf("failed to get service connections: %w", err)
 	}
 
 	if endpoints == nil {
@@ -458,8 +506,7 @@ func (c *Client) GetVariableGroups(ctx context.Context, projectName string) (int
 		Project: &projectName,
 	})
 	if err != nil {
-		c.logger.Debug("Failed to get variable groups", "project", projectName, "error", err)
-		return 0, nil // Return 0 on error to avoid breaking discovery
+		return 0, fmt.Errorf("failed to get variable groups: %w", err)
 	}
 
 	if groups == nil {
@@ -476,8 +523,7 @@ func (c *Client) GetWikiDetails(ctx context.Context, projectName, repoID string)
 		Project: &projectName,
 	})
 	if err != nil {
-		c.logger.Debug("Failed to get wikis", "project", projectName, "error", err)
-		return false, 0, nil // Return false on error to avoid breaking discovery
+		return false, 0, fmt.Errorf("failed to get wikis: %w", err)
 	}
 
 	if wikis == nil || len(*wikis) == 0 {
@@ -515,8 +561,7 @@ func (c *Client) GetTestPlans(ctx context.Context, projectName string) (int, err
 		Project: &projectName,
 	})
 	if err != nil {
-		c.logger.Debug("Failed to get test plans", "project", projectName, "error", err)
-		return 0, nil // Return 0 on error to avoid breaking discovery
+		return 0, fmt.Errorf("failed to get test plans: %w", err)
 	}
 
 	if plans == nil {
@@ -526,24 +571,35 @@ func (c *Client) GetTestPlans(ctx context.Context, projectName string) (int, err
 	return len(plans.Value), nil
 }
 
-// GetServiceHooks gets service hooks (subscriptions) for a project
+// GetServiceHooks gets service hooks (subscriptions) scoped to a project.
+// The underlying ListSubscriptions API is org-wide, so the results are
+// filtered client-side by matching the publisherInputs "projectId" field.
 func (c *Client) GetServiceHooks(ctx context.Context, projectName string) (int, error) {
-	subscriptions, err := c.serviceHooksClient.ListSubscriptions(ctx, servicehooks.ListSubscriptionsArgs{
-		// Note: ListSubscriptions is organization-wide, not project-specific
-		// We cannot filter by project, so this returns all subscriptions
-	})
+	subscriptions, err := c.serviceHooksClient.ListSubscriptions(ctx, servicehooks.ListSubscriptionsArgs{})
 	if err != nil {
-		c.logger.Debug("Failed to get service hook subscriptions", "project", projectName, "error", err)
-		return 0, nil // Return 0 on error to avoid breaking discovery
+		return 0, fmt.Errorf("failed to get service hook subscriptions: %w", err)
 	}
 
 	if subscriptions == nil {
 		return 0, nil
 	}
 
-	// Note: This returns the total count of service hooks in the organization,
-	// not just for this project. The API doesn't support project-level filtering.
-	return len(*subscriptions), nil
+	// Filter org-wide results to only those belonging to the requested project.
+	// ADO stores the project name or ID in publisherInputs["projectId"].
+	count := 0
+	lowerProject := strings.ToLower(projectName)
+	for _, sub := range *subscriptions {
+		if sub.PublisherInputs == nil {
+			continue
+		}
+		if pid, ok := (*sub.PublisherInputs)["projectId"]; ok {
+			if strings.EqualFold(pid, projectName) || strings.ToLower(pid) == lowerProject {
+				count++
+			}
+		}
+	}
+
+	return count, nil
 }
 
 // GetPackageFeeds gets package feeds for a project
@@ -552,8 +608,7 @@ func (c *Client) GetPackageFeeds(ctx context.Context, projectName string) (int, 
 		Project: &projectName,
 	})
 	if err != nil {
-		c.logger.Debug("Failed to get package feeds", "project", projectName, "error", err)
-		return 0, nil // Return 0 on error to avoid breaking discovery
+		return 0, fmt.Errorf("failed to get package feeds: %w", err)
 	}
 
 	if feeds == nil {
@@ -609,8 +664,7 @@ func (c *Client) GetWorkItemDetails(ctx context.Context, projectName, repoName s
 	})
 
 	if queryErr != nil {
-		c.logger.Debug("Failed to query work items", "project", projectName, "error", queryErr)
-		return 0, 0, []string{}, nil // Return empty on error to avoid breaking discovery
+		return 0, 0, nil, fmt.Errorf("failed to query work items: %w", queryErr)
 	}
 
 	if result == nil || result.WorkItems == nil {

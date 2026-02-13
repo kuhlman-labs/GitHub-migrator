@@ -2,8 +2,11 @@ package github
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -37,6 +40,17 @@ const MinRateLimitWait = 10 * time.Second
 
 // MaxRateLimitWait is the maximum wait time for rate limit errors (15 minutes)
 const MaxRateLimitWait = 15 * time.Minute
+
+// addJitter applies +/-20% random jitter to a duration to prevent thundering herd.
+func addJitter(d time.Duration) time.Duration {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	// Convert to a float64 in [0.0, 1.0)
+	randFloat := float64(binary.LittleEndian.Uint64(b[:])>>11) / (1 << 53)
+	// Scale to the [0.8, 1.2) range for +/-20% jitter
+	jitter := 0.8 + randFloat*0.4
+	return time.Duration(float64(d) * jitter)
+}
 
 // Retryer handles retry logic with exponential backoff
 type Retryer struct {
@@ -176,11 +190,15 @@ func (r *Retryer) Do(ctx context.Context, operation string, fn RetryFunc) error 
 			"backoff", backoff,
 			"error", err)
 
+		// Apply +/-20% jitter to avoid thundering herd when multiple goroutines
+		// retry against the same endpoint at the same time.
+		jitteredBackoff := addJitter(backoff)
+
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context cancelled during retry: %w", ctx.Err())
-		case <-time.After(backoff):
-			// Calculate next backoff
+		case <-time.After(jitteredBackoff):
+			// Calculate next base backoff (jitter is re-applied on the next iteration)
 			backoff = min(time.Duration(float64(backoff)*r.config.BackoffMultiple), r.config.MaxBackoff)
 		}
 	}
@@ -210,13 +228,20 @@ func DoWithRetry[T any](
 	})
 
 	if err != nil {
-		return result, lastErr
+		// Prefer lastErr (the actual API/callback error) when available, but fall
+		// back to err from retryer.Do itself -- e.g. when context is cancelled
+		// before the callback ever runs, lastErr is still nil.
+		if lastErr != nil {
+			return result, lastErr
+		}
+		return result, err
 	}
 	return result, nil
 }
 
 // CircuitBreaker implements a circuit breaker pattern
 type CircuitBreaker struct {
+	mu           sync.Mutex
 	maxFailures  int
 	resetTimeout time.Duration
 
@@ -266,6 +291,9 @@ func (cb *CircuitBreaker) Call(ctx context.Context, fn RetryFunc) error {
 
 // AllowRequest checks if a request should be allowed
 func (cb *CircuitBreaker) AllowRequest() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
 	switch cb.state {
 	case StateClosed:
 		return true
@@ -285,6 +313,9 @@ func (cb *CircuitBreaker) AllowRequest() bool {
 
 // RecordSuccess records a successful request
 func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
 	if cb.state == StateHalfOpen {
 		cb.logger.Info("Circuit breaker recovered, closing circuit")
 	}
@@ -294,6 +325,9 @@ func (cb *CircuitBreaker) RecordSuccess() {
 
 // RecordFailure records a failed request
 func (cb *CircuitBreaker) RecordFailure() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
 	cb.failures++
 	cb.lastFailTime = time.Now()
 
@@ -307,11 +341,17 @@ func (cb *CircuitBreaker) RecordFailure() {
 
 // GetState returns the current circuit breaker state
 func (cb *CircuitBreaker) GetState() CircuitState {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
 	return cb.state
 }
 
 // Reset resets the circuit breaker to closed state
 func (cb *CircuitBreaker) Reset() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
 	cb.failures = 0
 	cb.state = StateClosed
 	cb.logger.Info("Circuit breaker manually reset")

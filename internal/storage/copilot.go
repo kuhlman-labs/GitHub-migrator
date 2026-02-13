@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
+	"gorm.io/gorm"
 )
 
 // CopilotStore defines operations for Copilot sessions and messages
@@ -117,10 +119,12 @@ func (d *Database) CreateCopilotMessage(ctx context.Context, message *models.Cop
 	}
 
 	// Update session's updated_at timestamp
-	d.db.WithContext(ctx).
+	if err := d.db.WithContext(ctx).
 		Model(&models.CopilotSession{}).
 		Where("id = ?", message.SessionID).
-		Update("updated_at", time.Now())
+		Update("updated_at", time.Now()).Error; err != nil {
+		return message.ID, fmt.Errorf("message created but failed to update session timestamp: %w", err)
+	}
 
 	return message.ID, nil
 }
@@ -151,9 +155,9 @@ func (d *Database) CleanupExpiredSessions(ctx context.Context) (int64, error) {
 	return result.RowsAffected, nil
 }
 
-// isNotFoundError checks if an error is a "not found" error
+// isNotFoundError checks if an error is a GORM "record not found" error
 func isNotFoundError(err error) bool {
-	return err.Error() == "record not found"
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 // Compile-time interface check

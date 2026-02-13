@@ -62,6 +62,9 @@ func (cs *Service) Reload() error {
 	cs.mu.Lock()
 	cs.settings = settings
 	cs.lastLoad = time.Now()
+	// Snapshot callbacks under the same lock so Reload and OnReload don't race
+	callbacks := make([]func(), len(cs.reloadCallbacks))
+	copy(callbacks, cs.reloadCallbacks)
 	cs.mu.Unlock()
 
 	cs.logger.Info("Configuration reloaded from database",
@@ -69,16 +72,18 @@ func (cs *Service) Reload() error {
 		"auth_enabled", settings.AuthEnabled,
 		"migration_workers", settings.MigrationWorkers)
 
-	// Notify all registered callbacks
-	for _, callback := range cs.reloadCallbacks {
+	// Notify callbacks outside the lock to avoid holding it during execution
+	for _, callback := range callbacks {
 		go callback()
 	}
 
 	return nil
 }
 
-// OnReload registers a callback to be called when configuration is reloaded
+// OnReload registers a callback to be called when configuration is reloaded.
 func (cs *Service) OnReload(callback func()) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 	cs.reloadCallbacks = append(cs.reloadCallbacks, callback)
 }
 

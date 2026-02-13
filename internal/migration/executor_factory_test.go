@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
@@ -259,72 +260,6 @@ func TestExecutorFactory_GetExecutorForRepository_UnsupportedSourceType(t *testi
 	}
 }
 
-func TestExecutorFactory_CacheInvalidation(t *testing.T) {
-	factory, _ := setupTestFactory(t)
-
-	// Initially cache should be empty
-	if len(factory.executorCache) != 0 {
-		t.Error("Expected empty cache initially")
-	}
-
-	// InvalidateCache for non-existent source should not panic
-	factory.InvalidateCache(999)
-
-	// InvalidateAllCaches should not panic on empty cache
-	factory.InvalidateAllCaches()
-
-	if len(factory.executorCache) != 0 {
-		t.Error("Expected empty cache after InvalidateAllCaches")
-	}
-}
-
-func TestExecutorFactory_InvalidateCache(t *testing.T) {
-	factory, _ := setupTestFactory(t)
-
-	// Manually populate the cache to test invalidation
-	factory.cacheMu.Lock()
-	factory.executorCache[1] = &Executor{}
-	factory.executorCache[2] = &Executor{}
-	factory.cacheMu.Unlock()
-
-	// Invalidate source 1
-	factory.InvalidateCache(1)
-
-	factory.cacheMu.RLock()
-	_, exists1 := factory.executorCache[1]
-	_, exists2 := factory.executorCache[2]
-	factory.cacheMu.RUnlock()
-
-	if exists1 {
-		t.Error("Source 1 should have been invalidated")
-	}
-	if !exists2 {
-		t.Error("Source 2 should still be in cache")
-	}
-}
-
-func TestExecutorFactory_InvalidateAllCaches(t *testing.T) {
-	factory, _ := setupTestFactory(t)
-
-	// Manually populate the cache
-	factory.cacheMu.Lock()
-	factory.executorCache[1] = &Executor{}
-	factory.executorCache[2] = &Executor{}
-	factory.executorCache[3] = &Executor{}
-	factory.cacheMu.Unlock()
-
-	// Invalidate all
-	factory.InvalidateAllCaches()
-
-	factory.cacheMu.RLock()
-	count := len(factory.executorCache)
-	factory.cacheMu.RUnlock()
-
-	if count != 0 {
-		t.Errorf("Expected empty cache after InvalidateAllCaches, got %d entries", count)
-	}
-}
-
 func TestExecutorFactory_DefaultConfiguration(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
@@ -374,18 +309,16 @@ func TestExecutorFactory_ExecuteMigrationInterface(t *testing.T) {
 func TestExecutorFactory_ConcurrentAccess(t *testing.T) {
 	factory, _ := setupTestFactory(t)
 
-	// Test concurrent cache access
+	// Test concurrent executor creation attempts
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func(id int64) {
 			defer func() { done <- true }()
 
-			// Simulate concurrent operations
-			factory.InvalidateCache(id)
-			factory.cacheMu.Lock()
-			factory.executorCache[id] = &Executor{}
-			factory.cacheMu.Unlock()
-			factory.InvalidateCache(id)
+			// Simulate concurrent GetExecutorForRepository calls
+			// These will fail because sources don't exist, but shouldn't panic
+			repo := &models.Repository{FullName: fmt.Sprintf("org/repo-%d", id), SourceID: &id}
+			_, _ = factory.GetExecutorForRepository(context.Background(), repo)
 		}(int64(i))
 	}
 

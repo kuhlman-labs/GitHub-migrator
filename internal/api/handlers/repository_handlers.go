@@ -35,7 +35,7 @@ func (h *Handler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 
 	repos, err := h.db.ListRepositories(ctx, filters)
 	if err != nil {
-		if h.handleContextError(ctx, err, "list repositories", r) {
+		if h.handleContextError(ctx, err, "list repositories", r, w) {
 			return
 		}
 		h.logger.Error("Failed to list repositories", "error", err)
@@ -97,10 +97,19 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// URL-decode the repository name so the permission check and downstream
+	// handlers operate on the canonical name rather than the raw path value.
+	decodedName, decErr := url.QueryUnescape(fullName)
+	if decErr != nil {
+		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", decErr)
+		decodedName = fullName
+	}
+	fullName = decodedName
+
 	// Check if user has permission to access this repository
 	if err := h.CheckRepositoryAccess(r.Context(), fullName); err != nil {
 		h.logger.Warn("Repository access denied", "repo", fullName, "action", action, "error", err)
-		WriteError(w, ErrForbidden.WithDetails(err.Error()))
+		WriteError(w, ErrForbidden.WithDetails("insufficient permissions for this repository"))
 		return
 	}
 
@@ -149,7 +158,7 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName
 	ctx := r.Context()
 	repo, err := h.db.GetRepository(ctx, decodedFullName)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get repository", r) {
+		if h.handleContextError(ctx, err, "get repository", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get repository", "error", err)
@@ -165,7 +174,7 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request, fullName
 	// Get migration history
 	history, err := h.db.GetMigrationHistory(ctx, repo.ID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get migration history", r) {
+		if h.handleContextError(ctx, err, "get migration history", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get migration history", "error", err)
@@ -354,12 +363,16 @@ func (h *Handler) RediscoverRepository(w http.ResponseWriter, r *http.Request) {
 	h.rediscoverGitHubRepository(w, ctx, decodedFullName)
 }
 
-// getDecodedRepoName extracts and decodes the repository name from the request
+// getDecodedRepoName extracts the repository name from the request.
+// When routed through HandleRepositoryAction the name is already decoded and
+// stored under cleanFullNameKey, so we use it as-is.  The fallback path
+// (direct PathValue) still needs decoding.
 func (h *Handler) getDecodedRepoName(r *http.Request) (string, error) {
-	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
-	if !ok || fullName == "" {
-		fullName = r.PathValue("fullName")
+	if decoded, ok := r.Context().Value(cleanFullNameKey).(string); ok && decoded != "" {
+		return decoded, nil
 	}
+
+	fullName := r.PathValue("fullName")
 	if fullName == "" {
 		return "", fmt.Errorf("repository name is required")
 	}
@@ -390,7 +403,7 @@ func (h *Handler) rediscoverADORepository(w http.ResponseWriter, ctx context.Con
 
 	if err := h.adoHandler.RediscoverADORepository(ctx, repo); err != nil {
 		h.logger.Error("Failed to rediscover ADO repository", "error", err, "repo", decodedFullName)
-		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Failed to rediscover repository: %v", err)))
+		WriteError(w, ErrInternal.WithDetails("Failed to rediscover repository"))
 		return
 	}
 
@@ -458,7 +471,8 @@ func (h *Handler) rediscoverGitHubRepository(w http.ResponseWriter, ctx context.
 // startAsyncRediscovery runs repository discovery asynchronously
 func (h *Handler) startAsyncRediscovery(collector *discovery.Collector, ghRepo *ghapi.Repository, decodedFullName string) {
 	go func() {
-		bgCtx := context.Background()
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
 		if err := collector.ProfileRepository(bgCtx, ghRepo); err != nil {
 			h.logger.Error("Re-discovery failed", "error", err, "repo", decodedFullName)
 		} else {
@@ -472,19 +486,10 @@ func (h *Handler) startAsyncRediscovery(collector *discovery.Collector, ghRepo *
 
 // MarkRepositoryRemediated handles POST /api/v1/repositories/{fullName}/mark-remediated
 func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Request) {
-	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
-	if !ok || fullName == "" {
-		fullName = r.PathValue("fullName")
-	}
-	if fullName == "" {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
 		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
-	}
-
-	decodedFullName, err := url.QueryUnescape(fullName)
-	if err != nil {
-		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
-		decodedFullName = fullName
 	}
 
 	if h.collector == nil {
@@ -554,19 +559,10 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 
 // UnlockRepository handles POST /api/v1/repositories/{fullName}/unlock
 func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
-	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
-	if !ok || fullName == "" {
-		fullName = r.PathValue("fullName")
-	}
-	if fullName == "" {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
 		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
-	}
-
-	decodedFullName, err := url.QueryUnescape(fullName)
-	if err != nil {
-		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
-		decodedFullName = fullName
 	}
 
 	if h.sourceDualClient == nil {
@@ -590,12 +586,12 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 	if !repo.IsSourceLocked {
 		h.sendJSON(w, http.StatusOK, map[string]string{
 			"message":   "Repository is not locked",
-			"full_name": fullName,
+			"full_name": decodedFullName,
 		})
 		return
 	}
 
-	parts := strings.SplitN(fullName, "/", 2)
+	parts := strings.SplitN(decodedFullName, "/", 2)
 	if len(parts) != 2 {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid repository name format - expected 'org/repo'"))
 		return
@@ -605,7 +601,7 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 	migrationClient := h.sourceDualClient.MigrationClient()
 	err = migrationClient.UnlockRepository(ctx, org, repoName, *repo.SourceMigrationID)
 	if err != nil {
-		h.logger.Error("Failed to unlock repository", "error", err, "repo", fullName)
+		h.logger.Error("Failed to unlock repository", "error", err, "repo", decodedFullName)
 		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Failed to unlock repository: %v", err)))
 		return
 	}
@@ -615,30 +611,21 @@ func (h *Handler) UnlockRepository(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to update repository lock status", "error", err)
 	}
 
-	h.logger.Info("Repository unlocked successfully", "repo", fullName, "migration_id", *repo.SourceMigrationID)
+	h.logger.Info("Repository unlocked successfully", "repo", decodedFullName, "migration_id", *repo.SourceMigrationID)
 
 	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":      "Repository unlocked successfully",
-		"full_name":    fullName,
+		"full_name":    decodedFullName,
 		"migration_id": *repo.SourceMigrationID,
 	})
 }
 
 // RollbackRepository handles POST /api/v1/repositories/{fullName}/rollback
 func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
-	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
-	if !ok || fullName == "" {
-		fullName = r.PathValue("fullName")
-	}
-	if fullName == "" {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
 		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
-	}
-
-	decodedFullName, err := url.QueryUnescape(fullName)
-	if err != nil {
-		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
-		decodedFullName = fullName
 	}
 
 	ctx := r.Context()
@@ -666,9 +653,9 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("Repository rolled back successfully", "repo", fullName, "reason", req.Reason)
+	h.logger.Info("Repository rolled back successfully", "repo", decodedFullName, "reason", req.Reason)
 
-	repo, _ = h.db.GetRepository(ctx, fullName)
+	repo, _ = h.db.GetRepository(ctx, decodedFullName)
 
 	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":    "Repository rolled back successfully",
@@ -678,19 +665,10 @@ func (h *Handler) RollbackRepository(w http.ResponseWriter, r *http.Request) {
 
 // MarkRepositoryWontMigrate handles POST /api/v1/repositories/{fullName}/mark-wont-migrate
 func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Request) {
-	fullName, ok := r.Context().Value(cleanFullNameKey).(string)
-	if !ok || fullName == "" {
-		fullName = r.PathValue("fullName")
-	}
-	if fullName == "" {
+	decodedFullName, err := h.getDecodedRepoName(r)
+	if err != nil {
 		WriteError(w, ErrMissingField.WithField("fullName"))
 		return
-	}
-
-	decodedFullName, err := url.QueryUnescape(fullName)
-	if err != nil {
-		h.logger.Warn("Failed to decode repository name", "fullName", fullName, "error", err)
-		decodedFullName = fullName
 	}
 
 	ctx := r.Context()
@@ -742,12 +720,12 @@ func (h *Handler) MarkRepositoryWontMigrate(w http.ResponseWriter, r *http.Reque
 	repo.Status = newStatus
 	repo.UpdatedAt = time.Now()
 	if err := h.db.UpdateRepository(ctx, repo); err != nil {
-		h.logger.Error("Failed to update repository status", "error", err, "repo", fullName)
+		h.logger.Error("Failed to update repository status", "error", err, "repo", decodedFullName)
 		WriteError(w, ErrDatabaseUpdate.WithDetails("repository status"))
 		return
 	}
 
-	h.logger.Info("Repository wont_migrate status changed", "repo", fullName, "status", newStatus)
+	h.logger.Info("Repository wont_migrate status changed", "repo", decodedFullName, "status", newStatus)
 
 	h.sendJSON(w, http.StatusOK, map[string]any{
 		"message":    message,

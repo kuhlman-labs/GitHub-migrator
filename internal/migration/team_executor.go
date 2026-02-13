@@ -96,8 +96,12 @@ func (e *TeamExecutor) GetProgress() *TeamMigrationProgress {
 	if e.progress == nil {
 		return nil
 	}
-	// Return a copy to avoid race conditions
+	// Return a deep copy to avoid race conditions on the Errors slice
 	progressCopy := *e.progress
+	if e.progress.Errors != nil {
+		progressCopy.Errors = make([]string, len(e.progress.Errors))
+		copy(progressCopy.Errors, e.progress.Errors)
+	}
 	return &progressCopy
 }
 

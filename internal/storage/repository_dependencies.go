@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"gorm.io/gorm"
@@ -50,10 +51,10 @@ func (d *Database) GetRepositoryDependencies(ctx context.Context, repoID int64) 
 		return nil, fmt.Errorf("failed to query dependencies: %w", err)
 	}
 
-	// Enrich local dependencies with actual source URLs
+	// Enrich local dependencies with actual source URLs.
+	// Non-critical: if enrichment fails, return dependencies with their stored URLs.
 	if err := d.enrichDependencyURLs(ctx, dependencies); err != nil {
-		// Log error but don't fail the request
-		// Dependencies will just have their stored URLs
+		slog.Warn("Failed to enrich dependency URLs, returning stored URLs", "error", err)
 		return dependencies, nil
 	}
 

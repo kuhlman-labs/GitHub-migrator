@@ -186,7 +186,13 @@ func (e *Executor) pollArchiveGeneration(ctx context.Context, repo *models.Repos
 				lastInterval = nextInterval
 			}
 
-			// Schedule next poll
+			// Safely reset the timer for the next poll interval
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
 			timer.Reset(nextInterval)
 		}
 	}
@@ -363,7 +369,7 @@ func (e *Executor) startRepositoryMigration(ctx context.Context, repo *models.Re
 
 // pollMigrationStatus polls for migration completion on GHEC
 // Uses adaptive polling: fast polling initially, then backs off to preserve rate limits
-func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Repository, batch *models.Batch, historyID *int64, migrationID string) error {
+func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Repository, batch *models.Batch, historyID *int64, migrationID string, dryRun ...bool) error {
 	startTime := time.Now()
 	timeoutDeadline := startTime.Add(migrationTimeout)
 	lastInterval := migrationInitialInterval
@@ -414,8 +420,12 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 				e.logger.Info("Migration completed successfully",
 					"repo", repo.FullName,
 					"elapsed", elapsed.Round(time.Second))
-				repo.Status = string(models.StatusMigrationComplete)
-				// Set destination details using the correct destination org and repo name
+			completedStatus := models.StatusMigrationComplete
+			if len(dryRun) > 0 && dryRun[0] {
+				completedStatus = models.StatusDryRunComplete
+			}
+			repo.Status = string(completedStatus)
+			// Set destination details using the correct destination org and repo name
 				destOrg := e.getDestinationOrg(repo, batch)
 				destRepoName := e.getDestinationRepoName(repo)
 				destFullName := fmt.Sprintf("%s/%s", destOrg, destRepoName)
@@ -424,15 +434,25 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 				destURL := e.destClient.RepositoryURL(destFullName)
 				repo.DestinationURL = &destURL
 				if err := e.storage.UpdateRepository(ctx, repo); err != nil {
-					e.logger.Error("Failed to update repository status", "error", err)
+					// The migration actually succeeded on GitHub -- don't propagate
+					// this DB error as a migration failure, otherwise callers mark
+					// the repo as "failed" and a re-migration attempt hits
+					// "destination already exists".
+					e.logger.Error("Migration succeeded but failed to persist status -- manual DB reconciliation may be needed",
+						"repo", repo.FullName,
+						"error", err)
 				}
 				return nil
 
 			case "FAILED":
 				failureReason := string(query.Node.Migration.FailureReason)
-				repo.Status = string(models.StatusMigrationFailed)
-				if err := e.storage.UpdateRepository(ctx, repo); err != nil {
-					e.logger.Error("Failed to update repository status", "error", err)
+				failedStatus := models.StatusMigrationFailed
+				if len(dryRun) > 0 && dryRun[0] {
+					failedStatus = models.StatusDryRunFailed
+				}
+				repo.Status = string(failedStatus)
+				if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
+					e.logger.Error("Failed to update repository status after migration failure", "error", updateErr)
 				}
 				return fmt.Errorf("migration failed: %s", failureReason)
 
@@ -461,7 +481,13 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 					lastInterval = nextInterval
 				}
 
-				// Schedule next poll
+				// Safely reset the timer for the next poll interval
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
 				timer.Reset(nextInterval)
 				continue
 
@@ -470,6 +496,12 @@ func (e *Executor) pollMigrationStatus(ctx context.Context, repo *models.Reposit
 				// Calculate next polling interval even for unknown states
 				elapsed := time.Since(startTime)
 				nextInterval := calculateAdaptivePollInterval(elapsed, migrationInitialInterval, migrationMaxInterval, migrationFastPhaseDuration)
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
 				timer.Reset(nextInterval)
 				continue
 			}
