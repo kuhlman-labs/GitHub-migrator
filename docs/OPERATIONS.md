@@ -215,7 +215,7 @@ The GitHub Migration Server also supports optional authentication using GitHub O
 
 ### Configuration
 
-Add the following to your `configs/config.yaml`:
+Add the following to your config file (e.g., `configs/config.github.yml`):
 
 ```yaml
 # Source configuration - OAuth uses THIS base URL for authentication
@@ -544,21 +544,11 @@ For migrating from Azure DevOps to GitHub Enterprise Cloud, additional configura
    - GitHub Personal Access Token with: `repo`, `workflow`, `admin:org`
    - Organization admin access
 
-#### Microsoft Entra ID OAuth App (Optional)
+#### Web UI Authentication
 
-For user authentication via Microsoft Entra ID:
+When migrating from Azure DevOps, the web UI uses **destination-centric GitHub OAuth** (not Microsoft Entra ID). Users authenticate with their GitHub account on the destination instance, and authorization rules are validated against GitHub organizations and teams.
 
-1. Sign in to the [Azure Portal](https://portal.azure.com)
-2. Navigate to **Microsoft Entra ID** → **App registrations** → **New registration**
-3. Configure:
-   - **Name**: GitHub Migrator (ADO)
-   - **Supported account types**: Accounts in this organizational directory only
-   - **Redirect URI**: `https://your-migrator-domain.com/api/v1/auth/entraid/callback`
-4. Note the **Application (client) ID** and **Directory (tenant) ID**
-5. Create a client secret under **Certificates & secrets**
-6. Configure API permissions:
-   - Add **Azure DevOps** → **user_impersonation**
-   - Grant admin consent
+See [GitHub OAuth (User Authentication)](#github-oauth-user-authentication) above for setup instructions.
 
 #### Configuration
 
@@ -576,15 +566,14 @@ destination:
   base_url: https://api.github.com
   token: ${DEST_GITHUB_TOKEN}
 
-# Authentication Configuration (optional)
+# Authentication Configuration (optional - uses GitHub OAuth)
 auth:
   enabled: true
-  entraid_enabled: true
-  entraid_tenant_id: ${ENTRAID_TENANT_ID}
-  entraid_client_id: ${ENTRAID_CLIENT_ID}
-  entraid_client_secret: ${ENTRAID_CLIENT_SECRET}
-  entraid_callback_url: https://your-migrator-domain.com/api/v1/auth/entraid/callback
-  ado_organization_url: https://dev.azure.com/your-ado-org-name
+  github_oauth_client_id: "Iv1.your_client_id_here"
+  github_oauth_client_secret: "your_client_secret_here"
+  callback_url: "https://migrator.example.com/api/v1/auth/callback"
+  session_secret: "generate-a-random-secret-key-here"
+  session_duration_hours: 24
 ```
 
 #### Environment Variables
@@ -594,16 +583,16 @@ auth:
 export GHMIG_SOURCE_TYPE=azuredevops
 export GHMIG_SOURCE_ORGANIZATION=your-ado-org
 export GHMIG_SOURCE_BASE_URL=https://dev.azure.com/your-ado-org
-export SOURCE_ADO_TOKEN=your-ado-pat
+export GHMIG_SOURCE_TOKEN=your-ado-pat
 
 # GitHub Destination
-export GITHUB_DEST_TOKEN=ghp_xxxxxxxxxxxx
+export GHMIG_DESTINATION_TOKEN=ghp_xxxxxxxxxxxx
 
-# Entra ID (optional)
-export GHMIG_AUTH_ENTRAID_ENABLED=true
-export ENTRAID_TENANT_ID=your-tenant-id
-export ENTRAID_CLIENT_ID=your-client-id
-export ENTRAID_CLIENT_SECRET=your-client-secret
+# Web UI Auth (GitHub OAuth on destination - optional)
+export GHMIG_AUTH_ENABLED=true
+export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID=Iv1.your_client_id
+export GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET=your_secret
+export GHMIG_AUTH_SESSION_SECRET=your_session_secret
 ```
 
 #### ADO Feature Migration Support
@@ -755,7 +744,7 @@ The GitHub Migrator provides configurable visibility transformation rules to han
 
 ### Configuration
 
-Configure visibility handling in your `configs/config.yaml`:
+Configure visibility handling in your config file (e.g., `configs/config.github.yml`):
 
 ```yaml
 migration:
@@ -839,11 +828,11 @@ visibility_handling:
 For production deployments, use environment variables:
 
 ```bash
-export GHMIG_MIGRATION_VISIBILITY_PUBLIC_REPOS=private
-export GHMIG_MIGRATION_VISIBILITY_INTERNAL_REPOS=private
+export GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS=private
+export GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS=private
 ```
 
-See `configs/env.example` for complete documentation.
+See `configs/env.github.example` or `configs/env.azuredevops.example` for complete documentation.
 
 ### Complexity Scoring
 
@@ -860,7 +849,7 @@ The complexity score combines repository size, non-migrated features, and activi
 - Packages: **3 points** - Don't migrate with GEI, manual migration required
 - Self-hosted runners: **3 points** - Infrastructure reconfiguration needed
 
-**Note:** Projects (classic) card-based boards DO migrate with GEI and are not scored. The new Projects experience (table-based at org level) doesn't migrate but isn't repository-level data.
+**Note:** Projects (classic) card-based boards DO migrate with GEI. The new Projects experience (table-based at org level) doesn't migrate. Projects are scored at moderate impact due to potential manual recreation needs.
 
 **Moderate Impact Features (2 points each):**
 - Variables: **2 points** - Manual recreation required
@@ -869,6 +858,7 @@ The complexity score combines repository size, non-migrated features, and activi
 - Git LFS: **2 points** - Special handling required
 - Submodules: **2 points** - Dependency management complexity
 - GitHub Apps: **2 points** - Reconfiguration/reinstallation needed
+- Projects: **2 points** - May require manual recreation
 
 **Low Impact Features (1 point each):**
 - GHAS (Code scanning/Dependabot/Secret scanning): **1 point** - Simple toggles to re-enable
@@ -886,12 +876,10 @@ The complexity score combines repository size, non-migrated features, and activi
 - >5GB: **9 points**
 
 **Activity Level (0-4 points):**
-Activity is calculated using **quantiles** relative to your repository dataset. High-activity repositories require significantly more planning, coordination, and stakeholder communication:
-- High activity (top 25%): **4 points** - Many users, extensive coordination, high impact
-- Moderate activity (25-75%): **2 points** - Some coordination needed
-- Low activity (bottom 25%): **0 points** - Few users, minimal coordination
-
-Activity combines: branch count, commit count, issue count, and pull request count.
+Activity is scored based on combined activity metrics (branch count, commit count, issue count, and pull request count). High-activity repositories require significantly more planning, coordination, and stakeholder communication:
+- High activity (combined score > 1000): **4 points** - Many users, extensive coordination, high impact
+- Moderate activity (combined score 100-1000): **2 points** - Some coordination needed
+- Low activity (combined score < 100): **0 points** - Few users, minimal coordination
 
 #### Complexity Categories
 
@@ -1177,7 +1165,7 @@ curl -X POST http://localhost:8080/api/v1/batches \
   }'
 
 # Step 4: Start DRY RUN first
-curl -X POST http://localhost:8080/api/v1/batches/1/start?dry_run=true
+curl -X POST http://localhost:8080/api/v1/batches/1/dry-run
 
 # Step 5: Monitor dry run results
 curl http://localhost:8080/api/v1/batches/1
@@ -1687,8 +1675,8 @@ make lint  # includes gosec
 go list -json -m all | nancy sleuth
 
 # Update base images
-docker pull golang:1.21-alpine
-docker pull alpine:latest
+docker pull golang:1.25-bookworm
+docker pull debian:bookworm-slim
 docker build --no-cache -t github-migrator:latest .
 ```
 
@@ -1759,26 +1747,27 @@ docker run -d \
   -e POSTGRES_PASSWORD=your-secure-password \
   -e POSTGRES_DB=migrator \
   -p 5432:5432 \
-  postgres:15
+  postgres:16-alpine
 
-# Or using docker-compose.postgres.yml
-docker-compose -f docker-compose.postgres.yml up -d
+# Or using docker-compose overlays
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 ```
 
 #### Configuration
 
 ```yaml
 database:
-  type: postgresql
+  type: postgres
   dsn: "host=localhost port=5432 user=migrator password=your-secure-password dbname=migrator sslmode=disable"
   max_open_conns: 25
   max_idle_conns: 5
+  conn_max_lifetime_seconds: 300
 ```
 
 Or via environment variables:
 
 ```bash
-export GHMIG_DATABASE_TYPE=postgresql
+export GHMIG_DATABASE_TYPE=postgres
 export GHMIG_DATABASE_DSN="host=localhost port=5432 user=migrator password=secret dbname=migrator sslmode=disable"
 ```
 
@@ -1792,6 +1781,45 @@ export GHMIG_DATABASE_DSN="host=localhost port=5432 user=migrator password=secre
 | `password` | Database password | - |
 | `dbname` | Database name | - |
 | `sslmode` | SSL mode (disable, require, verify-full) | disable |
+
+### SQL Server (Alternative Production)
+
+SQL Server is also supported as a production database.
+
+#### Installation
+
+```bash
+# Docker
+docker run -d \
+  --name sqlserver \
+  -e ACCEPT_EULA=Y \
+  -e "SA_PASSWORD=YourStrong@Passw0rd" \
+  -p 1433:1433 \
+  mcr.microsoft.com/mssql/server:2022-latest
+
+# Or using docker-compose.sqlserver.yml
+docker compose -f docker-compose.sqlserver.yml up -d
+```
+
+#### Configuration
+
+```yaml
+database:
+  type: sqlserver
+  dsn: "sqlserver://sa:YourStrong@Passw0rd@localhost:1433?database=migrator"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime_seconds: 300
+  trust_server_certificate: true
+```
+
+Or via environment variables:
+
+```bash
+export GHMIG_DATABASE_TYPE=sqlserver
+export GHMIG_DATABASE_DSN="sqlserver://sa:YourStrong@Passw0rd@localhost:1433?database=migrator"
+export GHMIG_DATABASE_TRUST_SERVER_CERTIFICATE=true
+```
 
 ### Migrating SQLite to PostgreSQL
 
@@ -1807,8 +1835,8 @@ export GHMIG_DATABASE_DSN="host=localhost port=5432 user=migrator password=secre
 
 3. **Update configuration and restart:**
    ```bash
-   # Update config.yaml or environment variables
-   export GHMIG_DATABASE_TYPE=postgresql
+   # Update your config file or set environment variables
+   export GHMIG_DATABASE_TYPE=postgres
    
    # Restart server (migrations run automatically)
    make docker-run
@@ -1867,14 +1895,13 @@ top -p $(pgrep -f github-migrator)
 3. Memory leak (check logs for patterns)
 
 **Resolution:**
-```bash
-# Reduce parallel workers
-# Edit config.yaml
+```yaml
+# Reduce workers in your config file
 migration:
-  parallel_workers: 3
-discovery:
-  parallel_workers: 5
+  workers: 3
+```
 
+```bash
 # Restart service
 docker-compose restart
 ```
@@ -2030,12 +2057,9 @@ docker run -d \
 
 # 5. Create schema (run migrations will do this automatically)
 
-# 6. Update configuration
-cat > configs/config.yaml <<EOF
-database:
-  type: postgresql
-  dsn: "host=localhost port=5432 user=migrator_user password=secure_password dbname=migrator sslmode=disable"
-EOF
+# 6. Update configuration (or set environment variables)
+export GHMIG_DATABASE_TYPE=postgres
+export GHMIG_DATABASE_DSN="host=localhost port=5432 user=migrator_user password=secure_password dbname=migrator sslmode=disable"
 
 # 7. Start service (migrations will run automatically)
 docker-compose up -d
@@ -2065,7 +2089,7 @@ export GITHUB_SOURCE_TOKEN="new_source_token"
 export GITHUB_DEST_TOKEN="new_dest_token"
 
 # 4. Update config file or secrets
-# Edit configs/config.yaml or update Docker secrets
+# Edit your config YAML file or update Docker secrets/env vars
 
 # 5. Restart service
 docker-compose down
@@ -2094,40 +2118,36 @@ database:
   dsn: ./data/migrator.db
 
 migration:
-  parallel_workers: 3
-  
-discovery:
-  parallel_workers: 5
+  workers: 3
+  poll_interval_seconds: 30
 ```
 
 #### Medium Scale (1,000 - 10,000 repositories)
 
 ```yaml
 database:
-  type: postgresql
+  type: postgres
   dsn: "postgres://..."
   max_open_conns: 25
-  
+  max_idle_conns: 5
+
 migration:
-  parallel_workers: 5
-  
-discovery:
-  parallel_workers: 10
+  workers: 5
+  poll_interval_seconds: 30
 ```
 
 #### Large Scale (10,000+ repositories)
 
 ```yaml
 database:
-  type: postgresql
+  type: postgres
   dsn: "postgres://..."
   max_open_conns: 50
-  
+  max_idle_conns: 10
+
 migration:
-  parallel_workers: 10
-  
-discovery:
-  parallel_workers: 20
+  workers: 10
+  poll_interval_seconds: 15
 ```
 
 ---
@@ -2163,7 +2183,7 @@ discovery:
 
 ---
 
-**Operations Runbook Version:** 1.0.0  
-**Last Updated:** October 2025  
+**Operations Runbook Version:** 1.1.0  
+**Last Updated:** February 2026  
 **Next Review:** Quarterly
 
