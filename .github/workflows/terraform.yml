@@ -89,8 +89,8 @@ jobs:
           docker_registry_url      = "ghcr.io"
           docker_image_repository  = "${{ github.repository }}"
           docker_image_tag         = "${{ vars.DOCKER_IMAGE_TAG }}"
-          docker_registry_username = "${{ github.actor }}"
-          docker_registry_password = "${{ secrets.GITHUB_TOKEN }}"
+          docker_registry_username = "${{ secrets.GHCR_USERNAME }}"
+          docker_registry_password = "${{ secrets.GHCR_TOKEN }}"
 
           # PostgreSQL Database
           database_name                         = "${{ vars.DATABASE_NAME }}"
