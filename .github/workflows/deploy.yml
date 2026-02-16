@@ -61,13 +61,15 @@ jobs:
 
           echo "Deploying $IMAGE to slot $SLOT_NAME..."
 
-          # Update the container image for the slot
+          # Update the container image and registry credentials for the slot
           az webapp config container set \
             --name "$APP_NAME" \
             --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
             --slot "$SLOT_NAME" \
             --container-image-name "$IMAGE" \
-            --container-registry-url "https://${{ env.REGISTRY }}"
+            --container-registry-url "https://${{ env.REGISTRY }}" \
+            --container-registry-user "${{ secrets.GHCR_USERNAME }}" \
+            --container-registry-password "${{ secrets.GHCR_TOKEN }}"
 
           echo "Restarting slot..."
           az webapp restart \
