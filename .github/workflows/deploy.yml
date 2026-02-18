@@ -26,8 +26,7 @@ permissions:
   id-token: write
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  ACR_IMAGE_NAME: github-migrator
 
 jobs:
   deploy:
@@ -48,28 +47,21 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set lowercase image name
-        run: |
-          echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
       - name: Deploy to slot
         id: deploy
         run: |
           APP_NAME="${{ vars.APP_SERVICE_NAME }}"
           SLOT_NAME="${{ inputs.slot_name }}"
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ inputs.image_tag }}"
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.ACR_IMAGE_NAME }}:${{ inputs.image_tag }}"
 
           echo "Deploying $IMAGE to slot $SLOT_NAME..."
 
-          # Update the container image and registry credentials for the slot
           az webapp config container set \
             --name "$APP_NAME" \
             --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
             --slot "$SLOT_NAME" \
             --container-image-name "$IMAGE" \
-            --container-registry-url "https://${{ env.REGISTRY }}" \
-            --container-registry-user "${{ secrets.GHCR_USERNAME }}" \
-            --container-registry-password "${{ secrets.GHCR_TOKEN }}"
+            --container-registry-url "https://${{ secrets.ACR_LOGIN_SERVER }}"
 
           echo "Restarting slot..."
           az webapp restart \
@@ -131,7 +123,7 @@ jobs:
 
       - name: Deployment summary
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ inputs.image_tag }}"
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.ACR_IMAGE_NAME }}:${{ inputs.image_tag }}"
           {
             echo "## Deployment Summary"
             echo ""

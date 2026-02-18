@@ -34,15 +34,18 @@ resource "azurerm_linux_web_app" "main" {
   https_only = true
 
   site_config {
-    always_on                         = var.always_on
-    health_check_path                 = "/health"
-    health_check_eviction_time_in_min = 2
+    always_on                               = var.always_on
+    container_registry_use_managed_identity  = true
+    health_check_path                       = "/health"
+    health_check_eviction_time_in_min       = 2
 
+    # Managed identity handles ACR auth; empty strings satisfy the provider
+    # schema requirement while Azure uses the AcrPull role assignment instead.
     application_stack {
       docker_image_name        = var.docker_image
       docker_registry_url      = "https://${var.docker_registry_url}"
-      docker_registry_username = var.docker_registry_username
-      docker_registry_password = var.docker_registry_password
+      docker_registry_username = ""
+      docker_registry_password = ""
     }
 
     # CORS configuration
@@ -94,6 +97,13 @@ resource "azurerm_linux_web_app" "main" {
   tags = var.tags
 }
 
+# AcrPull role assignment for the production App Service identity
+resource "azurerm_role_assignment" "app_acr_pull" {
+  scope                = var.container_registry_id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
+}
+
 # Staging Deployment Slot
 resource "azurerm_linux_web_app_slot" "staging" {
   count          = var.enable_staging_slot ? 1 : 0
@@ -103,15 +113,16 @@ resource "azurerm_linux_web_app_slot" "staging" {
   https_only = true
 
   site_config {
-    always_on                         = var.always_on
-    health_check_path                 = "/health"
-    health_check_eviction_time_in_min = 2
+    always_on                               = var.always_on
+    container_registry_use_managed_identity  = true
+    health_check_path                       = "/health"
+    health_check_eviction_time_in_min       = 2
 
     application_stack {
       docker_image_name        = var.docker_image
       docker_registry_url      = "https://${var.docker_registry_url}"
-      docker_registry_username = var.docker_registry_username
-      docker_registry_password = var.docker_registry_password
+      docker_registry_username = ""
+      docker_registry_password = ""
     }
 
     cors {
@@ -150,6 +161,14 @@ resource "azurerm_linux_web_app_slot" "staging" {
   tags = merge(var.tags, { Slot = "staging" })
 }
 
+# AcrPull role assignment for the staging slot identity
+resource "azurerm_role_assignment" "staging_acr_pull" {
+  count                = var.enable_staging_slot ? 1 : 0
+  scope                = var.container_registry_id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_linux_web_app_slot.staging[0].identity[0].principal_id
+}
+
 # Dev Deployment Slot
 resource "azurerm_linux_web_app_slot" "dev" {
   count          = var.enable_dev_slot ? 1 : 0
@@ -159,15 +178,16 @@ resource "azurerm_linux_web_app_slot" "dev" {
   https_only = true
 
   site_config {
-    always_on                         = var.always_on
-    health_check_path                 = "/health"
-    health_check_eviction_time_in_min = 2
+    always_on                               = var.always_on
+    container_registry_use_managed_identity  = true
+    health_check_path                       = "/health"
+    health_check_eviction_time_in_min       = 2
 
     application_stack {
       docker_image_name        = var.docker_image
       docker_registry_url      = "https://${var.docker_registry_url}"
-      docker_registry_username = var.docker_registry_username
-      docker_registry_password = var.docker_registry_password
+      docker_registry_username = ""
+      docker_registry_password = ""
     }
 
     cors {
@@ -204,4 +224,12 @@ resource "azurerm_linux_web_app_slot" "dev" {
   }
 
   tags = merge(var.tags, { Slot = "dev" })
+}
+
+# AcrPull role assignment for the dev slot identity
+resource "azurerm_role_assignment" "dev_acr_pull" {
+  count                = var.enable_dev_slot ? 1 : 0
+  scope                = var.container_registry_id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_linux_web_app_slot.dev[0].identity[0].principal_id
 }

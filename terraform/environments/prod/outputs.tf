@@ -39,6 +39,24 @@ output "dev_slot_name" {
   value       = module.app_service.dev_slot_name
 }
 
+# Container Registry Outputs
+output "acr_login_server" {
+  description = "Login server of the Azure Container Registry"
+  value       = module.container_registry.login_server
+}
+
+output "acr_admin_username" {
+  description = "Admin username for the Azure Container Registry"
+  value       = module.container_registry.admin_username
+  sensitive   = true
+}
+
+output "acr_admin_password" {
+  description = "Admin password for the Azure Container Registry"
+  value       = module.container_registry.admin_password
+  sensitive   = true
+}
+
 # Database Outputs
 output "database_server_fqdn" {
   description = "FQDN of the PostgreSQL server"

@@ -57,22 +57,38 @@ module "postgresql" {
   )
 }
 
+# Deploy Azure Container Registry
+module "container_registry" {
+  source = "../../modules/container-registry"
+
+  acr_name            = var.acr_name
+  resource_group_name = data.azurerm_resource_group.main.name
+  location            = data.azurerm_resource_group.main.location
+
+  tags = merge(
+    var.tags,
+    {
+      Environment = "prod"
+      ManagedBy   = "Terraform"
+    }
+  )
+}
+
 # Deploy App Service (with PostgreSQL and Deployment Slots)
 module "app_service" {
   source = "../../modules/app-service"
 
-  depends_on = [module.postgresql]
+  depends_on = [module.postgresql, module.container_registry]
 
-  resource_group_name      = data.azurerm_resource_group.main.name
-  location                 = data.azurerm_resource_group.main.location
-  app_service_plan_name    = "${var.app_name_prefix}-plan-prod"
-  app_service_name         = "${var.app_name_prefix}-prod"
-  sku_name                 = var.app_service_sku
-  always_on                = var.always_on
-  docker_image             = "${lower(var.docker_image_repository)}:${var.docker_image_tag}"
-  docker_registry_url      = var.docker_registry_url
-  docker_registry_username = var.docker_registry_username
-  docker_registry_password = var.docker_registry_password
+  resource_group_name   = data.azurerm_resource_group.main.name
+  location              = data.azurerm_resource_group.main.location
+  app_service_plan_name = "${var.app_name_prefix}-plan-prod"
+  app_service_name      = "${var.app_name_prefix}-prod"
+  sku_name              = var.app_service_sku
+  always_on             = var.always_on
+  docker_image          = "${var.acr_image_name}:${var.docker_image_tag}"
+  docker_registry_url   = module.container_registry.login_server
+  container_registry_id = module.container_registry.id
 
   # Enable deployment slots for zero-downtime deployments
   enable_staging_slot = var.enable_staging_slot
