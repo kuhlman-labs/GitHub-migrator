@@ -39,13 +39,9 @@ resource "azurerm_linux_web_app" "main" {
     health_check_path                       = "/health"
     health_check_eviction_time_in_min       = 2
 
-    # Managed identity handles ACR auth; empty strings satisfy the provider
-    # schema requirement while Azure uses the AcrPull role assignment instead.
     application_stack {
-      docker_image_name        = var.docker_image
-      docker_registry_url      = "https://${var.docker_registry_url}"
-      docker_registry_username = ""
-      docker_registry_password = ""
+      docker_image_name   = var.docker_image
+      docker_registry_url = "https://${var.docker_registry_url}"
     }
 
     # CORS configuration
@@ -119,10 +115,8 @@ resource "azurerm_linux_web_app_slot" "staging" {
     health_check_eviction_time_in_min       = 2
 
     application_stack {
-      docker_image_name        = var.docker_image
-      docker_registry_url      = "https://${var.docker_registry_url}"
-      docker_registry_username = ""
-      docker_registry_password = ""
+      docker_image_name   = var.docker_image
+      docker_registry_url = "https://${var.docker_registry_url}"
     }
 
     cors {
@@ -184,10 +178,8 @@ resource "azurerm_linux_web_app_slot" "dev" {
     health_check_eviction_time_in_min       = 2
 
     application_stack {
-      docker_image_name        = var.docker_image
-      docker_registry_url      = "https://${var.docker_registry_url}"
-      docker_registry_username = ""
-      docker_registry_password = ""
+      docker_image_name   = var.docker_image
+      docker_registry_url = "https://${var.docker_registry_url}"
     }
 
     cors {
