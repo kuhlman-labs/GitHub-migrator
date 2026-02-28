@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Docker image tag to deploy (e.g., v1.0.0)'
+        description: 'Docker image tag to deploy (e.g., v1.0.0 or 1.0.0)'
         required: true
         type: string
 
@@ -41,6 +41,8 @@ jobs:
           else
             TAG="${{ github.event.inputs.image_tag }}"
           fi
+          # Strip 'v' prefix to match docker/metadata-action semver {{version}} output
+          TAG="${TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Using image tag: ${TAG}"
 
