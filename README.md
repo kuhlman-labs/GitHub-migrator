@@ -3,7 +3,7 @@
 A comprehensive solution for migrating repositories between GitHub instances at scale.
 
 [![Go Version](https://img.shields.io/badge/go-1.25+-blue.svg)](https://golang.org/dl/)
-[![Node Version](https://img.shields.io/badge/node-24+-green.svg)](https://nodejs.org/)
+[![Node Version](https://img.shields.io/badge/node-20+-green.svg)](https://nodejs.org/)
 
 ## Overview
 
@@ -22,7 +22,7 @@ GitHub Migrator automates large-scale repository migrations with intelligent dis
 ### Prerequisites
 
 - Go 1.25+
-- Node.js 24+
+- Node.js 20+
 - Docker
 
 ### Install & Run
@@ -34,8 +34,8 @@ cd GitHub-migrator
 make install
 
 # Configure authentication
-export GITHUB_SOURCE_TOKEN="ghp_xxxxxxxxxxxx"   # Source org admin token
-export GITHUB_DEST_TOKEN="ghp_yyyyyyyyyyyy"     # Destination org admin token
+export GHMIG_SOURCE_TOKEN="ghp_xxxxxxxxxxxx"         # Source org admin token
+export GHMIG_DESTINATION_TOKEN="ghp_yyyyyyyyyyyy"    # Destination org admin token
 
 # Run (choose one)
 make docker-build && make docker-run    # Docker: http://localhost:8080
@@ -58,6 +58,7 @@ make web-dev      # Frontend dev: http://localhost:3000
 
 | Document | Description |
 |----------|-------------|
+| [Architecture](./docs/ARCHITECTURE.md) | System design, components, and package dependencies |
 | [Deployment Guide](./docs/deployment/) | Docker, Azure, and Kubernetes deployment |
 | [API Reference](./docs/API.md) | REST API documentation and examples |
 | [Operations Guide](./docs/OPERATIONS.md) | Authentication, workflows, monitoring, troubleshooting |

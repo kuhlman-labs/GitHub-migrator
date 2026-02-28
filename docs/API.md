@@ -15,14 +15,19 @@ The GitHub Migrator provides a comprehensive REST API for managing repository di
 - [Configuration](#configuration)
 - [Authentication](#authentication)
 - [Setup](#setup)
+- [Settings](#settings)
 - [Sources](#sources)
 - [Discovery](#discovery)
 - [Repositories](#repositories)
 - [Organizations & Projects](#organizations--projects)
+- [User Mappings](#user-mappings)
+- [Team Mappings](#team-mappings)
+- [Dependencies](#dependencies)
 - [Dashboard](#dashboard)
 - [Batches](#batches)
 - [Migrations](#migrations)
 - [Analytics](#analytics)
+- [Copilot](#copilot)
 - [Azure DevOps](#azure-devops)
 - [Error Handling](#error-handling)
 - [Rate Limiting](#rate-limiting)
@@ -59,7 +64,7 @@ Get application configuration for the frontend.
 }
 ```
 
-Note: The `entraid_enabled` field has been removed. All authentication now uses destination-centric GitHub OAuth.
+All authentication uses destination-centric GitHub OAuth.
 
 ---
 
@@ -227,14 +232,81 @@ Validate database connection.
 **Request Body:**
 ```json
 {
-  "type": "postgresql",
+  "type": "postgres",
   "dsn": "host=localhost port=5432 user=migrator password=secret dbname=migrator"
 }
 ```
 
+**Supported types:** `sqlite`, `postgres`, `sqlserver`
+
 ### POST /api/v1/setup/apply
 
 Apply configuration and write env file.
+
+---
+
+## Settings
+
+Application settings management for configuring destination, teams, OAuth, and logging.
+
+### GET /api/v1/settings
+
+Get current application settings.
+
+**Response 200 OK:**
+```json
+{
+  "destination_url": "https://github.com",
+  "destination_org": "target-org",
+  "auth_enabled": true
+}
+```
+
+### PUT /api/v1/settings
+
+Update application settings. **Requires admin access.**
+
+**Request Body:**
+```json
+{
+  "destination_url": "https://github.com",
+  "destination_org": "target-org",
+  "destination_token": "ghp_xxxxxxxxxxxx"
+}
+```
+
+### GET /api/v1/settings/setup-progress
+
+Get setup wizard progress.
+
+**Response 200 OK:**
+```json
+{
+  "steps_completed": 3,
+  "total_steps": 5,
+  "current_step": "configure_teams"
+}
+```
+
+### POST /api/v1/settings/destination/validate
+
+Validate destination GitHub connection settings.
+
+### POST /api/v1/settings/teams/validate
+
+Validate team configuration settings.
+
+### POST /api/v1/settings/oauth/validate
+
+Validate OAuth configuration settings.
+
+### GET /api/v1/settings/logging
+
+Get current logging settings. Requires authentication.
+
+### PUT /api/v1/settings/logging
+
+Update logging settings. **Requires admin access.**
 
 ---
 
@@ -388,6 +460,20 @@ Get all repositories associated with a source.
 
 **Response 200 OK:** Array of Repository objects
 
+### GET /api/v1/sources/{id}/deletion-preview
+
+Preview what would be affected if this source were deleted (e.g., repository counts).
+
+**Response 200 OK:**
+```json
+{
+  "source_id": 1,
+  "repository_count": 150,
+  "batch_count": 3,
+  "migration_count": 45
+}
+```
+
 ---
 
 ## Discovery
@@ -429,6 +515,44 @@ Get the status of the current or last discovery operation.
 ```
 
 **Status Values:** `idle`, `running`, `completed`, `failed`
+
+### GET /api/v1/discovery/progress
+
+Get detailed progress of the current or last discovery operation.
+
+**Response 200 OK:**
+```json
+{
+  "status": "running",
+  "organization": "acme-corp",
+  "repositories_found": 127,
+  "repositories_profiled": 85,
+  "progress_percentage": 66.9,
+  "started_at": "2024-01-15T10:00:00Z"
+}
+```
+
+### POST /api/v1/discovery/cancel
+
+Cancel a running discovery operation. Requires authentication.
+
+**Response 200 OK:**
+```json
+{
+  "message": "Discovery cancelled"
+}
+```
+
+### POST /api/v1/discovery/force-reset
+
+Force reset a stuck discovery operation. **Requires admin access.**
+
+**Response 200 OK:**
+```json
+{
+  "message": "Discovery state reset"
+}
+```
 
 ---
 
@@ -493,6 +617,18 @@ List all repositories with optional filtering.
     }
   ],
   "total": 150
+}
+```
+
+### POST /api/v1/repositories/discover
+
+Discover repositories by organization or enterprise. An alternative to `/api/v1/discovery/start` for on-demand discovery.
+
+**Request Body:**
+```json
+{
+  "organization": "acme-corp",
+  "enterprise_slug": "acme-enterprise"
 }
 ```
 
@@ -602,6 +738,238 @@ Get simple list of organization names for filters.
 ### GET /api/v1/projects
 
 Get ADO projects with statistics.
+
+---
+
+## User Mappings
+
+Manage identity mappings between source and destination users. Used for mannequin reclamation and attribution of commit history after migration.
+
+### GET /api/v1/user-mappings
+
+List all user mappings.
+
+**Response 200 OK:**
+```json
+[
+  {
+    "source_login": "jdoe-ghes",
+    "target_login": "jdoe",
+    "source_name": "John Doe",
+    "status": "mapped",
+    "organization": "acme-corp"
+  }
+]
+```
+
+### POST /api/v1/user-mappings
+
+Create a new user mapping.
+
+**Request Body:**
+```json
+{
+  "source_login": "jdoe-ghes",
+  "target_login": "jdoe",
+  "organization": "acme-corp"
+}
+```
+
+### GET /api/v1/user-mappings/{login}
+
+Get detailed information for a specific user mapping.
+
+### PATCH /api/v1/user-mappings/{sourceLogin}
+
+Update an existing user mapping.
+
+### DELETE /api/v1/user-mappings/{sourceLogin}
+
+Delete a user mapping.
+
+### GET /api/v1/user-mappings/stats
+
+Get user mapping statistics (total, mapped, unmapped counts).
+
+### GET /api/v1/user-mappings/source-orgs
+
+Get list of source organizations with user mappings.
+
+### POST /api/v1/user-mappings/import
+
+Import user mappings from a CSV file.
+
+### GET /api/v1/user-mappings/export
+
+Export all user mappings as CSV.
+
+### GET /api/v1/user-mappings/generate-gei-csv
+
+Generate a GEI-compatible CSV file for mannequin reclamation.
+
+### POST /api/v1/user-mappings/suggest
+
+Auto-suggest user mappings based on login similarity.
+
+### POST /api/v1/user-mappings/sync
+
+Sync user mappings from discovery data.
+
+### GET /api/v1/user-mappings/mannequin-orgs
+
+Get organizations with mannequin users.
+
+### POST /api/v1/user-mappings/fetch-mannequins
+
+Fetch mannequin users from the destination organization.
+
+### POST /api/v1/user-mappings/reclaim-mannequins
+
+Reclaim mannequin users using the configured mappings.
+
+### POST /api/v1/user-mappings/send-invitations
+
+Bulk send attribution invitations to mapped users.
+
+### POST /api/v1/user-mappings/{sourceLogin}/send-invitation
+
+Send an attribution invitation for a specific user mapping.
+
+---
+
+## Team Mappings
+
+Manage team mappings between source and destination organizations for team migration.
+
+### GET /api/v1/team-mappings
+
+List all team mappings.
+
+**Response 200 OK:**
+```json
+[
+  {
+    "source_org": "acme-corp",
+    "source_team_slug": "backend-team",
+    "source_team_name": "Backend Team",
+    "target_org": "new-org",
+    "target_team_slug": "backend-team",
+    "status": "mapped",
+    "member_count": 8
+  }
+]
+```
+
+### POST /api/v1/team-mappings
+
+Create a new team mapping.
+
+### PATCH /api/v1/team-mappings/{sourceOrg}/{sourceTeamSlug}
+
+Update an existing team mapping.
+
+### DELETE /api/v1/team-mappings/{sourceOrg}/{sourceTeamSlug}
+
+Delete a team mapping.
+
+### GET /api/v1/team-mappings/stats
+
+Get team mapping statistics.
+
+### GET /api/v1/team-mappings/source-orgs
+
+Get list of source organizations with team mappings.
+
+### POST /api/v1/teams/discover
+
+Discover teams from source organizations.
+
+### POST /api/v1/team-mappings/import
+
+Import team mappings from a CSV file.
+
+### GET /api/v1/team-mappings/export
+
+Export all team mappings as CSV.
+
+### POST /api/v1/team-mappings/suggest
+
+Auto-suggest team mappings based on name similarity.
+
+### POST /api/v1/team-mappings/sync
+
+Sync team mappings from discovery data.
+
+### POST /api/v1/team-mappings/execute
+
+Execute team migration based on configured mappings.
+
+### GET /api/v1/team-mappings/execution-status
+
+Get the status of a running team migration execution.
+
+### POST /api/v1/team-mappings/cancel
+
+Cancel a running team migration execution.
+
+### POST /api/v1/team-mappings/reset
+
+Reset team migration status to allow re-execution.
+
+---
+
+## Dependencies
+
+Repository dependency analysis and graph visualization.
+
+### GET /api/v1/dependencies/graph
+
+Get the dependency graph for all discovered repositories.
+
+**Response 200 OK:**
+```json
+{
+  "nodes": [
+    {
+      "id": 1,
+      "full_name": "acme-corp/api-gateway",
+      "dependency_count": 3
+    }
+  ],
+  "edges": [
+    {
+      "source": "acme-corp/api-gateway",
+      "target": "acme-corp/common-lib",
+      "type": "runtime"
+    }
+  ]
+}
+```
+
+### GET /api/v1/dependencies/export
+
+Export dependency data.
+
+**Query Parameters:**
+- `format` (required) - Export format: `csv` or `json`
+
+### GET /api/v1/repositories/{fullName}/dependencies
+
+Get dependencies for a specific repository.
+
+**Response 200 OK:**
+```json
+{
+  "dependencies": [
+    {
+      "package_name": "acme-corp/common-lib",
+      "version": "v1.2.3",
+      "ecosystem": "go",
+      "type": "runtime"
+    }
+  ]
+}
+```
 
 ---
 
@@ -826,6 +1194,25 @@ Get comprehensive executive-level report.
 
 Export executive report in CSV or JSON format.
 
+### GET /api/v1/analytics/permission-audit
+
+Get permission audit report for repository access.
+
+**Response 200 OK:**
+```json
+{
+  "audit": [
+    {
+      "organization": "acme-corp",
+      "repository_count": 150,
+      "admin_count": 5,
+      "write_count": 12,
+      "read_count": 45
+    }
+  ]
+}
+```
+
 ### GET /api/v1/analytics/detailed-discovery-report/export
 
 Export detailed discovery report with all repository data.
@@ -835,6 +1222,65 @@ Export detailed discovery report with all repository data.
 - `organization` - Filter by organization
 - `project` - Filter by ADO project
 - `batch_id` - Filter by batch ID
+
+---
+
+## Copilot
+
+AI-powered assistant for migration guidance, using GitHub Copilot models.
+
+### GET /api/v1/copilot/status
+
+Get Copilot availability and configuration status.
+
+**Response 200 OK:**
+```json
+{
+  "available": true,
+  "model": "gpt-4o",
+  "features": ["chat", "streaming"]
+}
+```
+
+### GET /api/v1/copilot/models
+
+List available AI models.
+
+### POST /api/v1/copilot/chat
+
+Send a chat message and get a response.
+
+**Request Body:**
+```json
+{
+  "message": "What repositories should I migrate first?",
+  "session_id": 1
+}
+```
+
+### GET /api/v1/copilot/chat/stream
+
+Stream a chat response via Server-Sent Events (SSE).
+
+**Query Parameters:**
+- `message` (string) - The chat message
+- `session_id` (int, optional) - Session ID for context continuity
+
+### GET /api/v1/copilot/sessions
+
+List all chat sessions.
+
+### GET /api/v1/copilot/sessions/{id}/history
+
+Get chat history for a specific session.
+
+### DELETE /api/v1/copilot/sessions/{id}
+
+Delete a chat session.
+
+### POST /api/v1/copilot/validate-cli
+
+Validate that the GitHub CLI Copilot extension is available and configured.
 
 ---
 
@@ -988,6 +1434,6 @@ For detailed information, see:
 
 ---
 
-**API Version:** 1.1.0  
-**Last Updated:** December 2025  
+**API Version:** 1.2.0  
+**Last Updated:** February 2026  
 **Status:** Production Ready

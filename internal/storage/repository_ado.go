@@ -81,13 +81,19 @@ func (db *Database) GetADOProject(ctx context.Context, organization, projectName
 	return &project, nil
 }
 
-// GetRepositoriesByADOProject retrieves all repositories for a specific ADO project
+// GetRepositoriesByADOProject retrieves all repositories for a specific ADO project within an organization
 func (db *Database) GetRepositoriesByADOProject(ctx context.Context, organization, projectName string) ([]models.Repository, error) {
 	var repos []models.Repository
-	err := db.db.WithContext(ctx).
+	query := db.db.WithContext(ctx).
 		Joins("LEFT JOIN repository_ado_properties a ON repositories.id = a.repository_id").
-		Where("a.project = ?", projectName).
-		Order("repositories.full_name ASC").
+		Where("a.project = ?", projectName)
+
+	// Filter by organization if provided (matches the org prefix of full_name)
+	if organization != "" {
+		query = query.Where("repositories.full_name LIKE ?", organization+"/%")
+	}
+
+	err := query.Order("repositories.full_name ASC").
 		Find(&repos).Error
 
 	if err != nil {

@@ -22,7 +22,7 @@ Thank you for your interest in contributing to the GitHub Migrator. This guide w
 
 Before you begin, ensure you have the following installed:
 
-- **Go** 1.21 or higher ([installation guide](https://go.dev/doc/install))
+- **Go** 1.25 or higher ([installation guide](https://go.dev/doc/install))
 - **Node.js** 20 or higher ([installation guide](https://nodejs.org/))
 - **Git** 2.30+ with Git LFS support
 - **Make** (usually pre-installed on macOS/Linux)
@@ -50,10 +50,14 @@ Before you begin, ensure you have the following installed:
 
 3. **Set up your configuration**:
    ```bash
-   cp configs/config.yaml configs/local.yaml
+   # For GitHub sources:
+   cp configs/config.github.yml configs/local.yml
+
+   # For Azure DevOps sources:
+   cp configs/config.azuredevops.yml configs/local.yml
    ```
    
-   Edit `configs/local.yaml` with your development settings:
+   Edit `configs/local.yml` with your development settings:
    ```yaml
    server:
      port: 8080
@@ -76,8 +80,11 @@ Before you begin, ensure you have the following installed:
      level: debug
      format: text  # More readable for development
    ```
+   
+   See `configs/README.md` for all available configuration options and examples
+   for GitHub App auth, PostgreSQL, SQL Server, and OAuth.
 
-4. **Set environment variables**:
+4. **Set environment variables** (alternatively, use `configs/env.github.example` as a template):
    ```bash
    export GITHUB_SOURCE_TOKEN="ghp_your_source_token"
    export GITHUB_DEST_TOKEN="ghp_your_dest_token"
@@ -108,7 +115,7 @@ make run-server
 The server will automatically:
 - Create the SQLite database if it doesn't exist
 - Run database migrations
-- Load configuration from `configs/config.yaml`
+- Load configuration from the config file (e.g., `configs/config.github.yml`)
 - Start the HTTP server
 
 #### Frontend Development
@@ -191,8 +198,28 @@ docker run -d \
 
 # Update your config
 database:
-  type: postgresql
+  type: postgres
   dsn: "host=localhost port=5432 user=migrator password=dev dbname=migrator sslmode=disable"
+```
+
+#### SQL Server (Optional)
+
+For testing SQL Server locally:
+
+```bash
+# Start SQL Server with Docker
+docker run -d \
+  --name migrator-sqlserver \
+  -e ACCEPT_EULA=Y \
+  -e "SA_PASSWORD=YourStrong@Passw0rd" \
+  -p 1433:1433 \
+  mcr.microsoft.com/mssql/server:2022-latest
+
+# Update your config
+database:
+  type: sqlserver
+  dsn: "sqlserver://sa:YourStrong@Passw0rd@localhost:1433?database=migrator"
+  trust_server_certificate: true
 ```
 
 ### Hot Reloading
@@ -537,13 +564,13 @@ func (m *mockGitHubClient) GetRepository(ctx context.Context, owner, name string
 
 ```bash
 # Run frontend tests
-cd web && npm test
+make web-test
 
 # With coverage
-cd web && npm test -- --coverage
+make web-test-coverage
 
 # Watch mode for development
-cd web && npm test -- --watch
+make web-test-watch
 ```
 
 ### Integration Tests
@@ -625,7 +652,7 @@ Fixes #456
 
 3. **Run all checks** before pushing:
    ```bash
-   make all  # Runs lint, test, and build
+   make all  # Runs lint-all, web-typecheck, test-all, build, web-build
    ```
 
 4. **Push your branch**:
@@ -693,8 +720,9 @@ How this was tested
 │                                                               │
 │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐       │
 │  │   Batch     │  │   Analytics  │  │   Storage    │       │
-│  │ Orchestrator│  │              │  │   (SQLite/   │       │
-│  │             │  │              │  │  PostgreSQL) │       │
+│  │ Orchestrator│  │              │  │  (SQLite/    │       │
+│  │             │  │              │  │  PostgreSQL/ │       │
+│  │             │  │              │  │  SQL Server) │       │
 │  └─────────────┘  └──────────────┘  └──────────────┘       │
 │                                                               │
 │  ┌──────────────────────────────────────────────────┐       │
@@ -738,16 +766,28 @@ How this was tested
 - Status tracking and reporting
 
 #### 5. Storage Layer (`internal/storage`)
-- Database abstraction
-- Repository pattern
-- Migration management
-- Support for SQLite and PostgreSQL
+- Database abstraction via GORM
+- Focused store interfaces (Repository, Batch, Analytics, User, Team, etc.)
+- SQL migration files for schema management
+- Support for SQLite, PostgreSQL, and SQL Server
 
 #### 6. GitHub Integration (`internal/github`)
 - **Dual Client**: PAT + GitHub App support
 - **Rate Limiter**: Intelligent rate limiting
-- **Retry Logic**: Exponential backoff
+- **Retry Logic**: Exponential backoff with circuit breaker
 - REST and GraphQL API clients
+- Domain-specific methods: migrations, teams, organizations, dependencies
+
+#### 7. Copilot Integration (`internal/copilot`)
+- GitHub Copilot SDK integration for AI-assisted migration guidance
+- Chat sessions with migration-aware context
+
+#### 8. Source Provider Abstraction (`internal/source`)
+- Pluggable source provider interface
+- Implementations: GitHub, Azure DevOps, GitLab
+
+#### 9. MCP Server (`internal/mcp`)
+- Model Context Protocol server for external tool integration
 
 ### Data Flow
 
@@ -765,13 +805,15 @@ User → API Handler → Executor → GitHub Migrations API → Status Poller �
 
 1. **Dual Authentication**: Supports both PAT and GitHub App tokens. PAT required for migrations (GitHub limitation), App optional for non-migration operations.
 
-2. **SQLite for Development**: Simple, no external dependencies. PostgreSQL recommended for production.
+2. **SQLite for Development**: Simple, no external dependencies. PostgreSQL or SQL Server recommended for production.
 
 3. **Embedded Binaries**: git-sizer binaries embedded in the application for portability.
 
 4. **Background Workers**: Polling-based workers for migration status updates (no webhooks yet).
 
 5. **Frontend Served by Backend**: Single deployment artifact, frontend served from `/` after build.
+
+6. **Source Provider Abstraction**: Pluggable providers for GitHub, Azure DevOps, and GitLab sources.
 
 ---
 
@@ -782,7 +824,7 @@ User → API Handler → Executor → GitHub Migrations API → Status Poller �
 #### Enable Debug Logging
 
 ```yaml
-# configs/config.yaml
+# In your config YAML file (e.g., configs/config.github.yml)
 logging:
   level: debug
   format: text  # More readable than JSON for development
@@ -931,10 +973,26 @@ make build-all           # Build both backend and frontend
 ### Test Commands
 
 ```bash
-make test                # Run all backend tests with race detector
+make test                          # Run all backend tests with race detector
 
-make test-coverage       # Run tests and generate HTML coverage report
-                         # Output: coverage.html
+make test-coverage                 # Run tests and generate HTML coverage report
+                                   # Output: coverage.html
+
+make test-all                      # Run all tests (backend and frontend)
+
+make test-integration              # Run all integration tests (SQLite, PostgreSQL, SQL Server)
+
+make test-integration-sqlite       # Run SQLite integration tests only
+
+make test-integration-postgres     # Run PostgreSQL integration tests (requires Docker)
+
+make test-integration-sqlserver    # Run SQL Server integration tests (requires Docker)
+
+make web-test                      # Run frontend tests
+
+make web-test-coverage             # Run frontend tests with coverage
+
+make web-test-watch                # Run frontend tests in watch mode
 ```
 
 ### Lint Commands
@@ -943,6 +1001,8 @@ make test-coverage       # Run tests and generate HTML coverage report
 make lint                # Run golangci-lint and gosec on backend
 
 make web-lint            # Run ESLint on frontend
+
+make web-typecheck       # Run TypeScript type checking on frontend
 
 make lint-all            # Run all linters (backend + frontend)
 
@@ -957,18 +1017,28 @@ make run-server          # Run backend server locally
 
 make web-dev             # Run frontend dev server
                          # Starts Vite dev server on port 3000
+
+make run-dev             # Instructions for running both in dev mode
 ```
 
 ### Docker Commands
 
 ```bash
-make docker-build        # Build Docker image (github-migrator:latest)
+make docker-build                  # Build Docker image (github-migrator:latest)
 
-make docker-run          # Start containers with docker-compose
-                         # Runs: docker-compose up
+make docker-run                    # Run container with SQLite (docker-compose)
 
-make docker-down         # Stop and remove containers
-                         # Runs: docker-compose down
+make docker-run-postgres           # Run containers with PostgreSQL
+
+make docker-run-postgres-detached  # Run containers with PostgreSQL in background
+
+make docker-down                   # Stop Docker containers
+
+make docker-down-postgres          # Stop Docker containers with PostgreSQL (removes volumes)
+
+make docker-logs                   # View Docker container logs
+
+make docker-logs-postgres          # View Docker container logs (PostgreSQL setup)
 ```
 
 ### Utility Commands
@@ -977,8 +1047,8 @@ make docker-down         # Stop and remove containers
 make clean               # Remove build artifacts
                          # Deletes: bin/, coverage files, web/dist/, web/node_modules
 
-make all                 # Run all checks and build
-                         # Runs: lint + test + build + web-build
+make all                 # Run all checks, tests, and build
+                         # Runs: lint-all + web-typecheck + test-all + build + web-build
 
 make help                # Show all available commands with descriptions
 ```
@@ -1003,8 +1073,11 @@ These commands are designed for CI/CD pipelines:
 - name: Lint
   run: make lint-all
 
+- name: Type Check
+  run: make web-typecheck
+
 - name: Test
-  run: make test-coverage
+  run: make test-all
 
 - name: Build
   run: make build-all
@@ -1084,8 +1157,8 @@ For other questions, open an issue or reach out to the maintainers.
 
 ---
 
-**Contributing Guide Version**: 1.0.0  
-**Last Updated**: October 2025
+**Contributing Guide Version**: 1.1.0  
+**Last Updated**: February 2026
 
 ---
 

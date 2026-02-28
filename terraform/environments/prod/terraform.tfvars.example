@@ -7,12 +7,10 @@ app_name_prefix = "github-migrator"
 app_service_sku = "S1"
 always_on       = true
 
-# Docker Configuration
-docker_registry_url       = "ghcr.io"
-docker_image_repository   = "YOUR_GITHUB_USERNAME/github-migrator"
-docker_image_tag          = "prod"
-docker_registry_username  = "YOUR_GITHUB_USERNAME"
-docker_registry_password  = "YOUR_GITHUB_TOKEN"
+# Container Registry Configuration
+acr_name       = "ghmigratoracr"
+acr_image_name = "github-migrator"
+docker_image_tag = "prod"
 
 # PostgreSQL Database Configuration (Azure resource provisioning)
 database_name                          = "migrator"

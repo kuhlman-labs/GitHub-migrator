@@ -36,7 +36,14 @@ func (d *Database) GetMigrationLogs(ctx context.Context, repoID int64, level, ph
 		query = query.Where("phase = ?", phase)
 	}
 
-	err := query.Order("timestamp DESC").Limit(limit).Offset(offset).Find(&logs).Error
+	query = query.Order("timestamp DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	err := query.Find(&logs).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration logs: %w", err)
 	}
@@ -77,6 +84,9 @@ func (d *Database) UpdateMigrationHistory(ctx context.Context, id int64, status 
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to update migration history: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("migration history not found: id=%d", id)
 	}
 
 	return nil
@@ -257,6 +267,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
+	projectJoin := d.buildProjectFilterJoin(projectFilter)
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 
@@ -272,6 +283,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			SUM(CASE WHEN status IN ('pending', 'dry_run_queued', 'dry_run_in_progress', 'dry_run_complete') THEN 1 ELSE 0 END) as pending_count,
 			SUM(CASE WHEN status LIKE '%%failed%%' OR status = 'rolled_back' THEN 1 ELSE 0 END) as failed_count
 		FROM repositories r
+		%s
 		WHERE full_name LIKE '%%/%%'
 			AND status != 'wont_migrate'
 			%s
@@ -280,7 +292,7 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 			%s
 		GROUP BY organization
 		ORDER BY total_repos DESC
-	`, extractOrg, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
+	`, extractOrg, projectJoin, orgFilterSQL, projectFilterSQL, batchFilterSQL, sourceFilterSQL)
 
 	// Combine all arguments
 	args := append(orgArgs, projectArgs...)
@@ -304,7 +316,9 @@ func (d *Database) GetMigrationCompletionStatsByOrgFiltered(ctx context.Context,
 func (d *Database) GetMigrationCompletionStatsByProjectFiltered(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64) ([]*MigrationCompletionStats, error) {
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
-	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
+	// This query already joins repository_ado_properties as "ap", so use the
+	// alias-aware helper to avoid referencing the default "a" alias.
+	projectFilterSQL, projectArgs := d.buildProjectFilterWithAlias(projectFilter, "ap")
 	batchFilterSQL, batchArgs := d.buildBatchFilter(batchFilter)
 	sourceFilterSQL, sourceArgs := d.buildSourceFilter(sourceID)
 

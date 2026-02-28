@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -139,20 +140,31 @@ func (p *Profiler) ProfileFeatures(ctx context.Context, repo *models.Repository)
 	return nil
 }
 
-// profileBranchProtections counts protected branches
+// profileBranchProtections counts protected branches with pagination
 func (p *Profiler) profileBranchProtections(ctx context.Context, org, name string, repo *models.Repository) {
-	branches, _, err := p.client.REST().Repositories.ListBranches(ctx, org, name, nil)
-	if err == nil {
-		protectedCount := 0
+	opts := &ghapi.BranchListOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 100},
+	}
+
+	protectedCount := 0
+	for {
+		branches, resp, err := p.client.REST().Repositories.ListBranches(ctx, org, name, opts)
+		if err != nil {
+			p.logger.Debug("Failed to get branches", "error", err)
+			return
+		}
 		for _, branch := range branches {
 			if branch.GetProtected() {
 				protectedCount++
 			}
 		}
-		repo.SetBranchProtections(protectedCount)
-	} else {
-		p.logger.Debug("Failed to get branches", "error", err)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
+
+	repo.SetBranchProtections(protectedCount)
 }
 
 // profileRulesets checks if the repository has any rulesets configured
@@ -797,28 +809,42 @@ func (p *Profiler) profileApps(ctx context.Context, org, name string, repo *mode
 	}
 }
 
-// profileReleases counts releases and checks for assets
+// profileReleases counts releases and checks for assets with pagination
 func (p *Profiler) profileReleases(ctx context.Context, org, name string, repo *models.Repository) {
-	releases, _, err := p.client.REST().Repositories.ListReleases(ctx, org, name, &ghapi.ListOptions{PerPage: 100})
-	if err != nil {
-		p.logger.Debug("Failed to list releases", "error", err)
-		repo.SetReleaseCount(0)
-		repo.SetHasReleaseAssets(false)
-		return
-	}
+	opts := &ghapi.ListOptions{PerPage: 100}
+	totalReleases := 0
+	hasAssets := false
 
-	repo.SetReleaseCount(len(releases))
-
-	// Check if any releases have assets
-	for _, release := range releases {
-		if len(release.Assets) > 0 {
-			repo.SetHasReleaseAssets(true)
-			p.logger.Debug("Found release assets", "repo", repo.FullName, "release", release.GetTagName())
-			return
+	for {
+		releases, resp, err := p.client.REST().Repositories.ListReleases(ctx, org, name, opts)
+		if err != nil {
+			p.logger.Debug("Failed to list releases", "error", err)
+			// On a mid-pagination error, preserve whatever we already accumulated
+			// rather than zeroing out the counts.
+			break
 		}
+
+		totalReleases += len(releases)
+
+		// Check if any releases have assets
+		if !hasAssets {
+			for _, release := range releases {
+				if len(release.Assets) > 0 {
+					hasAssets = true
+					p.logger.Debug("Found release assets", "repo", repo.FullName, "release", release.GetTagName())
+					break
+				}
+			}
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
 
-	repo.SetHasReleaseAssets(false)
+	repo.SetReleaseCount(totalReleases)
+	repo.SetHasReleaseAssets(hasAssets)
 }
 
 // profileWikiContent checks if the wiki actually has content, not just if it's enabled
@@ -915,8 +941,8 @@ func (p *Profiler) checkWikiHasContent(ctx context.Context, wikiURL string) (boo
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Set GIT_TERMINAL_PROMPT=0 to prevent interactive prompts
-	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+	// Inherit the parent environment and disable interactive prompts
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 
 	err := cmd.Run()
 	if err != nil {

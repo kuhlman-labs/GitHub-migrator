@@ -15,16 +15,18 @@ func TestCORS(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	wrapped := CORS(handler)
+	allowedOrigins := []string{"http://localhost:3000", "https://example.com"}
+	wrapped := CORS(allowedOrigins, handler)
 
-	t.Run("adds CORS headers", func(t *testing.T) {
+	t.Run("adds CORS headers for allowed origin", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Origin", "http://localhost:3000")
 		w := httptest.NewRecorder()
 
 		wrapped.ServeHTTP(w, req)
 
-		if w.Header().Get("Access-Control-Allow-Origin") != "*" {
-			t.Error("Missing Access-Control-Allow-Origin header")
+		if w.Header().Get("Access-Control-Allow-Origin") != "http://localhost:3000" {
+			t.Errorf("Access-Control-Allow-Origin = %q, want %q", w.Header().Get("Access-Control-Allow-Origin"), "http://localhost:3000")
 		}
 
 		if !strings.Contains(w.Header().Get("Access-Control-Allow-Methods"), "GET") {
@@ -36,8 +38,32 @@ func TestCORS(t *testing.T) {
 		}
 	})
 
+	t.Run("does not add CORS headers for disallowed origin", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Origin", "https://evil.com")
+		w := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(w, req)
+
+		if w.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Error("Should not set Access-Control-Allow-Origin for disallowed origin")
+		}
+	})
+
+	t.Run("does not add CORS headers when no origin", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		w := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(w, req)
+
+		if w.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Error("Should not set Access-Control-Allow-Origin when no Origin header")
+		}
+	})
+
 	t.Run("handles OPTIONS request", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodOptions, "/test", nil)
+		req.Header.Set("Origin", "http://localhost:3000")
 		w := httptest.NewRecorder()
 
 		wrapped.ServeHTTP(w, req)
@@ -185,9 +211,11 @@ func TestMiddleware_Stack(t *testing.T) {
 	})
 
 	// Stack all middleware
-	wrapped := CORS(Logging(logger)(Recovery(logger)(handler)))
+	origins := []string{"http://localhost:3000"}
+	wrapped := CORS(origins, Logging(logger)(Recovery(logger)(handler)))
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
 	w := httptest.NewRecorder()
 
 	wrapped.ServeHTTP(w, req)

@@ -272,6 +272,19 @@ func (h *SetupHandler) ValidateDatabase(w http.ResponseWriter, r *http.Request) 
 
 // ApplySetup applies the configuration and triggers server restart
 func (h *SetupHandler) ApplySetup(w http.ResponseWriter, r *http.Request) {
+	// Reject if setup has already been completed to prevent unauthorized reconfiguration
+	status, err := h.db.GetSetupStatus()
+	if err != nil {
+		h.logger.Error("Failed to check setup status", "error", err)
+		http.Error(w, "Failed to verify setup status", http.StatusInternalServerError)
+		return
+	}
+	if status.SetupCompleted {
+		h.logger.Warn("Setup apply rejected: setup has already been completed")
+		http.Error(w, "Setup has already been completed. Configuration changes must be made through the settings page.", http.StatusForbidden)
+		return
+	}
+
 	var setupCfg SetupConfig
 	if err := json.NewDecoder(r.Body).Decode(&setupCfg); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -496,11 +509,11 @@ func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigDa
 	}
 
 	sb.WriteString("# Source Repository System Configuration\n")
-	fmt.Fprintf(sb, "GHMIG_SOURCE_TYPE=%s\n", src.Type)
-	fmt.Fprintf(sb, "GHMIG_SOURCE_BASE_URL=%s\n", src.BaseURL)
-	fmt.Fprintf(sb, "GHMIG_SOURCE_TOKEN=%s\n", src.Token)
+	writeQuotedEnv(sb, "GHMIG_SOURCE_TYPE", src.Type)
+	writeQuotedEnv(sb, "GHMIG_SOURCE_BASE_URL", src.BaseURL)
+	writeQuotedEnv(sb, "GHMIG_SOURCE_TOKEN", src.Token)
 	if src.Organization != "" {
-		fmt.Fprintf(sb, "GHMIG_SOURCE_ORGANIZATION=%s\n", src.Organization)
+		writeQuotedEnv(sb, "GHMIG_SOURCE_ORGANIZATION", src.Organization)
 	}
 
 	// GitHub App for source (only when source is GitHub)
@@ -508,7 +521,7 @@ func (h *SetupHandler) writeSourceConfig(sb *strings.Builder, src SourceConfigDa
 		sb.WriteString("\n# GitHub App Configuration for Source (Optional)\n")
 		fmt.Fprintf(sb, "GHMIG_SOURCE_APP_ID=%d\n", src.AppID)
 		if src.AppPrivateKey != "" {
-			fmt.Fprintf(sb, "GHMIG_SOURCE_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(src.AppPrivateKey))
+			writeQuotedEnv(sb, "GHMIG_SOURCE_APP_PRIVATE_KEY", src.AppPrivateKey)
 		}
 		if src.AppInstallationID > 0 {
 			fmt.Fprintf(sb, "GHMIG_SOURCE_APP_INSTALLATION_ID=%d\n", src.AppInstallationID)
@@ -529,15 +542,15 @@ func (h *SetupHandler) writeDestinationConfig(sb *strings.Builder, dest Destinat
 
 	sb.WriteString("# Destination Repository System Configuration\n")
 	sb.WriteString("GHMIG_DESTINATION_TYPE=github\n")
-	fmt.Fprintf(sb, "GHMIG_DESTINATION_BASE_URL=%s\n", dest.BaseURL)
-	fmt.Fprintf(sb, "GHMIG_DESTINATION_TOKEN=%s\n", dest.Token)
+	writeQuotedEnv(sb, "GHMIG_DESTINATION_BASE_URL", dest.BaseURL)
+	writeQuotedEnv(sb, "GHMIG_DESTINATION_TOKEN", dest.Token)
 
 	// GitHub App for destination (always available since destination is GitHub)
 	if dest.AppID > 0 {
 		sb.WriteString("\n# GitHub App Configuration for Destination (Optional)\n")
 		fmt.Fprintf(sb, "GHMIG_DESTINATION_APP_ID=%d\n", dest.AppID)
 		if dest.AppPrivateKey != "" {
-			fmt.Fprintf(sb, "GHMIG_DESTINATION_APP_PRIVATE_KEY=\"%s\"\n", escapeEnvValue(dest.AppPrivateKey))
+			writeQuotedEnv(sb, "GHMIG_DESTINATION_APP_PRIVATE_KEY", dest.AppPrivateKey)
 		}
 		if dest.AppInstallationID > 0 {
 			fmt.Fprintf(sb, "GHMIG_DESTINATION_APP_INSTALLATION_ID=%d\n", dest.AppInstallationID)
@@ -549,9 +562,8 @@ func (h *SetupHandler) writeDestinationConfig(sb *strings.Builder, dest Destinat
 // writeDatabaseConfig writes database configuration to the env file
 func (h *SetupHandler) writeDatabaseConfig(sb *strings.Builder, db DatabaseConfigData) {
 	sb.WriteString("# Database Configuration\n")
-	fmt.Fprintf(sb, "GHMIG_DATABASE_TYPE=%s\n", db.Type)
-	// Quote DSN as it often contains special characters
-	fmt.Fprintf(sb, "GHMIG_DATABASE_DSN=\"%s\"\n", escapeEnvValue(db.DSN))
+	writeQuotedEnv(sb, "GHMIG_DATABASE_TYPE", db.Type)
+	writeQuotedEnv(sb, "GHMIG_DATABASE_DSN", db.DSN)
 	sb.WriteString("\n")
 }
 
@@ -567,18 +579,18 @@ func (h *SetupHandler) writeMigrationConfig(sb *strings.Builder, mig MigrationCo
 	sb.WriteString("# Migration Configuration\n")
 	fmt.Fprintf(sb, "GHMIG_MIGRATION_WORKERS=%d\n", mig.Workers)
 	fmt.Fprintf(sb, "GHMIG_MIGRATION_POLL_INTERVAL_SECONDS=%d\n", mig.PollIntervalSeconds)
-	fmt.Fprintf(sb, "GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION=%s\n", mig.DestRepoExistsAction)
-	fmt.Fprintf(sb, "GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS=%s\n", mig.VisibilityHandling.PublicRepos)
-	fmt.Fprintf(sb, "GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS=%s\n", mig.VisibilityHandling.InternalRepos)
+	writeQuotedEnv(sb, "GHMIG_MIGRATION_DEST_REPO_EXISTS_ACTION", mig.DestRepoExistsAction)
+	writeQuotedEnv(sb, "GHMIG_MIGRATION_VISIBILITY_HANDLING_PUBLIC_REPOS", mig.VisibilityHandling.PublicRepos)
+	writeQuotedEnv(sb, "GHMIG_MIGRATION_VISIBILITY_HANDLING_INTERNAL_REPOS", mig.VisibilityHandling.InternalRepos)
 	sb.WriteString("\n")
 }
 
 // writeLoggingConfig writes logging configuration to the env file
 func (h *SetupHandler) writeLoggingConfig(sb *strings.Builder, log LoggingConfigData) {
 	sb.WriteString("# Logging Configuration\n")
-	fmt.Fprintf(sb, "GHMIG_LOGGING_LEVEL=%s\n", log.Level)
-	fmt.Fprintf(sb, "GHMIG_LOGGING_FORMAT=%s\n", log.Format)
-	fmt.Fprintf(sb, "GHMIG_LOGGING_OUTPUT_FILE=%s\n", log.OutputFile)
+	writeQuotedEnv(sb, "GHMIG_LOGGING_LEVEL", log.Level)
+	writeQuotedEnv(sb, "GHMIG_LOGGING_FORMAT", log.Format)
+	writeQuotedEnv(sb, "GHMIG_LOGGING_OUTPUT_FILE", log.OutputFile)
 	sb.WriteString("\n")
 }
 
@@ -600,39 +612,39 @@ func (h *SetupHandler) writeAuthConfig(sb *strings.Builder, auth *AuthConfigData
 // writeGitHubOAuthConfig writes GitHub OAuth settings
 func (h *SetupHandler) writeGitHubOAuthConfig(sb *strings.Builder, auth *AuthConfigData) {
 	if auth.GitHubOAuthClientID != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID=%s\n", auth.GitHubOAuthClientID)
+		writeQuotedEnv(sb, "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_ID", auth.GitHubOAuthClientID)
 	}
 	if auth.GitHubOAuthClientSecret != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET=%s\n", auth.GitHubOAuthClientSecret)
+		writeQuotedEnv(sb, "GHMIG_AUTH_GITHUB_OAUTH_CLIENT_SECRET", auth.GitHubOAuthClientSecret)
 	}
 	if auth.GitHubOAuthBaseURL != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_GITHUB_OAUTH_BASE_URL=%s\n", auth.GitHubOAuthBaseURL)
+		writeQuotedEnv(sb, "GHMIG_AUTH_GITHUB_OAUTH_BASE_URL", auth.GitHubOAuthBaseURL)
 	}
 }
 
 // writeAzureADConfig writes Azure AD settings
 func (h *SetupHandler) writeAzureADConfig(sb *strings.Builder, auth *AuthConfigData) {
 	if auth.AzureADTenantID != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_AZURE_AD_TENANT_ID=%s\n", auth.AzureADTenantID)
+		writeQuotedEnv(sb, "GHMIG_AUTH_AZURE_AD_TENANT_ID", auth.AzureADTenantID)
 	}
 	if auth.AzureADClientID != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_AZURE_AD_CLIENT_ID=%s\n", auth.AzureADClientID)
+		writeQuotedEnv(sb, "GHMIG_AUTH_AZURE_AD_CLIENT_ID", auth.AzureADClientID)
 	}
 	if auth.AzureADClientSecret != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_AZURE_AD_CLIENT_SECRET=%s\n", auth.AzureADClientSecret)
+		writeQuotedEnv(sb, "GHMIG_AUTH_AZURE_AD_CLIENT_SECRET", auth.AzureADClientSecret)
 	}
 }
 
 // writeCommonAuthConfig writes common authentication settings
 func (h *SetupHandler) writeCommonAuthConfig(sb *strings.Builder, auth *AuthConfigData) {
 	if auth.CallbackURL != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_CALLBACK_URL=%s\n", auth.CallbackURL)
+		writeQuotedEnv(sb, "GHMIG_AUTH_CALLBACK_URL", auth.CallbackURL)
 	}
 	if auth.FrontendURL != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_FRONTEND_URL=%s\n", auth.FrontendURL)
+		writeQuotedEnv(sb, "GHMIG_AUTH_FRONTEND_URL", auth.FrontendURL)
 	}
 	if auth.SessionSecret != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_SESSION_SECRET=%s\n", auth.SessionSecret)
+		writeQuotedEnv(sb, "GHMIG_AUTH_SESSION_SECRET", auth.SessionSecret)
 	}
 	if auth.SessionDurationHours > 0 {
 		fmt.Fprintf(sb, "GHMIG_AUTH_SESSION_DURATION_HOURS=%d\n", auth.SessionDurationHours)
@@ -651,12 +663,12 @@ func (h *SetupHandler) writeAuthorizationRules(sb *strings.Builder, rules *Autho
 	sb.WriteString("\n# Authorization Rules (Optional)\n")
 
 	if len(rules.RequireOrgMembership) > 0 {
-		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP=%s\n",
+		writeQuotedEnv(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ORG_MEMBERSHIP",
 			strings.Join(rules.RequireOrgMembership, ","))
 	}
 
 	if len(rules.RequireTeamMembership) > 0 {
-		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP=%s\n",
+		writeQuotedEnv(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_TEAM_MEMBERSHIP",
 			strings.Join(rules.RequireTeamMembership, ","))
 	}
 
@@ -669,25 +681,33 @@ func (h *SetupHandler) writeAuthorizationRules(sb *strings.Builder, rules *Autho
 	}
 
 	if rules.EnterpriseSlug != "" {
-		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG=%s\n", rules.EnterpriseSlug)
+		writeQuotedEnv(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_REQUIRE_ENTERPRISE_SLUG", rules.EnterpriseSlug)
 	}
 
 	if len(rules.MigrationAdminTeams) > 0 {
-		fmt.Fprintf(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS=%s\n",
+		writeQuotedEnv(sb, "GHMIG_AUTH_AUTHORIZATION_RULES_MIGRATION_ADMIN_TEAMS",
 			strings.Join(rules.MigrationAdminTeams, ","))
 	}
 }
 
-// writeEnvFile writes the .env file atomically
-// escapeEnvValue escapes a value for use in a .env file
-// It replaces newlines with the literal string \n and escapes quotes and backslashes
+// escapeEnvValue escapes a value for safe inclusion in a double-quoted .env variable.
+// Handles backslashes, newlines, carriage returns, and double quotes to prevent
+// value injection or parsing issues across different .env loaders.
 func escapeEnvValue(value string) string {
-	// Replace actual newlines with the literal string \n
+	// Escape backslashes first so subsequent replacements don't double-escape
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	// Replace newlines and carriage returns with escaped literals
 	value = strings.ReplaceAll(value, "\n", "\\n")
+	value = strings.ReplaceAll(value, "\r", "\\r")
 	// Escape double quotes
 	value = strings.ReplaceAll(value, "\"", "\\\"")
-	// Note: backslashes are already handled by the \n replacement above
 	return value
+}
+
+// writeQuotedEnv writes a KEY="escaped-value" line to the builder.
+// All user-provided string values must use this to prevent newline injection.
+func writeQuotedEnv(sb *strings.Builder, key, value string) {
+	fmt.Fprintf(sb, "%s=\"%s\"\n", key, escapeEnvValue(value))
 }
 
 func (h *SetupHandler) writeEnvFile(content string) error {

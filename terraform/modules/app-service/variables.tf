@@ -37,21 +37,13 @@ variable "docker_image" {
 }
 
 variable "docker_registry_url" {
-  description = "Docker registry URL (e.g., ghcr.io)"
+  description = "Docker registry login server (e.g., myregistry.azurecr.io)"
   type        = string
-  default     = "ghcr.io"
 }
 
-variable "docker_registry_username" {
-  description = "Docker registry username"
+variable "container_registry_id" {
+  description = "Resource ID of the Azure Container Registry (used for AcrPull role assignment)"
   type        = string
-  sensitive   = true
-}
-
-variable "docker_registry_password" {
-  description = "Docker registry password or token"
-  type        = string
-  sensitive   = true
 }
 
 variable "app_settings" {

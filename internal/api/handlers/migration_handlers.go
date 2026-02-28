@@ -444,8 +444,7 @@ func (h *Handler) rollbackRepositoryBatch(ctx context.Context, repo *models.Repo
 
 // GetMigrationStatus handles GET /api/v1/migrations/{id}
 func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid repository ID"))
 		return
@@ -454,7 +453,7 @@ func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	repo, err := h.db.GetRepositoryByID(ctx, id)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get repository by ID", r) {
+		if h.handleContextError(ctx, err, "get repository by ID", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get repository", "error", err)
@@ -493,8 +492,7 @@ func (h *Handler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
 
 // GetMigrationHistory handles GET /api/v1/migrations/{id}/history
 func (h *Handler) GetMigrationHistory(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid repository ID"))
 		return
@@ -503,7 +501,7 @@ func (h *Handler) GetMigrationHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	history, err := h.db.GetMigrationHistory(ctx, id)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get migration history", r) {
+		if h.handleContextError(ctx, err, "get migration history", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get migration history", "error", err)
@@ -516,8 +514,7 @@ func (h *Handler) GetMigrationHistory(w http.ResponseWriter, r *http.Request) {
 
 // GetMigrationLogs handles GET /api/v1/migrations/{id}/logs
 func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid repository ID"))
 		return
@@ -546,7 +543,7 @@ func (h *Handler) GetMigrationLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logs, err := h.db.GetMigrationLogs(ctx, id, level, phase, limit, offset)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get migration logs", r) {
+		if h.handleContextError(ctx, err, "get migration logs", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get migration logs", "error", err, "repo_id", id)
@@ -595,6 +592,10 @@ func (h *Handler) HandleSelfServiceMigration(w http.ResponseWriter, r *http.Requ
 
 	if len(req.Repositories) == 0 {
 		WriteError(w, ErrMissingField.WithDetails("No repositories provided"))
+		return
+	}
+	if len(req.Repositories) > MaxBatchArraySize {
+		WriteError(w, ErrBadRequest.WithDetails(fmt.Sprintf("too many repositories (maximum %d)", MaxBatchArraySize)))
 		return
 	}
 
@@ -851,7 +852,7 @@ func (h *Handler) GetMigrationHistoryList(w http.ResponseWriter, r *http.Request
 
 	migrations, err := h.db.GetCompletedMigrations(ctx, sourceID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get migration history", r) {
+		if h.handleContextError(ctx, err, "get migration history", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get migration history", "error", err)

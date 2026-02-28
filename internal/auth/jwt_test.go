@@ -28,7 +28,7 @@ func TestNewJWTManager(t *testing.T) {
 			name:        "short secret key",
 			secretKey:   "short",
 			duration:    24,
-			expectError: false, // Still works, just not secure
+			expectError: true, // Rejected: minimum 32 characters required for AES-256 key strength
 		},
 	}
 

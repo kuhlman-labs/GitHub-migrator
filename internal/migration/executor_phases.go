@@ -172,7 +172,7 @@ func (e *Executor) phaseMigrationPolling(ctx context.Context, mc *MigrationConte
 	e.logger.Info("Polling migration status", "repo", mc.Repo.FullName, "migration_id", mc.MigrationID)
 	e.logOperation(ctx, mc.Repo, mc.HistoryID, "INFO", "migration_progress", "poll", "Polling for migration completion", nil)
 
-	if err := e.pollMigrationStatus(ctx, mc.Repo, mc.Batch, mc.HistoryID, mc.MigrationID); err != nil {
+	if err := e.pollMigrationStatus(ctx, mc.Repo, mc.Batch, mc.HistoryID, mc.MigrationID, mc.DryRun); err != nil {
 		errMsg := err.Error()
 		e.logOperation(ctx, mc.Repo, mc.HistoryID, "ERROR", "migration_progress", "poll", "Migration failed", &errMsg)
 		return fmt.Errorf("migration failed: %w", err)
@@ -227,7 +227,6 @@ func (e *Executor) phaseCompletion(ctx context.Context, mc *MigrationContext) er
 
 	e.logger.Info("Migration complete", "repo", mc.Repo.FullName, "dry_run", mc.DryRun)
 	e.logOperation(ctx, mc.Repo, mc.HistoryID, "INFO", "migration", "complete", completionMsg, nil)
-	e.updateHistoryStatus(ctx, mc.HistoryID, "completed", nil)
 
 	mc.Repo.Status = string(completionStatus)
 	now := time.Now()
@@ -239,7 +238,13 @@ func (e *Executor) phaseCompletion(ctx context.Context, mc *MigrationContext) er
 		mc.Repo.MigratedAt = &now
 	}
 
-	return e.storage.UpdateRepository(ctx, mc.Repo)
+	// Persist the repo update first so that the history status is only marked
+	// "completed" when the repo status has actually been committed.
+	if err := e.storage.UpdateRepository(ctx, mc.Repo); err != nil {
+		return err
+	}
+	e.updateHistoryStatus(ctx, mc.HistoryID, "completed", nil)
+	return nil
 }
 
 // handlePhaseError handles error recovery for a phase failure.

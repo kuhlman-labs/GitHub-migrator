@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/batch"
@@ -13,6 +14,7 @@ type SchedulerWorker struct {
 	orchestrator *batch.Orchestrator
 	logger       *slog.Logger
 	interval     time.Duration
+	wg           sync.WaitGroup
 }
 
 // NewSchedulerWorker creates a new scheduler worker
@@ -26,6 +28,9 @@ func NewSchedulerWorker(orchestrator *batch.Orchestrator, logger *slog.Logger) *
 
 // Start begins the scheduler worker loop
 func (sw *SchedulerWorker) Start(ctx context.Context) {
+	sw.wg.Add(1)
+	defer sw.wg.Done()
+
 	sw.logger.Info("Starting scheduler worker", "interval", sw.interval)
 
 	ticker := time.NewTicker(sw.interval)
@@ -43,6 +48,11 @@ func (sw *SchedulerWorker) Start(ctx context.Context) {
 			sw.checkScheduledBatches(ctx)
 		}
 	}
+}
+
+// Wait blocks until the scheduler worker loop has exited.
+func (sw *SchedulerWorker) Wait() {
+	sw.wg.Wait()
 }
 
 func (sw *SchedulerWorker) checkScheduledBatches(ctx context.Context) {

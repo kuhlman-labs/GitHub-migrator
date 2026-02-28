@@ -635,6 +635,13 @@ func (c *Client) SendMessage(ctx context.Context, sessionID, message string) (*m
 
 // StreamMessage sends a message and streams the response via a callback.
 func (c *Client) StreamMessage(ctx context.Context, sessionID, message string, onEvent func(event StreamEvent)) error {
+	// Apply a safety timeout so we always return even if the SDK never fires
+	// a terminal event (session.idle, error). The caller's context is wrapped
+	// rather than replaced so existing deadlines shorter than 10 minutes still apply.
+	safetyCtx, safetyCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer safetyCancel()
+	ctx = safetyCtx
+
 	sess, err := c.GetSession(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)

@@ -6,18 +6,23 @@ import (
 	"time"
 )
 
-// CORS middleware adds CORS headers
-func CORS(next http.Handler) http.Handler {
+// CORS middleware adds CORS headers, restricting allowed origins to the provided allowlist.
+// If no allowed origins are provided, only same-origin requests are permitted.
+func CORS(allowedOrigins []string, next http.Handler) http.Handler {
+	allowed := make(map[string]bool, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		allowed[o] = true
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
 
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		if origin != "" && allowed[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -26,6 +31,22 @@ func CORS(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// MaxRequestBodySize is the default maximum request body size (10 MB).
+const MaxRequestBodySize = 10 * 1024 * 1024
+
+// BodySizeLimit middleware restricts the size of incoming request bodies.
+// Requests that exceed the limit receive a 413 Payload Too Large response.
+func BodySizeLimit(limit int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // Logging middleware logs HTTP requests

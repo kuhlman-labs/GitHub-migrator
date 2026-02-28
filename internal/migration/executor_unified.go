@@ -157,7 +157,6 @@ func (e *Executor) executeCompletion(ctx context.Context, mc *MigrationContext, 
 		"strategy", strategy.Name(),
 		"dry_run", mc.DryRun)
 	e.logOperation(ctx, mc.Repo, mc.HistoryID, "INFO", "migration", "complete", completionMsg, nil)
-	e.updateHistoryStatus(ctx, mc.HistoryID, "completed", nil)
 
 	mc.Repo.Status = string(completionStatus)
 	now := time.Now()
@@ -168,7 +167,13 @@ func (e *Executor) executeCompletion(ctx context.Context, mc *MigrationContext, 
 		mc.Repo.MigratedAt = &now
 	}
 
-	return e.storage.UpdateRepository(ctx, mc.Repo)
+	// Persist the repo update first so that the history status is only marked
+	// "completed" when the repo status has actually been committed.
+	if err := e.storage.UpdateRepository(ctx, mc.Repo); err != nil {
+		return err
+	}
+	e.updateHistoryStatus(ctx, mc.HistoryID, "completed", nil)
+	return nil
 }
 
 // handleStrategyPhaseError handles error recovery for a phase failure with strategy context.

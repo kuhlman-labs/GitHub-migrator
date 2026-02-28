@@ -240,7 +240,11 @@ func (s *Server) handleCheckDependencies(ctx context.Context, req mcp.CallToolRe
 	// Get reverse dependencies if requested
 	if includeReverse {
 		reverseDeps, err := s.db.GetDependentRepositories(ctx, repoName)
-		if err == nil {
+		if err != nil {
+			s.logger.Warn("Failed to get reverse dependencies", "repository", repoName, "error", err)
+			output.Message = fmt.Sprintf("Found %d dependencies for %s (reverse dependency lookup failed)",
+				len(dependencies), repoName)
+		} else {
 			for _, repo := range reverseDeps {
 				output.ReverseDependencies = append(output.ReverseDependencies, DependencyInfo{
 					DependencyFullName: repo.FullName,

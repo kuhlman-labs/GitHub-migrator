@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	testGraphQLPath            = "/graphql"
+	testGraphQLPath            = "/api/graphql"
 	testOrgMembershipPath      = "/user/memberships/orgs/test-org"
 	testUserMembershipsOrgPath = "/user/memberships/orgs"
 )

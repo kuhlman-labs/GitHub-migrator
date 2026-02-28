@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 )
@@ -15,9 +16,17 @@ import (
 const (
 	defaultGitHubAPIURL     = "https://api.github.com"
 	defaultGitHubGraphQLURL = "https://api.github.com/graphql"
+	ghesGraphQLSuffix       = "/api/graphql"
 	membershipStateActive   = "active"
 	membershipRoleAdmin     = "admin"
+
+	// authHTTPTimeout is the timeout for HTTP requests made during authorization checks.
+	authHTTPTimeout = 30 * time.Second
 )
+
+// authHTTPClient is a shared HTTP client with a timeout, reused across all
+// auth requests to avoid connection pool fragmentation and hang risks.
+var authHTTPClient = &http.Client{Timeout: authHTTPTimeout}
 
 // AuthorizationTier represents the user's authorization level for migrations
 type AuthorizationTier string
@@ -225,8 +234,11 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 	// This works with OAuth tokens, unlike the REST API endpoint
 	graphqlURL := defaultGitHubGraphQLURL
 	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
-		// For GHES, GraphQL endpoint is at /api/graphql
-		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
+		// For GHES, strip /api/v3 or /api suffix before appending /api/graphql
+		graphqlURL = strings.TrimSuffix(a.baseURL, "/")
+		graphqlURL = strings.TrimSuffix(graphqlURL, "/api/v3")
+		graphqlURL = strings.TrimSuffix(graphqlURL, "/api")
+		graphqlURL += ghesGraphQLSuffix
 	}
 
 	query := `query($enterpriseSlug: String!) {
@@ -262,7 +274,7 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		a.logger.Error("Enterprise admin check failed with error", "error", err, "url", graphqlURL)
@@ -270,7 +282,10 @@ func (a *Authorizer) CheckEnterpriseAdmin(ctx context.Context, username string, 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return false, fmt.Errorf("failed to read enterprise admin response body: %w", readErr)
+	}
 	a.logger.Debug("Enterprise admin GraphQL response",
 		"status", resp.StatusCode,
 		"body", string(body))
@@ -325,8 +340,11 @@ func (a *Authorizer) CheckEnterpriseMembership(ctx context.Context, username str
 	// This checks if the user has any access to the enterprise (member or admin)
 	graphqlURL := defaultGitHubGraphQLURL
 	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
-		// For GHES, GraphQL endpoint is at /api/graphql
-		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
+		// For GHES, strip /api/v3 or /api suffix before appending /api/graphql
+		graphqlURL = strings.TrimSuffix(a.baseURL, "/")
+		graphqlURL = strings.TrimSuffix(graphqlURL, "/api/v3")
+		graphqlURL = strings.TrimSuffix(graphqlURL, "/api")
+		graphqlURL += ghesGraphQLSuffix
 	}
 
 	query := `query($enterpriseSlug: String!) {
@@ -362,7 +380,7 @@ func (a *Authorizer) CheckEnterpriseMembership(ctx context.Context, username str
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		a.logger.Error("Enterprise membership check failed with error", "error", err, "url", graphqlURL)
@@ -370,7 +388,10 @@ func (a *Authorizer) CheckEnterpriseMembership(ctx context.Context, username str
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return false, fmt.Errorf("failed to read enterprise membership response body: %w", readErr)
+	}
 	a.logger.Debug("Enterprise membership GraphQL response",
 		"status", resp.StatusCode,
 		"body", string(body))
@@ -443,7 +464,7 @@ func (a *Authorizer) isOrgMember(ctx context.Context, username string, org strin
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		a.logger.Error("Failed to make org membership API request",
@@ -453,7 +474,10 @@ func (a *Authorizer) isOrgMember(ctx context.Context, username string, org strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return false, fmt.Errorf("failed to read org membership response body: %w", readErr)
+	}
 
 	a.logger.Debug("Org membership API response",
 		"status", resp.StatusCode,
@@ -519,7 +543,7 @@ func (a *Authorizer) isTeamMember(ctx context.Context, username string, org stri
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, err
@@ -531,7 +555,10 @@ func (a *Authorizer) isTeamMember(ctx context.Context, username string, org stri
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return false, fmt.Errorf("github API returned status %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
 		return false, fmt.Errorf("github API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -564,7 +591,7 @@ func (a *Authorizer) IsOrgAdmin(ctx context.Context, username string, org string
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, err
@@ -577,7 +604,10 @@ func (a *Authorizer) IsOrgAdmin(ctx context.Context, username string, org string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return false, fmt.Errorf("github API returned status %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
 		return false, fmt.Errorf("github API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -608,8 +638,11 @@ func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string
 	// Use GraphQL API to check viewer's permission (more reliable than REST API)
 	graphqlURL := defaultGitHubGraphQLURL
 	if a.baseURL != defaultGitHubAPIURL && a.baseURL != "" {
-		// For GHES, GraphQL endpoint is at /api/graphql
-		graphqlURL = strings.TrimSuffix(a.baseURL, "/api") + "/graphql"
+		// For GHES, strip /api/v3 or /api suffix before appending /api/graphql
+		graphqlURL = strings.TrimSuffix(a.baseURL, "/")
+		graphqlURL = strings.TrimSuffix(graphqlURL, "/api/v3")
+		graphqlURL = strings.TrimSuffix(graphqlURL, "/api")
+		graphqlURL += ghesGraphQLSuffix
 	}
 
 	query := `query($owner: String!, $name: String!) {
@@ -646,14 +679,17 @@ func (a *Authorizer) HasRepoAdminPermission(ctx context.Context, username string
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return false, fmt.Errorf("failed to read GraphQL response body: %w", readErr)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("github GraphQL API returned status %d: %s", resp.StatusCode, string(body))
@@ -719,7 +755,7 @@ func (a *Authorizer) GetUserOrganizations(ctx context.Context, token string) ([]
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -727,7 +763,10 @@ func (a *Authorizer) GetUserOrganizations(ctx context.Context, token string) ([]
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("github API returned status %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("github API returned status %d: %s", resp.StatusCode, string(body))
 	}
 

@@ -24,46 +24,47 @@ const (
 	TeamMigrationStatusFailed     = "failed"
 )
 
-// SaveTeamMapping inserts or updates a team mapping in the database
+// SaveTeamMapping inserts or updates a team mapping in the database.
+// Uses a transaction to prevent the TOCTOU race where two concurrent
+// requests both see "not found" and both try to insert.
 func (d *Database) SaveTeamMapping(ctx context.Context, mapping *models.TeamMapping) error {
-	// Check if mapping already exists
-	var existing models.TeamMapping
-	err := d.db.WithContext(ctx).
-		Where("source_org = ? AND source_team_slug = ?", mapping.SourceOrg, mapping.SourceTeamSlug).
-		First(&existing).Error
+	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing models.TeamMapping
+		err := tx.
+			Where("source_org = ? AND source_team_slug = ?", mapping.SourceOrg, mapping.SourceTeamSlug).
+			First(&existing).Error
 
-	if err == gorm.ErrRecordNotFound {
-		// Insert new mapping
-		if mapping.CreatedAt.IsZero() {
-			mapping.CreatedAt = time.Now()
-		}
-		if mapping.UpdatedAt.IsZero() {
-			mapping.UpdatedAt = time.Now()
-		}
-		if mapping.MappingStatus == "" {
-			mapping.MappingStatus = teamMappingStatusUnmapped
+		if err == gorm.ErrRecordNotFound {
+			// Insert new mapping
+			if mapping.CreatedAt.IsZero() {
+				mapping.CreatedAt = time.Now()
+			}
+			if mapping.UpdatedAt.IsZero() {
+				mapping.UpdatedAt = time.Now()
+			}
+			if mapping.MappingStatus == "" {
+				mapping.MappingStatus = teamMappingStatusUnmapped
+			}
+
+			if result := tx.Create(mapping); result.Error != nil {
+				return fmt.Errorf("failed to create team mapping: %w", result.Error)
+			}
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("failed to check existing team mapping: %w", err)
 		}
 
-		result := d.db.WithContext(ctx).Create(mapping)
-		if result.Error != nil {
-			return fmt.Errorf("failed to create team mapping: %w", result.Error)
+		// Mapping exists - update it
+		mapping.ID = existing.ID
+		mapping.CreatedAt = existing.CreatedAt
+		mapping.UpdatedAt = time.Now()
+
+		if result := tx.Save(mapping); result.Error != nil {
+			return fmt.Errorf("failed to update team mapping: %w", result.Error)
 		}
+
 		return nil
-	} else if err != nil {
-		return fmt.Errorf("failed to check existing team mapping: %w", err)
-	}
-
-	// Mapping exists - update it
-	mapping.ID = existing.ID
-	mapping.CreatedAt = existing.CreatedAt
-	mapping.UpdatedAt = time.Now()
-
-	result := d.db.WithContext(ctx).Save(mapping)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update team mapping: %w", result.Error)
-	}
-
-	return nil
+	})
 }
 
 // GetTeamMapping retrieves a team mapping by source org and team slug
@@ -242,6 +243,9 @@ func (d *Database) UpdateTeamMappingDestination(ctx context.Context, sourceOrg, 
 	if result.Error != nil {
 		return fmt.Errorf("failed to update team mapping destination: %w", result.Error)
 	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("team mapping not found: %s/%s", sourceOrg, sourceTeamSlug)
+	}
 
 	return nil
 }
@@ -388,9 +392,11 @@ func (d *Database) SuggestTeamMappings(ctx context.Context, destinationOrg strin
 
 	suggestions := make(map[string]string)
 	for _, mapping := range unmapped {
-		// Check if a team with the same slug exists in destination
+		// Check if a team with the same slug exists in destination.
+		// existingDestTeams may contain bare slugs ("team-slug") or full slugs
+		// ("org/team-slug"), so check both forms.
 		destSlug := destinationOrg + "/" + mapping.SourceTeamSlug
-		if destTeamSet[mapping.SourceTeamSlug] {
+		if destTeamSet[mapping.SourceTeamSlug] || destTeamSet[destSlug] {
 			suggestions[mapping.SourceFullSlug()] = destSlug
 		}
 	}

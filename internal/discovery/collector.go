@@ -702,12 +702,20 @@ func (c *Collector) DiscoverEnterpriseRepositories(ctx context.Context, enterpri
 				select {
 				case <-ctx.Done():
 					c.logger.Warn("Context cancelled during org processing", "error", ctx.Err())
-					return err
+					return ctx.Err()
 				case <-time.After(c.orgDelay):
 					// Continue to next org
 				}
 			}
 		}
+	}
+
+	// If context was cancelled during either branch, surface the cancellation
+	// instead of reporting success with partial results.
+	if ctx.Err() != nil {
+		c.logger.Warn("Enterprise discovery cancelled", "error", ctx.Err(),
+			"discovered_repos", len(allRepos))
+		return ctx.Err()
 	}
 
 	// Log summary for App installation mode (PAT mode logs above)
@@ -1073,14 +1081,24 @@ func (c *Collector) listAllRepositories(ctx context.Context, org string) ([]*gha
 
 // processRepositoriesWithProfilerTracked processes repositories in parallel with progress tracking
 func (c *Collector) processRepositoriesWithProfilerTracked(ctx context.Context, repos []*ghapi.Repository, profiler *Profiler, tracker ProgressTracker) error {
-	jobs := make(chan *ghapi.Repository, len(repos))
-	errors := make(chan error, len(repos))
+	// Cap channel buffer sizes to avoid excessive memory allocation for large orgs
+	bufferSize := len(repos)
+	if bufferSize > 1000 {
+		bufferSize = 1000
+	}
+	jobs := make(chan *ghapi.Repository, bufferSize)
+
+	// Collect errors via a mutex-guarded slice instead of a buffered channel
+	// so workers never block on a full error channel (which causes a deadlock
+	// when more errors are produced than the channel's buffer size).
+	var errMu sync.Mutex
+	var errs []error
 	var wg sync.WaitGroup
 
 	// Start workers
 	for i := 0; i < c.workers; i++ {
 		wg.Add(1)
-		go c.workerWithProfilerTracked(ctx, &wg, jobs, errors, profiler, tracker)
+		go c.workerWithProfilerTracked(ctx, &wg, jobs, &errMu, &errs, profiler, tracker)
 	}
 
 	// Send jobs - stop if context is cancelled (graceful cancellation)
@@ -1093,7 +1111,6 @@ func (c *Collector) processRepositoriesWithProfilerTracked(ctx context.Context, 
 				"total", len(repos))
 			close(jobs)
 			wg.Wait()
-			close(errors)
 			return ctx.Err()
 		case jobs <- repo:
 			sentCount++
@@ -1103,20 +1120,11 @@ func (c *Collector) processRepositoriesWithProfilerTracked(ctx context.Context, 
 
 	// Wait for completion
 	wg.Wait()
-	close(errors)
 
 	// Check if cancelled during processing
 	if ctx.Err() != nil {
 		c.logger.Info("Discovery cancelled during processing")
 		return ctx.Err()
-	}
-
-	// Collect errors
-	var errs []error
-	for err := range errors {
-		if err != nil {
-			errs = append(errs, err)
-		}
 	}
 
 	if len(errs) > 0 {
@@ -1131,7 +1139,7 @@ func (c *Collector) processRepositoriesWithProfilerTracked(ctx context.Context, 
 }
 
 // workerWithProfilerTracked processes repositories with progress tracking
-func (c *Collector) workerWithProfilerTracked(ctx context.Context, wg *sync.WaitGroup, jobs <-chan *ghapi.Repository, errors chan<- error, profiler *Profiler, tracker ProgressTracker) {
+func (c *Collector) workerWithProfilerTracked(ctx context.Context, wg *sync.WaitGroup, jobs <-chan *ghapi.Repository, errMu *sync.Mutex, errs *[]error, profiler *Profiler, tracker ProgressTracker) {
 	defer wg.Done()
 
 	for repo := range jobs {
@@ -1151,7 +1159,9 @@ func (c *Collector) workerWithProfilerTracked(ctx context.Context, wg *sync.Wait
 				c.logger.Error("Failed to profile repository",
 					"repo", repo.GetFullName(),
 					"error", err)
-				errors <- err
+				errMu.Lock()
+				*errs = append(*errs, err)
+				errMu.Unlock()
 				tracker.RecordError(err)
 			}
 		}
@@ -1205,10 +1215,26 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		repo.SetLastCommitDate(&pushTime)
 	}
 
-	// Get branch count using git API
-	branches, _, err := c.client.REST().Repositories.ListBranches(ctx, org, name, nil)
-	if err == nil {
-		repo.SetBranchCount(len(branches))
+	// Get branch count using git API (paginated)
+	branchOpts := &ghapi.BranchListOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 100},
+	}
+	totalBranches := 0
+	gotBranches := false
+	for {
+		branches, resp, err := c.client.REST().Repositories.ListBranches(ctx, org, name, branchOpts)
+		if err != nil {
+			break
+		}
+		gotBranches = true
+		totalBranches += len(branches)
+		if resp.NextPage == 0 {
+			break
+		}
+		branchOpts.Page = resp.NextPage
+	}
+	if gotBranches {
+		repo.SetBranchCount(totalBranches)
 	}
 
 	// Get last commit SHA from default branch
@@ -1220,13 +1246,27 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		}
 	}
 
-	// Get commit count (approximation from contributors API)
-	contributors, _, err := c.client.REST().Repositories.ListContributors(ctx, org, name, nil)
-	if err == nil {
-		totalCommits := 0
+	// Get commit count (approximation from contributors API, paginated)
+	contribOpts := &ghapi.ListContributorsOptions{
+		ListOptions: ghapi.ListOptions{PerPage: 100},
+	}
+	totalCommits := 0
+	gotContribs := false
+	for {
+		contributors, resp, err := c.client.REST().Repositories.ListContributors(ctx, org, name, contribOpts)
+		if err != nil {
+			break
+		}
+		gotContribs = true
 		for _, contributor := range contributors {
 			totalCommits += contributor.GetContributions()
 		}
+		if resp.NextPage == 0 {
+			break
+		}
+		contribOpts.Page = resp.NextPage
+	}
+	if gotContribs {
 		repo.SetCommitCount(totalCommits)
 	}
 

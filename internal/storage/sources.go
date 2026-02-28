@@ -89,6 +89,8 @@ func (d *Database) UpdateSource(ctx context.Context, source *models.Source) erro
 
 	source.UpdatedAt = time.Now()
 
+	// Save() performs a full-model replacement. The caller is expected to
+	// provide a complete Source (typically fetched, modified, then saved back).
 	result := d.db.WithContext(ctx).Save(source)
 	if result.Error != nil {
 		return fmt.Errorf("failed to update source: %w", result.Error)
@@ -203,7 +205,8 @@ func (d *Database) CountRepositoriesBySourceID(ctx context.Context, sourceID int
 	return count, nil
 }
 
-// AssignRepositoryToSource assigns a repository to a source
+// AssignRepositoryToSource assigns a repository to a source.
+// Returns an error if the repository does not exist.
 func (d *Database) AssignRepositoryToSource(ctx context.Context, repoID, sourceID int64) error {
 	result := d.db.WithContext(ctx).Model(&models.Repository{}).
 		Where("id = ?", repoID).
@@ -211,6 +214,9 @@ func (d *Database) AssignRepositoryToSource(ctx context.Context, repoID, sourceI
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to assign repository to source: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("repository not found: %d", repoID)
 	}
 
 	return nil
