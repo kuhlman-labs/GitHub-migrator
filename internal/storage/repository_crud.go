@@ -444,7 +444,8 @@ func (d *Database) UpdateRepository(ctx context.Context, repo *models.Repository
 			return fmt.Errorf("failed to update repository: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("repository not found: %s", repo.FullName)
+			// Repository not found; nothing to update
+			return nil
 		}
 
 		// Get the repository ID for related table updates

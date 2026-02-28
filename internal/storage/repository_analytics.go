@@ -369,6 +369,10 @@ type MigrationVelocity struct {
 
 // GetMigrationVelocity calculates migration velocity over the specified period
 func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectFilter, batchFilter string, sourceID *int64, days int) (*MigrationVelocity, error) {
+	if days <= 0 {
+		return &MigrationVelocity{}, nil
+	}
+
 	// Build filter clauses and collect arguments
 	orgFilterSQL, orgArgs := d.buildOrgFilter(orgFilter)
 	projectFilterSQL, projectArgs := d.buildProjectFilter(projectFilter)
@@ -409,10 +413,6 @@ func (d *Database) GetMigrationVelocity(ctx context.Context, orgFilter, projectF
 	err := d.db.WithContext(ctx).Raw(query, args...).Scan(&result).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get migration velocity: %w", err)
-	}
-
-	if days <= 0 {
-		return &MigrationVelocity{}, nil
 	}
 
 	velocity := &MigrationVelocity{

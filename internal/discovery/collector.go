@@ -1220,18 +1220,22 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		ListOptions: ghapi.ListOptions{PerPage: 100},
 	}
 	totalBranches := 0
+	gotBranches := false
 	for {
 		branches, resp, err := c.client.REST().Repositories.ListBranches(ctx, org, name, branchOpts)
 		if err != nil {
 			break
 		}
+		gotBranches = true
 		totalBranches += len(branches)
 		if resp.NextPage == 0 {
 			break
 		}
 		branchOpts.Page = resp.NextPage
 	}
-	repo.SetBranchCount(totalBranches)
+	if gotBranches {
+		repo.SetBranchCount(totalBranches)
+	}
 
 	// Get last commit SHA from default branch
 	if defaultBranch != "" {
@@ -1247,11 +1251,13 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		ListOptions: ghapi.ListOptions{PerPage: 100},
 	}
 	totalCommits := 0
+	gotContribs := false
 	for {
 		contributors, resp, err := c.client.REST().Repositories.ListContributors(ctx, org, name, contribOpts)
 		if err != nil {
 			break
 		}
+		gotContribs = true
 		for _, contributor := range contributors {
 			totalCommits += contributor.GetContributions()
 		}
@@ -1260,7 +1266,9 @@ func (c *Collector) ProfileDestinationRepository(ctx context.Context, fullName s
 		}
 		contribOpts.Page = resp.NextPage
 	}
-	repo.SetCommitCount(totalCommits)
+	if gotContribs {
+		repo.SetCommitCount(totalCommits)
+	}
 
 	// Profile GitHub features via API (no clone needed)
 	// Note: Don't save users for destination profiling, only source discovery
