@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 )
 
@@ -196,14 +197,18 @@ var (
 func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		slog.Error("Failed to encode JSON response", "error", err)
+	}
 }
 
 // WriteError writes an APIError to the response writer.
 func WriteError(w http.ResponseWriter, err APIError) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(err.StatusCode())
-	_ = json.NewEncoder(w).Encode(err)
+	if encErr := json.NewEncoder(w).Encode(err); encErr != nil {
+		slog.Error("Failed to encode error response", "error", encErr)
+	}
 }
 
 // WriteErrorFromErr writes an error to the response writer.
@@ -215,7 +220,9 @@ func WriteErrorFromErr(w http.ResponseWriter, err error) {
 		WriteError(w, apiErr)
 		return
 	}
-	WriteError(w, ErrInternal.WithDetails(err.Error()))
+	// Don't expose raw internal error messages to clients to avoid information disclosure.
+	// The actual error is already logged server-side by callers.
+	WriteError(w, ErrInternal)
 }
 
 // NewValidationError creates a validation error for a specific field.

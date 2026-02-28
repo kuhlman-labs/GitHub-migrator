@@ -152,20 +152,19 @@ auth:
   # Enable authentication for the web interface
   enabled: false
   
-  # Entra ID OAuth for Azure DevOps (Optional)
-  # Use this for user authentication when source is Azure DevOps
-  # Create app in: Azure Portal → App Registrations
-  entraid_enabled: false
-  # entraid_tenant_id: your-tenant-id
-  # entraid_client_id: your-client-id
-  # entraid_client_secret: your-client-secret
-  # entraid_callback_url: http://localhost:8080/api/v1/auth/entraid/callback
-  # ado_organization_url: https://dev.azure.com/YOUR_ORGANIZATION
+  # GitHub OAuth App configuration (for user authentication)
+  # Authentication uses destination-centric GitHub OAuth (not Entra ID).
+  # Create at: GitHub → Settings → Developer settings → OAuth Apps
+  # github_oauth_client_id: Iv1.YourClientID
+  # github_oauth_client_secret: YourClientSecret
+  
+  # Callback and frontend URLs
+  # callback_url: http://localhost:8080/api/v1/auth/callback
+  # frontend_url: http://localhost:3000
   
   # Session configuration
   # session_secret: your-random-secret-key-here
   # session_duration_hours: 24
-  # frontend_url: http://localhost:3000
 
 # =============================================================================
 # Azure DevOps Migration Notes
@@ -240,7 +239,7 @@ auth:
 #   base_url: https://github.company.com/api/v3
 #   token: ghp_githubtoken
 
-# Example 3: With Entra ID authentication for web UI
+# Example 3: With GitHub OAuth authentication for web UI
 # source:
 #   type: azuredevops
 #   base_url: https://dev.azure.com/contoso
@@ -252,12 +251,9 @@ auth:
 #   token: ghp_githubtoken
 # auth:
 #   enabled: true
-#   entraid_enabled: true
-#   entraid_tenant_id: your-tenant-id
-#   entraid_client_id: your-client-id
-#   entraid_client_secret: your-client-secret
-#   entraid_callback_url: http://localhost:8080/api/v1/auth/entraid/callback
-#   ado_organization_url: https://dev.azure.com/contoso
+#   github_oauth_client_id: Iv1.YourClientID
+#   github_oauth_client_secret: YourClientSecret
+#   callback_url: http://localhost:8080/api/v1/auth/callback
 #   session_secret: your-random-secret
 #   session_duration_hours: 24
 #   frontend_url: http://localhost:3000

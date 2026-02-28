@@ -3,7 +3,7 @@
   "info": {
     "title": "GitHub Migrator API",
     "description": "API for managing repository discovery, profiling, batch organization, and migration execution between GitHub instances.",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "contact": {
       "name": "GitHub Migrator"
     }
@@ -58,6 +58,30 @@
     {
       "name": "analytics",
       "description": "Analytics and reporting"
+    },
+    {
+      "name": "sources",
+      "description": "Migration source management"
+    },
+    {
+      "name": "user-mappings",
+      "description": "User identity mapping between source and destination"
+    },
+    {
+      "name": "team-mappings",
+      "description": "Team mapping and migration between source and destination"
+    },
+    {
+      "name": "dependencies",
+      "description": "Repository dependency analysis"
+    },
+    {
+      "name": "settings",
+      "description": "Application settings management"
+    },
+    {
+      "name": "copilot",
+      "description": "GitHub Copilot AI assistant integration"
     },
     {
       "name": "ado",
@@ -117,10 +141,6 @@
                     "auth_enabled": {
                       "type": "boolean",
                       "example": true
-                    },
-                    "entraid_enabled": {
-                      "type": "boolean",
-                      "example": false
                     }
                   }
                 }
@@ -236,6 +256,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/authorization-status": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "Get authorization status",
+        "description": "Get the current user's authorization tier and permissions",
+        "operationId": "getAuthorizationStatus",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Authorization status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "auth_enabled": {
+                      "type": "boolean"
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": ["Admin", "SelfService", "ReadOnly", "Unauthorized"]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "permissions": {
+                      "type": "object",
+                      "properties": {
+                        "can_migrate_all_repos": {
+                          "type": "boolean"
+                        },
+                        "can_migrate_own_repos": {
+                          "type": "boolean"
+                        },
+                        "has_completed_identity_mapping": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -406,9 +476,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "type": {
+                    "type": {
                     "type": "string",
-                    "enum": ["sqlite", "postgresql"]
+                    "enum": ["sqlite", "postgres", "sqlserver"]
                   },
                   "dsn": {
                     "type": "string"
@@ -472,6 +542,403 @@
                     },
                     "restart_required": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources": {
+      "get": {
+        "tags": ["sources"],
+        "summary": "List sources",
+        "description": "List all configured migration sources",
+        "operationId": "listSources",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "description": "If true, only return active sources",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Source"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["sources"],
+        "summary": "Create source",
+        "description": "Create a new migration source (admin only)",
+        "operationId": "createSource",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "type", "base_url", "token"],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["github", "azuredevops"]
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "organization": {
+                    "type": "string",
+                    "description": "Required for Azure DevOps sources"
+                  },
+                  "app_id": {
+                    "type": "integer",
+                    "description": "GitHub App ID"
+                  },
+                  "app_private_key": {
+                    "type": "string",
+                    "description": "GitHub App private key"
+                  },
+                  "app_installation_id": {
+                    "type": "integer",
+                    "description": "GitHub App installation ID"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Source created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{id}": {
+      "get": {
+        "tags": ["sources"],
+        "summary": "Get source",
+        "description": "Get a single source by ID",
+        "operationId": "getSource",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Source details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": ["sources"],
+        "summary": "Update source",
+        "description": "Update an existing source (admin only)",
+        "operationId": "updateSource",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Source updated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["sources"],
+        "summary": "Delete source",
+        "description": "Delete a source (admin only). Fails if repositories are associated.",
+        "operationId": "deleteSource",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Source deleted"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Source has associated repositories"
+          }
+        }
+      }
+    },
+    "/api/v1/sources/validate": {
+      "post": {
+        "tags": ["sources"],
+        "summary": "Validate source (inline)",
+        "description": "Validate a source connection with inline credentials",
+        "operationId": "validateSourceInline",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["github", "azuredevops"]
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "organization": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{id}/validate": {
+      "post": {
+        "tags": ["sources"],
+        "summary": "Validate source (stored)",
+        "description": "Validate connection using stored source credentials",
+        "operationId": "validateSourceStored",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{id}/set-active": {
+      "post": {
+        "tags": ["sources"],
+        "summary": "Set source active status",
+        "description": "Set a source active or inactive (admin only)",
+        "operationId": "setSourceActive",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "is_active": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Active status updated"
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{id}/repositories": {
+      "get": {
+        "tags": ["sources"],
+        "summary": "Get source repositories",
+        "description": "Get all repositories associated with a source",
+        "operationId": "getSourceRepositories",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of repositories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Repository"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{id}/deletion-preview": {
+      "get": {
+        "tags": ["sources"],
+        "summary": "Get deletion preview",
+        "description": "Preview what would be affected if this source were deleted",
+        "operationId": "getSourceDeletionPreview",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deletion impact preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "source_id": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "repository_count": {
+                      "type": "integer"
+                    },
+                    "batch_count": {
+                      "type": "integer"
+                    },
+                    "migration_count": {
+                      "type": "integer"
                     }
                   }
                 }
@@ -577,6 +1044,54 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/discovery/progress": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "Get discovery progress",
+        "description": "Get detailed progress of the current or last discovery operation",
+        "operationId": "getDiscoveryProgress",
+        "responses": {
+          "200": {
+            "description": "Discovery progress details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/discovery/cancel": {
+      "post": {
+        "tags": ["discovery"],
+        "summary": "Cancel discovery",
+        "description": "Cancel a running discovery operation",
+        "operationId": "cancelDiscovery",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Discovery cancelled"
+          }
+        }
+      }
+    },
+    "/api/v1/discovery/force-reset": {
+      "post": {
+        "tags": ["discovery"],
+        "summary": "Force reset discovery",
+        "description": "Force reset a stuck discovery operation (admin only)",
+        "operationId": "forceResetDiscovery",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Discovery reset"
           }
         }
       }
@@ -880,6 +1395,38 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/discover": {
+      "post": {
+        "tags": ["repositories"],
+        "summary": "Discover repositories",
+        "description": "Discover repositories by organization or enterprise",
+        "operationId": "discoverRepositories",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "organization": {
+                    "type": "string"
+                  },
+                  "enterprise_slug": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Discovery started"
           }
         }
       }
@@ -2450,6 +2997,672 @@
         }
       }
     },
+    "/api/v1/analytics/permission-audit": {
+      "get": {
+        "tags": ["analytics"],
+        "summary": "Get permission audit",
+        "description": "Get permission audit report for repository access",
+        "operationId": "getPermissionAudit",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Permission audit data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "tags": ["settings"],
+        "summary": "Get settings",
+        "description": "Get current application settings",
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "description": "Current settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["settings"],
+        "summary": "Update settings",
+        "description": "Update application settings (admin only)",
+        "operationId": "updateSettings",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings updated"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/setup-progress": {
+      "get": {
+        "tags": ["settings"],
+        "summary": "Get setup progress",
+        "description": "Get setup wizard progress",
+        "operationId": "getSetupProgress",
+        "responses": {
+          "200": {
+            "description": "Setup progress"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/destination/validate": {
+      "post": {
+        "tags": ["settings"],
+        "summary": "Validate destination",
+        "description": "Validate destination GitHub connection",
+        "operationId": "settingsValidateDestination",
+        "responses": {
+          "200": {
+            "description": "Validation result"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/teams/validate": {
+      "post": {
+        "tags": ["settings"],
+        "summary": "Validate teams",
+        "description": "Validate team configuration settings",
+        "operationId": "settingsValidateTeams",
+        "responses": {
+          "200": {
+            "description": "Validation result"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/oauth/validate": {
+      "post": {
+        "tags": ["settings"],
+        "summary": "Validate OAuth",
+        "description": "Validate OAuth configuration settings",
+        "operationId": "settingsValidateOAuth",
+        "responses": {
+          "200": {
+            "description": "Validation result"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/logging": {
+      "get": {
+        "tags": ["settings"],
+        "summary": "Get logging settings",
+        "description": "Get current logging settings",
+        "operationId": "getLoggingSettings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Logging settings"
+          }
+        }
+      },
+      "put": {
+        "tags": ["settings"],
+        "summary": "Update logging settings",
+        "description": "Update logging settings (admin only)",
+        "operationId": "updateLoggingSettings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Logging settings updated"
+          }
+        }
+      }
+    },
+    "/api/v1/user-mappings": {
+      "get": {
+        "tags": ["user-mappings"],
+        "summary": "List user mappings",
+        "description": "List all user identity mappings",
+        "operationId": "listUserMappings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "List of user mappings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source_login": {
+                        "type": "string"
+                      },
+                      "target_login": {
+                        "type": "string"
+                      },
+                      "source_name": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "organization": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["user-mappings"],
+        "summary": "Create user mapping",
+        "description": "Create a new user identity mapping",
+        "operationId": "createUserMapping",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "source_login": {
+                    "type": "string"
+                  },
+                  "target_login": {
+                    "type": "string"
+                  },
+                  "organization": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User mapping created"
+          }
+        }
+      }
+    },
+    "/api/v1/user-mappings/stats": {
+      "get": {
+        "tags": ["user-mappings"],
+        "summary": "Get user mapping stats",
+        "description": "Get user mapping statistics",
+        "operationId": "getUserMappingStats",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "User mapping statistics"
+          }
+        }
+      }
+    },
+    "/api/v1/user-mappings/import": {
+      "post": {
+        "tags": ["user-mappings"],
+        "summary": "Import user mappings",
+        "description": "Import user mappings from a CSV file",
+        "operationId": "importUserMappings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Import result"
+          }
+        }
+      }
+    },
+    "/api/v1/user-mappings/export": {
+      "get": {
+        "tags": ["user-mappings"],
+        "summary": "Export user mappings",
+        "description": "Export all user mappings as CSV",
+        "operationId": "exportUserMappings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "CSV export"
+          }
+        }
+      }
+    },
+    "/api/v1/user-mappings/suggest": {
+      "post": {
+        "tags": ["user-mappings"],
+        "summary": "Suggest user mappings",
+        "description": "Auto-suggest user mappings based on login similarity",
+        "operationId": "suggestUserMappings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Suggested mappings"
+          }
+        }
+      }
+    },
+    "/api/v1/user-mappings/fetch-mannequins": {
+      "post": {
+        "tags": ["user-mappings"],
+        "summary": "Fetch mannequins",
+        "description": "Fetch mannequin users from the destination organization",
+        "operationId": "fetchMannequins",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Mannequins fetched"
+          }
+        }
+      }
+    },
+    "/api/v1/user-mappings/reclaim-mannequins": {
+      "post": {
+        "tags": ["user-mappings"],
+        "summary": "Reclaim mannequins",
+        "description": "Reclaim mannequin users using configured mappings",
+        "operationId": "reclaimMannequins",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "202": {
+            "description": "Reclamation started"
+          }
+        }
+      }
+    },
+    "/api/v1/team-mappings": {
+      "get": {
+        "tags": ["team-mappings"],
+        "summary": "List team mappings",
+        "description": "List all team mappings",
+        "operationId": "listTeamMappings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "List of team mappings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source_org": {
+                        "type": "string"
+                      },
+                      "source_team_slug": {
+                        "type": "string"
+                      },
+                      "target_org": {
+                        "type": "string"
+                      },
+                      "target_team_slug": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "member_count": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["team-mappings"],
+        "summary": "Create team mapping",
+        "description": "Create a new team mapping",
+        "operationId": "createTeamMapping",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Team mapping created"
+          }
+        }
+      }
+    },
+    "/api/v1/team-mappings/stats": {
+      "get": {
+        "tags": ["team-mappings"],
+        "summary": "Get team mapping stats",
+        "description": "Get team mapping statistics",
+        "operationId": "getTeamMappingStats",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Team mapping statistics"
+          }
+        }
+      }
+    },
+    "/api/v1/team-mappings/execute": {
+      "post": {
+        "tags": ["team-mappings"],
+        "summary": "Execute team migration",
+        "description": "Execute team migration based on configured mappings",
+        "operationId": "executeTeamMigration",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "202": {
+            "description": "Team migration started"
+          }
+        }
+      }
+    },
+    "/api/v1/team-mappings/execution-status": {
+      "get": {
+        "tags": ["team-mappings"],
+        "summary": "Get team migration status",
+        "description": "Get the status of a running team migration execution",
+        "operationId": "getTeamMigrationStatus",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Team migration status"
+          }
+        }
+      }
+    },
+    "/api/v1/teams/discover": {
+      "post": {
+        "tags": ["team-mappings"],
+        "summary": "Discover teams",
+        "description": "Discover teams from source organizations",
+        "operationId": "discoverTeams",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "202": {
+            "description": "Team discovery started"
+          }
+        }
+      }
+    },
+    "/api/v1/dependencies/graph": {
+      "get": {
+        "tags": ["dependencies"],
+        "summary": "Get dependency graph",
+        "description": "Get the dependency graph for all discovered repositories",
+        "operationId": "getDependencyGraph",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Dependency graph",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "edges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dependencies/export": {
+      "get": {
+        "tags": ["dependencies"],
+        "summary": "Export dependencies",
+        "description": "Export dependency data",
+        "operationId": "exportDependencies",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["csv", "json"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dependency export"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/status": {
+      "get": {
+        "tags": ["copilot"],
+        "summary": "Get Copilot status",
+        "description": "Get Copilot availability and configuration status",
+        "operationId": "getCopilotStatus",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Copilot status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "model": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/models": {
+      "get": {
+        "tags": ["copilot"],
+        "summary": "List AI models",
+        "description": "List available AI models for Copilot",
+        "operationId": "getCopilotModels",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Available models"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/chat": {
+      "post": {
+        "tags": ["copilot"],
+        "summary": "Send chat message",
+        "description": "Send a chat message and get a response",
+        "operationId": "sendCopilotMessage",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "session_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chat response"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/chat/stream": {
+      "get": {
+        "tags": ["copilot"],
+        "summary": "Stream chat response",
+        "description": "Stream a chat response via Server-Sent Events (SSE)",
+        "operationId": "streamCopilotChat",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "message",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream of chat response"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/sessions": {
+      "get": {
+        "tags": ["copilot"],
+        "summary": "List sessions",
+        "description": "List all Copilot chat sessions",
+        "operationId": "listCopilotSessions",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "List of sessions"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/sessions/{id}": {
+      "delete": {
+        "tags": ["copilot"],
+        "summary": "Delete session",
+        "description": "Delete a Copilot chat session",
+        "operationId": "deleteCopilotSession",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/sessions/{id}/history": {
+      "get": {
+        "tags": ["copilot"],
+        "summary": "Get session history",
+        "description": "Get chat history for a specific session",
+        "operationId": "getCopilotSessionHistory",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session chat history"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/validate-cli": {
+      "post": {
+        "tags": ["copilot"],
+        "summary": "Validate CLI",
+        "description": "Validate that GitHub CLI Copilot extension is configured",
+        "operationId": "validateCopilotCLI",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "CLI validation result"
+          }
+        }
+      }
+    },
     "/api/v1/ado/discover": {
       "post": {
         "tags": ["ado"],
@@ -2825,6 +4038,50 @@
           },
           "is_privileged": {
             "type": "boolean"
+          }
+        }
+      },
+      "Source": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["github", "azuredevops"]
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "has_app_auth": {
+            "type": "boolean"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "repository_count": {
+            "type": "integer"
+          },
+          "last_sync_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "masked_token": {
+            "type": "string"
           }
         }
       },

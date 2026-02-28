@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -91,6 +92,20 @@ func (h *OAuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
+// clearStateCookie removes the oauth_state cookie with the same attributes used when
+// setting it so browsers match and delete the correct cookie.
+func clearStateCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 // HandleCallback processes the OAuth callback
 func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Verify state token
@@ -102,20 +117,15 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := r.URL.Query().Get("state")
-	if state == "" || state != stateCookie.Value {
+	if state == "" || subtle.ConstantTimeCompare([]byte(state), []byte(stateCookie.Value)) != 1 {
 		h.logger.Error("State mismatch", "expected", stateCookie.Value, "got", state)
+		clearStateCookie(w, r)
 		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
 		return
 	}
 
-	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	// Clear state cookie on the success path as well
+	clearStateCookie(w, r)
 
 	// Exchange code for token
 	code := r.URL.Query().Get("code")
@@ -125,7 +135,7 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.oauth.Exchange(context.Background(), code)
+	token, err := h.oauth.Exchange(r.Context(), code)
 	if err != nil {
 		h.logger.Error("Failed to exchange code for token", "error", err)
 		http.Error(w, "Failed to authenticate", http.StatusInternalServerError)
@@ -133,7 +143,7 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get user info
-	user, err := h.getGitHubUser(token.AccessToken)
+	user, err := h.getGitHubUser(r.Context(), token.AccessToken)
 	if err != nil {
 		h.logger.Error("Failed to get user info", "error", err)
 		http.Error(w, "Failed to get user info", http.StatusInternalServerError)
@@ -152,8 +162,8 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	*r = *r.WithContext(ctx)
 }
 
-// GetGitHubUser fetches user information from GitHub API
-func (h *OAuthHandler) getGitHubUser(accessToken string) (*GitHubUser, error) {
+// getGitHubUser fetches user information from GitHub API
+func (h *OAuthHandler) getGitHubUser(ctx context.Context, accessToken string) (*GitHubUser, error) {
 	apiURL := h.baseURL
 	if apiURL == "" {
 		apiURL = defaultGitHubAPIURL
@@ -162,7 +172,7 @@ func (h *OAuthHandler) getGitHubUser(accessToken string) (*GitHubUser, error) {
 		apiURL = apiURL[:len(apiURL)-1]
 	}
 
-	req, err := http.NewRequest("GET", apiURL+"/user", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL+"/user", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +180,7 @@ func (h *OAuthHandler) getGitHubUser(accessToken string) (*GitHubUser, error) {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -178,7 +188,10 @@ func (h *OAuthHandler) getGitHubUser(accessToken string) (*GitHubUser, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("github API returned status %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("github API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -189,15 +202,15 @@ func (h *OAuthHandler) getGitHubUser(accessToken string) (*GitHubUser, error) {
 
 	// Fetch user's email if not public
 	if user.Email == "" {
-		user.Email = h.fetchUserEmail(accessToken)
+		user.Email = h.fetchUserEmail(ctx, accessToken)
 	}
 
 	return &user, nil
 }
 
 // fetchUserEmail attempts to fetch a user's email address
-func (h *OAuthHandler) fetchUserEmail(accessToken string) string {
-	emails, err := h.getUserEmails(accessToken)
+func (h *OAuthHandler) fetchUserEmail(ctx context.Context, accessToken string) string {
+	emails, err := h.getUserEmails(ctx, accessToken)
 	if err != nil || len(emails) == 0 {
 		return ""
 	}
@@ -220,7 +233,7 @@ func (h *OAuthHandler) fetchUserEmail(accessToken string) string {
 }
 
 // getUserEmails fetches user's email addresses from GitHub API
-func (h *OAuthHandler) getUserEmails(accessToken string) ([]GitHubEmail, error) {
+func (h *OAuthHandler) getUserEmails(ctx context.Context, accessToken string) ([]GitHubEmail, error) {
 	apiURL := h.baseURL
 	if apiURL == "" {
 		apiURL = defaultGitHubAPIURL
@@ -229,7 +242,7 @@ func (h *OAuthHandler) getUserEmails(accessToken string) ([]GitHubEmail, error) 
 		apiURL = apiURL[:len(apiURL)-1]
 	}
 
-	req, err := http.NewRequest("GET", apiURL+"/user/emails", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL+"/user/emails", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +250,7 @@ func (h *OAuthHandler) getUserEmails(accessToken string) ([]GitHubEmail, error) 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
+	client := authHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

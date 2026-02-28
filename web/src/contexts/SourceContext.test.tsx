@@ -174,8 +174,11 @@ describe('SourceContext', () => {
         expect(screen.getByTestId('isLoading').textContent).toBe('false');
       });
 
-      // Should have saved the source ID to localStorage
-      expect(localStorage.getItem(STORAGE_KEY)).toBe('1');
+      // The useEffect that persists the filter runs after the render,
+      // so we need to wait for it to write to localStorage
+      await waitFor(() => {
+        expect(localStorage.getItem(STORAGE_KEY)).toBe('1');
+      });
     });
 
     it('should always return the single source even if localStorage has "all"', async () => {

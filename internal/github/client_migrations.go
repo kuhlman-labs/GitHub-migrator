@@ -119,9 +119,17 @@ func (c *Client) ListOrgInstallations(ctx context.Context, org string) ([]*OrgAp
 	opts := &github.ListOptions{PerPage: 100}
 
 	for {
-		result, resp, err := c.rest.Organizations.ListInstallations(ctx, org, opts)
-		if err != nil {
-			return nil, WrapError(err, "ListOrgInstallations", c.baseURL)
+		var result *github.OrganizationInstallations
+		var resp *github.Response
+		if err := c.retryer.Do(ctx, "ListOrgInstallations", func(ctx context.Context) error {
+			var err error
+			result, resp, err = c.rest.Organizations.ListInstallations(ctx, org, opts)
+			if err != nil {
+				return WrapError(err, "ListOrgInstallations", c.baseURL)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 
 		for _, install := range result.Installations {

@@ -207,7 +207,13 @@ func (c *Client) ListTeamMembers(ctx context.Context, org, teamSlug string) ([]*
 			// Get the member's role in the team
 			role := "member"
 			membership, _, err := c.rest.Teams.GetTeamMembershipBySlug(ctx, org, teamSlug, member.GetLogin())
-			if err == nil && membership != nil {
+			if err != nil {
+				c.logger.Warn("Failed to get team membership, defaulting to member role",
+					"org", org,
+					"team", teamSlug,
+					"member", member.GetLogin(),
+					"error", err)
+			} else if membership != nil {
 				role = membership.GetRole() // "member" or "maintainer"
 			}
 
@@ -314,7 +320,7 @@ func (c *Client) GetTeamBySlug(ctx context.Context, org, slug string) (*TeamInfo
 		team, _, err = c.rest.Teams.GetTeamBySlug(ctx, org, slug)
 		if err != nil {
 			// Check if it's a 404 (team not found)
-			if ghErr, ok := err.(*github.ErrorResponse); ok && ghErr.Response.StatusCode == 404 {
+			if ghErr, ok := err.(*github.ErrorResponse); ok && ghErr.Response != nil && ghErr.Response.StatusCode == 404 {
 				return nil // Return nil error for 404, we'll check team == nil
 			}
 			return WrapError(err, "GetTeamBySlug", c.baseURL)

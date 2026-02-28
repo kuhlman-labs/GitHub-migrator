@@ -19,6 +19,7 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  ACR_IMAGE_NAME: github-migrator
 
 jobs:
   # Build and push release image
@@ -53,11 +54,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.ACR_IMAGE_NAME }}
           flavor: |
             latest=false
           tags: |
@@ -104,16 +114,12 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set lowercase image name
-        run: |
-          echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
       - name: Deploy to staging slot
         run: |
           APP_NAME="${{ vars.APP_SERVICE_NAME }}"
           SLOT_NAME="staging"
           RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ needs.build.outputs.image_tag }}"
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.ACR_IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}"
 
           echo "Deploying $IMAGE to staging slot..."
 
@@ -121,8 +127,8 @@ jobs:
             --name "$APP_NAME" \
             --resource-group "$RG" \
             --slot "$SLOT_NAME" \
-            --docker-custom-image-name "$IMAGE" \
-            --docker-registry-server-url "https://${{ env.REGISTRY }}"
+            --container-image-name "$IMAGE" \
+            --container-registry-url "https://${{ secrets.ACR_LOGIN_SERVER }}"
 
           echo "Restarting slot..."
           az webapp restart \
@@ -169,7 +175,7 @@ jobs:
 
       - name: Staging deployment summary
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ needs.build.outputs.image_tag }}"
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.ACR_IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}"
           {
             echo "## Staging Deployment Successful"
             echo ""
@@ -197,10 +203,6 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Set lowercase image name
-        run: |
-          echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Swap staging to production
         run: |
@@ -266,7 +268,7 @@ jobs:
 
       - name: Production deployment summary
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ needs.build.outputs.image_tag }}"
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.ACR_IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}"
           APP="${{ vars.APP_SERVICE_NAME }}"
           RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
           {

@@ -98,9 +98,10 @@ func TestPathParameterValidation(t *testing.T) {
 
 		h.GetBatch(w, req)
 
-		// Should be not found (negative IDs don't exist)
-		if w.Code != http.StatusNotFound {
-			t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+		// Negative IDs are now rejected as invalid input (400) instead of
+		// passing through to the DB and returning 404.
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 		}
 	})
 

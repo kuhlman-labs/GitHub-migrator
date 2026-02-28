@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
@@ -63,9 +62,7 @@ func (h *BatchHandler) ListBatches(w http.ResponseWriter, r *http.Request) {
 // GetBatch handles GET /api/v1/batches/{id}
 func (h *BatchHandler) GetBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	idStr := r.PathValue("id")
-
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
 		return
@@ -141,9 +138,7 @@ func (h *BatchHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 // UpdateBatch handles PATCH /api/v1/batches/{id}
 func (h *BatchHandler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	idStr := r.PathValue("id")
-
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
 		return
@@ -180,6 +175,20 @@ func (h *BatchHandler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 		batch.Description = updateReq.Description
 	}
 	if updateReq.Status != nil {
+		// Validate that the status is a known batch status
+		validStatuses := map[string]bool{
+			string(models.BatchStatusPending):             true,
+			string(models.BatchStatusReady):               true,
+			string(models.BatchStatusInProgress):          true,
+			string(models.BatchStatusCompleted):           true,
+			string(models.BatchStatusCompletedWithErrors): true,
+			string(models.BatchStatusFailed):              true,
+			string(models.BatchStatusCancelled):           true,
+		}
+		if !validStatuses[*updateReq.Status] {
+			h.sendError(w, http.StatusBadRequest, "Invalid batch status: "+*updateReq.Status)
+			return
+		}
 		batch.Status = *updateReq.Status
 	}
 
@@ -198,9 +207,7 @@ func (h *BatchHandler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 // DeleteBatch handles DELETE /api/v1/batches/{id}
 func (h *BatchHandler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	idStr := r.PathValue("id")
-
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
 		return
@@ -290,9 +297,7 @@ func (h *BatchHandler) addSingleRepoToBatch(ctx context.Context, repoID, batchID
 // AddRepositoriesToBatch handles POST /api/v1/batches/{id}/repositories
 func (h *BatchHandler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	idStr := r.PathValue("id")
-
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
 		return
@@ -376,9 +381,7 @@ func (h *BatchHandler) checkBatchReposAccess(ctx context.Context, repoIDs []int6
 // RemoveRepositoriesFromBatch handles DELETE /api/v1/batches/{id}/repositories
 func (h *BatchHandler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	idStr := r.PathValue("id")
-
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := ParsePositiveID(r, "id")
 	if err != nil {
 		h.sendError(w, http.StatusBadRequest, "Invalid batch ID")
 		return

@@ -128,7 +128,15 @@ func (w *MigrationWorker) pollLoop() {
 
 // processQueuedRepositories fetches queued repositories and dispatches them to workers
 func (w *MigrationWorker) processQueuedRepositories() {
-	ctx := context.Background()
+	w.mu.RLock()
+	ctx := w.ctx
+	w.mu.RUnlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return // Worker is shutting down
+	}
 
 	// Get count of currently active migrations
 	w.mu.RLock()
@@ -173,16 +181,12 @@ func (w *MigrationWorker) processQueuedRepositories() {
 
 	// Dispatch each repository to a worker
 	for _, repo := range repos {
-		// Check if already processing (shouldn't happen, but defensive)
-		w.mu.RLock()
+		// Atomically check-and-set to prevent duplicate migrations
+		w.mu.Lock()
 		if w.active[repo.ID] {
-			w.mu.RUnlock()
+			w.mu.Unlock()
 			continue
 		}
-		w.mu.RUnlock()
-
-		// Mark as active
-		w.mu.Lock()
 		w.active[repo.ID] = true
 		w.mu.Unlock()
 
@@ -194,6 +198,9 @@ func (w *MigrationWorker) processQueuedRepositories() {
 
 // executeMigration executes a single migration
 func (w *MigrationWorker) executeMigration(repo *models.Repository) {
+	// Capture dry-run from original queued status before the executor changes it
+	isDryRun := repo.Status == string(models.StatusDryRunQueued)
+
 	defer w.wg.Done()
 	defer func() {
 		// Remove from active list
@@ -209,11 +216,12 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 				"repo", repo.FullName,
 				"panic", r)
 
-			// Update status to failed
-			ctx := context.Background()
-			dryRun := repo.Status == string(models.StatusDryRunInProgress)
+			// Use a bounded context so the status update doesn't block shutdown
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
 			failedStatus := models.StatusMigrationFailed
-			if dryRun {
+			if isDryRun {
 				failedStatus = models.StatusDryRunFailed
 			}
 			repo.Status = string(failedStatus)
@@ -225,17 +233,19 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 		}
 	}()
 
-	// Determine if this is a dry run
-	dryRun := repo.Status == string(models.StatusDryRunQueued)
-
 	w.logger.Info("Starting migration execution",
 		"repo", repo.FullName,
 		"repo_id", repo.ID,
-		"dry_run", dryRun,
+		"dry_run", isDryRun,
 		"has_batch", repo.BatchID != nil)
 
-	// Create context for this migration execution
-	ctx := context.Background()
+	// Derive migration context from the worker's context so shutdown cancels in-flight migrations
+	w.mu.RLock()
+	ctx := w.ctx
+	w.mu.RUnlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	// Fetch batch details if repository is part of a batch
 	var batch *models.Batch
@@ -259,7 +269,7 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 
 	// Update status to in-progress
 	statusUpdate := models.StatusMigratingContent
-	if dryRun {
+	if isDryRun {
 		statusUpdate = models.StatusDryRunInProgress
 	}
 	repo.Status = string(statusUpdate)
@@ -274,18 +284,18 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 	// The factory dynamically creates/caches executors per source and
 	// the executor automatically selects the appropriate strategy (GitHub or ADO)
 	// based on the repository's source type
-	err := w.executorFactory.ExecuteWithStrategy(ctx, repo, batch, dryRun)
+	err := w.executorFactory.ExecuteWithStrategy(ctx, repo, batch, isDryRun)
 
 	if err != nil {
 		w.logger.Error("Migration failed",
 			"repo", repo.FullName,
 			"repo_id", repo.ID,
-			"dry_run", dryRun,
+			"dry_run", isDryRun,
 			"error", err)
 
 		// Update status to failed
 		failedStatus := models.StatusMigrationFailed
-		if dryRun {
+		if isDryRun {
 			failedStatus = models.StatusDryRunFailed
 		}
 		repo.Status = string(failedStatus)
@@ -298,7 +308,7 @@ func (w *MigrationWorker) executeMigration(repo *models.Repository) {
 		w.logger.Info("Migration completed successfully",
 			"repo", repo.FullName,
 			"repo_id", repo.ID,
-			"dry_run", dryRun)
+			"dry_run", isDryRun)
 
 		// Status should already be updated by executor, but verify
 		updatedRepo, err := w.storage.GetRepository(ctx, repo.FullName)

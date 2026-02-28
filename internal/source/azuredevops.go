@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // AzureDevOpsProvider implements the Provider interface for Azure DevOps (formerly VSTS)
@@ -148,8 +149,7 @@ func (p *AzureDevOpsProvider) ValidateCredentials(ctx context.Context) error {
 	req.SetBasicAuth("", p.token)
 	req.Header.Set("Accept", "application/json")
 
-	// Make request
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrAuthenticationFailed, err.Error())

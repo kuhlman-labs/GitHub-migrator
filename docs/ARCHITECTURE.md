@@ -32,6 +32,14 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │  │  │   Discovery  │ │     Team     │ │     User     │ │     ADO Handlers     │   │  │
 │  │  │   Handlers   │ │   Handlers   │ │   Handlers   │ │                      │   │  │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────────┘   │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐   │  │
+│  │  │     Auth     │ │    Setup     │ │   Source     │ │     Settings         │   │  │
+│  │  │   Handlers   │ │   Handlers   │ │   Handlers   │ │     Handlers         │   │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────────┘   │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                            │  │
+│  │  │ Organization │ │  Dependency  │ │   Copilot    │                            │  │
+│  │  │   Handlers   │ │   Handlers   │ │   Handlers   │                            │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘                            │  │
 │  │                              │                                                  │  │
 │  │  ┌───────────────────────────────────────────────────────────────────────────┐ │  │
 │  │  │                    HandlerUtils (Shared Utilities)                        │ │  │
@@ -64,26 +72,52 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │ │    discovery      │ │  │ │    migration      │ │  │ └─────────────────────────┘   │
 │ └───────────────────┘ │  │ │  - Polling        │ │  │ ┌─────────────────────────┐   │
 │ ┌───────────────────┐ │  │ │  - Validation     │ │  │ │      Scheduler          │   │
-│ │  RepoDiscoverer   │ │  │ └───────────────────┘ │  │ │  - Priority queuing     │   │
-│ │  - List repos     │ │  │ ┌───────────────────┐ │  │ └─────────────────────────┘   │
-│ │  - Filter/Stats   │ │  │ │    Strategies     │ │  │ ┌─────────────────────────┐   │
-│ └───────────────────┘ │  │ │  - GitHub         │ │  │ │     Organizer           │   │
-│ ┌───────────────────┐ │  │ │  - ADO            │ │  │ │  - Batch grouping       │   │
-│ │  TeamDiscoverer   │ │  │ └───────────────────┘ │  │ └─────────────────────────┘   │
-│ │  - Teams & roles  │ │  │ ┌───────────────────┐ │  └───────────────────────────────┘
-│ └───────────────────┘ │  │ │  TeamExecutor     │ │
-│ ┌───────────────────┐ │  │ │  - Team migration │ │
-│ │ MemberDiscoverer  │ │  │ └───────────────────┘ │
-│ │  - Org members    │ │  └───────────────────────┘
-│ └───────────────────┘ │
+│ │   ADOCollector    │ │  │ └───────────────────┘ │  │ │  - Priority queuing     │   │
+│ │  - ADO discovery  │ │  │ ┌───────────────────┐ │  │ └─────────────────────────┘   │
+│ └───────────────────┘ │  │ │  ExecutorFactory  │ │  │ ┌─────────────────────────┐   │
+│ ┌───────────────────┐ │  │ │  - Create executor│ │  │ │     Organizer           │   │
+│ │  RepoDiscoverer   │ │  │ │    per strategy   │ │  │ │  - Batch grouping       │   │
+│ │  - List repos     │ │  │ └───────────────────┘ │  │ └─────────────────────────┘   │
+│ │  - Filter/Stats   │ │  │ ┌───────────────────┐ │  │ ┌─────────────────────────┐   │
+│ └───────────────────┘ │  │ │    Strategies     │ │  │ │    StatusUpdater        │   │
+│ ┌───────────────────┐ │  │ │  - GitHub         │ │  │ │  - Batch status sync    │   │
+│ │  TeamDiscoverer   │ │  │ │  - ADO            │ │  │ └─────────────────────────┘   │
+│ │  - Teams & roles  │ │  │ └───────────────────┘ │  └───────────────────────────────┘
+│ └───────────────────┘ │  │ ┌───────────────────┐ │
+│ ┌───────────────────┐ │  │ │  TeamExecutor     │ │
+│ │ MemberDiscoverer  │ │  │ │  - Team migration │ │
+│ │  - Org members    │ │  │ └───────────────────┘ │
+│ └───────────────────┘ │  └───────────────────────┘
 │ ┌───────────────────┐ │
 │ │     Profiler      │ │
 │ │  - Repo analysis  │ │
 │ │  - Complexity     │ │
 │ └───────────────────┘ │
 │ ┌───────────────────┐ │
+│ │   ADOProfiler     │ │
+│ │  - ADO repo       │ │
+│ │    profiling      │ │
+│ └───────────────────┘ │
+│ ┌───────────────────┐ │
+│ │     Analyzer      │ │
+│ │  - git-sizer      │ │
+│ │  - git count-obj  │ │
+│ └───────────────────┘ │
+│ ┌───────────────────┐ │
 │ │ DependencyAnalyzer│ │
 │ │  - Package deps   │ │
+│ │  - Submodules     │ │
+│ │  - Workflows      │ │
+│ └───────────────────┘ │
+│ ┌───────────────────┐ │
+│ │  PackageScanner   │ │
+│ │  - Multi-lang     │ │
+│ │    manifest parse │ │
+│ └───────────────────┘ │
+│ ┌───────────────────┐ │
+│ │ ProgressTracker   │ │
+│ │  - Discovery      │ │
+│ │    progress       │ │
 │ └───────────────────┘ │
 └───────────────────────┘
             │                           │                           │
@@ -105,6 +139,14 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐   │  │
 │  │  │  Dependency  │ │    User      │ │    Team      │ │       ADO            │   │  │
 │  │  │    Store     │ │   Store      │ │   Store      │ │      Store           │   │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────────┘   │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐   │  │
+│  │  │ UserMapping  │ │ TeamMapping  │ │   Source     │ │     Discovery        │   │  │
+│  │  │    Store     │ │    Store     │ │    Store     │ │      Store           │   │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────────┘   │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐   │  │
+│  │  │    Setup     │ │  Settings    │ │   Copilot    │ │  UserMannequin       │   │  │
+│  │  │    Store     │ │    Store     │ │    Store     │ │      Store           │   │  │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────────────────────────┘  │
 │                                        │                                            │
@@ -139,9 +181,13 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────────┐  │    │
 │  │  │  Migrations    │  │     Teams      │  │       Organizations            │  │    │
 │  │  └────────────────┘  └────────────────┘  └────────────────────────────────┘  │    │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────────┐  │    │
+│  │  │  Dependencies  │  │ Retry/Circuit  │  │        Error Handling          │  │    │
+│  │  │   (GraphQL)    │  │   Breaker      │  │                                │  │    │
+│  │  └────────────────┘  └────────────────┘  └────────────────────────────────┘  │    │
 │  │  ┌────────────────────────────────────────────────────────────────────────┐  │    │
 │  │  │                       DualClient                                        │  │    │
-│  │  │            (Manages JWT/Installation token switching)                   │  │    │
+│  │  │            (Manages PAT + GitHub App token switching)                   │  │    │
 │  │  └────────────────────────────────────────────────────────────────────────┘  │    │
 │  └─────────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                     │
@@ -173,14 +219,12 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │  │                         Authentication Flow                                  │    │
 │  │                                                                              │    │
 │  │    ┌─────────────┐      ┌─────────────┐      ┌─────────────────────────┐     │    │
-│  │    │   GitHub    │ ──▶  │    OAuth    │ ──▶  │   Session/Token         │     │    │
-│  │    │   OAuth     │      │  Callback   │      │     Storage             │     │    │
+│  │    │   GitHub    │ ──▶  │    OAuth    │ ──▶  │   JWT Token             │     │    │
+│  │    │   OAuth     │      │  Callback   │      │   Generation            │     │    │
 │  │    └─────────────┘      └─────────────┘      └─────────────────────────┘     │    │
 │  │                                                                              │    │
-│  │    ┌─────────────┐      ┌─────────────┐      ┌─────────────────────────┐     │    │
-│  │    │   Entra ID  │ ──▶  │   OIDC      │ ──▶  │   JWT Validation        │     │    │
-│  │    │   (Azure)   │      │  Callback   │      │                         │     │    │
-│  │    └─────────────┘      └─────────────┘      └─────────────────────────┘     │    │
+│  │    Supports GitHub.com and GitHub Enterprise Server OAuth providers.          │    │
+│  │    Encrypted JWT tokens with AES-256-GCM for session management.             │    │
 │  └─────────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐    │
@@ -201,18 +245,20 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │                            MODELS (internal/models)                                 │
 │                                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐    │
-│  │                           Repository                                         │    │
-│  │                         (80+ fields)                                         │    │
+│  │                       Repository (core model)                                │    │
+│  │    Linked via separate table structs for normalized storage:                  │    │
 │  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────────┐  │    │
-│  │  │ GitProperties  │  │ GitHubFeatures │  │      SecurityFeatures          │  │    │
-│  │  │ - Size, LFS    │  │ - Wiki, Pages  │  │  - CodeScanning, Dependabot    │  │    │
-│  │  │ - Branches     │  │ - Actions      │  │  - SecretScanning              │  │    │
+│  │  │ Repository     │  │ Repository     │  │    Repository                  │  │    │
+│  │  │ GitProperties  │  │   Features     │  │    ADOProperties               │  │    │
+│  │  │ - Size, LFS    │  │ - Wiki, Pages  │  │  - Project, Pipelines          │  │    │
+│  │  │ - Branches     │  │ - Actions      │  │  - Work Items                  │  │    │
+│  │  │ - Commits      │  │ - Packages     │  │                                │  │    │
 │  │  └────────────────┘  └────────────────┘  └────────────────────────────────┘  │    │
-│  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────────┐  │    │
-│  │  │ MigrationState │  │ GHESLimits     │  │      ADOProperties             │  │    │
-│  │  │ - Status       │  │ - Oversized    │  │  - Project, Pipelines          │  │    │
-│  │  │ - Batch        │  │ - Blockers     │  │  - Work Items                  │  │    │
-│  │  └────────────────┘  └────────────────┘  └────────────────────────────────┘  │    │
+│  │  ┌────────────────┐                                                          │    │
+│  │  │ Repository     │                                                          │    │
+│  │  │  Validation    │                                                          │    │
+│  │  │ - Complexity   │                                                          │    │
+│  │  └────────────────┘                                                          │    │
 │  └─────────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐     │
@@ -222,6 +268,10 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐     │
 │  │ UserMapping  │  │ TeamMapping  │  │  ADOProject  │  │ DiscoveryProgress    │     │
 │  │              │  │              │  │              │  │                      │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────────────┘     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐     │
+│  │    Source    │  │  Settings    │  │   Copilot    │  │  UserMannequin       │     │
+│  │              │  │              │  │   Session    │  │                      │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────────────┘     │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -290,12 +340,12 @@ This document provides an overview of the GitHub Migrator backend architecture.
              │ handlers │      │   auth   │      │middleware│
              └────┬─────┘      └──────────┘      └──────────┘
                   │
-    ┌─────────────┼─────────────┐
-    │             │             │
-    ▼             ▼             ▼
-┌────────┐  ┌──────────┐  ┌──────────┐
-│services│  │ discovery│  │ migration│
-└───┬────┘  └────┬─────┘  └────┬─────┘
+    ┌─────────────┼─────────────┬─────────────┐
+    │             │             │             │
+    ▼             ▼             ▼             ▼
+┌────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+│services│  │ discovery│  │ migration│  │ copilot  │
+└───┬────┘  └────┬─────┘  └────┬─────┘  └──────────┘
     │            │             │
     │       ┌────┴────┐        │
     │       │         │        │
@@ -304,13 +354,13 @@ This document provides an overview of the GitHub Migrator backend architecture.
 │    storage     │  │     github     │
 │                │  │   azuredevops  │
 └───────┬────────┘  └────────────────┘
-        │
-        ▼
-┌────────────────┐
-│     models     │
-│    config      │
-│    logging     │
-└────────────────┘
+        │                   │
+        ▼                   ▼
+┌────────────────┐  ┌────────────────┐
+│     models     │  │     source     │
+│    config      │  │   configsvc   │
+│    logging     │  │      mcp      │
+└────────────────┘  └────────────────┘
 ```
 
 ## Key Design Patterns
@@ -347,20 +397,23 @@ internal/
 ├── api/              # HTTP API layer
 │   ├── handlers/     # Domain-specific HTTP handlers
 │   └── middleware/   # HTTP middleware (CORS, logging)
-├── auth/             # Authentication & authorization
+├── auth/             # Authentication & authorization (OAuth, JWT, RBAC)
 ├── azuredevops/      # Azure DevOps API client
-├── batch/            # Batch orchestration & scheduling
-├── config/           # Configuration loading
-├── discovery/        # Repository/team/member discovery
+├── batch/            # Batch orchestration, scheduling & status
+├── config/           # Configuration loading (Viper)
+├── configsvc/        # Dynamic configuration service (from DB)
+├── copilot/          # GitHub Copilot integration (SDK, chat, licenses)
+├── discovery/        # Repository/team/member discovery & profiling
 ├── embedded/         # Embedded binaries (git-sizer)
-├── github/           # GitHub API client (REST + GraphQL)
-├── logging/          # Structured logging
-├── migration/        # Migration execution & strategies
-├── models/           # Data models & constants
+├── github/           # GitHub API client (REST + GraphQL + DualClient)
+├── logging/          # Structured logging (slog)
+├── mcp/              # Model Context Protocol server
+├── migration/        # Migration execution, strategies & validation
+├── models/           # Data models, constants & settings
 ├── services/         # Business logic layer
-├── source/           # Source provider abstraction
-├── storage/          # Database access layer
-│   └── migrations/   # SQL migration files
-└── worker/           # Background worker pool
+├── source/           # Source provider abstraction (GitHub, ADO, GitLab)
+├── storage/          # Database access layer (GORM)
+│   └── migrations/   # SQL migration files (SQLite, Postgres, SQL Server)
+└── worker/           # Background worker pool & scheduler
 ```
 

@@ -95,7 +95,7 @@ func (h *Handler) ListTeams(w http.ResponseWriter, r *http.Request) {
 
 	teams, err := h.db.ListTeams(ctx, orgFilter)
 	if err != nil {
-		if h.handleContextError(ctx, err, "list teams", r) {
+		if h.handleContextError(ctx, err, "list teams", r, w) {
 			return
 		}
 		h.logger.Error("Failed to list teams", "error", err)
@@ -161,7 +161,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	if sourceType == models.SourceTypeAzureDevOps {
 		projects, err := h.db.GetADOProjectsFiltered(ctx, "", sourceID)
 		if err != nil {
-			if h.handleContextError(ctx, err, "get ADO projects", r) {
+			if h.handleContextError(ctx, err, "get ADO projects", r, w) {
 				return
 			}
 			h.logger.Error("Failed to get ADO projects", "error", err)
@@ -217,7 +217,7 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	// For GitHub sources, use filtered query with source_id support
 	orgStats, err := h.db.GetOrganizationStatsFiltered(ctx, "", "", "", sourceID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get organization stats", r) {
+		if h.handleContextError(ctx, err, "get organization stats", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get organization stats", "error", err)
@@ -248,7 +248,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	// The GetADOProjects query will only return results if there are ADO repos
 	projects, err := h.db.GetADOProjectsFiltered(ctx, "", sourceID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get ADO projects", r) {
+		if h.handleContextError(ctx, err, "get ADO projects", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get ADO projects", "error", err)
@@ -290,7 +290,7 @@ func (h *Handler) GetOrganizationList(w http.ResponseWriter, r *http.Request) {
 
 	orgs, err := h.db.GetDistinctOrganizations(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get organization list", r) {
+		if h.handleContextError(ctx, err, "get organization list", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get organization list", "error", err)
@@ -308,7 +308,7 @@ func (h *Handler) GetDashboardActionItems(w http.ResponseWriter, r *http.Request
 
 	actionItems, err := h.db.GetDashboardActionItems(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get dashboard action items", r) {
+		if h.handleContextError(ctx, err, "get dashboard action items", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get dashboard action items", "error", err)

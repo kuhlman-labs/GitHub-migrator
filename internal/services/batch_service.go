@@ -54,7 +54,7 @@ func (s *BatchService) GetBatchWithStats(ctx context.Context, batchID int64) (*B
 
 	// Get repositories in this batch
 	repos, err := s.repoStore.ListRepositories(ctx, map[string]any{
-		"batch_id": fmt.Sprintf("%d", batchID),
+		"batch_id": batchID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list batch repositories: %w", err)
@@ -117,7 +117,15 @@ func (s *BatchService) AddRepositoriesToBatch(ctx context.Context, batchID int64
 		result := AddRepositoryResult{}
 
 		repo, err := s.repoStore.GetRepositoryByID(ctx, repoID)
-		if err != nil || repo == nil {
+		if err != nil {
+			result.FullName = fmt.Sprintf("ID:%d", repoID)
+			result.Reason = "failed to look up repository"
+			s.logger.Error("Database error looking up repository for batch",
+				"repo_id", repoID, "batch_id", batchID, "error", err)
+			results = append(results, result)
+			continue
+		}
+		if repo == nil {
 			result.FullName = fmt.Sprintf("ID:%d", repoID)
 			result.Reason = "repository not found"
 			results = append(results, result)
@@ -158,6 +166,8 @@ func (s *BatchService) AddRepositoriesToBatch(ctx context.Context, batchID int64
 }
 
 // RemoveRepositoriesFromBatch removes repositories from a batch.
+// Delegates to the storage layer which handles the removal atomically
+// within a single transaction, preventing partial-failure inconsistency.
 func (s *BatchService) RemoveRepositoriesFromBatch(ctx context.Context, batchID int64, repoIDs []int64) (int, error) {
 	batch, err := s.batchStore.GetBatch(ctx, batchID)
 	if err != nil {
@@ -172,27 +182,26 @@ func (s *BatchService) RemoveRepositoriesFromBatch(ctx context.Context, batchID 
 		return 0, fmt.Errorf("cannot remove repositories from batch with status '%s'", batch.Status)
 	}
 
-	removed := 0
+	// Count how many of the requested repos are actually in this batch so we
+	// can return an accurate removal count after the atomic storage call.
+	eligible := 0
 	for _, repoID := range repoIDs {
 		repo, err := s.repoStore.GetRepositoryByID(ctx, repoID)
 		if err != nil || repo == nil {
 			continue
 		}
-
-		if repo.BatchID == nil || *repo.BatchID != batchID {
-			continue
+		if repo.BatchID != nil && *repo.BatchID == batchID {
+			eligible++
 		}
-
-		repo.BatchID = nil
-		if err := s.repoStore.UpdateRepository(ctx, repo); err != nil {
-			s.logger.Error("Failed to remove repo from batch", "repo_id", repoID, "batch_id", batchID, "error", err)
-			continue
-		}
-
-		removed++
 	}
 
-	return removed, nil
+	if eligible > 0 {
+		if err := s.batchStore.RemoveRepositoriesFromBatch(ctx, batchID, repoIDs); err != nil {
+			return 0, fmt.Errorf("failed to remove repositories from batch: %w", err)
+		}
+	}
+
+	return eligible, nil
 }
 
 // CanDeleteBatch checks if a batch can be deleted.
@@ -214,6 +223,8 @@ func (s *BatchService) CanDeleteBatch(ctx context.Context, batchID int64) (bool,
 }
 
 // DeleteBatch deletes a batch and removes all repositories from it.
+// Delegates to the storage layer which handles clearing batch_id references
+// and deleting the batch atomically within a single transaction.
 func (s *BatchService) DeleteBatch(ctx context.Context, batchID int64) error {
 	canDelete, reason, err := s.CanDeleteBatch(ctx, batchID)
 	if err != nil {
@@ -223,28 +234,11 @@ func (s *BatchService) DeleteBatch(ctx context.Context, batchID int64) error {
 		return fmt.Errorf("cannot delete batch: %s", reason)
 	}
 
-	// Remove repositories from batch first
-	repos, err := s.repoStore.ListRepositories(ctx, map[string]any{
-		"batch_id": fmt.Sprintf("%d", batchID),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list batch repositories: %w", err)
-	}
-
-	for _, repo := range repos {
-		repo.BatchID = nil
-		if err := s.repoStore.UpdateRepository(ctx, repo); err != nil {
-			s.logger.Error("Failed to remove repo from batch during delete",
-				"repo_id", repo.ID, "batch_id", batchID, "error", err)
-		}
-	}
-
-	// Delete the batch
 	if err := s.batchStore.DeleteBatch(ctx, batchID); err != nil {
 		return fmt.Errorf("failed to delete batch: %w", err)
 	}
 
-	s.logger.Info("Batch deleted", "batch_id", batchID, "repos_removed", len(repos))
+	s.logger.Info("Batch deleted", "batch_id", batchID)
 	return nil
 }
 

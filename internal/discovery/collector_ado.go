@@ -251,14 +251,23 @@ func (c *ADOCollector) discoverADOProjectWithVisibilityTracked(ctx context.Conte
 
 // processADORepositoriesInParallelTracked processes ADO repositories in parallel with progress tracking
 func (c *ADOCollector) processADORepositoriesInParallelTracked(ctx context.Context, organization, projectName, projectVisibility string, repos []git.GitRepository, tracker ProgressTracker) error {
-	jobs := make(chan *git.GitRepository, len(repos))
-	errors := make(chan error, len(repos))
+	bufferSize := len(repos)
+	if bufferSize > 1000 {
+		bufferSize = 1000
+	}
+	jobs := make(chan *git.GitRepository, bufferSize)
+
+	// Collect errors via a mutex-guarded slice instead of a buffered channel
+	// so workers never block on a full error channel (which causes a deadlock
+	// when more errors are produced than the channel's buffer size).
+	var errMu sync.Mutex
+	var errs []error
 	var wg sync.WaitGroup
 
 	// Start workers
 	for i := 0; i < c.workers; i++ {
 		wg.Add(1)
-		go c.adoWorkerTracked(ctx, &wg, i, organization, projectName, projectVisibility, jobs, errors, tracker)
+		go c.adoWorkerTracked(ctx, &wg, i, organization, projectName, projectVisibility, jobs, &errMu, &errs, tracker)
 	}
 
 	// Send jobs (send pointers to avoid copies)
@@ -269,15 +278,6 @@ func (c *ADOCollector) processADORepositoriesInParallelTracked(ctx context.Conte
 
 	// Wait for completion
 	wg.Wait()
-	close(errors)
-
-	// Collect errors
-	var errs []error
-	for err := range errors {
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
 
 	if len(errs) > 0 {
 		c.logger.Warn("Repository processing completed with errors",
@@ -291,7 +291,7 @@ func (c *ADOCollector) processADORepositoriesInParallelTracked(ctx context.Conte
 }
 
 // adoWorkerTracked processes ADO repositories from the jobs channel with progress tracking
-func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup, workerID int, organization, projectName, projectVisibility string, jobs <-chan *git.GitRepository, errors chan<- error, tracker ProgressTracker) {
+func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup, workerID int, organization, projectName, projectVisibility string, jobs <-chan *git.GitRepository, errMu *sync.Mutex, errs *[]error, tracker ProgressTracker) {
 	defer wg.Done()
 
 	for adoRepo := range jobs {
@@ -378,7 +378,9 @@ func (c *ADOCollector) adoWorkerTracked(ctx context.Context, wg *sync.WaitGroup,
 					"project", projectName,
 					"repo", repoName,
 					"error", err)
-				errors <- err
+				errMu.Lock()
+				*errs = append(*errs, err)
+				errMu.Unlock()
 				tracker.RecordError(err)
 				tracker.IncrementProcessedRepos(1) // Still count as processed
 				continue
@@ -413,8 +415,10 @@ func (c *ADOCollector) DiscoverADORepository(ctx context.Context, organization, 
 		return fmt.Errorf("repository not found")
 	}
 
-	// Dereference the pointer for consistency with GetRepositories
-	repo := *repoPtr
+	// Keep the pointer so downstream type assertions to *git.GitRepository succeed.
+	// Dereferencing to a value type causes getRemoteURL and ProfileRepository to
+	// fail their type assertions silently.
+	repo := repoPtr
 
 	if repo.Name == nil {
 		return fmt.Errorf("repository has no name")

@@ -454,6 +454,9 @@ func (u *HandlerUtils) GetClientForOrg(ctx context.Context, org string) (*github
 	}
 
 	// Use the existing API client (PAT or App with installation ID)
+	if u.sourceDualClient == nil {
+		return nil, fmt.Errorf("no source client configured")
+	}
 	return u.sourceDualClient.APIClient(), nil
 }
 
@@ -486,7 +489,7 @@ func (h *Handler) handleMappingStatsRequest(
 
 	stats, err := getStatsFn(ctx, orgFilter, sourceID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get "+entityType+" mapping stats", r) {
+		if h.handleContextError(ctx, err, "get "+entityType+" mapping stats", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get "+entityType+" mapping stats", "error", err)

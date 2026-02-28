@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -16,6 +17,7 @@ type StatusUpdater struct {
 	logger   *slog.Logger
 	interval time.Duration
 	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // StatusUpdaterConfig holds configuration for the status updater
@@ -69,9 +71,11 @@ func (su *StatusUpdater) Start(ctx context.Context) {
 	}
 }
 
-// Stop stops the status updater
+// Stop stops the status updater. It is safe to call multiple times.
 func (su *StatusUpdater) Stop() {
-	close(su.stopCh)
+	su.stopOnce.Do(func() {
+		close(su.stopCh)
+	})
 }
 
 // updateBatchStatuses updates the status of all active batches
@@ -206,12 +210,13 @@ func CalculateBatchStatusFromRepos(repos []*models.Repository) string {
 	inProgressCount := 0
 	dryRunCompleteCount := 0
 	pendingCount := 0
+	wontMigrateCount := 0
 
 	for _, repo := range repos {
 		switch repo.Status {
 		case string(models.StatusComplete):
 			completedCount++
-		case string(models.StatusMigrationFailed), string(models.StatusDryRunFailed):
+		case string(models.StatusMigrationFailed), string(models.StatusDryRunFailed), string(models.StatusRolledBack):
 			failedCount++
 		case string(models.StatusDryRunQueued),
 			string(models.StatusDryRunInProgress),
@@ -226,50 +231,59 @@ func CalculateBatchStatusFromRepos(repos []*models.Repository) string {
 			dryRunCompleteCount++
 		case string(models.StatusPending):
 			pendingCount++
+		case string(models.StatusWontMigrate):
+			wontMigrateCount++
 		}
 	}
 
 	totalRepos := len(repos)
 
 	// Determine overall batch status
+
+	// Repos that are actively being processed keep the batch in progress
 	if inProgressCount > 0 {
 		return models.BatchStatusInProgress
 	}
 
-	// If all migrations are complete
-	if completedCount == totalRepos {
+	// Pending repos haven't started yet -- the batch isn't complete
+	if pendingCount > 0 {
+		return models.BatchStatusInProgress
+	}
+
+	// All repos are in a terminal state from here on
+
+	// If every repo in the batch has been excluded, treat it as completed
+	// (there is nothing left to migrate).
+	if wontMigrateCount == totalRepos {
 		return models.BatchStatusCompleted
 	}
 
-	// If all migrations failed
-	if failedCount == totalRepos {
+	// Exclude wont_migrate repos from the effective total so they don't
+	// prevent the batch from reaching a terminal status.
+	effectiveTotal := totalRepos - wontMigrateCount
+
+	if completedCount == effectiveTotal {
+		return models.BatchStatusCompleted
+	}
+
+	if failedCount == effectiveTotal {
 		return models.BatchStatusFailed
 	}
 
-	// If some completed and some failed
-	if completedCount > 0 && failedCount > 0 {
-		return models.BatchStatusCompletedWithErrors
-	}
-
-	// If any failed during migration
+	// Mix of completed/failed (or failed + dry-run-complete, etc.)
 	if failedCount > 0 {
 		return models.BatchStatusCompletedWithErrors
 	}
 
-	// If all dry runs are complete (batch is ready for migration)
-	if dryRunCompleteCount == totalRepos {
-		return models.BatchStatusReady
-	}
-
-	// If some dry runs complete and some failed
-	if dryRunCompleteCount > 0 && failedCount > 0 {
+	// All dry runs complete -- batch is ready for production migration
+	if dryRunCompleteCount == effectiveTotal {
 		return models.BatchStatusReady
 	}
 
 	return models.BatchStatusReady
 }
 
-// isTerminalStatus returns true if the status represents a completed state
-func isTerminalStatus(status string) bool {
+// IsTerminalStatus returns true if the status represents a completed state.
+func IsTerminalStatus(status string) bool {
 	return status == models.BatchStatusCompleted || status == models.BatchStatusFailed || status == models.BatchStatusCompletedWithErrors || status == models.BatchStatusCancelled
 }

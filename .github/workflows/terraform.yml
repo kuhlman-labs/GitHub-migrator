@@ -85,12 +85,10 @@ jobs:
           enable_staging_slot = true
           enable_dev_slot     = true
 
-          # Docker Registry (GitHub Container Registry)
-          docker_registry_url      = "ghcr.io"
-          docker_image_repository  = "${{ github.repository }}"
-          docker_image_tag         = "${{ vars.DOCKER_IMAGE_TAG }}"
-          docker_registry_username = "${{ github.actor }}"
-          docker_registry_password = "${{ secrets.GITHUB_TOKEN }}"
+          # Container Registry (Azure Container Registry)
+          acr_name         = "${{ vars.ACR_NAME }}"
+          acr_image_name   = "github-migrator"
+          docker_image_tag = "${{ vars.DOCKER_IMAGE_TAG }}"
 
           # PostgreSQL Database
           database_name                         = "${{ vars.DATABASE_NAME }}"
@@ -143,6 +141,7 @@ jobs:
           APP_NAME=$(terraform output -raw app_service_name)
           STAGING_URL=$(terraform output -raw staging_slot_url 2>/dev/null || echo 'N/A')
           DEV_URL=$(terraform output -raw dev_slot_url 2>/dev/null || echo 'N/A')
+          ACR_SERVER=$(terraform output -raw acr_login_server)
           DB_FQDN=$(terraform output -raw database_server_fqdn)
           DB_NAME=$(terraform output -raw database_name)
           DB_USER=$(terraform output -raw database_admin_username 2>/dev/null || echo '[sensitive]')
@@ -157,6 +156,13 @@ jobs:
             echo "| **Production URL** | $APP_URL |"
             echo "| **Staging Slot URL** | $STAGING_URL |"
             echo "| **Dev Slot URL** | $DEV_URL |"
+            echo ""
+            echo "### Azure Container Registry"
+            echo "| Resource | Value |"
+            echo "|----------|-------|"
+            echo "| **Login Server** | \`$ACR_SERVER\` |"
+            echo "| **Admin Username** | (see Terraform state or Azure Portal) |"
+            echo "| **Admin Password** | (see Terraform state or Azure Portal) |"
             echo ""
             echo "### PostgreSQL Database"
             echo "| Resource | Value |"
@@ -173,20 +179,29 @@ jobs:
             echo "postgres://$DB_USER:<password>@$DB_FQDN:5432/$DB_NAME?sslmode=require"
             echo '```'
             echo ""
-            echo "### Required GitHub Environment Setup"
+            echo "### Required GitHub Secrets (from Terraform outputs)"
             echo ""
-            echo "Add these to your GitHub environments (\`dev\`, \`staging\`, \`prod\`, \`pr-preview\`):"
+            echo "Run these commands to retrieve ACR credentials, then add them as repo secrets:"
+            echo '```bash'
+            echo "terraform output -raw acr_login_server   # -> ACR_LOGIN_SERVER"
+            echo "terraform output -raw acr_admin_username  # -> ACR_USERNAME"
+            echo "terraform output -raw acr_admin_password  # -> ACR_PASSWORD"
+            echo '```'
             echo ""
             echo "| Type | Name | Value |"
             echo "|------|------|-------|"
             echo "| Variable | \`APP_SERVICE_NAME\` | \`$APP_NAME\` |"
             echo "| Secret | \`AZURE_RESOURCE_GROUP\` | (your resource group) |"
             echo "| Secret | \`AZURE_CREDENTIALS\` | (your Azure SP JSON) |"
+            echo "| Secret | \`ACR_LOGIN_SERVER\` | \`$ACR_SERVER\` |"
+            echo "| Secret | \`ACR_USERNAME\` | (from terraform output) |"
+            echo "| Secret | \`ACR_PASSWORD\` | (from terraform output) |"
             echo ""
             echo "### Next Steps"
-            echo "1. Copy \`APP_SERVICE_NAME\` value above to GitHub environment variables"
-            echo "2. Configure app settings via the Settings UI after first deployment"
-            echo "3. Store database password in a secure location (Key Vault recommended)"
+            echo "1. Add ACR secrets above to GitHub repo settings"
+            echo "2. Copy \`APP_SERVICE_NAME\` value to GitHub environment variables"
+            echo "3. Configure app settings via the Settings UI after first deployment"
+            echo "4. Store database password in a secure location (Key Vault recommended)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup

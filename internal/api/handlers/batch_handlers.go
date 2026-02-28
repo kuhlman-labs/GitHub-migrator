@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +23,7 @@ func (h *Handler) ListBatches(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	batches, err := h.db.ListBatches(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "list batches", r) {
+		if h.handleContextError(ctx, err, "list batches", r, w) {
 			return
 		}
 		h.logger.Error("Failed to list batches", "error", err)
@@ -110,8 +109,7 @@ func (h *Handler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 
 // GetBatch handles GET /api/v1/batches/{id}
 func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -120,7 +118,7 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -153,8 +151,7 @@ func (h *Handler) GetBatch(w http.ResponseWriter, r *http.Request) {
 //
 //nolint:gocyclo // HTTP handler with multiple validation and processing steps
 func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -171,7 +168,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -291,8 +288,7 @@ func (h *Handler) DryRunBatch(w http.ResponseWriter, r *http.Request) {
 //
 //nolint:gocyclo // Complexity justified for batch startup validation and orchestration
 func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -309,7 +305,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -412,8 +408,7 @@ func (h *Handler) StartBatch(w http.ResponseWriter, r *http.Request) {
 //
 //nolint:gocyclo // Update operations naturally involve multiple conditional checks
 func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -423,7 +418,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -578,8 +573,7 @@ func (h *Handler) UpdateBatch(w http.ResponseWriter, r *http.Request) {
 
 // DeleteBatch handles DELETE /api/v1/batches/{id}
 func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -589,7 +583,7 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -624,8 +618,7 @@ func (h *Handler) DeleteBatch(w http.ResponseWriter, r *http.Request) {
 //
 //nolint:gocyclo // TODO: refactor to reduce complexity
 func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -635,7 +628,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -662,6 +655,10 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 
 	if len(req.RepositoryIDs) == 0 {
 		WriteError(w, ErrMissingField.WithDetails("repository_ids"))
+		return
+	}
+	if len(req.RepositoryIDs) > MaxBatchArraySize {
+		WriteError(w, ErrBadRequest.WithDetails(fmt.Sprintf("too many repository IDs (maximum %d)", MaxBatchArraySize)))
 		return
 	}
 
@@ -799,8 +796,7 @@ func (h *Handler) AddRepositoriesToBatch(w http.ResponseWriter, r *http.Request)
 
 // RemoveRepositoriesFromBatch handles DELETE /api/v1/batches/{id}/repositories
 func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -810,7 +806,7 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -837,6 +833,10 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 
 	if len(req.RepositoryIDs) == 0 {
 		WriteError(w, ErrMissingField.WithDetails("repository_ids"))
+		return
+	}
+	if len(req.RepositoryIDs) > MaxBatchArraySize {
+		WriteError(w, ErrBadRequest.WithDetails(fmt.Sprintf("too many repository IDs (maximum %d)", MaxBatchArraySize)))
 		return
 	}
 
@@ -869,8 +869,7 @@ func (h *Handler) RemoveRepositoriesFromBatch(w http.ResponseWriter, r *http.Req
 //
 //nolint:gocyclo // Complexity is due to multiple validation and error handling paths
 func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	batchID, err := strconv.ParseInt(idStr, 10, 64)
+	batchID, err := ParsePositiveID(r, "id")
 	if err != nil {
 		WriteError(w, ErrInvalidField.WithDetails("Invalid batch ID"))
 		return
@@ -880,7 +879,7 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 
 	batch, err := h.db.GetBatch(ctx, batchID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get batch", r) {
+		if h.handleContextError(ctx, err, "get batch", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get batch", "error", err)
@@ -955,7 +954,13 @@ func (h *Handler) RetryBatchFailures(w http.ResponseWriter, r *http.Request) {
 	retriedIDs := make([]int64, 0, len(reposToRetry))
 	initiatingUser := getInitiatingUser(ctx)
 	for _, repo := range reposToRetry {
-		repo.Status = string(models.StatusQueuedForMigration)
+		// Preserve the migration type: dry-run failures go back to dry-run queue,
+		// production failures go back to production queue
+		if repo.Status == string(models.StatusDryRunFailed) {
+			repo.Status = string(models.StatusDryRunQueued)
+		} else {
+			repo.Status = string(models.StatusQueuedForMigration)
+		}
 		if err := h.db.UpdateRepository(ctx, repo); err != nil {
 			h.logger.Error("Failed to update repository", "error", err, "repo", repo.FullName)
 			continue

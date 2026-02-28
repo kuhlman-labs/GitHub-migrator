@@ -155,7 +155,7 @@ func (h *Handler) GetMigrationProgress(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.db.GetRepositoryStatsByStatusFiltered(ctx, orgFilter, projectFilter, batchFilter, sourceID)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get repository stats", r) {
+		if h.handleContextError(ctx, err, "get repository stats", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get repository stats", "error", err)

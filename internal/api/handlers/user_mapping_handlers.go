@@ -27,7 +27,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	users, total, err := h.db.ListUsers(ctx, sourceInstance, pagination.Limit, pagination.Offset)
 	if err != nil {
-		if h.handleContextError(ctx, err, "list users", r) {
+		if h.handleContextError(ctx, err, "list users", r, w) {
 			return
 		}
 		h.logger.Error("Failed to list users", "error", err)
@@ -48,7 +48,7 @@ func (h *Handler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.db.GetUserStats(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get user stats", r) {
+		if h.handleContextError(ctx, err, "get user stats", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get user stats", "error", err)
@@ -86,7 +86,7 @@ func (h *Handler) DiscoverOrgMembers(w http.ResponseWriter, r *http.Request) {
 	// Run discovery synchronously since it's typically fast for org members
 	discovered, err := collector.DiscoverOrgMembersOnly(ctx, req.Organization)
 	if err != nil {
-		if h.handleContextError(ctx, err, "discover org members", r) {
+		if h.handleContextError(ctx, err, "discover org members", r, w) {
 			return
 		}
 		h.logger.Error("Org member discovery failed", "error", err, "org", req.Organization)
@@ -152,7 +152,7 @@ func (h *Handler) ListUserMappings(w http.ResponseWriter, r *http.Request) {
 
 	users, total, err := h.db.ListUsersWithMappings(ctx, filters)
 	if err != nil {
-		if h.handleContextError(ctx, err, "list users with mappings", r) {
+		if h.handleContextError(ctx, err, "list users with mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to list users with mappings", "error", err)
@@ -189,7 +189,7 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 	// Get user from github_users
 	user, err := h.db.GetUserByLogin(ctx, login)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get user", r) {
+		if h.handleContextError(ctx, err, "get user", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get user", "login", login, "error", err)
@@ -290,7 +290,7 @@ func (h *Handler) CreateUserMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.SaveUserMapping(ctx, mapping); err != nil {
-		if h.handleContextError(ctx, err, "save user mapping", r) {
+		if h.handleContextError(ctx, err, "save user mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to save user mapping", "error", err)
@@ -325,7 +325,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 	// Get existing mapping
 	existing, err := h.db.GetUserMappingBySourceLogin(ctx, sourceLogin)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get user mapping", r) {
+		if h.handleContextError(ctx, err, "get user mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get user mapping", "error", err)
@@ -368,7 +368,7 @@ func (h *Handler) UpdateUserMapping(w http.ResponseWriter, r *http.Request) {
 	existing.UpdatedAt = time.Now()
 
 	if err := h.db.SaveUserMapping(ctx, existing); err != nil {
-		if h.handleContextError(ctx, err, "update user mapping", r) {
+		if h.handleContextError(ctx, err, "update user mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to update user mapping", "error", err)
@@ -394,7 +394,7 @@ func (h *Handler) DeleteUserMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.DeleteUserMapping(ctx, sourceLogin); err != nil {
-		if h.handleContextError(ctx, err, "delete user mapping", r) {
+		if h.handleContextError(ctx, err, "delete user mapping", r, w) {
 			return
 		}
 		h.logger.Error("Failed to delete user mapping", "error", err)
@@ -590,7 +590,7 @@ func (h *Handler) ExportUserMappings(w http.ResponseWriter, r *http.Request) {
 
 	mappings, _, err := h.db.ListUserMappings(ctx, filters)
 	if err != nil {
-		if h.handleContextError(ctx, err, "export user mappings", r) {
+		if h.handleContextError(ctx, err, "export user mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to export user mappings", "error", err)
@@ -667,7 +667,7 @@ func (h *Handler) GenerateGEICSV(w http.ResponseWriter, r *http.Request) {
 	// Use the new joined query that gets mappings with their mannequin data for a specific org
 	mappingsWithMannequins, err := h.db.ListMappingsWithMannequins(ctx, orgFilter, statusFilter)
 	if err != nil {
-		if h.handleContextError(ctx, err, "generate GEI CSV", r) {
+		if h.handleContextError(ctx, err, "generate GEI CSV", r, w) {
 			return
 		}
 		h.logger.Error("Failed to generate GEI CSV", "error", err)
@@ -718,7 +718,7 @@ func (h *Handler) GetMannequinOrgs(w http.ResponseWriter, r *http.Request) {
 
 	orgs, err := h.db.GetMannequinOrgs(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get mannequin orgs", r) {
+		if h.handleContextError(ctx, err, "get mannequin orgs", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get mannequin orgs", "error", err)
@@ -744,7 +744,7 @@ func (h *Handler) SuggestUserMappings(w http.ResponseWriter, r *http.Request) {
 
 	mappings, _, err := h.db.ListUserMappings(ctx, filters)
 	if err != nil {
-		if h.handleContextError(ctx, err, "suggest user mappings", r) {
+		if h.handleContextError(ctx, err, "suggest user mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get unmapped users", "error", err)
@@ -800,7 +800,7 @@ func (h *Handler) SyncUserMappingsFromDiscovery(w http.ResponseWriter, r *http.R
 	// Create new mappings for users without mappings
 	created, err := h.db.SyncUserMappingsFromUsers(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "sync user mappings", r) {
+		if h.handleContextError(ctx, err, "sync user mappings", r, w) {
 			return
 		}
 		h.logger.Error("Failed to sync user mappings", "error", err)
@@ -867,7 +867,10 @@ func (h *Handler) ReclaimMannequins(w http.ResponseWriter, r *http.Request) {
 	// Mark mannequins as pending reclaim in user_mannequins table
 	for _, m := range pendingReclaims {
 		reclaimStatus := string(models.ReclaimStatusPending)
-		_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, req.DestinationOrg, reclaimStatus, nil)
+		if err := h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, req.DestinationOrg, reclaimStatus, nil); err != nil {
+			h.logger.Warn("Failed to update mannequin reclaim status to pending",
+				"source_login", m.SourceLogin, "error", err)
+		}
 	}
 
 	// Generate instructions for manual reclaim (gh gei reclaim-mannequin requires CLI)
@@ -1383,12 +1386,18 @@ func (h *Handler) SendAttributionInvitation(w http.ResponseWriter, r *http.Reque
 			"target_user", targetUser.Login,
 			"error", err)
 		errMsg := err.Error()
-		_ = h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusFailed), &errMsg)
+		if dbErr := h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusFailed), &errMsg); dbErr != nil {
+			h.logger.Warn("Failed to update mannequin reclaim status to failed",
+				"source_login", sourceLogin, "error", dbErr)
+		}
 		WriteError(w, ErrInternal.WithDetails(fmt.Sprintf("Failed to send invitation: %s", err.Error())))
 		return
 	}
 
-	_ = h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusInvited), nil)
+	if dbErr := h.db.UpdateMannequinReclaimStatus(apiCtx, sourceLogin, req.DestinationOrg, string(models.ReclaimStatusInvited), nil); dbErr != nil {
+		h.logger.Warn("Failed to update mannequin reclaim status to invited",
+			"source_login", sourceLogin, "error", dbErr)
+	}
 
 	h.logger.Info("Attribution invitation sent",
 		"source_login", sourceLogin,
@@ -1463,10 +1472,16 @@ func (h *Handler) processBulkInvitationsWithMannequins(ctx context.Context, dest
 			result.failed++
 			errMsg := err.Error()
 			result.errors = append(result.errors, fmt.Sprintf("%s: %s", m.SourceLogin, errMsg))
-			_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusFailed), &errMsg)
+			if dbErr := h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusFailed), &errMsg); dbErr != nil {
+				h.logger.Warn("Failed to update mannequin reclaim status to failed",
+					"source_login", m.SourceLogin, "error", dbErr)
+			}
 		} else {
 			result.invited++
-			_ = h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusInvited), nil)
+			if dbErr := h.db.UpdateMannequinReclaimStatus(ctx, m.SourceLogin, destOrg, string(models.ReclaimStatusInvited), nil); dbErr != nil {
+				h.logger.Warn("Failed to update mannequin reclaim status to invited",
+					"source_login", m.SourceLogin, "error", dbErr)
+			}
 		}
 	}
 
@@ -1553,7 +1568,7 @@ func (h *Handler) GetSourceOrgs(w http.ResponseWriter, r *http.Request) {
 
 	orgs, err := h.db.GetUserMappingSourceOrgs(ctx)
 	if err != nil {
-		if h.handleContextError(ctx, err, "get source orgs", r) {
+		if h.handleContextError(ctx, err, "get source orgs", r, w) {
 			return
 		}
 		h.logger.Error("Failed to get source orgs", "error", err)

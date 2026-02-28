@@ -34,34 +34,28 @@ variable "always_on" {
   default     = true
 }
 
-# Docker Configuration
-variable "docker_registry_url" {
-  description = "Docker registry URL (e.g., ghcr.io)"
+# Container Registry Configuration
+variable "acr_name" {
+  description = "Name of the Azure Container Registry (must be globally unique, alphanumeric only)"
   type        = string
-  default     = "ghcr.io"
+  default     = "ghmigratoracr"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9]{5,50}$", var.acr_name))
+    error_message = "ACR name must be 5-50 alphanumeric characters only."
+  }
 }
 
-variable "docker_image_repository" {
-  description = "Docker image repository (e.g., username/github-migrator)"
+variable "acr_image_name" {
+  description = "Image name within ACR (e.g., github-migrator)"
   type        = string
+  default     = "github-migrator"
 }
 
 variable "docker_image_tag" {
   description = "Docker image tag"
   type        = string
   default     = "prod"
-}
-
-variable "docker_registry_username" {
-  description = "Docker registry username"
-  type        = string
-  sensitive   = true
-}
-
-variable "docker_registry_password" {
-  description = "Docker registry password/token"
-  type        = string
-  sensitive   = true
 }
 
 # PostgreSQL Database Configuration (Azure resource provisioning)

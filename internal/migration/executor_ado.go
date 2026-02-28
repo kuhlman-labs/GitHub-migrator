@@ -130,8 +130,21 @@ func (e *Executor) ExecuteADOMigration(ctx context.Context, repo *models.Reposit
 	e.logger.Info("Polling migration status", "repo", repo.FullName, "migration_id", migrationID)
 	e.logOperation(ctx, repo, historyID, "INFO", "migration", "poll", "Polling migration status", nil)
 
-	if err := e.pollMigrationStatus(ctx, repo, batch, historyID, migrationID); err != nil {
-		// Error already logged and status updated in pollMigrationStatus
+	if err := e.pollMigrationStatus(ctx, repo, batch, historyID, migrationID, dryRun); err != nil {
+		// pollMigrationStatus only updates repo status for the explicit "FAILED"
+		// state. For other error paths (timeout, context cancellation, GraphQL
+		// query failure) we must update both the repo status and the migration
+		// history here to avoid leaving the repo stuck in "migrating_content".
+		failedStatus := models.StatusMigrationFailed
+		if dryRun {
+			failedStatus = models.StatusDryRunFailed
+		}
+		repo.Status = string(failedStatus)
+		if updateErr := e.storage.UpdateRepository(ctx, repo); updateErr != nil {
+			e.logger.Error("Failed to update repository status after poll error", "error", updateErr)
+		}
+		errMsg := err.Error()
+		e.updateHistoryStatus(ctx, historyID, statusFailed, &errMsg)
 		return fmt.Errorf("migration failed: %w", err)
 	}
 
@@ -179,11 +192,7 @@ func (e *Executor) ExecuteADOMigration(ctx context.Context, repo *models.Reposit
 		repo.MigratedAt = &now
 	}
 
-	if err := e.storage.UpdateRepository(ctx, repo); err != nil {
-		e.logger.Error("Failed to update repository status", "error", err)
-	}
-
-	return nil
+	return e.storage.UpdateRepository(ctx, repo)
 }
 
 // startADORepositoryMigration starts a migration from Azure DevOps to GitHub using GraphQL
@@ -347,8 +356,8 @@ func (e *Executor) startADORepositoryMigration(ctx context.Context, repo *models
 		"has_ado_pat", e.sourceToken != "",
 		"visibility", targetVisibility)
 
-	// Execute mutation
-	err = e.destClient.GraphQL().Mutate(ctx, &mutation, input, nil)
+	// Execute mutation with retry for transient failures (rate limits, 5xx)
+	err = e.destClient.MutateWithRetry(ctx, "StartADORepositoryMigration", &mutation, input, nil)
 	if err != nil {
 		errMsg := err.Error()
 
@@ -442,7 +451,7 @@ func (e *Executor) getOrCreateADOMigrationSource(ctx context.Context, ownerID st
 		"source_name", sourceName,
 		"base_url", adoBaseURL)
 
-	err := e.destClient.GraphQL().Mutate(ctx, &mutation, input, nil)
+	err := e.destClient.MutateWithRetry(ctx, "CreateADOMigrationSource", &mutation, input, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create ADO migration source: %w", err)
 	}
@@ -508,8 +517,8 @@ func (e *Executor) validateADORepositoryAccess(ctx context.Context, repo *models
 	req.Header.Set("Authorization", "Basic "+auth)
 	req.Header.Set("Accept", "application/json")
 
-	// Make the API call
-	client := &http.Client{}
+	// Make the API call with a reasonable timeout
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to call ADO API: %w - ensure the ADO organization is accessible and your network allows outbound connections to dev.azure.com", err)
@@ -517,7 +526,10 @@ func (e *Executor) validateADORepositoryAccess(ctx context.Context, repo *models
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body for better error messages
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return fmt.Errorf("failed to read ADO API response body: %w", readErr)
+	}
 
 	e.logger.Debug("ADO API response",
 		"repo", repo.FullName,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -127,9 +128,10 @@ func (d *Database) Migrate() error {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
 
-	// Determine which dialect folder to use
+	// Determine which dialect folder to use.
+	// Use path.Join (forward-slash) instead of filepath.Join because embed.FS requires forward slashes.
 	dialectFolder := d.getDialectFolder()
-	migrationPath := filepath.Join("migrations", dialectFolder)
+	migrationPath := path.Join("migrations", dialectFolder)
 
 	slog.Info("Loading migrations from dialect folder", "path", migrationPath, "database_type", d.cfg.Type)
 
@@ -158,7 +160,7 @@ func (d *Database) Migrate() error {
 		}
 
 		slog.Info("Applying migration", "file", filename)
-		content, err := migrationsFS.ReadFile(filepath.Join(migrationPath, filename))
+		content, err := migrationsFS.ReadFile(path.Join(migrationPath, filename))
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", filename, err)
 		}

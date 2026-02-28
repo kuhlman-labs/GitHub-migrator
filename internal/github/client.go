@@ -428,9 +428,16 @@ func (c *Client) GetAuthenticatedUserLogin(ctx context.Context) (string, error) 
 func (c *Client) GetOrganizationInstallationID(ctx context.Context, org string) (int64, error) {
 	c.logger.Debug("Getting installation ID for organization", "org", org)
 
-	installation, _, err := c.rest.Apps.FindOrganizationInstallation(ctx, org)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get installation for org %s: %w", org, err)
+	var installation *github.Installation
+	if err := c.retryer.Do(ctx, "GetOrganizationInstallationID", func(ctx context.Context) error {
+		var err error
+		installation, _, err = c.rest.Apps.FindOrganizationInstallation(ctx, org)
+		if err != nil {
+			return WrapError(err, "GetOrganizationInstallationID", c.baseURL)
+		}
+		return nil
+	}); err != nil {
+		return 0, err
 	}
 
 	if installation == nil || installation.ID == nil {
@@ -452,9 +459,17 @@ func (c *Client) ListAppInstallations(ctx context.Context) (map[string]int64, er
 	opts := &github.ListOptions{PerPage: 100}
 
 	for {
-		installs, resp, err := c.rest.Apps.ListInstallations(ctx, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list app installations: %w", err)
+		var installs []*github.Installation
+		var resp *github.Response
+		if err := c.retryer.Do(ctx, "ListAppInstallations", func(ctx context.Context) error {
+			var err error
+			installs, resp, err = c.rest.Apps.ListInstallations(ctx, opts)
+			if err != nil {
+				return WrapError(err, "ListAppInstallations", c.baseURL)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 
 		for _, install := range installs {
@@ -554,6 +569,17 @@ func (c *Client) DoWithRetry(ctx context.Context, operation string, fn func(ctx 
 		resp, err = fn(ctx)
 		duration := time.Since(start)
 
+		// Update rate limits from the response regardless of success or failure.
+		// Error responses (e.g. 429, 403) still carry valid rate-limit headers
+		// that we need to keep our limiter state accurate.
+		if resp != nil && resp.Rate.Limit > 0 {
+			c.rateLimiter.UpdateLimits(
+				resp.Rate.Remaining,
+				resp.Rate.Limit,
+				resp.Rate.Reset.Time,
+			)
+		}
+
 		if err != nil {
 			lastErr = WrapError(err, operation, c.baseURL)
 			c.logger.Error("GitHub API call failed",
@@ -564,14 +590,7 @@ func (c *Client) DoWithRetry(ctx context.Context, operation string, fn func(ctx 
 			return lastErr
 		}
 
-		// Update rate limits from response
 		if resp != nil && resp.Rate.Limit > 0 {
-			c.rateLimiter.UpdateLimits(
-				resp.Rate.Remaining,
-				resp.Rate.Limit,
-				resp.Rate.Reset.Time,
-			)
-
 			c.logger.Debug("GitHub API call completed",
 				"operation", operation,
 				"base_url", c.baseURL,
@@ -591,7 +610,13 @@ func (c *Client) DoWithRetry(ctx context.Context, operation string, fn func(ctx 
 	})
 
 	if err != nil {
-		return resp, lastErr
+		// Prefer lastErr (the wrapped API error) when available, but fall back
+		// to err from retryer.Do -- e.g. when context is cancelled before the
+		// callback ever runs, lastErr is still nil.
+		if lastErr != nil {
+			return resp, lastErr
+		}
+		return resp, err
 	}
 	return resp, nil
 }
