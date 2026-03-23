@@ -48,11 +48,13 @@ configs/config.local.yaml
 
 # DevContainer - Certificates and sensitive files (NEVER commit these!)
 .devcontainer/certs/
-.devcontainer/corporate-certs/
+**/.devcontainer/certs/
+# Ignore cert files in corporate-certs but keep the directory tracked via .gitkeep
+.devcontainer/corporate-certs/*
+!.devcontainer/corporate-certs/.gitkeep
 .devcontainer/**/*.crt
 .devcontainer/**/*.pem
 .devcontainer/**/*.key
-**/.devcontainer/certs/
 
 # Frontend
 web/go.mod
