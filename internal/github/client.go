@@ -183,7 +183,16 @@ func createGitHubAppTokenSource(appID int64, privateKey string, installationID i
 	// This exchanges the App JWT for an installation access token
 	// The go-githubauth library handles token caching and refresh automatically,
 	// avoiding mutex contention that caused performance issues with concurrent requests
-	installationTokenSource := githubauth.NewInstallationTokenSource(installationID, appTokenSource)
+	var installationOpts []githubauth.InstallationTokenSourceOpt
+
+	// For GHES instances, pass the enterprise base URL so the token exchange
+	// hits the correct API endpoint (e.g., https://github.company.com/api/v3/)
+	if baseURL != "" && detectInstanceType(baseURL) != InstanceTypeGitHub {
+		enterpriseURL := strings.TrimSuffix(baseURL, "/") + "/"
+		installationOpts = append(installationOpts, githubauth.WithEnterpriseURL(enterpriseURL))
+	}
+
+	installationTokenSource := githubauth.NewInstallationTokenSource(installationID, appTokenSource, installationOpts...)
 
 	return installationTokenSource, nil
 }
