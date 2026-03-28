@@ -288,9 +288,9 @@ func (s *Server) handleStartDiscovery(ctx context.Context, req mcp.CallToolReque
 	progressTracker := discovery.NewDBProgressTracker(s.db, s.logger, progress)
 	collector.SetProgressTracker(progressTracker)
 
-	// Launch discovery goroutine with 2-hour timeout
+	// Launch discovery goroutine with 72-hour timeout
 	// #nosec G118 -- cancel is called in the goroutine's deferred cleanup
-	discoveryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	discoveryCtx, cancel := context.WithTimeout(context.Background(), 72*time.Hour)
 
 	// Register cancel function
 	s.discoveryMu.Lock()
