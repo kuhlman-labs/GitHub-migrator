@@ -1015,20 +1015,24 @@ func (c *Collector) waitForRateLimitReset(ctx context.Context, err error, tracke
 		previousPhase = progress.Phase
 	}
 
-	// Update tracker to show waiting for rate limit
+	// Update tracker to show waiting for rate limit with expected reset time
 	tracker.SetPhase(models.PhaseWaitingForRateLimit)
+	resumeAt := time.Now().Add(waitDuration)
+	tracker.SetRateLimitResetAt(&resumeAt)
 
 	// Wait for the rate limit to reset
 	select {
 	case <-ctx.Done():
-		// Restore previous phase before returning
+		// Clear rate limit info and restore previous phase before returning
+		tracker.SetRateLimitResetAt(nil)
 		if previousPhase != "" {
 			tracker.SetPhase(previousPhase)
 		}
 		return fmt.Errorf("context cancelled while waiting for rate limit: %w", ctx.Err())
 	case <-time.After(waitDuration):
 		c.logger.Info("Rate limit wait complete, resuming discovery")
-		// Restore previous phase
+		// Clear rate limit info and restore previous phase
+		tracker.SetRateLimitResetAt(nil)
 		if previousPhase != "" {
 			tracker.SetPhase(previousPhase)
 		}

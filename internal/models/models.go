@@ -1265,20 +1265,21 @@ const (
 
 // DiscoveryProgress tracks the progress of a discovery operation
 type DiscoveryProgress struct {
-	ID             int64      `json:"id" gorm:"primaryKey;autoIncrement"`
-	DiscoveryType  string     `json:"discovery_type" gorm:"column:discovery_type;not null"`           // "enterprise", "organization", or "repository"
-	Target         string     `json:"target" gorm:"column:target;not null"`                           // enterprise slug, org name, or "org/repo"
-	Status         string     `json:"status" gorm:"column:status;not null;default:in_progress;index"` // "in_progress", "completed", "failed"
-	StartedAt      time.Time  `json:"started_at" gorm:"column:started_at;not null;autoCreateTime"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty" gorm:"column:completed_at"`
-	TotalOrgs      int        `json:"total_orgs" gorm:"column:total_orgs;default:0"`
-	ProcessedOrgs  int        `json:"processed_orgs" gorm:"column:processed_orgs;default:0"`
-	CurrentOrg     string     `json:"current_org" gorm:"column:current_org"`
-	TotalRepos     int        `json:"total_repos" gorm:"column:total_repos;default:0"`
-	ProcessedRepos int        `json:"processed_repos" gorm:"column:processed_repos;default:0"`
-	Phase          string     `json:"phase" gorm:"column:phase;default:listing_repos"` // Current phase within org processing
-	ErrorCount     int        `json:"error_count" gorm:"column:error_count;default:0"`
-	LastError      *string    `json:"last_error,omitempty" gorm:"column:last_error"`
+	ID               int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	DiscoveryType    string     `json:"discovery_type" gorm:"column:discovery_type;not null"`           // "enterprise", "organization", or "repository"
+	Target           string     `json:"target" gorm:"column:target;not null"`                           // enterprise slug, org name, or "org/repo"
+	Status           string     `json:"status" gorm:"column:status;not null;default:in_progress;index"` // "in_progress", "completed", "failed"
+	StartedAt        time.Time  `json:"started_at" gorm:"column:started_at;not null;autoCreateTime"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty" gorm:"column:completed_at"`
+	TotalOrgs        int        `json:"total_orgs" gorm:"column:total_orgs;default:0"`
+	ProcessedOrgs    int        `json:"processed_orgs" gorm:"column:processed_orgs;default:0"`
+	CurrentOrg       string     `json:"current_org" gorm:"column:current_org"`
+	TotalRepos       int        `json:"total_repos" gorm:"column:total_repos;default:0"`
+	ProcessedRepos   int        `json:"processed_repos" gorm:"column:processed_repos;default:0"`
+	Phase            string     `json:"phase" gorm:"column:phase;default:listing_repos"` // Current phase within org processing
+	ErrorCount       int        `json:"error_count" gorm:"column:error_count;default:0"`
+	LastError        *string    `json:"last_error,omitempty" gorm:"column:last_error"`
+	RateLimitResetAt *time.Time `json:"rate_limit_reset_at,omitempty" gorm:"column:rate_limit_reset_at"` // When rate limit resets (set during waiting_for_rate_limit phase)
 }
 
 // TableName specifies the table name for DiscoveryProgress model

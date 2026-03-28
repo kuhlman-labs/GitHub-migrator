@@ -112,6 +112,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 
 	// Start discovery asynchronously based on type
 	if req.EnterpriseSlug != "" {
+		// #nosec G118 -- goroutine intentionally outlives HTTP request; uses its own context with timeout
 		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
 			return collector.DiscoverEnterpriseRepositories(ctx, req.EnterpriseSlug)
 		}, "enterprise", req.EnterpriseSlug, req.SourceID)
@@ -124,6 +125,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 			"progress_id": progress.ID,
 		})
 	} else {
+		// #nosec G118 -- goroutine intentionally outlives HTTP request; uses its own context with timeout
 		go h.runDiscoveryAsync(progress.ID, progressTracker, func(ctx context.Context) error {
 			return collector.DiscoverRepositories(ctx, req.Organization)
 		}, "organization", req.Organization, req.SourceID)
@@ -140,7 +142,7 @@ func (h *Handler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
 
 // runDiscoveryAsync executes a discovery operation asynchronously and updates progress
 func (h *Handler) runDiscoveryAsync(progressID int64, tracker *discovery.DBProgressTracker, discoverFn func(context.Context) error, discoveryType, target string, sourceID *int64) {
-	// Create cancellable context with a safety-net timeout to prevent permanent goroutine leaks
+	// #nosec G118 -- cancel is called in deferred cleanup; stored in map for external cancellation
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 
 	// Register cancel function for this discovery
@@ -351,6 +353,7 @@ func (h *Handler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start discovery asynchronously with a bounded timeout to prevent goroutine leaks
+	// #nosec G118 -- goroutine intentionally outlives HTTP request; uses its own context with timeout
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
@@ -542,7 +545,7 @@ func (h *Handler) startDynamicADOOrgDiscovery(w http.ResponseWriter, req *StartA
 
 // runDynamicADOOrgDiscovery executes org discovery in background
 func (h *Handler) runDynamicADOOrgDiscovery(organization string, sourceID, progressID int64, collector *discovery.ADOCollector, tracker *discovery.DBProgressTracker) {
-	// Create cancellable context with a safety-net timeout to prevent permanent goroutine leaks
+	// #nosec G118 -- cancel is called in deferred cleanup; stored in map for external cancellation
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 
 	// Register cancel function for this discovery
@@ -615,7 +618,7 @@ func (h *Handler) startDynamicADOProjectDiscovery(w http.ResponseWriter, req *St
 
 // runDynamicADOProjectDiscovery executes project discovery in background
 func (h *Handler) runDynamicADOProjectDiscovery(organization string, projects []string, sourceID, progressID int64, collector *discovery.ADOCollector, tracker *discovery.DBProgressTracker) {
-	// Create cancellable context with a safety-net timeout to prevent permanent goroutine leaks
+	// #nosec G118 -- cancel is called in deferred cleanup; stored in map for external cancellation
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 
 	// Register cancel function for this discovery

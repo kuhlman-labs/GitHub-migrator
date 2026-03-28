@@ -46,6 +46,7 @@ func TestNewService_DefaultConfig(t *testing.T) {
 
 	if service == nil {
 		t.Fatal("expected service, got nil")
+		return
 	}
 	if service.client == nil {
 		t.Error("expected service to have client")

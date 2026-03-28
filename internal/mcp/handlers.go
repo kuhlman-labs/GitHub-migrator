@@ -68,86 +68,20 @@ func getComplexityRating(score int) string {
 	}
 }
 
-// handleAnalyzeRepositories implements the analyze_repositories tool
-func (s *Server) handleAnalyzeRepositories(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Extract parameters
-	org := req.GetString("organization", "")
-	status := req.GetString("status", "")
-	maxComplexity := req.GetInt("max_complexity", 0)
-	minComplexity := req.GetInt("min_complexity", 0)
-	limit := req.GetInt("limit", 20)
-	if limit > 100 {
-		limit = 100
-	}
-
-	// Build filters
-	filters := map[string]any{
-		"limit":           limit,
-		"include_details": true, // Load git properties and validation
-	}
-
-	if org != "" {
-		filters["organization"] = org
-	}
-	if status != "" {
-		filters["status"] = status
-	}
-	if maxComplexity > 0 {
-		filters["max_complexity"] = maxComplexity
-	}
-	if minComplexity > 0 {
-		filters["min_complexity"] = minComplexity
-	}
-
-	// Query repositories
-	repos, err := s.db.ListRepositories(ctx, filters)
-	if err != nil {
-		s.logger.Error("Failed to list repositories", "error", err)
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to query repositories: %v", err)), nil
-	}
-
-	// Convert to summaries
-	summaries := make([]RepositorySummary, 0, len(repos))
-	for _, repo := range repos {
-		summaries = append(summaries, s.repoToSummary(repo))
-	}
-
-	output := AnalyzeRepositoriesOutput{
-		Repositories: summaries,
-		TotalCount:   len(summaries),
-		Message:      fmt.Sprintf("Found %d repositories matching criteria", len(summaries)),
-	}
-
-	return s.jsonResult(output)
-}
-
-// handleGetComplexityBreakdown implements the get_complexity_breakdown tool
-func (s *Server) handleGetComplexityBreakdown(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoName, err := req.RequireString("repository")
-	if err != nil {
-		return mcp.NewToolResultError("repository parameter is required"), nil
-	}
-
-	// Get repository with details
-	repo, err := s.db.GetRepository(ctx, repoName)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Repository not found: %s", repoName)), nil
-	}
-
+// buildComplexityBreakdown extracts complexity breakdown from a repository
+func (s *Server) buildComplexityBreakdown(repo *models.Repository) ComplexityBreakdown {
 	breakdown := ComplexityBreakdown{
 		TotalScore: 0,
 		Rating:     "unknown",
 		Components: make(map[string]int),
 	}
 
-	// Parse complexity breakdown from validation data
 	if repo.Validation != nil {
 		if repo.Validation.ComplexityScore != nil {
 			breakdown.TotalScore = *repo.Validation.ComplexityScore
 			breakdown.Rating = getComplexityRating(*repo.Validation.ComplexityScore)
 		}
 
-		// Parse breakdown JSON if available
 		if repo.Validation.ComplexityBreakdown != nil {
 			var components map[string]int
 			if err := json.Unmarshal([]byte(*repo.Validation.ComplexityBreakdown), &components); err == nil {
@@ -155,7 +89,6 @@ func (s *Server) handleGetComplexityBreakdown(ctx context.Context, req mcp.CallT
 			}
 		}
 
-		// Add blockers based on validation flags
 		if repo.Validation.HasBlockingFiles {
 			breakdown.Blockers = append(breakdown.Blockers, "Has blocking files")
 		}
@@ -173,7 +106,6 @@ func (s *Server) handleGetComplexityBreakdown(ctx context.Context, req mcp.CallT
 		}
 	}
 
-	// Add recommendations based on complexity
 	if breakdown.TotalScore > 17 {
 		breakdown.Recommendations = append(breakdown.Recommendations,
 			"Consider breaking into multiple migrations",
@@ -184,6 +116,270 @@ func (s *Server) handleGetComplexityBreakdown(ctx context.Context, req mcp.CallT
 			"Run a dry-run before full migration",
 		)
 	}
+
+	return breakdown
+}
+
+// buildDependencyInfos converts raw dependencies to DependencyInfo slice
+func (s *Server) buildDependencyInfos(ctx context.Context, deps []*models.RepositoryDependency) []DependencyInfo {
+	infos := make([]DependencyInfo, 0, len(deps))
+	for _, dep := range deps {
+		info := DependencyInfo{
+			DependencyFullName: dep.DependencyFullName,
+			DependencyType:     dep.DependencyType,
+			IsLocal:            dep.IsLocal,
+		}
+		if dep.IsLocal {
+			depRepo, err := s.db.GetRepository(ctx, dep.DependencyFullName)
+			if err == nil && depRepo != nil {
+				info.MigrationStatus = depRepo.Status
+				info.IsMigrated = depRepo.Status == StatusCompleted || depRepo.Status == StatusMigrationComplete
+			}
+		}
+		infos = append(infos, info)
+	}
+	return infos
+}
+
+// buildFeaturesSummary extracts features summary from a repository
+func buildFeaturesSummary(repo *models.Repository) FeaturesSummary {
+	fs := FeaturesSummary{}
+	if repo.GitProperties != nil {
+		fs.HasLFS = repo.GitProperties.HasLFS
+		fs.HasSubmodules = repo.GitProperties.HasSubmodules
+		fs.HasLargeFiles = repo.GitProperties.HasLargeFiles
+		fs.LargeFileCount = repo.GitProperties.LargeFileCount
+		fs.BranchCount = repo.GitProperties.BranchCount
+		fs.CommitCount = repo.GitProperties.CommitCount
+		if repo.GitProperties.TotalSize != nil {
+			fs.TotalSizeKB = *repo.GitProperties.TotalSize / 1024
+		}
+	}
+	if repo.Features != nil {
+		fs.HasWiki = repo.Features.HasWiki
+		fs.HasPages = repo.Features.HasPages
+		fs.HasActions = repo.Features.HasActions
+		fs.HasPackages = repo.Features.HasPackages
+		fs.HasDiscussions = repo.Features.HasDiscussions
+		fs.HasProjects = repo.Features.HasProjects
+		fs.HasRulesets = repo.Features.HasRulesets
+		fs.HasCodeScanning = repo.Features.HasCodeScanning
+		fs.HasDependabot = repo.Features.HasDependabot
+		fs.HasSecretScanning = repo.Features.HasSecretScanning
+		fs.HasCodeowners = repo.Features.HasCodeowners
+		fs.HasSelfHostedRunners = repo.Features.HasSelfHostedRunners
+		fs.HasReleaseAssets = repo.Features.HasReleaseAssets
+		fs.BranchProtections = repo.Features.BranchProtections
+		fs.WebhookCount = repo.Features.WebhookCount
+		fs.EnvironmentCount = repo.Features.EnvironmentCount
+		fs.SecretCount = repo.Features.SecretCount
+		fs.VariableCount = repo.Features.VariableCount
+		fs.WorkflowCount = repo.Features.WorkflowCount
+	}
+	return fs
+}
+
+// buildAggregateStats computes aggregate statistics for a set of repositories
+func buildAggregateStats(repos []*models.Repository) *AnalyzeRepositoriesStats {
+	stats := &AnalyzeRepositoriesStats{
+		ComplexityDistribution: map[string]int{},
+		FeatureCounts:          map[string]int{},
+		StatusDistribution:     map[string]int{},
+	}
+
+	for _, repo := range repos {
+		if repo.GitProperties != nil && repo.GitProperties.TotalSize != nil {
+			stats.TotalSizeKB += *repo.GitProperties.TotalSize / 1024
+		}
+
+		if repo.Validation != nil && repo.Validation.ComplexityScore != nil {
+			stats.ComplexityDistribution[getComplexityRating(*repo.Validation.ComplexityScore)]++
+		}
+
+		if repo.HasLFS() {
+			stats.FeatureCounts["lfs"]++
+		}
+		if repo.HasActions() {
+			stats.FeatureCounts["actions"]++
+		}
+		if repo.HasSubmodules() {
+			stats.FeatureCounts["submodules"]++
+		}
+		if repo.HasPackages() {
+			stats.FeatureCounts["packages"]++
+		}
+		if repo.HasPages() {
+			stats.FeatureCounts["pages"]++
+		}
+		if repo.HasWiki() {
+			stats.FeatureCounts["wiki"]++
+		}
+		if repo.HasDiscussions() {
+			stats.FeatureCounts["discussions"]++
+		}
+		if repo.HasProjects() {
+			stats.FeatureCounts["projects"]++
+		}
+		if repo.HasRulesets() {
+			stats.FeatureCounts["rulesets"]++
+		}
+		if repo.HasCodeScanning() {
+			stats.FeatureCounts["code_scanning"]++
+		}
+		if repo.HasDependabot() {
+			stats.FeatureCounts["dependabot"]++
+		}
+		if repo.HasSecretScanning() {
+			stats.FeatureCounts["secret_scanning"]++
+		}
+		if repo.HasSelfHostedRunners() {
+			stats.FeatureCounts["self_hosted_runners"]++
+		}
+		if repo.HasLargeFiles() {
+			stats.FeatureCounts["large_files"]++
+		}
+
+		if repo.HasMigrationBlockers() {
+			stats.BlockerCount++
+		}
+		if repo.IsArchived {
+			stats.ArchivedCount++
+		}
+		if repo.IsFork {
+			stats.ForkCount++
+		}
+
+		stats.StatusDistribution[repo.Status]++
+	}
+
+	return stats
+}
+
+// parseRepoNamesArray extracts a string array from MCP request arguments
+func parseRepoNamesArray(args map[string]any, key string) []string {
+	reposArg, ok := args[key]
+	if !ok {
+		return nil
+	}
+	var names []string
+	switch v := reposArg.(type) {
+	case []interface{}:
+		for _, r := range v {
+			if s, ok := r.(string); ok {
+				names = append(names, s)
+			}
+		}
+	case []string:
+		names = v
+	}
+	return names
+}
+
+// handleAnalyzeRepositories implements the analyze_repositories tool
+func (s *Server) handleAnalyzeRepositories(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract parameters
+	org := req.GetString("organization", "")
+	status := req.GetString("status", "")
+	maxComplexity := req.GetInt("max_complexity", 0)
+	minComplexity := req.GetInt("min_complexity", 0)
+	limit := req.GetInt("limit", 0) // 0 = no limit (return all)
+
+	// Check for explicit repository list
+	repoNames := parseRepoNamesArray(req.GetArguments(), "repositories")
+
+	var repos []*models.Repository
+	var err error
+
+	if len(repoNames) > 0 {
+		// Fetch specific repos by name
+		repos, err = s.db.GetRepositoriesByNames(ctx, repoNames)
+		if err != nil {
+			s.logger.Error("Failed to get repositories by names", "error", err)
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get repositories: %v", err)), nil
+		}
+
+		// Apply optional in-memory filters
+		filtered := make([]*models.Repository, 0, len(repos))
+		for _, repo := range repos {
+			if org != "" {
+				parts := strings.Split(repo.FullName, "/")
+				if len(parts) > 0 && !strings.EqualFold(parts[0], org) {
+					continue
+				}
+			}
+			if status != "" && repo.Status != status {
+				continue
+			}
+			if repo.Validation != nil && repo.Validation.ComplexityScore != nil {
+				score := *repo.Validation.ComplexityScore
+				if minComplexity > 0 && score < minComplexity {
+					continue
+				}
+				if maxComplexity > 0 && score > maxComplexity {
+					continue
+				}
+			}
+			filtered = append(filtered, repo)
+		}
+		repos = filtered
+		if limit > 0 && len(repos) > limit {
+			repos = repos[:limit]
+		}
+	} else {
+		// Build filters for DB query
+		filters := map[string]any{
+			"include_details": true,
+		}
+		if limit > 0 {
+			filters["limit"] = limit
+		}
+		if org != "" {
+			filters["organization"] = org
+		}
+		if status != "" {
+			filters["status"] = status
+		}
+		if minComplexity > 0 || maxComplexity > 0 {
+			filters["min_complexity_score"] = minComplexity
+			filters["max_complexity_score"] = maxComplexity
+		}
+
+		repos, err = s.db.ListRepositories(ctx, filters)
+		if err != nil {
+			s.logger.Error("Failed to list repositories", "error", err)
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to query repositories: %v", err)), nil
+		}
+	}
+
+	// Convert to summaries
+	summaries := make([]RepositorySummary, 0, len(repos))
+	for _, repo := range repos {
+		summaries = append(summaries, s.repoToSummary(repo))
+	}
+
+	output := AnalyzeRepositoriesOutput{
+		Repositories: summaries,
+		TotalCount:   len(summaries),
+		Stats:        buildAggregateStats(repos),
+		Message:      fmt.Sprintf("Found %d repositories matching criteria", len(summaries)),
+	}
+
+	return s.jsonResult(output)
+}
+
+// handleGetComplexityBreakdown implements the get_complexity_breakdown tool
+func (s *Server) handleGetComplexityBreakdown(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	repoName, err := req.RequireString("repository")
+	if err != nil {
+		return mcp.NewToolResultError("repository parameter is required"), nil
+	}
+
+	repo, err := s.db.GetRepository(ctx, repoName)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Repository not found: %s", repoName)), nil
+	}
+
+	breakdown := s.buildComplexityBreakdown(repo)
 
 	output := GetComplexityBreakdownOutput{
 		Repository: repoName,
@@ -202,33 +398,13 @@ func (s *Server) handleCheckDependencies(ctx context.Context, req mcp.CallToolRe
 	}
 	includeReverse := req.GetBool("include_reverse", false)
 
-	// Get dependencies
 	deps, err := s.db.GetRepositoryDependenciesByFullName(ctx, repoName)
 	if err != nil {
 		s.logger.Error("Failed to get dependencies", "repository", repoName, "error", err)
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to get dependencies: %v", err)), nil
 	}
 
-	// Convert to dependency info
-	dependencies := make([]DependencyInfo, 0, len(deps))
-	for _, dep := range deps {
-		info := DependencyInfo{
-			DependencyFullName: dep.DependencyFullName,
-			DependencyType:     dep.DependencyType,
-			IsLocal:            dep.IsLocal,
-		}
-
-		// Check if dependency is migrated
-		if dep.IsLocal {
-			depRepo, err := s.db.GetRepository(ctx, dep.DependencyFullName)
-			if err == nil && depRepo != nil {
-				info.MigrationStatus = depRepo.Status
-				info.IsMigrated = depRepo.Status == StatusCompleted || depRepo.Status == StatusMigrationComplete
-			}
-		}
-
-		dependencies = append(dependencies, info)
-	}
+	dependencies := s.buildDependencyInfos(ctx, deps)
 
 	output := CheckDependenciesOutput{
 		Repository:      repoName,
@@ -237,7 +413,6 @@ func (s *Server) handleCheckDependencies(ctx context.Context, req mcp.CallToolRe
 		Message:         fmt.Sprintf("Found %d dependencies for %s", len(dependencies), repoName),
 	}
 
-	// Get reverse dependencies if requested
 	if includeReverse {
 		reverseDeps, err := s.db.GetDependentRepositories(ctx, repoName)
 		if err != nil {
@@ -262,23 +437,264 @@ func (s *Server) handleCheckDependencies(ctx context.Context, req mcp.CallToolRe
 	return s.jsonResult(output)
 }
 
+// handleGetDependencyGraph implements the get_dependency_graph tool.
+// Returns the enterprise-wide local dependency graph showing all repos with
+// internal dependencies and their relationships.
+func (s *Server) handleGetDependencyGraph(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	depTypeFilter := req.GetString("dependency_type", "")
+	var depTypes []string
+	if depTypeFilter != "" {
+		depTypes = strings.Split(depTypeFilter, ",")
+	}
+
+	edges, err := s.db.GetAllLocalDependencyPairs(ctx, depTypes, nil)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get dependency graph: %v", err)), nil
+	}
+
+	// Build node set and count edges per node
+	nodeSet := make(map[string]bool)
+	dependsOnCount := make(map[string]int)
+	dependedByCount := make(map[string]int)
+	for _, edge := range edges {
+		nodeSet[edge.SourceRepo] = true
+		nodeSet[edge.TargetRepo] = true
+		dependsOnCount[edge.SourceRepo]++
+		dependedByCount[edge.TargetRepo]++
+	}
+
+	// Build nodes with repo metadata
+	nodes := make([]DependencyGraphNode, 0, len(nodeSet))
+	for fullName := range nodeSet {
+		org := ""
+		status := "unknown"
+		if parts := strings.Split(fullName, "/"); len(parts) > 0 {
+			org = parts[0]
+		}
+		if repo, lookupErr := s.db.GetRepository(ctx, fullName); lookupErr == nil && repo != nil {
+			status = repo.Status
+		}
+		nodes = append(nodes, DependencyGraphNode{
+			FullName:        fullName,
+			Organization:    org,
+			Status:          status,
+			DependsOnCount:  dependsOnCount[fullName],
+			DependedByCount: dependedByCount[fullName],
+		})
+	}
+
+	// Sort nodes by total connections descending for readability
+	sort.Slice(nodes, func(i, j int) bool {
+		totalI := nodes[i].DependsOnCount + nodes[i].DependedByCount
+		totalJ := nodes[j].DependsOnCount + nodes[j].DependedByCount
+		return totalI > totalJ
+	})
+
+	// Build edges
+	graphEdges := make([]DependencyGraphEdge, 0, len(edges))
+	for _, edge := range edges {
+		graphEdges = append(graphEdges, DependencyGraphEdge{
+			Source:         edge.SourceRepo,
+			Target:         edge.TargetRepo,
+			DependencyType: edge.DependencyType,
+		})
+	}
+
+	// Detect circular dependencies
+	edgeSet := make(map[string]bool)
+	circularPairs := make(map[string]bool)
+	for _, edge := range edges {
+		key := edge.SourceRepo + "->" + edge.TargetRepo
+		reverseKey := edge.TargetRepo + "->" + edge.SourceRepo
+		if edgeSet[reverseKey] {
+			pairKey := edge.SourceRepo + "|" + edge.TargetRepo
+			if edge.SourceRepo > edge.TargetRepo {
+				pairKey = edge.TargetRepo + "|" + edge.SourceRepo
+			}
+			circularPairs[pairKey] = true
+		}
+		edgeSet[key] = true
+	}
+
+	output := GetDependencyGraphOutput{
+		Nodes: nodes,
+		Edges: graphEdges,
+		Stats: DependencyGraphStats{
+			TotalReposWithDeps:   len(nodeSet),
+			TotalLocalDeps:       len(edges),
+			CircularDependencies: len(circularPairs),
+		},
+		Message: fmt.Sprintf("Found %d repositories with %d local dependency relationships", len(nodeSet), len(edges)),
+	}
+
+	return s.jsonResult(output)
+}
+
+// handleUpdateRepositoryStatus implements the update_repository_status tool.
+// Supports batch updates with actions: mark_wont_migrate, unmark_wont_migrate,
+// mark_migrated, reset_to_pending.
+func (s *Server) handleUpdateRepositoryStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	action, err := req.RequireString("action")
+	if err != nil {
+		return mcp.NewToolResultError("action parameter is required"), nil
+	}
+
+	// Validate action
+	validActions := map[string]models.MigrationStatus{
+		"mark_wont_migrate":   models.StatusWontMigrate,
+		"unmark_wont_migrate": models.StatusPending,
+		"mark_migrated":       models.StatusComplete,
+		"reset_to_pending":    models.StatusPending,
+	}
+	targetStatus, ok := validActions[action]
+	if !ok {
+		return mcp.NewToolResultError("action must be one of: mark_wont_migrate, unmark_wont_migrate, mark_migrated, reset_to_pending"), nil
+	}
+
+	// Get repositories list
+	repoNames := parseRepoNamesArray(req.GetArguments(), "repositories")
+	if len(repoNames) == 0 {
+		return mcp.NewToolResultError("repositories parameter is required (array of full names)"), nil
+	}
+
+	updatedCount := 0
+	var errors []string
+	for _, repoName := range repoNames {
+		if updateErr := s.db.UpdateRepositoryStatus(ctx, repoName, targetStatus); updateErr != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", repoName, updateErr))
+		} else {
+			updatedCount++
+		}
+	}
+
+	output := UpdateRepositoryStatusOutput{
+		UpdatedCount: updatedCount,
+		FailedCount:  len(errors),
+		Errors:       errors,
+		Message:      fmt.Sprintf("Updated %d/%d repositories to '%s'", updatedCount, len(repoNames), targetStatus),
+	}
+
+	return s.jsonResult(output)
+}
+
+// handleGetRepositoryDetails implements the get_repository_details tool
+func (s *Server) handleGetRepositoryDetails(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	repoName, err := req.RequireString("repository")
+	if err != nil {
+		return mcp.NewToolResultError("repository parameter is required"), nil
+	}
+	includeReverse := req.GetBool("include_reverse", false)
+	historyLimit := req.GetInt("history_limit", 10)
+	if historyLimit <= 0 {
+		historyLimit = 10
+	}
+
+	// Get repository with all details
+	repo, err := s.db.GetRepository(ctx, repoName)
+	if err != nil || repo == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Repository not found: %s", repoName)), nil
+	}
+
+	// Build all sections
+	summary := s.repoToSummary(repo)
+	complexity := s.buildComplexityBreakdown(repo)
+	features := buildFeaturesSummary(repo)
+
+	// Dependencies
+	deps, err := s.db.GetRepositoryDependenciesByFullName(ctx, repoName)
+	if err != nil {
+		deps = nil
+	}
+	dependencies := s.buildDependencyInfos(ctx, deps)
+
+	// Reverse dependencies
+	var reverseDeps []DependencyInfo
+	if includeReverse {
+		revRepos, err := s.db.GetDependentRepositories(ctx, repoName)
+		if err == nil {
+			for _, r := range revRepos {
+				reverseDeps = append(reverseDeps, DependencyInfo{
+					DependencyFullName: r.FullName,
+					DependencyType:     "depends_on_this",
+					IsLocal:            true,
+					MigrationStatus:    r.Status,
+					IsMigrated:         r.Status == StatusCompleted || r.Status == StatusMigrationComplete,
+				})
+			}
+		}
+	}
+
+	// Migration history
+	var historyRecords []MigrationHistoryRecord
+	history, err := s.db.GetMigrationHistory(ctx, repo.ID)
+	if err == nil {
+		for i, h := range history {
+			if i >= historyLimit {
+				break
+			}
+			record := MigrationHistoryRecord{
+				ID:           h.ID,
+				RepositoryID: h.RepositoryID,
+				Status:       h.Status,
+				Phase:        h.Phase,
+				StartedAt:    h.StartedAt.Format(time.RFC3339),
+			}
+			if h.Message != nil {
+				record.Message = *h.Message
+			}
+			if h.ErrorMessage != nil {
+				record.ErrorMessage = *h.ErrorMessage
+			}
+			if h.CompletedAt != nil {
+				t := h.CompletedAt.Format(time.RFC3339)
+				record.CompletedAt = &t
+			}
+			if h.DurationSeconds != nil {
+				record.DurationSeconds = h.DurationSeconds
+			}
+			historyRecords = append(historyRecords, record)
+		}
+	}
+
+	output := GetRepositoryDetailsOutput{
+		Repository:          summary,
+		Complexity:          complexity,
+		Features:            features,
+		Dependencies:        dependencies,
+		DependencyCount:     len(dependencies),
+		ReverseDependencies: reverseDeps,
+		MigrationHistory:    historyRecords,
+		HistoryCount:        len(historyRecords),
+		Message:             fmt.Sprintf("Details for %s: %s complexity (%d points), %d dependencies, %d history records", repoName, complexity.Rating, complexity.TotalScore, len(dependencies), len(historyRecords)),
+	}
+
+	return s.jsonResult(output)
+}
+
 // handleFindPilotCandidates implements the find_pilot_candidates tool
 func (s *Server) handleFindPilotCandidates(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	maxCount := req.GetInt("max_count", 10)
-	if maxCount > 50 {
-		maxCount = 50
-	}
 	org := req.GetString("organization", "")
+	sourceIDVal := int64(req.GetInt("source_id", 0))
+	maxComplexity := req.GetInt("max_complexity", 5)
 
-	// Find simple, pending repositories with few dependencies
+	// Find pending repositories within complexity threshold
+	// Fetch extra to allow scoring and filtering by dependencies
+	fetchLimit := maxCount * 3
+	if fetchLimit < 100 {
+		fetchLimit = 100
+	}
 	filters := map[string]any{
 		"status":          StatusPending,
-		"max_complexity":  5,            // Simple complexity
-		"limit":           maxCount * 2, // Get extra to filter by dependencies
+		"max_complexity":  maxComplexity,
+		"limit":           fetchLimit,
 		"include_details": true,
 	}
 	if org != "" {
 		filters["organization"] = org
+	}
+	if sourceIDVal > 0 {
+		filters["source_id"] = sourceIDVal
 	}
 
 	repos, err := s.db.ListRepositories(ctx, filters)
@@ -336,7 +752,7 @@ func (s *Server) handleFindPilotCandidates(ctx context.Context, req mcp.CallTool
 	output := FindPilotCandidatesOutput{
 		Candidates: candidates,
 		Count:      len(candidates),
-		Criteria:   "Simple complexity (≤5), few local dependencies, not archived, not a fork",
+		Criteria:   fmt.Sprintf("Complexity ≤%d, few local dependencies, not archived, not a fork", maxComplexity),
 		Message:    fmt.Sprintf("Found %d good pilot migration candidates", len(candidates)),
 	}
 

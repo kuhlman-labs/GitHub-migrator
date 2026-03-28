@@ -157,6 +157,7 @@ func (s *Scheduler) ExecuteBatch(ctx context.Context, batchID int64, dryRun bool
 	}
 
 	// Start batch execution in background
+	// #nosec G118 -- batchCtx is derived from the caller's ctx with cancellation; goroutine must outlive the request
 	go s.executeBatchAsync(batchCtx, batch, migratable, dryRun)
 
 	return nil

@@ -57,6 +57,21 @@ func (d *Database) GetSourceByName(ctx context.Context, name string) (*models.So
 	return &source, nil
 }
 
+// GetSourceByEnterpriseSlug retrieves a source by its enterprise slug
+func (d *Database) GetSourceByEnterpriseSlug(ctx context.Context, slug string) (*models.Source, error) {
+	var source models.Source
+	err := d.db.WithContext(ctx).Where("enterprise_slug = ?", slug).First(&source).Error
+
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source by enterprise slug: %w", err)
+	}
+
+	return &source, nil
+}
+
 // ListSources retrieves all sources, optionally filtered by active status
 func (d *Database) ListSources(ctx context.Context) ([]*models.Source, error) {
 	var sources []*models.Source
