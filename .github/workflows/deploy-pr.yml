@@ -185,7 +185,7 @@ jobs:
           exit 1
 
       - name: Comment on PR with preview URL
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const url = '${{ steps.get-url.outputs.url }}';
@@ -271,7 +271,7 @@ jobs:
           fi
 
       - name: Comment on PR about cleanup
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const body = `## Preview Deployment
