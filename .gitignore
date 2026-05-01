@@ -41,11 +41,20 @@ configs/config.local.yaml
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
 .DS_Store
+
+# DevContainer - Certificates and sensitive files (NEVER commit these!)
+.devcontainer/certs/
+**/.devcontainer/certs/
+# Ignore cert files in corporate-certs but keep the directory tracked via .gitkeep
+.devcontainer/corporate-certs/*
+!.devcontainer/corporate-certs/.gitkeep
+.devcontainer/**/*.crt
+.devcontainer/**/*.pem
+.devcontainer/**/*.key
 
 # Frontend
 web/go.mod

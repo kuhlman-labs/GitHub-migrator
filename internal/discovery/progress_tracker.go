@@ -3,6 +3,7 @@ package discovery
 import (
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
@@ -28,6 +29,8 @@ type ProgressTracker interface {
 	IncrementProcessedRepos(count int)
 	// SetPhase updates the current phase of discovery
 	SetPhase(phase string)
+	// SetRateLimitResetAt sets when the rate limit will reset (nil to clear)
+	SetRateLimitResetAt(resetAt *time.Time)
 	// RecordError records an error that occurred during discovery
 	RecordError(err error)
 	// GetProgressID returns the ID of the progress record
@@ -201,6 +204,17 @@ func (t *DBProgressTracker) SetPhase(phase string) {
 	}
 }
 
+// SetRateLimitResetAt sets when the rate limit will reset (nil to clear)
+func (t *DBProgressTracker) SetRateLimitResetAt(resetAt *time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.progress.RateLimitResetAt = resetAt
+	if err := t.db.UpdateDiscoveryProgress(t.progress); err != nil {
+		t.logger.Warn("Failed to update rate limit reset time", "error", err)
+	}
+}
+
 // RecordError records an error that occurred during discovery
 func (t *DBProgressTracker) RecordError(err error) {
 	t.mu.Lock()
@@ -234,6 +248,7 @@ func (NoOpProgressTracker) SetTotalRepos(int)                      {}
 func (NoOpProgressTracker) AddRepos(int)                           {}
 func (NoOpProgressTracker) IncrementProcessedRepos(int)            {}
 func (NoOpProgressTracker) SetPhase(string)                        {}
+func (NoOpProgressTracker) SetRateLimitResetAt(*time.Time)         {}
 func (NoOpProgressTracker) RecordError(error)                      {}
 func (NoOpProgressTracker) GetProgressID() int64                   { return 0 }
 func (NoOpProgressTracker) GetProgress() *models.DiscoveryProgress { return nil }

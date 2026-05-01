@@ -153,7 +153,7 @@ func (h *ADOHandler) startADOOrgDiscovery(w http.ResponseWriter, req StartADODis
 
 // runADOOrgDiscovery executes organization discovery in background
 func (h *ADOHandler) runADOOrgDiscovery(organization string, progressID int64, tracker *discovery.DBProgressTracker) {
-	// Create cancellable context
+	// #nosec G118 -- cancel is called in deferred cleanup; stored in map for external cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Register cancel function for this discovery
@@ -225,7 +225,7 @@ func (h *ADOHandler) startADOProjectDiscovery(w http.ResponseWriter, req StartAD
 
 // runADOProjectDiscovery executes project discovery in background
 func (h *ADOHandler) runADOProjectDiscovery(organization string, projects []string, progressID int64, tracker *discovery.DBProgressTracker) {
-	// Create cancellable context
+	// #nosec G118 -- cancel is called in deferred cleanup; stored in map for external cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Register cancel function for this discovery

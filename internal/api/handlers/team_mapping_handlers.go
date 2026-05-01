@@ -347,6 +347,8 @@ func (h *Handler) DeleteTeamMapping(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ImportTeamMappings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Limit request body size to 10MB to prevent memory exhaustion
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	// Parse multipart form (max 10MB)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		WriteError(w, ErrBadRequest.WithDetails("Failed to parse form data"))

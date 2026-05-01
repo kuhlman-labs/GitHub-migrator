@@ -361,6 +361,18 @@ func applySizeFilters(query *gorm.DB, filters map[string]any) *gorm.DB {
 		query = query.Scopes(WithComplexity(complexity))
 	}
 
+	minScore, hasMinScore := filters["min_complexity_score"].(int)
+	maxScore, hasMaxScore := filters["max_complexity_score"].(int)
+	if hasMinScore || hasMaxScore {
+		query = query.Joins("LEFT JOIN repository_validation rv_score ON rv_score.repository_id = repositories.id")
+		if hasMinScore && minScore > 0 {
+			query = query.Where("COALESCE(rv_score.complexity_score, 0) >= ?", minScore)
+		}
+		if hasMaxScore && maxScore > 0 {
+			query = query.Where("COALESCE(rv_score.complexity_score, 0) <= ?", maxScore)
+		}
+	}
+
 	return query
 }
 

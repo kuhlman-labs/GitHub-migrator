@@ -69,6 +69,7 @@ func TestAuthContext_SetAndGet(t *testing.T) {
 	retrieved := client.getCurrentAuth()
 	if retrieved == nil {
 		t.Fatal("expected auth context, got nil")
+		return
 	}
 
 	if retrieved.UserID != "123" {
@@ -142,6 +143,7 @@ func TestNewClient_DefaultConfig(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("expected client, got nil")
+		return
 	}
 
 	// Check defaults were applied

@@ -214,6 +214,11 @@ func (s *Server) SetConfigService(configSvc *configsvc.Service) {
 	s.configSvc = configSvc
 	s.settingsHandler = handlers.NewSettingsHandler(s.db, s.logger, configSvc)
 
+	// Also set configSvc on the MCP server for hot-reloading after destination changes
+	if s.mcpServer != nil {
+		s.mcpServer.SetConfigService(configSvc)
+	}
+
 	// Also set configSvc on the main handler for effective auth config
 	if s.handler != nil {
 		s.handler.SetConfigService(configSvc)

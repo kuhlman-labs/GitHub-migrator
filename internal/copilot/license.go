@@ -366,12 +366,12 @@ func CheckCLIAvailable(cliPath string) (bool, string, error) {
 	defer cancel()
 
 	// Try --version first (common for most CLIs)
-	// #nosec G204 -- validatedPath has been sanitized by validateCLIPath
+	// #nosec G204,G702 -- validatedPath has been sanitized by validateCLIPath
 	cmd := exec.CommandContext(ctx, validatedPath, "--version")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Try without arguments - some CLIs print version info
-		// #nosec G204 -- validatedPath has been sanitized by validateCLIPath
+		// #nosec G204,G702 -- validatedPath has been sanitized by validateCLIPath
 		cmd = exec.CommandContext(ctx, validatedPath, "version")
 		output, err = cmd.CombinedOutput()
 		if err != nil {

@@ -538,6 +538,7 @@ func (h *Handler) MarkRepositoryRemediated(w http.ResponseWriter, r *http.Reques
 		"had_long_refs", repo.HasLongRefs,
 		"had_blocking_files", repo.HasBlockingFiles)
 
+	// #nosec G118 -- background context is intentional; goroutine outlives the HTTP request
 	go func() {
 		bgCtx := context.Background()
 		if err := h.collector.ProfileRepository(bgCtx, ghRepo); err != nil {

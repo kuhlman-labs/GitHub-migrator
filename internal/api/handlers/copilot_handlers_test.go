@@ -268,6 +268,7 @@ func TestCopilotHandler_GetUserAuthContext_NoAuthorizer(t *testing.T) {
 
 	if authCtx == nil {
 		t.Fatal("expected auth context, got nil")
+		return
 	}
 
 	// Without authorizer, should default to admin
