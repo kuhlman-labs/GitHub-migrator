@@ -9,7 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jferrl/go-githubauth v1.5.0
 	github.com/lmittmann/tint v1.1.2
-	github.com/mark3labs/mcp-go v0.49.0
+	github.com/mark3labs/mcp-go v0.51.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoft/azure-devops-go-api/azuredevops/v7 v7.1.0
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
@@ -45,6 +45,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/shurcooL/graphql v0.0.0-20230722043721-ed46e5a46466 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
