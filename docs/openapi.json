@@ -1840,6 +1840,158 @@
         }
       }
     },
+    "/api/v1/repositories/{fullName}/migration-route": {
+      "post": {
+        "tags": ["repositories"],
+        "summary": "Set or clear the migration route",
+        "description": "Set the migration corridor for a repository. Only \"gei\" and \"elm\" are legal; null clears the route back to the GEI default. This is the operator writer of the ELM route contract.",
+        "operationId": "setRepositoryMigrationRoute",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "route": {
+                    "type": "string",
+                    "enum": ["gei", "elm"],
+                    "nullable": true,
+                    "description": "null or empty clears the route back to the GEI default"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Migration route updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "full_name": {
+                      "type": "string"
+                    },
+                    "migration_route": {
+                      "type": "string",
+                      "enum": ["gei", "elm"]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid migration route - the stored route is left unchanged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ELMErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{fullName}/cutover": {
+      "post": {
+        "tags": ["repositories"],
+        "summary": "Cut an Enterprise Live Migration over to the destination",
+        "description": "Cut over a live migration. THIS IS IRREVERSIBLE: ELM archives the source repository and recovery is a manual operator runbook. Operator-triggered only - nothing transitions into cutover automatically - and --force is never used. Refused with 409 unless the persisted record reports cutover readiness, in which case no cutover command is dispatched.",
+        "operationId": "cutoverRepository",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cutover started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "repository": {
+                      "$ref": "#/components/schemas/Repository"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The live migration is not ready for cutover (reason: elm_not_ready) or the repository has no live migration (reason: elm_no_record). No cutover command is dispatched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ELMErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ELM is not configured for this deployment (reason: elm_not_configured)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ELMErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{fullName}/elm": {
+      "get": {
+        "tags": ["repositories"],
+        "summary": "Get Enterprise Live Migration status",
+        "description": "Report the migration route and, when a live migration exists, its phase, progress and cutover readiness. cutover_ready is the source of truth for whether the dashboard's Cut over button is enabled.",
+        "operationId": "getRepositoryELMStatus",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fullName"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ELM status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ELMStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/organizations": {
       "get": {
         "tags": ["organizations"],
@@ -3876,6 +4028,12 @@
           "status": {
             "type": "string"
           },
+          "migration_route": {
+            "type": "string",
+            "enum": ["gei", "elm"],
+            "nullable": true,
+            "description": "Migration corridor for this repository. NULL or empty reads as \"gei\"."
+          },
           "batch_id": {
             "type": "integer",
             "format": "int64",
@@ -4104,6 +4262,68 @@
         "properties": {
           "error": {
             "type": "string"
+          }
+        }
+      },
+      "ELMErrorResponse": {
+        "type": "object",
+        "description": "A refused ELM request. reason is stable and machine-readable so the dashboard can branch on the cause without parsing prose.",
+        "required": ["error", "reason"],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["elm_not_ready", "elm_no_record", "elm_not_configured", "invalid_migration_route"]
+          }
+        }
+      },
+      "ELMStatus": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "migration_route": {
+            "type": "string",
+            "enum": ["gei", "elm"],
+            "description": "The stored route; a NULL column reads as \"gei\""
+          },
+          "status": {
+            "type": "string"
+          },
+          "has_elm_migration": {
+            "type": "boolean"
+          },
+          "elm_migration_id": {
+            "type": "string"
+          },
+          "elm_status": {
+            "type": "string"
+          },
+          "elm_phase": {
+            "type": "string"
+          },
+          "progress_percent": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cutover_ready": {
+            "type": "boolean",
+            "description": "Whether the appliance reports the backfill ready to cut over. The dashboard's Cut over button is disabled unless this is true."
+          },
+          "last_polled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
           }
         }
       }

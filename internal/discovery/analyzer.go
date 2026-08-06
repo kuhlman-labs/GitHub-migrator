@@ -41,6 +41,15 @@ const (
 // Analyzer analyzes Git repository properties
 type Analyzer struct {
 	logger *slog.Logger
+
+	// ELMEnabled turns on the discovery half of the ELM route contract. It
+	// DEFAULTS TO FALSE, and while false an oversized repository is handled
+	// byte-for-byte as it always has been: flagged oversized and forced to
+	// remediation_required, with migration_route left nil (which reads as the GEI
+	// default). Only when it is true does the analyzer write "elm" into
+	// repositories.migration_route -- the same single column the operator endpoint
+	// writes and ELMStrategy reads.
+	ELMEnabled bool
 }
 
 // NewAnalyzer creates a new Git analyzer
@@ -48,6 +57,14 @@ func NewAnalyzer(logger *slog.Logger) *Analyzer {
 	return &Analyzer{
 		logger: logger,
 	}
+}
+
+// WithELMEnabled enables or disables ELM auto-routing during discovery and
+// returns the analyzer, so callers holding the ELM config can wire the gate in
+// one line. ELM routing stays off unless this is called with true.
+func (a *Analyzer) WithELMEnabled(enabled bool) *Analyzer {
+	a.ELMEnabled = enabled
+	return a
 }
 
 // GitSizerMetric represents a single metric in git-sizer JSON output (version 2)
@@ -788,7 +805,9 @@ func (a *Analyzer) categorizeFileSizeIssues(output *GitSizerOutput, repo *models
 }
 
 // validateRepositorySize checks if the repository exceeds GitHub's 40 GiB limit
-// Repositories exceeding this limit will be automatically marked for remediation
+// Repositories exceeding this limit will be automatically marked for remediation,
+// UNLESS ELM is enabled and the repository is eligible for the live-migration
+// corridor -- see elmRouteEligible.
 func (a *Analyzer) validateRepositorySize(repo *models.Repository) {
 	if repo.GetTotalSize() == nil {
 		return
@@ -808,6 +827,25 @@ func (a *Analyzer) validateRepositorySize(repo *models.Repository) {
 			limitGB)
 		repo.SetOversizedRepositoryDetails(&details)
 
+		// This is the discovery half of the ELM route contract: an oversized GHES
+		// repository is migratable after all, via Enterprise Live Migrations. Record
+		// the route in repositories.migration_route -- the SAME column the operator
+		// endpoint writes and ELMStrategy reads -- and deliberately do NOT force
+		// remediation_required, because the repository does not need remediating.
+		// The oversized flag and details stay set so the size is still surfaced.
+		if a.elmRouteEligible(repo) {
+			route := string(models.MigrationRouteELM)
+			repo.MigrationRoute = &route
+
+			a.logger.Info("Repository exceeds GitHub's 40 GiB size limit - routing to ELM",
+				"repo_path", repo.FullName,
+				"size_gb", sizeGB,
+				"limit_gb", limitGB,
+				"migration_route", route,
+				"status", repo.Status)
+			return
+		}
+
 		// Automatically set repository status to remediation_required
 		repo.Status = string(models.StatusRemediationRequired)
 
@@ -817,4 +855,21 @@ func (a *Analyzer) validateRepositorySize(repo *models.Repository) {
 			"limit_gb", limitGB,
 			"status", repo.Status)
 	}
+}
+
+// elmRouteEligible reports whether discovery may auto-route this repository to
+// Enterprise Live Migrations.
+//
+// The gate is off by default (ELMEnabled), and even when on ELM only serves the
+// GHES -> GHE.com corridor, so an Azure DevOps repository or a non-GHES source is
+// never auto-routed. These are exactly the conditions ELMStrategy.SupportsRepository
+// re-checks at strategy-selection time.
+func (a *Analyzer) elmRouteEligible(repo *models.Repository) bool {
+	if !a.ELMEnabled {
+		return false
+	}
+	if ado := repo.GetADOProject(); ado != nil && *ado != "" {
+		return false
+	}
+	return repo.Source == models.SourceGHES
 }

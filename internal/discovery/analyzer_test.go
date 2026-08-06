@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kuhlman-labs/github-migrator/internal/models"
@@ -973,4 +974,140 @@ func TestGetGitObjectSize_Integration(t *testing.T) {
 	}
 
 	t.Logf("Git object size: %d bytes", size)
+}
+
+// oversizedRepo builds a repository whose measured size is over GitHub's 40 GiB
+// limit. The size is seeded BY CONSTRUCTION (a literal above MaxRepositorySize)
+// rather than by running the analyzer, so the assertions below land on the
+// routing behaviour and not on fixture setup.
+func oversizedRepo(t *testing.T, source string, adoProject *string) *models.Repository {
+	t.Helper()
+
+	size := int64(MaxRepositorySize) + (1 << 30) // 1 GiB over the limit
+	repo := &models.Repository{
+		FullName:      "acme/huge",
+		Source:        source,
+		Status:        string(models.StatusPending),
+		GitProperties: &models.RepositoryGitProperties{TotalSize: &size},
+	}
+	if adoProject != nil {
+		repo.ADOProperties = &models.RepositoryADOProperties{Project: adoProject}
+	}
+	return repo
+}
+
+// TestAnalyzer_OversizedRepoWithoutELM pins the OFF-BY-DEFAULT gate: with
+// ELMEnabled false (the zero value), an oversized GHES repository is handled
+// exactly as it is today -- flagged oversized and forced to remediation_required,
+// with migration_route left nil so it reads as the GEI default.
+func TestAnalyzer_OversizedRepoWithoutELM(t *testing.T) {
+	analyzer := NewAnalyzer(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if analyzer.ELMEnabled {
+		t.Fatal("ELMEnabled must default to false")
+	}
+
+	repo := oversizedRepo(t, models.SourceGHES, nil)
+	analyzer.validateRepositorySize(repo)
+
+	if !repo.HasOversizedRepository() {
+		t.Error("expected oversized repository flag to be set")
+	}
+	if repo.Status != string(models.StatusRemediationRequired) {
+		t.Errorf("expected status %q, got %q", models.StatusRemediationRequired, repo.Status)
+	}
+	if repo.MigrationRoute != nil {
+		t.Errorf("expected migration_route to stay nil with ELM disabled, got %q", *repo.MigrationRoute)
+	}
+	if repo.GetMigrationRoute() != string(models.MigrationRouteGEI) {
+		t.Errorf("expected an unrouted repository to read as %q, got %q",
+			models.MigrationRouteGEI, repo.GetMigrationRoute())
+	}
+}
+
+// TestAnalyzer_OversizedRepoWithELM covers the enabled branch: the repository is
+// routed to ELM, is NOT forced to remediation_required, and still carries the
+// oversized flag and details so the size stays visible to the operator.
+func TestAnalyzer_OversizedRepoWithELM(t *testing.T) {
+	analyzer := NewAnalyzer(slog.New(slog.NewTextHandler(os.Stderr, nil))).WithELMEnabled(true)
+
+	repo := oversizedRepo(t, models.SourceGHES, nil)
+	analyzer.validateRepositorySize(repo)
+
+	if repo.MigrationRoute == nil || *repo.MigrationRoute != string(models.MigrationRouteELM) {
+		t.Fatalf("expected migration_route %q, got %v", models.MigrationRouteELM, repo.MigrationRoute)
+	}
+	if !repo.IsELMRouted() {
+		t.Error("expected repository to read as ELM-routed")
+	}
+	if repo.Status == string(models.StatusRemediationRequired) {
+		t.Error("expected an ELM-routed oversized repository NOT to be forced to remediation_required")
+	}
+	if !repo.HasOversizedRepository() {
+		t.Error("expected the oversized flag to stay set so the size is still surfaced")
+	}
+	details := repo.GetOversizedRepositoryDetails()
+	if details == nil {
+		t.Fatal("expected oversized repository details to stay set")
+	}
+	if !strings.Contains(*details, `"size_bytes"`) {
+		t.Errorf("expected size details to be recorded, got %q", *details)
+	}
+}
+
+// TestAnalyzer_OversizedRepoELMIneligibleSources covers the corridor restriction:
+// even with ELM enabled, only a GHES-sourced repository with no ADO project is
+// auto-routed. Everything else keeps today's remediation behaviour.
+func TestAnalyzer_OversizedRepoELMIneligibleSources(t *testing.T) {
+	adoProject := "Contoso"
+
+	tests := []struct {
+		name       string
+		source     string
+		adoProject *string
+	}{
+		{name: "github.com source is not an ELM corridor", source: models.SourceGHEC, adoProject: nil},
+		{name: "azure devops repository is never ELM-routed", source: models.SourceAzureDevOps, adoProject: &adoProject},
+		{name: "ado project on a ghes row still refuses", source: models.SourceGHES, adoProject: &adoProject},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analyzer := NewAnalyzer(slog.New(slog.NewTextHandler(os.Stderr, nil))).WithELMEnabled(true)
+
+			repo := oversizedRepo(t, tt.source, tt.adoProject)
+			analyzer.validateRepositorySize(repo)
+
+			if repo.MigrationRoute != nil {
+				t.Errorf("expected migration_route to stay nil, got %q", *repo.MigrationRoute)
+			}
+			if repo.Status != string(models.StatusRemediationRequired) {
+				t.Errorf("expected status %q, got %q", models.StatusRemediationRequired, repo.Status)
+			}
+		})
+	}
+}
+
+// TestAnalyzer_UnderSizedRepoIsNeverRouted proves the route write is bound to the
+// oversized branch: a repository within the limit is untouched even with ELM on.
+func TestAnalyzer_UnderSizedRepoIsNeverRouted(t *testing.T) {
+	analyzer := NewAnalyzer(slog.New(slog.NewTextHandler(os.Stderr, nil))).WithELMEnabled(true)
+
+	size := int64(1024)
+	repo := &models.Repository{
+		FullName:      "acme/small",
+		Source:        models.SourceGHES,
+		Status:        string(models.StatusPending),
+		GitProperties: &models.RepositoryGitProperties{TotalSize: &size},
+	}
+	analyzer.validateRepositorySize(repo)
+
+	if repo.MigrationRoute != nil {
+		t.Errorf("expected migration_route to stay nil, got %q", *repo.MigrationRoute)
+	}
+	if repo.HasOversizedRepository() {
+		t.Error("expected a small repository not to be flagged oversized")
+	}
+	if repo.Status != string(models.StatusPending) {
+		t.Errorf("expected status to stay %q, got %q", models.StatusPending, repo.Status)
+	}
 }
