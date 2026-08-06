@@ -158,9 +158,18 @@ workflows:
           # on a test failure, feed the captured output back for a
           # bounded fix loop, then re-verify, before the PR opens.
           verify:
-            # Backend (go test) + frontend (vitest) suites — see the
-            # `test-all` target in this repo's Makefile.
-            command: "make test-all"
+            # Backend suite. `download-binaries` is NOT optional: several
+            # packages reach internal/embedded, whose //go:embed
+            # bin/git-sizer-* directives fail the BUILD outright when the
+            # binaries are absent — and they are gitignored, so a fresh
+            # checkout (every implement worktree) never has them. This
+            # mirrors ci.yml, which downloads them before `go test` for
+            # the same reason.
+            #
+            # Backend only: the web suite needs `npm ci` first, which is
+            # too slow to provision per worktree inside this timeout. The
+            # frontend slice runs `npm run test:run` itself.
+            command: "make download-binaries && make test"
             timeout: "15m"
             max_iterations: 1
         # Advisory implement-review: agent reviewers read the diff
