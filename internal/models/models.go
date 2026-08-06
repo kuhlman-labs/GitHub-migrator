@@ -40,12 +40,17 @@ type Repository struct {
 	SourceID  *int64 `json:"source_id,omitempty" gorm:"index"` // Foreign key to sources table
 
 	// Core status fields (kept in main table for fast filtering)
-	Status     string `json:"status" gorm:"not null;index"`
-	BatchID    *int64 `json:"batch_id,omitempty" gorm:"index"`
-	Priority   int    `json:"priority" gorm:"default:0"`
-	Visibility string `json:"visibility"`
-	IsArchived bool   `json:"is_archived" gorm:"default:false"`
-	IsFork     bool   `json:"is_fork" gorm:"default:false"`
+	Status string `json:"status" gorm:"not null;index"`
+	// MigrationRoute records which migration corridor this repository takes.
+	// It lives on the main repositories table (not a related table) so the strategy
+	// reader sees it without a Preload. NULL or empty reads as the GEI default --
+	// see GetMigrationRoute. Only MigrationRouteGEI and MigrationRouteELM are legal.
+	MigrationRoute *string `json:"migration_route,omitempty" gorm:"column:migration_route;index"`
+	BatchID        *int64  `json:"batch_id,omitempty" gorm:"index"`
+	Priority       int     `json:"priority" gorm:"default:0"`
+	Visibility     string  `json:"visibility"`
+	IsArchived     bool    `json:"is_archived" gorm:"default:false"`
+	IsFork         bool    `json:"is_fork" gorm:"default:false"`
 
 	// Migration destination
 	DestinationURL      *string `json:"destination_url,omitempty"`
@@ -285,6 +290,36 @@ func (r *Repository) GetADOIsGit() bool {
 	return true // Default to true for non-ADO repos
 }
 
+// GetMigrationRoute returns the migration route recorded for this repository.
+//
+// THE DEFAULT IS THE CONTRACT: a NULL or empty column reads as MigrationRouteGEI,
+// so every repository that exists today -- and every repository discovered in
+// future -- is GEI-routed unless something explicitly writes "elm". No backfill is
+// required and no existing repository changes behavior.
+func (r *Repository) GetMigrationRoute() string {
+	if r.MigrationRoute == nil || *r.MigrationRoute == "" {
+		return string(MigrationRouteGEI)
+	}
+	return *r.MigrationRoute
+}
+
+// IsELMRouted returns true if this repository is routed to Enterprise Live Migrations.
+// This is the single decision point consulted by ELMStrategy.SupportsRepository.
+func (r *Repository) IsELMRouted() bool {
+	return r.GetMigrationRoute() == string(MigrationRouteELM)
+}
+
+// IsValidMigrationRoute returns true if s is one of the two legal migration routes.
+// Used by the operator-facing route writer to reject anything else.
+func IsValidMigrationRoute(s string) bool {
+	switch MigrationRoute(s) {
+	case MigrationRouteGEI, MigrationRouteELM:
+		return true
+	default:
+		return false
+	}
+}
+
 // HasMigrationBlockers returns true if the repository has any migration blockers.
 func (r *Repository) HasMigrationBlockers() bool {
 	return r.HasOversizedCommits() || r.HasLongRefs() || r.HasBlockingFiles() || r.HasOversizedRepository()
@@ -308,6 +343,12 @@ func (r *Repository) IsMigrationInProgress() bool {
 		string(StatusQueuedForMigration): true,
 		string(StatusMigratingContent):   true,
 		string(StatusPostMigration):      true,
+		// ELM lifecycle: a live migration is in progress from the moment the
+		// backfill starts until cutover completes, including the (potentially
+		// long) awaiting_cutover wait, so it is never treated as idle or re-queued.
+		string(StatusSyncing):         true,
+		string(StatusAwaitingCutover): true,
+		string(StatusCuttingOver):     true,
 	}
 	return inProgressStatuses[r.Status]
 }
@@ -338,7 +379,10 @@ func (r *Repository) CanBeAssignedToBatch() (bool, string) {
 	if r.BatchID != nil {
 		return false, "repository is already assigned to a batch"
 	}
-	if r.HasOversizedRepository() {
+	// An oversized repository is exactly the case ELM exists to serve: a live
+	// migration streams the repository rather than building a 40 GiB archive, so
+	// the size refusal below must not apply to an ELM-routed repository.
+	if r.HasOversizedRepository() && !r.IsELMRouted() {
 		return false, "repository exceeds GitHub's 40 GiB size limit and requires remediation"
 	}
 	eligibleStatuses := map[string]bool{
@@ -509,6 +553,9 @@ func NewADORepository(fullName, sourceURL, visibility string, project *string, i
 func (r *Repository) flattenOptionalFields(result map[string]any) {
 	if r.SourceID != nil {
 		result["source_id"] = *r.SourceID
+	}
+	if r.MigrationRoute != nil {
+		result["migration_route"] = *r.MigrationRoute
 	}
 	if r.BatchID != nil {
 		result["batch_id"] = *r.BatchID
@@ -884,7 +931,48 @@ const (
 	StatusComplete            MigrationStatus = "complete"
 	StatusRolledBack          MigrationStatus = "rolled_back"
 	StatusWontMigrate         MigrationStatus = "wont_migrate"
+
+	// ELM (Enterprise Live Migrations) lifecycle statuses.
+	// A repository backfilling into the destination is "syncing"; once the
+	// appliance reports the backfill is caught up it moves to "awaiting_cutover",
+	// where it can sit indefinitely waiting on a deliberate operator cutover;
+	// "cutting_over" covers the brief irreversible cutover itself.
+	StatusSyncing         MigrationStatus = "syncing"
+	StatusAwaitingCutover MigrationStatus = "awaiting_cutover"
+	StatusCuttingOver     MigrationStatus = "cutting_over"
 )
+
+// MigrationRoute identifies which migration corridor a repository takes.
+type MigrationRoute string
+
+const (
+	// MigrationRouteGEI routes a repository through the GitHub Enterprise Importer.
+	// This is the default for any repository with no route recorded.
+	MigrationRouteGEI MigrationRoute = "gei"
+	// MigrationRouteELM routes a repository through Enterprise Live Migrations.
+	MigrationRouteELM MigrationRoute = "elm"
+)
+
+// ELMMigration tracks the state of an Enterprise Live Migration for a repository.
+// One row per repository; the ELM migration id is the handle the appliance knows.
+type ELMMigration struct {
+	ID              int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	RepositoryID    int64      `json:"repository_id" gorm:"column:repository_id;not null;uniqueIndex"`
+	ELMMigrationID  string     `json:"elm_migration_id" gorm:"column:elm_migration_id;not null;uniqueIndex"`
+	ELMStatus       string     `json:"elm_status" gorm:"column:elm_status;not null"`
+	ELMPhase        string     `json:"elm_phase" gorm:"column:elm_phase"`
+	CutoverReady    bool       `json:"cutover_ready" gorm:"column:cutover_ready;default:false"`
+	ProgressPercent *int       `json:"progress_percent,omitempty" gorm:"column:progress_percent"`
+	LastPolledAt    *time.Time `json:"last_polled_at,omitempty" gorm:"column:last_polled_at"`
+	LastError       *string    `json:"last_error,omitempty" gorm:"column:last_error;type:text"`
+	CreatedAt       time.Time  `json:"created_at" gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt       time.Time  `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime"`
+}
+
+// TableName specifies the table name for ELMMigration model
+func (ELMMigration) TableName() string {
+	return "elm_migrations"
+}
 
 // MigrationHistory tracks the migration lifecycle of a repository
 type MigrationHistory struct {
