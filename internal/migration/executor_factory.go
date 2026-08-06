@@ -33,6 +33,12 @@ type ExecutorFactory struct {
 	postMigrationMode PostMigrationMode
 	configProvider    MigrationConfigProvider // Dynamic config provider (optional)
 
+	// elmService is the deployment's single Enterprise Live Migrations service.
+	// It is nil when ELM is disabled or unconfigured, in which case the ELM
+	// strategy refuses loudly rather than letting an ELM-routed repository fall
+	// through to GEI.
+	elmService *ELMService
+
 	// Static fallback values used when no configProvider is set
 	staticDestRepoExistsAction DestinationRepoExistsAction
 	staticVisibilityHandling   VisibilityHandling
@@ -47,6 +53,7 @@ type ExecutorFactoryConfig struct {
 	DestRepoExistsAction DestinationRepoExistsAction
 	VisibilityHandling   VisibilityHandling
 	ConfigProvider       MigrationConfigProvider // Optional: provides dynamic settings
+	ELMService           *ELMService             // Optional: enables the ELM corridor
 }
 
 // NewExecutorFactory creates a new executor factory
@@ -86,6 +93,7 @@ func NewExecutorFactory(cfg ExecutorFactoryConfig) (*ExecutorFactory, error) {
 		logger:                     cfg.Logger,
 		postMigrationMode:          postMigMode,
 		configProvider:             cfg.ConfigProvider,
+		elmService:                 cfg.ELMService,
 		staticDestRepoExistsAction: destRepoAction,
 		staticVisibilityHandling:   visibilityHandling,
 	}, nil
@@ -231,7 +239,13 @@ func (f *ExecutorFactory) ExecuteWithStrategy(ctx context.Context, repo *models.
 		return fmt.Errorf("failed to get executor: %w", err)
 	}
 
-	return executor.ExecuteWithStrategy(ctx, repo, batch, dryRun)
+	return executor.ExecuteWithStrategyAndELM(ctx, repo, batch, dryRun, f.elmService)
+}
+
+// ELMService returns the deployment's ELM service, or nil when ELM is not
+// configured.
+func (f *ExecutorFactory) ELMService() *ELMService {
+	return f.elmService
 }
 
 // ExecuteMigration implements the MigrationExecutor interface for compatibility with batch scheduler.
