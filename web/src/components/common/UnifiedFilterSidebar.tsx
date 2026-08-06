@@ -28,6 +28,9 @@ const STATUS_CATEGORIES = [
     statuses: [
       { value: 'pending', label: 'Pending' },
       { value: 'remediation_required', label: 'Remediation Required' },
+      // Grouped with the other operator-action statuses: an ELM backfill that is
+      // caught up waits here until a human triggers cutover.
+      { value: 'awaiting_cutover', label: 'Awaiting Cutover' },
     ]
   },
   {
@@ -40,6 +43,9 @@ const STATUS_CATEGORIES = [
       { value: 'queued_for_migration', label: 'Queued for Migration' },
       { value: 'migrating_content', label: 'Migrating Content' },
       { value: 'post_migration', label: 'Post Migration' },
+      // ELM live migration in flight
+      { value: 'syncing', label: 'Syncing' },
+      { value: 'cutting_over', label: 'Cutting Over' },
     ]
   },
   {

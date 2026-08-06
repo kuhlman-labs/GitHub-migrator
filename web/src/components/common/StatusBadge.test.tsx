@@ -101,6 +101,37 @@ describe('StatusBadge', () => {
     });
   });
 
+  // Each ELM status is asserted independently, on its rendered variant rather
+  // than only its text, so a partial edit that maps one status and forgets the
+  // others fails here.
+  describe('ELM live migration statuses', () => {
+    it('should render syncing with the in-progress accent variant', () => {
+      render(<StatusBadge status="syncing" />);
+      expect(screen.getByText('syncing')).toHaveAttribute('data-variant', 'accent');
+    });
+
+    it('should render cutting_over with the in-progress accent variant', () => {
+      render(<StatusBadge status="cutting_over" />);
+      expect(screen.getByText('cutting over')).toHaveAttribute('data-variant', 'accent');
+    });
+
+    it('should render awaiting_cutover with the attention variant', () => {
+      render(<StatusBadge status="awaiting_cutover" />);
+      expect(screen.getByText('awaiting cutover')).toHaveAttribute('data-variant', 'attention');
+    });
+
+    it('should distinguish awaiting_cutover from a migration in flight', () => {
+      const { unmount } = render(<StatusBadge status="awaiting_cutover" />);
+      const awaiting = screen.getByText('awaiting cutover').getAttribute('data-variant');
+      unmount();
+
+      render(<StatusBadge status="syncing" />);
+      const syncing = screen.getByText('syncing').getAttribute('data-variant');
+
+      expect(awaiting).not.toBe(syncing);
+    });
+  });
+
   describe('size variants', () => {
     it('should render with large size by default', () => {
       render(<StatusBadge status="pending" />);
