@@ -16,7 +16,6 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/azuredevops"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
-	"github.com/kuhlman-labs/github-migrator/internal/elm"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/mcp"
 	"github.com/kuhlman-labs/github-migrator/internal/migration"
@@ -125,10 +124,10 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		}
 	}
 
-	// Wire the ELM service behind the operator-triggered cutover endpoint. This is
-	// a no-op unless ELM is explicitly enabled and fully configured, in which case
-	// the ELM endpoints answer 503 rather than acting.
-	wireELMService(cfg, db, mainHandler, logger)
+	// The ELM service is NOT built here. cmd/server/main.go builds exactly one ELM
+	// service (owning a single privileged SSH transport and the poll loop) and
+	// injects it via SetELMService, so the API layer never opens a second admin-shell
+	// connection. Until that injection lands the ELM endpoints answer 503.
 
 	// Create source handler for multi-source management
 	sourceHandler := handlers.NewSourceHandler(db, logger)
@@ -160,66 +159,20 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 	}
 }
 
-// wireELMService gives the API layer an ELM service so the operator-triggered
-// cutover endpoint can act.
+// SetELMService injects the deployment's single ELM service so the
+// operator-triggered cutover endpoint can act.
 //
-// The service is built here rather than injected because api.NewServer is called
-// before cmd/server/main.go builds the worker-side ELM service. This instance
-// serves only the synchronous, operator-triggered API actions; the long-lived
-// poll/reconcile loop stays where main.go starts it, so this one never polls.
-//
-// Every failure path is fail-soft AND fail-closed: nothing is registered, and the
-// ELM endpoints answer 503 "elm_not_configured" instead of acting on a half-built
-// transport.
-func wireELMService(cfg *config.Config, db *storage.Database, h *handlers.Handler, logger *slog.Logger) {
-	if !cfg.ELM.Enabled {
+// The service is built once in cmd/server/main.go, which owns its one privileged
+// SSH transport and the long-lived poll/reconcile loop. Injecting that same
+// instance here (rather than building a second one) means the API layer opens no
+// additional admin-shell connection and leaks none. Until this is called the ELM
+// endpoints answer 503 "elm_not_configured"; a nil service leaves them that way.
+func (s *Server) SetELMService(svc *migration.ELMService) {
+	if svc == nil {
 		return
 	}
-	if err := cfg.ELM.Validate(); err != nil {
-		logger.Error("ELM is enabled but misconfigured - the cutover endpoint is unavailable", "error", err)
-		return
-	}
-
-	transport, err := elm.NewSSHTransport(elm.SSHConfig{
-		Host:                 cfg.ELM.SSHHost,
-		Port:                 cfg.ELM.SSHPort,
-		User:                 cfg.ELM.SSHUser,
-		PrivateKeyPath:       cfg.ELM.SSHPrivateKeyPath,
-		PrivateKeyPassphrase: cfg.ELM.SSHPrivateKeyPassphrase,
-		KnownHostsPath:       cfg.ELM.SSHKnownHostsPath,
-		ConnectTimeout:       time.Duration(cfg.ELM.SSHConnectTimeoutSecs) * time.Second,
-	}, logger)
-	if err != nil {
-		logger.Error("Failed to open ELM SSH transport - the cutover endpoint is unavailable", "error", err)
-		return
-	}
-
-	client, err := elm.NewClient(transport, elm.ClientConfig{
-		TargetAPIURL: cfg.ELM.TargetAPIURL,
-		PATName:      cfg.ELM.PATName,
-	})
-	if err != nil {
-		logger.Error("Failed to create ELM client - the cutover endpoint is unavailable", "error", err)
-		_ = transport.Close()
-		return
-	}
-
-	svc, err := migration.NewELMService(migration.ELMServiceConfig{
-		Storage:                  db,
-		Client:                   client,
-		Logger:                   logger,
-		PollInterval:             time.Duration(cfg.ELM.PollIntervalSeconds) * time.Second,
-		MaxConcurrentSource:      cfg.ELM.MaxConcurrentSource,
-		MaxConcurrentDestination: cfg.ELM.MaxConcurrentDestination,
-	})
-	if err != nil {
-		logger.Error("Failed to create ELM service - the cutover endpoint is unavailable", "error", err)
-		_ = transport.Close()
-		return
-	}
-
-	handlers.SetELMService(h, svc)
-	logger.Info("ELM cutover endpoint enabled", "ssh_host", cfg.ELM.SSHHost)
+	handlers.SetELMService(s.handler, svc)
+	s.logger.Info("ELM cutover endpoint enabled")
 }
 
 // ShutdownChan returns the shutdown channel for graceful server shutdown

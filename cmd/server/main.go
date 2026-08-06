@@ -106,6 +106,11 @@ func main() {
 	// awaiting_cutover must not occupy a worker slot, possibly for days.
 	elmService := initializeELMService(workerCtx, cfg, db, logger)
 
+	// Inject that single ELM service into the API layer so the operator-triggered
+	// cutover endpoint shares the one privileged SSH transport and poll loop rather
+	// than opening (and leaking) a second admin-shell connection.
+	server.SetELMService(elmService)
+
 	// Initialize migration executor and worker (destination client required)
 	// Source clients are created dynamically per-source by ExecutorFactory
 	migrationWorker := initializeMigrationWorker(workerCtx, cfg, cfgSvc, destDualClient, db, elmService, logger)

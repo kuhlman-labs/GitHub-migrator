@@ -211,13 +211,21 @@ func (s *ELMService) StartBackfill(ctx context.Context, repo *models.Repository,
 	}
 
 	if err := s.client.StartMigration(ctx, ref.ID); err != nil {
-		// The migration exists on the appliance; persist the handle so a later
-		// reconcile can adopt or cancel it rather than orphaning it.
-		s.persistRecord(ctx, repo.ID, ref.ID, elm.StateQueued, "", nil, false, errString(err))
+		// The migration exists on the appliance; persist the handle (best effort --
+		// the repository stays queued, never syncing, so a lost record here cannot
+		// strand it) so a later reconcile can adopt or cancel it rather than orphaning it.
+		_ = s.persistRecord(ctx, repo.ID, ref.ID, elm.StateQueued, "", nil, false, errString(err))
 		return "", fmt.Errorf("failed to start ELM migration %s: %w", ref.ID, err)
 	}
 
-	s.persistRecord(ctx, repo.ID, ref.ID, elm.StateQueued, "", nil, false, nil)
+	// The durable elm_migrations row is the ONLY handle the poll loop and restart
+	// reconciliation have on this live migration. If it cannot be written we must NOT
+	// advance the repository to syncing: an in-flight status with no record strands
+	// the repository where nothing can adopt or advance it. Leave it in its existing
+	// (queued) state so it is retried, and surface the failure.
+	if err := s.persistRecord(ctx, repo.ID, ref.ID, elm.StateQueued, "", nil, false, nil); err != nil {
+		return "", fmt.Errorf("failed to persist ELM migration handle for %s (elm id %s): %w", repo.FullName, ref.ID, err)
+	}
 
 	repo.Status = string(models.StatusSyncing)
 	if err := s.storage.UpdateRepository(ctx, repo); err != nil {
@@ -231,8 +239,11 @@ func (s *ELMService) StartBackfill(ctx context.Context, repo *models.Repository,
 	return ref.ID, nil
 }
 
-// persistRecord upserts the ELM record for a repository.
-func (s *ELMService) persistRecord(ctx context.Context, repoID int64, elmID, state, phase string, progress *int, ready bool, lastErr *string) {
+// persistRecord upserts the ELM record for a repository and returns the storage
+// error so callers can decide whether it is fatal. It is the durable handle for
+// the whole live-migration lifecycle, so StartBackfill treats a failure here as
+// fatal and refuses to advance the repository into an in-flight status.
+func (s *ELMService) persistRecord(ctx context.Context, repoID int64, elmID, state, phase string, progress *int, ready bool, lastErr *string) error {
 	now := time.Now()
 	rec := &models.ELMMigration{
 		RepositoryID:    repoID,
@@ -246,7 +257,9 @@ func (s *ELMService) persistRecord(ctx context.Context, repoID int64, elmID, sta
 	}
 	if err := s.storage.UpsertELMMigration(ctx, rec); err != nil {
 		s.logger.Error("Failed to persist ELM migration record", "error", err, "elm_migration_id", elmID)
+		return err
 	}
+	return nil
 }
 
 func errString(err error) *string {

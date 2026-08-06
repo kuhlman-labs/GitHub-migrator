@@ -477,6 +477,49 @@ func TestELMService_StartBackfillRefusesIneligibleRepository(t *testing.T) {
 	}
 }
 
+// TestELMService_StartBackfillDoesNotSyncWithoutDurableRecord pins the durable-handle
+// guard: the elm_migrations row is the ONLY handle the poll loop and restart
+// reconciliation have, so if it cannot be written the repository must NOT be moved
+// to syncing (an in-flight status nothing can adopt).
+//
+// It asserts COMMITTED STATE, not error identity: the appliance create/start both
+// succeed, so only the guard keeps the repository out of syncing. The bad state is
+// seeded BY CONSTRUCTION with a BEFORE INSERT trigger that fails every write to
+// elm_migrations while leaving the admission COUNT (a SELECT) and the appliance
+// transport untouched, so the RED lands on the syncing assertion rather than on
+// admission or fixture setup.
+func TestELMService_StartBackfillDoesNotSyncWithoutDurableRecord(t *testing.T) {
+	db := newELMTestDB(t)
+	ctx := context.Background()
+
+	transport := &fakeELMTransport{handler: (&elmScript{createID: "elm-strand"}).handle}
+	svc := newELMService(t, db, transport, 10, 20)
+
+	repo := seedELMRepo(t, db, "octocorp/widgets", 1, models.StatusQueuedForMigration)
+
+	// By construction: make every INSERT into elm_migrations fail while SELECT/COUNT
+	// and the appliance transport keep working, so persistRecord is the only thing
+	// that fails.
+	if err := db.DB().Exec(
+		`CREATE TRIGGER elm_block_insert BEFORE INSERT ON elm_migrations BEGIN SELECT RAISE(FAIL, 'blocked'); END;`,
+	).Error; err != nil {
+		t.Fatalf("failed to install blocking trigger: %v", err)
+	}
+
+	if _, err := svc.StartBackfill(ctx, repo, elmTestTarget); err == nil {
+		t.Fatal("expected StartBackfill to fail when the durable ELM record cannot be written")
+	}
+
+	// The appliance was asked to create and start, so the migration exists there...
+	if n := transport.count(cmdCreate); n != 1 {
+		t.Errorf("expected exactly one create command, got %d", n)
+	}
+	// ...but with no durable handle the repository must stay queued, never syncing.
+	if got := reloadRepo(t, db, repo.FullName).Status; got != string(models.StatusQueuedForMigration) {
+		t.Errorf("status = %q, want queued_for_migration (must not advance to syncing without a durable record)", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Cutover gating
 // ---------------------------------------------------------------------------
