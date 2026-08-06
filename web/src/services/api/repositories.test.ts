@@ -161,6 +161,69 @@ describe('repositoriesApi', () => {
     });
   });
 
+  describe('getELMStatus', () => {
+    it('should fetch the ELM status for a repository', async () => {
+      const mockStatus = {
+        full_name: 'org/repo',
+        migration_route: 'elm',
+        status: 'awaiting_cutover',
+        has_elm_migration: true,
+        cutover_ready: true,
+      };
+      mockClient.get.mockResolvedValue({ data: mockStatus });
+
+      const result = await repositoriesApi.getELMStatus('org/repo');
+
+      expect(mockClient.get).toHaveBeenCalledWith('/repositories/org%2Frepo/elm');
+      expect(result).toEqual(mockStatus);
+    });
+  });
+
+  describe('cutover', () => {
+    it('should trigger cutover and return the updated repository', async () => {
+      const mockRepo = { id: 1, full_name: 'org/repo', status: 'cutting_over' };
+      mockClient.post.mockResolvedValue({ data: { message: 'Cutover started', repository: mockRepo } });
+
+      const result = await repositoriesApi.cutover('org/repo');
+
+      expect(mockClient.post).toHaveBeenCalledWith('/repositories/org%2Frepo/cutover');
+      expect(result).toEqual(mockRepo);
+    });
+
+    it('should propagate a 409 not-ready refusal to the caller', async () => {
+      mockClient.post.mockRejectedValue({
+        response: { status: 409, data: { reason: 'elm_not_ready' } },
+      });
+
+      await expect(repositoriesApi.cutover('org/repo')).rejects.toMatchObject({
+        response: { status: 409 },
+      });
+    });
+  });
+
+  describe('setMigrationRoute', () => {
+    it('should set the elm route', async () => {
+      mockClient.post.mockResolvedValue({ data: { full_name: 'org/repo', migration_route: 'elm' } });
+
+      const result = await repositoriesApi.setMigrationRoute('org/repo', 'elm');
+
+      expect(mockClient.post).toHaveBeenCalledWith('/repositories/org%2Frepo/migration-route', {
+        route: 'elm',
+      });
+      expect(result).toEqual({ full_name: 'org/repo', migration_route: 'elm' });
+    });
+
+    it('should send an explicit null to clear the route back to the GEI default', async () => {
+      mockClient.post.mockResolvedValue({ data: { full_name: 'org/repo', migration_route: 'gei' } });
+
+      await repositoriesApi.setMigrationRoute('org/repo', null);
+
+      expect(mockClient.post).toHaveBeenCalledWith('/repositories/org%2Frepo/migration-route', {
+        route: null,
+      });
+    });
+  });
+
   describe('getDependencies', () => {
     it('should fetch repository dependencies', async () => {
       mockClient.get.mockResolvedValue({ data: { dependencies: [] } });

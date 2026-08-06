@@ -11,6 +11,7 @@ import type {
   DependentsResponse,
   DependencyGraphResponse,
 } from '../../types';
+import type { ELMStatus, MigrationRoute } from '../../types/migration';
 
 export const repositoriesApi = {
   async list(filters?: RepositoryFilters & { source_id?: number }): Promise<RepositoryListResponse> {
@@ -72,6 +73,37 @@ export const repositoriesApi = {
       reason: reason || '',
     });
     return data.repository;
+  },
+
+  /**
+   * Reads the ELM (Enterprise Live Migrations) state of a repository: its route
+   * and, once a live migration exists, its phase, progress and cutover readiness.
+   */
+  async getELMStatus(fullName: string): Promise<ELMStatus> {
+    const { data } = await client.get(`/repositories/${encodeURIComponent(fullName)}/elm`);
+    return data;
+  },
+
+  /**
+   * Triggers ELM cutover. This is the one irreversible, downtime-causing step of a
+   * live migration and is only ever called from a deliberate operator action; the
+   * backend refuses with 409 unless it reports the migration ready.
+   */
+  async cutover(fullName: string): Promise<Repository> {
+    const { data } = await client.post(`/repositories/${encodeURIComponent(fullName)}/cutover`);
+    return data.repository;
+  },
+
+  /**
+   * Sets (or, with null, clears back to the GEI default) the migration route
+   * recorded on a repository.
+   */
+  async setMigrationRoute(fullName: string, route: MigrationRoute | null) {
+    const { data } = await client.post(
+      `/repositories/${encodeURIComponent(fullName)}/migration-route`,
+      { route }
+    );
+    return data;
   },
 
   async getDependencies(fullName: string): Promise<DependenciesResponse> {
