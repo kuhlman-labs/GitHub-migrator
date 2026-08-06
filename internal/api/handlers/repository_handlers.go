@@ -92,6 +92,12 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 	} else if strings.HasSuffix(fullPath, "/reset") {
 		action = "reset"
 		fullName = strings.TrimSuffix(fullPath, "/reset")
+	} else if strings.HasSuffix(fullPath, "/cutover") {
+		action = actionCutover
+		fullName = strings.TrimSuffix(fullPath, "/cutover")
+	} else if strings.HasSuffix(fullPath, "/migration-route") {
+		action = "migration-route"
+		fullName = strings.TrimSuffix(fullPath, "/migration-route")
 	} else {
 		WriteError(w, ErrNotFound.WithDetails("Unknown repository action"))
 		return
@@ -131,6 +137,10 @@ func (h *Handler) HandleRepositoryAction(w http.ResponseWriter, r *http.Request)
 		h.MarkRepositoryWontMigrate(w, r)
 	case "reset":
 		h.ResetRepositoryStatus(w, r)
+	case actionCutover:
+		h.TriggerCutover(w, r)
+	case "migration-route":
+		h.SetMigrationRoute(w, r)
 	default:
 		WriteError(w, ErrNotFound.WithDetails("Unknown repository action"))
 	}
@@ -215,6 +225,14 @@ func (h *Handler) GetRepositoryOrDependencies(w http.ResponseWriter, r *http.Req
 	if before, ok := strings.CutSuffix(fullPath, "/dependencies"); ok {
 		fullName := before
 		h.getRepositoryDependencies(w, r, fullName)
+		return
+	}
+
+	// Check if this is an ELM (Enterprise Live Migrations) status request.
+	// The route wildcard {fullName...} must be the last path segment, so this read
+	// is dispatched by suffix here rather than registered as its own route.
+	if before, ok := strings.CutSuffix(fullPath, "/elm"); ok {
+		h.GetELMStatus(w, r, before)
 		return
 	}
 
