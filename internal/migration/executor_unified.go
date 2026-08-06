@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,15 +21,28 @@ import (
 //  6. Post-migration validation
 //  7. Completion and cleanup
 func (e *Executor) ExecuteWithStrategy(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool) error {
-	// Create strategy registry and get appropriate strategy
-	registry := NewStrategyRegistry(
-		NewGitHubMigrationStrategy(e),
-		NewADOMigrationStrategy(e),
-	)
+	return e.ExecuteWithStrategyAndELM(ctx, repo, batch, dryRun, nil)
+}
+
+// ExecuteWithStrategyAndELM is ExecuteWithStrategy with the deployment's ELM
+// service supplied. The ELM service is owned by the ExecutorFactory (there is one
+// per deployment, since ELM targets a single configured destination) rather than
+// by the executor, so it is threaded through here instead of held on Executor.
+// Passing nil registers an inert ELM strategy that refuses loudly if an
+// ELM-routed repository reaches it.
+func (e *Executor) ExecuteWithStrategyAndELM(ctx context.Context, repo *models.Repository, batch *models.Batch, dryRun bool, elmService *ELMService) error {
+	registry := newMigrationStrategyRegistry(e, elmService)
 
 	strategy := registry.GetStrategy(repo)
 	if strategy == nil {
 		return fmt.Errorf("no migration strategy found for repository %s", repo.FullName)
+	}
+
+	// ELM does not share the GEI phase pipeline: there are no archives to build and
+	// the backfill is advanced by the long-lived ELM poll loop rather than by an
+	// inline polling phase, so it gets its own short flow.
+	if elmStrategy, ok := strategy.(*ELMStrategy); ok {
+		return e.executeELM(ctx, elmStrategy, repo, batch, dryRun)
 	}
 
 	e.logger.Info("Selected migration strategy",
@@ -63,9 +77,7 @@ func (e *Executor) ExecuteWithStrategy(ctx context.Context, repo *models.Reposit
 
 	// Log operation start
 	e.logOperation(ctx, repo, historyID, "INFO", "migration", "start",
-		fmt.Sprintf("Starting %s using %s strategy",
-			map[bool]string{true: "dry run", false: "migration"}[dryRun],
-			strategy.Name()), nil)
+		fmt.Sprintf("Starting %s using %s strategy", runModeLabel(dryRun), strategy.Name()), nil)
 
 	// Log migration flags to history for audit trail
 	flagsDetails := fmt.Sprintf("strategy=%s, lock_repositories=%v, exclude_releases=%v, exclude_attachments=%v",
@@ -111,6 +123,72 @@ func (e *Executor) ExecuteWithStrategy(ctx context.Context, repo *models.Reposit
 
 	// Phase 7: Completion (strategy-aware)
 	return e.executeCompletion(ctx, mc, strategy)
+}
+
+// runModeLabel renders the human-readable label for a run mode.
+func runModeLabel(dryRun bool) string {
+	if dryRun {
+		return "dry run"
+	}
+	return "migration"
+}
+
+// newMigrationStrategyRegistry builds the strategy registry in its runtime order.
+//
+// ELM MUST be registered FIRST: GetStrategy returns the first match and the
+// GitHub strategy matches every non-ADO repository, so registering ELM later
+// would make it permanently unreachable and the feature silently inert. Because
+// ELMStrategy matches only on the recorded route, a repository with no route
+// falls straight through to the GitHub/GEI strategy.
+func newMigrationStrategyRegistry(e *Executor, elmService *ELMService) *StrategyRegistry {
+	return NewStrategyRegistry(
+		NewELMStrategy(e, elmService),
+		NewGitHubMigrationStrategy(e),
+		NewADOMigrationStrategy(e),
+	)
+}
+
+// executeELM runs the Enterprise Live Migrations flow.
+//
+// A production run validates the source, then creates and starts the backfill and
+// RETURNS -- the repository is left in `syncing` and the ELM poll loop advances it
+// to awaiting_cutover, where it waits indefinitely on a deliberate operator
+// cutover without holding a migration worker slot.
+//
+// A dry run is preflight-only and creates no migration at all.
+func (e *Executor) executeELM(ctx context.Context, strategy *ELMStrategy, repo *models.Repository, batch *models.Batch, dryRun bool) error {
+	mc := e.NewMigrationContext(repo, batch, dryRun)
+	// ELM keeps the source writable until cutover, so nothing is ever locked.
+	mc.LockRepositories = false
+
+	historyID, err := e.createMigrationHistory(ctx, repo, dryRun)
+	if err != nil {
+		return fmt.Errorf("failed to create migration history: %w", err)
+	}
+	mc.HistoryID = historyID
+
+	e.logOperation(ctx, repo, historyID, "INFO", "migration", "start",
+		fmt.Sprintf("Starting %s using %s strategy", runModeLabel(dryRun), strategy.Name()), nil)
+
+	if err := e.executeSourceValidation(ctx, mc, strategy); err != nil {
+		e.handleStrategyPhaseError(ctx, mc, strategy, err)
+		return err
+	}
+
+	if dryRun {
+		return strategy.DryRun(ctx, mc)
+	}
+
+	migrationID, err := strategy.StartMigration(ctx, mc)
+	if err != nil {
+		e.handleStrategyPhaseError(ctx, mc, strategy, err)
+		return err
+	}
+	mc.MigrationID = migrationID
+
+	e.logger.Info("ELM live migration started; poll loop owns the remaining lifecycle",
+		"repo", repo.FullName, "elm_migration_id", migrationID)
+	return nil
 }
 
 // executeSourceValidation runs strategy-specific source validation.
@@ -184,6 +262,12 @@ func (e *Executor) handleStrategyPhaseError(ctx context.Context, mc *MigrationCo
 	status := models.StatusMigrationFailed
 	if mc.DryRun {
 		status = models.StatusDryRunFailed
+	}
+	// An ELM concurrency ceiling is a capacity refusal, not a migration failure:
+	// the repository goes back to queued so it is admitted on a later pass instead
+	// of needing an operator to reset it.
+	if errors.Is(err, ErrELMAdmissionCeiling) {
+		status = models.StatusQueuedForMigration
 	}
 	mc.Repo.Status = string(status)
 
