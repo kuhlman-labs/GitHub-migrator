@@ -14,12 +14,31 @@ const (
 	ProviderTypeGitHub = "github"
 )
 
+// ELM configuration keys. They are named once here so the env binding, the
+// defaults and the validation messages can never drift apart.
+const (
+	keyELMEnabled                 = "elm.enabled"
+	keyELMSSHHost                 = "elm.ssh_host"
+	keyELMSSHPort                 = "elm.ssh_port"
+	keyELMSSHUser                 = "elm.ssh_user"
+	keyELMSSHPrivateKeyPath       = "elm.ssh_private_key_path"
+	keyELMSSHPrivateKeyPassphrase = "elm.ssh_private_key_passphrase" //nolint:gosec // this is the config key name, not a credential
+	keyELMSSHKnownHostsPath       = "elm.ssh_known_hosts_path"
+	keyELMSSHConnectTimeoutSecs   = "elm.ssh_connect_timeout_seconds"
+	keyELMTargetAPIURL            = "elm.target_api_url"
+	keyELMPATName                 = "elm.pat_name"
+	keyELMPollIntervalSeconds     = "elm.poll_interval_seconds"
+	keyELMMaxConcurrentSource     = "elm.max_concurrent_source"
+	keyELMMaxConcurrentDest       = "elm.max_concurrent_destination"
+)
+
 type Config struct {
 	Server      ServerConfig      `mapstructure:"server"`
 	Database    DatabaseConfig    `mapstructure:"database"`
 	Source      SourceConfig      `mapstructure:"source"`
 	Destination DestinationConfig `mapstructure:"destination"`
 	Migration   MigrationConfig   `mapstructure:"migration"`
+	ELM         ELMConfig         `mapstructure:"elm"`
 	Logging     LoggingConfig     `mapstructure:"logging"`
 	Auth        AuthConfig        `mapstructure:"auth"`
 	// Deprecated: Use Source and Destination instead
@@ -82,6 +101,81 @@ type MigrationConfig struct {
 type VisibilityHandlingConfig struct {
 	PublicRepos   string `mapstructure:"public_repos"`   // public, internal, or private (default: private)
 	InternalRepos string `mapstructure:"internal_repos"` // internal or private (default: private)
+}
+
+// ELMConfig configures GitHub Enterprise Live Migrations (ELM), the GHES ->
+// GHE.com near-zero-downtime corridor.
+//
+// The ELM exporter is only reachable from the appliance itself, so every command
+// is issued over SSH into the administrative shell. Host-key verification is
+// mandatory: SSHKnownHostsPath has no default and an enabled-but-incomplete
+// config is refused rather than degraded into an unverified connection.
+type ELMConfig struct {
+	Enabled bool `mapstructure:"enabled"` // Master switch; ELM is inert when false
+
+	// SSH connection into the GHES administrative shell
+	SSHHost                 string `mapstructure:"ssh_host"`
+	SSHPort                 int    `mapstructure:"ssh_port"`
+	SSHUser                 string `mapstructure:"ssh_user"`
+	SSHPrivateKeyPath       string `mapstructure:"ssh_private_key_path"`
+	SSHPrivateKeyPassphrase string `mapstructure:"ssh_private_key_passphrase"`
+	SSHKnownHostsPath       string `mapstructure:"ssh_known_hosts_path"` // Required: host key verification is mandatory
+	SSHConnectTimeoutSecs   int    `mapstructure:"ssh_connect_timeout_seconds"`
+
+	// ELM CLI parameters
+	TargetAPIURL string `mapstructure:"target_api_url"` // Destination (GHE.com) API endpoint
+	PATName      string `mapstructure:"pat_name"`       // Named appliance credential (preview documents "system-pat")
+
+	PollIntervalSeconds int `mapstructure:"poll_interval_seconds"`
+
+	// Concurrency ceilings published for the ELM preview. They ship as config so a
+	// change in GitHub's published limits is an edit rather than a release.
+	MaxConcurrentSource      int `mapstructure:"max_concurrent_source"`      // Per source instance (default 10)
+	MaxConcurrentDestination int `mapstructure:"max_concurrent_destination"` // Per deployment; the tool targets one destination (default 20)
+}
+
+// Validate refuses an enabled-but-incomplete ELM configuration. A disabled ELM
+// config is never validated, so deployments that do not use ELM are unaffected.
+func (c *ELMConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+
+	var missing []string
+	if strings.TrimSpace(c.SSHHost) == "" {
+		missing = append(missing, keyELMSSHHost)
+	}
+	if strings.TrimSpace(c.SSHUser) == "" {
+		missing = append(missing, keyELMSSHUser)
+	}
+	if strings.TrimSpace(c.SSHPrivateKeyPath) == "" {
+		missing = append(missing, keyELMSSHPrivateKeyPath)
+	}
+	if strings.TrimSpace(c.SSHKnownHostsPath) == "" {
+		missing = append(missing, keyELMSSHKnownHostsPath)
+	}
+	if strings.TrimSpace(c.TargetAPIURL) == "" {
+		missing = append(missing, keyELMTargetAPIURL)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("elm is enabled but required settings are missing: %s", strings.Join(missing, ", "))
+	}
+
+	var invalid []string
+	if c.PollIntervalSeconds <= 0 {
+		invalid = append(invalid, keyELMPollIntervalSeconds+" must be greater than 0")
+	}
+	if c.MaxConcurrentSource <= 0 {
+		invalid = append(invalid, keyELMMaxConcurrentSource+" must be greater than 0")
+	}
+	if c.MaxConcurrentDestination <= 0 {
+		invalid = append(invalid, keyELMMaxConcurrentDest+" must be greater than 0")
+	}
+	if len(invalid) > 0 {
+		return fmt.Errorf("invalid elm configuration: %s", strings.Join(invalid, "; "))
+	}
+
+	return nil
 }
 
 // GitHubConfig is deprecated but kept for backward compatibility
@@ -227,6 +321,19 @@ func bindEnvVars() {
 		"migration.dest_repo_exists_action",
 		"migration.visibility_handling.public_repos",
 		"migration.visibility_handling.internal_repos",
+		keyELMEnabled,
+		keyELMSSHHost,
+		keyELMSSHPort,
+		keyELMSSHUser,
+		keyELMSSHPrivateKeyPath,
+		keyELMSSHPrivateKeyPassphrase,
+		keyELMSSHKnownHostsPath,
+		keyELMSSHConnectTimeoutSecs,
+		keyELMTargetAPIURL,
+		keyELMPATName,
+		keyELMPollIntervalSeconds,
+		keyELMMaxConcurrentSource,
+		keyELMMaxConcurrentDest,
 		"logging.level",
 		"logging.format",
 		"logging.output_file",
@@ -278,6 +385,17 @@ func setDefaults() {
 	viper.SetDefault("migration.dest_repo_exists_action", "fail")
 	viper.SetDefault("migration.visibility_handling.public_repos", "private")
 	viper.SetDefault("migration.visibility_handling.internal_repos", "private")
+	// ELM defaults. Note there is deliberately NO default for
+	// elm.ssh_known_hosts_path or elm.ssh_private_key_path: an operator must name
+	// them, and Validate refuses an enabled config that does not.
+	viper.SetDefault(keyELMEnabled, false)
+	viper.SetDefault(keyELMSSHPort, 22)
+	viper.SetDefault(keyELMSSHUser, "admin")
+	viper.SetDefault(keyELMSSHConnectTimeoutSecs, 30)
+	viper.SetDefault(keyELMPATName, "system-pat")
+	viper.SetDefault(keyELMPollIntervalSeconds, 60)
+	viper.SetDefault(keyELMMaxConcurrentSource, 10)
+	viper.SetDefault(keyELMMaxConcurrentDest, 20)
 	viper.SetDefault("logging.level", "info")
 	viper.SetDefault("logging.format", "json")
 	viper.SetDefault("logging.output_file", "./logs/migrator.log")
