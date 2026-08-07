@@ -62,6 +62,10 @@ export interface Repository {
   open_issue_count: number;
   open_pr_count: number;
   status: string;
+  // Migration route: 'gei' or 'elm'. Absent means the repository is GEI-routed --
+  // the backend reports 'gei' for an unset route, so an absent value is not
+  // "unknown", it is the default.
+  migration_route?: string;
   batch_id?: number;
   priority: number;
   destination_url?: string;

@@ -293,6 +293,44 @@ func TestExecutorFactory_DefaultConfiguration(t *testing.T) {
 	}
 }
 
+// TestExecutorFactory_CarriesELMService asserts the factory threads the
+// deployment's single ELM service through to the executors it builds. Without it
+// the ELM strategy would be registered but permanently unconfigured, and an
+// ELM-routed repository would fail rather than live-migrate.
+func TestExecutorFactory_CarriesELMService(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	db := newELMTestDB(t)
+
+	transport := &fakeELMTransport{handler: (&elmScript{}).handle}
+	elmService := newELMService(t, db, transport, 10, 20)
+
+	factory, err := NewExecutorFactory(ExecutorFactoryConfig{
+		Storage:    db,
+		DestClient: &github.Client{},
+		Logger:     logger,
+		ELMService: elmService,
+	})
+	if err != nil {
+		t.Fatalf("NewExecutorFactory() error = %v", err)
+	}
+	if factory.ELMService() != elmService {
+		t.Error("factory did not carry the ELM service it was given")
+	}
+
+	// ELM is optional: a factory built without it must still work, and reports nil.
+	plain, err := NewExecutorFactory(ExecutorFactoryConfig{
+		Storage:    db,
+		DestClient: &github.Client{},
+		Logger:     logger,
+	})
+	if err != nil {
+		t.Fatalf("NewExecutorFactory() without ELM error = %v", err)
+	}
+	if plain.ELMService() != nil {
+		t.Error("a factory built without an ELM service must report nil")
+	}
+}
+
 func TestExecutorFactory_ExecuteMigrationInterface(t *testing.T) {
 	factory, _ := setupTestFactory(t)
 

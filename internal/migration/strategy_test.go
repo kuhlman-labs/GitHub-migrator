@@ -6,12 +6,17 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/models"
 )
 
+// Strategy names as the registry reports them.
+const (
+	strategyNameGitHub = "GitHub"
+	strategyNameADO    = "AzureDevOps"
+)
+
 func TestStrategyRegistry_GetStrategy(t *testing.T) {
-	// Create a mock executor (nil is fine for testing strategy selection)
-	registry := NewStrategyRegistry(
-		NewGitHubMigrationStrategy(nil),
-		NewADOMigrationStrategy(nil),
-	)
+	// The REAL runtime registry, built by the same constructor
+	// ExecuteWithStrategyAndELM uses, so its ordering is under test here rather
+	// than restated. (A mock executor is unnecessary; nil is fine for selection.)
+	registry := newMigrationStrategyRegistry(nil, nil)
 
 	tests := []struct {
 		name         string
@@ -25,7 +30,7 @@ func TestStrategyRegistry_GetStrategy(t *testing.T) {
 				r := &models.Repository{FullName: "org/repo"}
 				return r
 			}(),
-			wantStrategy: "GitHub",
+			wantStrategy: strategyNameGitHub,
 			wantNil:      false,
 		},
 		{
@@ -35,7 +40,7 @@ func TestStrategyRegistry_GetStrategy(t *testing.T) {
 				r.SetADOProject(strPtr(""))
 				return r
 			}(),
-			wantStrategy: "GitHub",
+			wantStrategy: strategyNameGitHub,
 			wantNil:      false,
 		},
 		{
@@ -45,7 +50,63 @@ func TestStrategyRegistry_GetStrategy(t *testing.T) {
 				r.SetADOProject(strPtr("MyProject"))
 				return r
 			}(),
-			wantStrategy: "AzureDevOps",
+			wantStrategy: strategyNameADO,
+			wantNil:      false,
+		},
+		{
+			// THE ROUTE CONTRACT. This repository is GHES-sourced and ADO-free, so
+			// the ONLY thing keeping it out of the ELM strategy -- which is
+			// registered first -- is that no route was ever recorded for it. A NULL
+			// migration_route reads as the GEI default.
+			name: "repository with no migration route falls through to GitHub",
+			repo: &models.Repository{
+				FullName: "octocorp/widgets",
+				Source:   models.SourceGHES,
+			},
+			wantStrategy: strategyNameGitHub,
+			wantNil:      false,
+		},
+		{
+			name: "repository routed to elm selects ELM",
+			repo: func() *models.Repository {
+				route := string(models.MigrationRouteELM)
+				return &models.Repository{
+					FullName:       "octocorp/widgets",
+					Source:         models.SourceGHES,
+					MigrationRoute: &route,
+				}
+			}(),
+			wantStrategy: "ELM",
+			wantNil:      false,
+		},
+		{
+			name: "ADO repository is never ELM-routed even when the column says elm",
+			repo: func() *models.Repository {
+				route := string(models.MigrationRouteELM)
+				r := &models.Repository{
+					FullName:       "project/repo",
+					Source:         models.SourceAzureDevOps,
+					MigrationRoute: &route,
+				}
+				r.SetADOProject(strPtr("MyProject"))
+				return r
+			}(),
+			wantStrategy: strategyNameADO,
+			wantNil:      false,
+		},
+		{
+			// ELM is the GHES -> GHE.com corridor only, so a route recorded on a
+			// non-GHES repository does not make it ELM-eligible.
+			name: "elm route on a non-GHES source falls through to GitHub",
+			repo: func() *models.Repository {
+				route := string(models.MigrationRouteELM)
+				return &models.Repository{
+					FullName:       "octocorp/widgets",
+					Source:         models.SourceGHEC,
+					MigrationRoute: &route,
+				}
+			}(),
+			wantStrategy: strategyNameGitHub,
 			wantNil:      false,
 		},
 	}

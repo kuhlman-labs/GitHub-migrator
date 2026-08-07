@@ -27,7 +27,16 @@ export function StatusBadge({ status, size = 'large' }: StatusBadgeProps) {
       migrating_content: 'accent',
       post_migration: 'accent',
       in_progress: 'accent',
-      
+      // ELM live migration in flight - the backfill is running (syncing) or the
+      // operator-triggered cutover is executing (cutting_over).
+      syncing: 'accent',
+      cutting_over: 'accent',
+
+      // Waiting on a human: the backfill is caught up and the repository sits
+      // here until an operator deliberately cuts over. Deliberately NOT 'accent'
+      // so it does not read as work in flight.
+      awaiting_cutover: 'attention',
+
       // Complete (success/green)
       dry_run_complete: 'success',
       migration_complete: 'success',

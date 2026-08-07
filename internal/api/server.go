@@ -18,6 +18,7 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/mcp"
+	"github.com/kuhlman-labs/github-migrator/internal/migration"
 	"github.com/kuhlman-labs/github-migrator/internal/source"
 	"github.com/kuhlman-labs/github-migrator/internal/storage"
 )
@@ -123,6 +124,11 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		}
 	}
 
+	// The ELM service is NOT built here. cmd/server/main.go builds exactly one ELM
+	// service (owning a single privileged SSH transport and the poll loop) and
+	// injects it via SetELMService, so the API layer never opens a second admin-shell
+	// connection. Until that injection lands the ELM endpoints answer 503.
+
 	// Create source handler for multi-source management
 	sourceHandler := handlers.NewSourceHandler(db, logger)
 
@@ -151,6 +157,22 @@ func NewServer(cfg *config.Config, db *storage.Database, logger *slog.Logger, so
 		mcpServer:      mcpServer,
 		shutdownChan:   make(chan struct{}),
 	}
+}
+
+// SetELMService injects the deployment's single ELM service so the
+// operator-triggered cutover endpoint can act.
+//
+// The service is built once in cmd/server/main.go, which owns its one privileged
+// SSH transport and the long-lived poll/reconcile loop. Injecting that same
+// instance here (rather than building a second one) means the API layer opens no
+// additional admin-shell connection and leaks none. Until this is called the ELM
+// endpoints answer 503 "elm_not_configured"; a nil service leaves them that way.
+func (s *Server) SetELMService(svc *migration.ELMService) {
+	if svc == nil {
+		return
+	}
+	handlers.SetELMService(s.handler, svc)
+	s.logger.Info("ELM cutover endpoint enabled")
 }
 
 // ShutdownChan returns the shutdown channel for graceful server shutdown

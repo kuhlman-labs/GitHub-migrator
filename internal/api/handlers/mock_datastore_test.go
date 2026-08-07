@@ -61,6 +61,12 @@ type MockDataStore struct {
 	// Discovery mock state
 	ActiveDiscoveryProgress   *models.DiscoveryProgress
 	ForceResetDiscoveryResult int64
+
+	// ELM mock state: the elm_migrations rows keyed by repository id, plus the
+	// error-injection hooks for the ELM read and route-write paths.
+	ELMMigrations      map[int64]*models.ELMMigration
+	GetELMMigrationErr error
+	MigrationRouteErr  error
 }
 
 // NewMockDataStore creates a new MockDataStore with initialized maps.
@@ -78,6 +84,7 @@ func NewMockDataStore() *MockDataStore {
 		Teams:            make(map[string]*models.GitHubTeam),
 		TeamMappings:     make(map[string]*models.TeamMapping),
 		ADOProjects:      make(map[string]*models.ADOProject),
+		ELMMigrations:    make(map[int64]*models.ELMMigration),
 		nextRepoID:       1,
 		nextBatchID:      1,
 		nextHistoryID:    1,
@@ -1076,3 +1083,126 @@ func (m *MockDataStore) GetSettings(ctx context.Context) (*models.Settings, erro
 
 // Compile-time check that MockDataStore implements DataStore
 var _ DataStore = (*MockDataStore)(nil)
+
+// ============================================================================
+// ELM (Enterprise Live Migrations) Operations
+// ============================================================================
+
+// SetELMMigration seeds an elm_migrations row for a repository.
+func (m *MockDataStore) SetELMMigration(rec *models.ELMMigration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ELMMigrations == nil {
+		m.ELMMigrations = map[int64]*models.ELMMigration{}
+	}
+	m.ELMMigrations[rec.RepositoryID] = rec
+}
+
+// WithELMGetError injects a failure on the ELM record read path.
+func (m *MockDataStore) WithELMGetError(err error) *MockDataStore {
+	m.GetELMMigrationErr = err
+	return m
+}
+
+// WithMigrationRouteError injects a failure on the route write path.
+func (m *MockDataStore) WithMigrationRouteError(err error) *MockDataStore {
+	m.MigrationRouteErr = err
+	return m
+}
+
+func (m *MockDataStore) GetELMMigration(_ context.Context, repoID int64) (*models.ELMMigration, error) {
+	if m.GetELMMigrationErr != nil {
+		return nil, m.GetELMMigrationErr
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.ELMMigrations[repoID], nil
+}
+
+func (m *MockDataStore) GetELMMigrationByELMID(_ context.Context, elmMigrationID string) (*models.ELMMigration, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, rec := range m.ELMMigrations {
+		if rec.ELMMigrationID == elmMigrationID {
+			return rec, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockDataStore) UpsertELMMigration(_ context.Context, rec *models.ELMMigration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ELMMigrations == nil {
+		m.ELMMigrations = map[int64]*models.ELMMigration{}
+	}
+	m.ELMMigrations[rec.RepositoryID] = rec
+	return nil
+}
+
+func (m *MockDataStore) ListELMMigrationsInFlight(_ context.Context) ([]*models.ELMMigration, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*models.ELMMigration, 0, len(m.ELMMigrations))
+	for _, rec := range m.ELMMigrations {
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+func (m *MockDataStore) CountELMMigrationsInFlight(_ context.Context) (*storage.ELMInFlightCounts, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	counts := &storage.ELMInFlightCounts{BySourceID: map[int64]int{}}
+	for repoID := range m.ELMMigrations {
+		repo := m.ReposByID[repoID]
+		key := storage.ELMUnknownSourceBucket
+		if repo != nil && repo.SourceID != nil {
+			key = *repo.SourceID
+		}
+		counts.BySourceID[key]++
+		counts.Global++
+	}
+	return counts, nil
+}
+
+func (m *MockDataStore) DeleteELMMigration(_ context.Context, repoID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.ELMMigrations, repoID)
+	return nil
+}
+
+// UpdateRepositoryMigrationRoute writes the route straight through WITHOUT
+// validating it.
+//
+// This is deliberate. The real storage layer validates as defence in depth, but
+// route validation is the HANDLER's job and TestSetMigrationRoute_RejectsUnknownRoute
+// exists to prove the handler does it. A validating mock would swallow a deleted
+// handler guard and turn that counterfactual into a fixture failure instead of a
+// behavioural one.
+func (m *MockDataStore) UpdateRepositoryMigrationRoute(_ context.Context, fullName string, route *string) error {
+	if m.MigrationRouteErr != nil {
+		return m.MigrationRouteErr
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	repo, exists := m.Repos[fullName]
+	if !exists {
+		return fmt.Errorf("repository not found: %s", fullName)
+	}
+	if route == nil {
+		repo.MigrationRoute = nil
+		return nil
+	}
+	value := *route
+	repo.MigrationRoute = &value
+	return nil
+}
+
+// Compile-time check that MockDataStore implements the ELM storage surface the
+// handlers resolve h.db to.
+var (
+	_ ELMStore         = (*MockDataStore)(nil)
+	_ storage.ELMStore = (*MockDataStore)(nil)
+)
