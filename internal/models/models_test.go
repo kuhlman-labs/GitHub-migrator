@@ -369,6 +369,9 @@ func TestMigrationStatus_Constants(t *testing.T) {
 		{StatusComplete, "complete"},
 		{StatusRolledBack, "rolled_back"},
 		{StatusWontMigrate, "wont_migrate"},
+		{StatusSyncing, "syncing"},
+		{StatusAwaitingCutover, "awaiting_cutover"},
+		{StatusCuttingOver, "cutting_over"},
 	}
 
 	for _, tt := range statuses {
@@ -588,5 +591,201 @@ func TestMigrationLog_Structure(t *testing.T) {
 	}
 	if log.InitiatedBy == nil || *log.InitiatedBy != "user@example.com" {
 		t.Error("Expected InitiatedBy to be 'user@example.com'")
+	}
+}
+
+// TestMigrationRoute_Constants asserts the two legal route values render exactly as
+// the storage column, API and dashboard expect. A typo here silently unroutes ELM.
+func TestMigrationRoute_Constants(t *testing.T) {
+	if string(MigrationRouteGEI) != "gei" {
+		t.Errorf("Expected MigrationRouteGEI='gei', got %q", string(MigrationRouteGEI))
+	}
+	if string(MigrationRouteELM) != "elm" {
+		t.Errorf("Expected MigrationRouteELM='elm', got %q", string(MigrationRouteELM))
+	}
+}
+
+// TestGetMigrationRoute_DefaultsToGEI pins the route contract's default: an
+// unrouted repository is GEI-routed, so no backfill is needed for existing rows.
+func TestGetMigrationRoute_DefaultsToGEI(t *testing.T) {
+	empty := ""
+	elm := "elm"
+	gei := "gei"
+
+	tests := []struct {
+		name     string
+		route    *string
+		expected string
+	}{
+		{name: "nil route defaults to gei", route: nil, expected: "gei"},
+		{name: "empty route defaults to gei", route: &empty, expected: "gei"},
+		{name: "explicit gei", route: &gei, expected: "gei"},
+		{name: "elm route", route: &elm, expected: "elm"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &Repository{MigrationRoute: tt.route}
+			if got := repo.GetMigrationRoute(); got != tt.expected {
+				t.Errorf("GetMigrationRoute() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestRepository_IsELMRouted tests the single route predicate ELMStrategy consults.
+func TestRepository_IsELMRouted(t *testing.T) {
+	elm := "elm"
+	gei := "gei"
+	empty := ""
+
+	tests := []struct {
+		name     string
+		route    *string
+		expected bool
+	}{
+		{name: "nil route is not ELM", route: nil, expected: false},
+		{name: "empty route is not ELM", route: &empty, expected: false},
+		{name: "gei route is not ELM", route: &gei, expected: false},
+		{name: "elm route is ELM", route: &elm, expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &Repository{MigrationRoute: tt.route}
+			if got := repo.IsELMRouted(); got != tt.expected {
+				t.Errorf("IsELMRouted() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestIsValidMigrationRoute tests the validator used by the operator route writer.
+func TestIsValidMigrationRoute(t *testing.T) {
+	tests := []struct {
+		route    string
+		expected bool
+	}{
+		{"gei", true},
+		{"elm", true},
+		{"", false},
+		{"GEI", false},
+		{"ELM", false},
+		{"gei-plus", false},
+		{"github", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.route, func(t *testing.T) {
+			if got := IsValidMigrationRoute(tt.route); got != tt.expected {
+				t.Errorf("IsValidMigrationRoute(%q) = %v, want %v", tt.route, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestIsMigrationInProgress_ELMStatuses asserts the three ELM lifecycle statuses
+// count as in progress, so an ELM repository is never treated as idle or re-queued.
+func TestIsMigrationInProgress_ELMStatuses(t *testing.T) {
+	tests := []struct {
+		status   MigrationStatus
+		expected bool
+	}{
+		{StatusSyncing, true},
+		{StatusAwaitingCutover, true},
+		{StatusCuttingOver, true},
+		{StatusPending, false},
+		{StatusMigrationComplete, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.status), func(t *testing.T) {
+			repo := &Repository{Status: string(tt.status)}
+			if got := repo.IsMigrationInProgress(); got != tt.expected {
+				t.Errorf("IsMigrationInProgress() for %q = %v, want %v", tt.status, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestCanBeAssignedToBatch_ELMRoutedOversized pins the ELM branch of the batch
+// eligibility guard: an oversized ELM-routed repository is assignable (ELM is what
+// serves it), while an oversized unrouted repository is still refused.
+func TestCanBeAssignedToBatch_ELMRoutedOversized(t *testing.T) {
+	elm := "elm"
+
+	oversizedELM := &Repository{
+		Status:         string(StatusPending),
+		MigrationRoute: &elm,
+		Validation:     &RepositoryValidation{HasOversizedRepository: true},
+	}
+	if ok, reason := oversizedELM.CanBeAssignedToBatch(); !ok {
+		t.Errorf("oversized ELM-routed repository should be assignable, got refusal: %q", reason)
+	}
+
+	oversizedUnrouted := &Repository{
+		Status:     string(StatusPending),
+		Validation: &RepositoryValidation{HasOversizedRepository: true},
+	}
+	ok, reason := oversizedUnrouted.CanBeAssignedToBatch()
+	if ok {
+		t.Error("oversized unrouted repository should be refused")
+	}
+	if reason == "" {
+		t.Error("expected a refusal reason for the oversized unrouted repository")
+	}
+
+	// An ELM route does not bypass the other guards.
+	batchID := int64(7)
+	alreadyBatched := &Repository{
+		Status:         string(StatusPending),
+		MigrationRoute: &elm,
+		BatchID:        &batchID,
+		Validation:     &RepositoryValidation{HasOversizedRepository: true},
+	}
+	if ok, _ := alreadyBatched.CanBeAssignedToBatch(); ok {
+		t.Error("ELM-routed repository already in a batch should still be refused")
+	}
+}
+
+// TestELMMigration_TableName tests the elm_migrations table name
+func TestELMMigration_TableName(t *testing.T) {
+	rec := ELMMigration{}
+	if rec.TableName() != "elm_migrations" {
+		t.Errorf("Expected table name 'elm_migrations', got %q", rec.TableName())
+	}
+}
+
+// TestRepository_MarshalJSON_MigrationRoute asserts the route reaches the API
+// payload the dashboard reads (Repository has a custom MarshalJSON).
+func TestRepository_MarshalJSON_MigrationRoute(t *testing.T) {
+	elm := "elm"
+	repo := &Repository{FullName: "org/repo", MigrationRoute: &elm}
+
+	data, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if decoded["migration_route"] != "elm" {
+		t.Errorf("Expected migration_route='elm' in JSON, got %v", decoded["migration_route"])
+	}
+
+	// An unrouted repository omits the field entirely.
+	unrouted := &Repository{FullName: "org/other"}
+	data, err = json.Marshal(unrouted)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	decoded = map[string]any{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if _, present := decoded["migration_route"]; present {
+		t.Error("Expected migration_route to be omitted for an unrouted repository")
 	}
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button, Checkbox, TextInput, FormControl, Select } from '@primer/react';
 import { XCircleFillIcon, AlertIcon, ChevronDownIcon, InfoIcon, XIcon, CheckCircleFillIcon, TrashIcon } from '@primer/octicons-react';
 import type { Repository, Batch } from '../../types';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import { Badge } from '../common/Badge';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
@@ -31,7 +31,23 @@ export function MigrationReadinessTab({
   
   // Dialog state
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
-  
+
+  // ELM (Enterprise Live Migrations) state. The route is what decides whether this
+  // repository is migrated live, so the ELM read only runs for a routed repository.
+  const isELMRouted = repository.migration_route === 'elm';
+  const { data: elmStatus } = useQuery({
+    queryKey: ['repository-elm', repository.full_name],
+    queryFn: () => api.getRepositoryELMStatus(repository.full_name),
+    enabled: isELMRouted,
+    refetchInterval: isELMRouted ? 30000 : false,
+  });
+
+  // Readiness is whatever the API reports and nothing else -- an absent or failed
+  // read is NOT ready. This is the only thing that enables the cutover control.
+  const cutoverReady = elmStatus?.cutover_ready === true;
+  const [showCutoverDialog, setShowCutoverDialog] = useState(false);
+  const [cuttingOver, setCuttingOver] = useState(false);
+
   // Destination configuration
   
   // Calculate the suggested default (ignoring any saved custom destination)
@@ -186,6 +202,33 @@ export function MigrationReadinessTab({
       showError(errorMsg);
     } finally {
       setAssigningBatch(false);
+    }
+  };
+
+  // Cutover is irreversible: ELM archives the source repository and recovery is a
+  // manual operator runbook. It therefore stays a deliberate click behind a
+  // confirmation, and is refused here as well as by the API when not ready.
+  const handleCutover = () => {
+    if (!cutoverReady || cuttingOver) return;
+    setShowCutoverDialog(true);
+  };
+
+  const confirmCutover = async () => {
+    setShowCutoverDialog(false);
+    setCuttingOver(true);
+    try {
+      await api.cutoverRepository(repository.full_name);
+
+      await queryClient.invalidateQueries({ queryKey: ['repository', repository.full_name] });
+      await queryClient.invalidateQueries({ queryKey: ['repository-elm', repository.full_name] });
+
+      showSuccess('Cutover started. The source repository will be archived when it completes.');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      const errorMsg = err.response?.data?.error || 'Failed to start cutover. Please try again.';
+      showError(errorMsg);
+    } finally {
+      setCuttingOver(false);
     }
   };
 
@@ -492,6 +535,80 @@ export function MigrationReadinessTab({
         </div>
       )}
 
+      {/* Enterprise Live Migrations (ELM) - only for repositories routed to ELM */}
+      {isELMRouted && (
+        <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)', border: '1px solid var(--borderColor-default)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--fgColor-default)' }}>Live Migration (ELM)</h3>
+            <Badge>Route: {elmStatus?.migration_route || repository.migration_route}</Badge>
+          </div>
+
+          <div
+            className="rounded-md p-4 space-y-3"
+            style={{ backgroundColor: 'var(--bgColor-muted)', border: '1px solid var(--borderColor-default)' }}
+          >
+            {elmStatus?.has_elm_migration ? (
+              <>
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--fgColor-muted)' }}>Backfill progress</span>
+                  <span className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                    {elmStatus.progress_percent != null ? `${elmStatus.progress_percent}%` : 'Unknown'}
+                    {elmStatus.elm_phase ? ` — ${elmStatus.elm_phase}` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--fgColor-muted)' }}>Live migration status</span>
+                  <span className="font-semibold" style={{ color: 'var(--fgColor-default)' }}>
+                    {elmStatus.elm_status || 'unknown'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--fgColor-muted)' }}>Cutover readiness</span>
+                  <span
+                    className="font-semibold"
+                    style={{ color: cutoverReady ? 'var(--fgColor-success)' : 'var(--fgColor-attention)' }}
+                  >
+                    {cutoverReady ? 'Ready for cutover' : 'Not ready for cutover'}
+                  </span>
+                </div>
+                {elmStatus.last_polled_at && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span style={{ color: 'var(--fgColor-muted)' }}>Last polled</span>
+                    <span style={{ color: 'var(--fgColor-muted)' }}>
+                      {new Date(elmStatus.last_polled_at).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+                {elmStatus.last_error && (
+                  <p className="text-sm" style={{ color: 'var(--fgColor-danger)' }}>
+                    Last error: {elmStatus.last_error}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm" style={{ color: 'var(--fgColor-muted)' }}>
+                Routed to Enterprise Live Migrations. No live migration has been created yet.
+              </p>
+            )}
+
+            <div className="flex items-center gap-3 pt-3" style={{ borderTop: '1px solid var(--borderColor-default)' }}>
+              <Button
+                onClick={handleCutover}
+                disabled={!cutoverReady || cuttingOver}
+                variant="danger"
+              >
+                {cuttingOver ? 'Cutting over...' : 'Cut over'}
+              </Button>
+              <p className="text-xs" style={{ color: 'var(--fgColor-muted)' }}>
+                {cutoverReady
+                  ? 'Cutover archives the source repository and cannot be undone automatically.'
+                  : 'Cutover becomes available once the backfill reports it is ready.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Migration Configuration - Hide if migration is complete */}
       {repository.status !== 'complete' && (
       <div className="rounded-lg shadow-sm p-6" style={{ backgroundColor: 'var(--bgColor-default)', border: '1px solid var(--borderColor-default)' }}>
@@ -766,6 +883,18 @@ export function MigrationReadinessTab({
         variant="danger"
         onConfirm={confirmRemoveFromBatch}
         onCancel={() => setShowRemoveDialog(false)}
+      />
+
+      {/* Cutover Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={showCutoverDialog}
+        title="Cut over to destination"
+        message={`Cutting over ${repository.full_name} archives the source repository and redirects users to the destination. This step causes downtime and cannot be undone automatically. Continue?`}
+        confirmLabel="Cut over"
+        variant="danger"
+        onConfirm={confirmCutover}
+        onCancel={() => setShowCutoverDialog(false)}
+        isLoading={cuttingOver}
       />
     </div>
   );

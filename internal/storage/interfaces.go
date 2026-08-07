@@ -299,6 +299,27 @@ type SourceStore interface {
 	UpdateSourceRepositoryCount(ctx context.Context, id int64) error
 }
 
+// ELMStore defines operations for Enterprise Live Migrations (ELM) state:
+// the per-repository migration route and the elm_migrations records.
+type ELMStore interface {
+	// GetELMMigration retrieves the ELM migration record for a repository, or nil if absent.
+	GetELMMigration(ctx context.Context, repoID int64) (*models.ELMMigration, error)
+	// GetELMMigrationByELMID retrieves the ELM migration record by appliance-side id, or nil if absent.
+	GetELMMigrationByELMID(ctx context.Context, elmMigrationID string) (*models.ELMMigration, error)
+	// UpsertELMMigration creates or updates the ELM migration record for a repository.
+	UpsertELMMigration(ctx context.Context, rec *models.ELMMigration) error
+	// ListELMMigrationsInFlight returns ELM records whose repository is in an ELM lifecycle status.
+	ListELMMigrationsInFlight(ctx context.Context) ([]*models.ELMMigration, error)
+	// CountELMMigrationsInFlight returns the per-source and global in-flight counts
+	// used by the ELM admission ceilings.
+	CountELMMigrationsInFlight(ctx context.Context) (*ELMInFlightCounts, error)
+	// DeleteELMMigration removes the ELM migration record for a repository.
+	DeleteELMMigration(ctx context.Context, repoID int64) error
+	// UpdateRepositoryMigrationRoute sets (or, with a nil route, clears) the
+	// migration route for a repository. Invalid values are rejected.
+	UpdateRepositoryMigrationRoute(ctx context.Context, fullName string, route *string) error
+}
+
 // SetupStore defines operations for setup status.
 type SetupStore interface {
 	// GetSetupStatus retrieves the current setup status.
@@ -339,6 +360,7 @@ var (
 	_ SourceStore           = (*Database)(nil)
 	_ ADOStore              = (*Database)(nil)
 	_ DiscoveryStore        = (*Database)(nil)
+	_ ELMStore              = (*Database)(nil)
 	_ SettingsStore         = (*Database)(nil)
 	_ SetupStore            = (*Database)(nil)
 	_ DatabaseAccess        = (*Database)(nil)
