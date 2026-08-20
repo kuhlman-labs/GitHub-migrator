@@ -10,7 +10,7 @@ require (
 	github.com/jferrl/go-githubauth v1.5.0
 	github.com/lmittmann/tint v1.1.2
 	github.com/mark3labs/mcp-go v0.52.0
-	github.com/mattn/go-isatty v0.0.20
+	github.com/mattn/go-isatty v0.0.24
 	github.com/microsoft/azure-devops-go-api/azuredevops/v7 v7.1.0
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
 	github.com/spf13/viper v1.21.0
