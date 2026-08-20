@@ -60,7 +60,7 @@
     "msw": "^2.12.7",
     "postcss": "^8.5.12",
     "tailwindcss": "^4.1.18",
-    "typescript": "^5.2.2",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.50.1",
     "vite": "^7.3.2",
     "vitest": "^4.0.16"
