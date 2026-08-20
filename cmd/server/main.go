@@ -15,6 +15,7 @@ import (
 	"github.com/kuhlman-labs/github-migrator/internal/batch"
 	"github.com/kuhlman-labs/github-migrator/internal/config"
 	"github.com/kuhlman-labs/github-migrator/internal/configsvc"
+	"github.com/kuhlman-labs/github-migrator/internal/elm"
 	"github.com/kuhlman-labs/github-migrator/internal/github"
 	"github.com/kuhlman-labs/github-migrator/internal/logging"
 	"github.com/kuhlman-labs/github-migrator/internal/migration"
@@ -100,13 +101,23 @@ func main() {
 	shuttingDown := false
 	schedulerStarted := false
 
+	// Initialize the ELM service and its long-lived poll loop. This runs beside the
+	// migration worker rather than inside it: a live migration waiting in
+	// awaiting_cutover must not occupy a worker slot, possibly for days.
+	elmService := initializeELMService(workerCtx, cfg, db, logger)
+
+	// Inject that single ELM service into the API layer so the operator-triggered
+	// cutover endpoint shares the one privileged SSH transport and poll loop rather
+	// than opening (and leaking) a second admin-shell connection.
+	server.SetELMService(elmService)
+
 	// Initialize migration executor and worker (destination client required)
 	// Source clients are created dynamically per-source by ExecutorFactory
-	migrationWorker := initializeMigrationWorker(workerCtx, cfg, cfgSvc, destDualClient, db, logger)
+	migrationWorker := initializeMigrationWorker(workerCtx, cfg, cfgSvc, destDualClient, db, elmService, logger)
 
 	// Initialize and start scheduler worker for scheduled batches
 	// Uses ExecutorFactory for dynamic multi-source support
-	schedulerWorker := initializeSchedulerWorker(cfg, cfgSvc, destDualClient, db, logger)
+	schedulerWorker := initializeSchedulerWorker(cfg, cfgSvc, destDualClient, db, elmService, logger)
 
 	// Register callback to start workers when destination is configured dynamically
 	// This handles the case where destination is configured via UI after server start
@@ -136,7 +147,7 @@ func main() {
 				logger,
 			)
 			if newDestClient != nil {
-				migrationWorker = initializeMigrationWorker(workerCtx, cfg, cfgSvc, newDestClient, db, logger)
+				migrationWorker = initializeMigrationWorker(workerCtx, cfg, cfgSvc, newDestClient, db, elmService, logger)
 				if migrationWorker != nil {
 					slog.Info("Migration worker started after destination configuration")
 				}
@@ -156,7 +167,7 @@ func main() {
 				logger,
 			)
 			if newDestClient != nil {
-				schedulerWorker = initializeSchedulerWorker(cfg, cfgSvc, newDestClient, db, logger)
+				schedulerWorker = initializeSchedulerWorker(cfg, cfgSvc, newDestClient, db, elmService, logger)
 				if schedulerWorker != nil && !schedulerStarted {
 					go schedulerWorker.Start(workerCtx)
 					schedulerStarted = true
@@ -362,7 +373,7 @@ func initializeGitHubDualClient(token, baseURL, clientType string, appID int64, 
 // initializeMigrationWorker creates and starts the migration worker if configured.
 // Uses ExecutorFactory for dynamic multi-source support.
 // The provided context is used to control worker lifecycle for graceful shutdown.
-func initializeMigrationWorker(ctx context.Context, cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.MigrationWorker {
+func initializeMigrationWorker(ctx context.Context, cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, elmService *migration.ELMService, logger *slog.Logger) *worker.MigrationWorker {
 	// Destination client is always required for migrations
 	if destDualClient == nil {
 		logger.Info("Migration worker not started - destination GitHub client not configured")
@@ -370,7 +381,7 @@ func initializeMigrationWorker(ctx context.Context, cfg *config.Config, cfgSvc *
 	}
 
 	// Create executor factory for dynamic multi-source support
-	executorFactory, err := createExecutorFactory(cfg, cfgSvc, destDualClient, db, logger)
+	executorFactory, err := createExecutorFactory(cfg, cfgSvc, destDualClient, db, elmService, logger)
 	if err != nil {
 		slog.Error("Failed to create executor factory", "error", err)
 		return nil
@@ -407,7 +418,7 @@ func initializeMigrationWorker(ctx context.Context, cfg *config.Config, cfgSvc *
 
 // createExecutorFactory creates an executor factory with the shared configuration.
 // Uses ConfigService for dynamic settings from database, falling back to static config.
-func createExecutorFactory(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) (*migration.ExecutorFactory, error) {
+func createExecutorFactory(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, elmService *migration.ELMService, logger *slog.Logger) (*migration.ExecutorFactory, error) {
 	// Get migration settings from database (via ConfigService) if available
 	migCfg := cfgSvc.GetMigrationConfig()
 
@@ -459,7 +470,83 @@ func createExecutorFactory(cfg *config.Config, cfgSvc *configsvc.Service, destDu
 		DestRepoExistsAction: destRepoAction,
 		VisibilityHandling:   visibilityHandling,
 		ConfigProvider:       cfgSvc, // Dynamic config provider for live setting updates
+		ELMService:           elmService,
 	})
+}
+
+// initializeELMService builds the Enterprise Live Migrations service and starts
+// its poll/reconcile loop.
+//
+// It returns nil when ELM is disabled, which is the default: ELMStrategy is then
+// registered but inert, and since no repository carries an "elm" route unless
+// something deliberately writes one, behavior is identical to today.
+//
+// The poll loop is started here, beside the migration worker, rather than inside
+// internal/worker: a repository can sit in awaiting_cutover for days and must not
+// consume a worker slot while it does.
+func initializeELMService(ctx context.Context, cfg *config.Config, db *storage.Database, logger *slog.Logger) *migration.ELMService {
+	if !cfg.ELM.Enabled {
+		logger.Info("ELM disabled - live migrations are not available")
+		return nil
+	}
+
+	if err := cfg.ELM.Validate(); err != nil {
+		logger.Error("ELM is enabled but misconfigured - live migrations are not available", "error", err)
+		return nil
+	}
+
+	transport, err := elm.NewSSHTransport(elm.SSHConfig{
+		Host:                 cfg.ELM.SSHHost,
+		Port:                 cfg.ELM.SSHPort,
+		User:                 cfg.ELM.SSHUser,
+		PrivateKeyPath:       cfg.ELM.SSHPrivateKeyPath,
+		PrivateKeyPassphrase: cfg.ELM.SSHPrivateKeyPassphrase,
+		KnownHostsPath:       cfg.ELM.SSHKnownHostsPath,
+		ConnectTimeout:       time.Duration(cfg.ELM.SSHConnectTimeoutSecs) * time.Second,
+	}, logger)
+	if err != nil {
+		// Construction fails closed (unreadable known_hosts, unreadable key, host
+		// key mismatch), so there is deliberately no degraded fallback here.
+		logger.Error("Failed to open ELM SSH transport - live migrations are not available", "error", err)
+		return nil
+	}
+
+	client, err := elm.NewClient(transport, elm.ClientConfig{
+		TargetAPIURL: cfg.ELM.TargetAPIURL,
+		PATName:      cfg.ELM.PATName,
+	})
+	if err != nil {
+		logger.Error("Failed to create ELM client", "error", err)
+		_ = transport.Close()
+		return nil
+	}
+
+	elmService, err := migration.NewELMService(migration.ELMServiceConfig{
+		Storage:                  db,
+		Client:                   client,
+		Logger:                   logger,
+		PollInterval:             time.Duration(cfg.ELM.PollIntervalSeconds) * time.Second,
+		MaxConcurrentSource:      cfg.ELM.MaxConcurrentSource,
+		MaxConcurrentDestination: cfg.ELM.MaxConcurrentDestination,
+	})
+	if err != nil {
+		logger.Error("Failed to create ELM service", "error", err)
+		_ = transport.Close()
+		return nil
+	}
+
+	go func() {
+		defer func() { _ = transport.Close() }()
+		elmService.Run(ctx)
+	}()
+
+	logger.Info("ELM service started",
+		"ssh_host", cfg.ELM.SSHHost,
+		"poll_interval", elmService.PollInterval(),
+		"max_concurrent_source", cfg.ELM.MaxConcurrentSource,
+		"max_concurrent_destination", cfg.ELM.MaxConcurrentDestination)
+
+	return elmService
 }
 
 // initializeBatchStatusUpdater creates the batch status updater service
@@ -480,7 +567,7 @@ func initializeBatchStatusUpdater(db *storage.Database, logger *slog.Logger) *ba
 
 // initializeSchedulerWorker creates the scheduler worker for scheduled batches.
 // Uses ExecutorFactory for dynamic multi-source support.
-func initializeSchedulerWorker(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, logger *slog.Logger) *worker.SchedulerWorker {
+func initializeSchedulerWorker(cfg *config.Config, cfgSvc *configsvc.Service, destDualClient *github.DualClient, db *storage.Database, elmService *migration.ELMService, logger *slog.Logger) *worker.SchedulerWorker {
 	// Destination client is always required
 	if destDualClient == nil {
 		logger.Info("Scheduler worker not started - destination GitHub client not configured")
@@ -488,7 +575,7 @@ func initializeSchedulerWorker(cfg *config.Config, cfgSvc *configsvc.Service, de
 	}
 
 	// Create executor factory for dynamic multi-source support
-	executorFactory, err := createExecutorFactory(cfg, cfgSvc, destDualClient, db, logger)
+	executorFactory, err := createExecutorFactory(cfg, cfgSvc, destDualClient, db, elmService, logger)
 	if err != nil {
 		slog.Error("Failed to create executor factory for scheduler", "error", err)
 		return nil

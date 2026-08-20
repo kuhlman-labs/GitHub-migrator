@@ -697,3 +697,170 @@ auth:
 		t.Errorf("Expected first team to be 'org1/old-team', got %s", cfg.Auth.AuthorizationRules.MigrationAdminTeams[0])
 	}
 }
+
+// Tests for GitHub Enterprise Live Migrations (ELM) config
+
+func TestELMConfig_Defaults(t *testing.T) {
+	viper.Reset()
+	setDefaults()
+
+	tests := []struct {
+		key      string
+		expected any
+	}{
+		{"elm.enabled", false},
+		{"elm.ssh_port", 22},
+		{"elm.ssh_user", "admin"},
+		{"elm.ssh_connect_timeout_seconds", 30},
+		{"elm.pat_name", "system-pat"},
+		{"elm.poll_interval_seconds", 60},
+		{"elm.max_concurrent_source", 10},
+		{"elm.max_concurrent_destination", 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got := viper.Get(tt.key)
+			if got != tt.expected {
+				t.Errorf("Default for %s = %v, want %v", tt.key, got, tt.expected)
+			}
+		})
+	}
+
+	// Host key verification is mandatory, so there is deliberately no default
+	// known_hosts path and no default private key path: an operator must name both.
+	for _, key := range []string{"elm.ssh_known_hosts_path", "elm.ssh_private_key_path", "elm.ssh_host", "elm.target_api_url"} {
+		if got := viper.Get(key); got != nil && got != "" {
+			t.Errorf("%s must have no default (got %v) so an incomplete config is refused rather than guessed", key, got)
+		}
+	}
+}
+
+func completeELMConfig() ELMConfig {
+	return ELMConfig{
+		Enabled:                  true,
+		SSHHost:                  "ghes.example.com",
+		SSHPort:                  22,
+		SSHUser:                  "admin",
+		SSHPrivateKeyPath:        "/etc/ghmig/elm_ed25519",
+		SSHKnownHostsPath:        "/etc/ghmig/known_hosts",
+		TargetAPIURL:             "https://api.acme.ghe.com",
+		PATName:                  "system-pat",
+		PollIntervalSeconds:      60,
+		MaxConcurrentSource:      10,
+		MaxConcurrentDestination: 20,
+	}
+}
+
+func TestELMConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutate      func(*ELMConfig)
+		wantErr     bool
+		wantMessage string
+	}{
+		{
+			name:   "disabled and empty is valid",
+			mutate: func(c *ELMConfig) { *c = ELMConfig{} },
+		},
+		{
+			name: "disabled and incomplete is still valid",
+			mutate: func(c *ELMConfig) {
+				*c = ELMConfig{Enabled: false, SSHHost: "ghes.example.com"}
+			},
+		},
+		{
+			name:   "enabled and complete is valid",
+			mutate: func(c *ELMConfig) {},
+		},
+		{
+			name:        "enabled without ssh host",
+			mutate:      func(c *ELMConfig) { c.SSHHost = "" },
+			wantErr:     true,
+			wantMessage: "elm.ssh_host",
+		},
+		{
+			name:        "enabled without ssh user",
+			mutate:      func(c *ELMConfig) { c.SSHUser = "" },
+			wantErr:     true,
+			wantMessage: "elm.ssh_user",
+		},
+		{
+			name:        "enabled without private key path",
+			mutate:      func(c *ELMConfig) { c.SSHPrivateKeyPath = "" },
+			wantErr:     true,
+			wantMessage: "elm.ssh_private_key_path",
+		},
+		{
+			name:        "enabled without known_hosts path",
+			mutate:      func(c *ELMConfig) { c.SSHKnownHostsPath = "" },
+			wantErr:     true,
+			wantMessage: "elm.ssh_known_hosts_path",
+		},
+		{
+			name:        "enabled without target api url",
+			mutate:      func(c *ELMConfig) { c.TargetAPIURL = "" },
+			wantErr:     true,
+			wantMessage: "elm.target_api_url",
+		},
+		{
+			name:        "whitespace-only known_hosts path is not a path",
+			mutate:      func(c *ELMConfig) { c.SSHKnownHostsPath = "   " },
+			wantErr:     true,
+			wantMessage: "elm.ssh_known_hosts_path",
+		},
+		{
+			name:        "enabled with a non-positive poll interval",
+			mutate:      func(c *ELMConfig) { c.PollIntervalSeconds = 0 },
+			wantErr:     true,
+			wantMessage: "elm.poll_interval_seconds",
+		},
+		{
+			name:        "enabled with a non-positive source ceiling",
+			mutate:      func(c *ELMConfig) { c.MaxConcurrentSource = 0 },
+			wantErr:     true,
+			wantMessage: "elm.max_concurrent_source",
+		},
+		{
+			name:        "enabled with a non-positive destination ceiling",
+			mutate:      func(c *ELMConfig) { c.MaxConcurrentDestination = -1 },
+			wantErr:     true,
+			wantMessage: "elm.max_concurrent_destination",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := completeELMConfig()
+			tt.mutate(&cfg)
+
+			err := cfg.Validate()
+			if tt.wantErr && err == nil {
+				t.Fatalf("expected Validate() to refuse this config")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("Validate() = %v, want nil", err)
+			}
+			if tt.wantMessage != "" && !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Errorf("Validate() error %q does not name %q", err.Error(), tt.wantMessage)
+			}
+		})
+	}
+}
+
+func TestELMConfig_ValidateReportsEverythingMissingAtOnce(t *testing.T) {
+	cfg := ELMConfig{Enabled: true}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected an enabled-but-empty ELM config to be refused")
+	}
+	for _, key := range []string{
+		"elm.ssh_host", "elm.ssh_user", "elm.ssh_private_key_path",
+		"elm.ssh_known_hosts_path", "elm.target_api_url",
+	} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error %q does not name the missing setting %q", err.Error(), key)
+		}
+	}
+}

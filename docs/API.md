@@ -712,6 +712,105 @@ Mark or unmark a repository as "won't migrate".
 
 Mark a repository as remediated and trigger re-validation.
 
+### POST /api/v1/repositories/{fullName}/migration-route
+
+Set or clear the migration route for a repository. This is the operator writer of
+the ELM route contract — see [ELM.md](ELM.md).
+
+**Request Body:**
+```json
+{
+  "route": "elm"
+}
+```
+
+`route` accepts only `"gei"` or `"elm"`. `null` (or an omitted/empty value) clears
+the route back to the GEI default.
+
+**Response 200 OK:**
+```json
+{
+  "full_name": "acme-corp/monolith",
+  "migration_route": "elm",
+  "message": "Migration route updated"
+}
+```
+
+**Response 400 Bad Request** — the route is not one of the two legal values. The
+stored route is left unchanged.
+```json
+{
+  "error": "Invalid migration route",
+  "details": "route must be \"gei\" or \"elm\"",
+  "reason": "invalid_migration_route"
+}
+```
+
+### POST /api/v1/repositories/{fullName}/cutover
+
+Cut an Enterprise Live Migration over to the destination. **This is the one
+irreversible, downtime-causing step of a live migration**: ELM archives the source
+repository, and recovery is a manual operator runbook. It is operator-triggered
+only — nothing transitions into cutover automatically — and `--force` is never
+used.
+
+**Response 200 OK:**
+```json
+{
+  "message": "Cutover started",
+  "repository": {
+    "full_name": "acme-corp/monolith",
+    "status": "cutting_over",
+    "migration_route": "elm"
+  }
+}
+```
+
+**Response 409 Conflict** — the migration is not ready to cut over. No cutover
+command is dispatched and the repository is left where it was. `reason` is
+machine-readable:
+
+| `reason` | Meaning |
+| --- | --- |
+| `elm_not_ready` | The backfill has not reported cutover readiness |
+| `elm_no_record` | The repository has no live migration |
+
+```json
+{
+  "error": "Live migration is not ready for cutover",
+  "details": "the backfill for acme-corp/monolith reports elm status \"backfilling\"",
+  "reason": "elm_not_ready"
+}
+```
+
+**Response 503 Service Unavailable** — ELM is not configured for this deployment
+(`reason: elm_not_configured`).
+
+### GET /api/v1/repositories/{fullName}/elm
+
+Get the live-migration state for a repository. `cutover_ready` is the source of
+truth for whether the dashboard's *Cut over* button is enabled.
+
+**Response 200 OK:**
+```json
+{
+  "full_name": "acme-corp/monolith",
+  "migration_route": "elm",
+  "status": "awaiting_cutover",
+  "has_elm_migration": true,
+  "elm_migration_id": "elm-1a2b3c",
+  "elm_status": "cutover_ready",
+  "elm_phase": "git",
+  "progress_percent": 100,
+  "cutover_ready": true,
+  "last_polled_at": "2026-08-06T12:00:00Z"
+}
+```
+
+A repository that has never been routed reports `"migration_route": "gei"` and
+`"has_elm_migration": false` — the route column is nullable and a NULL reads as
+the GEI default.
+
 ---
 
 ## Organizations & Projects
